@@ -12,21 +12,18 @@ type Rect = Pick<PhotoTag, "x" | "y" | "width" | "height">;
 export function Gallery({
   family,
   canEdit,
-  busy,
-  upload,
+  onAdd,
   onOpen,
   personFilter,
   onClearFilter,
 }: {
   family: Family;
   canEdit: boolean;
-  busy: boolean;
-  upload: (file: File) => Promise<Family>;
+  onAdd: () => void;
   onOpen: (id: string) => void;
   personFilter?: string | null;
   onClearFilter: () => void;
 }) {
-  const [error, setError] = useState("");
   const photos = (family.photos || []).filter(
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),
@@ -51,36 +48,12 @@ export function Gallery({
           </p>
         </div>
         {canEdit && (
-          <label className={`upload-button ${busy ? "disabled" : ""}`}>
+          <button className="primary-action" onClick={onAdd}>
             <ImagePlus size={18} />
-            {busy ? "Загружаем…" : "Добавить фото"}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              disabled={busy}
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                setError("");
-                try {
-                  if (file.size > 20 * 1024 * 1024)
-                    throw new Error("Максимальный размер — 20 МБ");
-                  const data = await upload(file);
-                  onOpen(data.photos![data.photos!.length - 1].id);
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-                e.target.value = "";
-              }}
-            />
-          </label>
+            Добавить фото
+          </button>
         )}
       </div>
-      {error && (
-        <p role="alert" className="form-error">
-          {error}
-        </p>
-      )}
       {!photos.length ? (
         <div className="gallery-empty">
           <ImagePlus size={42} strokeWidth={1} />
@@ -127,6 +100,8 @@ export function PhotoViewer({
   save,
   onClose,
   onPerson,
+  onCreatePerson,
+  initialPersonId = "",
 }: {
   photo: ArchivePhoto;
   family: Family;
@@ -136,10 +111,12 @@ export function PhotoViewer({
   save: (f: Family) => Promise<Family>;
   onClose: () => void;
   onPerson: (id: string) => void;
+  onCreatePerson: () => void;
+  initialPersonId?: string;
 }) {
   const [tagging, setTagging] = useState(false),
     [rect, setRect] = useState<Rect | null>(null),
-    [personId, setPersonId] = useState(""),
+    [personId, setPersonId] = useState(initialPersonId),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
   const [title, setTitle] = useState(photo.title),
@@ -185,7 +162,7 @@ export function PhotoViewer({
   }
   function selectSuggestion(s: FaceSuggestion) {
     setRect(s.box);
-    setPersonId(s.personId || "");
+    setPersonId(initialPersonId);
     setSuggestionId(s.id);
     setTagging(true);
   }
@@ -271,11 +248,7 @@ export function PhotoViewer({
                 onClick={() => selectSuggestion(s)}
                 aria-label={`Подтвердить лицо ${i + 1}`}
               >
-                <span>
-                  {s.personId
-                    ? `Возможно: ${family.people.find((p) => p.id === s.personId)?.name}`
-                    : `Лицо ${i + 1}`}
-                </span>
+                <span>{`Лицо ${i + 1}`}</span>
               </button>
             ))}
             {photo.tags.map((tag) => {
@@ -343,6 +316,13 @@ export function PhotoViewer({
           ))}
           {canEdit && (
             <>
+              <p className="field-hint">
+                Выберите рамку на снимке и укажите человека. Не нашли его в
+                древе — создайте карточку здесь.
+              </p>
+              <button onClick={onCreatePerson} disabled={busy}>
+                Добавить человека в древо
+              </button>
               <button disabled={scanning} onClick={() => void scan()}>
                 {scanning ? "Ищем лица…" : "Найти лица"}
               </button>
@@ -361,9 +341,7 @@ export function PhotoViewer({
               {suggestions.map((s, i) => (
                 <div key={s.id} className="connection-row">
                   <button onClick={() => selectSuggestion(s)}>
-                    {s.personId
-                      ? `Возможно: ${fullName(family.people.find((p) => p.id === s.personId)!)}`
-                      : `Лицо ${i + 1}: выбрать человека`}
+                    {`Лицо ${i + 1}: выбрать человека`}
                   </button>
                   <button
                     aria-label="Убрать предложение"
@@ -407,36 +385,39 @@ export function PhotoViewer({
                   </button>
                   {rect && (
                     <>
-                      {(["x", "y", "width", "height"] as const).map(
-                        (key, i) => (
-                          <label key={key}>
-                            {["Слева", "Сверху", "Ширина", "Высота"][i]}
-                            <input
-                              type="range"
-                              min={
-                                key === "width" || key === "height" ? 0.02 : 0
-                              }
-                              max={
-                                key === "x"
-                                  ? 1 - rect.width
-                                  : key === "y"
-                                    ? 1 - rect.height
-                                    : key === "width"
-                                      ? 1 - rect.x
-                                      : 1 - rect.y
-                              }
-                              step="0.005"
-                              value={rect[key]}
-                              onChange={(e) =>
-                                setRect({
-                                  ...rect,
-                                  [key]: Number(e.target.value),
-                                })
-                              }
-                            />
-                          </label>
-                        ),
-                      )}
+                      <details className="tag-adjustments">
+                        <summary>Уточнить рамку</summary>
+                        {(["x", "y", "width", "height"] as const).map(
+                          (key, i) => (
+                            <label key={key}>
+                              {["Слева", "Сверху", "Ширина", "Высота"][i]}
+                              <input
+                                type="range"
+                                min={
+                                  key === "width" || key === "height" ? 0.02 : 0
+                                }
+                                max={
+                                  key === "x"
+                                    ? 1 - rect.width
+                                    : key === "y"
+                                      ? 1 - rect.height
+                                      : key === "width"
+                                        ? 1 - rect.x
+                                        : 1 - rect.y
+                                }
+                                step="0.005"
+                                value={rect[key]}
+                                onChange={(e) =>
+                                  setRect({
+                                    ...rect,
+                                    [key]: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                          ),
+                        )}
+                      </details>
                       <label>
                         Кто это?
                         <select
@@ -480,74 +461,77 @@ export function PhotoViewer({
                   )}
                 </div>
               )}
-              <form
-                className="archive-form photo-metadata"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  await update({
-                    ...photo,
-                    title: title.trim(),
-                    takenAt: takenAt.trim() || undefined,
-                    place: place.trim() || undefined,
-                    year: year.trim() || undefined,
-                    event: event.trim() || undefined,
-                    description: description.trim() || undefined,
-                  });
-                }}
-              >
-                <label>
-                  Название
-                  <input
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Год
-                  <input
-                    value={year}
-                    inputMode="numeric"
-                    pattern="[0-9]{4}"
-                    maxLength={4}
-                    placeholder="1965"
-                    onChange={(e) => setYear(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Место
-                  <input
-                    value={place}
-                    placeholder="Город, деревня или адрес"
-                    onChange={(e) => setPlace(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Событие
-                  <input
-                    value={event}
-                    placeholder="Свадьба, день рождения, семейная встреча"
-                    onChange={(e) => setEvent(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Дата или период (уточнение)
-                  <input
-                    value={takenAt}
-                    placeholder="Например, лето 1965"
-                    onChange={(e) => setTakenAt(e.target.value)}
-                  />
-                </label>
-                <label>
-                  История снимка
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </label>
-                <button disabled={busy}>Сохранить описание</button>
-              </form>
+              <details className="photo-description-editor">
+                <summary>Изменить описание фотографии</summary>
+                <form
+                  className="archive-form photo-metadata"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await update({
+                      ...photo,
+                      title: title.trim(),
+                      takenAt: takenAt.trim() || undefined,
+                      place: place.trim() || undefined,
+                      year: year.trim() || undefined,
+                      event: event.trim() || undefined,
+                      description: description.trim() || undefined,
+                    });
+                  }}
+                >
+                  <label>
+                    Название
+                    <input
+                      required
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Год
+                    <input
+                      value={year}
+                      inputMode="numeric"
+                      pattern="[0-9]{4}"
+                      maxLength={4}
+                      placeholder="1965"
+                      onChange={(e) => setYear(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Место
+                    <input
+                      value={place}
+                      placeholder="Город, деревня или адрес"
+                      onChange={(e) => setPlace(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Событие
+                    <input
+                      value={event}
+                      placeholder="Свадьба, день рождения, семейная встреча"
+                      onChange={(e) => setEvent(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Дата или период (уточнение)
+                    <input
+                      value={takenAt}
+                      placeholder="Например, лето 1965"
+                      onChange={(e) => setTakenAt(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    История снимка
+                    <textarea
+                      rows={3}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </label>
+                  <button disabled={busy}>Сохранить описание</button>
+                </form>
+              </details>
               {canDelete && (
                 <button
                   className="danger-action"
@@ -575,7 +559,7 @@ export function PhotoViewer({
               )}
             </>
           )}
-          {!canEdit && (
+          {
             <div className="photo-details">
               {[
                 ["Год", photo.year],
@@ -592,7 +576,7 @@ export function PhotoViewer({
                 ))}
               {photo.description?.trim() && <p>{photo.description}</p>}
             </div>
-          )}
+          }
           {error && (
             <p role="alert" className="form-error">
               {error}

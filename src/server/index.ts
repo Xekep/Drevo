@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openArchive, ConflictError } from "./database.ts";
+import { removeStarterFamily } from "./demo-cleanup.ts";
 import { validateFamily } from "../domain/index.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
 import { userStore, ForbiddenError } from "./users.ts";
@@ -46,6 +47,7 @@ export async function startServer(
       ),
     ),
   );
+  removeStarterFamily(archive);
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const visibility = settingsStore(archive.db);
@@ -83,6 +85,7 @@ export async function startServer(
       user,
       readTree,
       readPhotos,
+      reverseTimeline: settings.reverseTimeline,
     };
   };
   const vite = production
@@ -280,7 +283,8 @@ export async function startServer(
         path !== dist
       )
         return json(res, 403, { error: "Недоступный путь" });
-      if (url === "/") path = resolve(dist, "index.html");
+      if (url === "/" || url === "/admin" || url === "/admin/")
+        path = resolve(dist, "index.html");
       if (!existsSync(path))
         return json(res, 404, { error: "Страница не найдена" });
       try {
@@ -360,6 +364,27 @@ export async function startServer(
             title = decodeURIComponent(
               String(req.headers["x-file-name"] || "Фотография"),
             ).slice(0, 250);
+          const metadata = JSON.parse(
+            decodeURIComponent(
+              String(req.headers["x-photo-metadata"] || "%7B%7D"),
+            ),
+          );
+          if (
+            !metadata ||
+            typeof metadata !== "object" ||
+            Array.isArray(metadata)
+          )
+            throw new Error("Некорректное описание фотографии");
+          const fields: Record<string, string> = {};
+          for (const key of ["title", "year", "place", "event", "description"])
+            if (metadata[key] !== undefined) {
+              if (
+                typeof metadata[key] !== "string" ||
+                metadata[key].length > 1000
+              )
+                throw new Error("Слишком длинное описание фотографии");
+              if (metadata[key].trim()) fields[key] = metadata[key].trim();
+            }
           return json(
             res,
             201,
@@ -368,7 +393,7 @@ export async function startServer(
                 ...current,
                 photos: [
                   ...(current.photos || []),
-                  { id: file.id, url: file.url, title, tags: [] },
+                  { id: file.id, url: file.url, title, ...fields, tags: [] },
                 ],
               },
               revision,

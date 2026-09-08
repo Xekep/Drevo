@@ -14,10 +14,8 @@ export function ArchiveSettings({
 }) {
   const [title, setTitle] = useState(family.title),
     [description, setDescription] = useState(family.description),
-    [demo, setDemo] = useState(family.demo),
     [error, setError] = useState(""),
-    [imported, setImported] = useState<Family | null>(null),
-    [clear, setClear] = useState(false);
+    [imported, setImported] = useState<Family | null>(null);
   async function persist(data: Family) {
     try {
       await save(data);
@@ -32,7 +30,7 @@ export function ArchiveSettings({
         className="archive-form"
         onSubmit={(e) => {
           e.preventDefault();
-          void persist({ ...family, title, description, demo });
+          void persist({ ...family, title, description });
         }}
       >
         <label>
@@ -49,14 +47,6 @@ export function ArchiveSettings({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-        </label>
-        <label className="check-field">
-          <input
-            type="checkbox"
-            checked={demo}
-            onChange={(e) => setDemo(e.target.checked)}
-          />{" "}
-          Это демонстрационная семья
         </label>
         <button disabled={busy} className="primary-action">
           Сохранить настройки
@@ -103,38 +93,6 @@ export function ArchiveSettings({
             </>
           )}
         </section>
-        {family.demo && (
-          <section>
-            <h3>Начать свою историю</h3>
-            <p>
-              Убрать демонстрационных людей и начать пустое древо. Сначала
-              сохраните нужные данные.
-            </p>
-            <button
-              type="button"
-              className="danger-action"
-              disabled={busy}
-              onClick={() => {
-                if (!clear) {
-                  setClear(true);
-                  return;
-                }
-                void persist({
-                  title: "Семейный архив",
-                  description: "История нашей семьи",
-                  demo: false,
-                  people: [],
-                  links: [],
-                  photos: [],
-                });
-              }}
-            >
-              {clear
-                ? "Подтвердить очистку демонстрационного архива"
-                : "Начать пустое древо"}
-            </button>
-          </section>
-        )}
         {error && (
           <p className="form-error" role="alert">
             {error}

@@ -12,9 +12,11 @@ import {
   CircleHelp,
   FileText,
   Heart,
-  List,
   MapPin,
   Maximize2,
+  Menu,
+  ImagePlus,
+  ShieldCheck,
   Minus,
   Plus,
   Search,
@@ -38,8 +40,8 @@ import {
   position as basePosition,
   RAIL_WIDTH,
   START_YEAR as DEFAULT_START_YEAR,
-  YEAR_HEIGHT,
   yearY as baseYearY,
+  yearAtY,
   years,
   type Person,
 } from "./domain";
@@ -53,6 +55,7 @@ import { FamiliesCatalog } from "./components/families-catalog";
 import { ArchiveSettings } from "./components/archive-settings";
 import { PersonEditor, ConnectionEditor } from "./components/archive-editors";
 import { Gallery, PhotoViewer } from "./components/gallery";
+import { PhotoUpload } from "./components/photo-upload";
 import { Connections } from "./components/graph-connections";
 const normalize = (text: string) =>
   text.toLocaleLowerCase("ru").replaceAll("ё", "е").trim();
@@ -71,9 +74,27 @@ export default function App() {
     upload,
     reload,
     needsLogin,
+    reverseTimeline,
   } = useArchive();
   const isAdmin = user?.role === "admin";
-  const [adminPanel, setAdminPanel] = useState(false);
+  const [adminPanel, setAdminRoute] = useState(
+    window.location.pathname.startsWith("/admin"),
+  );
+  function setAdminPanel(open: boolean) {
+    window.history.pushState(null, "", open ? "/admin" : "/");
+    setAdminRoute(open);
+    setMenuOpen(false);
+  }
+  useEffect(() => {
+    const sync = () =>
+      setAdminRoute(window.location.pathname.startsWith("/admin"));
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  const [menuOpen, setMenuOpen] = useState(false),
+    [addOpen, setAddOpen] = useState(false);
+  const [photoUpload, setPhotoUpload] = useState(false);
+  const [relativeTo, setRelativeTo] = useState<Person | undefined>();
   const [login, setLogin] = useState(false);
   const [settings, setSettings] = useState(false);
   const [editor, setEditor] = useState<Person | "new" | null>(null);
@@ -81,6 +102,8 @@ export default function App() {
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
   const [photoFilter, setPhotoFilter] = useState<string | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);
+  const [resumePhoto, setResumePhoto] = useState<string | null>(null),
+    [photoPersonId, setPhotoPersonId] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [compare, setCompare] = useState(false);
   const [requestedView, setView] = useState<
@@ -94,7 +117,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [zoom, setZoom] = useState(0.9);
-  const [currentYear, setCurrentYear] = useState(DEFAULT_START_YEAR);
+  const [scrollY, setScrollY] = useState(0);
   const [about, setAbout] = useState(false);
   const [lifelines, setLifelines] = useState(true);
   const viewport = useRef<HTMLDivElement>(null);
@@ -113,12 +136,15 @@ export default function App() {
     DEFAULT_START_YEAR,
     ...people.map((p) => Math.floor(dateYear(p.birth) / 10) * 10),
   );
-  const yearY = (year: number) => baseYearY(year, START_YEAR);
+  const yearY = (year: number) => baseYearY(year, START_YEAR, reverseTimeline);
   const position = useCallback(
-    (p: Person) => basePosition(p, START_YEAR),
-    [START_YEAR],
+    (p: Person) => basePosition(p, START_YEAR, reverseTimeline),
+    [START_YEAR, reverseTimeline],
   );
-  const WORLD_HEIGHT = yearY(END_YEAR) + 140;
+  const WORLD_HEIGHT = baseYearY(END_YEAR, START_YEAR) + 140;
+  useEffect(() => {
+    viewport.current?.scrollTo({ top: 0 });
+  }, [reverseTimeline, START_YEAR]);
   const personMap = useMemo(
     () => new Map(people.map((p) => [p.id, p])),
     [people],
@@ -157,13 +183,6 @@ export default function App() {
       )
       .sort((a, b) => a.birth.localeCompare(b.birth));
   }, [people, query]);
-  const firstYear = people.length
-    ? Math.min(...people.map((p) => dateYear(p.birth)))
-    : 1838;
-  const lastYear = people.length
-    ? Math.max(...people.map((p) => dateYear(p.death)))
-    : new Date().getFullYear();
-
   useEffect(() => {
     function keyboard(event: KeyboardEvent) {
       const typing =
@@ -174,6 +193,8 @@ export default function App() {
         searchInput.current?.focus();
       }
       if (event.key === "Escape") {
+        setMenuOpen(false);
+        setAddOpen(false);
         setSearchOpen(false);
         if (about) setAbout(false);
         else if (!typing) {
@@ -303,14 +324,31 @@ export default function App() {
       behavior: "smooth",
     });
   }
+  const currentYear = Math.max(
+    START_YEAR,
+    Math.min(
+      END_YEAR,
+      Math.round(yearAtY(scrollY / zoom, START_YEAR, reverseTimeline)),
+    ),
+  );
   const activeEra =
     [...ERAS].reverse().find((e) => currentYear >= e.start) || ERAS[0];
 
   return (
     <div className="app-shell">
       {login && <LoginDialog onClose={() => setLogin(false)} />}
-      {adminPanel && isAdmin && (
-        <AdminPanel onClose={() => setAdminPanel(false)} onChanged={reload} />
+      {photoUpload && canEdit && (
+        <PhotoUpload
+          upload={upload}
+          busy={busy}
+          onClose={() => setPhotoUpload(false)}
+          onUploaded={(id) => {
+            setPhotoId(id);
+            setView("gallery");
+            setPhotoFilter(null);
+            setSelected([]);
+          }}
+        />
       )}
       {settings && family && isAdmin && (
         <ArchiveSettings
@@ -325,10 +363,23 @@ export default function App() {
           isAdmin={isAdmin}
           family={family}
           person={editor === "new" ? undefined : editor}
+          user={user}
+          relativeTo={relativeTo}
+          upload={upload}
           save={save}
           busy={busy}
-          onClose={() => setEditor(null)}
-          onSaved={chooseRelative}
+          onClose={() => {
+            setEditor(null);
+            setRelativeTo(undefined);
+            if (resumePhoto) {
+              setPhotoId(resumePhoto);
+              setResumePhoto(null);
+            }
+          }}
+          onSaved={(id) => {
+            if (resumePhoto) setPhotoPersonId(id);
+            else chooseRelative(id);
+          }}
         />
       )}
       {family && connection && (
@@ -346,6 +397,14 @@ export default function App() {
           key={photoId}
           photo={family.photos.find((p) => p.id === photoId)!}
           family={family}
+          initialPersonId={photoPersonId}
+          onCreatePerson={() => {
+            setResumePhoto(photoId);
+            setPhotoId(null);
+            setPhotoPersonId("");
+            setRelativeTo(undefined);
+            setEditor("new");
+          }}
           canEdit={owns(
             user,
             family.photos.find((p) => p.id === photoId)!,
@@ -353,59 +412,269 @@ export default function App() {
           canDelete={isAdmin}
           busy={busy}
           save={save}
-          onClose={() => setPhotoId(null)}
+          onClose={() => {
+            setPhotoId(null);
+            setPhotoPersonId("");
+          }}
           onPerson={(id) => {
             setPhotoId(null);
+            setPhotoPersonId("");
             chooseRelative(id);
           }}
         />
       )}
-      <header className="site-header">
+      {(menuOpen || addOpen) && (
+        <button
+          className="menu-backdrop"
+          aria-label="Закрыть меню"
+          onClick={() => {
+            setMenuOpen(false);
+            setAddOpen(false);
+          }}
+        />
+      )}
+      <header className="site-header compact-header">
         <button
           className="brand"
+          aria-label="Древо — главная"
           onClick={() => {
+            if (adminPanel) setAdminPanel(false);
             setView("tree");
             setSelected([]);
-            setCompare(false);
-            setQuery("");
-            fitTree();
           }}
-          aria-label="Древо — главная"
         >
-          <TreeDeciduous className="brand-symbol" size={32} strokeWidth={1.4} />
+          <TreeDeciduous size={30} strokeWidth={1.4} />
           древо<span className="brand-period">.</span>
         </button>
-        <nav aria-label="Основная навигация">
+        <div className="header-menu">
           <button
-            className={view === "tree" ? "nav-active" : ""}
-            onClick={() => setView("tree")}
-          >
-            Семейное древо
-          </button>
-          <button
-            className={view === "list" ? "nav-active" : ""}
-            onClick={() => setView("list")}
-          >
-            Люди<span className="nav-count">{people.length || "—"}</span>
-          </button>
-          <button
-            className={view === "gallery" ? "nav-active" : ""}
+            className="menu-trigger"
+            aria-label="Разделы архива"
+            aria-expanded={menuOpen}
+            aria-controls="archive-menu"
             onClick={() => {
-              setPhotoFilter(null);
-              setView("gallery");
+              setMenuOpen(!menuOpen);
+              setAddOpen(false);
             }}
           >
-            Фотографии
+            <Menu size={20} />
+            <span>Меню</span>
           </button>
-          <button onClick={() => setAbout(true)}>
-            Об архиве
-            <ArrowUpRight size={11} />
-          </button>
-        </nav>
-        <div className="header-right">
+          {menuOpen && (
+            <nav
+              className="compact-menu"
+              id="archive-menu"
+              aria-label="Разделы архива"
+            >
+              <span className="menu-caption">СЕМЕЙНЫЙ АРХИВ</span>
+              {(
+                [
+                  ["tree", "Древо", TreeDeciduous],
+                  ["list", "Люди", Users],
+                  ["families", "Семьи", Heart],
+                  ["gallery", "Фотографии", ImagePlus],
+                ] as const
+              ).map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  disabled={id === "gallery" ? !readPhotos : !readTree}
+                  aria-current={!adminPanel && view === id ? "page" : undefined}
+                  onClick={() => {
+                    if (adminPanel) setAdminPanel(false);
+                    setView(id);
+                    setMenuOpen(false);
+                    setPhotoFilter(null);
+                    setSelected([]);
+                  }}
+                >
+                  <Icon size={18} />
+                  {label}
+                </button>
+              ))}
+              {isAdmin && (
+                <button onClick={() => setAdminPanel(true)}>
+                  <ShieldCheck size={18} />
+                  Админская панель
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setAbout(true);
+                  setMenuOpen(false);
+                }}
+              >
+                <CircleHelp size={18} />
+                Как пользоваться
+              </button>
+              {user && (
+                <span className="menu-account">
+                  {user.name}
+                  <small>{ROLE_NAMES[user.role]}</small>
+                </span>
+              )}
+            </nav>
+          )}
+        </div>
+        {!adminPanel && (
+          <>
+            {" "}
+            <div
+              className="search-box"
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget))
+                  setSearchOpen(false);
+              }}
+            >
+              <Search size={15} />
+              <input
+                ref={searchInput}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && searchResults[0] && query.trim()) {
+                    choose(searchResults[0].id, e.shiftKey, true);
+                    e.currentTarget.blur();
+                  }
+                }}
+                placeholder="Найти человека…"
+                aria-label="Поиск по имени, месту или году"
+                aria-controls="search-results"
+                autoComplete="off"
+              />
+              {query ? (
+                <button
+                  aria-label="Очистить поиск"
+                  onClick={() => {
+                    setQuery("");
+                    searchInput.current?.focus();
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              ) : (
+                <kbd>/</kbd>
+              )}
+              {searchOpen && query.trim() && view === "tree" && (
+                <div className="search-results" id="search-results">
+                  <div className="search-count">
+                    Найдено: {searchResults.length}
+                  </div>
+                  {searchResults.length ? (
+                    searchResults.slice(0, 8).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={(e) => choose(p.id, e.shiftKey, true)}
+                      >
+                        <Avatar person={p} />
+                        <span>
+                          <b>{fullName(p)}</b>
+                          <small>
+                            {years(p)} · {p.birthPlace.split(",")[0]}
+                          </small>
+                        </span>
+                        <ArrowUpRight size={12} />
+                      </button>
+                    ))
+                  ) : (
+                    <p>
+                      Никого не нашли. Попробуйте другое имя, город или год.
+                    </p>
+                  )}
+                  {searchResults.length > 8 && (
+                    <button
+                      className="all-results"
+                      onClick={() => {
+                        setView("list");
+                        setSearchOpen(false);
+                      }}
+                    >
+                      Все результаты
+                      <ArrowRight size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        <div className="header-actions">
+          {!adminPanel && readTree && people.length > 1 && (
+            <button
+              className={`header-compare ${compare ? "is-active" : ""}`}
+              title="Сравнить родство"
+              aria-label="Сравнить родство"
+              aria-pressed={compare}
+              onClick={() => {
+                setCompare(!compare);
+                setView("tree");
+                if (compare) setSelected(selected.slice(0, 1));
+              }}
+            >
+              <ArrowDownUp size={18} />
+            </button>
+          )}
+          {!adminPanel && canEdit && (
+            <div className="header-menu">
+              <button
+                className="primary-action add-trigger"
+                disabled={busy}
+                aria-expanded={addOpen}
+                aria-controls="add-menu"
+                onClick={() => {
+                  setAddOpen(!addOpen);
+                  setMenuOpen(false);
+                }}
+              >
+                <Plus size={18} />
+                <span>Добавить</span>
+              </button>
+              {addOpen && (
+                <div className="compact-menu add-menu" id="add-menu">
+                  <button
+                    onClick={() => {
+                      setRelativeTo(undefined);
+                      setEditor("new");
+                      setAddOpen(false);
+                    }}
+                  >
+                    <Users size={18} />
+                    <span>
+                      Человека<small>Карточка и портрет</small>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPhotoUpload(true);
+                      setAddOpen(false);
+                    }}
+                  >
+                    <ImagePlus size={18} />
+                    <span>
+                      Фотографию<small>Снимок, история и люди</small>
+                    </span>
+                  </button>
+                  <button
+                    disabled={people.length < 2}
+                    onClick={() => {
+                      setConnection(selected);
+                      setAddOpen(false);
+                    }}
+                  >
+                    <Plus size={18} />
+                    Связь между людьми
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {!local &&
             (user ? (
               <button
+                className="session-button"
                 onClick={async () => {
                   await fetch("/auth/logout", { method: "POST" });
                   window.location.reload();
@@ -414,806 +683,672 @@ export default function App() {
                 Выйти
               </button>
             ) : (
-              <button onClick={() => setLogin(true)}>Войти</button>
+              <button className="session-button" onClick={() => setLogin(true)}>
+                Войти
+              </button>
             ))}
-          <span className="private-tag">
-            <span className="tiny-dot" />
-            Семейный архив
-          </span>
-          <button
-            className="owner-avatar"
-            onClick={() => setAbout(true)}
-            aria-label="О семейном архиве"
-          >
-            С
-          </button>
         </div>
       </header>
-
-      <main className="workspace">
-        <div className="toolbar">
-          <div className="view-switch" aria-label="Вид архива">
+      {adminPanel ? (
+        family && isAdmin ? (
+          <AdminPanel
+            family={family}
+            onClose={() => setAdminPanel(false)}
+            onChanged={reload}
+            onSettings={() => setSettings(true)}
+          />
+        ) : (
+          <main className="load-state">
+            <ShieldCheck size={36} />
+            <h2>Панель администратора</h2>
+            <p>
+              {user ? "Этот раздел доступен только администратору." : error}
+            </p>
             <button
-              className={view === "tree" ? "active" : ""}
-              aria-pressed={view === "tree"}
-              onClick={() => setView("tree")}
+              className="primary-action"
+              onClick={() => (user ? setAdminPanel(false) : setLogin(true))}
             >
-              <TreeDeciduous size={13} />
-              Древо
+              {user ? "Вернуться к древу" : "Войти через Яндекс"}
             </button>
-            <button
-              className={view === "list" ? "active" : ""}
-              aria-pressed={view === "list"}
-              onClick={() => setView("list")}
-            >
-              <List size={14} />
-              Список
-            </button>
-          </div>
-          <div
-            className="search-box"
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget))
-                setSearchOpen(false);
-            }}
-          >
-            <Search size={15} />
-            <input
-              ref={searchInput}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setSearchOpen(true);
-              }}
-              onFocus={() => setSearchOpen(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && searchResults[0] && query.trim()) {
-                  choose(searchResults[0].id, e.shiftKey, true);
-                  e.currentTarget.blur();
-                }
-              }}
-              placeholder="Найти человека…"
-              aria-label="Поиск по имени, месту или году"
-              aria-controls="search-results"
-              autoComplete="off"
-            />
-            {query ? (
+          </main>
+        )
+      ) : (
+        <main className="workspace">
+          {linkFrom !== null && (
+            <div className="floating-link-prompt">
+              <span>Выберите человека на древе</span>
               <button
-                aria-label="Очистить поиск"
                 onClick={() => {
-                  setQuery("");
-                  searchInput.current?.focus();
+                  setConnection(linkFrom ? [linkFrom] : []);
+                  setLinkFrom(null);
                 }}
               >
-                <X size={12} />
+                Выбрать из списка
               </button>
-            ) : (
-              <kbd>/</kbd>
-            )}
-            {searchOpen && query.trim() && view === "tree" && (
-              <div className="search-results" id="search-results">
-                <div className="search-count">
-                  Найдено: {searchResults.length}
-                </div>
-                {searchResults.length ? (
-                  searchResults.slice(0, 8).map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={(e) => choose(p.id, e.shiftKey, true)}
-                    >
-                      <Avatar person={p} />
-                      <span>
-                        <b>{fullName(p)}</b>
-                        <small>
-                          {years(p)} · {p.birthPlace.split(",")[0]}
-                        </small>
-                      </span>
-                      <ArrowUpRight size={12} />
-                    </button>
-                  ))
-                ) : (
-                  <p>Никого не нашли. Попробуйте другое имя, город или год.</p>
-                )}
-                {searchResults.length > 8 && (
+              <button
+                onClick={() => setLinkFrom(null)}
+                aria-label="Отменить добавление связи"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+          <div className="workspace-body">
+            {!family ? (
+              <div className="load-state" role={error ? "alert" : "status"}>
+                <TreeDeciduous size={42} strokeWidth={1} />
+                <h2>
+                  {needsLogin
+                    ? "Семейная история — для своих"
+                    : error
+                      ? "Архив пока недоступен"
+                      : "Собираем семейную историю"}
+                </h2>
+                <p>{error || "Загружаем людей и связи между поколениями…"}</p>
+                {error && (
                   <button
-                    className="all-results"
+                    className="full-button"
                     onClick={() => {
-                      setView("list");
-                      setSearchOpen(false);
+                      if (needsLogin) setLogin(true);
+                      else reload();
                     }}
                   >
-                    Все результаты
-                    <ArrowRight size={12} />
+                    {needsLogin ? "Войти в архив" : "Попробовать снова"}
                   </button>
                 )}
               </div>
-            )}
-          </div>
-          <div className="toolbar-spacer" />
-          <button
-            className={`compare-button ${compare ? "is-active" : ""}`}
-            aria-pressed={compare}
-            aria-label={
-              compare
-                ? "Завершить сравнение родства"
-                : "Сравнить родство двух людей"
-            }
-            title="Сравнить родство двух людей"
-            onClick={() => {
-              setCompare(!compare);
-              if (compare) setSelected(selected.slice(0, 1));
-            }}
-          >
-            <ArrowDownUp size={13} />
-            <span>{compare ? "Режим сравнения" : "Сравнить родство"}</span>
-            {compare && (
-              <span className="compare-count">{selected.length}/2</span>
-            )}
-          </button>
-          <button
-            className="help-button"
-            onClick={() => setAbout(true)}
-            aria-label="Как пользоваться древом"
-          >
-            <CircleHelp size={16} />
-          </button>
-        </div>
-        {family && (
-          <div className="archive-actions">
-            {user && (
-              <span className="role-badge">
-                {user.name} ? {ROLE_NAMES[user.role]}
-              </span>
-            )}
-            <button disabled={!readTree} onClick={() => setView("families")}>
-              {"Семьи"}
-            </button>
-            <button
-              disabled={!readPhotos}
-              onClick={() => {
-                setPhotoFilter(null);
-                setView("gallery");
-              }}
-            >
-              Фотографии <span>{family.photos?.length || 0}</span>
-            </button>
-            {canEdit && (
+            ) : (
               <>
-                <button disabled={busy} onClick={() => setEditor("new")}>
-                  <Plus size={14} /> Человек
-                </button>
-                <button
-                  disabled={busy || people.length < 2}
-                  onClick={() => {
-                    if (chosen.length === 2) setConnection(selected);
-                    else {
-                      setView("tree");
+                {people.length === 0 && view !== "gallery" ? (
+                  <div className="empty-tree">
+                    <div className="empty-tree-icon">
+                      <TreeDeciduous size={64} strokeWidth={1} />
+                    </div>
+                    <span className="section-label">ВАША СЕМЕЙНАЯ ИСТОРИЯ</span>
+                    <h1>Древо начинается с человека</h1>
+                    <p>
+                      Добавьте себя или близкого. Затем соедините поколения —
+                      история будет расти вместе с вашей семьёй.
+                    </p>
+                    {canEdit && (
+                      <button
+                        className="primary-action"
+                        onClick={() => {
+                          setRelativeTo(undefined);
+                          setEditor("new");
+                        }}
+                      >
+                        <Plus size={18} />
+                        Добавить первого человека
+                      </button>
+                    )}
+                    <small>
+                      Фотографии и источники можно добавить в любой момент.
+                    </small>
+                  </div>
+                ) : view === "families" ? (
+                  <FamiliesCatalog
+                    people={people}
+                    onPerson={chooseRelative}
+                    onReveal={(ids) => {
+                      setSelected([]);
                       setCompare(false);
-                      setLinkFrom(chosen[0]?.id || "");
-                    }
-                  }}
-                >
-                  Связать людей
-                </button>
-                {isAdmin && (
-                  <>
-                    <button onClick={() => setAdminPanel(true)}>
-                      {"Управление"}
-                    </button>
-                    <button onClick={() => setSettings(true)}>
-                      {"Настройки"}
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-            <span className="save-status" role="status">
-              {busy
-                ? "Сохраняем…"
-                : canEdit
-                  ? "Сохранено в архиве"
-                  : "Просмотр архива"}
-            </span>
-            {linkFrom !== null && (
-              <div className="link-prompt">
-                {linkFrom
-                  ? "Выберите второго человека на древе"
-                  : "Выберите первого человека на древе"}
-                <button onClick={() => setLinkFrom(null)}>Отмена</button>
-                <button
-                  onClick={() => {
-                    setConnection(linkFrom ? [linkFrom] : []);
-                    setLinkFrom(null);
-                  }}
-                >
-                  Выбрать из списка
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="workspace-body">
-          {!family ? (
-            <div className="load-state" role={error ? "alert" : "status"}>
-              <TreeDeciduous size={42} strokeWidth={1} />
-              <h2>
-                {needsLogin
-                  ? "Семейная история — для своих"
-                  : error
-                    ? "Архив пока недоступен"
-                    : "Собираем семейную историю"}
-              </h2>
-              <p>{error || "Загружаем людей и связи между поколениями…"}</p>
-              {error && (
-                <button
-                  className="full-button"
-                  onClick={() => {
-                    if (needsLogin) setLogin(true);
-                    else reload();
-                  }}
-                >
-                  {needsLogin ? "Войти в архив" : "Попробовать снова"}
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {view === "families" ? (
-                <FamiliesCatalog
-                  people={people}
-                  onPerson={chooseRelative}
-                  onReveal={(ids) => {
-                    setSelected([]);
-                    setCompare(false);
-                    reveal(ids, true);
-                  }}
-                />
-              ) : view === "gallery" ? (
-                <Gallery
-                  personFilter={photoFilter}
-                  onClearFilter={() => setPhotoFilter(null)}
-                  family={family}
-                  canEdit={canEdit}
-                  busy={busy}
-                  upload={upload}
-                  onOpen={setPhotoId}
-                />
-              ) : view === "tree" ? (
-                <div className="graph-area">
-                  <div
-                    ref={viewport}
-                    className="graph-viewport"
-                    tabIndex={0}
-                    role="region"
-                    aria-label="Генеалогическое древо. Прокручивайте для перемещения по времени. Shift и нажатие на карточку — сравнение."
-                    onScroll={(e) =>
-                      setCurrentYear(
-                        Math.max(
-                          START_YEAR,
-                          Math.min(
-                            END_YEAR,
-                            Math.round(
-                              START_YEAR +
-                                (e.currentTarget.scrollTop / zoom - 60) /
-                                  YEAR_HEIGHT,
-                            ),
-                          ),
-                        ),
-                      )
-                    }
-                    onPointerDown={(e) => {
-                      if (
-                        e.pointerType !== "mouse" ||
-                        e.button !== 0 ||
-                        (e.target as HTMLElement).closest("button,a,input")
-                      )
-                        return;
-                      drag.current = {
-                        x: e.clientX,
-                        y: e.clientY,
-                        top: e.currentTarget.scrollTop,
-                        left: e.currentTarget.scrollLeft,
-                        moved: false,
-                      };
-                      e.currentTarget.setPointerCapture(e.pointerId);
+                      reveal(ids, true);
                     }}
-                    onPointerMove={(e) => {
-                      if (!drag.current) return;
-                      const dx = e.clientX - drag.current.x,
-                        dy = e.clientY - drag.current.y;
-                      if (Math.abs(dx) + Math.abs(dy) > 4)
-                        drag.current.moved = true;
-                      e.currentTarget.scrollLeft = drag.current.left - dx;
-                      e.currentTarget.scrollTop = drag.current.top - dy;
-                    }}
-                    onPointerUp={(e) => {
-                      if (e.currentTarget.hasPointerCapture(e.pointerId))
-                        e.currentTarget.releasePointerCapture(e.pointerId);
-                      drag.current = null;
-                    }}
-                    onPointerCancel={() => {
-                      drag.current = null;
-                    }}
-                  >
+                  />
+                ) : view === "gallery" ? (
+                  <Gallery
+                    personFilter={photoFilter}
+                    onClearFilter={() => setPhotoFilter(null)}
+                    family={family}
+                    canEdit={canEdit}
+                    onAdd={() => setPhotoUpload(true)}
+                    onOpen={setPhotoId}
+                  />
+                ) : view === "tree" ? (
+                  <div className="graph-area">
                     <div
-                      className="graph-scroll-content"
-                      style={{
-                        width: RAIL_WIDTH + width * zoom,
-                        height: WORLD_HEIGHT * zoom,
+                      ref={viewport}
+                      className="graph-viewport"
+                      tabIndex={0}
+                      role="region"
+                      aria-label="Генеалогическое древо. Прокручивайте для перемещения по времени. Shift и нажатие на карточку — сравнение."
+                      onScroll={(e) => setScrollY(e.currentTarget.scrollTop)}
+                      onPointerDown={(e) => {
+                        if (
+                          e.pointerType !== "mouse" ||
+                          e.button !== 0 ||
+                          (e.target as HTMLElement).closest("button,a,input")
+                        )
+                          return;
+                        drag.current = {
+                          x: e.clientX,
+                          y: e.clientY,
+                          top: e.currentTarget.scrollTop,
+                          left: e.currentTarget.scrollLeft,
+                          moved: false,
+                        };
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      }}
+                      onPointerMove={(e) => {
+                        if (!drag.current) return;
+                        const dx = e.clientX - drag.current.x,
+                          dy = e.clientY - drag.current.y;
+                        if (Math.abs(dx) + Math.abs(dy) > 4)
+                          drag.current.moved = true;
+                        e.currentTarget.scrollLeft = drag.current.left - dx;
+                        e.currentTarget.scrollTop = drag.current.top - dy;
+                      }}
+                      onPointerUp={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId))
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        drag.current = null;
+                      }}
+                      onPointerCancel={() => {
+                        drag.current = null;
                       }}
                     >
-                      <aside
-                        className="era-rail"
-                        aria-label="Исторические эпохи"
-                        style={{ height: WORLD_HEIGHT * zoom }}
+                      <div
+                        className="graph-scroll-content"
+                        style={{
+                          width: RAIL_WIDTH + width * zoom,
+                          height: WORLD_HEIGHT * zoom,
+                        }}
                       >
-                        {ERAS.filter(
-                          (e) => e.end > START_YEAR && e.start < END_YEAR,
-                        ).map((e) => {
-                          const start = Math.max(START_YEAR, e.start),
-                            end = Math.min(END_YEAR, e.end);
-                          const top =
-                              e.start < START_YEAR ? 0 : yearY(start) * zoom,
-                            height = yearY(end) * zoom - top;
-                          return (
-                            <div
-                              key={e.name}
-                              className={`era-section ${e.className}`}
-                              style={{ top, height }}
-                            >
-                              <button
-                                className="era-label"
-                                style={{
-                                  top: e.className === "transition" ? 4 : 85,
-                                }}
-                                onClick={() => jumpToYear(start)}
-                                title={`${e.name}, ${e.start}–${e.end === 2100 ? "настоящее время" : e.end}`}
-                              >
-                                <span className="era-name">
-                                  {e.className === "transition"
-                                    ? "1917–1922"
-                                    : e.name.toUpperCase()}
-                                </span>
-                                {e.className !== "transition" && (
-                                  <span>
-                                    {e.start} —{" "}
-                                    {e.end === 2100 ? "н. в." : e.end}
-                                  </span>
-                                )}
-                              </button>
-                            </div>
-                          );
-                        })}
-                        {Array.from(
-                          {
-                            length:
-                              Math.floor(END_YEAR / 100) -
-                              Math.floor(START_YEAR / 100) +
-                              1,
-                          },
-                          (_, i) => ({
-                            name: centuryLabel(
-                              Math.floor(START_YEAR / 100) + i + 1,
-                            ),
-                            year:
-                              i === 0
-                                ? START_YEAR
-                                : (Math.floor(START_YEAR / 100) + i) * 100,
-                          }),
-                        ).map((c) => (
-                          <button
-                            className="century"
-                            key={c.name}
-                            style={{
-                              top:
-                                (c.year === START_YEAR ? 0 : yearY(c.year)) *
-                                zoom,
-                            }}
-                            onClick={() => jumpToYear(c.year)}
-                            title={`Перейти в ${c.name} век`}
-                          >
-                            {c.name}
-                            <span>ВЕК</span>
-                          </button>
-                        ))}
-                      </aside>
-                      <div className="world-position">
-                        <div
-                          className="timeline-stage"
-                          style={{
-                            width,
-                            height: WORLD_HEIGHT,
-                            transform: `scale(${zoom})`,
-                          }}
+                        <aside
+                          className="era-rail"
+                          aria-label="Исторические эпохи"
+                          style={{ height: WORLD_HEIGHT * zoom }}
                         >
                           {ERAS.filter(
-                            (e) => e.start > START_YEAR && e.start < END_YEAR,
-                          ).map((e) => (
-                            <div
-                              className={`era-background ${e.className}`}
-                              key={e.name}
-                              style={{
-                                top: yearY(e.start),
-                                height:
-                                  yearY(Math.min(e.end, END_YEAR)) -
-                                  yearY(e.start),
-                              }}
-                            />
-                          ))}
-                          <div className="year-grid">
-                            {Array.from(
-                              {
-                                length:
-                                  Math.floor((END_YEAR - START_YEAR) / 10) + 1,
-                              },
-                              (_, i) => START_YEAR + i * 10,
-                            ).map((year) => (
-                              <div key={year} style={{ top: yearY(year) }}>
-                                <span>{year}</span>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="tree-caption">
-                            <span className="tiny-dot" />
-                            СЕМЬЯ В КОНТЕКСТЕ ВРЕМЕНИ
-                          </div>
-                          <Connections
-                            startYear={START_YEAR}
-                            height={WORLD_HEIGHT}
-                            links={family.links}
-                            people={people}
-                            highlighted={highlighted}
-                            width={width}
-                          />
-                          {lifelines &&
-                            chosen.length === 1 &&
-                            (() => {
-                              const p = chosen[0],
-                                pos = position(p);
-                              return (
-                                <div
-                                  className="graph-lifeline"
-                                  style={{
-                                    left: pos.x - 13,
-                                    top: pos.y,
-                                    height: Math.max(
-                                      8,
-                                      yearY(dateYear(p.death)) - pos.y,
-                                    ),
-                                  }}
-                                >
-                                  <span>{dateYear(p.birth)}</span>
-                                  <span>
-                                    {p.death ? dateYear(p.death) : "сегодня"}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                          {people.map((p) => {
-                            const pos = position(p),
-                              index = selected.indexOf(p.id),
-                              faded =
-                                highlighted.length > 0 &&
-                                !highlighted.includes(p.id);
+                            (e) => e.end > START_YEAR && e.start < END_YEAR,
+                          ).map((e) => {
+                            const start = Math.max(START_YEAR, e.start),
+                              end = Math.min(END_YEAR, e.end);
+                            const top =
+                                Math.min(yearY(start), yearY(end)) * zoom,
+                              height =
+                                Math.abs(yearY(end) - yearY(start)) * zoom;
                             return (
-                              <button
-                                key={p.id}
-                                className={`person-node ${index >= 0 ? "selected" : ""} ${faded ? "dimmed" : ""} ${highlighted.includes(p.id) ? "on-path" : ""} ${query && !searchResults.includes(p) ? "search-dimmed" : ""}`}
-                                style={{
-                                  left: pos.x,
-                                  top: pos.y,
-                                  width: NODE_WIDTH,
-                                  height: NODE_HEIGHT,
-                                }}
-                                onClick={(e) =>
-                                  choose(
-                                    p.id,
-                                    e.shiftKey || e.ctrlKey || e.metaKey,
-                                  )
-                                }
-                                aria-pressed={index >= 0}
-                                aria-label={`${fullName(p)}, ${years(p)}. ${p.birthPlace}. Открыть карточку`}
+                              <div
+                                key={e.name}
+                                className={`era-section ${e.className}`}
+                                style={{ top, height }}
                               >
-                                {index >= 0 && (
-                                  <span className="selection-mark">
-                                    {compare ? index + 1 : <Check size={9} />}
+                                <button
+                                  className="era-label"
+                                  style={{
+                                    top: e.className === "transition" ? 4 : 85,
+                                  }}
+                                  onClick={() => jumpToYear(start)}
+                                  title={`${e.name}, ${e.start}–${e.end === 2100 ? "настоящее время" : e.end}`}
+                                >
+                                  <span className="era-name">
+                                    {e.className === "transition"
+                                      ? "1917–1922"
+                                      : e.name.toUpperCase()}
                                   </span>
-                                )}
-                                <span className="node-main">
-                                  <Avatar person={p} />
-                                  <span>
-                                    <strong>{p.surname}</strong>
-                                    <span className="person-given">
-                                      {p.name} {p.patronymic}
+                                  {e.className !== "transition" && (
+                                    <span>
+                                      {e.start} —{" "}
+                                      {e.end === 2100 ? "н. в." : e.end}
                                     </span>
-                                    <span className="person-years">
-                                      {years(p)}
-                                      {!p.death && <i className="alive-dot" />}
-                                    </span>
-                                  </span>
-                                </span>
-                                <span className="node-footer">
-                                  <span>
-                                    <MapPin size={10} />
-                                    {p.birthPlace.split(",")[0]}
-                                  </span>
-                                  <span className="node-meta">
-                                    {p.sources.length > 0 && (
-                                      <>
-                                        <FileText size={9} />
-                                        {p.sources.length}
-                                      </>
-                                    )}
-                                    <ArrowUpRight size={11} />
-                                  </span>
-                                </span>
-                              </button>
+                                  )}
+                                </button>
+                              </div>
                             );
                           })}
+                          {Array.from(
+                            {
+                              length:
+                                Math.floor(END_YEAR / 100) -
+                                Math.floor(START_YEAR / 100) +
+                                1,
+                            },
+                            (_, i) => ({
+                              name: centuryLabel(
+                                Math.floor(START_YEAR / 100) + i + 1,
+                              ),
+                              year:
+                                i === 0
+                                  ? START_YEAR
+                                  : (Math.floor(START_YEAR / 100) + i) * 100,
+                            }),
+                          ).map((c) => (
+                            <button
+                              className="century"
+                              key={c.name}
+                              style={{
+                                top:
+                                  yearY(
+                                    reverseTimeline
+                                      ? Math.min(
+                                          END_YEAR,
+                                          (Math.floor(c.year / 100) + 1) * 100,
+                                        )
+                                      : c.year,
+                                  ) * zoom,
+                              }}
+                              onClick={() => jumpToYear(c.year)}
+                              title={`Перейти в ${c.name} век`}
+                            >
+                              {c.name}
+                              <span>ВЕК</span>
+                            </button>
+                          ))}
+                        </aside>
+                        <div className="world-position">
                           <div
-                            className="tree-end"
-                            style={{ top: yearY(2029) }}
+                            className="timeline-stage"
+                            style={{
+                              width,
+                              height: WORLD_HEIGHT,
+                              transform: `scale(${zoom})`,
+                            }}
                           >
-                            <Sprout size={18} strokeWidth={1.3} />
-                            <span>История продолжается</span>
+                            {ERAS.filter(
+                              (e) => e.start > START_YEAR && e.start < END_YEAR,
+                            ).map((e) => (
+                              <div
+                                className={`era-background ${e.className}`}
+                                key={e.name}
+                                style={{
+                                  top: Math.min(
+                                    yearY(e.start),
+                                    yearY(Math.min(e.end, END_YEAR)),
+                                  ),
+                                  height: Math.abs(
+                                    yearY(Math.min(e.end, END_YEAR)) -
+                                      yearY(e.start),
+                                  ),
+                                }}
+                              />
+                            ))}
+                            <div className="year-grid">
+                              {Array.from(
+                                {
+                                  length:
+                                    Math.floor((END_YEAR - START_YEAR) / 10) +
+                                    1,
+                                },
+                                (_, i) => START_YEAR + i * 10,
+                              ).map((year) => (
+                                <div key={year} style={{ top: yearY(year) }}>
+                                  <span>{year}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="tree-caption">
+                              <span className="tiny-dot" />
+                              СЕМЬЯ В КОНТЕКСТЕ ВРЕМЕНИ
+                            </div>
+                            <Connections
+                              startYear={START_YEAR}
+                              reverse={reverseTimeline}
+                              height={WORLD_HEIGHT}
+                              links={family.links}
+                              people={people}
+                              highlighted={highlighted}
+                              width={width}
+                            />
+                            {lifelines &&
+                              chosen.length === 1 &&
+                              (() => {
+                                const p = chosen[0],
+                                  pos = position(p);
+                                return (
+                                  <div
+                                    className="graph-lifeline"
+                                    style={{
+                                      left: pos.x - 13,
+                                      top: Math.min(
+                                        pos.y,
+                                        yearY(dateYear(p.death)),
+                                      ),
+                                      height: Math.max(
+                                        8,
+                                        Math.abs(
+                                          yearY(dateYear(p.death)) - pos.y,
+                                        ),
+                                      ),
+                                    }}
+                                  >
+                                    <span>
+                                      {reverseTimeline
+                                        ? p.death
+                                          ? dateYear(p.death)
+                                          : "сегодня"
+                                        : dateYear(p.birth)}
+                                    </span>
+                                    <span>
+                                      {reverseTimeline
+                                        ? dateYear(p.birth)
+                                        : p.death
+                                          ? dateYear(p.death)
+                                          : "сегодня"}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                            {people.map((p) => {
+                              const pos = position(p),
+                                index = selected.indexOf(p.id),
+                                faded =
+                                  highlighted.length > 0 &&
+                                  !highlighted.includes(p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  className={`person-node ${index >= 0 ? "selected" : ""} ${faded ? "dimmed" : ""} ${highlighted.includes(p.id) ? "on-path" : ""} ${query && !searchResults.includes(p) ? "search-dimmed" : ""}`}
+                                  style={{
+                                    left: pos.x,
+                                    top: pos.y,
+                                    width: NODE_WIDTH,
+                                    height: NODE_HEIGHT,
+                                  }}
+                                  onClick={(e) =>
+                                    choose(
+                                      p.id,
+                                      e.shiftKey || e.ctrlKey || e.metaKey,
+                                    )
+                                  }
+                                  aria-pressed={index >= 0}
+                                  aria-label={`${fullName(p)}, ${years(p)}. ${p.birthPlace}. Открыть карточку`}
+                                >
+                                  {index >= 0 && (
+                                    <span className="selection-mark">
+                                      {compare ? index + 1 : <Check size={9} />}
+                                    </span>
+                                  )}
+                                  <span className="node-main">
+                                    <Avatar person={p} />
+                                    <span>
+                                      <strong>{p.surname}</strong>
+                                      <span className="person-given">
+                                        {p.name} {p.patronymic}
+                                      </span>
+                                      <span className="person-years">
+                                        {years(p)}
+                                        {!p.death && (
+                                          <i className="alive-dot" />
+                                        )}
+                                      </span>
+                                    </span>
+                                  </span>
+                                  <span className="node-footer">
+                                    <span>
+                                      <MapPin size={10} />
+                                      {p.birthPlace.split(",")[0]}
+                                    </span>
+                                    <span className="node-meta">
+                                      {p.sources.length > 0 && (
+                                        <>
+                                          <FileText size={9} />
+                                          {p.sources.length}
+                                        </>
+                                      )}
+                                      <ArrowUpRight size={11} />
+                                    </span>
+                                  </span>
+                                </button>
+                              );
+                            })}
+                            <div
+                              className="tree-end"
+                              style={{ top: yearY(2029) }}
+                            >
+                              <Sprout size={18} strokeWidth={1.3} />
+                              <span>История продолжается</span>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="graph-controls">
-                    <div className="zoom-control">
+                    <div className="graph-controls">
+                      <div className="zoom-control">
+                        <button
+                          onClick={() => changeZoom(zoom - 0.1)}
+                          disabled={zoom <= 0.45}
+                          aria-label="Уменьшить масштаб"
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <button
+                          className="zoom-value"
+                          onClick={() => changeZoom(1)}
+                          title="Масштаб 100%"
+                        >
+                          {Math.round(zoom * 100)}%
+                        </button>
+                        <button
+                          onClick={() => changeZoom(zoom + 0.1)}
+                          disabled={zoom >= 1.35}
+                          aria-label="Увеличить масштаб"
+                        >
+                          <Plus size={14} />
+                        </button>
+                        <i />
+                        <button
+                          onClick={fitTree}
+                          title="Вписать древо по ширине"
+                          aria-label="Вписать древо по ширине"
+                        >
+                          <Maximize2 size={13} />
+                        </button>
+                      </div>
                       <button
-                        onClick={() => changeZoom(zoom - 0.1)}
-                        disabled={zoom <= 0.45}
-                        aria-label="Уменьшить масштаб"
+                        className={`lifeline-toggle ${lifelines ? "active" : ""}`}
+                        onClick={() => setLifelines(!lifelines)}
+                        aria-pressed={lifelines}
+                        title="Показать полосу жизни выбранного человека"
                       >
-                        <Minus size={14} />
-                      </button>
-                      <button
-                        className="zoom-value"
-                        onClick={() => changeZoom(1)}
-                        title="Масштаб 100%"
-                      >
-                        {Math.round(zoom * 100)}%
-                      </button>
-                      <button
-                        onClick={() => changeZoom(zoom + 0.1)}
-                        disabled={zoom >= 1.35}
-                        aria-label="Увеличить масштаб"
-                      >
-                        <Plus size={14} />
-                      </button>
-                      <i />
-                      <button
-                        onClick={fitTree}
-                        title="Вписать древо по ширине"
-                        aria-label="Вписать древо по ширине"
-                      >
-                        <Maximize2 size={13} />
+                        <span className="lifeline-icon" />
+                        Линия жизни
                       </button>
                     </div>
-                    <button
-                      className={`lifeline-toggle ${lifelines ? "active" : ""}`}
-                      onClick={() => setLifelines(!lifelines)}
-                      aria-pressed={lifelines}
-                      title="Показать полосу жизни выбранного человека"
-                    >
-                      <span className="lifeline-icon" />
-                      Линия жизни
-                    </button>
-                  </div>
-                  <div className={`current-era ${activeEra.className}`}>
-                    <i style={{ background: activeEra.color }} />
-                    <span>{activeEra.short}</span>
-                    <b>{currentYear}</b>
-                  </div>
-                  {compare && selected.length < 2 && (
-                    <div className="graph-compare-hint" role="status">
-                      <ArrowDownUp size={12} />
-                      Выберите {selected.length ? "второго" : "двух"}{" "}
-                      {selected.length ? "человека" : "людей"} на древе
+                    <div className={`current-era ${activeEra.className}`}>
+                      <i style={{ background: activeEra.color }} />
+                      <span>{activeEra.short}</span>
+                      <b>{currentYear}</b>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="people-list">
-                  <div className="list-heading">
-                    <h2>Люди в нашей истории</h2>
-                    <span>
-                      {searchResults.length}{" "}
-                      {plural(
-                        searchResults.length,
-                        "человек",
-                        "человека",
-                        "человек",
-                      )}
-                    </span>
+                    {compare && selected.length < 2 && (
+                      <div className="graph-compare-hint" role="status">
+                        <ArrowDownUp size={12} />
+                        Выберите {selected.length ? "второго" : "двух"}{" "}
+                        {selected.length ? "человека" : "людей"} на древе
+                      </div>
+                    )}
                   </div>
-                  <div className="list-columns">
-                    <span>Человек</span>
-                    <span>Годы жизни</span>
-                    <span>Место рождения</span>
-                  </div>
-                  {searchResults.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`person-row ${selected.includes(p.id) ? "active" : ""}`}
-                      onClick={(e) =>
-                        choose(p.id, e.shiftKey || e.ctrlKey || e.metaKey)
-                      }
-                      aria-pressed={selected.includes(p.id)}
-                    >
-                      <span className="list-person">
-                        <Avatar person={p} />
-                        <span>
-                          <b>{p.surname}</b>
-                          <small>
-                            {p.name} {p.patronymic}
-                          </small>
-                        </span>
-                      </span>
-                      <span>{years(p)}</span>
+                ) : (
+                  <div className="people-list">
+                    <div className="list-heading">
+                      <h2>Люди в нашей истории</h2>
                       <span>
-                        {p.birthPlace.split(",")[0]}
-                        <ChevronRight size={13} />
+                        {searchResults.length}{" "}
+                        {plural(
+                          searchResults.length,
+                          "человек",
+                          "человека",
+                          "человек",
+                        )}
                       </span>
-                    </button>
-                  ))}
-                  {!searchResults.length && (
-                    <div className="empty-sources">
-                      <Search size={25} />
-                      <h3>Совпадений нет</h3>
-                      <p>Попробуйте другое имя, город или год.</p>
+                    </div>
+                    <div className="list-columns">
+                      <span>Человек</span>
+                      <span>Годы жизни</span>
+                      <span>Место рождения</span>
+                    </div>
+                    {searchResults.map((p) => (
                       <button
-                        className="full-button"
-                        onClick={() => setQuery("")}
+                        key={p.id}
+                        className={`person-row ${selected.includes(p.id) ? "active" : ""}`}
+                        onClick={(e) =>
+                          choose(p.id, e.shiftKey || e.ctrlKey || e.metaKey)
+                        }
+                        aria-pressed={selected.includes(p.id)}
                       >
-                        Сбросить поиск
+                        <span className="list-person">
+                          <Avatar person={p} />
+                          <span>
+                            <b>{p.surname}</b>
+                            <small>
+                              {p.name} {p.patronymic}
+                            </small>
+                          </span>
+                        </span>
+                        <span>{years(p)}</span>
+                        <span>
+                          {p.birthPlace.split(",")[0]}
+                          <ChevronRight size={13} />
+                        </span>
+                      </button>
+                    ))}
+                    {!searchResults.length && (
+                      <div className="empty-sources">
+                        <Search size={25} />
+                        <h3>Совпадений нет</h3>
+                        <p>Попробуйте другое имя, город или год.</p>
+                        <button
+                          className="full-button"
+                          onClick={() => setQuery("")}
+                        >
+                          Сбросить поиск
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(chosen.length > 0 || compare) && (
+                  <aside
+                    className={`detail-panel ${compare && chosen.length < 2 ? "picking" : ""}`}
+                    ref={panelRef}
+                    aria-label={
+                      compare ? "Анализ родства" : "Карточка человека"
+                    }
+                  >
+                    <div className="panel-topline">
+                      <span>
+                        {compare ? "АНАЛИЗ РОДСТВА" : "КАРТОЧКА ЧЕЛОВЕКА"}
+                      </span>
+                      <button
+                        aria-label="Закрыть карточку"
+                        onClick={() => {
+                          setSelected([]);
+                          setCompare(false);
+                        }}
+                      >
+                        <X size={14} />
                       </button>
                     </div>
-                  )}
-                </div>
-              )}
-              {(chosen.length > 0 || compare) && (
-                <aside
-                  className={`detail-panel ${compare && chosen.length < 2 ? "picking" : ""}`}
-                  ref={panelRef}
-                  aria-label={compare ? "Анализ родства" : "Карточка человека"}
-                >
-                  <div className="panel-topline">
-                    <span>
-                      {compare ? "АНАЛИЗ РОДСТВА" : "КАРТОЧКА ЧЕЛОВЕКА"}
-                    </span>
-                    <button
-                      aria-label="Закрыть карточку"
-                      onClick={() => {
-                        setSelected([]);
-                        setCompare(false);
-                      }}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                  {compare ? (
-                    <ComparisonPanel
-                      links={family.links}
-                      selected={chosen}
-                      relation={relation}
-                      people={people}
-                      onRemove={(id) =>
-                        setSelected(selected.filter((p) => p !== id))
-                      }
-                      onReveal={() => {
-                        setQuery("");
-                        reveal(relation?.path || [], true);
-                      }}
-                    />
-                  ) : (
-                    chosen[0] && (
-                      <>
-                        <div className="person-edit-actions">
-                          {owns(user, chosen[0]) && (
-                            <>
-                              <button onClick={() => setEditor(chosen[0])}>
-                                Редактировать
-                              </button>
+                    {compare ? (
+                      <ComparisonPanel
+                        links={family.links}
+                        selected={chosen}
+                        relation={relation}
+                        people={people}
+                        onRemove={(id) =>
+                          setSelected(selected.filter((p) => p !== id))
+                        }
+                        onReveal={() => {
+                          setQuery("");
+                          reveal(relation?.path || [], true);
+                        }}
+                      />
+                    ) : (
+                      chosen[0] && (
+                        <>
+                          <div className="person-edit-actions">
+                            {canEdit && (
                               <button
                                 onClick={() => {
-                                  setLinkFrom(chosen[0].id);
-                                  setSelected([]);
-                                  setView("tree");
+                                  setRelativeTo(chosen[0]);
+                                  setEditor("new");
                                 }}
                               >
-                                Добавить связь
+                                Добавить родственника
                               </button>
-                            </>
-                          )}
-                        </div>
-                        <PersonPanel
-                          links={family.links}
-                          key={chosen[0].id}
-                          person={chosen[0]}
-                          people={people}
-                          onSelect={chooseRelative}
-                          onCompare={() => setCompare(true)}
-                        />
-                        <section className="person-photos">
-                          {readPhotos && (
-                            <button
-                              className="full-button"
-                              onClick={() => {
-                                setPhotoFilter(chosen[0].id);
-                                setView("gallery");
-                                setSelected([]);
-                              }}
-                            >
-                              {"Фотоальбом"} (
-                              {family.photos?.filter((p) =>
-                                p.tags.some((t) => t.personId === chosen[0].id),
-                              ).length || 0}
-                              )
-                            </button>
-                          )}
-                          <h3>На фотографиях</h3>
-                          {family.photos?.some((p) =>
-                            p.tags.some((t) => t.personId === chosen[0].id),
-                          ) ? (
-                            <div className="person-photo-grid">
-                              {family.photos
-                                .filter((p) =>
+                            )}
+                            {owns(user, chosen[0]) && (
+                              <>
+                                <button onClick={() => setEditor(chosen[0])}>
+                                  Редактировать
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setLinkFrom(chosen[0].id);
+                                    setSelected([]);
+                                    setView("tree");
+                                  }}
+                                >
+                                  Добавить связь
+                                </button>
+                              </>
+                            )}
+                          </div>
+                          <PersonPanel
+                            links={family.links}
+                            key={chosen[0].id}
+                            person={chosen[0]}
+                            people={people}
+                            onSelect={chooseRelative}
+                            onCompare={() => setCompare(true)}
+                          />
+                          <section className="person-photos">
+                            {readPhotos && (
+                              <button
+                                className="full-button"
+                                onClick={() => {
+                                  setPhotoFilter(chosen[0].id);
+                                  setView("gallery");
+                                  setSelected([]);
+                                }}
+                              >
+                                {"Фотоальбом"} (
+                                {family.photos?.filter((p) =>
                                   p.tags.some(
                                     (t) => t.personId === chosen[0].id,
                                   ),
+                                ).length || 0}
                                 )
-                                .map((p) => (
-                                  <button
-                                    key={p.id}
-                                    onClick={() => setPhotoId(p.id)}
-                                  >
-                                    <img src={p.url} alt={p.title} />
-                                    <span>{p.title}</span>
-                                  </button>
-                                ))}
-                            </div>
-                          ) : (
-                            <p>Отметьте этого человека на снимке в галерее.</p>
-                          )}
-                        </section>
-                      </>
-                    )
-                  )}
-                </aside>
-              )}
-            </>
-          )}
-        </div>
-        <footer className="workspace-footer">
-          <span>
-            <i className="tiny-dot" />
-            {family?.demo ? "Демонстрационное древо" : "Семейное древо"}
-          </span>
-          <span className="graph-legend">
-            <i />
-            Родители и дети
-            <span className="marriage-line" />
-            Супруги
-          </span>
-          <span>
-            {firstYear} — {lastYear}
-            <span className="footer-divider">/</span>
-            {people.length}{" "}
-            {plural(people.length, "история", "истории", "историй")}
-          </span>
-        </footer>
-      </main>
-      <footer className="site-footer">
-        <span>У каждого имени — своя история.</span>
-        <button onClick={() => setAbout(true)}>
-          Сохраняем то, что связывает.
-          <Sprout size={12} />
-        </button>
-      </footer>
+                              </button>
+                            )}
+                            <h3>На фотографиях</h3>
+                            {family.photos?.some((p) =>
+                              p.tags.some((t) => t.personId === chosen[0].id),
+                            ) ? (
+                              <div className="person-photo-grid">
+                                {family.photos
+                                  .filter((p) =>
+                                    p.tags.some(
+                                      (t) => t.personId === chosen[0].id,
+                                    ),
+                                  )
+                                  .map((p) => (
+                                    <button
+                                      key={p.id}
+                                      onClick={() => setPhotoId(p.id)}
+                                    >
+                                      <img src={p.url} alt={p.title} />
+                                      <span>{p.title}</span>
+                                    </button>
+                                  ))}
+                              </div>
+                            ) : (
+                              <p>
+                                Отметьте этого человека на снимке в галерее.
+                              </p>
+                            )}
+                          </section>
+                        </>
+                      )
+                    )}
+                  </aside>
+                )}
+              </>
+            )}
+          </div>
+        </main>
+      )}
       <dialog
         ref={dialogRef}
         className="about-dialog"

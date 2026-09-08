@@ -107,6 +107,30 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal((await request("/api/users", reader)).status, 403);
     assert.equal((await request("/api/backup", reader)).status, 403);
     let data = await request("/api/family", reader).then((r) => r.json());
+    assert.equal(data.family.people.length, 0, "новый архив пустой");
+    data.family.people.push({
+      id: "admin-person",
+      name: "Реальный",
+      surname: "Человек",
+      patronymic: "",
+      sex: "m",
+      birth: "1950",
+      birthPlace: "",
+      parents: [],
+      spouses: [],
+      sources: [],
+      column: 0,
+      generation: 1,
+    });
+    const created = await request(
+      "/api/family",
+      admin,
+      "PUT",
+      data.family,
+      data.revision,
+    );
+    assert.equal(created.status, 200);
+    data = await created.json();
     assert.equal(
       (await request("/api/family", reader, "PUT", data.family, data.revision))
         .status,
@@ -124,6 +148,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     data.family.people.push({
       ...data.family.people[0],
       id: "own",
+      createdBy: undefined,
       name: "Новая",
       parents: [],
       spouses: [],
@@ -185,6 +210,14 @@ test("OAuth roles, ownership, public sections and complete backup work through H
         Cookie: reader,
         "If-Match": String(data.revision),
         "X-Drevo-Upload": "1",
+        "X-Photo-Metadata": encodeURIComponent(
+          JSON.stringify({
+            title: "Семья на даче",
+            place: "Москва",
+            year: "1965",
+            event: "Встреча",
+          }),
+        ),
       },
       body: png,
     });
@@ -192,6 +225,10 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     data = await response.json();
     const photo = data.family.photos.at(-1);
     assert.equal(photo.createdBy, "second");
+    assert.equal(photo.title, "Семья на даче");
+    assert.equal(photo.year, "1965");
+    assert.equal(photo.place, "Москва");
+    assert.equal(photo.event, "Встреча");
     photo.tags = [
       { id: "t", personId: "own", x: 0.1, y: 0.1, width: 0.4, height: 0.5 },
     ];
@@ -217,11 +254,13 @@ test("OAuth roles, ownership, public sections and complete backup work through H
         await request("/api/settings", admin, "PUT", {
           publicTree: true,
           publicAlbums: false,
+          reverseTimeline: true,
         })
       ).status,
       200,
     );
     let publicData = await request("/api/family").then((r) => r.json());
+    assert.equal(publicData.reverseTimeline, true);
     assert.ok(publicData.family.people.length);
     assert.equal(publicData.family.photos.length, 0);
     assert.equal((await request(photo.url)).status, 401);
@@ -230,6 +269,11 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       publicAlbums: true,
     });
     publicData = await request("/api/family").then((r) => r.json());
+    assert.equal(
+      publicData.reverseTimeline,
+      true,
+      "старый формат обновления видимости не сбрасывает направление времени",
+    );
     assert.equal(publicData.family.people.length, 0);
     assert.equal(publicData.family.photos[0].tags.length, 0);
     assert.equal((await request(photo.url)).status, 200);

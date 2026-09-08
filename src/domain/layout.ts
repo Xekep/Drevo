@@ -30,11 +30,13 @@ export function centuryLabel(value: number) {
     }
   return result;
 }
-export const yearY = (year: number, start = START_YEAR) =>
-  60 + (year - start) * YEAR_HEIGHT;
-export const position = (p: Person, start = START_YEAR) => ({
+export const yearY = (year: number, start = START_YEAR, reverse = false) =>
+  60 + (reverse ? END_YEAR - year : year - start) * YEAR_HEIGHT;
+export const yearAtY = (y: number, start = START_YEAR, reverse = false) =>
+  reverse ? END_YEAR - (y - 60) / YEAR_HEIGHT : start + (y - 60) / YEAR_HEIGHT;
+export const position = (p: Person, start = START_YEAR, reverse = false) => ({
   x: 68 + p.column * 246,
-  y: yearY(dateYear(p.birth), start),
+  y: yearY(dateYear(p.birth), start, reverse),
 });
 export const ERAS = [
   {

@@ -12,10 +12,7 @@ import {
 
 const family = validateFamily(
   JSON.parse(
-    readFileSync(
-      new URL("../public/data/family.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("./fixtures/family.json", import.meta.url), "utf8"),
   ),
 );
 const find = (id: string) => family.people.find((p) => p.id === id)!;

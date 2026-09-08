@@ -11,7 +11,7 @@ function containsFace(tag: FaceRect, face: FaceRect) {
   );
 }
 import type { ArchivePhoto } from "../domain";
-export type FaceSuggestion = { id: string; box: FaceRect; personId?: string };
+export type FaceSuggestion = { id: string; box: FaceRect };
 let engine: Promise<typeof import("@vladmandic/face-api")> | undefined;
 const cache = new Map<string, Promise<FaceSample[]>>();
 async function loadEngine() {

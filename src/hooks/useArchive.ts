@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { validateFamily, type Family, type ArchiveUser } from "../domain";
+import {
+  validateFamily,
+  type Family,
+  type ArchiveUser,
+  type PhotoMetadata,
+} from "../domain";
 export function useArchive() {
+  const [reverseTimeline, setReverseTimeline] = useState(false);
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
     [canEdit, setCanEdit] = useState(false),
@@ -50,6 +56,7 @@ export function useArchive() {
             setUser(result.user || null);
             setReadTree(result.readTree !== false);
             setReadPhotos(result.readPhotos !== false);
+            setReverseTimeline(result.reverseTimeline === true);
             setError("");
           }
         } else {
@@ -120,15 +127,19 @@ export function useArchive() {
     [write],
   );
   const upload = useCallback(
-    (file: File) =>
+    (file: File, metadata?: PhotoMetadata) =>
       write("/api/photos", file, {
         "Content-Type": file.type,
         "X-Drevo-Upload": "1",
         "X-File-Name": encodeURIComponent(file.name),
+        ...(metadata
+          ? { "X-Photo-Metadata": encodeURIComponent(JSON.stringify(metadata)) }
+          : {}),
       }),
     [write],
   );
   return {
+    reverseTimeline,
     user,
     readTree,
     readPhotos,

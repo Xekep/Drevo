@@ -56,6 +56,10 @@ export type ArchivePhoto = {
   description?: string;
   tags: PhotoTag[];
 };
+export type PhotoMetadata = Pick<
+  ArchivePhoto,
+  "title" | "year" | "place" | "event" | "description"
+>;
 export const EXTRA_LINK_TYPES = [
   "adoptive_parent",
   "godparent",
