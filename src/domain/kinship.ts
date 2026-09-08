@@ -1,5 +1,6 @@
 import type { Person, Relation, KinshipRole, FamilyLink } from "./types.ts";
 import { fullName, plural } from "./dates.ts";
+import { resolvedSex } from "./name-hints.ts";
 function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
   return {
     term:
@@ -214,7 +215,25 @@ function familyRole(path: Person[]): KinshipRole {
           : "D",
     )
     .join("");
-  if (path.some((p) => p.sex === "u")) {
+  // Пол общего предка или самого адресата часто не влияет на название.
+  const required: Record<string, number[]> = {
+    S: [1],
+    SU: [1, 2],
+    DS: [1, 2],
+    SUD: [1, 3],
+    UDS: [2, 3],
+    US: [1, 2],
+    SD: [1, 2],
+    USD: [3],
+    DSU: [3],
+    SUU: [1, 3],
+    DDS: [2, 3],
+    UUDS: [4],
+    SUDD: [4],
+    SUDS: [1, 3, 4],
+    DU: [2],
+  };
+  if ((required[edges] || [path.length - 1]).some((i) => path[i].sex === "u")) {
     const neutral: Record<string, string> = {
       S: "супруг / супруга",
       SU: "родитель супруга",
@@ -389,6 +408,7 @@ function familyRole(path: Person[]): KinshipRole {
   };
 }
 export function edgeLabel(from: Person, to: Person, links: FamilyLink[] = []) {
+  to = { ...to, sex: resolvedSex(to) };
   if (to.sex === "u") {
     if (from.parents.includes(to.id)) return "родитель";
     if (to.parents.includes(from.id)) return "ребёнок";
@@ -659,6 +679,11 @@ export function analyzeKinship(
   people: Person[],
   links: FamilyLink[] = [],
 ): Relation {
+  people = people.map((p) =>
+    p.sex === "u" ? { ...p, sex: resolvedSex(p) } : p,
+  );
+  a = people.find((p) => p.id === a.id) || { ...a, sex: resolvedSex(a) };
+  b = people.find((p) => p.id === b.id) || { ...b, sex: resolvedSex(b) };
   const base = analyzeBloodAndMarriage(a, b, people);
   if (a.id === b.id) return base;
   const extras: Relation[] = [];

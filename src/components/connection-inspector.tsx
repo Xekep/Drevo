@@ -8,6 +8,7 @@ import {
   removeConnection,
   CONNECTION_NAMES,
   fullName,
+  resolvedSex,
   type Family,
   type ArchiveUser,
   type ConnectionType,
@@ -21,6 +22,7 @@ export function ConnectionInspector({
   save,
   busy,
   onClose,
+  canEdit = true,
 }: {
   family: Family;
   user: ArchiveUser | null;
@@ -29,22 +31,40 @@ export function ConnectionInspector({
   save: (family: Family) => Promise<Family>;
   busy: boolean;
   onClose: () => void;
+  canEdit?: boolean;
 }) {
   const [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
   const readonly =
-    !!draft.original && !canChangeConnection(family, user, draft.original);
+    !canEdit ||
+    (!!draft.original && !canChangeConnection(family, user, draft.original));
   const people = [...family.people].sort((a, b) =>
     fullName(a).localeCompare(fullName(b), "ru"),
   );
   const from = people.find((p) => p.id === draft.from),
     to = people.find((p) => p.id === draft.to);
+  const sex = from ? resolvedSex(from) : "u";
+  const role =
+    draft.type === "parent"
+      ? sex === "m"
+        ? "отец"
+        : sex === "f"
+          ? "мать"
+          : "родитель"
+      : draft.type === "godparent"
+        ? sex === "m"
+          ? "крёстный отец"
+          : sex === "f"
+            ? "крёстная мать"
+            : "крёстный родитель"
+        : CONNECTION_NAMES[draft.type].toLocaleLowerCase("ru");
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
-    onChange({ ...draft, ...next });
+    onChange({ ...draft, hint: undefined, ...next });
   };
   async function submit(remove = false) {
+    if (readonly) return;
     try {
       setError("");
       if (draft.original && !canChangeConnection(family, user, draft.original))
@@ -73,6 +93,27 @@ export function ConnectionInspector({
       setError((e as Error).message);
     }
   }
+  if (readonly)
+    return (
+      <section className="connection-inspector">
+        <header className="inspector-heading">
+          <span>
+            <Link2 size={18} />
+            Семейная связь
+          </span>
+          <button onClick={onClose} aria-label="Закрыть связь">
+            <X size={20} />
+          </button>
+        </header>
+        <div className="archive-form">
+          <p className="connection-preview">
+            {from ? fullName(from) : "Участник не выбран"} — <b>{role}</b> для{" "}
+            {to ? fullName(to) : "второго человека"}.
+          </p>
+          {draft.note && <p>{draft.note}</p>}
+        </div>
+      </section>
+    );
   return (
     <section className="connection-inspector">
       <header className="inspector-heading">
@@ -94,9 +135,7 @@ export function ConnectionInspector({
         <p className="connection-preview">
           {from && to ? (
             <>
-              <b>{from.name}</b> —{" "}
-              {CONNECTION_NAMES[draft.type].toLocaleLowerCase("ru")} для{" "}
-              <b>{to.name}</b>.
+              <b>{from.name}</b> — {role} для <b>{to.name}</b>.
             </>
           ) : (
             "Выберите участников и тип связи. Линия на дереве — предварительная."
@@ -104,6 +143,12 @@ export function ConnectionInspector({
         </p>
         <label>
           Первый человек
+          {draft.hint && (
+            <small>
+              Направление предложено по ФИО. {draft.hint} Проверьте перед
+              сохранением.
+            </small>
+          )}
           <select
             required
             value={draft.from}
@@ -126,20 +171,20 @@ export function ConnectionInspector({
             onChange={(e) => update({ type: e.target.value as ConnectionType })}
           >
             <optgroup label="Семья">
-              {["parent", "spouse", "adoptive_parent"].map((type) => (
-                <option key={type} value={type}>
-                  {CONNECTION_NAMES[type as ConnectionType]}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Другие связи">
-              {["godparent", "guardian", "nurse", "sworn_sibling"].map(
+              {["parent", "spouse", "godparent", "adoptive_parent"].map(
                 (type) => (
                   <option key={type} value={type}>
                     {CONNECTION_NAMES[type as ConnectionType]}
                   </option>
                 ),
               )}
+            </optgroup>
+            <optgroup label="Другие связи">
+              {["guardian", "nurse", "sworn_sibling"].map((type) => (
+                <option key={type} value={type}>
+                  {CONNECTION_NAMES[type as ConnectionType]}
+                </option>
+              ))}
             </optgroup>
           </select>
         </label>

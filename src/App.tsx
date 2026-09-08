@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, ImagePlus, Link2, Plus, Undo2, X } from "lucide-react";
 import {
   analyzeKinship,
+  parentHints,
   owns,
   type Person,
   type GraphConnection,
@@ -30,7 +31,8 @@ import { PhotoUpload } from "./components/photo-upload";
 import { LoginDialog } from "./components/login-dialog";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
-import { EditorDialog } from "./components/editor-dialog";
+import { AboutProject } from "./components/about-project";
+import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
 
 type PersonDraft = {
@@ -41,8 +43,36 @@ type PersonDraft = {
 };
 export default function App() {
   const archive = useArchive(),
-    { family, user, busy, canEdit, readTree, readPhotos, save, upload } =
-      archive;
+    {
+      family,
+      user,
+      busy,
+      canEdit: allowedEdit,
+      readTree,
+      readPhotos,
+      save: saveArchive,
+      upload: uploadArchive,
+    } = archive;
+  const desktop = useDesktopEditing(),
+    canEdit = allowedEdit && desktop;
+  const save = useCallback<typeof archive.save>(
+    (data) => {
+      if (!canEdit)
+        return Promise.reject(
+          new Error("Редактирование доступно с компьютера."),
+        );
+      return saveArchive(data);
+    },
+    [canEdit, saveArchive],
+  );
+  const upload = useCallback<typeof archive.upload>(
+    (...args) => {
+      if (!canEdit)
+        return Promise.reject(new Error("Загрузка доступна с компьютера."));
+      return uploadArchive(...args);
+    },
+    [canEdit, uploadArchive],
+  );
   const selection = useWorkspaceSelection(),
     { selected, compare, linkFrom, focus, choose, reveal, dispatch } =
       selection;
@@ -50,13 +80,15 @@ export default function App() {
     window.location.pathname.startsWith("/admin") ? "admin" : "tree",
   );
   const view =
-    requestedView === "admin"
+    requestedView === "admin" && desktop
       ? "admin"
       : !readTree
         ? "gallery"
         : requestedView === "gallery" && !readPhotos
           ? "tree"
-          : requestedView;
+          : requestedView === "admin"
+            ? "tree"
+            : requestedView;
   const [query, setQuery] = useState(""),
     [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
@@ -105,13 +137,28 @@ export default function App() {
   }, []);
   const openConnection = useCallback(
     (draft: ConnectionDraft) => {
+      if (!canEdit) return;
+      const source = map.get(draft.from),
+        target = map.get(draft.to);
+      if (!draft.original && draft.type === "parent" && source && target) {
+        const hints = parentHints(source, people).filter(
+          (h) => h.person.id === target.id,
+        );
+        if (hints.length === 1)
+          draft = {
+            ...draft,
+            from: hints[0].from,
+            to: hints[0].to,
+            hint: hints[0].reason,
+          };
+      }
       setPersonDraft(null);
       setConnectionDraft(draft);
       setPreview(draft);
       dispatch({ type: "finishLink" });
       setAddMenu(false);
     },
-    [dispatch],
+    [dispatch, canEdit, map, people],
   );
   const selectEdge = useCallback(
     (edge: GraphConnection) => {
@@ -124,14 +171,14 @@ export default function App() {
   );
   const choosePerson = useCallback(
     (id: string, additive = false) => {
-      if (linkFrom && linkFrom !== id) {
+      if (canEdit && linkFrom && linkFrom !== id) {
         openConnection({ from: linkFrom, to: id, type: "parent" });
         return;
       }
       closeConnection();
       choose(id, additive);
     },
-    [linkFrom, openConnection, closeConnection, choose],
+    [canEdit, linkFrom, openConnection, closeConnection, choose],
   );
   const showPerson = useCallback(
     (id: string) => {
@@ -145,18 +192,20 @@ export default function App() {
     if (!personDraft && !connectionDraft) dispatch({ type: "clear" });
   }, [dispatch, personDraft, connectionDraft]);
   const newPerson = useCallback(() => {
+    if (!canEdit) return;
     setPersonDraft({ key: crypto.randomUUID() });
     closeConnection();
     setAddMenu(false);
     setView("tree");
-  }, [closeConnection]);
+  }, [canEdit, closeConnection]);
   const startLink = useCallback(() => {
+    if (!canEdit) return;
     closeConnection();
     setPersonDraft(null);
     dispatch({ type: "link" });
     setAddMenu(false);
     setView("tree");
-  }, [closeConnection, dispatch]);
+  }, [canEdit, closeConnection, dispatch]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
     setConnectionDraft(draft);
     setPreview(draft);
@@ -171,7 +220,7 @@ export default function App() {
   }
   function relative(type: "child" | ConnectionType, existing: boolean) {
     const p = chosen[0];
-    if (!p) return;
+    if (!p || !canEdit) return;
     if (existing)
       openConnection({
         from: type === "child" ? p.id : "",
@@ -181,40 +230,45 @@ export default function App() {
     else setPersonDraft({ key: crypto.randomUUID(), relative: p, type });
   }
   const personEditor = family && personDraft && (
-    <PersonEditor
-      key={personDraft.key}
-      inline={!resumePhoto}
-      isAdmin={user?.role === "admin"}
-      user={user}
-      family={family}
-      person={personDraft.person}
-      relativeTo={personDraft.relative}
-      initialRelationship={personDraft.type}
-      upload={upload}
-      save={save}
-      busy={busy}
-      onClose={closeEditor}
-      onSaved={(id) => {
-        if (resumePhoto) setPhotoPersonId(id);
-        else showPerson(id);
-      }}
-    />
+    <div hidden={!canEdit} inert={!canEdit}>
+      <PersonEditor
+        key={personDraft.key}
+        inline={!resumePhoto}
+        suspended={!canEdit}
+        isAdmin={user?.role === "admin"}
+        user={user}
+        family={family}
+        person={personDraft.person}
+        relativeTo={personDraft.relative}
+        initialRelationship={personDraft.type}
+        upload={upload}
+        save={save}
+        busy={busy}
+        onClose={closeEditor}
+        onSaved={(id) => {
+          if (resumePhoto) setPhotoPersonId(id);
+          else showPerson(id);
+        }}
+      />
+    </div>
   );
   const photo = family?.photos?.find((p) => p.id === photoId);
   return (
     <div className="archive-app">
-      <ArchiveNavigation
-        view={view}
-        onView={navigate}
-        user={user}
-        local={archive.local}
-        readTree={readTree}
-        readPhotos={readPhotos}
-        onHelp={() => setHelp(true)}
-      />
       <div className="archive-main">
         <ArchiveHeader
-          title={family?.title || "История семьи"}
+          navigation={
+            <ArchiveNavigation
+              desktop={desktop}
+              view={view}
+              onView={navigate}
+              user={user}
+              local={archive.local}
+              readTree={readTree}
+              readPhotos={readPhotos}
+              onHelp={() => setHelp(true)}
+            />
+          }
           people={people}
           query={query}
           onQuery={setQuery}
@@ -225,7 +279,7 @@ export default function App() {
           onLogin={() => setLogin(true)}
           user={user}
         />
-        {addMenu && (
+        {addMenu && canEdit && (
           <div className="archive-add-menu">
             <button onClick={newPerson}>
               <Plus size={18} />
@@ -342,7 +396,7 @@ export default function App() {
                         </button>
                       )}
                     </div>
-                    {linkFrom !== null && (
+                    {canEdit && linkFrom !== null && (
                       <div className="link-instruction" role="status">
                         <Link2 size={18} />
                         {linkFrom
@@ -373,18 +427,25 @@ export default function App() {
                         onClose={closeEditor}
                         editing
                       >
+                        {!canEdit && (
+                          <p className="desktop-edit-notice">
+                            Черновик сохранён в этой вкладке. Продолжить
+                            редактирование можно в окне компьютера.
+                          </p>
+                        )}
                         {personEditor}
                       </InspectorDock>
                     ) : connectionDraft ? (
                       <InspectorDock
                         key={connectionDraft.original?.key || "new-connection"}
                         onClose={closeConnection}
-                        editing
+                        editing={canEdit}
                       >
                         <ConnectionInspector
                           family={family}
                           user={user}
                           draft={connectionDraft}
+                          canEdit={canEdit}
                           onChange={updateConnection}
                           save={save}
                           busy={busy}
@@ -516,8 +577,8 @@ export default function App() {
           photo={photo}
           family={family}
           initialPersonId={photoPersonId}
-          canEdit={owns(user, photo)}
-          canDelete={user?.role === "admin"}
+          canEdit={canEdit && owns(user, photo)}
+          canDelete={canEdit && user?.role === "admin"}
           busy={busy}
           save={save}
           onClose={() => {
@@ -538,7 +599,7 @@ export default function App() {
         />
       )}
       {resumePhoto && personEditor}
-      {settings && family && user?.role === "admin" && (
+      {settings && canEdit && family && user?.role === "admin" && (
         <ArchiveSettings
           family={family}
           save={save}
@@ -546,43 +607,7 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {help && (
-        <EditorDialog
-          title="Как работать с деревом"
-          onClose={() => setHelp(false)}
-        >
-          <div className="archive-form">
-            <p>
-              «Древо» группирует людей по поколениям; «Хронология» показывает
-              годы и исторические эпохи. Выбранный человек сохраняется при
-              переключении.
-            </p>
-            <p>
-              Тяните фон мышью или прокручивайте двумя пальцами. Масштаб —
-              кнопками, щипком или Ctrl + колесо. Нажатие на карточку открывает
-              сведения справа; Shift + нажатие выбирает второго человека для
-              сравнения.
-            </p>
-            <p>
-              Соедините точки на карточках или нажмите «Связь» и выберите двух
-              людей. Предварительная линия сохраняется только после проверки и
-              нажатия «Сохранить связь». Нажмите существующую линию, чтобы
-              изменить её тип или участников.
-            </p>
-            <p>
-              «Ветка» оставляет предков и потомков выбранного человека, а
-              стрелка на карточке сворачивает потомков. «Отменить» возвращает
-              последнее сохранённое изменение в этой вкладке. После загрузки
-              фотографии начинается новая история отмены.
-            </p>
-            <p>
-              На телефоне панель открывается снизу; кнопка над ней меняет
-              высоту. Для связывания без перетаскивания используйте выбор из
-              списка.
-            </p>
-          </div>
-        </EditorDialog>
-      )}
+      {help && <AboutProject onClose={() => setHelp(false)} />}
       {archive.conflict && family && (
         <ConflictDialog conflict={archive.conflict} family={family} />
       )}

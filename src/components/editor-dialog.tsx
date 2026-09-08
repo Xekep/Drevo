@@ -6,17 +6,22 @@ export function EditorDialog({
   children,
   wide = false,
   inline = false,
+  suspended = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
   inline?: boolean;
+  suspended?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    if (!inline) ref.current?.showModal();
-  }, [inline]);
+    if (!inline) {
+      if (suspended) ref.current?.close();
+      else ref.current?.showModal();
+    }
+  }, [inline, suspended]);
   if (inline)
     return (
       <section className="inline-editor" aria-label={title}>

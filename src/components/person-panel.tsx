@@ -15,6 +15,7 @@ import {
   edgeLabel,
   ERAS,
   initials,
+  resolvedSex,
   safeUrl,
   years,
   type Person,
@@ -31,7 +32,7 @@ export function Avatar({
   const src = safeUrl(person.photo);
   return (
     <span
-      className={`${large ? "profile-avatar" : "person-avatar"} ${person.sex === "u" ? "unknown" : person.sex === "f" ? "female" : "male"}`}
+      className={`${large ? "profile-avatar" : "person-avatar"} ${resolvedSex(person) === "u" ? "unknown" : resolvedSex(person) === "f" ? "female" : "male"}`}
     >
       {/* Native image keeps optional archive photos independent of an image service. */}
       {src && failed !== src ? (

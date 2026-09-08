@@ -72,9 +72,13 @@ export function PersonInspector({
                 <>
                   <option value="parent">Родителя</option>
                   <option value="spouse">Супруга / супругу</option>
+                  <option value="godparent">Крёстный / крёстная</option>
                   <optgroup label="Дополнительная связь">
                     {Object.entries(CONNECTION_NAMES)
-                      .filter(([key]) => !["parent", "spouse"].includes(key))
+                      .filter(
+                        ([key]) =>
+                          !["parent", "spouse", "godparent"].includes(key),
+                      )
                       .map(([key, label]) => (
                         <option key={key} value={key}>
                           {label}

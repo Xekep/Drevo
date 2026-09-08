@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   TreeDeciduous,
   Users,
@@ -9,6 +9,7 @@ import {
   Plus,
   LogOut,
   CircleHelp,
+  Menu,
 } from "lucide-react";
 import {
   fullName,
@@ -26,6 +27,7 @@ export function ArchiveNavigation({
   readTree,
   readPhotos,
   onHelp,
+  desktop,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -34,7 +36,27 @@ export function ArchiveNavigation({
   readTree: boolean;
   readPhotos: boolean;
   onHelp: () => void;
+  desktop: boolean;
 }) {
+  const menu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (e: PointerEvent) => {
+      if (menu.current && !menu.current.contains(e.target as Node))
+        menu.current.open = false;
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && menu.current?.open) {
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
   return (
     <nav className="archive-nav" aria-label="Разделы архива">
       <button
@@ -66,30 +88,69 @@ export function ArchiveNavigation({
             </button>
           ))}
       </div>
-      <div className="nav-bottom">
-        {user?.role === "admin" && (
+      <details ref={menu} className="archive-more" key={view}>
+        <summary aria-label="Меню проекта">
+          <Menu size={20} />
+        </summary>
+        <div className="nav-bottom">
+          <div className="mobile-sections">
+            {(
+              [
+                ["tree", "Древо", TreeDeciduous],
+                ["list", "Люди", Users],
+                ["families", "Семьи", Heart],
+                ["gallery", "Фото", Image],
+              ] as const
+            )
+              .filter(([id]) => (id === "gallery" ? readPhotos : readTree))
+              .map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  aria-current={view === id ? "page" : undefined}
+                  onClick={() => onView(id)}
+                >
+                  <Icon size={18} />
+                  {label}
+                </button>
+              ))}
+          </div>
           <button
-            aria-current={view === "admin" ? "page" : undefined}
-            onClick={() => onView("admin")}
-            title="Админская панель"
+            onClick={() => {
+              if (menu.current) menu.current.open = false;
+              onHelp();
+            }}
+            title="О проекте"
           >
-            <ShieldCheck size={22} />
-            <span>Админка</span>
+            <CircleHelp size={18} />
+            <span>О проекте</span>
           </button>
-        )}
-        <button onClick={onHelp} title="Как пользоваться">
-          <CircleHelp size={22} />
-          <span>Помощь</span>
-        </button>
-        {user && !local && (
-          <form action="/auth/logout" method="post">
-            <button title="Выйти">
-              <LogOut size={20} />
-              <span>Выйти</span>
+          {user?.role === "admin" && desktop && (
+            <button
+              aria-current={view === "admin" ? "page" : undefined}
+              onClick={() => onView("admin")}
+              title="Админская панель"
+            >
+              <ShieldCheck size={22} />
+              <span>Админка</span>
             </button>
-          </form>
-        )}
-      </div>
+          )}
+          {user && !local && (
+            <form action="/auth/logout" method="post">
+              <button title="Выйти">
+                <LogOut size={20} />
+                <span>Выйти</span>
+              </button>
+            </form>
+          )}
+          {!desktop && (
+            <p>
+              Просмотр на телефоне.
+              <br />
+              Редактирование — с компьютера.
+            </p>
+          )}
+        </div>
+      </details>
     </nav>
   );
 }
@@ -103,7 +164,7 @@ export function ArchiveHeader({
   busy,
   onLogin,
   user,
-  title,
+  navigation,
 }: {
   people: Person[];
   query: string;
@@ -114,7 +175,7 @@ export function ArchiveHeader({
   busy: boolean;
   onLogin: () => void;
   user: ArchiveUser | null;
-  title: string;
+  navigation: ReactNode;
 }) {
   const [open, setOpen] = useState(false),
     ref = useRef<HTMLInputElement>(null);
@@ -138,10 +199,7 @@ export function ArchiveHeader({
     : [];
   return (
     <header className="archive-header">
-      <div className="archive-title">
-        <span>СЕМЕЙНЫЙ АРХИВ</span>
-        <strong>{title || "История семьи"}</strong>
-      </div>
+      {navigation}
       <div
         className="archive-search"
         onBlur={(e) => {

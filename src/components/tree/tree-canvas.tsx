@@ -48,6 +48,7 @@ export type ConnectionDraft = {
   type: GraphConnection["type"];
   original?: GraphConnection;
   note?: string;
+  hint?: string;
 };
 export type TreeFocus = { ids: string[]; token: number };
 type Props = {

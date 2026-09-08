@@ -6,6 +6,9 @@ import {
   CONNECTION_NAMES,
   fullName,
   splitFullName,
+  guessSex,
+  parentHints,
+  birthSurnameHints,
   removePerson,
   removeConnection,
   type Connection,
@@ -30,6 +33,7 @@ export function PersonEditor({
   onSaved,
   busy,
   inline = false,
+  suspended = false,
   initialRelationship = "child",
 }: {
   family: Family;
@@ -43,6 +47,7 @@ export function PersonEditor({
   onSaved: (id: string) => void;
   busy: boolean;
   inline?: boolean;
+  suspended?: boolean;
   initialRelationship?: "child" | ConnectionType;
 }) {
   const [draft, setDraft] = useState<Person>(() =>
@@ -66,11 +71,39 @@ export function PersonEditor({
   const [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
   const [nameText, setNameText] = useState(person ? fullName(person) : "");
+  const [autoSex, setAutoSex] = useState(!person || person.sex === "u");
+  const [accepted, setAccepted] = useState<string[]>([]);
   const [portraitFile, setPortraitFile] = useState<File | null>(null),
     [portraitPreview, setPortraitPreview] = useState(""),
     [relationship, setRelationship] = useState<"child" | ConnectionType>(
       initialRelationship,
     );
+  const hintDraft = {
+    ...draft,
+    sex: autoSex ? guessSex(draft) : draft.sex,
+    parents:
+      !person && relativeTo && relationship === "child"
+        ? [...draft.parents, relativeTo.id]
+        : draft.parents,
+  };
+  const suggestions = parentHints(hintDraft, family.people).filter(
+    (hint) =>
+      (hint.to === draft.id || owns(user, hint.person)) &&
+      !(relativeTo && relationship === "parent" && hint.to === relativeTo.id),
+  );
+  const confirmed = suggestions.filter((hint) =>
+    accepted.includes(`${hint.from}:${hint.to}`),
+  );
+  const surnames = birthSurnameHints(
+    {
+      ...hintDraft,
+      parents: [
+        ...hintDraft.parents,
+        ...confirmed.filter((h) => h.to === draft.id).map((h) => h.from),
+      ],
+    },
+    family.people,
+  );
   useEffect(
     () => () => {
       if (portraitPreview) URL.revokeObjectURL(portraitPreview);
@@ -102,6 +135,7 @@ export function PersonEditor({
       }
       const p = {
         ...draft,
+        sex: autoSex ? guessSex(draft) : draft.sex,
         photo: portrait,
         name: draft.name.trim(),
         surname: draft.surname.trim(),
@@ -126,6 +160,8 @@ export function PersonEditor({
             ? connectPeople(next, relativeTo.id, p.id, "parent")
             : connectPeople(next, p.id, relativeTo.id, relationship);
       }
+      for (const hint of confirmed)
+        next = connectPeople(next, hint.from, hint.to, "parent");
       await save(next);
       onSaved(p.id);
       onClose();
@@ -157,6 +193,7 @@ export function PersonEditor({
   return (
     <EditorDialog
       inline={inline}
+      suspended={suspended}
       title={person ? "Редактировать человека" : "Новый человек"}
       onClose={() => {
         if (!busy) onClose();
@@ -219,9 +256,13 @@ export function PersonEditor({
                 <>
                   <option value="parent">Родитель</option>
                   <option value="spouse">Супруг / супруга</option>
+                  <option value="godparent">Крёстный / крёстная</option>
                   <optgroup label="Другие связи">
                     {Object.entries(CONNECTION_NAMES)
-                      .filter(([type]) => !["parent", "spouse"].includes(type))
+                      .filter(
+                        ([type]) =>
+                          !["parent", "spouse", "godparent"].includes(type),
+                      )
                       .map(([type, label]) => (
                         <option key={type} value={type}>
                           {label}
@@ -253,6 +294,98 @@ export function PersonEditor({
             Фамилия, имя, отчество. Отчество необязательно.
           </small>
         </label>
+        <label className="name-sex-hint">
+          Пол
+          <select
+            value={autoSex ? "auto" : draft.sex}
+            onChange={(e) => {
+              setAutoSex(e.target.value === "auto");
+              if (e.target.value !== "auto") field("sex", e.target.value);
+            }}
+          >
+            <option value="auto">
+              {guessSex(draft) === "m"
+                ? "Мужской · по ФИО"
+                : guessSex(draft) === "f"
+                  ? "Женский · по ФИО"
+                  : "Определить по ФИО"}
+            </option>
+            <option value="m">Мужской</option>
+            <option value="f">Женский</option>
+          </select>
+        </label>
+        {suggestions.length > 0 && (
+          <details className="name-suggestions" open>
+            <summary>
+              Возможно, уже есть родственники · {suggestions.length}
+            </summary>
+            <p>Отметьте верные связи — добавим их при сохранении.</p>
+            <div className="name-suggestions-list">
+              {suggestions.map((hint) => {
+                const key = `${hint.from}:${hint.to}`;
+                return (
+                  <label
+                    className="check-field"
+                    key={key}
+                    htmlFor={`hint-${key}`}
+                    aria-label={`Подтвердить связь с ${fullName(hint.person)}`}
+                  >
+                    <input
+                      id={`hint-${key}`}
+                      type="checkbox"
+                      checked={accepted.includes(key)}
+                      onChange={(e) => {
+                        setAccepted((values) =>
+                          e.target.checked
+                            ? [
+                                ...values.filter(
+                                  (value) =>
+                                    !suggestions.some(
+                                      (other) =>
+                                        `${other.from}:${other.to}` === value &&
+                                        other.to === hint.to,
+                                    ),
+                                ),
+                                key,
+                              ]
+                            : values.filter((value) => value !== key),
+                        );
+                      }}
+                    />
+                    <span>
+                      <b>
+                        {hint.role === "father"
+                          ? "Возможный отец"
+                          : "Возможный ребёнок"}
+                        : {fullName(hint.person)}
+                      </b>
+                      <small>{hint.reason}</small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+        )}
+        {surnames.map(({ surname, parent }) => (
+          <div className="surname-suggestion" key={surname}>
+            <p>
+              Возможно, фамилия при рождении — <b>{surname}</b>. По фамилии
+              отца: {fullName(parent)}.
+            </p>
+            <button type="button" onClick={() => field("maidenName", surname)}>
+              Да, указать {surname}
+            </button>
+          </div>
+        ))}
+        {draft.maidenName && (
+          <p className="birth-surname-value">
+            Фамилия при рождении: <b>{draft.maidenName}</b>{" "}
+            <button type="button" onClick={() => field("maidenName", "")}>
+              Убрать
+            </button>
+          </p>
+        )}
         <details className="form-details person-extra">
           <summary>Дополнительные сведения</summary>
           <div className="form-grid">
@@ -263,17 +396,6 @@ export function PersonEditor({
                 placeholder="Год или ГГГГ-ММ-ДД"
                 onChange={(e) => field("birth", e.target.value)}
               />
-            </label>
-            <label>
-              Пол
-              <select
-                value={draft.sex}
-                onChange={(e) => field("sex", e.target.value)}
-              >
-                <option value="u">Не указан</option>
-                <option value="m">Мужской</option>
-                <option value="f">Женский</option>
-              </select>
             </label>
           </div>
           <details className="form-details">

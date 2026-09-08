@@ -3,8 +3,8 @@ export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
 import { yearY, START_YEAR } from "./layout.ts";
 
-export const TREE_NODE_WIDTH = 264,
-  TREE_NODE_HEIGHT = 116;
+export const TREE_NODE_WIDTH = 220,
+  TREE_NODE_HEIGHT = 96;
 export type TreeMode = "generations" | "timeline";
 export type TreeGeometry = {
   mode: TreeMode;
@@ -118,15 +118,15 @@ export function treeGeometry(
     }
     const wrap = mode === "timeline" ? 6 : Math.max(6, ordered.length);
     ordered.forEach((p, i) => {
-      const x = (i % wrap) * 316;
+      const x = (i % wrap) * 268;
       xPositions.set(p.id, x);
-      positions.push([p.id, { x, y: (row + Math.floor(i / wrap)) * 208 }]);
+      positions.push([p.id, { x, y: (row + Math.floor(i / wrap)) * 170 }]);
     });
     row += Math.ceil(ordered.length / wrap);
   }
-  const height = Math.max(0, row - 1) * 208;
+  const height = Math.max(0, row - 1) * 170;
   if (reverse) for (const [, point] of positions) point.y = height - point.y;
-  const offset = mode === "timeline" && positions.length ? row * 208 + 80 : 0;
+  const offset = mode === "timeline" && positions.length ? row * 170 + 80 : 0;
   if (mode === "timeline") {
     const bottoms: number[] = [];
     const dated = people
@@ -142,7 +142,7 @@ export function treeGeometry(
       let column = bottoms.findIndex((bottom) => bottom + 20 <= y);
       if (column < 0) column = bottoms.length;
       bottoms[column] = y + TREE_NODE_HEIGHT;
-      positions.push([p.id, { x: column * 316, y }]);
+      positions.push([p.id, { x: column * 268, y }]);
     }
   }
   return { positions, start, offset, mode, reverse };
