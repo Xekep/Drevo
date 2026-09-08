@@ -1,0 +1,27 @@
+[Unit]
+Description=Drevo genealogy archive
+After=network.target
+
+[Service]
+Type=simple
+User=site_drevo
+Group=site_drevo_grp
+WorkingDirectory=/var/www/drevo.kiiko.ru/current
+Environment=NODE_ENV=production
+Environment=PORT=3107
+Environment=DATABASE_PATH=/var/www/drevo.kiiko.ru/shared/drevo.sqlite
+Environment=PUBLIC_ORIGIN=https://drevo.kiiko.ru
+EnvironmentFile=/etc/drevo.env
+ExecStart=/opt/drevo-node/bin/node --experimental-strip-types src/server/index.ts --production
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/drevo.kiiko.ru/shared
+
+[Install]
+WantedBy=multi-user.target

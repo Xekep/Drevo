@@ -8,7 +8,7 @@ import {
   safeUrl,
   validateFamily,
   type Person,
-} from "../lib/genealogy.ts";
+} from "../src/domain/index.ts";
 
 const family = validateFamily(
   JSON.parse(

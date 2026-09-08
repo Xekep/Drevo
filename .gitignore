@@ -36,6 +36,10 @@ yarn-error.log*
 
 /dist/
 /dist-static/
+/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.tsbuildinfo
 /.wrangler/
 /outputs/

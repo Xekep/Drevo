@@ -7,7 +7,7 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["node", "@cloudflare/workers-types"],
+    "types": ["node", "vite/client"],
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
@@ -19,13 +19,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "**/*.mts"
-  ],
+  "include": ["src", "tests", "vite.config.ts"],
   "exclude": ["node_modules"]
 }

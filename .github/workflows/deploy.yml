@@ -1,0 +1,53 @@
+name: Deploy Drevo
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: drevo-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' '[94.232.248.210]:4321 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG2C3d6j+K8FTcK6aoKhH7lTTfBWX2lp1hBFZp+I8nhV' > ~/.ssh/known_hosts
+      - name: Upload isolated release
+        env:
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p release/src release/public
+          cp -R dist ops release/
+          cp -R src/domain src/server release/src/
+          cp -R public/data release/public/
+          cp package.json release/
+          ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 "mkdir -p /var/www/drevo.kiiko.ru/releases/$RELEASE_ID"
+          rsync -az --no-owner --no-group --chmod=Dg+rwx,Dg+s,Do-rwx,Fg+rw,Fo-rwx \
+            -e 'ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes' \
+            release/ "deploy@94.232.248.210:/var/www/drevo.kiiko.ru/releases/$RELEASE_ID/"
+      - name: Activate and check release
+        env:
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_attempt }}
+        run: |
+          ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 \
+            "bash /var/www/drevo.kiiko.ru/releases/$RELEASE_ID/ops/deploy.sh $RELEASE_ID"
+          curl --fail --retry 3 --silent --show-error https://drevo.kiiko.ru/api/health
