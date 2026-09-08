@@ -114,11 +114,12 @@ export function PhotoViewer({
   onCreatePerson: () => void;
   initialPersonId?: string;
 }) {
-  const [tagging, setTagging] = useState(false),
+  const [requestedTagging, setTagging] = useState(false),
     [rect, setRect] = useState<Rect | null>(null),
     [personId, setPersonId] = useState(initialPersonId),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
+  const tagging = canEdit && requestedTagging;
   const [title, setTitle] = useState(photo.title),
     [takenAt, setTakenAt] = useState(photo.takenAt || ""),
     [place, setPlace] = useState(photo.place || ""),
@@ -203,7 +204,7 @@ export function PhotoViewer({
               e.currentTarget.setPointerCapture(e.pointerId);
             }}
             onPointerMove={(e) => {
-              if (!start.current) return;
+              if (!tagging || !start.current) return;
               const p = point(e),
                 s = start.current;
               setRect({
@@ -234,23 +235,24 @@ export function PhotoViewer({
                   void scan();
               }}
             />
-            {suggestions.map((s, i) => (
-              <button
-                key={s.id}
-                className="photo-tag suggested-tag"
-                style={{
-                  left: `${s.box.x * 100}%`,
-                  top: `${s.box.y * 100}%`,
-                  width: `${s.box.width * 100}%`,
-                  height: `${s.box.height * 100}%`,
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => selectSuggestion(s)}
-                aria-label={`Подтвердить лицо ${i + 1}`}
-              >
-                <span>{`Лицо ${i + 1}`}</span>
-              </button>
-            ))}
+            {canEdit &&
+              suggestions.map((s, i) => (
+                <button
+                  key={s.id}
+                  className="photo-tag suggested-tag"
+                  style={{
+                    left: `${s.box.x * 100}%`,
+                    top: `${s.box.y * 100}%`,
+                    width: `${s.box.width * 100}%`,
+                    height: `${s.box.height * 100}%`,
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => selectSuggestion(s)}
+                  aria-label={`Подтвердить лицо ${i + 1}`}
+                >
+                  <span>{`Лицо ${i + 1}`}</span>
+                </button>
+              ))}
             {photo.tags.map((tag) => {
               const person = family.people.find((p) => p.id === tag.personId);
               return (
@@ -275,7 +277,7 @@ export function PhotoViewer({
                 )
               );
             })}
-            {rect && (
+            {canEdit && rect && (
               <span
                 className="photo-tag draft-tag"
                 style={{

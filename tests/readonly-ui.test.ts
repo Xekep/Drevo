@@ -30,6 +30,9 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     const { AboutProject } = await server.ssrLoadModule(
       "/src/components/about-project.tsx",
     );
+    const { PhotoViewer } = await server.ssrLoadModule(
+      "/src/components/gallery.tsx",
+    );
     const user = {
       id: "admin",
       role: "admin",
@@ -113,6 +116,32 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     );
     assert.match(about, /История начинается/);
     assert.match(about, /Перейти к истории/);
+    const photo = {
+      id: "photo",
+      url: "/media/example.jpg",
+      title: "Семейный снимок",
+      tags: [
+        { id: "tag", personId: p.id, x: 0.1, y: 0.1, width: 0.2, height: 0.3 },
+      ],
+    };
+    const viewer = renderToStaticMarkup(
+      createElement(PhotoViewer, {
+        photo,
+        family,
+        canEdit: false,
+        canDelete: false,
+        busy: false,
+        save: async () => family,
+        onClose: noop,
+        onPerson: noop,
+        onCreatePerson: noop,
+      }),
+    );
+    assert.match(viewer, /Открыть карточку: Иванов Иван/);
+    assert.doesNotMatch(
+      viewer,
+      /Найти лица|Добавить человека в древо|Убрать отметку|<form/,
+    );
   } finally {
     await server.close();
     rmSync(cacheDir, { recursive: true, force: true });
