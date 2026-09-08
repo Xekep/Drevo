@@ -7,17 +7,25 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import { CONNECTION_NAMES, type GraphConnection } from "../../domain";
+import { roundedRoute, type EdgeRoute } from "../../domain/edge-routing";
 export type RelationshipEdgeType = Edge<
-  { connection: GraphConnection; onSelect: (edge: GraphConnection) => void },
+  {
+    connection: GraphConnection;
+    onSelect: (edge: GraphConnection) => void;
+    route?: EdgeRoute;
+  },
   "relationship" | "smoothstep"
 >;
 export const RelationshipEdge = memo(function RelationshipEdge(
   props: EdgeProps<RelationshipEdgeType>,
 ) {
-  const [path, x, y] = getBezierPath({
+  const fallback = getBezierPath({
     ...props,
     curvature: 0.35,
   });
+  const { path, x, y } = props.data?.route
+    ? roundedRoute(props.data.route.points)
+    : { path: fallback[0], x: fallback[1], y: fallback[2] };
   const edge = props.data!.connection;
   return (
     <>

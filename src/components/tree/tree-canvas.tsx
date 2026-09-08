@@ -40,6 +40,7 @@ import {
   type RelationshipEdgeType,
 } from "./relationship-edge";
 import { EraOverlay } from "./era-overlay";
+import { routeKey } from "../../domain/edge-routing";
 
 export type ConnectionDraft = {
   from: string;
@@ -217,6 +218,7 @@ function Canvas(props: Props) {
     () => new Map(geometry?.positions || []),
     [geometry],
   );
+  const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
   const nodes = useMemo<PersonNodeType[]>(
     () =>
       family.people
@@ -259,6 +261,7 @@ function Canvas(props: Props) {
           const a = positions.get(e.from),
             b = positions.get(e.to),
             side = ["spouse", "sworn_sibling"].includes(e.type);
+          const route = routes.get(routeKey(e));
           const highlighted = props.highlighted.some(
             (id, i) =>
               i > 0 &&
@@ -270,22 +273,26 @@ function Canvas(props: Props) {
             source: e.from,
             target: e.to,
             type: "relationship",
-            sourceHandle: side
-              ? a && b && a.x > b.x
-                ? "left"
-                : "right"
-              : a && b && a.y > b.y
-                ? "top"
-                : "bottom",
-            targetHandle: side
-              ? a && b && a.x > b.x
-                ? "right"
-                : "left"
-              : a && b && a.y > b.y
-                ? "bottom"
-                : "top",
+            sourceHandle:
+              route?.sourceHandle ??
+              (side
+                ? a && b && a.x > b.x
+                  ? "left"
+                  : "right"
+                : a && b && a.y > b.y
+                  ? "top"
+                  : "bottom"),
+            targetHandle:
+              route?.targetHandle ??
+              (side
+                ? a && b && a.x > b.x
+                  ? "right"
+                  : "left"
+                : a && b && a.y > b.y
+                  ? "bottom"
+                  : "top"),
             selected: props.selectedEdge === e.key,
-            data: { connection: e, onSelect: onEdge },
+            data: { connection: e, onSelect: onEdge, route },
             style: {
               stroke: colors[e.type],
               strokeWidth:
@@ -320,6 +327,7 @@ function Canvas(props: Props) {
       connections,
       visible,
       positions,
+      routes,
       props.highlighted,
       props.selectedEdge,
       props.busy,

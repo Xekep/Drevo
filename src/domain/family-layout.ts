@@ -1,4 +1,5 @@
 import type { LayoutPerson } from "./tree-layout.ts";
+import { untangleFamilies } from "./layout-order.ts";
 
 /** Семейные блоки: родители рядом, потомки по центру своей ветви. Только геометрия. */
 export function familyPositions(
@@ -100,22 +101,53 @@ export function familyPositions(
     shelfY = 0,
     shelfHeight = 0;
   const queue: Unit[] = [];
-  for (const root of ordered
+  const roots = ordered
     .filter((u) => !u.parent)
-    .sort((a, b) => a.id.localeCompare(b.id))) {
-    if (shelfX && shelfX + root.width > 1600) {
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const rootOf = new Map<string, Unit>();
+  for (const unit of [...ordered].reverse())
+    rootOf.set(unit.id, unit.parent ? rootOf.get(unit.parent.id)! : unit);
+  const neighbors = new Map(roots.map((root) => [root.id, new Set<Unit>()]));
+  for (const p of people)
+    for (const id of [...p.parents, ...p.spouses]) {
+      if (!map.has(id)) continue;
+      const a = rootOf.get(find(p.id))!,
+        b = rootOf.get(find(id))!;
+      if (a !== b) {
+        neighbors.get(a.id)!.add(b);
+        neighbors.get(b.id)!.add(a);
+      }
+    }
+  const seen = new Set<string>();
+  for (const first of roots) {
+    if (seen.has(first.id)) continue;
+    const component = [first];
+    seen.add(first.id);
+    for (let i = 0; i < component.length; i++)
+      for (const next of neighbors.get(component[i].id)!)
+        if (!seen.has(next.id)) {
+          seen.add(next.id);
+          component.push(next);
+        }
+    const componentWidth =
+      component.reduce((sum, root) => sum + root.width, 0) +
+      (component.length - 1) * 100;
+    const firstLevel = Math.min(...component.map((root) => root.level));
+    if (shelfX && shelfX + componentWidth > 1600) {
       shelfX = 0;
       shelfY += shelfHeight + 110;
       shelfHeight = 0;
     }
-    root.x = shelfX;
-    root.y = shelfY;
-    shelfX += root.width + 100;
-    shelfHeight = Math.max(
-      shelfHeight,
-      (root.depth - root.level) * 190 + height,
-    );
-    queue.push(root);
+    for (const root of component) {
+      root.x = shelfX;
+      root.y = shelfY + (root.level - firstLevel) * 190;
+      shelfX += root.width + 100;
+      shelfHeight = Math.max(
+        shelfHeight,
+        (root.depth - firstLevel) * 190 + height,
+      );
+      queue.push(root);
+    }
   }
   const positions: [string, { x: number; y: number }][] = [];
   for (let i = 0; i < queue.length; i++) {
@@ -138,5 +170,10 @@ export function familyPositions(
       queue.push(child);
     }
   }
-  return positions;
+  return untangleFamilies(
+    people,
+    positions,
+    [...units.values()].map((unit) => unit.members.map((p) => p.id)),
+    width,
+  );
 }

@@ -1,4 +1,5 @@
 import { familyPositions } from "./family-layout.ts";
+import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { Person, Family, FamilyLink } from "./types.ts";
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
@@ -13,6 +14,7 @@ export type TreeGeometry = {
   positions: [string, { x: number; y: number }][];
   start: number;
   offset: number;
+  routes?: [string, EdgeRoute][];
 };
 /** Линейный обход DAG; не зависит от хранимого служебного generation. */
 export function generationLevels(people: LayoutPerson[]) {
@@ -68,13 +70,18 @@ export function treeGeometry(
     parents: [...new Set([...p.parents, ...(adoptive.get(p.id) || [])])],
   }));
   const peopleMap = new Map(parentage.map((p) => [p.id, p]));
-  // Ограничение раскладки: супруг без известных родителей следует уровню партнёра.
+  const partners = new Map(parentage.map((p) => [p.id, new Set(p.spouses)]));
+  for (const p of parentage)
+    for (const a of p.parents)
+      for (const b of p.parents) if (a !== b) partners.get(a)?.add(b);
+  // Геометрия: супруг или второй родитель без известных предков следует уровню партнёра.
   const aligned = parentage.map((p) => ({
     ...p,
     parents: p.parents.length
       ? p.parents
-      : p.spouses.map((id) => peopleMap.get(id)).find((s) => s?.parents.length)
-          ?.parents || [],
+      : [...partners.get(p.id)!]
+          .map((id) => peopleMap.get(id))
+          .find((s) => s?.parents.length)?.parents || [],
   }));
   const alignedLevels = generationLevels(aligned);
   const levels =
@@ -98,7 +105,8 @@ export function treeGeometry(
       ? height + TREE_NODE_HEIGHT + 100
       : 0;
   if (mode === "timeline") {
-    const bottoms: number[] = [];
+    const familyX = new Map(placed.map(([id, p]) => [id, p.x]));
+    let active: { x: number; bottom: number }[] = [];
     const dated = people
       .filter((p) => p.birth)
       .sort(
@@ -109,13 +117,36 @@ export function treeGeometry(
       );
     for (const p of dated) {
       const y = offset + yearY(dateYear(p.birth), start, reverse);
-      let column = bottoms.findIndex((bottom) => bottom + 20 <= y);
-      if (column < 0) column = bottoms.length;
-      bottoms[column] = y + TREE_NODE_HEIGHT;
-      positions.push([p.id, { x: column * 268, y }]);
+      active = active.filter((point) => point.bottom + 20 > y);
+      const desired = familyX.get(p.id) || 0;
+      const gap = TREE_NODE_WIDTH + 32;
+      let left = desired,
+        right = desired;
+      for (const point of active) {
+        if (point.x - right >= gap) break;
+        if (Math.abs(point.x - right) < gap) right = point.x + gap;
+      }
+      for (let i = active.length - 1; i >= 0; i--) {
+        if (left - active[i].x >= gap) break;
+        if (Math.abs(active[i].x - left) < gap) left = active[i].x - gap;
+      }
+      const x = desired - left <= right - desired ? left : right;
+      const index = active.findIndex((point) => point.x > x);
+      active.splice(index < 0 ? active.length : index, 0, {
+        x,
+        bottom: y + TREE_NODE_HEIGHT,
+      });
+      positions.push([p.id, { x, y }]);
     }
   }
-  return { positions, start, offset, mode, reverse };
+  const routes = routeRelationships(
+    people,
+    links,
+    positions,
+    TREE_NODE_WIDTH,
+    TREE_NODE_HEIGHT,
+  );
+  return { positions, start, offset, mode, reverse, routes };
 }
 export function visibleBranch(
   family: Family,
