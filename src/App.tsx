@@ -475,6 +475,9 @@ export default function App() {
                               user={user}
                               canEdit={canEdit}
                               readPhotos={readPhotos}
+                              save={save}
+                              busy={busy}
+                              onConnection={openConnection}
                               onSelect={showPerson}
                               onCompare={() => dispatch({ type: "compare" })}
                               onEdit={() =>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
   ArrowUpRight,
@@ -92,12 +92,14 @@ export function PersonPanel({
   links,
   onSelect,
   onCompare,
+  suggestions,
 }: {
   person: Person;
   people: Person[];
   links?: FamilyLink[];
   onSelect: (id: string) => void;
   onCompare: () => void;
+  suggestions?: ReactNode;
 }) {
   const [tab, setTab] = useState<"bio" | "sources">("bio");
   const relatives = people.filter(
@@ -142,6 +144,7 @@ export function PersonPanel({
           </p>
         )}
       </div>
+      {suggestions}
       <div
         className="panel-tabs"
         role="tablist"

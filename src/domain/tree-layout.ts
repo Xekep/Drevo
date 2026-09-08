@@ -1,3 +1,4 @@
+import { familyPositions } from "./family-layout.ts";
 import type { Person, Family, FamilyLink } from "./types.ts";
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
@@ -80,53 +81,22 @@ export function treeGeometry(
       alignedLevels.size === people.length
         ? alignedLevels
         : generationLevels(parentage),
-    rows = new Map<number, LayoutPerson[]>();
-  for (const p of people) {
-    if (mode === "timeline" && p.birth) continue;
-    const level = levels.get(p.id) || 0;
-    const list = rows.get(level) || [];
-    list.push(p);
-    rows.set(level, list);
-  }
-  const positions: TreeGeometry["positions"] = [],
-    xPositions = new Map<string, number>();
-  let row = 0;
-  for (const level of [...rows.keys()].sort((a, b) => a - b)) {
-    const list = rows.get(level)!;
-    const center = (p: LayoutPerson) =>
-      p.parents.reduce((sum, id) => sum + (xPositions.get(id) || 0), 0) /
-      Math.max(1, p.parents.length);
-    list.sort(
-      (a, b) =>
-        center(a) - center(b) ||
-        a.parents.join().localeCompare(b.parents.join()) ||
-        (a.birth || "9999").localeCompare(b.birth || "9999") ||
-        a.id.localeCompare(b.id),
+    placed = familyPositions(
+      parentage,
+      levels,
+      TREE_NODE_WIDTH,
+      TREE_NODE_HEIGHT,
     );
-    const map = new Map(list.map((p) => [p.id, p])),
-      seen = new Set<string>(),
-      ordered: LayoutPerson[] = [];
-    for (const p of list) {
-      if (seen.has(p.id)) continue;
-      ordered.push(p);
-      seen.add(p.id);
-      for (const spouse of p.spouses)
-        if (map.has(spouse) && !seen.has(spouse)) {
-          ordered.push(map.get(spouse)!);
-          seen.add(spouse);
-        }
-    }
-    const wrap = mode === "timeline" ? 6 : Math.max(6, ordered.length);
-    ordered.forEach((p, i) => {
-      const x = (i % wrap) * 268;
-      xPositions.set(p.id, x);
-      positions.push([p.id, { x, y: (row + Math.floor(i / wrap)) * 170 }]);
-    });
-    row += Math.ceil(ordered.length / wrap);
-  }
-  const height = Math.max(0, row - 1) * 170;
+  const positions: TreeGeometry["positions"] =
+    mode === "timeline"
+      ? placed.filter(([id]) => !peopleMap.get(id)?.birth)
+      : placed;
+  const height = Math.max(0, ...positions.map(([, p]) => p.y));
   if (reverse) for (const [, point] of positions) point.y = height - point.y;
-  const offset = mode === "timeline" && positions.length ? row * 170 + 80 : 0;
+  const offset =
+    mode === "timeline" && positions.length
+      ? height + TREE_NODE_HEIGHT + 100
+      : 0;
   if (mode === "timeline") {
     const bottoms: number[] = [];
     const dated = people

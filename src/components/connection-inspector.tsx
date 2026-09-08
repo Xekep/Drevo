@@ -144,10 +144,7 @@ export function ConnectionInspector({
         <label>
           Первый человек
           {draft.hint && (
-            <small>
-              Направление предложено по ФИО. {draft.hint} Проверьте перед
-              сохранением.
-            </small>
+            <small>{draft.hint} Проверьте перед сохранением.</small>
           )}
           <select
             required

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Plus, Pencil, Images, Link2 } from "lucide-react";
 import { PersonPanel } from "./person-panel";
+import { PersonHints } from "./person-hints";
+import type { Connection } from "../domain";
 import {
   owns,
   CONNECTION_NAMES,
@@ -22,6 +24,9 @@ export function PersonInspector({
   onExistingRelative,
   onAlbum,
   onPhoto,
+  save,
+  busy = false,
+  onConnection,
 }: {
   person: Person;
   family: Family;
@@ -35,6 +40,9 @@ export function PersonInspector({
   onExistingRelative: (type: "child" | ConnectionType) => void;
   onAlbum: () => void;
   onPhoto: (id: string) => void;
+  save?: (family: Family) => Promise<Family>;
+  busy?: boolean;
+  onConnection?: (connection: Connection & { hint?: string }) => void;
 }) {
   const [adding, setAdding] = useState(false),
     [type, setType] = useState<"child" | ConnectionType>("child");
@@ -44,7 +52,7 @@ export function PersonInspector({
   return (
     <>
       <div className="inspector-person-actions">
-        {owns(user, person) && (
+        {canEdit && owns(user, person) && (
           <button onClick={onEdit}>
             <Pencil size={16} />
             Изменить
@@ -57,7 +65,7 @@ export function PersonInspector({
           </button>
         )}
       </div>
-      {adding && (
+      {canEdit && adding && (
         <div className="relative-flow archive-form">
           <label>
             Кого добавить
@@ -107,6 +115,20 @@ export function PersonInspector({
         links={family.links}
         onSelect={onSelect}
         onCompare={onCompare}
+        suggestions={
+          canEdit &&
+          save &&
+          onConnection && (
+            <PersonHints
+              person={person}
+              family={family}
+              user={user}
+              busy={busy}
+              save={save}
+              onConnection={onConnection}
+            />
+          )
+        }
       />
       {readPhotos && (
         <section className="person-photos">

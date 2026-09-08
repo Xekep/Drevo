@@ -13,6 +13,15 @@ const femaleNames = new Set(
   ),
 );
 
+for (const name of "авдей авраам адам аким альберт антип аполлон аристарх архип афанасий богдан валерьян вениамин викентий виссарион всеволод гордей демид демьян добрыня ефим ефрем захар игнат игнатий иннокентий ипполит карп клим лаврентий лазарь леонтий макар марат мирон мирослав митрофан наум назар нестор никифор никон остап панкрат платон прохор радомир родион руслан савелий самуил святослав серафим тихон трифон фаддей федот фрол харитон эрнест юлиан юлий".split(
+  " ",
+))
+  maleNames.add(name);
+for (const name of "августа агата агния аграфена аделина алена алевтина анфиса василиса виолетта ева есения ефросинья жанна ия калерия карина кристина лилия майя марфа милана милада неонила пелагея прасковья регина римма серафима стефания уляна фаина федора фекла харитина эвелина эльвира эмма яна ярослава".split(
+  " ",
+))
+  femaleNames.add(name);
+
 /** Подсказка по полному имени/отчеству. Фамилия сама по себе не определяет пол. */
 export function guessSex(
   p: Pick<Person, "name" | "patronymic">,
@@ -52,8 +61,15 @@ const irregular: Record<string, string[]> = {
 export function matchesPatronymic(fatherName: string, patronymic: string) {
   const name = normalize(fatherName),
     value = normalize(patronymic);
-  if (!name || !value || !maleNames.has(name)) return false;
+  if (
+    !name ||
+    !value ||
+    !/^[а-я]+$/.test(name) ||
+    ["саша", "женя", "валя", "паша"].includes(name)
+  )
+    return false;
   if (irregular[name]) return irregular[name].includes(value);
+  if (/[ая]$/.test(name)) return false;
   const stems = name.endsWith("ий")
     ? [name.slice(0, -2) + "ь", name.slice(0, -1)]
     : /[йь]$/.test(name)
@@ -183,4 +199,32 @@ export function birthSurnameHints(draft: Person, people: Person[]) {
     values.add(normalize(surname));
     return [{ surname, parent }];
   });
+}
+
+/** Общие дети дают повод уточнить брак, но не доказывают его. */
+export function marriageHints(person: Person, people: Person[]) {
+  const map = new Map(people.map((p) => [p.id, p]));
+  const shared = new Map<string, Person[]>();
+  for (const child of people) {
+    if (!child.parents.includes(person.id)) continue;
+    for (const id of child.parents) {
+      const other = map.get(id);
+      if (
+        !other ||
+        id === person.id ||
+        person.spouses.includes(id) ||
+        other.spouses.includes(person.id) ||
+        person.parents.includes(id) ||
+        other.parents.includes(person.id)
+      )
+        continue;
+      const children = shared.get(id) || [];
+      children.push(child);
+      shared.set(id, children);
+    }
+  }
+  return [...shared].map(([id, children]) => ({
+    person: map.get(id)!,
+    children,
+  }));
 }

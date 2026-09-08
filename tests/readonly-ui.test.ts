@@ -93,7 +93,10 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       }),
     );
     assert.match(inspector, /Фотоальбом/);
-    assert.doesNotMatch(inspector, /Редактировать|Новый человек|Уже в древе/);
+    assert.doesNotMatch(
+      inspector,
+      /Изменить|Редактировать|Новый человек|Уже в древе|Можно уточнить/,
+    );
     const connection = renderToStaticMarkup(
       createElement(ConnectionInspector, {
         family,
@@ -116,6 +119,35 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     );
     assert.match(about, /История начинается/);
     assert.match(about, /Перейти к истории/);
+    const { PersonHints } = await server.ssrLoadModule(
+      "/src/components/person-hints.tsx",
+    );
+    const hintsFamily: Family = {
+      ...family,
+      people: [p, { ...family.people[1], surname: "Петрова" }],
+    };
+    const hints = renderToStaticMarkup(
+      createElement(PersonHints, {
+        person: hintsFamily.people[1],
+        family: hintsFamily,
+        user,
+        busy: false,
+        save: async () => hintsFamily,
+        onConnection: noop,
+      }),
+    );
+    assert.match(hints, /Да, указать Иванова/);
+    const outsiderHints = renderToStaticMarkup(
+      createElement(PersonHints, {
+        person: hintsFamily.people[1],
+        family: hintsFamily,
+        user: { ...user, id: "other", role: "relative" },
+        busy: false,
+        save: async () => hintsFamily,
+        onConnection: noop,
+      }),
+    );
+    assert.equal(outsiderHints, "");
     const photo = {
       id: "photo",
       url: "/media/example.jpg",

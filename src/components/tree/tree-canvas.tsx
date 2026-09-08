@@ -4,7 +4,6 @@ import {
   ReactFlowProvider,
   ConnectionMode,
   MarkerType,
-  Background,
   Panel,
   useReactFlow,
   useViewport,
@@ -302,7 +301,9 @@ function Canvas(props: Props) {
                   height: 16,
                 },
             reconnectable:
-              !props.busy && canChangeConnection(family, user, e, peopleMap),
+              props.canEdit &&
+              !props.busy &&
+              canChangeConnection(family, user, e, peopleMap),
             focusable: true,
             domAttributes: {
               onKeyDown: (event) => {
@@ -322,6 +323,7 @@ function Canvas(props: Props) {
       props.highlighted,
       props.selectedEdge,
       props.busy,
+      props.canEdit,
       onEdge,
       family,
       user,
@@ -424,7 +426,7 @@ function Canvas(props: Props) {
               aria-pressed={mode === "generations"}
               onClick={() => switchMode("generations")}
             >
-              Древо
+              Поколения
             </button>
             <button
               aria-pressed={mode === "timeline"}
@@ -486,33 +488,33 @@ function Canvas(props: Props) {
             cameras.current[mode] = camera;
           }}
         >
-          {mode === "timeline" && geometry?.mode === "timeline" ? (
+          {mode === "timeline" && geometry?.mode === "timeline" && (
             <EraOverlay geometry={geometry} reverse={reverse} />
-          ) : (
-            <Background color="#afbdac" gap={28} size={1} />
           )}
-          <Panel position="top-right" className="flow-branch-tools">
-            <button
-              disabled={!selected.length}
-              onClick={() => setRoot(selected[0])}
-              title="Оставить предков и потомков выбранного человека"
-            >
-              <GitBranch size={17} />
-              Ветка
-            </button>
-            {root && (
-              <button onClick={() => setRoot(null)}>
-                <X size={16} />
-                Всё древо
+          {(selected.length > 0 || root || collapsed.size > 0) && (
+            <Panel position="top-right" className="flow-branch-tools">
+              <button
+                disabled={!selected.length}
+                onClick={() => setRoot(selected[0])}
+                title="Оставить предков и потомков выбранного человека"
+              >
+                <GitBranch size={17} />
+                Ветка
               </button>
-            )}
-            {collapsed.size > 0 && (
-              <button onClick={() => setCollapsed(new Set())}>
-                <RotateCcw size={16} />
-                Развернуть
-              </button>
-            )}
-          </Panel>
+              {root && (
+                <button onClick={() => setRoot(null)}>
+                  <X size={16} />
+                  Всё древо
+                </button>
+              )}
+              {collapsed.size > 0 && (
+                <button onClick={() => setCollapsed(new Set())}>
+                  <RotateCcw size={16} />
+                  Развернуть
+                </button>
+              )}
+            </Panel>
+          )}
           {props.canEdit && (
             <Panel position="bottom-left" className="flow-add-tools">
               <button onClick={props.onAdd}>

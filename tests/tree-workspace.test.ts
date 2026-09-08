@@ -286,6 +286,36 @@ test("layout handles 10000 people and a deep lineage without recursive stack gro
     `10000 человек: раскладка и уровни ${Math.round(performance.now() - before)} мс; ${Buffer.byteLength(JSON.stringify(layout))} байт координат`,
   );
 });
+
+test("family layout centers children below co-parents and gives branches room without inventing marriages", () => {
+  const data = family(
+    person("father"),
+    person("mother"),
+    person("child", ["father", "mother"]),
+    person("sibling", ["father", "mother"]),
+    person("grandchild", ["child"]),
+  );
+  const before = structuredClone(data);
+  for (const mode of ["generations", "timeline"] as const) {
+    const points = new Map(treeGeometry(data.people, mode).positions);
+    const parentCenter =
+      (points.get("father")!.x + points.get("mother")!.x) / 2;
+    const childrenCenter =
+      (points.get("child")!.x + points.get("sibling")!.x) / 2;
+    assert.equal(parentCenter, childrenCenter);
+    assert.equal(points.get("child")!.x, points.get("grandchild")!.x);
+    assert.equal(points.get("father")!.y, points.get("mother")!.y);
+    for (const [id, a] of points)
+      for (const [other, b] of points) {
+        if (id === other) continue;
+        assert.ok(
+          Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= TREE_NODE_HEIGHT,
+          `${id} overlaps ${other}`,
+        );
+      }
+  }
+  assert.deepEqual(data, before);
+});
 test("branch focus and collapsing preserve selected cards while excluding unrelated branches", () => {
   const data = family(
     person("a"),

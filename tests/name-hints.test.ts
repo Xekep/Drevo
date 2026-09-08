@@ -7,6 +7,7 @@ import {
   parentHints,
   birthSurnameHints,
   surnameForSex,
+  marriageHints,
   analyzeKinship,
   edgeLabel,
   connectPeople,
@@ -212,4 +213,24 @@ test("godparents yield personal terms and kumovstvo with unspecified legacy sex"
     analyzeKinship(father, godmother, data.people, data.links).roles![1].term,
     "кума",
   );
+});
+
+test("saved co-parents suggest a marriage question without creating a marriage or duplicates", () => {
+  const father = person("Иван"),
+    mother = person("Мария"),
+    child = person("Анна", { parents: [father.id, mother.id] }),
+    other = person("Пётр", { parents: [father.id, mother.id] });
+  const data = archive(father, mother, child, other),
+    before = structuredClone(data);
+  const hints = marriageHints(father, data.people);
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].person.id, mother.id);
+  assert.equal(hints[0].children.length, 2);
+  assert.deepEqual(data, before);
+  const married = connectPeople(data, father.id, mother.id, "spouse");
+  assert.equal(marriageHints(married.people[0], married.people).length, 0);
+  assert.equal(matchesPatronymic("Митрофан", "Митрофанович"), true);
+  assert.equal(guessSex(person("Митрофан")), "m");
+  assert.equal(guessSex(person("Алёна")), "f");
+  assert.equal(matchesPatronymic("Афанасий", "Афанасьевна"), true);
 });

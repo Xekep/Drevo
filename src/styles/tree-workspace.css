@@ -920,10 +920,7 @@
 
 /* Одна строка навигации; на узком экране разделы сворачиваются в меню. */
 .archive-nav {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  flex-shrink: 0;
+  display: contents;
 }
 .archive-nav button {
   display: flex;
@@ -932,49 +929,83 @@
   white-space: nowrap;
 }
 .archive-nav .nav-brand {
+  order: 0;
   color: #526b46;
-  gap: 7px;
+  gap: 8px;
+  margin-right: 28px;
 }
 .nav-brand svg {
-  width: 27px;
-  height: 27px;
+  width: 28px;
+  height: 28px;
 }
 .nav-brand span {
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: 27px;
   font-weight: 500;
 }
 .nav-sections {
+  order: 1;
   display: flex;
-  gap: 3px;
+  align-self: stretch;
+  gap: 25px;
 }
 .nav-sections button {
+  position: relative;
   font-size: 13px;
-  color: #64715d;
-  padding: 8px 10px;
-  border-radius: 8px;
+  color: #7c877c;
+  padding: 0;
+  border-radius: 0;
 }
 .nav-sections svg {
-  width: 17px;
-  height: 17px;
+  display: none;
 }
 .nav-sections button[aria-current="page"] {
-  color: #425c35;
-  background: #e9eee1;
+  color: #3e604a;
+}
+.nav-sections button[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: #75956e;
 }
 .nav-sections button:hover {
-  background: #f0f1e9;
+  color: #3e604a;
+}
+.archive-search {
+  order: 2;
+  margin-left: auto;
+  width: clamp(150px, 21vw, 280px);
+  background: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+}
+.archive-search:focus-within {
+  background: white;
+}
+.archive-header-actions {
+  order: 3;
+}
+.archive-header-actions .primary-action {
+  border-radius: 7px;
+  padding: 9px 13px;
+  background: #59735a;
 }
 .archive-more {
+  order: 4;
   position: relative;
+  margin-left: 3px;
 }
 .archive-more > summary {
   display: flex;
   cursor: pointer;
   list-style: none;
-  padding: 10px;
+  padding: 9px;
   color: #728069;
-  border-radius: 8px;
+  border-radius: 50%;
+  border: 1px solid #e1e6da;
 }
 .archive-more > summary::-webkit-details-marker {
   display: none;
@@ -985,14 +1016,14 @@
 .nav-bottom {
   position: absolute;
   z-index: 45;
-  top: calc(100% + 10px);
-  left: 0;
-  width: 240px;
-  padding: 8px;
+  top: calc(100% + 12px);
+  right: 0;
+  width: 235px;
+  padding: 10px;
   background: #fffefa;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 12px 36px #31452c20;
+  border-radius: 10px;
+  box-shadow: 0 12px 36px #31452c15;
 }
 .nav-bottom button {
   width: 100%;
@@ -1157,7 +1188,8 @@
     display: none;
   }
   .archive-more[open] .nav-bottom {
-    left: -85px;
+    left: auto;
+    right: 0;
   }
   .archive-search {
     flex: 1;
@@ -1233,6 +1265,194 @@
     display: none;
   }
   .archive-more[open] .nav-bottom {
-    left: -36px;
+    left: auto;
+    right: 0;
+  }
+}
+
+/* Family archive surfaces */
+.archive-header {
+  background: #fafbf7;
+  flex-basis: 66px;
+  padding: 0 28px;
+  gap: 18px;
+}
+.tree-canvas {
+  background: radial-gradient(ellipse at 45% 35%, #fffef9, #f1f4eb 85%);
+}
+.flow-person {
+  border-radius: 8px;
+  border-color: #dce3d6;
+  box-shadow: 0 3px 8px #354b3306;
+  background: #fffffdf5;
+}
+.flow-person-content {
+  border-radius: 8px;
+}
+.flow-person .person-avatar {
+  border-radius: 50%;
+  width: 39px;
+  min-width: 39px;
+  height: 39px;
+  font-family: var(--serif);
+}
+.flow-person-content strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.flow-person-content > span > span {
+  font-size: 12px;
+  color: #5f6e61;
+}
+.flow-person-content small {
+  font-size: 11px;
+  color: #82917a;
+}
+.flow-person .react-flow__handle {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.flow-person:hover .react-flow__handle,
+.flow-person:focus-within .react-flow__handle,
+.flow-person.is-selected .react-flow__handle {
+  opacity: 1;
+}
+.flow-person.is-compact strong {
+  font-size: 20px;
+}
+.flow-person.is-compact .flow-person-content > span > span {
+  font-size: 17px;
+}
+.tree-mode-bar {
+  top: 18px;
+  left: 24px;
+  gap: 12px;
+}
+.segmented {
+  background: #fffffff0;
+  padding: 3px;
+  border-radius: 7px;
+  border-color: #e1e7db;
+}
+.segmented button {
+  font-size: 12px;
+  padding: 7px 11px;
+  border-radius: 5px;
+}
+.segmented button[aria-pressed="true"] {
+  background: #eaf0e2;
+  box-shadow: none;
+}
+.workspace-actions {
+  top: 20px;
+  right: 22px;
+  background: transparent;
+  border: 0;
+}
+.flow-camera-tools {
+  left: auto !important;
+  right: 20px !important;
+  transform: none !important;
+  bottom: 18px !important;
+}
+.flow-add-tools {
+  bottom: 18px !important;
+  left: 20px !important;
+  flex-direction: row;
+}
+.flow-branch-tools {
+  top: auto !important;
+  bottom: 66px !important;
+  right: 20px !important;
+}
+.flow-camera-tools,
+.flow-add-tools,
+.flow-branch-tools {
+  border-radius: 8px;
+  box-shadow: none;
+  border-color: #e1e7db;
+}
+.profile-hints {
+  margin: 0 20px 20px;
+  padding: 12px 14px;
+  background: #f3f6ec;
+  border: 1px solid #e0e8d6;
+  border-radius: 8px;
+}
+.profile-hints summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #63794d;
+  cursor: pointer;
+}
+.profile-hints > div {
+  border-top: 1px solid #e0e8d6;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.profile-hints p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.profile-hints small {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #79856d;
+}
+.profile-hints button {
+  color: #49663d;
+  margin-top: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+@media (max-width: 1200px) {
+  .archive-nav .nav-brand {
+    margin-right: 8px;
+  }
+  .nav-sections {
+    gap: 16px;
+  }
+  .archive-header {
+    gap: 12px;
+    padding: 0 18px;
+  }
+  .tree-mode-bar > span {
+    display: none;
+  }
+}
+@media (max-width: 899px) {
+  .archive-header {
+    flex-basis: 58px;
+    padding: 0 12px;
+    gap: 10px;
+  }
+  .archive-nav .nav-brand {
+    margin-right: 0;
+  }
+  .archive-more[open] .nav-bottom {
+    left: auto;
+    right: 0;
+  }
+  .tree-mode-bar {
+    left: 12px;
+    top: 14px;
+  }
+  .workspace-actions {
+    right: 10px;
+    top: 15px;
+  }
+  .flow-camera-tools {
+    right: 10px !important;
+    bottom: 18px !important;
+  }
+  .flow-branch-tools {
+    right: 10px !important;
+    bottom: 74px !important;
   }
 }

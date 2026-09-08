@@ -2,7 +2,7 @@ import { memo } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getSmoothStepPath,
+  getBezierPath,
   type Edge,
   type EdgeProps,
 } from "@xyflow/react";
@@ -14,10 +14,9 @@ export type RelationshipEdgeType = Edge<
 export const RelationshipEdge = memo(function RelationshipEdge(
   props: EdgeProps<RelationshipEdgeType>,
 ) {
-  const [path, x, y] = getSmoothStepPath({
+  const [path, x, y] = getBezierPath({
     ...props,
-    borderRadius: 12,
-    offset: 24,
+    curvature: 0.35,
   });
   const edge = props.data!.connection;
   return (
@@ -28,20 +27,22 @@ export const RelationshipEdge = memo(function RelationshipEdge(
         style={props.style}
         interactionWidth={24}
       />
-      <EdgeLabelRenderer>
-        <button
-          className={`flow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
-          style={{
-            transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
-          }}
-          onClick={() => props.data!.onSelect(edge)}
-          aria-label={`Связь: ${CONNECTION_NAMES[edge.type]}`}
-        >
-          {props.selected || edge.type !== "parent"
-            ? CONNECTION_NAMES[edge.type]
-            : "Родитель"}
-        </button>
-      </EdgeLabelRenderer>
+      {(props.selected || !["parent", "spouse"].includes(edge.type)) && (
+        <EdgeLabelRenderer>
+          <button
+            className={`flow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
+            style={{
+              transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
+            }}
+            onClick={() => props.data!.onSelect(edge)}
+            aria-label={`Связь: ${CONNECTION_NAMES[edge.type]}`}
+          >
+            {props.selected || edge.type !== "parent"
+              ? CONNECTION_NAMES[edge.type]
+              : "Родитель"}
+          </button>
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 });
