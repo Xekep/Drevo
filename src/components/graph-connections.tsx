@@ -15,6 +15,7 @@ export function Connections({
   links,
   highlighted,
   width,
+  positions,
 }: {
   people: Person[];
   startYear: number;
@@ -23,10 +24,12 @@ export function Connections({
   links?: FamilyLink[];
   highlighted: string[];
   width: number;
+  positions?: Map<string, { x: number; y: number }>;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const position = (p: Person) => basePosition(p, startYear, reverse);
+    const position = (p: Person) =>
+      positions?.get(p.id) || basePosition(p, startYear, reverse);
     const canvas = ref.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -65,12 +68,13 @@ export function Connections({
         ctx!.lineTo(x, right.y + 43);
         ctx!.lineTo(right.x, right.y + 43);
       } else {
+        const downward = q.y >= p.y;
         const sx = p.x + NODE_WIDTH / 2,
-          sy = p.y + (reverse ? 0 : NODE_HEIGHT);
+          sy = p.y + (downward ? NODE_HEIGHT : 0);
         const ex = q.x + NODE_WIDTH / 2,
-          ey = q.y + (reverse ? NODE_HEIGHT : 0);
+          ey = q.y + (downward ? 0 : NODE_HEIGHT);
         const mid =
-          sy + (reverse ? -1 : 1) * Math.max(18, Math.abs(ey - sy) * 0.52);
+          sy + (downward ? 1 : -1) * Math.max(18, Math.abs(ey - sy) * 0.52);
         ctx!.moveTo(sx, sy);
         ctx!.lineTo(sx, mid);
         ctx!.lineTo(ex, mid);
@@ -83,7 +87,7 @@ export function Connections({
         ctx!.beginPath();
         ctx!.arc(
           q.x + NODE_WIDTH / 2,
-          q.y + (reverse ? NODE_HEIGHT + 3 : -3),
+          q.y + (q.y >= p.y ? -3 : NODE_HEIGHT + 3),
           2.3,
           0,
           Math.PI * 2,
@@ -106,7 +110,16 @@ export function Connections({
         }
       }
     }
-  }, [people, highlighted, width, startYear, WORLD_HEIGHT, links, reverse]);
+  }, [
+    people,
+    highlighted,
+    width,
+    startYear,
+    WORLD_HEIGHT,
+    links,
+    reverse,
+    positions,
+  ]);
   return (
     <canvas
       ref={ref}

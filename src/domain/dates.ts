@@ -2,11 +2,23 @@ import type { Person } from "./types.ts";
 export const dateYear = (date?: string) =>
   date ? Number(date.slice(0, 4)) : new Date().getFullYear();
 export const fullName = (p: Person) =>
-  `${p.surname} ${p.name} ${p.patronymic}`.trim();
+  [p.surname, p.name, p.patronymic]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(" ");
+/** Порядок явно указан в форме: фамилия, имя, затем отчество. */
+export function splitFullName(value: string) {
+  const [surname = "", name = "", ...rest] = value.trim().split(/\s+/);
+  return { surname, name, patronymic: rest.join(" ") };
+}
 export const initials = (p: Person) =>
   `${p.name.trim()[0] || ""}${p.surname.trim()[0] || ""}` || "?";
 export const years = (p: Person) =>
-  `${dateYear(p.birth)} — ${p.death ? dateYear(p.death) : "н. в."}`;
+  p.birth
+    ? `${dateYear(p.birth)} — ${p.death ? dateYear(p.death) : "н. в."}`
+    : p.death
+      ? `† ${dateYear(p.death)}`
+      : "";
 export function plural(n: number, one: string, few: string, many: string) {
   const a = Math.abs(n) % 100,
     b = a % 10;
@@ -19,6 +31,7 @@ export function plural(n: number, one: string, few: string, many: string) {
         : many;
 }
 export function dateLabel(value: string) {
+  if (!value) return "";
   if (/^\d{4}$/.test(value)) return `${value} год`;
   return new Intl.DateTimeFormat("ru-RU", {
     day: "numeric",
@@ -30,6 +43,7 @@ export function dateLabel(value: string) {
     .replace(" г.", "");
 }
 export function ageLabel(p: Person) {
+  if (!p.birth) return "";
   const end = p.death || new Date().toISOString().slice(0, 10);
   const age =
     dateYear(end) -

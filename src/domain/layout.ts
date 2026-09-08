@@ -36,8 +36,47 @@ export const yearAtY = (y: number, start = START_YEAR, reverse = false) =>
   reverse ? END_YEAR - (y - 60) / YEAR_HEIGHT : start + (y - 60) / YEAR_HEIGHT;
 export const position = (p: Person, start = START_YEAR, reverse = false) => ({
   x: 68 + p.column * 246,
-  y: yearY(dateYear(p.birth), start, reverse),
+  y: p.birth ? yearY(dateYear(p.birth), start, reverse) : 60,
 });
+/** Люди без дат располагаются отдельно от шкалы эпох, а не в вымышленном году. */
+export function graphLayout(
+  people: Person[],
+  start = START_YEAR,
+  reverse = false,
+) {
+  const undated = new Map(people.filter((p) => !p.birth).map((p) => [p.id, p])),
+    levels = new Map<string, number>();
+  function level(id: string, active = new Set<string>()): number {
+    if (levels.has(id)) return levels.get(id)!;
+    if (active.has(id)) return 0;
+    active.add(id);
+    const parents =
+      undated.get(id)?.parents.filter((p) => undated.has(p)) || [];
+    const value = parents.length
+      ? Math.max(...parents.map((p) => level(p, active))) + 1
+      : 0;
+    active.delete(id);
+    levels.set(id, value);
+    return value;
+  }
+  for (const id of undated.keys()) level(id);
+  const maxLevel = Math.max(0, ...levels.values()),
+    offset = undated.size ? 100 + (maxLevel + 1) * 156 : 0;
+  const rowCounts = new Map<number, number>();
+  const positions = new Map(
+    people.map((p) => {
+      if (p.birth) {
+        const point = position(p, start, reverse);
+        return [p.id, { ...point, y: point.y + offset }] as const;
+      }
+      const row = reverse ? maxLevel - levels.get(p.id)! : levels.get(p.id)!;
+      const column = rowCounts.get(row) || 0;
+      rowCounts.set(row, column + 1);
+      return [p.id, { x: 68 + column * 246, y: 80 + row * 156 }] as const;
+    }),
+  );
+  return { positions, offset };
+}
 export const ERAS = [
   {
     name: "Ранние эпохи",

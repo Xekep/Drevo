@@ -1,5 +1,15 @@
 import type { Person, Relation, KinshipRole, FamilyLink } from "./types.ts";
 import { fullName, plural } from "./dates.ts";
+function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
+  return {
+    term:
+      male.term === female.term ? male.term : `${male.term} / ${female.term}`,
+    description:
+      male.description === female.description
+        ? male.description
+        : `${male.description} / ${female.description}`,
+  };
+}
 function ancestors(id: string, map: Map<string, Person>) {
   const paths = new Map<string, string[]>([[id, [id]]]);
   const queue = [id];
@@ -13,6 +23,12 @@ function ancestors(id: string, map: Map<string, Person>) {
   return paths;
 }
 function ancestorWord(p: Person, distance: number) {
+  if (p.sex === "u")
+    return distance === 1
+      ? "родитель"
+      : distance === 2
+        ? "дедушка / бабушка"
+        : `предок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
   if (distance === 1) return p.sex === "m" ? "отец" : "мать";
   if (distance === 2) return p.sex === "m" ? "дедушка" : "бабушка";
   if (distance === 3) return p.sex === "m" ? "прадедушка" : "прабабушка";
@@ -21,6 +37,12 @@ function ancestorWord(p: Person, distance: number) {
   return `предок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
 }
 function descendantWord(p: Person, distance: number) {
+  if (p.sex === "u")
+    return distance === 1
+      ? "ребёнок"
+      : distance === 2
+        ? "внук / внучка"
+        : `потомок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
   if (distance === 1) return p.sex === "m" ? "сын" : "дочь";
   if (distance <= 6)
     return "пра".repeat(distance - 2) + (p.sex === "m" ? "внук" : "внучка");
@@ -50,6 +72,22 @@ function bloodRole(
   dr: number,
   map: Map<string, Person>,
 ): KinshipRole {
+  if (subject.sex === "u") {
+    if (ds === 0)
+      return {
+        term: ancestorWord(subject, dr),
+        description: `Прямой предок: ${dr} ${plural(dr, "поколение", "поколения", "поколений")}.`,
+      };
+    if (dr === 0)
+      return {
+        term: descendantWord(subject, ds),
+        description: `Прямой потомок: ${ds} ${plural(ds, "поколение", "поколения", "поколений")}.`,
+      };
+    return unspecifiedRole(
+      bloodRole({ ...subject, sex: "m" }, reference, ds, dr, map),
+      bloodRole({ ...subject, sex: "f" }, reference, ds, dr, map),
+    );
+  }
   const female = subject.sex === "f",
     sibling = female ? "сестра" : "брат";
   if (ds === 0)
@@ -80,6 +118,12 @@ function bloodRole(
           };
     const parent = map.get(shared[0]),
       father = parent?.sex === "m";
+    if (!parent || parent.sex === "u")
+      return {
+        term: sibling,
+        description:
+          "Указан общий родитель; сведений недостаточно, чтобы уточнить линию родства.",
+      };
     const differentOtherParents =
       completeParents(subject) &&
       completeParents(reference) &&
@@ -170,6 +214,30 @@ function familyRole(path: Person[]): KinshipRole {
           : "D",
     )
     .join("");
+  if (path.some((p) => p.sex === "u")) {
+    const neutral: Record<string, string> = {
+      S: "супруг / супруга",
+      SU: "родитель супруга",
+      DS: "супруг ребёнка",
+      SUD: "брат или сестра супруга",
+      UDS: "супруг брата или сестры",
+      US: "супруг родителя",
+      SD: "ребёнок супруга",
+      USD: "ребёнок супруга родителя",
+      DSU: "родитель супруга ребёнка",
+      SUU: "дедушка или бабушка супруга",
+      DDS: "супруг внука или внучки",
+      UUDS: "супруг дяди или тёти",
+      SUDD: "племянник или племянница супруга",
+      SUDS: "супруг брата или сестры супруга",
+      DU: "родитель общего ребёнка",
+    };
+    return {
+      term: neutral[edges] || "родственник через семью",
+      description:
+        "Связь подтверждена цепочкой в древе. Для точного названия укажите пол участников в их карточках.",
+    };
+  }
   const wife = female ? "жена" : "муж";
   if (edges === "UUDS")
     return {
@@ -321,6 +389,12 @@ function familyRole(path: Person[]): KinshipRole {
   };
 }
 export function edgeLabel(from: Person, to: Person, links: FamilyLink[] = []) {
+  if (to.sex === "u") {
+    if (from.parents.includes(to.id)) return "родитель";
+    if (to.parents.includes(from.id)) return "ребёнок";
+    if (from.spouses.includes(to.id) || to.spouses.includes(from.id))
+      return "супруг / супруга";
+  }
   if (from.parents.includes(to.id)) return to.sex === "m" ? "отец" : "мать";
   if (to.parents.includes(from.id)) return to.sex === "m" ? "сын" : "дочь";
   if (from.spouses.includes(to.id) || to.spouses.includes(from.id))
@@ -381,7 +455,7 @@ function analyzeBloodAndMarriage(
         d = Math.max(da, db);
       return {
         title: "Прямая линия родства",
-        explanation: `${older.name} — ${ancestorWord(older, d)}. ${younger.name} — ${d === 1 ? (younger.sex === "m" ? "сын" : "дочь") : d === 2 ? (younger.sex === "m" ? "внук" : "внучка") : d === 3 ? (younger.sex === "m" ? "правнук" : "правнучка") : `потомок через ${d} поколений`}.${marriageNote}`,
+        explanation: `${older.name} — ${ancestorWord(older, d)}. ${younger.name} — ${descendantWord(younger, d)}.${marriageNote}`,
         path,
         common: [older.id],
         kind: "direct",
@@ -392,11 +466,13 @@ function analyzeBloodAndMarriage(
     let title = "Боковое родство";
     if (da === 1 && db === 1) {
       title =
-        a.sex === b.sex
-          ? a.sex === "m"
-            ? "Братья"
-            : "Сёстры"
-          : "Брат и сестра";
+        a.sex === "u" || b.sex === "u"
+          ? "Братья и сёстры"
+          : a.sex === b.sex
+            ? a.sex === "m"
+              ? "Братья"
+              : "Сёстры"
+            : "Брат и сестра";
       const shared = a.parents.filter((id) => b.parents.includes(id));
       if (
         shared.length === 1 &&
@@ -409,7 +485,10 @@ function analyzeBloodAndMarriage(
     } else if (Math.min(da, db) === 1 && Math.max(da, db) === 2) {
       const aunt = da === 1 ? a : b,
         child = da === 1 ? b : a;
-      title = `${aunt.sex === "m" ? "Дядя" : "Тётя"} и ${child.sex === "m" ? "племянник" : "племянница"}`;
+      title =
+        aunt.sex === "u" || child.sex === "u"
+          ? "Родство дяди или тёти и племянника или племянницы"
+          : `${aunt.sex === "m" ? "Дядя" : "Тётя"} и ${child.sex === "m" ? "племянник" : "племянница"}`;
     } else if (da === db)
       title =
         da === 2
@@ -505,6 +584,11 @@ function analyzeBloodAndMarriage(
 }
 
 function specialRole(link: FamilyLink, subject: Person): KinshipRole {
+  if (subject.sex === "u")
+    return unspecifiedRole(
+      specialRole(link, { ...subject, sex: "m" }),
+      specialRole(link, { ...subject, sex: "f" }),
+    );
   const forward = link.from === subject.id,
     f = subject.sex === "f";
   switch (link.type) {
@@ -626,7 +710,7 @@ export function analyzeKinship(
       "Кумовство",
       [a.id, commonGodchild, b.id],
       [a, b].map((p) => ({
-        term: p.sex === "m" ? "кум" : "кума",
+        term: p.sex === "u" ? "кум / кума" : p.sex === "m" ? "кум" : "кума",
         description:
           "Связь между родителями и крёстными одного ребёнка либо между его крёстными.",
       })) as [KinshipRole, KinshipRole],
@@ -654,7 +738,12 @@ export function analyzeKinship(
       "Молочное родство",
       [a.id, nurse, b.id],
       [a, b].map((p) => ({
-        term: p.sex === "f" ? "молочная сестра" : "молочный брат",
+        term:
+          p.sex === "u"
+            ? "молочный брат / молочная сестра"
+            : p.sex === "f"
+              ? "молочная сестра"
+              : "молочный брат",
         description:
           "Связь через одну кормилицу, подтверждённая архивной записью.",
       })) as [KinshipRole, KinshipRole],
@@ -662,6 +751,7 @@ export function analyzeKinship(
     );
   if (base.roles && base.distances?.[0] === 2 && base.distances[1] === 2)
     base.roles.forEach((r, i) => {
+      if ([a, b][i].sex === "u") return;
       r.aliases = [
         i === 0
           ? a.sex === "m"

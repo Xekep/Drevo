@@ -11,7 +11,8 @@ export type Person = {
   surname: string;
   name: string;
   patronymic: string;
-  sex: "m" | "f";
+  sex: "m" | "f" | "u";
+  /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
   death?: string;
   birthPlace: string;

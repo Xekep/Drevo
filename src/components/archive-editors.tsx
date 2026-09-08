@@ -5,6 +5,7 @@ import {
   connectPeople,
   CONNECTION_NAMES,
   fullName,
+  splitFullName,
   removePerson,
   removeConnection,
   type Connection,
@@ -48,7 +49,7 @@ export function PersonEditor({
           name: "",
           surname: "",
           patronymic: "",
-          sex: "m",
+          sex: "u",
           birth: "",
           birthPlace: "",
           parents: [],
@@ -60,6 +61,7 @@ export function PersonEditor({
   );
   const [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
+  const [nameText, setNameText] = useState(person ? fullName(person) : "");
   const [portraitFile, setPortraitFile] = useState<File | null>(null),
     [portraitPreview, setPortraitPreview] = useState(""),
     [relationship, setRelationship] = useState("child");
@@ -70,12 +72,17 @@ export function PersonEditor({
     [portraitPreview],
   );
   function field(key: keyof Person, value: unknown) {
-    setDraft((p) => ({ ...p, [key]: value }));
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    if (["name", "surname", "patronymic"].includes(key))
+      setNameText(fullName(next));
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
     try {
+      if (!draft.name.trim() || !draft.surname.trim())
+        throw new Error("Укажите фамилию и имя. Отчество можно пропустить.");
       let current = family,
         portrait = draft.photo;
       if (portraitFile) {
@@ -93,9 +100,13 @@ export function PersonEditor({
         name: draft.name.trim(),
         surname: draft.surname.trim(),
         patronymic: draft.patronymic.trim(),
-        column: person
-          ? draft.column
-          : availableColumn(current.people, draft.birth),
+        column:
+          person && person.birth === draft.birth
+            ? draft.column
+            : availableColumn(
+                current.people.filter((x) => x.id !== draft.id),
+                draft.birth,
+              ),
       };
       let next = {
         ...current,
@@ -153,7 +164,7 @@ export function PersonEditor({
         <p className="flow-intro">
           {person
             ? "Дополните историю и сохраните изменения."
-            : "Начните с имени и года рождения. Остальную историю можно заполнить позже."}
+            : "Достаточно фамилии и имени. Остальные сведения можно добавить позже."}
         </p>
         <div className="portrait-picker">
           <span className="portrait-preview">
@@ -209,222 +220,227 @@ export function PersonEditor({
             </select>
           </label>
         )}
-        <div className="form-grid">
-          {(
-            [
-              ["surname", "Фамилия"],
-              ["name", "Имя"],
-              ["patronymic", "Отчество"],
-              ["birth", "Рождение"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key}>
-              {label}
+        <label className="name-entry">
+          ФИО
+          <input
+            required
+            autoComplete="off"
+            value={nameText}
+            placeholder="Иванов Иван Иванович"
+            aria-describedby="name-order-hint"
+            onChange={(e) => {
+              setNameText(e.target.value);
+              setDraft((value) => ({
+                ...value,
+                ...splitFullName(e.target.value),
+              }));
+            }}
+          />
+          <small id="name-order-hint">
+            Фамилия, имя, отчество. Отчество необязательно.
+          </small>
+        </label>
+        <details className="form-details person-extra">
+          <summary>Дополнительные сведения</summary>
+          <div className="form-grid">
+            <label>
+              Дата рождения
               <input
-                value={draft[key] || ""}
-                required={["name", "surname", "birth"].includes(key)}
-                placeholder={
-                  key === "birth" ? "ГГГГ или ГГГГ-ММ-ДД" : undefined
-                }
-                onChange={(e) => field(key, e.target.value)}
+                value={draft.birth}
+                placeholder="Год или ГГГГ-ММ-ДД"
+                onChange={(e) => field("birth", e.target.value)}
               />
             </label>
-          ))}
-          <label>
-            Пол
-            <select
-              value={draft.sex}
-              onChange={(e) => field("sex", e.target.value)}
-            >
-              <option value="m">Мужской</option>
-              <option value="f">Женский</option>
-            </select>
-          </label>
-        </div>
-        <details className="form-details" open={!!person}>
-          <summary>Биография, места и другие сведения</summary>
-          <div className="form-grid">
-            {(
-              [
-                ["maidenName", "Девичья фамилия"],
-                ["birthPlace", "Место рождения"],
-                ["death", "Дата смерти"],
-                ["deathPlace", "Место смерти"],
-                ["occupation", "Занятие"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                {label}
-                <input
-                  value={draft[key] || ""}
-                  placeholder={
-                    key === "death" ? "ГГГГ или ГГГГ-ММ-ДД" : undefined
-                  }
-                  onChange={(e) =>
-                    field(
-                      key,
-                      e.target.value || (key === "death" ? undefined : ""),
-                    )
-                  }
-                />
-              </label>
-            ))}
+            <label>
+              Пол
+              <select
+                value={draft.sex}
+                onChange={(e) => field("sex", e.target.value)}
+              >
+                <option value="u">Не указан</option>
+                <option value="m">Мужской</option>
+                <option value="f">Женский</option>
+              </select>
+            </label>
           </div>
-          <label>
-            История человека
-            <textarea
-              rows={4}
-              value={draft.biography || ""}
-              onChange={(e) => field("biography", e.target.value)}
-            />
-          </label>
-        </details>
-        <details className="form-details">
-          <summary>Выбрать портрет из галереи или по ссылке</summary>
-          <label>
-            Портрет из галереи
-            <select
-              value={
-                (family.photos || []).some((p) => p.url === draft.photo)
-                  ? draft.photo
-                  : ""
-              }
-              onChange={(e) => field("photo", e.target.value)}
-            >
-              <option value="">Без портрета / ссылка ниже</option>
-              {family.photos?.map((p) => (
-                <option key={p.id} value={p.url}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Ссылка на портрет
-            <input
-              value={draft.photo || ""}
-              onChange={(e) => field("photo", e.target.value)}
-              placeholder="https://… или /media/…"
-            />
-          </label>
-        </details>
-        <details className="form-details">
-          <summary>Источники и дополнительные настройки</summary>
-          <label className="check-field">
-            <input
-              type="checkbox"
-              checked={!!draft.parentageComplete}
-              onChange={(e) => field("parentageComplete", e.target.checked)}
-            />{" "}
-            Все кровные родители известны и указаны
-          </label>
-          <details>
-            <summary>Расположение на древе</summary>
+          <details className="form-details">
+            <summary>Уточнить части ФИО</summary>
             <div className="form-grid">
-              <label>
-                Поколение
-                <input
-                  type="number"
-                  min="1"
-                  value={draft.generation}
-                  onChange={(e) => field("generation", Number(e.target.value))}
-                />
-              </label>
-              {person && (
-                <label>
-                  Колонка
+              {(
+                [
+                  ["surname", "Фамилия"],
+                  ["name", "Имя"],
+                  ["patronymic", "Отчество"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
                   <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={draft.column}
-                    onChange={(e) => field("column", Number(e.target.value))}
+                    value={draft[key]}
+                    onChange={(e) => field(key, e.target.value)}
                   />
                 </label>
-              )}
+              ))}
             </div>
           </details>
-          <section>
-            <h3>Источники</h3>
-            {draft.sources.map((s, i) => (
-              <div className="source-editor" key={i}>
-                {(
-                  [
-                    ["title", "Название"],
-                    ["type", "Тип документа"],
-                    ["reference", "Архивный шифр"],
-                    ["url", "Ссылка"],
-                    ["note", "Примечание"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label key={key}>
-                    {label}
-                    <input
-                      value={s[key] || ""}
-                      onChange={(e) =>
-                        field(
-                          "sources",
-                          draft.sources.map((x, j) =>
-                            i === j ? { ...x, [key]: e.target.value } : x,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                ))}
-                <button
-                  type="button"
-                  onClick={() =>
-                    field(
-                      "sources",
-                      draft.sources.filter((_, j) => i !== j),
-                    )
-                  }
-                >
-                  Убрать источник
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                field("sources", [
-                  ...draft.sources,
-                  { title: "", type: "", reference: "" },
-                ])
-              }
-            >
-              + Источник
-            </button>
+          <section className="person-history-fields">
+            <div className="form-grid">
+              {(
+                [
+                  ["maidenName", "Фамилия при рождении"],
+                  ["birthPlace", "Место рождения"],
+                  ["death", "Дата смерти"],
+                  ["deathPlace", "Место смерти"],
+                  ["occupation", "Занятие"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <input
+                    value={draft[key] || ""}
+                    placeholder={
+                      key === "death" ? "ГГГГ или ГГГГ-ММ-ДД" : undefined
+                    }
+                    onChange={(e) =>
+                      field(
+                        key,
+                        e.target.value || (key === "death" ? undefined : ""),
+                      )
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <label>
+              История человека
+              <textarea
+                rows={4}
+                value={draft.biography || ""}
+                onChange={(e) => field("biography", e.target.value)}
+              />
+            </label>
           </section>
-          {person && (
+          <details className="form-details">
+            <summary>Выбрать портрет из галереи или по ссылке</summary>
+            <label>
+              Портрет из галереи
+              <select
+                value={
+                  (family.photos || []).some((p) => p.url === draft.photo)
+                    ? draft.photo
+                    : ""
+                }
+                onChange={(e) => field("photo", e.target.value)}
+              >
+                <option value="">Без портрета / ссылка ниже</option>
+                {family.photos?.map((p) => (
+                  <option key={p.id} value={p.url}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Ссылка на портрет
+              <input
+                value={draft.photo || ""}
+                onChange={(e) => field("photo", e.target.value)}
+                placeholder="https://… или /media/…"
+              />
+            </label>
+          </details>
+          <details className="form-details">
+            <summary>Источники и дополнительные настройки</summary>
+            <label className="check-field">
+              <input
+                type="checkbox"
+                checked={!!draft.parentageComplete}
+                onChange={(e) => field("parentageComplete", e.target.checked)}
+              />{" "}
+              Все кровные родители известны и указаны
+            </label>
             <section>
-              <h3>Прямые связи</h3>
-              {connections.map((edge, i) => (
-                <div className="connection-row" key={i}>
-                  <span>
-                    {fullName(family.people.find((p) => p.id === edge.from)!)} →{" "}
-                    {CONNECTION_NAMES[edge.type]} →{" "}
-                    {fullName(family.people.find((p) => p.id === edge.to)!)}
-                  </span>
+              <h3>Источники</h3>
+              {draft.sources.map((s, i) => (
+                <div className="source-editor" key={i}>
+                  {(
+                    [
+                      ["title", "Название"],
+                      ["type", "Тип документа"],
+                      ["reference", "Архивный шифр"],
+                      ["url", "Ссылка"],
+                      ["note", "Примечание"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key}>
+                      {label}
+                      <input
+                        value={s[key] || ""}
+                        onChange={(e) =>
+                          field(
+                            "sources",
+                            draft.sources.map((x, j) =>
+                              i === j ? { ...x, [key]: e.target.value } : x,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                  ))}
                   <button
                     type="button"
-                    disabled={busy}
-                    onClick={async () => {
-                      try {
-                        await save(removeConnection(family, edge));
-                        onClose();
-                      } catch (e) {
-                        setError((e as Error).message);
-                      }
-                    }}
+                    onClick={() =>
+                      field(
+                        "sources",
+                        draft.sources.filter((_, j) => i !== j),
+                      )
+                    }
                   >
-                    Убрать
+                    Убрать источник
                   </button>
                 </div>
               ))}
+              <button
+                type="button"
+                onClick={() =>
+                  field("sources", [
+                    ...draft.sources,
+                    { title: "", type: "", reference: "" },
+                  ])
+                }
+              >
+                + Источник
+              </button>
             </section>
-          )}
+            {person && (
+              <section>
+                <h3>Прямые связи</h3>
+                {connections.map((edge, i) => (
+                  <div className="connection-row" key={i}>
+                    <span>
+                      {fullName(family.people.find((p) => p.id === edge.from)!)}{" "}
+                      → {CONNECTION_NAMES[edge.type]} →{" "}
+                      {fullName(family.people.find((p) => p.id === edge.to)!)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={async () => {
+                        try {
+                          await save(removeConnection(family, edge));
+                          onClose();
+                        } catch (e) {
+                          setError((e as Error).message);
+                        }
+                      }}
+                    >
+                      Убрать
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+          </details>
         </details>
         {error && (
           <p role="alert" className="form-error">

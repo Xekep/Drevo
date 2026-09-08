@@ -1,0 +1,159 @@
+/* Карточки и состояния управления на основном полотне. */
+.compact-header.site-header {
+  box-shadow: 0 1px 12px #253f2b08;
+  border-bottom-color: #dfe8dd;
+}
+.compact-header .menu-trigger:hover,
+.header-compare:hover {
+  background: #edf3ea;
+}
+.compact-header .search-box {
+  border-radius: 12px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.compact-header .search-box:focus-within {
+  box-shadow: 0 0 0 3px #70946612;
+}
+.compact-menu {
+  animation: menu-appear 0.12s ease-out;
+}
+.primary-action {
+  border-radius: 10px;
+  box-shadow: 0 2px 6px #426b4a15;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.primary-action:hover {
+  box-shadow: 0 4px 12px #426b4a22;
+}
+.person-node {
+  border: 1px solid #dce6d7;
+  border-radius: 13px;
+  background: #fffffff5;
+  box-shadow:
+    0 2px 3px #28412904,
+    0 5px 18px #28412909;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s;
+}
+.person-node:hover {
+  border-color: #9eb593;
+  box-shadow:
+    0 4px 8px #28412909,
+    0 10px 24px #28412912;
+}
+.person-node.selected {
+  border-color: #638c56;
+  box-shadow:
+    0 0 0 3px #789f671e,
+    0 6px 22px #28412912;
+}
+.person-node .node-main {
+  align-items: center;
+}
+.person-node strong {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.15px;
+}
+.person-node .person-given {
+  font-size: 12px;
+  color: #62705d;
+}
+.person-node .person-years {
+  font-size: 10px;
+  color: #8b9886;
+}
+.person-node .node-footer {
+  border-top-color: #edf1e9;
+}
+.person-node .person-avatar {
+  border-radius: 13px;
+}
+.detail-panel {
+  border-left-color: #dee7d8;
+  box-shadow: -8px 0 30px #344e3008;
+}
+.profile-head h2 {
+  font-size: 30px;
+  letter-spacing: -0.7px;
+}
+.profile-head h2 > span {
+  font-size: 23px;
+  line-height: 1.45;
+}
+.person-edit-actions button {
+  border: 1px solid #dfe8d7;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fafdf6;
+}
+.person-edit-actions button:hover {
+  background: #edf4e6;
+  border-color: #b8cdae;
+}
+.editor-dialog {
+  border-radius: 18px;
+  box-shadow: 0 24px 90px #18291e30;
+}
+.editor-dialog > header {
+  border-bottom: 1px solid #edf1e8;
+}
+.editor-dialog > header h2 {
+  font-family: var(--sans);
+  font-size: 21px;
+  letter-spacing: -0.4px;
+  font-weight: 600;
+}
+.archive-form input:focus,
+.archive-form textarea:focus,
+.archive-form select:focus {
+  outline: 2px solid #91b07b55;
+  outline-offset: 2px;
+  border-color: #96b185;
+}
+.editor-dialog .archive-form footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 16px;
+  padding-bottom: 12px;
+  background: var(--paper);
+  z-index: 1;
+}
+@keyframes menu-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-menu {
+    animation: none;
+  }
+  .person-node,
+  .primary-action {
+    transition: none;
+  }
+}
+@media (max-width: 600px) {
+  .undated-region > span {
+    display: block;
+    margin: 5px 0 0;
+  }
+  .profile-head h2 {
+    font-size: 26px;
+  }
+  .profile-head h2 > span {
+    font-size: 20px;
+  }
+}

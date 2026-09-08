@@ -21,7 +21,9 @@ export function familyGroups(people: Person[]): FamilyGroup[] {
   return [...groups.values()]
     .map((g) => ({
       ...g,
-      children: g.children.sort((a, b) => a.birth.localeCompare(b.birth)),
+      children: g.children.sort((a, b) =>
+        (a.birth || "9999").localeCompare(b.birth || "9999"),
+      ),
     }))
     .sort(
       (a, b) =>

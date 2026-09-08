@@ -149,6 +149,8 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       ...data.family.people[0],
       id: "own",
       createdBy: undefined,
+      birth: "",
+      sex: "u",
       name: "Новая",
       parents: [],
       spouses: [],
@@ -167,6 +169,11 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       data.family.people.find((p: { id: string }) => p.id === "own").createdBy,
       "second",
     );
+    const minimal = (
+      await request("/api/family", reader).then((r) => r.json())
+    ).family.people.find((p: { id: string }) => p.id === "own");
+    assert.equal(minimal.birth, "");
+    assert.equal(minimal.sex, "u");
     const original = structuredClone(data.family) as Family;
     const bad = structuredClone(original);
     bad.people[0].name = "Подмена";

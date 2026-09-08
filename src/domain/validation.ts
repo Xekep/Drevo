@@ -28,9 +28,10 @@ export function validateFamily(value: unknown): Family {
       ![p.name, p.surname, p.patronymic, p.birthPlace].every(
         (s) => typeof s === "string",
       ) ||
-      !["m", "f"].includes(p.sex) ||
-      !validDate(p.birth) ||
-      (p.death !== undefined && (!validDate(p.death) || p.death < p.birth)) ||
+      !["m", "f", "u"].includes(p.sex) ||
+      (p.birth !== "" && !validDate(p.birth)) ||
+      (p.death !== undefined &&
+        (!validDate(p.death) || (!!p.birth && p.death < p.birth))) ||
       !Array.isArray(p.parents) ||
       !Array.isArray(p.spouses) ||
       ![...p.parents, ...p.spouses].every((id) => typeof id === "string") ||
@@ -81,7 +82,12 @@ export function validateFamily(value: unknown): Family {
   for (const p of data.people) {
     if ([...p.parents, ...p.spouses].some((id) => !ids.has(id) || id === p.id))
       throw new Error("Обнаружена неизвестная семейная связь");
-    if (p.parents.some((id) => map.get(id)!.birth >= p.birth))
+    if (
+      p.birth &&
+      p.parents.some(
+        (id) => map.get(id)!.birth && map.get(id)!.birth >= p.birth,
+      )
+    )
       throw new Error("Родитель должен родиться раньше ребёнка");
   }
   const visited = new Set<string>(),
@@ -120,6 +126,8 @@ export function validateFamily(value: unknown): Family {
     if (pairs.has(key)) throw new Error("Такая связь уже существует");
     if (
       ["adoptive_parent", "nurse"].includes(link.type) &&
+      map.get(link.from)!.birth &&
+      map.get(link.to)!.birth &&
       map.get(link.from)!.birth >= map.get(link.to)!.birth
     )
       throw new Error("Родитель или кормилица должны родиться раньше ребёнка");

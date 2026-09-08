@@ -37,7 +37,7 @@ import {
   NODE_HEIGHT,
   NODE_WIDTH,
   plural,
-  position as basePosition,
+  graphLayout,
   RAIL_WIDTH,
   START_YEAR as DEFAULT_START_YEAR,
   yearY as baseYearY,
@@ -131,17 +131,26 @@ export default function App() {
     top: number;
     moved: boolean;
   } | null>(null);
+  const suppressGraphClick = useRef(false);
+  const pendingReveal = useRef<string | null>(null);
   const people = useMemo(() => family?.people || [], [family]);
   const START_YEAR = Math.min(
     DEFAULT_START_YEAR,
-    ...people.map((p) => Math.floor(dateYear(p.birth) / 10) * 10),
+    ...people
+      .filter((p) => p.birth)
+      .map((p) => Math.floor(dateYear(p.birth) / 10) * 10),
   );
-  const yearY = (year: number) => baseYearY(year, START_YEAR, reverseTimeline);
+  const layout = useMemo(
+    () => graphLayout(people, START_YEAR, reverseTimeline),
+    [people, START_YEAR, reverseTimeline],
+  );
+  const yearY = (year: number) =>
+    layout.offset + baseYearY(year, START_YEAR, reverseTimeline);
   const position = useCallback(
-    (p: Person) => basePosition(p, START_YEAR, reverseTimeline),
-    [START_YEAR, reverseTimeline],
+    (p: Person) => layout.positions.get(p.id)!,
+    [layout],
   );
-  const WORLD_HEIGHT = baseYearY(END_YEAR, START_YEAR) + 140;
+  const WORLD_HEIGHT = baseYearY(END_YEAR, START_YEAR) + 140 + layout.offset;
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0 });
   }, [reverseTimeline, START_YEAR]);
@@ -181,7 +190,7 @@ export default function App() {
           ).includes(t),
         ),
       )
-      .sort((a, b) => a.birth.localeCompare(b.birth));
+      .sort((a, b) => (a.birth || "9999").localeCompare(b.birth || "9999"));
   }, [people, query]);
   useEffect(() => {
     function keyboard(event: KeyboardEvent) {
@@ -259,6 +268,14 @@ export default function App() {
     },
     [personMap, zoom, position],
   );
+  useEffect(() => {
+    const id = pendingReveal.current;
+    if (id && personMap.has(id)) {
+      pendingReveal.current = null;
+      reveal([id]);
+      panelRef.current?.scrollTo({ top: 0 });
+    }
+  }, [personMap, reveal, selected]);
   function choose(id: string, additive = false, move = false) {
     if (drag.current?.moved) return;
     if (linkFrom !== null) {
@@ -328,7 +345,9 @@ export default function App() {
     START_YEAR,
     Math.min(
       END_YEAR,
-      Math.round(yearAtY(scrollY / zoom, START_YEAR, reverseTimeline)),
+      Math.round(
+        yearAtY(scrollY / zoom - layout.offset, START_YEAR, reverseTimeline),
+      ),
     ),
   );
   const activeEra =
@@ -378,7 +397,12 @@ export default function App() {
           }}
           onSaved={(id) => {
             if (resumePhoto) setPhotoPersonId(id);
-            else chooseRelative(id);
+            else {
+              pendingReveal.current = id;
+              setCompare(false);
+              setSelected([id]);
+              setView("tree");
+            }
           }}
         />
       )}
@@ -813,14 +837,27 @@ export default function App() {
                       tabIndex={0}
                       role="region"
                       aria-label="Генеалогическое древо. Прокручивайте для перемещения по времени. Shift и нажатие на карточку — сравнение."
+                      onDragStart={(e) => e.preventDefault()}
+                      onClickCapture={(e) => {
+                        if (suppressGraphClick.current && e.detail > 0) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          suppressGraphClick.current = false;
+                        }
+                      }}
                       onScroll={(e) => setScrollY(e.currentTarget.scrollTop)}
                       onPointerDown={(e) => {
+                        suppressGraphClick.current = false;
                         if (
                           e.pointerType !== "mouse" ||
                           e.button !== 0 ||
-                          (e.target as HTMLElement).closest("button,a,input")
+                          (e.target as HTMLElement).closest(
+                            "a,input,select,textarea",
+                          )
                         )
                           return;
+                        if (!(e.target as HTMLElement).closest("button"))
+                          e.preventDefault();
                         drag.current = {
                           x: e.clientX,
                           y: e.clientY,
@@ -828,14 +865,24 @@ export default function App() {
                           left: e.currentTarget.scrollLeft,
                           moved: false,
                         };
-                        e.currentTarget.setPointerCapture(e.pointerId);
                       }}
                       onPointerMove={(e) => {
                         if (!drag.current) return;
+                        if (e.pointerType !== "mouse" || !(e.buttons & 1)) {
+                          drag.current = null;
+                          return;
+                        }
                         const dx = e.clientX - drag.current.x,
                           dy = e.clientY - drag.current.y;
-                        if (Math.abs(dx) + Math.abs(dy) > 4)
-                          drag.current.moved = true;
+                        if (
+                          !drag.current.moved &&
+                          Math.abs(dx) + Math.abs(dy) <= 4
+                        )
+                          return;
+                        drag.current.moved = true;
+                        suppressGraphClick.current = true;
+                        if (!e.currentTarget.hasPointerCapture(e.pointerId))
+                          e.currentTarget.setPointerCapture(e.pointerId);
                         e.currentTarget.scrollLeft = drag.current.left - dx;
                         e.currentTarget.scrollTop = drag.current.top - dy;
                       }}
@@ -846,6 +893,14 @@ export default function App() {
                       }}
                       onPointerCancel={() => {
                         drag.current = null;
+                        suppressGraphClick.current = false;
+                      }}
+                      onLostPointerCapture={() => {
+                        drag.current = null;
+                      }}
+                      onPointerLeave={(e) => {
+                        if (!e.currentTarget.hasPointerCapture(e.pointerId))
+                          drag.current = null;
                       }}
                     >
                       <div
@@ -860,6 +915,14 @@ export default function App() {
                           aria-label="Исторические эпохи"
                           style={{ height: WORLD_HEIGHT * zoom }}
                         >
+                          {layout.offset > 0 && (
+                            <div
+                              className="undated-era"
+                              style={{ height: layout.offset * zoom }}
+                            >
+                              <span>ДАТЫ НЕ УКАЗАНЫ</span>
+                            </div>
+                          )}
                           {ERAS.filter(
                             (e) => e.end > START_YEAR && e.start < END_YEAR,
                           ).map((e) => {
@@ -946,6 +1009,18 @@ export default function App() {
                               transform: `scale(${zoom})`,
                             }}
                           >
+                            {layout.offset > 0 && (
+                              <div
+                                className="undated-region"
+                                style={{ height: layout.offset }}
+                              >
+                                <b>Без даты рождения</b>
+                                <span>
+                                  Эти карточки появятся на шкале эпох, когда вы
+                                  укажете год.
+                                </span>
+                              </div>
+                            )}
                             {ERAS.filter(
                               (e) => e.start > START_YEAR && e.start < END_YEAR,
                             ).map((e) => (
@@ -978,11 +1053,15 @@ export default function App() {
                                 </div>
                               ))}
                             </div>
-                            <div className="tree-caption">
+                            <div
+                              className="tree-caption"
+                              style={{ top: layout.offset + 22 }}
+                            >
                               <span className="tiny-dot" />
                               СЕМЬЯ В КОНТЕКСТЕ ВРЕМЕНИ
                             </div>
                             <Connections
+                              positions={layout.positions}
                               startYear={START_YEAR}
                               reverse={reverseTimeline}
                               height={WORLD_HEIGHT}
@@ -993,6 +1072,7 @@ export default function App() {
                             />
                             {lifelines &&
                               chosen.length === 1 &&
+                              !!chosen[0].birth &&
                               (() => {
                                 const p = chosen[0],
                                   pos = position(p);
@@ -1067,18 +1147,24 @@ export default function App() {
                                       <span className="person-given">
                                         {p.name} {p.patronymic}
                                       </span>
-                                      <span className="person-years">
-                                        {years(p)}
-                                        {!p.death && (
-                                          <i className="alive-dot" />
-                                        )}
-                                      </span>
+                                      {years(p) && (
+                                        <span className="person-years">
+                                          {years(p)}
+                                          {p.birth && !p.death && (
+                                            <i className="alive-dot" />
+                                          )}
+                                        </span>
+                                      )}
                                     </span>
                                   </span>
                                   <span className="node-footer">
                                     <span>
-                                      <MapPin size={10} />
-                                      {p.birthPlace.split(",")[0]}
+                                      {p.birthPlace && (
+                                        <>
+                                          <MapPin size={10} />
+                                          {p.birthPlace.split(",")[0]}
+                                        </>
+                                      )}
                                     </span>
                                     <span className="node-meta">
                                       {p.sources.length > 0 && (
@@ -1148,8 +1234,14 @@ export default function App() {
                     </div>
                     <div className={`current-era ${activeEra.className}`}>
                       <i style={{ background: activeEra.color }} />
-                      <span>{activeEra.short}</span>
-                      <b>{currentYear}</b>
+                      <span>
+                        {layout.offset > 0 && scrollY / zoom < layout.offset
+                          ? "Без даты рождения"
+                          : activeEra.short}
+                      </span>
+                      {!(
+                        layout.offset > 0 && scrollY / zoom < layout.offset
+                      ) && <b>{currentYear}</b>}
                     </div>
                     {compare && selected.length < 2 && (
                       <div className="graph-compare-hint" role="status">

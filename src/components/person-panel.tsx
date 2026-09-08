@@ -20,7 +20,6 @@ import {
   type Person,
   type FamilyLink,
 } from "../domain";
-const roman = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 export function Avatar({
   person,
   large = false,
@@ -32,7 +31,7 @@ export function Avatar({
   const src = safeUrl(person.photo);
   return (
     <span
-      className={`${large ? "profile-avatar" : "person-avatar"} ${person.sex === "f" ? "female" : "male"}`}
+      className={`${large ? "profile-avatar" : "person-avatar"} ${person.sex === "u" ? "unknown" : person.sex === "f" ? "female" : "male"}`}
     >
       {/* Native image keeps optional archive photos independent of an image service. */}
       {src && failed !== src ? (
@@ -45,6 +44,7 @@ export function Avatar({
 }
 
 function LifeSpan({ person }: { person: Person }) {
+  if (!person.birth) return null;
   const birth = dateYear(person.birth),
     death = dateYear(person.death);
   const lived = ERAS.filter((e) => e.start <= death && e.end > birth);
@@ -117,9 +117,6 @@ export function PersonPanel({
     <>
       <div className="profile-head">
         <Avatar person={person} large />
-        <span className="profile-generation">
-          {roman[person.generation] || person.generation} поколение
-        </span>
         <h2>
           {person.surname}
           <br />
@@ -128,13 +125,21 @@ export function PersonPanel({
           </span>
         </h2>
         {person.maidenName && (
-          <div className="maiden-name">в девичестве {person.maidenName}</div>
+          <div className="maiden-name">
+            Фамилия при рождении: {person.maidenName}
+          </div>
         )}
-        <p>
-          {years(person)}
-          <span>·</span>
-          {ageLabel(person)}
-        </p>
+        {years(person) && (
+          <p>
+            {years(person)}
+            {ageLabel(person) && (
+              <>
+                <span>·</span>
+                {ageLabel(person)}
+              </>
+            )}
+          </p>
+        )}
       </div>
       <div
         className="panel-tabs"
@@ -170,31 +175,33 @@ export function PersonPanel({
       >
         {tab === "bio" ? (
           <>
-            <div className="life-event">
-              <span className="event-icon">
-                <Sprout size={13} />
-              </span>
-              <div>
-                <span className="event-label">Рождение</span>
-                <b>{dateLabel(person.birth)}</b>
-                <p>{person.birthPlace}</p>
+            {(person.birth || person.birthPlace) && (
+              <div className="life-event">
+                <span className="event-icon">
+                  <Sprout size={13} />
+                </span>
+                <div>
+                  <span className="event-label">Рождение</span>
+                  {person.birth && <b>{dateLabel(person.birth)}</b>}
+                  {person.birthPlace && <p>{person.birthPlace}</p>}
+                </div>
               </div>
-            </div>
+            )}
             {person.death ? (
               <div className="life-event">
                 <span className="event-icon">†</span>
                 <div>
                   <span className="event-label">Уход из жизни</span>
                   <b>{dateLabel(person.death)}</b>
-                  <p>{person.deathPlace || "Место не указано"}</p>
+                  {person.deathPlace && <p>{person.deathPlace}</p>}
                 </div>
               </div>
-            ) : (
+            ) : person.birth ? (
               <div className="living-note">
                 <span className="tiny-dot" />
                 История продолжается
               </div>
-            )}
+            ) : null}
             <LifeSpan person={person} />
             {(person.biography || person.occupation) && (
               <div className="biography">

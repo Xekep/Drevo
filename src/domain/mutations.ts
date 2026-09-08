@@ -94,7 +94,9 @@ export function availableColumn(people: Person[], birth: string) {
       !people.some(
         (p) =>
           Math.abs(p.column - column) < 0.9 &&
-          Math.abs(dateYear(p.birth) - year) < 15,
+          (birth
+            ? !!p.birth && Math.abs(dateYear(p.birth) - year) < 15
+            : !p.birth),
       )
     )
       return column;
