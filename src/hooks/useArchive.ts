@@ -7,6 +7,7 @@ export function useArchive() {
     [busy, setBusy] = useState(false),
     [attempt, setAttempt] = useState(0);
   const [local, setLocal] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
   const revision = useRef(0),
     saving = useRef(false);
   useEffect(() => {
@@ -22,10 +23,16 @@ export function useArchive() {
         const json = response.headers
           .get("content-type")
           ?.includes("application/json");
-        if (response.status === 401)
+        if (response.status === 401) {
+          if (active) {
+            setNeedsLogin(true);
+            setCanEdit(false);
+            setFamily(null);
+          }
           throw new Error(
             "Это закрытый семейный архив. Нажмите «Войти», чтобы открыть древо.",
           );
+        }
         if (!response.ok && response.status !== 404)
           throw new Error("Архив недоступен");
         if (response.ok && json) {
@@ -33,6 +40,7 @@ export function useArchive() {
             data = validateFamily(result.family);
           if (active) {
             setFamily(data);
+            setNeedsLogin(false);
             revision.current = result.revision;
             setCanEdit(result.canEdit === true);
             setLocal(result.local === true);
@@ -115,6 +123,7 @@ export function useArchive() {
     [write],
   );
   return {
+    needsLogin,
     family,
     error,
     canEdit,

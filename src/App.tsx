@@ -54,8 +54,17 @@ const normalize = (text: string) =>
   text.toLocaleLowerCase("ru").replaceAll("ё", "е").trim();
 
 export default function App() {
-  const { family, error, canEdit, local, busy, save, upload, reload } =
-    useArchive();
+  const {
+    family,
+    error,
+    canEdit,
+    local,
+    busy,
+    save,
+    upload,
+    reload,
+    needsLogin,
+  } = useArchive();
   const [login, setLogin] = useState(false);
   const [settings, setSettings] = useState(false);
   const [editor, setEditor] = useState<Person | "new" | null>(null);
@@ -614,17 +623,22 @@ export default function App() {
             <div className="load-state" role={error ? "alert" : "status"}>
               <TreeDeciduous size={42} strokeWidth={1} />
               <h2>
-                {error ? "Архив пока недоступен" : "Собираем семейную историю"}
+                {needsLogin
+                  ? "Семейная история — для своих"
+                  : error
+                    ? "Архив пока недоступен"
+                    : "Собираем семейную историю"}
               </h2>
               <p>{error || "Загружаем людей и связи между поколениями…"}</p>
               {error && (
                 <button
                   className="full-button"
                   onClick={() => {
-                    reload();
+                    if (needsLogin) setLogin(true);
+                    else reload();
                   }}
                 >
-                  Попробовать снова
+                  {needsLogin ? "Войти в архив" : "Попробовать снова"}
                 </button>
               )}
             </div>
