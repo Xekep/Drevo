@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { validateFamily, type Family } from "../domain";
+import { validateFamily, type Family, type ArchiveUser } from "../domain";
 export function useArchive() {
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
     [canEdit, setCanEdit] = useState(false),
     [busy, setBusy] = useState(false),
     [attempt, setAttempt] = useState(0);
+  const [user, setUser] = useState<ArchiveUser | null>(null);
+  const [readTree, setReadTree] = useState(true),
+    [readPhotos, setReadPhotos] = useState(true);
   const [local, setLocal] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
   const revision = useRef(0),
@@ -44,6 +47,9 @@ export function useArchive() {
             revision.current = result.revision;
             setCanEdit(result.canEdit === true);
             setLocal(result.local === true);
+            setUser(result.user || null);
+            setReadTree(result.readTree !== false);
+            setReadPhotos(result.readPhotos !== false);
             setError("");
           }
         } else {
@@ -123,6 +129,9 @@ export function useArchive() {
     [write],
   );
   return {
+    user,
+    readTree,
+    readPhotos,
     needsLogin,
     family,
     error,

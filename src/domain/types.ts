@@ -6,6 +6,7 @@ export type Source = {
   note?: string;
 };
 export type Person = {
+  createdBy?: string;
   id: string;
   surname: string;
   name: string;
@@ -44,10 +45,14 @@ export type PhotoTag = {
   height: number;
 };
 export type ArchivePhoto = {
+  createdBy?: string;
   id: string;
   url: string;
   title: string;
   takenAt?: string;
+  place?: string;
+  year?: string;
+  event?: string;
   description?: string;
   tags: PhotoTag[];
 };
@@ -60,6 +65,7 @@ export const EXTRA_LINK_TYPES = [
 ] as const;
 export type ExtraLinkType = (typeof EXTRA_LINK_TYPES)[number];
 export type FamilyLink = {
+  createdBy?: string;
   id: string;
   from: string;
   to: string;

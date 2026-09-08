@@ -8,6 +8,94 @@
   background: #fbfcf9;
   font-size: 12px;
 }
+.role-badge {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 8px;
+}
+.suggested-tag {
+  border-style: dashed;
+  border-color: #e8b658;
+  background: #edc06612;
+}
+.suggested-tag > span {
+  background: #856d30;
+}
+.backup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.backup-actions a {
+  padding: 12px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.family-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(275px, 1fr));
+  gap: 20px;
+}
+.family-group {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 22px;
+}
+.family-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 12px 0;
+}
+.family-person b {
+  font-size: 12px;
+  font-weight: 500;
+}
+.family-person small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 5px;
+}
+.family-children {
+  border-left: 2px solid #d7e1d1;
+  margin: 12px 0 20px 20px;
+  padding-left: 20px;
+}
+.family-children button {
+  display: block;
+  text-align: left;
+  font-size: 12px;
+  padding: 8px 0;
+}
+.family-children small {
+  color: var(--muted);
+}
+.family-children p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.family-search {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.family-search input {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+.workspace {
+  margin-top: 24px;
+}
+.workspace-body {
+  height: clamp(560px, calc(100dvh - 260px), 1100px);
+}
 .yandex-login {
   display: flex;
   align-items: center;

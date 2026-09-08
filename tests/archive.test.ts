@@ -1,13 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openArchive, ConflictError } from "../src/server/database.ts";
 import { databaseBackup } from "../src/server/backup.ts";
-import { startServer } from "../src/server/index.ts";
-import { passwordHash } from "../src/server/auth.ts";
 import {
   analyzeKinship,
   connectPeople,
@@ -93,6 +91,9 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
         id: "photo",
         url: "/media/photo.png",
         title: "Снимок",
+        place: "Кострома",
+        year: "1965",
+        event: "Семейная встреча",
         tags: [
           {
             id: "tag",
@@ -156,130 +157,4 @@ test("photo tag geometry must stay within image and refer to an existing person"
   assert.doesNotThrow(() => validateFamily(f));
   f.photos[0].tags[0].x = 0.1;
   assert.throws(() => validateFamily(f));
-});
-test("HTTP login gates edits and backups; uploaded photo and tags survive a round trip", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drevo-http-"));
-  process.env.PUBLIC_ORIGIN = "https://drevo.kiiko.ru";
-  process.env.ARCHIVE_PASSWORD_HASH = await passwordHash("test-password-long");
-  const app = await startServer(0, join(dir, "db.sqlite"), true),
-    base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-  try {
-    let response = await fetch(base + "/api/family");
-    let snapshot = await response.json();
-    assert.equal(snapshot.canEdit, false);
-    assert.equal((await fetch(base + "/api/backup")).status, 401);
-    assert.equal(
-      (
-        await fetch(base + "/api/family", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "If-Match": String(snapshot.revision),
-          },
-          body: JSON.stringify(snapshot.family),
-        })
-      ).status,
-      401,
-    );
-    response = await fetch(base + "/api/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Origin: "https://drevo.kiiko.ru",
-      },
-      body: JSON.stringify({
-        username: "xekep",
-        password: "test-password-long",
-      }),
-    });
-    assert.equal(response.status, 200);
-    const cookie = response.headers.get("set-cookie")!.split(";")[0];
-    assert.match(
-      response.headers.get("set-cookie")!,
-      /HttpOnly.*SameSite=Strict.*Secure/,
-    );
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aR9sAAAAASUVORK5CYII=",
-      "base64",
-    );
-    response = await fetch(base + "/api/photos", {
-      method: "POST",
-      headers: {
-        Cookie: cookie,
-        "If-Match": String(snapshot.revision),
-        "X-Drevo-Upload": "1",
-        "Content-Type": "image/png",
-      },
-      body: png,
-    });
-    assert.equal(response.status, 201);
-    snapshot = await response.json();
-    const photo = snapshot.family.photos.at(-1);
-    response = await fetch(base + photo.url);
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
-    photo.tags = [
-      {
-        id: "tag",
-        personId: snapshot.family.people[0].id,
-        x: 0.2,
-        y: 0.3,
-        width: 0.2,
-        height: 0.3,
-      },
-    ];
-    response = await fetch(base + "/api/family", {
-      method: "PUT",
-      headers: {
-        Cookie: cookie,
-        "If-Match": String(snapshot.revision),
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(snapshot.family),
-    });
-    assert.equal(response.status, 200);
-    assert.equal(
-      (
-        await fetch(base + "/api/family").then((r) => r.json())
-      ).family.photos.at(-1).tags.length,
-      1,
-    );
-    response = await fetch(base + "/api/backup", {
-      headers: { Cookie: cookie },
-    });
-    assert.equal(response.status, 200);
-    assert.equal(
-      Buffer.from(await response.arrayBuffer()).toString("ascii", 0, 15),
-      "SQLite format 3",
-    );
-    response = await fetch(base + "/api/photos", {
-      method: "POST",
-      headers: { Cookie: cookie, "If-Match": "1", "X-Drevo-Upload": "1" },
-      body: "<svg>not a valid image</svg>",
-    });
-    assert.equal(response.status, 400);
-    assert.equal(
-      (
-        await fetch(base + "/api/logout", {
-          method: "POST",
-          headers: { Cookie: cookie, Origin: "https://evil.test" },
-        })
-      ).status,
-      403,
-    );
-    await fetch(base + "/api/logout", {
-      method: "POST",
-      headers: { Cookie: cookie },
-    });
-    assert.equal(
-      (await fetch(base + "/api/backup", { headers: { Cookie: cookie } }))
-        .status,
-      401,
-    );
-    assert.ok(readFileSync(join(dir, "db.sqlite")).length > 0);
-  } finally {
-    await app.close();
-    delete process.env.PUBLIC_ORIGIN;
-    delete process.env.ARCHIVE_PASSWORD_HASH;
-    rmSync(dir, { recursive: true, force: true });
-  }
 });

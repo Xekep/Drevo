@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import {
   analyzeKinship,
+  owns,
+  ROLE_NAMES,
   centuryLabel,
   dateYear,
   END_YEAR,
@@ -46,6 +48,8 @@ import { PersonPanel, Avatar } from "./components/person-panel";
 import { ComparisonPanel } from "./components/comparison-panel";
 import { useArchive } from "./hooks/useArchive";
 import { LoginDialog } from "./components/login-dialog";
+import { AdminPanel } from "./components/admin-panel";
+import { FamiliesCatalog } from "./components/families-catalog";
 import { ArchiveSettings } from "./components/archive-settings";
 import { PersonEditor, ConnectionEditor } from "./components/archive-editors";
 import { Gallery, PhotoViewer } from "./components/gallery";
@@ -58,6 +62,9 @@ export default function App() {
     family,
     error,
     canEdit,
+    user,
+    readTree,
+    readPhotos,
     local,
     busy,
     save,
@@ -65,15 +72,25 @@ export default function App() {
     reload,
     needsLogin,
   } = useArchive();
+  const isAdmin = user?.role === "admin";
+  const [adminPanel, setAdminPanel] = useState(false);
   const [login, setLogin] = useState(false);
   const [settings, setSettings] = useState(false);
   const [editor, setEditor] = useState<Person | "new" | null>(null);
   const [connection, setConnection] = useState<string[] | null>(null);
   const [linkFrom, setLinkFrom] = useState<string | null>(null);
+  const [photoFilter, setPhotoFilter] = useState<string | null>(null);
   const [photoId, setPhotoId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [compare, setCompare] = useState(false);
-  const [view, setView] = useState<"tree" | "list" | "gallery">("tree");
+  const [requestedView, setView] = useState<
+    "tree" | "list" | "gallery" | "families"
+  >("tree");
+  const view = !readTree
+    ? "gallery"
+    : !readPhotos && requestedView === "gallery"
+      ? "tree"
+      : requestedView;
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [zoom, setZoom] = useState(0.9);
@@ -140,7 +157,6 @@ export default function App() {
       )
       .sort((a, b) => a.birth.localeCompare(b.birth));
   }, [people, query]);
-  const generationCount = Math.max(0, ...people.map((p) => p.generation));
   const firstYear = people.length
     ? Math.min(...people.map((p) => dateYear(p.birth)))
     : 1838;
@@ -292,10 +308,11 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      {login && (
-        <LoginDialog onClose={() => setLogin(false)} onLogin={reload} />
+      {login && <LoginDialog onClose={() => setLogin(false)} />}
+      {adminPanel && isAdmin && (
+        <AdminPanel onClose={() => setAdminPanel(false)} onChanged={reload} />
       )}
-      {settings && family && (
+      {settings && family && isAdmin && (
         <ArchiveSettings
           family={family}
           save={save}
@@ -305,6 +322,7 @@ export default function App() {
       )}
       {family && editor && (
         <PersonEditor
+          isAdmin={isAdmin}
           family={family}
           person={editor === "new" ? undefined : editor}
           save={save}
@@ -315,6 +333,7 @@ export default function App() {
       )}
       {family && connection && (
         <ConnectionEditor
+          user={user}
           family={family}
           initial={connection}
           save={save}
@@ -327,7 +346,11 @@ export default function App() {
           key={photoId}
           photo={family.photos.find((p) => p.id === photoId)!}
           family={family}
-          canEdit={canEdit}
+          canEdit={owns(
+            user,
+            family.photos.find((p) => p.id === photoId)!,
+          )}
+          canDelete={isAdmin}
           busy={busy}
           save={save}
           onClose={() => setPhotoId(null)}
@@ -367,7 +390,10 @@ export default function App() {
           </button>
           <button
             className={view === "gallery" ? "nav-active" : ""}
-            onClick={() => setView("gallery")}
+            onClick={() => {
+              setPhotoFilter(null);
+              setView("gallery");
+            }}
           >
             Фотографии
           </button>
@@ -378,7 +404,7 @@ export default function App() {
         </nav>
         <div className="header-right">
           {!local &&
-            (canEdit ? (
+            (user ? (
               <button
                 onClick={async () => {
                   await fetch("/auth/logout", { method: "POST" });
@@ -403,36 +429,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <section className="project-heading">
-        <div>
-          <div className="eyebrow">ИСТОРИЯ, КОТОРАЯ ПРОДОЛЖАЕТСЯ</div>
-          <h1>
-            {family?.title || "Семья Соколовых"}
-            <span className="heading-dot">.</span>
-          </h1>
-          <p>
-            {family?.description || "Одна семья. Много историй. Всё связано."}
-          </p>
-        </div>
-        <div className="project-stats">
-          <div>
-            <b>{people.length || "—"}</b>
-            <span>
-              {plural(people.length, "человек", "человека", "человек")}
-            </span>
-          </div>
-          <div>
-            <b>{generationCount || "—"}</b>
-            <span>
-              {plural(generationCount, "поколение", "поколения", "поколений")}
-            </span>
-          </div>
-          <div>
-            <b>{people.length ? lastYear - firstYear : "—"}</b>
-            <span>лет истории</span>
-          </div>
-        </div>
-      </section>
+
       <main className="workspace">
         <div className="toolbar">
           <div className="view-switch" aria-label="Вид архива">
@@ -563,7 +560,21 @@ export default function App() {
         </div>
         {family && (
           <div className="archive-actions">
-            <button onClick={() => setView("gallery")}>
+            {user && (
+              <span className="role-badge">
+                {user.name} ? {ROLE_NAMES[user.role]}
+              </span>
+            )}
+            <button disabled={!readTree} onClick={() => setView("families")}>
+              {"Семьи"}
+            </button>
+            <button
+              disabled={!readPhotos}
+              onClick={() => {
+                setPhotoFilter(null);
+                setView("gallery");
+              }}
+            >
               Фотографии <span>{family.photos?.length || 0}</span>
             </button>
             {canEdit && (
@@ -584,13 +595,16 @@ export default function App() {
                 >
                   Связать людей
                 </button>
-                <button onClick={() => setSettings(true)}>{"Настройки"}</button>
-                <a href="/api/backup" download>
-                  {"Бэкап базы"}
-                </a>
-                <a href="/api/export" download>
-                  Экспорт
-                </a>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => setAdminPanel(true)}>
+                      {"Управление"}
+                    </button>
+                    <button onClick={() => setSettings(true)}>
+                      {"Настройки"}
+                    </button>
+                  </>
+                )}
               </>
             )}
             <span className="save-status" role="status">
@@ -644,8 +658,20 @@ export default function App() {
             </div>
           ) : (
             <>
-              {view === "gallery" ? (
+              {view === "families" ? (
+                <FamiliesCatalog
+                  people={people}
+                  onPerson={chooseRelative}
+                  onReveal={(ids) => {
+                    setSelected([]);
+                    setCompare(false);
+                    reveal(ids, true);
+                  }}
+                />
+              ) : view === "gallery" ? (
                 <Gallery
+                  personFilter={photoFilter}
+                  onClearFilter={() => setPhotoFilter(null)}
                   family={family}
                   canEdit={canEdit}
                   busy={busy}
@@ -1087,7 +1113,7 @@ export default function App() {
                     chosen[0] && (
                       <>
                         <div className="person-edit-actions">
-                          {canEdit && (
+                          {owns(user, chosen[0]) && (
                             <>
                               <button onClick={() => setEditor(chosen[0])}>
                                 Редактировать
@@ -1113,6 +1139,22 @@ export default function App() {
                           onCompare={() => setCompare(true)}
                         />
                         <section className="person-photos">
+                          {readPhotos && (
+                            <button
+                              className="full-button"
+                              onClick={() => {
+                                setPhotoFilter(chosen[0].id);
+                                setView("gallery");
+                                setSelected([]);
+                              }}
+                            >
+                              {"Фотоальбом"} (
+                              {family.photos?.filter((p) =>
+                                p.tags.some((t) => t.personId === chosen[0].id),
+                              ).length || 0}
+                              )
+                            </button>
+                          )}
                           <h3>На фотографиях</h3>
                           {family.photos?.some((p) =>
                             p.tags.some((t) => t.personId === chosen[0].id),

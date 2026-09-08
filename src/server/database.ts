@@ -1,3 +1,5 @@
+import { authorizeArchive } from "./permissions.ts";
+import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -22,6 +24,13 @@ export function openArchive(path: string, seed: Family) {
     CREATE TABLE IF NOT EXISTS photo_tags (id TEXT PRIMARY KEY, photo_id TEXT NOT NULL REFERENCES photos(id) ON DELETE CASCADE, person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
     CREATE INDEX IF NOT EXISTS photo_tags_person ON photo_tags(person_id);
     CREATE TABLE IF NOT EXISTS history (revision INTEGER PRIMARY KEY, saved_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), data TEXT NOT NULL CHECK(json_valid(data))) STRICT;`);
+  if (
+    !db
+      .prepare("PRAGMA table_info(relations)")
+      .all()
+      .some((row) => row.name === "created_by")
+  )
+    db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
   function read() {
     const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
     const people = db
@@ -50,6 +59,7 @@ export function openArchive(path: string, seed: Family) {
       } else
         links.push({
           id: String(row.id),
+          ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
           from,
           to,
           type: type as FamilyLink["type"],
@@ -82,8 +92,10 @@ export function openArchive(path: string, seed: Family) {
       revision: Number(meta.revision),
     };
   }
-  function write(value: unknown, expected: number) {
-    const family = validateFamily(value);
+  function write(value: unknown, expected: number, actor?: ArchiveUser) {
+    const family = actor
+      ? authorizeArchive(value, read().family, actor)
+      : validateFamily(value);
     db.exec("BEGIN IMMEDIATE");
     try {
       const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
@@ -120,8 +132,14 @@ export function openArchive(path: string, seed: Family) {
           }
         }
       }
-      for (const l of family.links || [])
+      for (const l of family.links || []) {
         edgeQuery.run(l.id, l.from, l.to, l.type, l.note || "");
+        if (l.createdBy)
+          db.prepare("UPDATE relations SET created_by=? WHERE id=?").run(
+            l.createdBy,
+            l.id,
+          );
+      }
       const photoQuery = db.prepare("INSERT INTO photos(id,data) VALUES(?,?)"),
         tagQuery = db.prepare(
           "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",

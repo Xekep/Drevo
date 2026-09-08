@@ -13,9 +13,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests vite.config.ts",
     "preview:static": "vite preview --host 127.0.0.1",
-    "format": "prettier --write src tests docs README.md"
+    "format": "prettier --write src tests docs README.md",
+    "prepare:models": "node --experimental-strip-types src/server/prepare-models.ts",
+    "predev": "npm run prepare:models",
+    "prebuild": "npm run prepare:models"
   },
   "dependencies": {
+    "@vladmandic/face-api": "1.7.15",
     "lucide-react": "^1.42.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"

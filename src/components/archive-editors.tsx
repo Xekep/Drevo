@@ -10,10 +10,13 @@ import {
   type ConnectionType,
   type Family,
   type Person,
+  type ArchiveUser,
+  owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
+  isAdmin,
   family,
   person,
   save,
@@ -23,6 +26,7 @@ export function PersonEditor({
 }: {
   family: Family;
   person?: Person;
+  isAdmin: boolean;
   save: Save;
   onClose: () => void;
   onSaved: (id: string) => void;
@@ -306,7 +310,7 @@ export function PersonEditor({
           <button type="button" onClick={onClose}>
             Отмена
           </button>
-          {person && (
+          {person && isAdmin && (
             <button
               type="button"
               className="danger-action"
@@ -339,6 +343,7 @@ export function PersonEditor({
   );
 }
 export function ConnectionEditor({
+  user,
   family,
   initial,
   save,
@@ -346,6 +351,7 @@ export function ConnectionEditor({
   busy,
 }: {
   family: Family;
+  user: ArchiveUser | null;
   initial: string[];
   save: Save;
   onClose: () => void;
@@ -354,6 +360,7 @@ export function ConnectionEditor({
   const [from, setFrom] = useState(initial[0] || ""),
     [to, setTo] = useState(initial[1] || ""),
     [type, setType] = useState<ConnectionType>("parent"),
+    [additional, setAdditional] = useState(false),
     [note, setNote] = useState(""),
     [error, setError] = useState("");
   const people = [...family.people].sort((a, b) =>
@@ -385,32 +392,68 @@ export function ConnectionEditor({
             onChange={(e) => setFrom(e.target.value)}
           >
             <option value="">Выберите человека</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {fullName(p)}
-              </option>
-            ))}
+            {people
+              .filter((p) => type === "parent" || owns(user, p))
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {fullName(p)}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          Группа связей
+          <select
+            value={additional ? "additional" : "family"}
+            onChange={(e) => {
+              const extra = e.target.value === "additional";
+              setAdditional(extra);
+              setType(extra ? "godparent" : "parent");
+              setFrom("");
+              setTo("");
+            }}
+          >
+            <option value="family">Семья</option>
+            <option value="additional">Крёстные, опека и другие связи</option>
           </select>
         </label>
         <label>
           Кем приходится
           <select
             value={type}
-            onChange={(e) => setType(e.target.value as ConnectionType)}
+            onChange={(e) => {
+              const next = e.target.value as ConnectionType;
+              setType(next);
+              if (
+                next !== "parent" &&
+                !owns(user, people.find((p) => p.id === from) || {})
+              )
+                setFrom("");
+            }}
           >
-            {Object.entries(CONNECTION_NAMES).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
+            {Object.entries(CONNECTION_NAMES)
+              .filter(
+                ([key]) =>
+                  additional !==
+                  ["parent", "spouse", "adoptive_parent"].includes(key),
+              )
+              .map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
           </select>
         </label>
+        <p className="field-hint">
+          Братья, сёстры, предки, потомки и родственники супругов определяются
+          по древу. Укажите общих родителей или брак.
+        </p>
         <label>
           Второй человек
           <select required value={to} onChange={(e) => setTo(e.target.value)}>
             <option value="">Выберите человека</option>
             {people
-              .filter((p) => p.id !== from)
+              .filter((p) => p.id !== from && owns(user, p))
               .map((p) => (
                 <option key={p.id} value={p.id}>
                   {fullName(p)}

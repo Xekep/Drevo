@@ -157,6 +157,11 @@ export function validateFamily(value: unknown): Family {
       !/^\/media\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/.test(photo.url) ||
       !Array.isArray(photo.tags) ||
       (photo.takenAt !== undefined && typeof photo.takenAt !== "string") ||
+      (photo.place !== undefined && typeof photo.place !== "string") ||
+      (photo.event !== undefined && typeof photo.event !== "string") ||
+      (photo.year !== undefined &&
+        (typeof photo.year !== "string" ||
+          (photo.year !== "" && !/^\d{4}$/.test(photo.year)))) ||
       (photo.description !== undefined && typeof photo.description !== "string")
     )
       throw new Error("Некорректная фотография");

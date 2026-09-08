@@ -4,8 +4,11 @@ type Options = {
   origin?: string;
   clientId?: string;
   clientSecret?: string;
-  allowedIds: string[];
-  issueSession: (req: IncomingMessage, res: ServerResponse) => void;
+  issueSession: (
+    req: IncomingMessage,
+    res: ServerResponse,
+    profile: { id: string; name: string },
+  ) => void;
   fetcher?: typeof fetch;
 };
 /** Минимальный Authorization Code + PKCE. Токен Яндекса не передаётся браузеру и не сохраняется. */
@@ -13,8 +16,7 @@ export function createYandexOAuth(options: Options) {
   const enabled = !!(
     options.origin &&
     options.clientId &&
-    options.clientSecret &&
-    options.allowedIds.length
+    options.clientSecret
   );
   const pending = new Map<string, { verifier: string; expires: number }>(),
     fetcher = options.fetcher || fetch;
@@ -141,19 +143,27 @@ export function createYandexOAuth(options: Options) {
           },
         );
         if (!profileResponse.ok) throw new Error("Profile request failed");
-        const profile = (await profileResponse.json()) as { id?: unknown };
+        const profile = (await profileResponse.json()) as {
+          id?: unknown;
+          display_name?: unknown;
+          real_name?: unknown;
+          login?: unknown;
+        };
         if (
           typeof profile.id !== "string" ||
-          !options.allowedIds.includes(profile.id)
-        ) {
-          fail(
-            res,
-            403,
-            "Этому аккаунту Яндекса не предоставлен доступ к семейному архиву.",
-          );
-          return true;
-        }
-        options.issueSession(req, res);
+          !profile.id ||
+          profile.id.length > 100
+        )
+          throw new Error("Invalid profile ID");
+        const name = [
+          profile.display_name,
+          profile.real_name,
+          profile.login,
+        ].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+        options.issueSession(req, res, {
+          id: profile.id,
+          name: (name || profile.id).slice(0, 200),
+        });
         res.writeHead(303, {
           Location: "/",
           "Cache-Control": "no-store",

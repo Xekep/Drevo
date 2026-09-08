@@ -9,8 +9,12 @@ import { fileURLToPath } from "node:url";
 import { openArchive, ConflictError } from "./database.ts";
 import { validateFamily } from "../domain/index.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
+import { userStore, ForbiddenError } from "./users.ts";
+import type { Role } from "../domain/access.ts";
 import { createAuth } from "./auth.ts";
 import { databaseBackup } from "./backup.ts";
+import { fullBackup } from "./full-backup.ts";
+import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -28,6 +32,7 @@ export async function startServer(
   port = Number(process.env.PORT || 3000),
   databasePath?: string,
   production = process.argv.includes("--production"),
+  oauthFetch?: typeof fetch,
 ) {
   const dbPath =
     databasePath ||
@@ -43,22 +48,43 @@ export async function startServer(
   );
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
   const publicOrigin = process.env.PUBLIC_ORIGIN;
-  const auth = createAuth(publicOrigin);
+  const visibility = settingsStore(archive.db);
+  const users = userStore(archive.db);
+  const auth = createAuth(users, publicOrigin);
   const yandex = createYandexOAuth({
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
     clientSecret: process.env.YANDEX_CLIENT_SECRET,
-    allowedIds: (process.env.YANDEX_ALLOWED_IDS || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
     issueSession: auth.issueSession,
+    fetcher: oauthFetch,
   });
-  const snapshot = (req: IncomingMessage) => ({
-    ...archive.read(),
-    canEdit: auth.canEdit(req),
-    local: auth.local,
-  });
+  const snapshot = (req: IncomingMessage) => {
+    const user = auth.currentUser(req),
+      settings = visibility.read(),
+      readTree = !!user || settings.publicTree,
+      readPhotos = !!user || settings.publicAlbums;
+    const data = archive.read();
+    if (!readTree) {
+      data.family.people = [];
+      data.family.links = [];
+      data.family.photos = data.family.photos?.map((p) => ({ ...p, tags: [] }));
+    }
+    if (!readPhotos) {
+      data.family.photos = [];
+      data.family.people = data.family.people.map((p) => ({
+        ...p,
+        photo: undefined,
+      }));
+    }
+    return {
+      ...data,
+      canEdit: auth.canEdit(req),
+      local: auth.local,
+      user,
+      readTree,
+      readPhotos,
+    };
+  };
   const vite = production
     ? null
     : await (
@@ -104,60 +130,119 @@ export async function startServer(
         canEdit: auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
-        passwordLogin: auth.passwordLogin,
+        user: auth.currentUser(req),
       });
-    if (
-      (url === "/api/login" ||
-        url === "/api/logout" ||
-        url === "/auth/logout") &&
-      req.method === "POST"
-    ) {
+    if (url === "/api/login")
+      return json(res, 404, { error: "Password sign-in has been removed" });
+    if (url === "/auth/logout" && req.method === "POST") {
       if (
         (origin && origin !== (publicOrigin || `http://${host}`)) ||
         req.headers["sec-fetch-site"] === "cross-site"
       )
         return json(res, 403, { error: "Invalid origin" });
-      if (url === "/api/logout" || url === "/auth/logout") {
-        auth.logout(req, res);
-        return json(res, 200, { ok: true });
-      }
-      if (!req.headers["content-type"]?.startsWith("application/json"))
-        return json(res, 415, { error: "JSON required" });
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of req) {
-        size += chunk.length;
-        if (size > 4096) return json(res, 413, { error: "Request too large" });
-        chunks.push(Buffer.from(chunk));
-      }
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        if (
-          typeof body.username !== "string" ||
-          typeof body.password !== "string"
-        )
-          throw new Error();
-        const ok = await auth.login(req, res, body.username, body.password);
-        return json(res, ok ? 200 : 401, {
-          ok,
-          error: ok ? undefined : "Invalid credentials or too many attempts",
-        });
-      } catch {
-        return json(res, 400, { error: "Invalid login request" });
-      }
+      auth.logout(req, res);
+      return json(res, 200, { ok: true });
     }
+    if (url === "/api/users" || url.startsWith("/api/users/")) {
+      if (!auth.isAdmin(req))
+        return json(res, auth.currentUser(req) ? 403 : 401, {
+          error: "Only administrators can manage access",
+        });
+      if (url === "/api/users" && req.method === "GET")
+        return json(res, 200, { users: users.list() });
+      if (url.startsWith("/api/users/") && req.method === "PATCH") {
+        if (
+          (origin && origin !== (publicOrigin || `http://${host}`)) ||
+          req.headers["sec-fetch-site"] === "cross-site"
+        )
+          return json(res, 403, { error: "Invalid origin" });
+        if (!req.headers["content-type"]?.startsWith("application/json"))
+          return json(res, 415, { error: "JSON required" });
+        try {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > 4096)
+              return json(res, 413, { error: "Request too large" });
+            chunks.push(Buffer.from(chunk));
+          }
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          users.setRole(
+            auth.currentUser(req)!,
+            decodeURIComponent(url.slice("/api/users/".length)),
+            body.role as Role,
+          );
+          return json(res, 200, { users: users.list() });
+        } catch (error) {
+          return json(res, error instanceof ForbiddenError ? 403 : 400, {
+            error: (error as Error).message,
+          });
+        }
+      }
+      return json(res, 405, { error: "Method not allowed" });
+    }
+    if (url === "/api/settings") {
+      if (!auth.isAdmin(req))
+        return json(res, auth.currentUser(req) ? 403 : 401, {
+          error: "Only administrators can change visibility",
+        });
+      if (req.method === "GET") return json(res, 200, visibility.read());
+      if (req.method === "PUT") {
+        if (
+          (origin && origin !== (publicOrigin || `http://${host}`)) ||
+          req.headers["sec-fetch-site"] === "cross-site"
+        )
+          return json(res, 403, { error: "Invalid origin" });
+        if (!req.headers["content-type"]?.startsWith("application/json"))
+          return json(res, 415, { error: "JSON required" });
+        try {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          for await (const chunk of req) {
+            size += chunk.length;
+            if (size > 4096)
+              return json(res, 413, { error: "Request too large" });
+            chunks.push(Buffer.from(chunk));
+          }
+          if (!auth.isAdmin(req))
+            return json(res, 403, { error: "Access revoked" });
+          return json(
+            res,
+            200,
+            visibility.write(
+              JSON.parse(Buffer.concat(chunks).toString("utf8")),
+            ),
+          );
+        } catch (error) {
+          return json(res, 400, { error: (error as Error).message });
+        }
+      }
+      return json(res, 405, { error: "Method not allowed" });
+    }
+    const visitor = auth.currentUser(req),
+      access = visibility.read();
     if (
-      auth.privateArchive &&
-      url !== "/api/health" &&
-      !auth.canEdit(req) &&
-      (url.startsWith("/media/") ||
-        url.startsWith("/api/") ||
-        url === "/data/family.json")
+      !visitor &&
+      ((url.startsWith("/media/") && !access.publicAlbums) ||
+        (["/api/family", "/api/export", "/data/family.json"].includes(url) &&
+          !access.publicTree &&
+          !access.publicAlbums))
     )
       return json(res, 401, { error: "Sign in to view this archive" });
+    if (url === "/api/backup/full" && req.method === "GET") {
+      if (!auth.isAdmin(req))
+        return json(res, visitor ? 403 : 401, {
+          error: "Only administrators can download backups",
+        });
+      await fullBackup(archive.db, dbPath, res);
+      return;
+    }
     if (url === "/api/backup" && req.method === "GET") {
-      if (!auth.canEdit(req))
-        return json(res, 401, { error: "Sign in to download a backup" });
+      if (!auth.isAdmin(req))
+        return json(res, auth.currentUser(req) ? 403 : 401, {
+          error: "Only administrators can download database backups",
+        });
       const bytes = databaseBackup(archive.db);
       res.writeHead(200, {
         "Content-Type": "application/vnd.sqlite3",
@@ -221,7 +306,7 @@ export async function startServer(
         "Content-Disposition",
         'attachment; filename="drevo-archive.json"',
       );
-      return json(res, 200, archive.read().family);
+      return json(res, 200, snapshot(req).family);
     }
     if (!(
       (url === "/api/family" && req.method === "PUT") ||
@@ -236,7 +321,9 @@ export async function startServer(
         error: "Сохранение разрешено только со страницы архива",
       });
     if (!auth.canEdit(req))
-      return json(res, 401, { error: "Sign in to edit the archive" });
+      return json(res, auth.currentUser(req) ? 403 : 401, {
+        error: "You do not have editing access",
+      });
     if (
       url === "/api/family" &&
       !req.headers["content-type"]?.startsWith("application/json")
@@ -261,6 +348,9 @@ export async function startServer(
           });
         chunks.push(Buffer.from(chunk));
       }
+      const actor = auth.currentUser(req);
+      if (!actor || actor.role === "reader")
+        throw new ForbiddenError("Editing access is no longer available");
       if (url === "/api/photos") {
         if (req.headers["x-drevo-upload"] !== "1")
           return json(res, 400, { error: "Некорректная загрузка" });
@@ -282,6 +372,7 @@ export async function startServer(
                 ],
               },
               revision,
+              actor,
             ),
           );
         } catch (error) {
@@ -295,15 +386,24 @@ export async function startServer(
         archive.write(
           JSON.parse(Buffer.concat(chunks).toString("utf8")),
           revision,
+          actor,
         ),
       );
     } catch (error) {
-      return json(res, error instanceof ConflictError ? 409 : 400, {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Не удалось сохранить данные",
-      });
+      return json(
+        res,
+        error instanceof ConflictError
+          ? 409
+          : error instanceof ForbiddenError
+            ? 403
+            : 400,
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось сохранить данные",
+        },
+      );
     }
   }
   const server = createServer((req, res) => {

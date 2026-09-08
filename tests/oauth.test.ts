@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { createYandexOAuth } from "../src/server/yandex-oauth.ts";
 
-test("Yandex OAuth checks state, uses PKCE, limits accounts and consumes the callback once", async () => {
+test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes the callback once", async () => {
   let tokenCalls = 0,
     profileId = "allowed",
     issued = 0,
@@ -37,7 +37,6 @@ test("Yandex OAuth checks state, uses PKCE, limits accounts and consumes the cal
     origin: "https://drevo.kiiko.ru",
     clientId: "client",
     clientSecret: "secret",
-    allowedIds: ["allowed"],
     fetcher,
     issueSession: () => {
       issued++;
@@ -93,8 +92,8 @@ test("Yandex OAuth checks state, uses PKCE, limits accounts and consumes the cal
       base + `/auth/yandex/callback?state=${second.state}&code=code`,
       { headers: { Cookie: second.cookie }, redirect: "manual" },
     );
-    assert.equal(response.status, 403);
-    assert.equal(issued, 1);
+    assert.equal(response.status, 303);
+    assert.equal(issued, 2);
     const third = await begin();
     response = await fetch(
       base + `/auth/yandex/callback?state=${third.state}&error=access_denied`,

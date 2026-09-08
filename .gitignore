@@ -44,3 +44,5 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+/public/models/
