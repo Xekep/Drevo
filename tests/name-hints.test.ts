@@ -234,3 +234,171 @@ test("saved co-parents suggest a marriage question without creating a marriage o
   assert.equal(guessSex(person("Алёна")), "f");
   assert.equal(matchesPatronymic("Афанасий", "Афанасьевна"), true);
 });
+
+test("name matching handles pasted whitespace, yo and less common full names without inventing patronymics", () => {
+  for (const [name, patronymic] of [
+    ["\u00a0Артемий\u00a0", "Артемьевна"],
+    ["Артур", "Артуровна"],
+    ["Моисей", "Моисеевич"],
+    ["Елисей", "Елисеевна"],
+    ["Давид", "Давидовна"],
+    ["Дмитрий", "Дмитриевна"],
+    ["Фё\u200bдор", "Федорович"],
+  ]) {
+    const father = person("father", { name });
+    const child = person("child", { name: "Анна", patronymic });
+    assert.ok(
+      parentHints(child, [father]).some((h) => h.from === father.id),
+      `${name}: ${patronymic}`,
+    );
+  }
+  assert.equal(matchesPatronymic("Дмитрий", "Дмитрьевна"), false);
+  assert.equal(matchesPatronymic("Юрий", "Юриевич"), false);
+  assert.equal(matchesPatronymic("Артём", "Артемьевич"), false);
+  assert.equal(matchesPatronymic("Иван", "Петрович"), false);
+});
+
+test("birth surname outranks a married surname and unambiguous compound surnames are preserved", () => {
+  const father = person("father", { name: "Иван", surname: "Соколов-Петров" });
+  const namesake = person("namesake", { name: "Иван", surname: "Андреев" });
+  const child = person("child", {
+    name: "Анна",
+    surname: "Андреева",
+    maidenName: " Соколова ‑ Петрова ",
+    patronymic: "Ивановна",
+  });
+  const hints = parentHints(child, [namesake, father]);
+  assert.equal(hints[0].from, father.id);
+  assert.match(hints[0].reason, /фамилия при рождении/);
+  assert.equal(surnameForSex("Соколов‑Петров", "f"), "Соколова-Петрова");
+  assert.equal(surnameForSex("Кийко-Иванова", "m"), "Кийко-Иванов");
+  assert.equal(surnameForSex("Цой-Иванов", "f"), null);
+  const suggested = birthSurnameHints(
+    { ...child, maidenName: "", parents: [father.id] },
+    [father],
+  );
+  assert.equal(suggested[0].surname, "Соколова-Петрова");
+});
+
+test("an undated known brother, ancestor or adoptive descendant cannot become a suggested father", () => {
+  const mother = person("mother", { name: "Мария" });
+  const brother = person("brother", { name: "Иван", parents: [mother.id] });
+  const child = person("child", {
+    name: "Анна",
+    patronymic: "Ивановна",
+    parents: [mother.id],
+  });
+  assert.equal(parentHints(child, [mother, brother]).length, 0);
+  const grandparent = person("grandparent", { name: "Иван" });
+  const unknown = person("unknown", { parents: [grandparent.id] });
+  assert.equal(
+    parentHints({ ...child, parents: [unknown.id] }, [grandparent, unknown])
+      .length,
+    0,
+  );
+  const father = person("father", { name: "Иван" });
+  const unrelatedChild = { ...child, parents: [] };
+  assert.equal(parentHints(unrelatedChild, [father]).length, 1);
+  assert.equal(
+    parentHints(
+      unrelatedChild,
+      [father],
+      [{ type: "adoptive_parent", from: child.id, to: father.id }],
+    ).length,
+    0,
+  );
+  assert.equal(
+    parentHints({ ...unrelatedChild, death: "1950" }, [
+      { ...father, birth: "1960" },
+    ]).length,
+    0,
+  );
+});
+
+test("mother suggestions use recorded co-parenthood, work both ways and still require confirmation", () => {
+  const father = person("father", { name: "Иван", birth: "1960" });
+  const mother = person("mother", { name: "Мария", birth: "1962" });
+  const sibling = person("sibling", {
+    name: "Пётр",
+    parents: [father.id, mother.id],
+  });
+  const child = person("child", {
+    name: "Анна",
+    birth: "1990",
+    patronymic: "Ивановна",
+    parents: [father.id],
+  });
+  const people = [father, mother, sibling, child],
+    before = structuredClone(people);
+  const hints = parentHints(child, people);
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].role, "mother");
+  assert.equal(hints[0].from, mother.id);
+  assert.match(hints[0].reason, /единокровными/);
+  assert.ok(
+    parentHints(mother, people).some(
+      (h) => h.role === "child" && h.to === child.id,
+    ),
+  );
+  assert.deepEqual(people, before);
+  for (const patch of [
+    { parentageComplete: true },
+    { parents: [father.id, mother.id] },
+    { birth: "1970" },
+    { birth: "2020" },
+  ])
+    assert.equal(
+      parentHints({ ...child, ...patch }, people).filter(
+        (h) => h.role === "mother",
+      ).length,
+      0,
+    );
+  assert.equal(
+    parentHints(
+      child,
+      people.map((p) => (p.id === mother.id ? { ...p, death: "1980" } : p)),
+    ).length,
+    0,
+  );
+  assert.equal(
+    parentHints(child, [
+      { ...father, spouses: [mother.id] },
+      { ...mother, spouses: [father.id] },
+      child,
+    ]).length,
+    0,
+  );
+});
+
+test("partial dates remain possible while precise dates rule out contradictory parent hints", () => {
+  const father = person("father", {
+    name: "Иван",
+    birth: "1960",
+    death: "1989-01-01",
+  });
+  const child = person("child", {
+    name: "Анна",
+    patronymic: "Ивановна",
+    birth: "1990-12-01",
+  });
+  assert.equal(parentHints(child, [father]).length, 0);
+  assert.equal(
+    parentHints({ ...child, birth: "1990" }, [{ ...father, death: "1989" }])
+      .length,
+    1,
+  );
+  assert.equal(
+    parentHints({ ...child, birth: "1974-01-01" }, [
+      { ...father, birth: "1960-12-01", death: undefined },
+    ]).length,
+    0,
+  );
+  const mother = person("mother", {
+    name: "Мария",
+    birth: "1960",
+    death: "1990-01-01",
+  });
+  const sibling = person("sibling", { parents: [father.id, mother.id] });
+  const data = [{ ...father, death: undefined }, mother, sibling];
+  assert.equal(parentHints({ ...child, parents: [father.id] }, data).length, 0);
+});

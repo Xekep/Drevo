@@ -154,8 +154,11 @@
 .tree-view {
   position: absolute;
   inset: 0;
+  isolation: isolate;
 }
 .tree-view.is-hidden {
+  /* React Flow задаёт своим узлам visibility: visible; прозрачность скрывает весь слой. */
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }

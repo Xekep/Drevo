@@ -141,7 +141,7 @@ export default function App() {
       const source = map.get(draft.from),
         target = map.get(draft.to);
       if (!draft.original && draft.type === "parent" && source && target) {
-        const hints = parentHints(source, people).filter(
+        const hints = parentHints(source, people, family?.links).filter(
           (h) => h.person.id === target.id,
         );
         if (hints.length === 1)
@@ -158,7 +158,7 @@ export default function App() {
       dispatch({ type: "finishLink" });
       setAddMenu(false);
     },
-    [dispatch, canEdit, map, people],
+    [dispatch, canEdit, map, people, family?.links],
   );
   const selectEdge = useCallback(
     (edge: GraphConnection) => {

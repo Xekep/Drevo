@@ -86,7 +86,11 @@ export function PersonEditor({
         ? [...draft.parents, relativeTo.id]
         : draft.parents,
   };
-  const suggestions = parentHints(hintDraft, family.people).filter(
+  const suggestions = parentHints(
+    hintDraft,
+    family.people,
+    family.links,
+  ).filter(
     (hint) =>
       (hint.to === draft.id || owns(user, hint.person)) &&
       !(relativeTo && relationship === "parent" && hint.to === relativeTo.id),
@@ -343,7 +347,8 @@ export function PersonEditor({
                                     !suggestions.some(
                                       (other) =>
                                         `${other.from}:${other.to}` === value &&
-                                        other.to === hint.to,
+                                        other.to === hint.to &&
+                                        other.parentSex === hint.parentSex,
                                     ),
                                 ),
                                 key,
@@ -356,7 +361,9 @@ export function PersonEditor({
                       <b>
                         {hint.role === "father"
                           ? "Возможный отец"
-                          : "Возможный ребёнок"}
+                          : hint.role === "mother"
+                            ? "Возможная мать"
+                            : "Возможный ребёнок"}
                         : {fullName(hint.person)}
                       </b>
                       <small>{hint.reason}</small>

@@ -32,7 +32,7 @@ export function PersonHints({
   const surnames = owns(user, person)
     ? birthSurnameHints(person, family.people)
     : [];
-  const parents = parentHints(person, family.people).filter((h) =>
+  const parents = parentHints(person, family.people, family.links).filter((h) =>
     canChangeConnection(family, user, { ...h, type: "parent" }),
   );
   const marriages = marriageHints(person, family.people).filter((h) =>
@@ -79,8 +79,12 @@ export function PersonHints({
       {parents.map((hint) => (
         <div key={`${hint.from}:${hint.to}`}>
           <p>
-            {hint.role === "father" ? "Возможный отец" : "Возможный ребёнок"}:{" "}
-            <b>{fullName(hint.person)}</b>
+            {hint.role === "father"
+              ? "Возможный отец"
+              : hint.role === "mother"
+                ? "Возможная мать"
+                : "Возможный ребёнок"}
+            : <b>{fullName(hint.person)}</b>
           </p>
           <small>{hint.reason}</small>
           <button
