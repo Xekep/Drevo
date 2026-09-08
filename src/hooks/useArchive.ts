@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   validateFamily,
+  archiveChanges,
+  applyArchiveChanges,
+  inverseChanges,
+  type Change,
+  type ChangeConflict,
   type Family,
   type ArchiveUser,
   type PhotoMetadata,
@@ -19,6 +24,22 @@ export function useArchive() {
   const [needsLogin, setNeedsLogin] = useState(false);
   const revision = useRef(0),
     saving = useRef(false);
+  const snapshot = useRef<Family | null>(null),
+    history = useRef<Change[][]>([]);
+  const [undoCount, setUndoCount] = useState(0);
+  const [undoRemovesPerson, setUndoRemovesPerson] = useState(false);
+  const publishHistory = useCallback(() => {
+    setUndoCount(history.current.length);
+    setUndoRemovesPerson(
+      (history.current.at(-1) || []).some(
+        (c) => !c.field && c.collection === "people" && c.before === undefined,
+      ),
+    );
+  }, []);
+  const [conflict, setConflict] = useState<{
+    fields: ChangeConflict[];
+    resolve: (choice: "local" | "remote" | "cancel") => void;
+  } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -49,6 +70,9 @@ export function useArchive() {
             data = validateFamily(result.family);
           if (active) {
             setFamily(data);
+            snapshot.current = data;
+            history.current = [];
+            setUndoCount(0);
             setNeedsLogin(false);
             revision.current = result.revision;
             setCanEdit(result.canEdit === true);
@@ -90,34 +114,90 @@ export function useArchive() {
     };
   }, [attempt]);
   const write = useCallback(
-    async (url: string, body: BodyInit, headers: Record<string, string>) => {
+    async (
+      url: string,
+      body: BodyInit,
+      headers: Record<string, string>,
+      track = true,
+    ) => {
       if (saving.current) throw new Error("Дождитесь завершения сохранения");
       if (!canEdit) throw new Error("Войдите в архив для сохранения изменений");
       saving.current = true;
       setBusy(true);
       try {
-        const response = await fetch(url, {
-          method: url === "/api/family" ? "PUT" : "POST",
-          headers: { ...headers, "If-Match": String(revision.current) },
-          body,
-        });
-        const result = await response.json();
-        if (response.status === 401) {
-          setCanEdit(false);
-          throw new Error("Сеанс завершён. Войдите в архив ещё раз.");
+        let base = snapshot.current;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const response = await fetch(url, {
+            method: url === "/api/family" ? "PUT" : "POST",
+            headers: { ...headers, "If-Match": String(revision.current) },
+            body,
+          });
+          const result = await response.json();
+          if (
+            response.status === 409 &&
+            url === "/api/family" &&
+            base &&
+            typeof body === "string"
+          ) {
+            const freshResponse = await fetch("/api/family", {
+              cache: "no-store",
+            });
+            if (!freshResponse.ok)
+              throw new Error(
+                "Не удалось сверить изменения. Черновик остаётся открытым.",
+              );
+            const fresh = await freshResponse.json(),
+              current = validateFamily(fresh.family);
+            const changes = archiveChanges(
+              base,
+              validateFamily(JSON.parse(body)),
+            );
+            let merged = applyArchiveChanges(current, changes);
+            if (merged.conflicts.length) {
+              const choice = await new Promise<"local" | "remote" | "cancel">(
+                (resolve) => setConflict({ fields: merged.conflicts, resolve }),
+              );
+              setConflict(null);
+              if (choice === "cancel")
+                throw new Error(
+                  "Сохранение отложено. Черновик остаётся в форме.",
+                );
+              merged = applyArchiveChanges(current, changes, choice);
+            }
+            body = JSON.stringify(validateFamily(merged.family));
+            base = current;
+            snapshot.current = current;
+            revision.current = fresh.revision;
+            setFamily(current);
+            continue;
+          }
+          if (response.status === 401) {
+            setCanEdit(false);
+            throw new Error("Сеанс завершён. Войдите в архив ещё раз.");
+          }
+          if (!response.ok)
+            throw new Error(result.error || "Не удалось сохранить изменения");
+          const data = validateFamily(result.family);
+          if (url === "/api/family" && track && base) {
+            const changes = archiveChanges(base, data);
+            if (changes.length)
+              history.current = [...history.current.slice(-19), changes];
+          } else if (url !== "/api/family") history.current = [];
+          snapshot.current = data;
+          revision.current = result.revision;
+          setFamily(data);
+          publishHistory();
+          return data;
         }
-        if (!response.ok)
-          throw new Error(result.error || "Не удалось сохранить изменения");
-        const data = validateFamily(result.family);
-        revision.current = result.revision;
-        setFamily(data);
-        return data;
+        throw new Error(
+          "Архив снова изменился. Черновик сохранён в форме; повторите сохранение.",
+        );
       } finally {
         saving.current = false;
         setBusy(false);
       }
     },
-    [canEdit],
+    [canEdit, publishHistory],
   );
   const save = useCallback(
     (data: Family) =>
@@ -138,7 +218,28 @@ export function useArchive() {
       }),
     [write],
   );
+  const undo = useCallback(async () => {
+    const last = history.current.at(-1),
+      current = snapshot.current;
+    if (!last || !current) return;
+    const reversed = applyArchiveChanges(current, inverseChanges(last));
+    if (reversed.conflicts.length)
+      throw new Error(
+        "Эти сведения уже изменились. Отмена могла бы затронуть новые правки.",
+      );
+    await write(
+      "/api/family",
+      JSON.stringify(validateFamily(reversed.family)),
+      { "Content-Type": "application/json" },
+      false,
+    );
+    history.current.pop();
+    publishHistory();
+  }, [write, publishHistory]);
   return {
+    conflict,
+    undo,
+    canUndo: undoCount > 0 && (user?.role === "admin" || !undoRemovesPerson),
     reverseTimeline,
     user,
     readTree,

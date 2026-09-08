@@ -6,3 +6,6 @@ export * from "./kinship.ts";
 export * from "./mutations.ts";
 export * from "./access.ts";
 export * from "./families.ts";
+export * from "./connections.ts";
+export * from "./changes.ts";
+export * from "./tree-layout.ts";

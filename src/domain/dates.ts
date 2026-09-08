@@ -19,6 +19,17 @@ export const years = (p: Person) =>
     : p.death
       ? `† ${dateYear(p.death)}`
       : "";
+export function matchesPerson(p: Person, query: string) {
+  const normalize = (text: string) =>
+    text.toLocaleLowerCase("ru").replaceAll("ё", "е").trim();
+  const text = normalize(
+    `${fullName(p)} ${p.maidenName || ""} ${p.birthPlace} ${p.deathPlace || ""} ${years(p)}`,
+  );
+  return normalize(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => text.includes(term));
+}
 export function plural(n: number, one: string, few: string, many: string) {
   const a = Math.abs(n) % 100,
     b = a % 10;

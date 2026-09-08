@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@vladmandic/face-api": "1.7.15",
+    "@xyflow/react": "^12.11.6",
     "lucide-react": "^1.42.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"

@@ -5,16 +5,35 @@ export function EditorDialog({
   onClose,
   children,
   wide = false,
+  inline = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  inline?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+    if (!inline) ref.current?.showModal();
+  }, [inline]);
+  if (inline)
+    return (
+      <section className="inline-editor" aria-label={title}>
+        <header>
+          <h2>{title}</h2>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Закрыть редактор"
+          >
+            <X size={20} />
+          </button>
+        </header>
+        {children}
+      </section>
+    );
   return (
     <dialog
       ref={ref}

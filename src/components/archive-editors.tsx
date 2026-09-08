@@ -29,6 +29,8 @@ export function PersonEditor({
   onClose,
   onSaved,
   busy,
+  inline = false,
+  initialRelationship = "child",
 }: {
   family: Family;
   person?: Person;
@@ -40,6 +42,8 @@ export function PersonEditor({
   onClose: () => void;
   onSaved: (id: string) => void;
   busy: boolean;
+  inline?: boolean;
+  initialRelationship?: "child" | ConnectionType;
 }) {
   const [draft, setDraft] = useState<Person>(() =>
     person
@@ -64,7 +68,9 @@ export function PersonEditor({
   const [nameText, setNameText] = useState(person ? fullName(person) : "");
   const [portraitFile, setPortraitFile] = useState<File | null>(null),
     [portraitPreview, setPortraitPreview] = useState(""),
-    [relationship, setRelationship] = useState("child");
+    [relationship, setRelationship] = useState<"child" | ConnectionType>(
+      initialRelationship,
+    );
   useEffect(
     () => () => {
       if (portraitPreview) URL.revokeObjectURL(portraitPreview);
@@ -118,12 +124,7 @@ export function PersonEditor({
         next =
           relationship === "child"
             ? connectPeople(next, relativeTo.id, p.id, "parent")
-            : connectPeople(
-                next,
-                p.id,
-                relativeTo.id,
-                relationship === "parent" ? "parent" : "spouse",
-              );
+            : connectPeople(next, p.id, relativeTo.id, relationship);
       }
       await save(next);
       onSaved(p.id);
@@ -155,6 +156,7 @@ export function PersonEditor({
   ].filter((e) => e.from === draft.id || e.to === draft.id);
   return (
     <EditorDialog
+      inline={inline}
       title={person ? "Редактировать человека" : "Новый человек"}
       onClose={() => {
         if (!busy) onClose();
@@ -208,13 +210,24 @@ export function PersonEditor({
             Кем новый человек приходится {fullName(relativeTo)}
             <select
               value={relationship}
-              onChange={(e) => setRelationship(e.target.value)}
+              onChange={(e) =>
+                setRelationship(e.target.value as "child" | ConnectionType)
+              }
             >
               <option value="child">Ребёнок</option>
               {owns(user, relativeTo) && (
                 <>
                   <option value="parent">Родитель</option>
                   <option value="spouse">Супруг / супруга</option>
+                  <optgroup label="Другие связи">
+                    {Object.entries(CONNECTION_NAMES)
+                      .filter(([type]) => !["parent", "spouse"].includes(type))
+                      .map(([type, label]) => (
+                        <option key={type} value={type}>
+                          {label}
+                        </option>
+                      ))}
+                  </optgroup>
                 </>
               )}
             </select>
@@ -482,157 +495,6 @@ export function PersonEditor({
             фотографии останутся.
           </p>
         )}
-      </form>
-    </EditorDialog>
-  );
-}
-export function ConnectionEditor({
-  user,
-  family,
-  initial,
-  save,
-  onClose,
-  busy,
-}: {
-  family: Family;
-  user: ArchiveUser | null;
-  initial: string[];
-  save: Save;
-  onClose: () => void;
-  busy: boolean;
-}) {
-  const [from, setFrom] = useState(initial[0] || ""),
-    [to, setTo] = useState(initial[1] || ""),
-    [type, setType] = useState<ConnectionType>("parent"),
-    [additional, setAdditional] = useState(false),
-    [note, setNote] = useState(""),
-    [error, setError] = useState("");
-  const people = [...family.people].sort((a, b) =>
-    fullName(a).localeCompare(fullName(b), "ru"),
-  );
-  return (
-    <EditorDialog title="Связать людей" onClose={onClose}>
-      <form
-        className="archive-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            await save(connectPeople(family, from, to, type, note));
-            onClose();
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        <p>
-          Первый человек является указанным родственником для второго. Остальные
-          степени родства вычисляются автоматически.
-        </p>
-        <label>
-          Первый человек
-          <select
-            required
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          >
-            <option value="">Выберите человека</option>
-            {people
-              .filter((p) => type === "parent" || owns(user, p))
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {fullName(p)}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          Группа связей
-          <select
-            value={additional ? "additional" : "family"}
-            onChange={(e) => {
-              const extra = e.target.value === "additional";
-              setAdditional(extra);
-              setType(extra ? "godparent" : "parent");
-              setFrom("");
-              setTo("");
-            }}
-          >
-            <option value="family">Семья</option>
-            <option value="additional">Крёстные, опека и другие связи</option>
-          </select>
-        </label>
-        <label>
-          Кем приходится
-          <select
-            value={type}
-            onChange={(e) => {
-              const next = e.target.value as ConnectionType;
-              setType(next);
-              if (
-                next !== "parent" &&
-                !owns(user, people.find((p) => p.id === from) || {})
-              )
-                setFrom("");
-            }}
-          >
-            {Object.entries(CONNECTION_NAMES)
-              .filter(
-                ([key]) =>
-                  additional !==
-                  ["parent", "spouse", "adoptive_parent"].includes(key),
-              )
-              .map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-          </select>
-        </label>
-        <p className="field-hint">
-          Братья, сёстры, предки, потомки и родственники супругов определяются
-          по древу. Укажите общих родителей или брак.
-        </p>
-        <label>
-          Второй человек
-          <select required value={to} onChange={(e) => setTo(e.target.value)}>
-            <option value="">Выберите человека</option>
-            {people
-              .filter((p) => p.id !== from && owns(user, p))
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {fullName(p)}
-                </option>
-              ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={() => {
-            setFrom(to);
-            setTo(from);
-          }}
-        >
-          Поменять местами
-        </button>
-        {!["parent", "spouse"].includes(type) && (
-          <label>
-            Примечание
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
-        )}
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer>
-          <button className="primary-action" disabled={busy}>
-            Сохранить связь
-          </button>
-          <button type="button" onClick={onClose}>
-            Отмена
-          </button>
-        </footer>
       </form>
     </EditorDialog>
   );

@@ -1,0 +1,47 @@
+import { memo } from "react";
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  getSmoothStepPath,
+  type Edge,
+  type EdgeProps,
+} from "@xyflow/react";
+import { CONNECTION_NAMES, type GraphConnection } from "../../domain";
+export type RelationshipEdgeType = Edge<
+  { connection: GraphConnection; onSelect: (edge: GraphConnection) => void },
+  "relationship" | "smoothstep"
+>;
+export const RelationshipEdge = memo(function RelationshipEdge(
+  props: EdgeProps<RelationshipEdgeType>,
+) {
+  const [path, x, y] = getSmoothStepPath({
+    ...props,
+    borderRadius: 12,
+    offset: 24,
+  });
+  const edge = props.data!.connection;
+  return (
+    <>
+      <BaseEdge
+        path={path}
+        markerEnd={props.markerEnd}
+        style={props.style}
+        interactionWidth={24}
+      />
+      <EdgeLabelRenderer>
+        <button
+          className={`flow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
+          style={{
+            transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
+          }}
+          onClick={() => props.data!.onSelect(edge)}
+          aria-label={`Связь: ${CONNECTION_NAMES[edge.type]}`}
+        >
+          {props.selected || edge.type !== "parent"
+            ? CONNECTION_NAMES[edge.type]
+            : "Родитель"}
+        </button>
+      </EdgeLabelRenderer>
+    </>
+  );
+});
