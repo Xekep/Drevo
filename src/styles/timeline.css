@@ -1,0 +1,346 @@
+/* Хронология: отдельная шкала и прозрачное полотно над оттенками эпох. */
+.mode-timeline {
+  --timeline-rail: 112px;
+  background: #fafbf6;
+}
+.mode-timeline .react-flow {
+  left: var(--timeline-rail);
+  width: calc(100% - var(--timeline-rail));
+  background: transparent;
+  z-index: 1;
+}
+.mode-timeline .tree-mode-bar {
+  left: calc(var(--timeline-rail) + 24px);
+}
+.timeline-landscape {
+  position: absolute;
+  inset: 0 0 0 var(--timeline-rail);
+  overflow: hidden;
+  pointer-events: none;
+}
+.timeline-wash,
+.timeline-rail-wash {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.timeline-wash {
+  border-top: 1px solid #9dada02e;
+}
+.timeline-wash.empire {
+  background: linear-gradient(90deg, #eef0e34f, #f8f9f120);
+}
+.timeline-wash.transition {
+  background: #e9e3d970;
+}
+.timeline-wash.soviet {
+  background: linear-gradient(90deg, #f0e9db60, #f6f1e932);
+}
+.timeline-wash.russia {
+  background: linear-gradient(90deg, #e5eee36b, #f1f6ed38);
+}
+.timeline-year {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #d8ded233;
+}
+.timeline-year.major {
+  border-color: #cbd5c35c;
+}
+.timeline-year span {
+  position: absolute;
+  top: 7px;
+  left: 13px;
+  color: #88947e;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-century-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #bbc8ae7a;
+}
+.timeline-undated-boundary {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed #c5cfba;
+}
+.timeline-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--timeline-rail);
+  z-index: 5;
+  background: #f2f5ec;
+  border-right: 1px solid #dce3d2;
+  pointer-events: none;
+}
+.timeline-rail-sections {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.timeline-rail-wash {
+  border-top: 1px solid #d4dccb;
+}
+.timeline-rail-wash.empire {
+  background: #eff2e6;
+}
+.timeline-rail-wash.transition {
+  background: #e9e5d9;
+}
+.timeline-rail-wash.soviet {
+  background: #f0ebe0;
+}
+.timeline-rail-wash.russia {
+  background: #eaf1e5;
+}
+.timeline-century {
+  position: absolute;
+  left: 16px;
+  z-index: 2;
+  color: #728065;
+  text-align: left;
+  padding: 3px 0;
+  pointer-events: auto;
+}
+.timeline-century strong {
+  display: block;
+  font: 400 29px/1 var(--serif);
+  letter-spacing: -1px;
+}
+.timeline-century > span {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 2.2px;
+  margin-top: 7px;
+  color: #8c9980;
+}
+.timeline-century:hover {
+  color: #3e613e;
+}
+.timeline-era {
+  position: absolute;
+  left: 72px;
+  z-index: 1;
+  writing-mode: vertical-rl;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 4px;
+  color: #82906f;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: auto;
+}
+.timeline-era small {
+  color: #939c85;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.timeline-era.soviet {
+  color: #998367;
+}
+.timeline-era.russia {
+  color: #709078;
+}
+.timeline-era.compact {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+}
+.timeline-era.transition {
+  left: 64px;
+  font-size: 9px;
+  letter-spacing: 0.2px;
+}
+.timeline-era:hover {
+  color: #405e3b;
+}
+.timeline-undated {
+  position: absolute;
+  top: 92px;
+  left: 15px;
+  right: 8px;
+  color: #8b967f;
+}
+.timeline-undated > span {
+  font-size: 8px;
+  letter-spacing: 2px;
+}
+.timeline-undated strong {
+  display: block;
+  font: 400 25px/1.4 var(--serif);
+}
+.timeline-undated small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.7;
+  margin-top: 12px;
+}
+.timeline-period-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 16px 12px;
+  background: #f2f5ecf5;
+  border-bottom: 1px solid #e0e7d7;
+  pointer-events: auto;
+}
+.timeline-period-menu summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 7px 3px;
+  color: #77866b;
+  font-size: 10px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+.timeline-period-menu summary::-webkit-details-marker {
+  display: none;
+}
+.timeline-period-menu nav {
+  position: absolute;
+  top: 57px;
+  left: 12px;
+  width: 250px;
+  max-height: min(520px, 65dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #dce4d2;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fffef9;
+  box-shadow: 0 14px 35px #32472618;
+}
+.timeline-period-menu nav > span {
+  display: block;
+  color: #98a18d;
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  margin: 8px 8px 10px;
+}
+.timeline-period-menu nav > button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  color: #53694a;
+}
+.timeline-period-menu nav button:hover {
+  background: #eef3e6;
+}
+.timeline-period-menu nav small {
+  font-size: 10px;
+  color: #95a087;
+}
+.timeline-century-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+.timeline-century-links button {
+  flex: 1;
+  min-width: 50px;
+  display: grid;
+  gap: 5px;
+  padding: 10px 7px;
+  background: #f3f6ec;
+  border-radius: 6px;
+  color: #6d805c;
+  font: 22px/1 var(--serif);
+}
+.timeline-century-links small {
+  font-family: var(--sans);
+}
+.timeline-quick-centuries {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 18px;
+  z-index: 2;
+  display: grid;
+  gap: 3px;
+  padding: 12px 4px 5px;
+  border-top: 1px solid #dce4d1;
+  background: #f2f5ecf5;
+  max-height: 45%;
+  overflow: auto;
+  pointer-events: auto;
+}
+.timeline-quick-centuries > span {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #95a087;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.timeline-quick-centuries button {
+  font: 21px/1.5 var(--serif);
+  color: #798c67;
+  border-radius: 5px;
+}
+.timeline-quick-centuries button:hover {
+  color: #3e613e;
+  background: #e6eedc;
+}
+.timeline-rail:has(.timeline-period-menu[open]) {
+  z-index: 25;
+}
+@media (max-width: 899px) {
+  .mode-timeline {
+    --timeline-rail: 78px;
+  }
+  .mode-timeline .tree-mode-bar {
+    left: calc(var(--timeline-rail) + 10px);
+  }
+  .timeline-century {
+    left: 9px;
+  }
+  .timeline-century strong {
+    font-size: 24px;
+  }
+  .timeline-era {
+    left: 48px;
+    font-size: 10px;
+  }
+  .timeline-era.transition {
+    left: 49px;
+    font-size: 8px;
+  }
+  .timeline-era small {
+    display: none;
+  }
+  .timeline-period-menu {
+    padding: 16px 7px;
+  }
+  .timeline-period-menu summary {
+    letter-spacing: 0.5px;
+    font-size: 9px;
+  }
+  .timeline-undated {
+    left: 10px;
+  }
+  .timeline-undated small {
+    font-size: 9px;
+  }
+  .timeline-year span {
+    left: 7px;
+    font-size: 9px;
+  }
+  .tree-view:has(.mode-timeline) .workspace-actions {
+    top: 64px;
+  }
+}

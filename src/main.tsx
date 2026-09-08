@@ -6,6 +6,7 @@ import "./styles/app.css";
 import "./styles/workspace.css";
 import "./styles/polish.css";
 import "./styles/tree-workspace.css";
+import "./styles/timeline.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

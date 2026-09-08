@@ -488,9 +488,6 @@ function Canvas(props: Props) {
             cameras.current[mode] = camera;
           }}
         >
-          {mode === "timeline" && geometry?.mode === "timeline" && (
-            <EraOverlay geometry={geometry} reverse={reverse} />
-          )}
           {(selected.length > 0 || root || collapsed.size > 0) && (
             <Panel position="top-right" className="flow-branch-tools">
               <button
@@ -532,6 +529,9 @@ function Canvas(props: Props) {
           )}
           <CameraTools selected={selected} />
         </ReactFlow>
+        {mode === "timeline" && geometry?.mode === "timeline" && (
+          <EraOverlay geometry={geometry} />
+        )}
         {problem && (
           <div className="tree-notice" role="alert">
             {problem}
