@@ -128,7 +128,11 @@ export function routeRelationships(
   const cost = (a: Point, b: Point, group: string) => {
     let value = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
     for (const line of lines.query(bounds(a, b))) {
-      if (line.group === group) continue;
+      if (line.group === group) {
+        // Совместный участок допустим; собственный крест семьи всё же лучше обойти.
+        if (segmentsCross([a, b], [line.a, line.b])) value += 300;
+        continue;
+      }
       if (segmentsCross([a, b], [line.a, line.b])) value += 1800;
       else if (
         (a.x === b.x &&

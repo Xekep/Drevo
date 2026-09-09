@@ -94,6 +94,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
   try {
     assert.equal((await request("/api/login", "", "POST", {})).status, 404);
     assert.equal((await request("/api/family")).status, 401);
+    assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
     const admin = await login("first"),
       reader = await login("second");
     assert.equal(
@@ -105,7 +106,23 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "reader",
     );
     assert.equal((await request("/api/users", reader)).status, 403);
+    assert.equal(
+      (
+        await fetch(base + "/api/places/locate?q=unknown", {
+          headers: { Cookie: reader, "X-Drevo-Map": "1" },
+        })
+      ).status,
+      403,
+    );
     assert.equal((await request("/api/backup", reader)).status, 403);
+    assert.equal(
+      (await request("/api/restore/preview", reader, "POST", {})).status,
+      403,
+    );
+    assert.equal(
+      (await request("/api/restore/apply", reader, "POST", {})).status,
+      403,
+    );
     let data = await request("/api/family", reader).then((r) => r.json());
     assert.equal(data.family.people.length, 0, "новый архив пустой");
     data.family.people.push({
@@ -156,6 +173,10 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       spouses: [],
       sources: [],
     });
+    assert.equal(
+      (await request("/api/restore/apply", reader, "POST", {})).status,
+      403,
+    );
     let response = await request(
       "/api/family",
       reader,

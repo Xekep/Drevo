@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownUp, ImagePlus, Link2, Plus, Undo2, X } from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
   parentHints,
@@ -25,6 +32,7 @@ import { ConnectionInspector } from "./components/connection-inspector";
 import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
 import { PeopleCatalog } from "./components/people-catalog";
+const PlacesMap = lazy(() => import("./components/places-map"));
 import { FamiliesCatalog } from "./components/families-catalog";
 import { Gallery, PhotoViewer } from "./components/gallery";
 import { PhotoUpload } from "./components/photo-upload";
@@ -218,8 +226,12 @@ export default function App() {
       setResumePhoto(null);
     }
   }
-  function relative(type: "child" | ConnectionType, existing: boolean) {
-    const p = chosen[0];
+  function relative(
+    type: "child" | ConnectionType,
+    existing: boolean,
+    id?: string,
+  ) {
+    const p = id ? map.get(id) : chosen[0];
     if (!p || !canEdit) return;
     if (existing)
       openConnection({
@@ -348,6 +360,10 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      onAddRelative={(id, type) => {
+                        closeConnection();
+                        relative(type, false, id);
+                      }}
                       family={family}
                       user={user}
                       canEdit={canEdit}
@@ -378,23 +394,6 @@ export default function App() {
                         <ArrowDownUp size={17} />
                         Родство
                       </button>
-                      {canEdit && (
-                        <button
-                          disabled={busy || !archive.canUndo}
-                          onClick={() =>
-                            void archive
-                              .undo()
-                              .then(() => {
-                                setNotice("Последнее изменение отменено");
-                                closeConnection();
-                              })
-                              .catch((e) => setNotice(e.message))
-                          }
-                        >
-                          <Undo2 size={17} />
-                          Отменить
-                        </button>
-                      )}
                     </div>
                     {canEdit && linkFrom !== null && (
                       <div className="link-instruction" role="status">
@@ -508,6 +507,22 @@ export default function App() {
                     query={query}
                     onSelect={showPerson}
                   />
+                )}
+                {view === "places" && archive.readTree && (
+                  <Suspense
+                    fallback={
+                      <div className="archive-status">Открываем карту…</div>
+                    }
+                  >
+                    <PlacesMap
+                      family={family}
+                      user={user}
+                      canEdit={canEdit}
+                      busy={busy}
+                      save={save}
+                      onPerson={showPerson}
+                    />
+                  </Suspense>
                 )}
                 {view === "families" && (
                   <FamiliesCatalog

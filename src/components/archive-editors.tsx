@@ -6,8 +6,10 @@ import {
   CONNECTION_NAMES,
   fullName,
   splitFullName,
+  normalizeDateInput,
+  dateInputLabel,
   guessSex,
-  parentHints,
+  editorParentHints,
   birthSurnameHints,
   removePerson,
   removeConnection,
@@ -20,6 +22,7 @@ import {
   owns,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
+import { PlaceField } from "./place-field";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
   isAdmin,
@@ -73,6 +76,19 @@ export function PersonEditor({
   const [nameText, setNameText] = useState(person ? fullName(person) : "");
   const [autoSex, setAutoSex] = useState(!person || person.sex === "u");
   const [accepted, setAccepted] = useState<string[]>([]);
+  const [birthText, setBirthText] = useState(
+    dateInputLabel(person?.birth || ""),
+  );
+  const [deathText, setDeathText] = useState(
+    dateInputLabel(person?.death || ""),
+  );
+  const hintDate = (value: string) => {
+    try {
+      return normalizeDateInput(value);
+    } catch {
+      return "";
+    }
+  };
   const [portraitFile, setPortraitFile] = useState<File | null>(null),
     [portraitPreview, setPortraitPreview] = useState(""),
     [relationship, setRelationship] = useState<"child" | ConnectionType>(
@@ -80,15 +96,18 @@ export function PersonEditor({
     );
   const hintDraft = {
     ...draft,
+    birth: hintDate(birthText),
+    death: hintDate(deathText) || undefined,
     sex: autoSex ? guessSex(draft) : draft.sex,
     parents:
       !person && relativeTo && relationship === "child"
         ? [...draft.parents, relativeTo.id]
         : draft.parents,
   };
-  const suggestions = parentHints(
+  const suggestions = editorParentHints(
     hintDraft,
     family.people,
+    accepted,
     family.links,
   ).filter(
     (hint) =>
@@ -126,6 +145,8 @@ export function PersonEditor({
     try {
       if (!draft.name.trim() || !draft.surname.trim())
         throw new Error("Укажите фамилию и имя. Отчество можно пропустить.");
+      const birth = normalizeDateInput(birthText),
+        death = normalizeDateInput(deathText) || undefined;
       let current = family,
         portrait = draft.photo;
       if (portraitFile) {
@@ -139,17 +160,19 @@ export function PersonEditor({
       }
       const p = {
         ...draft,
+        birth,
+        death,
         sex: autoSex ? guessSex(draft) : draft.sex,
         photo: portrait,
         name: draft.name.trim(),
         surname: draft.surname.trim(),
         patronymic: draft.patronymic.trim(),
         column:
-          person && person.birth === draft.birth
+          person && person.birth === birth
             ? draft.column
             : availableColumn(
                 current.people.filter((x) => x.id !== draft.id),
-                draft.birth,
+                birth,
               ),
       };
       let next = {
@@ -399,9 +422,16 @@ export function PersonEditor({
             <label>
               Дата рождения
               <input
-                value={draft.birth}
-                placeholder="Год или ГГГГ-ММ-ДД"
-                onChange={(e) => field("birth", e.target.value)}
+                value={birthText}
+                placeholder="1.5.1980, 05.1980 или 1980"
+                onChange={(e) => setBirthText(e.target.value)}
+                onBlur={() => {
+                  try {
+                    setBirthText(dateInputLabel(normalizeDateInput(birthText)));
+                  } catch {
+                    /* Ошибка будет показана при сохранении. */
+                  }
+                }}
               />
             </label>
           </div>
@@ -435,23 +465,43 @@ export function PersonEditor({
                   ["deathPlace", "Место смерти"],
                   ["occupation", "Занятие"],
                 ] as const
-              ).map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <input
+              ).map(([key, label]) =>
+                key === "birthPlace" || key === "deathPlace" ? (
+                  <PlaceField
+                    key={key}
+                    label={label}
                     value={draft[key] || ""}
-                    placeholder={
-                      key === "death" ? "ГГГГ или ГГГГ-ММ-ДД" : undefined
-                    }
-                    onChange={(e) =>
-                      field(
-                        key,
-                        e.target.value || (key === "death" ? undefined : ""),
-                      )
+                    onChange={(value) => field(key, value)}
+                    onLocation={(location) =>
+                      setDraft((current) => ({
+                        ...current,
+                        [key === "birthPlace"
+                          ? "birthLocation"
+                          : "deathLocation"]: location,
+                      }))
                     }
                   />
-                </label>
-              ))}
+                ) : (
+                  <label key={key}>
+                    {label}
+                    <input
+                      value={key === "death" ? deathText : draft[key] || ""}
+                      placeholder={
+                        key === "death"
+                          ? "1.5.1980, 05.1980 или 1980"
+                          : key.endsWith("Place")
+                            ? "Название в то время, например Свердловск-44"
+                            : undefined
+                      }
+                      onChange={(e) =>
+                        key === "death"
+                          ? setDeathText(e.target.value)
+                          : field(key, e.target.value)
+                      }
+                    />
+                  </label>
+                ),
+              )}
             </div>
             <label>
               История человека

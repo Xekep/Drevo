@@ -17,6 +17,9 @@ export type Person = {
   death?: string;
   birthPlace: string;
   deathPlace?: string;
+  /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */
+  birthLocation?: PlaceLocation;
+  deathLocation?: PlaceLocation;
   maidenName?: string;
   occupation?: string;
   biography?: string;
@@ -28,6 +31,12 @@ export type Person = {
   generation: number;
   column: number;
   sources: Source[];
+};
+export type PlaceLocation = {
+  place: string;
+  lat: number;
+  lon: number;
+  label?: string;
 };
 export type Family = {
   title: string;

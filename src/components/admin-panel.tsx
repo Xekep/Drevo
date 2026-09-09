@@ -13,6 +13,7 @@ import {
   type Role,
   type Family,
 } from "../domain";
+import { BackupRestore } from "./backup-restore";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -284,6 +285,8 @@ export function AdminPanel({
                 Только база SQLite
               </a>
             </div>
+            <hr />
+            <BackupRestore onRestored={onChanged} />
             <hr />
             <h2>Настройки и перенос данных</h2>
             <p>Название архива, описание и импорт сохранённого JSON.</p>

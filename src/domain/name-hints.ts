@@ -1,4 +1,5 @@
 import type { Person, FamilyLink } from "./types.ts";
+import { dateBound as bound } from "./dates.ts";
 
 const normalize = (value: string) =>
   value
@@ -218,8 +219,6 @@ export function parentHints(
       Number(father.death.slice(0, 4)) < birth - (sex === "m" ? 1 : 0)
     )
       return false;
-    const bound = (date: string, last: boolean) =>
-      date.length === 4 ? `${date}-${last ? "12-31" : "01-01"}` : date;
     const later = (date: string, years: number) =>
       `${String(Number(date.slice(0, 4)) + years).padStart(4, "0")}${date.slice(4)}`;
     if (
@@ -271,8 +270,7 @@ export function parentHints(
       });
     }
   }
-  // Мать подсказываем по уже записанным общим детям с известным отцом,
-  // но не по одному браку или фамилии: это может быть другая семья отца.
+  // Общие дети — более сильное основание; брак даёт только вопрос для проверки.
   const coparents = new Map<string, Map<string, Person>>();
   for (const sibling of all.values())
     for (const fatherId of sibling.parents) {
@@ -291,8 +289,15 @@ export function parentHints(
     for (const fatherId of child.parents) {
       const father = all.get(fatherId);
       if (!father) continue;
-      for (const [motherId, sibling] of coparents.get(fatherId) || []) {
-        const mother = all.get(motherId)!;
+      if (resolvedSex(father) !== "m") continue;
+      const candidates = new Set([
+        ...(coparents.get(fatherId)?.keys() || []),
+        ...father.spouses,
+      ]);
+      for (const motherId of candidates) {
+        const mother = all.get(motherId),
+          sibling = coparents.get(fatherId)?.get(motherId);
+        if (!mother) continue;
         if (child.id !== draft.id && mother.id !== draft.id) continue;
         if (!plausible(mother, child, "f")) continue;
         hints.push({
@@ -301,7 +306,9 @@ export function parentHints(
           person: child.id === draft.id ? mother : child,
           role: child.id === draft.id ? "mother" : "child",
           parentSex: "f",
-          reason: `У ${mother.name} и указанного отца ${father.name} уже записан общий ребёнок: ${sibling.name}. Уточните, одна ли это мать: дети могут быть единокровными.`,
+          reason: sibling
+            ? `У ${mother.name} и указанного отца ${father.name} уже записан общий ребёнок: ${sibling.name}. Уточните, одна ли это мать: дети могут быть единокровными.`
+            : `${mother.name} указана супругой отца ${father.name}. Проверьте, мать ли она этому ребёнку: супруга отца может быть мачехой.`,
         });
       }
     }
@@ -316,6 +323,31 @@ export function parentHints(
       a.person.name.localeCompare(b.person.name, "ru") ||
       a.person.id.localeCompare(b.person.id),
   );
+}
+/** Выбранный в форме отец участвует в следующем шаге поиска до сохранения. */
+export function editorParentHints(
+  draft: Person,
+  people: Person[],
+  accepted: string[],
+  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+) {
+  const base = parentHints(draft, people, links);
+  const chosen = base.filter((h) => accepted.includes(`${h.from}:${h.to}`));
+  const withParents = (p: Person) => ({
+    ...p,
+    parents: [
+      ...new Set([
+        ...p.parents,
+        ...chosen.filter((h) => h.to === p.id).map((h) => h.from),
+      ]),
+    ],
+  });
+  const next = parentHints(withParents(draft), people.map(withParents), links);
+  return [
+    ...new Map(
+      [...base, ...next].map((h) => [`${h.from}:${h.to}`, h]),
+    ).values(),
+  ];
 }
 export function birthSurnameHints(draft: Person, people: Person[]) {
   if (draft.maidenName || resolvedSex(draft) !== "f") return [];

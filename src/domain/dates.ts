@@ -1,4 +1,56 @@
 import type { Person } from "./types.ts";
+/** Каноническое хранение сохраняет точность: год, месяц или день. */
+export function validDate(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(value) ||
+    Number(value.slice(0, 4)) < 1
+  )
+    return false;
+  const full =
+    value.length === 4
+      ? value + "-01-01"
+      : value.length === 7
+        ? value + "-01"
+        : value;
+  return (
+    !Number.isNaN(Date.parse(full)) &&
+    new Date(full).toISOString().slice(0, 10) === full
+  );
+}
+export function normalizeDateInput(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  let result = text;
+  const local = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(text);
+  const month = /^(\d{1,2})[./](\d{4})$/.exec(text);
+  const iso = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/.exec(text);
+  if (local)
+    result = `${local[3]}-${local[2].padStart(2, "0")}-${local[1].padStart(2, "0")}`;
+  else if (month) result = `${month[2]}-${month[1].padStart(2, "0")}`;
+  else if (iso)
+    result = `${iso[1]}-${iso[2].padStart(2, "0")}${iso[3] ? "-" + iso[3].padStart(2, "0") : ""}`;
+  if (!validDate(result))
+    throw new Error("Проверьте дату. Например: 1.5.1980, 05.1980 или 1980.");
+  return result;
+}
+export function dateInputLabel(value: string) {
+  return validDate(value) && value.length > 4
+    ? value.split("-").reverse().join(".")
+    : value;
+}
+export function dateBound(value: string, last: boolean) {
+  if (value.length === 4) return `${value}-${last ? "12-31" : "01-01"}`;
+  if (value.length === 7) {
+    const [year, month] = value.split("-").map(Number);
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
+      month - 1
+    ];
+    return `${value}-${last ? days : "01"}`;
+  }
+  return value;
+}
 export const dateYear = (date?: string) =>
   date ? Number(date.slice(0, 4)) : new Date().getFullYear();
 export const fullName = (p: Person) =>
@@ -43,14 +95,15 @@ export function plural(n: number, one: string, few: string, many: string) {
 }
 export function dateLabel(value: string) {
   if (!value) return "";
+  if (!validDate(value)) return value;
   if (/^\d{4}$/.test(value)) return `${value} год`;
   return new Intl.DateTimeFormat("ru-RU", {
-    day: "numeric",
+    ...(value.length === 10 ? { day: "numeric" as const } : {}),
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   })
-    .format(new Date(value + "T12:00:00Z"))
+    .format(new Date(dateBound(value, false) + "T12:00:00Z"))
     .replace(" г.", "");
 }
 export function ageLabel(p: Person) {
@@ -62,7 +115,7 @@ export function ageLabel(p: Person) {
     (end.length > 4 && p.birth.length > 4 && end.slice(5) < p.birth.slice(5)
       ? 1
       : 0);
-  return `${p.birth.length === 4 || p.death?.length === 4 ? "около " : ""}${age} ${plural(age, "год", "года", "лет")}`;
+  return `${p.birth.length < 10 || (p.death && p.death.length < 10) ? "около " : ""}${age} ${plural(age, "год", "года", "лет")}`;
 }
 export function safeUrl(value?: string): string | undefined {
   if (!value) return;

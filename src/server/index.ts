@@ -17,6 +17,9 @@ import { databaseBackup } from "./backup.ts";
 import { fullBackup } from "./full-backup.ts";
 import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
+import { restoreStore, RESTORE_LIMIT } from "./restore.ts";
+import { geocodingStore } from "./geocoding.ts";
+import { familyPlaces, placeKey } from "../domain/places.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const staticTypes: Record<string, string> = {
@@ -49,6 +52,9 @@ export async function startServer(
   );
   removeStarterFamily(archive);
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
+  const restores = restoreStore(archive, dbPath);
+  const geocoding = geocodingStore(archive.db);
+  let restoreUploadBusy = false;
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
@@ -233,6 +239,85 @@ export async function startServer(
           !access.publicAlbums))
     )
       return json(res, 401, { error: "Sign in to view this archive" });
+    if (url === "/api/places/locate") {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      if (!visitor && !access.publicTree)
+        return json(res, 401, { error: "Войдите для просмотра мест семьи" });
+      if (
+        req.headers["x-drevo-map"] !== "1" ||
+        (origin && origin !== (publicOrigin || `http://${host}`)) ||
+        req.headers["sec-fetch-site"] === "cross-site"
+      )
+        return json(res, 403, { error: "Откройте карту в архиве" });
+      const query = (parsedUrl.searchParams.get("q") || "").trim();
+      if (
+        !auth.canEdit(req) &&
+        !familyPlaces(archive.read().family.people).some(
+          (p) => p.key === placeKey(query),
+        )
+      )
+        return json(res, 403, {
+          error: "Можно искать только места из доступного древа",
+        });
+      try {
+        const result = await geocoding.locate(query);
+        if (!auth.currentUser(req) && !visibility.read().publicTree)
+          return json(res, 401, { error: "Доступ к древу закрыт" });
+        return json(res, 200, result);
+      } catch (e) {
+        return json(res, 400, { error: (e as Error).message });
+      }
+    }
+    if (url === "/api/restore/preview" || url === "/api/restore/apply") {
+      if (req.method !== "POST")
+        return json(res, 405, { error: "Ожидается POST" });
+      if (!auth.isAdmin(req))
+        return json(res, auth.currentUser(req) ? 403 : 401, {
+          error: "Импорт доступен только администратору",
+        });
+      if (
+        (origin && origin !== (publicOrigin || `http://${host}`)) ||
+        req.headers["sec-fetch-site"] === "cross-site"
+      )
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (req.headers["x-drevo-restore"] !== "1")
+        return json(res, 400, { error: "Откройте импорт в админке" });
+      const preview = url.endsWith("preview");
+      if (preview && restoreUploadBusy)
+        return json(res, 429, {
+          error: "Уже загружается другой бэкап. Повторите позже.",
+        });
+      if (preview) restoreUploadBusy = true;
+      try {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > (preview ? RESTORE_LIMIT : 4096))
+            return json(res, 413, {
+              error: "Файл слишком большой. Максимум 128 МБ.",
+            });
+          chunks.push(Buffer.from(chunk));
+        }
+        const actor = auth.currentUser(req);
+        if (!actor || !auth.isAdmin(req))
+          return json(res, 403, { error: "Доступ администратора отозван" });
+        const bytes = Buffer.concat(chunks);
+        if (preview)
+          return json(res, 200, await restores.preview(bytes, actor));
+        const body = JSON.parse(bytes.toString("utf8"));
+        if (body.confirm !== true || typeof body.token !== "string")
+          return json(res, 400, { error: "Подтвердите замену данных" });
+        return json(res, 200, restores.apply(body.token, actor));
+      } catch (e) {
+        return json(res, e instanceof ConflictError ? 409 : 400, {
+          error: (e as Error).message,
+        });
+      } finally {
+        if (preview) restoreUploadBusy = false;
+      }
+    }
     if (url === "/api/backup/full" && req.method === "GET") {
       if (!auth.isAdmin(req))
         return json(res, visitor ? 403 : 401, {
@@ -455,6 +540,8 @@ export async function startServer(
       await vite?.close();
       server.closeAllConnections();
       await new Promise<void>((r) => server.close(() => r()));
+      restores.close();
+      geocoding.close();
       archive.close();
     },
   };

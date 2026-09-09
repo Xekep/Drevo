@@ -31,67 +31,7 @@ export function openArchive(path: string, seed: Family) {
       .some((row) => row.name === "created_by")
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
-  function read() {
-    const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
-    const people = db
-      .prepare("SELECT data FROM people ORDER BY rowid")
-      .all()
-      .map(
-        (row) =>
-          ({
-            ...JSON.parse(String(row.data)),
-            parents: [],
-            spouses: [],
-          }) as Person,
-      );
-    const map = new Map(people.map((p) => [p.id, p]));
-    const links: FamilyLink[] = [];
-    for (const row of db
-      .prepare("SELECT * FROM relations ORDER BY rowid")
-      .all()) {
-      const from = String(row.source),
-        to = String(row.target),
-        type = String(row.type);
-      if (type === "parent") map.get(to)!.parents.push(from);
-      else if (type === "spouse") {
-        map.get(from)!.spouses.push(to);
-        map.get(to)!.spouses.push(from);
-      } else
-        links.push({
-          id: String(row.id),
-          ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
-          from,
-          to,
-          type: type as FamilyLink["type"],
-          ...(row.note ? { note: String(row.note) } : {}),
-        });
-    }
-    const photos = db
-      .prepare("SELECT data FROM photos ORDER BY rowid")
-      .all()
-      .map(
-        (row) =>
-          ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
-      );
-    const photoMap = new Map(photos.map((p) => [p.id, p]));
-    for (const row of db
-      .prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid")
-      .all())
-      photoMap
-        .get(String(row.photo_id))!
-        .tags.push(JSON.parse(String(row.data)));
-    return {
-      family: {
-        title: String(meta.title),
-        description: String(meta.description),
-        demo: !!meta.demo,
-        people,
-        links,
-        photos,
-      } as Family,
-      revision: Number(meta.revision),
-    };
-  }
+  const read = () => readArchive(db);
   function write(value: unknown, expected: number, actor?: ArchiveUser) {
     const family = actor
       ? authorizeArchive(value, read().family, actor)
@@ -173,4 +113,63 @@ export function openArchive(path: string, seed: Family) {
   }
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
   return { read, write, close: () => db.close(), db };
+}
+
+export function readArchive(db: DatabaseSync) {
+  const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
+  const people = db
+    .prepare("SELECT data FROM people ORDER BY rowid")
+    .all()
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+  const map = new Map(people.map((p) => [p.id, p]));
+  const links: FamilyLink[] = [];
+  for (const row of db
+    .prepare("SELECT * FROM relations ORDER BY rowid")
+    .all()) {
+    const from = String(row.source),
+      to = String(row.target),
+      type = String(row.type);
+    if (type === "parent") map.get(to)!.parents.push(from);
+    else if (type === "spouse") {
+      map.get(from)!.spouses.push(to);
+      map.get(to)!.spouses.push(from);
+    } else
+      links.push({
+        id: String(row.id),
+        ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
+        from,
+        to,
+        type: type as FamilyLink["type"],
+        ...(row.note ? { note: String(row.note) } : {}),
+      });
+  }
+  const photos = db
+    .prepare("SELECT data FROM photos ORDER BY rowid")
+    .all()
+    .map(
+      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
+    );
+  const photoMap = new Map(photos.map((p) => [p.id, p]));
+  for (const row of db
+    .prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid")
+    .all())
+    photoMap.get(String(row.photo_id))!.tags.push(JSON.parse(String(row.data)));
+  return {
+    family: {
+      title: String(meta.title),
+      description: String(meta.description),
+      demo: !!meta.demo,
+      people,
+      links,
+      photos,
+    } as Family,
+    revision: Number(meta.revision),
+  };
 }

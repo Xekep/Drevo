@@ -7,6 +7,7 @@ import {
   Panel,
   useReactFlow,
   useViewport,
+  useStore,
   type Viewport,
   type Connection as FlowConnection,
 } from "@xyflow/react";
@@ -35,12 +36,19 @@ import {
   type TreeGeometry,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { HouseholdNode, type HouseholdNodeType } from "./household-node";
+import { householdBands } from "../../domain/household-bands";
 import {
   RelationshipEdge,
   type RelationshipEdgeType,
 } from "./relationship-edge";
 import { EraOverlay } from "./era-overlay";
 import { routeKey } from "../../domain/edge-routing";
+import { useNarrowScreen } from "../../hooks/useNarrowScreen";
+import {
+  initialFamilyFocus,
+  relativeAtHandle,
+} from "../../domain/tree-interactions";
 
 export type ConnectionDraft = {
   from: string;
@@ -64,13 +72,14 @@ type Props = {
   onConnect: (draft: ConnectionDraft) => void;
   onClear: () => void;
   onAdd: () => void;
+  onAddRelative: (id: string, type: "parent" | "child" | "spouse") => void;
   onLink: () => void;
   focus: TreeFocus | null;
   preview: ConnectionDraft | null;
   query: string;
   highlighted: string[];
 };
-const nodeTypes = { person: PersonNode },
+const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
 const colors = {
   parent: "#58775a",
@@ -128,6 +137,33 @@ function CameraTools({ selected }: { selected: string[] }) {
   );
 }
 function Canvas(props: Props) {
+  const narrow = useNarrowScreen();
+  const canvasWidth = useStore((s) => s.width),
+    canvasHeight = useStore((s) => s.height);
+  const container = useRef<HTMLDivElement>(null);
+  const mobileCamera = useRef("");
+  const [createAt, setCreateAt] = useState<{
+    id: string;
+    type: "parent" | "child" | "spouse";
+    x: number;
+    y: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!createAt) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target as Element)?.closest(".tree-create-at"))
+        setCreateAt(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCreateAt(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [createAt]);
   const {
     family,
     user,
@@ -143,7 +179,10 @@ function Canvas(props: Props) {
     [problem, setProblem] = useState("");
   const [collapsed, setCollapsed] = useState(new Set<string>()),
     [root, setRoot] = useState<string | null>(null);
-  const flow = useReactFlow<PersonNodeType, RelationshipEdgeType>(),
+  const flow = useReactFlow<
+      PersonNodeType | HouseholdNodeType,
+      RelationshipEdgeType
+    >(),
     cameras = useRef<Partial<Record<TreeMode, Viewport>>>({}),
     lastFocus = useRef(-1),
     previousMode = useRef<TreeMode>(mode);
@@ -219,6 +258,41 @@ function Canvas(props: Props) {
     [geometry],
   );
   const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
+  const households = useMemo(
+    () =>
+      mode === "generations"
+        ? householdBands(
+            family.people,
+            new Map([...positions].filter(([id]) => visible.has(id))),
+            TREE_NODE_WIDTH,
+            TREE_NODE_HEIGHT,
+          )
+        : [],
+    [mode, family.people, positions, visible],
+  );
+  const householdMembers = useMemo(
+    () => new Set(households.flatMap((group) => group.members)),
+    [households],
+  );
+  const householdNodes = useMemo<HouseholdNodeType[]>(
+    () =>
+      households.map((group) => ({
+        id: group.id,
+        type: "household",
+        position: { x: group.x, y: group.y },
+        width: group.width,
+        height: group.height,
+        data: {},
+        draggable: false,
+        selectable: false,
+        connectable: false,
+        focusable: false,
+        zIndex: -1,
+        style: { pointerEvents: "none" },
+        domAttributes: { "aria-hidden": true },
+      })),
+    [households],
+  );
   const nodes = useMemo<PersonNodeType[]>(
     () =>
       family.people
@@ -232,6 +306,7 @@ function Canvas(props: Props) {
           selected: selected.includes(p.id),
           data: {
             person: p,
+            household: householdMembers.has(p.id),
             collapsed: collapsed.has(p.id),
             childrenCount: childrenCount.get(p.id) || 0,
             dimmed: !matchesPerson(p, props.query),
@@ -246,7 +321,12 @@ function Canvas(props: Props) {
       collapsed,
       childrenCount,
       props.query,
+      householdMembers,
     ],
+  );
+  const displayNodes = useMemo(
+    () => [...householdNodes, ...nodes],
+    [householdNodes, nodes],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
   const peopleMap = useMemo(
@@ -370,7 +450,9 @@ function Canvas(props: Props) {
       !nodes.length ||
       geometry.mode !== mode ||
       geometry.reverse !== reverse ||
-      layoutPeople.current !== family.people
+      layoutPeople.current !== family.people ||
+      !canvasWidth ||
+      !canvasHeight
     )
       return;
     const timer = setTimeout(() => {
@@ -383,6 +465,7 @@ function Canvas(props: Props) {
         void flow.fitView({
           nodes: focus.ids.map((id) => ({ id })),
           maxZoom: 1,
+          minZoom: narrow ? 0.55 : 0.15,
           padding: 0.5,
         });
       } else if (
@@ -399,7 +482,30 @@ function Canvas(props: Props) {
           });
         else if (cameras.current[mode])
           void flow.setViewport(cameras.current[mode]!);
-        else void flow.fitView({ maxZoom: 1, padding: 0.25 });
+        else
+          void flow.fitView({
+            maxZoom: 1,
+            minZoom: narrow ? 0.55 : 0.15,
+            padding: 0.25,
+          });
+      } else if (narrow) {
+        const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
+        if (mobileCamera.current !== key) {
+          const first = !mobileCamera.current;
+          mobileCamera.current = key;
+          if (!selected.length && !first) return;
+          const ids = selected.length
+            ? selected
+            : initialFamilyFocus(family.people);
+          void flow.fitView({
+            nodes: ids.map((id) => ({ id })),
+            minZoom: 0.55,
+            maxZoom: selected.length
+              ? Math.max(0.65, Math.min(0.9, flow.getZoom()))
+              : 0.8,
+            padding: 0.18,
+          });
+        }
       }
     }, 50);
     return () => clearTimeout(timer);
@@ -413,6 +519,11 @@ function Canvas(props: Props) {
     positions,
     selected,
     flow,
+    narrow,
+    canvasWidth,
+    canvasHeight,
+    childrenCount,
+    peopleMap,
   ]);
   const connect = useCallback(
     (c: FlowConnection) => {
@@ -427,7 +538,7 @@ function Canvas(props: Props) {
   }
   return (
     <TreeActions.Provider value={actions}>
-      <div className={`tree-canvas mode-${mode}`}>
+      <div ref={container} className={`tree-canvas mode-${mode}`}>
         <div className="tree-mode-bar">
           <div className="segmented" aria-label="Представление дерева">
             <button
@@ -449,13 +560,41 @@ function Canvas(props: Props) {
               : `${nodes.length} из ${family.people.length} человек`}
           </span>
         </div>
-        <ReactFlow<PersonNodeType, RelationshipEdgeType>
-          nodes={nodes}
+        <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
+          nodes={displayNodes}
           edges={displayEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
           onConnect={connect}
+          onConnectEnd={(event, state) => {
+            if (
+              !props.canEdit ||
+              props.busy ||
+              state.isValid ||
+              !state.fromNode ||
+              state.toNode ||
+              !(event.target as Element)?.closest(".react-flow__pane")
+            )
+              return;
+            const point =
+              "changedTouches" in event ? event.changedTouches[0] : event;
+            const box = container.current?.getBoundingClientRect();
+            if (!box || !point) return;
+            const handle = state.fromHandle?.id;
+            setCreateAt({
+              id: state.fromNode.id,
+              type: relativeAtHandle(handle, reverse),
+              x: Math.max(
+                10,
+                Math.min(box.width - 240, point.clientX - box.left),
+              ),
+              y: Math.max(
+                65,
+                Math.min(box.height - 85, point.clientY - box.top),
+              ),
+            });
+          }}
           onReconnect={(edge, c) => {
             if (edge.data && c.source && c.target)
               onConnect({
@@ -483,7 +622,7 @@ function Canvas(props: Props) {
           minZoom={0.15}
           maxZoom={1.8}
           onlyRenderVisibleElements
-          fitView
+          fitView={!narrow}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
           ariaLabelConfig={{
             "controls.zoomIn.ariaLabel": "Увеличить",
@@ -537,6 +676,31 @@ function Canvas(props: Props) {
           )}
           <CameraTools selected={selected} />
         </ReactFlow>
+        {createAt && props.canEdit && (
+          <div
+            className="tree-create-at"
+            style={{ left: createAt.x, top: createAt.y }}
+          >
+            <button
+              disabled={props.busy}
+              onClick={() => {
+                props.onAddRelative(createAt.id, createAt.type);
+                setCreateAt(null);
+              }}
+            >
+              <Plus size={20} />
+              <span>
+                Добавить{" "}
+                {createAt.type === "parent"
+                  ? "родителя"
+                  : createAt.type === "child"
+                    ? "ребёнка"
+                    : "супруга / супругу"}
+                <small>Связь с {peopleMap.get(createAt.id)?.name}</small>
+              </span>
+            </button>
+          </div>
+        )}
         {mode === "timeline" && geometry?.mode === "timeline" && (
           <EraOverlay geometry={geometry} />
         )}

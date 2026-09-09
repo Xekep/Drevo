@@ -14,13 +14,13 @@ import {
   dateYear,
   edgeLabel,
   ERAS,
-  initials,
   resolvedSex,
   safeUrl,
   years,
   type Person,
   type FamilyLink,
 } from "../domain";
+import { PortraitPlaceholder } from "./portrait-placeholder";
 export function Avatar({
   person,
   large = false,
@@ -38,7 +38,7 @@ export function Avatar({
       {src && failed !== src ? (
         <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} />
       ) : (
-        initials(person)
+        <PortraitPlaceholder />
       )}
     </span>
   );

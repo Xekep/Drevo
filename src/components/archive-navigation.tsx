@@ -10,6 +10,7 @@ import {
   LogOut,
   CircleHelp,
   Menu,
+  MapPin,
 } from "lucide-react";
 import {
   fullName,
@@ -18,7 +19,8 @@ import {
   type Person,
   type ArchiveUser,
 } from "../domain";
-export type ArchiveView = "tree" | "list" | "families" | "gallery" | "admin";
+export type ArchiveView =
+  "tree" | "list" | "families" | "gallery" | "places" | "admin";
 export function ArchiveNavigation({
   view,
   onView,
@@ -74,6 +76,7 @@ export function ArchiveNavigation({
             ["list", "Люди", Users],
             ["families", "Семьи", Heart],
             ["gallery", "Фото", Image],
+            ["places", "Места", MapPin],
           ] as const
         )
           .filter(([id]) => (id === "gallery" ? readPhotos : readTree))
@@ -100,6 +103,7 @@ export function ArchiveNavigation({
                 ["list", "Люди", Users],
                 ["families", "Семьи", Heart],
                 ["gallery", "Фото", Image],
+                ["places", "Места", MapPin],
               ] as const
             )
               .filter(([id]) => (id === "gallery" ? readPhotos : readTree))

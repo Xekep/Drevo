@@ -1,4 +1,5 @@
 import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
+import { validDate, dateBound } from "./dates.ts";
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -13,12 +14,6 @@ export function validateFamily(value: unknown): Family {
     throw new Error("В архиве нет данных о людях");
   const ids = new Set<string>();
   const today = new Date().toISOString().slice(0, 10);
-  const validDate = (s: unknown) =>
-    typeof s === "string" &&
-    ((/^\d{4}$/.test(s) && Number(s) >= 1) ||
-      (/^\d{4}-\d{2}-\d{2}$/.test(s) &&
-        !Number.isNaN(Date.parse(s)) &&
-        new Date(s).toISOString().slice(0, 10) === s));
   for (const p of data.people) {
     if (
       !p ||
@@ -31,7 +26,9 @@ export function validateFamily(value: unknown): Family {
       !["m", "f", "u"].includes(p.sex) ||
       (p.birth !== "" && !validDate(p.birth)) ||
       (p.death !== undefined &&
-        (!validDate(p.death) || (!!p.birth && p.death < p.birth))) ||
+        (!validDate(p.death) ||
+          (!!p.birth &&
+            dateBound(p.death, true) < dateBound(p.birth, false)))) ||
       !Array.isArray(p.parents) ||
       !Array.isArray(p.spouses) ||
       ![...p.parents, ...p.spouses].every((id) => typeof id === "string") ||
@@ -42,6 +39,25 @@ export function validateFamily(value: unknown): Family {
       !Array.isArray(p.sources)
     )
       throw new Error("Некорректная карточка человека");
+    for (const key of ["birthLocation", "deathLocation"] as const) {
+      const location = p[key];
+      if (
+        location !== undefined &&
+        (!location ||
+          typeof location !== "object" ||
+          typeof location.place !== "string" ||
+          !location.place.trim() ||
+          location.place.length > 1000 ||
+          !Number.isFinite(location.lat) ||
+          !Number.isFinite(location.lon) ||
+          Math.abs(location.lat) > 90 ||
+          Math.abs(location.lon) > 180 ||
+          (location.label !== undefined &&
+            (typeof location.label !== "string" ||
+              location.label.length > 1000)))
+      )
+        throw new Error("Проверьте координаты места");
+    }
     for (const key of [
       "deathPlace",
       "maidenName",
@@ -85,7 +101,9 @@ export function validateFamily(value: unknown): Family {
     if (
       p.birth &&
       p.parents.some(
-        (id) => map.get(id)!.birth && map.get(id)!.birth >= p.birth,
+        (id) =>
+          map.get(id)!.birth &&
+          dateBound(map.get(id)!.birth, false) >= dateBound(p.birth, true),
       )
     )
       throw new Error("Родитель должен родиться раньше ребёнка");
@@ -128,7 +146,8 @@ export function validateFamily(value: unknown): Family {
       ["adoptive_parent", "nurse"].includes(link.type) &&
       map.get(link.from)!.birth &&
       map.get(link.to)!.birth &&
-      map.get(link.from)!.birth >= map.get(link.to)!.birth
+      dateBound(map.get(link.from)!.birth, false) >=
+        dateBound(map.get(link.to)!.birth, true)
     )
       throw new Error("Родитель или кормилица должны родиться раньше ребёнка");
     linkIds.add(link.id);

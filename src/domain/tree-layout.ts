@@ -1,4 +1,6 @@
 import { familyPositions } from "./family-layout.ts";
+import { householdLevels } from "./household-levels.ts";
+import { arrangeHouseholds } from "./family-arrangement.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { Person, Family, FamilyLink } from "./types.ts";
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
@@ -70,24 +72,7 @@ export function treeGeometry(
     parents: [...new Set([...p.parents, ...(adoptive.get(p.id) || [])])],
   }));
   const peopleMap = new Map(parentage.map((p) => [p.id, p]));
-  const partners = new Map(parentage.map((p) => [p.id, new Set(p.spouses)]));
-  for (const p of parentage)
-    for (const a of p.parents)
-      for (const b of p.parents) if (a !== b) partners.get(a)?.add(b);
-  // Геометрия: супруг или второй родитель без известных предков следует уровню партнёра.
-  const aligned = parentage.map((p) => ({
-    ...p,
-    parents: p.parents.length
-      ? p.parents
-      : [...partners.get(p.id)!]
-          .map((id) => peopleMap.get(id))
-          .find((s) => s?.parents.length)?.parents || [],
-  }));
-  const alignedLevels = generationLevels(aligned);
-  const levels =
-      alignedLevels.size === people.length
-        ? alignedLevels
-        : generationLevels(parentage),
+  const levels = householdLevels(parentage),
     placed = familyPositions(
       parentage,
       levels,
@@ -138,6 +123,23 @@ export function treeGeometry(
       });
       positions.push([p.id, { x, y }]);
     }
+  }
+  if (mode === "generations") {
+    const arranged = arrangeHouseholds(
+      people,
+      links,
+      positions,
+      TREE_NODE_WIDTH,
+      TREE_NODE_HEIGHT,
+    );
+    return {
+      positions: arranged.positions,
+      routes: arranged.routes,
+      start,
+      offset,
+      mode,
+      reverse,
+    };
   }
   const routes = routeRelationships(
     people,

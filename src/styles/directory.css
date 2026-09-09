@@ -1,0 +1,336 @@
+.people-directory {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 38px 32px 64px;
+}
+.flow-household {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  border: 1px solid #d5dfcc;
+  background: #fffffbea;
+  box-shadow: 0 4px 20px #39533309;
+  pointer-events: none;
+}
+.flow-person[data-household="true"]:not(.is-selected):not(:hover) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.people-directory header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.people-directory h1 {
+  font: 400 36px/1.2 var(--serif);
+  margin-top: 9px;
+}
+.people-directory h1 small {
+  font: 14px var(--sans);
+  color: #89947e;
+  margin-left: 10px;
+}
+.people-directory header label {
+  display: grid;
+  gap: 7px;
+  font-size: 11px;
+  color: #7b8872;
+}
+.people-directory select {
+  border: 1px solid #dae2d3;
+  border-radius: 8px;
+  background: #fffef9;
+  padding: 10px 30px 10px 12px;
+  color: #526449;
+  font-size: 13px;
+}
+.people-directory ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid #dce4d3;
+}
+.directory-columns,
+.directory-person {
+  display: grid;
+  grid-template-columns:
+    minmax(240px, 2fr) minmax(110px, 0.8fr) minmax(140px, 1.2fr)
+    minmax(125px, 1fr) 17px;
+  gap: 20px;
+  align-items: center;
+}
+.directory-columns {
+  padding: 0 16px 12px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8c9882;
+}
+.directory-person {
+  padding: 17px 16px;
+  width: 100%;
+  text-align: left;
+  border-bottom: 1px solid #e4e9dd;
+  transition: background 0.15s;
+  border-radius: 0;
+}
+.directory-person:hover,
+.directory-person:focus-visible {
+  background: #eff4e8;
+}
+.directory-name {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.directory-name > span:last-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.directory-name b {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.directory-name .person-avatar {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+.directory-person small {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #839078;
+}
+.directory-years {
+  font-size: 13px;
+  color: #657359;
+  font-variant-numeric: tabular-nums;
+}
+.directory-places,
+.directory-family {
+  display: grid;
+  gap: 4px;
+}
+.directory-places small {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.directory-places svg {
+  flex-shrink: 0;
+}
+.directory-arrow {
+  color: #a3af96;
+}
+.directory-empty {
+  padding: 30px 0;
+  color: #7c8a70;
+}
+.backup-restore {
+  display: grid;
+  gap: 14px;
+}
+.backup-restore > button {
+  justify-self: start;
+  padding: 10px 16px;
+  border: 1px solid #cedbc4;
+  border-radius: 8px;
+}
+.restore-file {
+  position: relative;
+  padding: 22px;
+  border: 1px dashed #b5c5a8;
+  border-radius: 12px;
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  background: #f7f9f1;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.restore-file input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.restore-file:focus-within {
+  outline: 2px solid #628452;
+}
+.restore-preview {
+  padding: 20px;
+  border: 1px solid #d4dfc9;
+  border-radius: 12px;
+  background: #f6f8f0;
+}
+.restore-confirm {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+.restore-confirm input {
+  width: auto !important;
+}
+.restore-warning {
+  color: #96682f;
+}
+.tree-create-at {
+  position: absolute;
+  z-index: 24;
+  background: #fffef7;
+  border: 1px solid #a9bf98;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #304b2925;
+}
+.tree-create-at button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  color: #426239;
+  text-align: left;
+  font-size: 13px;
+}
+.tree-create-at button span {
+  display: grid;
+  gap: 5px;
+}
+.tree-create-at small {
+  font-size: 10px;
+  color: #8b997f;
+}
+.flow-person[data-readonly="true"] .react-flow__handle {
+  visibility: hidden;
+}
+.portrait-placeholder {
+  width: 100%;
+  height: 100%;
+  display: block;
+  color: #71856b;
+}
+.female .portrait-placeholder {
+  color: #a58c78;
+}
+.unknown .portrait-placeholder {
+  color: #8a927f;
+}
+.person-avatar:has(.portrait-placeholder),
+.profile-avatar:has(.portrait-placeholder) {
+  background: radial-gradient(circle at 40% 25%, #fafbf3, #e4ead9);
+  border: 1px solid #d8e0cd;
+  overflow: hidden;
+}
+.female:has(> .portrait-placeholder) {
+  background: radial-gradient(circle at 40% 25%, #fff9ee, #ede4d7);
+  border-color: #e4d9c8;
+}
+@media (max-width: 899px) {
+  .tree-mode-bar {
+    max-width: calc(100% - 20px);
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .workspace-actions {
+    top: 62px;
+    right: 10px;
+  }
+  .flow-branch-tools {
+    top: 98px !important;
+    right: 10px !important;
+    max-width: calc(100% - 20px);
+    flex-wrap: wrap;
+  }
+  .flow-camera-tools {
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    right: 8px !important;
+    padding: 4px;
+    gap: 1px;
+  }
+  .flow-camera-tools button {
+    min-width: 36px;
+    min-height: 40px;
+  }
+  .flow-camera-tools > span {
+    font-size: 10px;
+    min-width: 34px;
+  }
+  .archive-workspace:has(.inspector-dock.expanded) .tree-canvas {
+    bottom: 84%;
+  }
+  .inspector-dock .profile-head {
+    padding: 16px;
+  }
+  .inspector-dock .profile-content {
+    padding: 18px;
+  }
+  .inspector-dock .profile-avatar {
+    width: 66px;
+    height: 76px;
+  }
+  .dock-grip button {
+    min-height: 30px;
+    min-width: 60px;
+  }
+  .people-directory {
+    padding: 25px 16px 50px;
+  }
+  .people-directory header {
+    align-items: start;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .people-directory h1 {
+    font-size: 30px;
+  }
+  .people-directory header label {
+    margin-left: auto;
+    max-width: 100%;
+  }
+  .people-directory select {
+    max-width: 100%;
+    font-size: 12px;
+  }
+  .directory-columns {
+    display: none;
+  }
+  .directory-person {
+    grid-template-columns: 1fr auto;
+    gap: 5px 10px;
+    padding: 15px 4px;
+  }
+  .directory-name {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .directory-years,
+  .directory-places,
+  .directory-family {
+    grid-column: 1;
+    padding-left: 58px;
+  }
+  .directory-years:empty,
+  .directory-places:empty,
+  .directory-family:empty {
+    display: none;
+  }
+  .directory-family {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .directory-arrow {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}

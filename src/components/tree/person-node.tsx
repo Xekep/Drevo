@@ -22,6 +22,7 @@ export type PersonNodeType = Node<
     collapsed: boolean;
     childrenCount: number;
     dimmed: boolean;
+    household?: boolean;
   },
   "person"
 >;
@@ -35,6 +36,8 @@ export const PersonNode = memo(function PersonNode({
   return (
     <div
       className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      data-readonly={!isConnectable}
+      data-household={data.household || undefined}
     >
       {[
         ["top", Position.Top],

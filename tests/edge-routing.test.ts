@@ -14,6 +14,7 @@ import {
   type EdgeRoute,
 } from "../src/domain/edge-routing.ts";
 import { segmentsCross, type Point } from "../src/domain/layout-order.ts";
+import { householdBands } from "../src/domain/household-bands.ts";
 
 const person = (
   id: string,
@@ -21,6 +22,67 @@ const person = (
   spouses: string[] = [],
   birth = "",
 ): LayoutPerson => ({ id, birth, parents, spouses });
+
+test("couples with unequal known ancestry stay one household without borrowing each other's parents", () => {
+  const people = [
+    person("a0"),
+    person("a", ["a0"], ["b"]),
+    person("b0"),
+    person("b1", ["b0"]),
+    person("b", ["b1"], ["a"]),
+    person("child", ["a", "b"]),
+    person("unrelated"),
+  ];
+  const before = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const layout = treeGeometry(people, "generations", reverse),
+      points = new Map(layout.positions);
+    assert.equal(points.get("a")!.y, points.get("b")!.y);
+    assert.equal(
+      Math.abs(points.get("a")!.x - points.get("b")!.x),
+      TREE_NODE_WIDTH + 32,
+    );
+    for (const p of people)
+      for (const parent of p.parents)
+        assert.equal(points.get(parent)!.y < points.get(p.id)!.y, !reverse);
+    assert.equal(layout.routes!.length, 6);
+    verifyRoutes(layout.positions, layout.routes!);
+    const bands = householdBands(
+      people,
+      points,
+      TREE_NODE_WIDTH,
+      TREE_NODE_HEIGHT,
+    );
+    assert.deepEqual(bands.flatMap((b) => b.members).sort(), ["a", "b"]);
+    assert.equal(
+      householdBands(
+        people,
+        new Map([...points].filter(([id]) => id !== "b")),
+        TREE_NODE_WIDTH,
+        TREE_NODE_HEIGHT,
+      ).length,
+      0,
+    );
+  }
+  assert.deepEqual(people, before);
+});
+
+test("cross-generation consanguineous unions cannot collapse ancestors onto descendants", () => {
+  const people = [
+    person("ancestor", [], ["descendant"]),
+    person("middle", ["ancestor"]),
+    person("descendant", ["middle"], ["ancestor"]),
+    person("other-parent"),
+    person("other-child", ["other-parent"], ["partner"]),
+    person("partner"),
+  ];
+  const points = new Map(treeGeometry(people, "generations").positions);
+  assert.equal(points.size, people.length);
+  for (const p of people)
+    for (const parent of p.parents)
+      assert.ok(points.get(p.id)!.y > points.get(parent)!.y);
+  assert.equal(points.get("other-child")!.y, points.get("partner")!.y);
+});
 function verifyRoutes(
   positions: [string, Point][],
   routes: [string, EdgeRoute][],

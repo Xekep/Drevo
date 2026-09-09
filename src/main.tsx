@@ -7,6 +7,8 @@ import "./styles/workspace.css";
 import "./styles/polish.css";
 import "./styles/tree-workspace.css";
 import "./styles/timeline.css";
+import "./styles/directory.css";
+import "./styles/places.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

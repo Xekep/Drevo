@@ -5,6 +5,7 @@ import {
   resolvedSex,
   matchesPatronymic,
   parentHints,
+  editorParentHints,
   birthSurnameHints,
   surnameForSex,
   marriageHints,
@@ -366,8 +367,56 @@ test("mother suggestions use recorded co-parenthood, work both ways and still re
       { ...mother, spouses: [father.id] },
       child,
     ]).length,
-    0,
+    1,
   );
+});
+
+test("choosing a father immediately suggests his possible child's mother and withdraws dependent hints when changed", () => {
+  const mother = person("mother", { name: "Мария", birth: "1962" });
+  const father = person("father", {
+    name: "Иван",
+    birth: "1960",
+    spouses: [mother.id],
+  });
+  mother.spouses = [father.id];
+  const other = person("other", { name: "Иван", birth: "1961" });
+  const child = person("child", {
+    name: "Анна",
+    patronymic: "Ивановна",
+    birth: "1990",
+  });
+  const people = [father, mother, other],
+    before = structuredClone(people);
+  const selected = [`${father.id}:${child.id}`, `${mother.id}:${child.id}`];
+  assert.equal(
+    editorParentHints(child, people, []).some((h) => h.role === "mother"),
+    false,
+  );
+  const hints = editorParentHints(child, people, selected);
+  assert.ok(hints.some((h) => h.from === father.id));
+  assert.match(hints.find((h) => h.from === mother.id)!.reason, /мачехой/);
+  assert.equal(
+    editorParentHints(child, people, [selected[1]]).some(
+      (h) => h.role === "mother",
+    ),
+    false,
+  );
+  assert.equal(
+    editorParentHints(child, people, [
+      `${other.id}:${child.id}`,
+      selected[1],
+    ]).some((h) => h.role === "mother"),
+    false,
+  );
+  let next = archive(...people, child);
+  for (const h of hints.filter((h) => selected.includes(`${h.from}:${h.to}`)))
+    next = connectPeople(next, h.from, h.to, "parent");
+  assert.deepEqual(
+    next.people.find((p) => p.id === child.id)!.parents.sort(),
+    [father.id, mother.id].sort(),
+  );
+  assert.deepEqual(people, before);
+  assert.deepEqual(child.parents, []);
 });
 
 test("partial dates remain possible while precise dates rule out contradictory parent hints", () => {
