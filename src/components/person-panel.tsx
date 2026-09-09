@@ -17,10 +17,13 @@ import {
   resolvedSex,
   safeUrl,
   years,
+  hasRecordedDeath,
   type Person,
   type FamilyLink,
 } from "../domain";
 import { PortraitPlaceholder } from "./portrait-placeholder";
+import { PersonAwards } from "./person-awards";
+import { MemorialPortrait } from "./memorial-portrait";
 export function Avatar({
   person,
   large = false,
@@ -45,7 +48,7 @@ export function Avatar({
 }
 
 function LifeSpan({ person }: { person: Person }) {
-  if (!person.birth) return null;
+  if (!person.birth || (hasRecordedDeath(person) && !person.death)) return null;
   const birth = dateYear(person.birth),
     death = dateYear(person.death);
   const lived = ERAS.filter((e) => e.start <= death && e.end > birth);
@@ -119,7 +122,13 @@ export function PersonPanel({
   return (
     <>
       <div className="profile-head">
-        <Avatar person={person} large />
+        {hasRecordedDeath(person) ? (
+          <MemorialPortrait key={person.id}>
+            <Avatar person={person} large />
+          </MemorialPortrait>
+        ) : (
+          <Avatar person={person} large />
+        )}
         <h2>
           {person.surname}
           <br />
@@ -191,12 +200,12 @@ export function PersonPanel({
                 </div>
               </div>
             )}
-            {person.death ? (
+            {hasRecordedDeath(person) ? (
               <div className="life-event">
                 <span className="event-icon">†</span>
                 <div>
                   <span className="event-label">Уход из жизни</span>
-                  <b>{dateLabel(person.death)}</b>
+                  {person.death && <b>{dateLabel(person.death)}</b>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}
                 </div>
               </div>
@@ -213,6 +222,7 @@ export function PersonPanel({
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}
+            <PersonAwards awards={person.awards} />
             <div className="relatives">
               <h3>
                 Семейные связи <span>{relatives.length}</span>

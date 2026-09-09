@@ -23,6 +23,7 @@ import {
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
 import { PlaceField } from "./place-field";
+import { AwardsEditor } from "./person-awards";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
   isAdmin,
@@ -512,6 +513,10 @@ export function PersonEditor({
               />
             </label>
           </section>
+          <AwardsEditor
+            awards={draft.awards || []}
+            onChange={(awards) => field("awards", awards)}
+          />
           <details className="form-details">
             <summary>Выбрать портрет из галереи или по ссылке</summary>
             <label>

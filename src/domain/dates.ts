@@ -65,12 +65,16 @@ export function splitFullName(value: string) {
 }
 export const initials = (p: Person) =>
   `${p.name.trim()[0] || ""}${p.surname.trim()[0] || ""}` || "?";
+export const hasRecordedDeath = (p: Pick<Person, "death" | "deathPlace">) =>
+  !!(p.death || p.deathPlace?.trim());
 export const years = (p: Person) =>
   p.birth
-    ? `${dateYear(p.birth)} — ${p.death ? dateYear(p.death) : "н. в."}`
+    ? `${dateYear(p.birth)} — ${p.death ? dateYear(p.death) : hasRecordedDeath(p) ? "?" : "н. в."}`
     : p.death
       ? `† ${dateYear(p.death)}`
-      : "";
+      : hasRecordedDeath(p)
+        ? "†"
+        : "";
 export function matchesPerson(p: Person, query: string) {
   const normalize = (text: string) =>
     text.toLocaleLowerCase("ru").replaceAll("ё", "е").trim();
@@ -107,7 +111,7 @@ export function dateLabel(value: string) {
     .replace(" г.", "");
 }
 export function ageLabel(p: Person) {
-  if (!p.birth) return "";
+  if (!p.birth || (hasRecordedDeath(p) && !p.death)) return "";
   const end = p.death || new Date().toISOString().slice(0, 10);
   const age =
     dateYear(end) -

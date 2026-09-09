@@ -139,6 +139,14 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       patronymic: "",
       sex: "m",
       birth: "1950",
+      awards: [
+        {
+          id: "award",
+          name: "Награда",
+          year: "1980",
+          source: { title: "Наградной лист", url: "https://example.org/award" },
+        },
+      ],
       birthPlace: "",
       parents: [],
       spouses: [],
@@ -155,6 +163,12 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     );
     assert.equal(created.status, 200);
     data = await created.json();
+    assert.equal(data.family.people[0].awards[0].year, "1980");
+    assert.equal(
+      (await request("/api/export.json", reader).then((r) => r.json()))
+        .people[0].awards[0].source.url,
+      "https://example.org/award",
+    );
     assert.equal(
       (await request("/api/family", reader, "PUT", data.family, data.revision))
         .status,

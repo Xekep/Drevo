@@ -5,6 +5,12 @@ export type Source = {
   url?: string;
   note?: string;
 };
+export type PersonAward = {
+  id: string;
+  name: string;
+  year?: string;
+  source?: { title: string; url?: string };
+};
 export type Person = {
   createdBy?: string;
   id: string;
@@ -23,6 +29,7 @@ export type Person = {
   maidenName?: string;
   occupation?: string;
   biography?: string;
+  awards?: PersonAward[];
   photo?: string;
   parents: string[];
   /** True only when the complete parent list is known. */

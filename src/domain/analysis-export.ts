@@ -47,6 +47,14 @@ export function analysisExport(
       maidenName: p.maidenName,
       occupation: p.occupation,
       biography: p.biography,
+      awards: p.awards?.map((a) => ({
+        id: a.id,
+        name: a.name,
+        year: a.year,
+        source: a.source
+          ? { title: a.source.title, url: a.source.url }
+          : undefined,
+      })),
       parents: [...p.parents],
       parentageComplete: p.parentageComplete,
       spouses: [...p.spouses],

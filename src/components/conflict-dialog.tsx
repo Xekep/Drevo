@@ -7,6 +7,7 @@ const names: Record<string, string> = {
   surname: "Фамилия",
   patronymic: "Отчество",
   biography: "История",
+  awards: "Награды",
   parents: "Родители",
   spouses: "Супруги",
   note: "Примечание",

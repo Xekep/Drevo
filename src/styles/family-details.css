@@ -1,0 +1,271 @@
+.archive-summary {
+  color: #687660;
+  font-size: 12px;
+  line-height: 1.65;
+  position: relative;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: #fafbf4eb;
+}
+.archive-summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 7px;
+}
+.archive-summary > div > span + span::before {
+  content: "·";
+  margin-right: 7px;
+  color: #97a18b;
+}
+.archive-summary > div:first-child {
+  color: #475f43;
+}
+.summary-busy {
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.tree-mode-bar {
+  max-width: calc(100% - 48px);
+  flex-wrap: wrap;
+}
+.mode-timeline .tree-mode-bar {
+  max-width: calc(100% - var(--timeline-rail) - 40px);
+}
+.person-awards {
+  margin: 25px 0;
+}
+.person-awards h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+.person-awards ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.award-card {
+  border: 1px solid #e4ddc9;
+  background: #fcfaf3;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.award-card > summary,
+.award-static {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+}
+.award-card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.award-card > summary::-webkit-details-marker {
+  display: none;
+}
+.award-card > summary:hover {
+  background: #f5f0e2;
+}
+.award-card > summary:focus-visible {
+  outline: 2px solid #819970;
+  outline-offset: -3px;
+}
+.award-badge {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  color: #a57e38;
+  background: radial-gradient(ellipse at 35% 25%, #fffef3, #efe2bd);
+  border: 1px solid #dfcda3;
+  border-radius: 45% 45% 50% 50%;
+  box-shadow: inset 0 0 0 3px #ffffff60;
+}
+.award-label {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.award-label strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.award-label small {
+  font-size: 12px;
+  color: #897951;
+}
+.award-chevron {
+  flex-shrink: 0;
+  color: #96886b;
+}
+.award-card[open] .award-chevron {
+  transform: rotate(180deg);
+}
+.award-source {
+  padding: 0 14px 14px 66px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.award-source p {
+  margin: 0 0 7px;
+}
+.award-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #597348;
+}
+.award-editor fieldset {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #e3dfce;
+  border-radius: 9px;
+  min-width: 0;
+}
+.award-editor legend {
+  font-size: 12px;
+  padding: 0 6px;
+  color: #817348;
+}
+.award-name-year {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px;
+  gap: 12px;
+}
+.archive-form .award-editor label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.award-remove,
+.award-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.award-remove {
+  font-size: 12px;
+  color: #927966;
+}
+.memorial-portrait {
+  margin: 18px auto 13px;
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+.memorial-portrait .profile-avatar {
+  margin-bottom: 0;
+}
+.memorial-dove {
+  position: absolute;
+  z-index: 1;
+  width: 62px;
+  height: 52px;
+  right: -19px;
+  top: -28px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px #52664415);
+}
+.memorial-dove svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .memorial-dove {
+    animation: dove-arrive 1.4s ease-out both;
+  }
+  .dove-wing {
+    transform-origin: 46px 35px;
+    animation: dove-settle 0.35s ease-in-out 3 alternate;
+  }
+  .dove-departed .memorial-dove {
+    animation: dove-leave 0.8s ease-in both;
+  }
+  .dove-departed .dove-wing {
+    animation: dove-flap 0.14s ease-in-out 6 alternate;
+  }
+}
+@keyframes dove-arrive {
+  0% {
+    opacity: 0;
+    transform: translate(40px, -28px) rotate(-12deg) scale(0.85);
+  }
+  65% {
+    opacity: 1;
+    transform: translate(0, -4px) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes dove-settle {
+  from {
+    transform: rotate(-18deg) scaleY(0.55);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes dove-leave {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translate(6px, -10px) rotate(-9deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(60px, -65px) rotate(-18deg) scale(0.65);
+  }
+}
+@keyframes dove-flap {
+  from {
+    transform: rotate(-30deg) scaleY(0.3);
+  }
+  to {
+    transform: rotate(25deg) scaleY(1.2);
+  }
+}
+@media (max-width: 899px) {
+  .tree-mode-bar {
+    max-width: calc(100% - 24px);
+  }
+  .mode-timeline .tree-mode-bar {
+    max-width: calc(100% - var(--timeline-rail) - 20px);
+  }
+  .archive-summary {
+    order: 3;
+    flex-basis: 100%;
+    width: fit-content;
+    font-size: 12px;
+    padding: 3px 7px;
+  }
+  .flow-branch-tools {
+    top: 124px !important;
+  }
+  .memorial-dove {
+    width: 51px;
+    height: 43px;
+    right: -16px;
+    top: -24px;
+    animation: none;
+  }
+  .memorial-dove .dove-wing {
+    animation: none;
+  }
+}

@@ -1,5 +1,5 @@
 import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
-import { validDate, dateBound } from "./dates.ts";
+import { validDate, dateBound, safeUrl } from "./dates.ts";
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -75,6 +75,44 @@ export function validateFamily(value: unknown): Family {
         (s.note !== undefined && typeof s.note !== "string")
       )
         throw new Error("Некорректный источник");
+    if (p.awards !== undefined) {
+      if (!Array.isArray(p.awards) || p.awards.length > 100)
+        throw new Error("Допустимо не более 100 наград у человека");
+      const awardIds = new Set<string>();
+      for (const award of p.awards) {
+        if (
+          !award ||
+          typeof award.id !== "string" ||
+          !award.id ||
+          award.id.length > 100 ||
+          awardIds.has(award.id) ||
+          typeof award.name !== "string" ||
+          !award.name.trim() ||
+          award.name.length > 300 ||
+          (award.year !== undefined &&
+            award.year !== "" &&
+            (typeof award.year !== "string" ||
+              !/^\d{4}$/.test(award.year) ||
+              !validDate(award.year) ||
+              award.year > today.slice(0, 4)))
+        )
+          throw new Error("Проверьте название и год награды");
+        if (
+          award.source !== undefined &&
+          (!award.source ||
+            typeof award.source !== "object" ||
+            typeof award.source.title !== "string" ||
+            award.source.title.length > 2000 ||
+            (award.source.url !== undefined &&
+              (typeof award.source.url !== "string" ||
+                award.source.url.length > 2048 ||
+                !/^https?:\/\/[^\s]+$/i.test(award.source.url) ||
+                !safeUrl(award.source.url))))
+        )
+          throw new Error("Проверьте источник награды и ссылку HTTP/HTTPS");
+        awardIds.add(award.id);
+      }
+    }
     ids.add(p.id);
     if (
       p.parentageComplete !== undefined &&

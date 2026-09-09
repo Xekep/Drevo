@@ -46,6 +46,7 @@ import { EraOverlay } from "./era-overlay";
 import { routeKey } from "../../domain/edge-routing";
 import { crossingPaths } from "../../domain/route-crossings";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
+import { ArchiveSummary } from "../archive-summary";
 import {
   initialFamilyFocus,
   relativeAtHandle,
@@ -740,11 +741,11 @@ function Canvas(props: Props) {
               Хронология
             </button>
           </div>
-          <span>
-            {layoutBusy
-              ? "Расставляем карточки…"
-              : `${new Set(nodes.map((n) => n.data.person.id)).size} из ${family.people.length} человек`}
-          </span>
+          <ArchiveSummary
+            people={family.people}
+            shown={new Set(nodes.map((n) => n.data.person.id)).size}
+            busy={layoutBusy}
+          />
           {!!family.links?.length && (
             <button
               className="tree-extra-toggle"
