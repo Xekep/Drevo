@@ -1037,6 +1037,30 @@
 .about-story > p {
   margin-top: 16px;
 }
+.about-story .about-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 28px;
+  border-top: 1px solid #e4eadc;
+  padding-top: 24px;
+}
+.about-instructions > div {
+  display: flex;
+  gap: 14px;
+}
+.about-instructions > div > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: #8ca476;
+}
+.about-story .about-instructions b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.about-instructions p {
+  margin-top: 5px;
+}
 .name-sex-hint {
   display: flex !important;
   align-items: center;
