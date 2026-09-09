@@ -59,21 +59,83 @@
   color: #2e5941;
 }
 .family-map-pin {
-  border-radius: 50%;
-  background: #fffef7;
-  border: 2px solid #537c61;
-  box-shadow: 0 3px 12px #243d3430;
+  background: transparent;
+  border: 0;
   color: #294d39;
+  font: 600 12px/1 sans-serif;
+}
+.map-portrait-stack {
+  position: relative;
+  width: 100%;
+  height: 48px;
+}
+.map-portrait {
+  position: absolute;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  border: 3px solid #fffdf5;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #e4eadd;
+  box-shadow: 0 2px 10px #29442f45;
+}
+.map-portrait img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.map-portrait-silhouette {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  color: #819778;
+}
+.map-portrait-silhouette::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 18px;
+  border-radius: 50%;
+  background: currentColor;
+  left: calc(50% - 7px);
+  top: 6px;
+  opacity: 0.7;
+}
+.map-portrait-silhouette::after {
+  content: "";
+  position: absolute;
+  width: 32px;
+  height: 27px;
+  border-radius: 50% 50% 0 0;
+  background: currentColor;
+  left: calc(50% - 16px);
+  top: 26px;
+  opacity: 0.55;
+}
+.map-portrait-count {
+  position: absolute;
+  z-index: 4;
+  right: -4px;
+  bottom: -3px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
   display: grid;
   place-items: center;
-  font: 600 12px/1 sans-serif;
-  transition: background 0.15s;
-}
-.family-map-pin.selected {
-  background: #436e54;
+  border: 2px solid #fffdf5;
+  border-radius: 12px;
+  background: #4b7156;
   color: white;
-  border-color: #fffdf5;
-  box-shadow: 0 0 0 5px #537c6130;
+  font-size: 10px;
+}
+.family-map-pin.selected .map-portrait {
+  border-color: #4d7959;
+  box-shadow:
+    0 0 0 4px #537c6130,
+    0 3px 12px #243d3430;
 }
 .family-map-pin:focus-visible {
   outline: 3px solid #bf823e;

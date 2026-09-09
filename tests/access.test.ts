@@ -94,6 +94,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
   try {
     assert.equal((await request("/api/login", "", "POST", {})).status, 404);
     assert.equal((await request("/api/family")).status, 401);
+    assert.equal((await request("/api/export.json")).status, 401);
     assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
     const admin = await login("first"),
       reader = await login("second");
@@ -106,6 +107,12 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "reader",
     );
     assert.equal((await request("/api/users", reader)).status, 403);
+    for (const cookie of [admin, reader]) {
+      const exported = await request("/api/export.json", cookie);
+      assert.equal(exported.status, 200);
+      assert.equal(exported.headers.get("cache-control"), "no-store");
+      assert.equal((await exported.json()).format, "drevo.genealogy");
+    }
     assert.equal(
       (
         await fetch(base + "/api/places/locate?q=unknown", {
@@ -291,6 +298,24 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(publicData.reverseTimeline, true);
     assert.ok(publicData.family.people.length);
     assert.equal(publicData.family.photos.length, 0);
+    const exported = await request("/api/export.json").then((r) => r.json());
+    assert.equal(exported.people.length, publicData.family.people.length);
+    assert.equal(exported.photos, undefined);
+    assert.ok(
+      exported.people.every(
+        (p: Record<string, unknown>) => !("photo" in p) && !("createdBy" in p),
+      ),
+    );
+    assert.equal(
+      (await request("/api/export.json?download=1")).headers.get(
+        "content-disposition",
+      ),
+      'attachment; filename="drevo-family.json"',
+    );
+    assert.equal(
+      (await request("/api/export.json", admin, "POST", {})).status,
+      405,
+    );
     assert.equal((await request(photo.url)).status, 401);
     await request("/api/settings", admin, "PUT", {
       publicTree: false,
@@ -303,6 +328,11 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "старый формат обновления видимости не сбрасывает направление времени",
     );
     assert.equal(publicData.family.people.length, 0);
+    assert.equal(
+      (await request("/api/export.json")).status,
+      401,
+      "public albums do not expose a private tree",
+    );
     assert.equal(publicData.family.photos[0].tags.length, 0);
     assert.equal((await request(photo.url)).status, 200);
     validateFamily(publicData.family);
@@ -332,6 +362,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     );
     await request("/auth/logout", admin, "POST");
     assert.equal((await request("/api/backup", admin)).status, 401);
+    assert.equal((await request("/api/export.json", admin)).status, 401);
   } finally {
     await app.close();
     for (const key of [

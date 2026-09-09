@@ -91,18 +91,21 @@ export function routeRelationships(
   positions: [string, Point][],
   width: number,
   height: number,
+  pointNodes: Set<string> = new Set(),
 ): [string, EdgeRoute][] {
   const map = new Map(positions),
     peopleMap = new Map(people.map((p) => [p.id, p]));
   const obstacles = new Spatial<Box>(),
     lines = new Spatial<Box & Line>();
-  for (const [, p] of positions)
+  for (const [id, p] of positions) {
+    if (pointNodes.has(id)) continue;
     obstacles.add({
       left: p.x - 10,
       right: p.x + width + 10,
       top: p.y - 10,
       bottom: p.y + height + 10,
     });
+  }
   const edges = new Map<string, Relation>();
   const add = (e: Relation) => {
     if (map.has(e.from) && map.has(e.to)) edges.set(routeKey(e), e);
@@ -115,10 +118,13 @@ export function routeRelationships(
     }
   }
   for (const link of links) add(link);
-  const port = (p: Point, h: Handle): Point => ({
-    x: p.x + (h === "left" ? 0 : h === "right" ? width : width / 2),
-    y: p.y + (h === "top" ? 0 : h === "bottom" ? height : height / 2),
-  });
+  const port = (p: Point, h: Handle, id: string): Point =>
+    pointNodes.has(id)
+      ? { ...p }
+      : {
+          x: p.x + (h === "left" ? 0 : h === "right" ? width : width / 2),
+          y: p.y + (h === "top" ? 0 : h === "bottom" ? height : height / 2),
+        };
   const escape = (p: Point, h: Handle): Point => ({
     x: p.x + (h === "left" ? -10 : h === "right" ? 10 : 0),
     y: p.y + (h === "top" ? -10 : h === "bottom" ? 10 : 0),
@@ -160,32 +166,49 @@ export function routeRelationships(
     const a = map.get(edge.from)!,
       b = map.get(edge.to)!;
     const side = edge.type === "spouse" || edge.type === "sworn_sibling";
-    const sourceHandle: Handle = side
+    let sourceHandle: Handle = side
       ? a.x > b.x
         ? "left"
         : "right"
       : a.y > b.y
         ? "top"
         : "bottom";
-    const targetHandle: Handle = side
+    let targetHandle: Handle = side
       ? a.x > b.x
         ? "right"
         : "left"
       : a.y > b.y
         ? "bottom"
         : "top";
-    const start = port(a, sourceHandle),
-      end = port(b, targetHandle),
-      s = escape(start, sourceHandle),
-      t = escape(end, targetHandle);
+    if (
+      pointNodes.has(edge.to) &&
+      !pointNodes.has(edge.from) &&
+      b.y >= a.y &&
+      b.y <= a.y + height
+    )
+      sourceHandle = b.x < a.x ? "left" : "right";
+    if (
+      pointNodes.has(edge.from) &&
+      !pointNodes.has(edge.to) &&
+      a.y >= b.y &&
+      a.y <= b.y + height
+    )
+      targetHandle = a.x < b.x ? "left" : "right";
+    const start = port(a, sourceHandle, edge.from),
+      end = port(b, targetHandle, edge.to),
+      s = pointNodes.has(edge.from) ? start : escape(start, sourceHandle),
+      t = pointNodes.has(edge.to) ? end : escape(end, targetHandle);
     const parents = peopleMap
       .get(edge.to)!
       .parents.filter((id) => map.has(id))
       .sort();
-    const group =
-      edge.type === "parent"
-        ? `family:${JSON.stringify(parents)}`
-        : routeKey(edge);
+    const group = pointNodes.has(edge.from)
+      ? `junction:${edge.from}`
+      : pointNodes.has(edge.to)
+        ? `junction:${edge.to}`
+        : edge.type === "parent"
+          ? `family:${JSON.stringify(parents)}`
+          : routeKey(edge);
     let middle = (s.y + t.y) / 2;
     if (edge.type === "parent") {
       const parentPoints = parents.map((id) => map.get(id)!);

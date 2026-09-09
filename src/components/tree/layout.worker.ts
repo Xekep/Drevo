@@ -1,11 +1,8 @@
-import {
-  treeGeometry,
-  type TreeMode,
-  type LayoutPerson,
-} from "../../domain/tree-layout";
+import { type TreeMode, type LayoutPerson } from "../../domain/tree-layout";
 import type { FamilyLink } from "../../domain/types";
 import { unionGeometry } from "../../domain/union-layout";
 import { layoutUnions } from "./elk-layout";
+import { unionTimeline } from "../../domain/union-timeline";
 self.onmessage = async (
   event: MessageEvent<{
     people: LayoutPerson[];
@@ -19,7 +16,12 @@ self.onmessage = async (
     self.postMessage(
       mode === "generations"
         ? await unionGeometry(people, layoutUnions, reverse, links)
-        : treeGeometry(people, mode, reverse, links),
+        : unionTimeline(
+            people,
+            await unionGeometry(people, layoutUnions, false, links),
+            reverse,
+            links,
+          ),
     );
   } catch {
     self.postMessage({

@@ -11,6 +11,7 @@ import {
   CircleHelp,
   Menu,
   MapPin,
+  Download,
 } from "lucide-react";
 import {
   fullName,
@@ -128,6 +129,18 @@ export function ArchiveNavigation({
             <CircleHelp size={18} />
             <span>О проекте</span>
           </button>
+          {readTree && (
+            <a
+              href="/api/export.json?download=1"
+              download="drevo-family.json"
+              onClick={() => {
+                if (menu.current) menu.current.open = false;
+              }}
+            >
+              <Download size={18} />
+              <span>Экспорт JSON без фото</span>
+            </a>
+          )}
           {user?.role === "admin" && desktop && (
             <button
               aria-current={view === "admin" ? "page" : undefined}

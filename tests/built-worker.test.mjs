@@ -44,7 +44,9 @@ test(
       assert.equal(g.branches.length, 4);
       const timeline = await calculate(worker, "timeline");
       assert.equal(timeline.error, undefined);
-      assert.equal(timeline.positions.length, people.length);
+      assert.equal(timeline.positions.length, g.positions.length);
+      assert.equal(timeline.branches.length, g.branches.length);
+      assert.equal(timeline.coveredRelations.length, 6);
       const reverse = await calculate(worker, "generations", true);
       assert.equal(reverse.error, undefined);
       assert.equal(reverse.reverse, true);

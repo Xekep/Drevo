@@ -25,6 +25,7 @@ export type TreeGeometry = {
   occurrences?: UnionOccurrence[];
   blocks?: UnionBlock[];
   branches?: UnionBranch[];
+  coveredRelations?: string[];
 };
 /** Линейный обход DAG; не зависит от хранимого служебного generation. */
 export function generationLevels(people: LayoutPerson[]) {

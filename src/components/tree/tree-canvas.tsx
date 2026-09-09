@@ -321,7 +321,7 @@ function Canvas(props: Props) {
   const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
   const households = useMemo(
     () =>
-      geometry?.mode === mode && mode === "generations"
+      geometry?.mode === mode
         ? (geometry.blocks || []).filter((block) =>
             block.members.every((id) => visible.has(occurrencePeople.get(id)!)),
           )
@@ -411,7 +411,10 @@ function Canvas(props: Props) {
             visible.has(e.to) &&
             positions.has(e.from) &&
             positions.has(e.to) &&
-            (!geometry?.branches || !["parent", "spouse"].includes(e.type)) &&
+            (!geometry?.branches ||
+              (geometry.coveredRelations
+                ? !geometry.coveredRelations.includes(routeKey(e))
+                : !["parent", "spouse"].includes(e.type))) &&
             (extraVisible || ["parent", "spouse"].includes(e.type)),
         )
         .map((e) => {

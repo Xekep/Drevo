@@ -20,6 +20,7 @@ import { mediaStore } from "./media.ts";
 import { restoreStore, RESTORE_LIMIT } from "./restore.ts";
 import { geocodingStore } from "./geocoding.ts";
 import { familyPlaces, placeKey } from "../domain/places.ts";
+import { analysisExport } from "../domain/analysis-export.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const staticTypes: Record<string, string> = {
@@ -231,6 +232,25 @@ export async function startServer(
     }
     const visitor = auth.currentUser(req),
       access = visibility.read();
+    if (url === "/api/export.json") {
+      if (req.method !== "GET") {
+        res.setHeader("Allow", "GET");
+        return json(res, 405, { error: "Ожидается GET" });
+      }
+      if (!visitor && !access.publicTree)
+        return json(res, 401, { error: "Войдите для экспорта древа" });
+      const { family, revision } = archive.read();
+      if (parsedUrl.searchParams.get("download") === "1")
+        res.setHeader(
+          "Content-Disposition",
+          'attachment; filename="drevo-family.json"',
+        );
+      return json(
+        res,
+        200,
+        analysisExport(family, revision, new Date().toISOString()),
+      );
+    }
     if (
       !visitor &&
       ((url.startsWith("/media/") && !access.publicAlbums) ||

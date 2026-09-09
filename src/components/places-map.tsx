@@ -9,6 +9,7 @@ import {
   type Family,
   type ArchiveUser,
   type PlaceLocation,
+  type Person,
 } from "../domain";
 import {
   familyPlaces,
@@ -17,8 +18,9 @@ import {
   type PlaceResult,
 } from "../domain/places";
 import { Avatar } from "./person-panel";
+import { portraitMarker, markerPeople } from "./map-portrait-marker";
 
-type Point = PlaceCandidate & { key: string; title: string; count: number };
+type Point = PlaceCandidate & { key: string; title: string; people: Person[] };
 function MapSurface({
   points,
   selected,
@@ -83,20 +85,22 @@ function MapSurface({
     }
     for (const group of buckets.values()) {
       const point = group.find((p) => p.key === selected) || group[0];
+      const members = markerPeople(group.flatMap((p) => p.people));
+      const portrait = portraitMarker(members);
       const marker = L.marker([point.lat, point.lon], {
         icon: L.divIcon({
           className: `family-map-pin${group.some((p) => p.key === selected) ? " selected" : ""}`,
-          html: `<span>${group.reduce((n, p) => n + p.count, 0)}</span>`,
-          iconSize: [34, 34],
-          iconAnchor: [17, 17],
+          html: portrait.content,
+          iconSize: [portrait.width, 48],
+          iconAnchor: [portrait.width / 2, 24],
         }),
-        title: group.map((p) => p.title).join(" / "),
+        title: `${group.map((p) => p.title).join(" / ")} · ${members.length} чел.`,
         keyboard: true,
         bubblingMouseEvents: false,
       }).addTo(layer);
       const text = document.createElement("span");
       text.textContent = group.map((p) => p.title).join(" / ");
-      marker.bindTooltip(text, { direction: "top", offset: [0, -14] });
+      marker.bindTooltip(text, { direction: "top", offset: [0, -26] });
       marker.on("click", () => handlers.current.onSelect(point.key));
     }
     if (!fitted.current && points.length) {
@@ -238,7 +242,7 @@ export default function PlacesMap({
                 name: p.name,
                 key: p.key,
                 title: p.name,
-                count: new Set(p.events.map((e) => e.person.id)).size,
+                people: p.events.map((e) => e.person),
               },
             ]
           : [];
@@ -317,7 +321,7 @@ export default function PlacesMap({
             ...picked,
             key: current.key,
             title: current.name,
-            count: current.events.length,
+            people: current.events.map((event) => event.person),
           },
         ]
       : points;
