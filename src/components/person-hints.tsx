@@ -4,6 +4,7 @@ import {
   birthSurnameHints,
   parentHints,
   marriageHints,
+  siblingHints,
   fullName,
   owns,
   canChangeConnection,
@@ -12,6 +13,7 @@ import {
   type ArchiveUser,
   type Connection,
 } from "../domain";
+import { SiblingSuggestions } from "./sibling-suggestions";
 
 export function PersonHints({
   person,
@@ -42,7 +44,11 @@ export function PersonHints({
       type: "spouse",
     }),
   );
-  const count = surnames.length + parents.length + marriages.length;
+  const siblings = owns(user, person)
+    ? siblingHints(person, family.people, family.links)
+    : [];
+  const count =
+    surnames.length + parents.length + marriages.length + siblings.length;
   if (!count) return null;
   return (
     <details className="profile-hints" open>
@@ -127,6 +133,21 @@ export function PersonHints({
           </button>
         </div>
       ))}
+      <SiblingSuggestions
+        hints={siblings}
+        busy={busy}
+        onParents={(hint) => {
+          const knownParent = hint.person.parents.find(
+            (id) => !person.parents.includes(id),
+          );
+          onConnection({
+            from: knownParent || "",
+            to: person.id,
+            type: "parent",
+            hint: `Возможное родство с ${fullName(hint.person)}. ${hint.reason} Выберите реально известного общего родителя; неизвестного придумывать не нужно.`,
+          });
+        }}
+      />
       {error && <p role="alert">{error}</p>}
     </details>
   );

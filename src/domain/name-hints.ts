@@ -394,3 +394,119 @@ export function marriageHints(person: Person, people: Person[]) {
     children,
   }));
 }
+
+/** Мужская и женская формы одного отчества, включая словарные исключения. */
+export function equivalentPatronymics(a: string, b: string) {
+  const left = normalize(a),
+    right = normalize(b);
+  if (!/^[а-я]{4,}$/.test(left) || !/^[а-я]{4,}$/.test(right)) return false;
+  if (left === right)
+    return /(?:ович|овна|евич|евна|ич|ична|инична)$/.test(left);
+  const regular = (value: string) =>
+    value.replace(/ов(?:ич|на)$/, "ов").replace(/ев(?:ич|на)$/, "ев");
+  if (regular(left) === regular(right)) return true;
+  return [...maleNames].some(
+    (name) => matchesPatronymic(name, left) && matchesPatronymic(name, right),
+  );
+}
+
+export type SiblingHint = {
+  person: Person;
+  reason: string;
+  ageGap: number | null;
+};
+/** Только кандидаты для проверки. Не создаёт родство и не назначает родителей. */
+export function siblingHints(
+  draft: Person,
+  people: Person[],
+  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+): SiblingHint[] {
+  if (!draft.name.trim() || !draft.patronymic.trim()) return [];
+  const familySurname = (p: Person) =>
+    normalize(
+      surnameForSex(p.maidenName || p.surname, "m") ||
+        p.maidenName ||
+        p.surname,
+    );
+  const surname = familySurname(draft);
+  if (!surname) return [];
+  const map = new Map(people.map((p) => [p.id, p]));
+  map.set(draft.id, draft);
+  const ancestors = (p: Person) => {
+    const seen = new Set<string>(),
+      queue = [...p.parents];
+    for (let i = 0; i < queue.length; i++) {
+      const id = queue[i];
+      if (!seen.has(id)) {
+        seen.add(id);
+        queue.push(...(map.get(id)?.parents || []));
+      }
+    }
+    return seen;
+  };
+  const above = ancestors(draft);
+  const father = (p: Person) =>
+    p.parents.find((id) => {
+      const parent = map.get(id);
+      return parent && resolvedSex(parent) === "m";
+    });
+  const complete = (p: Person) =>
+    p.parentageComplete === true ||
+    (p.parentageComplete !== false && p.parents.length >= 2);
+  return people
+    .flatMap((person): SiblingHint[] => {
+      if (
+        person.id === draft.id ||
+        !person.name.trim() ||
+        familySurname(person) !== surname ||
+        !equivalentPatronymics(draft.patronymic, person.patronymic)
+      )
+        return [];
+      if (
+        normalize(draft.name) === normalize(person.name) &&
+        normalize(draft.patronymic) === normalize(person.patronymic)
+      )
+        return []; // Сначала проверять возможный дубль карточки.
+      if (
+        draft.spouses.includes(person.id) ||
+        person.spouses.includes(draft.id) ||
+        draft.parents.some((id) => person.parents.includes(id)) ||
+        above.has(person.id) ||
+        ancestors(person).has(draft.id)
+      )
+        return [];
+      if (
+        links.some(
+          (l) =>
+            [l.from, l.to].includes(draft.id) &&
+            [l.from, l.to].includes(person.id),
+        )
+      )
+        return [];
+      if (
+        (complete(draft) && complete(person)) ||
+        (father(draft) && father(person) && father(draft) !== father(person))
+      )
+        return [];
+      const ageGap =
+        draft.birth && person.birth
+          ? Math.abs(
+              Number(draft.birth.slice(0, 4)) -
+                Number(person.birth.slice(0, 4)),
+            )
+          : null;
+      if (ageGap !== null && ageGap > 60) return [];
+      return [
+        {
+          person,
+          ageGap,
+          reason: `Совпадают фамилия${draft.maidenName || person.maidenName ? " при рождении" : " (с учётом мужской и женской формы)"} и отчества от одного имени. Это предположение: родных и единокровных по ФИО не отличить.${ageGap !== null && ageGap > 30 ? " Большая разница в годах рождения — особенно важно проверить сведения." : ""}`,
+        },
+      ];
+    })
+    .sort(
+      (a, b) =>
+        (a.ageGap ?? 31) - (b.ageGap ?? 31) ||
+        a.person.id.localeCompare(b.person.id),
+    );
+}

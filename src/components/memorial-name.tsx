@@ -17,7 +17,7 @@ const poses = [
 ];
 
 /** Рисованная покадровая анимация: сидит сразу, один короткий взлёт. */
-export function MemorialPortrait({ children }: { children: ReactNode }) {
+export function MemorialName({ children }: { children: ReactNode }) {
   const [departed, setDeparted] = useState(false);
   const [frame, setFrame] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -55,7 +55,7 @@ export function MemorialPortrait({ children }: { children: ReactNode }) {
   const pose = poses[Math.max(0, frame)];
   return (
     <span
-      className={`memorial-portrait${departed ? " dove-departed" : ""}`}
+      className={`memorial-name${departed ? " dove-departed" : ""}`}
       onPointerEnter={(event) => {
         if (
           !departed &&

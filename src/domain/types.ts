@@ -77,16 +77,7 @@ export type PhotoMetadata = Pick<
   ArchivePhoto,
   "title" | "year" | "place" | "event" | "description"
 >;
-export const SIBLING_LINK_TYPES = [
-  "sibling",
-  "full_sibling",
-  "paternal_sibling",
-  "maternal_sibling",
-  "step_sibling",
-] as const;
-export type SiblingLinkType = (typeof SIBLING_LINK_TYPES)[number];
 export const EXTRA_LINK_TYPES = [
-  ...SIBLING_LINK_TYPES,
   "adoptive_parent",
   "godparent",
   "nurse",

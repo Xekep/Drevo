@@ -2,11 +2,9 @@ import { useState } from "react";
 import { Plus, Pencil, Images, Link2 } from "lucide-react";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
-import { SiblingTypeField } from "./sibling-type-field";
 import type { Connection } from "../domain";
 import {
   owns,
-  isSiblingLink,
   CONNECTION_NAMES,
   type ConnectionType,
   type Person,
@@ -72,23 +70,21 @@ export function PersonInspector({
           <label>
             Кого добавить
             <select
-              value={isSiblingLink(type) ? "sibling" : type}
+              value={type}
               onChange={(e) =>
-                setType(e.target.value as "child" | "sibling" | ConnectionType)
+                setType(e.target.value as "child" | ConnectionType)
               }
             >
               <option value="child">Ребёнка</option>
               {owns(user, person) && (
                 <>
                   <option value="parent">Родителя</option>
-                  <option value="sibling">Брата / сестру</option>
                   <option value="spouse">Супруга / супругу</option>
                   <option value="godparent">Крёстный / крёстная</option>
                   <optgroup label="Дополнительная связь">
                     {Object.entries(CONNECTION_NAMES)
                       .filter(
                         ([key]) =>
-                          !isSiblingLink(key) &&
                           !["parent", "spouse", "godparent"].includes(key),
                       )
                       .map(([key, label]) => (
@@ -101,9 +97,10 @@ export function PersonInspector({
               )}
             </select>
           </label>
-          {isSiblingLink(type) && (
-            <SiblingTypeField value={type} onChange={setType} />
-          )}
+          <p className="field-hint">
+            Братья и сёстры определятся автоматически, когда вы укажете общих
+            родителей. Для сводных укажите их родителей и брак между ними.
+          </p>
           <div className="relative-choice">
             <button onClick={() => onNewRelative(type)}>
               <Plus size={16} />

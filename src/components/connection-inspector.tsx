@@ -9,15 +9,12 @@ import {
   CONNECTION_NAMES,
   fullName,
   resolvedSex,
-  isSiblingLink,
-  siblingRole,
   suggestConnectionOrder,
   type Family,
   type ArchiveUser,
   type ConnectionType,
 } from "../domain";
 import type { ConnectionDraft } from "./tree/tree-canvas";
-import { SiblingTypeField } from "./sibling-type-field";
 export function ConnectionInspector({
   family,
   user,
@@ -49,9 +46,8 @@ export function ConnectionInspector({
   const from = people.find((p) => p.id === draft.from),
     to = people.find((p) => p.id === draft.to);
   const sex = from ? resolvedSex(from) : "u";
-  const role = isSiblingLink(draft.type)
-    ? siblingRole(draft.type, { sex }).term
-    : draft.type === "parent"
+  const role =
+    draft.type === "parent"
       ? sex === "m"
         ? "отец"
         : sex === "f"
@@ -176,22 +172,18 @@ export function ConnectionInspector({
         <label>
           Кем приходится
           <select
-            value={isSiblingLink(draft.type) ? "sibling" : draft.type}
+            value={draft.type}
             disabled={readonly || busy}
             onChange={(e) => update({ type: e.target.value as ConnectionType })}
           >
             <optgroup label="Семья">
-              {[
-                "parent",
-                "spouse",
-                "sibling",
-                "godparent",
-                "adoptive_parent",
-              ].map((type) => (
-                <option key={type} value={type}>
-                  {CONNECTION_NAMES[type as ConnectionType]}
-                </option>
-              ))}
+              {["parent", "spouse", "godparent", "adoptive_parent"].map(
+                (type) => (
+                  <option key={type} value={type}>
+                    {CONNECTION_NAMES[type as ConnectionType]}
+                  </option>
+                ),
+              )}
             </optgroup>
             <optgroup label="Другие связи">
               {["guardian", "nurse", "sworn_sibling"].map((type) => (
@@ -202,13 +194,6 @@ export function ConnectionInspector({
             </optgroup>
           </select>
         </label>
-        {isSiblingLink(draft.type) && (
-          <SiblingTypeField
-            value={draft.type}
-            disabled={readonly || busy}
-            onChange={(type) => update({ type })}
-          />
-        )}
         <label>
           Второй человек
           <select
@@ -259,8 +244,8 @@ export function ConnectionInspector({
           </label>
         )}
         <p>
-          Родство рассчитывается по родителям, бракам и указанным кровным
-          братьям и сёстрам. Связь сохранится только после подтверждения.
+          Братья, сёстры и более дальнее родство рассчитываются автоматически по
+          родителям и бракам. Связь сохранится только после подтверждения.
         </p>
         {readonly && (
           <p>

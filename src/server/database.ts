@@ -5,7 +5,6 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   validateFamily,
-  EXTRA_LINK_TYPES,
   type Family,
   type Person,
   type FamilyLink,
@@ -32,32 +31,6 @@ export function openArchive(path: string, seed: Family) {
       .some((row) => row.name === "created_by")
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
-  // Расширение CHECK выполняется атомарно, сохраняя идентификаторы и авторство.
-  const schema = db
-    .prepare("SELECT sql FROM sqlite_schema WHERE name='relations'")
-    .get();
-  if (!String(schema?.sql).includes("'full_sibling'")) {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const types = ["parent", "spouse", ...EXTRA_LINK_TYPES]
-        .map((type) => `'${type}'`)
-        .join(",");
-      db.exec(`CREATE TABLE relations_siblings (
-        id TEXT PRIMARY KEY, source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-        target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-        type TEXT NOT NULL CHECK(type IN (${types})), note TEXT NOT NULL DEFAULT '', created_by TEXT,
-        CHECK(source<>target), UNIQUE(source,target,type)) STRICT;
-        INSERT INTO relations_siblings(id,source,target,type,note,created_by) SELECT id,source,target,type,note,created_by FROM relations;
-        DROP TABLE relations;
-        ALTER TABLE relations_siblings RENAME TO relations;
-        CREATE INDEX relations_target ON relations(target);
-        COMMIT;`);
-    } catch (error) {
-      db.exec("ROLLBACK");
-      db.close();
-      throw error;
-    }
-  }
   const read = () => readArchive(db);
   function write(value: unknown, expected: number, actor?: ArchiveUser) {
     const family = actor

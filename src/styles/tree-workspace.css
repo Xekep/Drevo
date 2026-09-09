@@ -1093,6 +1093,14 @@
   display: grid;
   gap: 12px;
 }
+.sibling-candidate {
+  padding: 8px 0;
+}
+.sibling-candidate summary small {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+}
 .name-suggestions-list label {
   align-items: start;
   margin: 0;

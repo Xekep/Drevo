@@ -4,13 +4,13 @@ import {
   availableColumn,
   connectPeople,
   CONNECTION_NAMES,
-  isSiblingLink,
   fullName,
   splitFullName,
   normalizeDateInput,
   dateInputLabel,
   guessSex,
   editorParentHints,
+  siblingHints,
   birthSurnameHints,
   removePerson,
   removeConnection,
@@ -25,7 +25,7 @@ import {
 import { EditorDialog } from "./editor-dialog";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
-import { SiblingTypeField } from "./sibling-type-field";
+import { SiblingSuggestions } from "./sibling-suggestions";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
   isAdmin,
@@ -119,6 +119,17 @@ export function PersonEditor({
   );
   const confirmed = suggestions.filter((hint) =>
     accepted.includes(`${hint.from}:${hint.to}`),
+  );
+  const siblings = siblingHints(
+    {
+      ...hintDraft,
+      parents: [
+        ...hintDraft.parents,
+        ...confirmed.filter((h) => h.to === draft.id).map((h) => h.from),
+      ],
+    },
+    family.people,
+    family.links,
   );
   const surnames = birthSurnameHints(
     {
@@ -276,7 +287,7 @@ export function PersonEditor({
           <label>
             Кем новый человек приходится {fullName(relativeTo)}
             <select
-              value={isSiblingLink(relationship) ? "sibling" : relationship}
+              value={relationship}
               onChange={(e) =>
                 setRelationship(e.target.value as "child" | ConnectionType)
               }
@@ -286,13 +297,11 @@ export function PersonEditor({
                 <>
                   <option value="parent">Родитель</option>
                   <option value="spouse">Супруг / супруга</option>
-                  <option value="sibling">Брат / сестра</option>
                   <option value="godparent">Крёстный / крёстная</option>
                   <optgroup label="Другие связи">
                     {Object.entries(CONNECTION_NAMES)
                       .filter(
                         ([type]) =>
-                          !isSiblingLink(type) &&
                           !["parent", "spouse", "godparent"].includes(type),
                       )
                       .map(([type, label]) => (
@@ -305,9 +314,6 @@ export function PersonEditor({
               )}
             </select>
           </label>
-        )}
-        {relativeTo && !person && isSiblingLink(relationship) && (
-          <SiblingTypeField value={relationship} onChange={setRelationship} />
         )}
         <label className="name-entry">
           ФИО
@@ -405,6 +411,7 @@ export function PersonEditor({
             </div>
           </details>
         )}
+        <SiblingSuggestions hints={siblings} />
         {surnames.map(({ surname, parent }) => (
           <div className="surname-suggestion" key={surname}>
             <p>

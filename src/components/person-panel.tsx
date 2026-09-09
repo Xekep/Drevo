@@ -23,7 +23,7 @@ import {
 } from "../domain";
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PersonAwards } from "./person-awards";
-import { MemorialPortrait } from "./memorial-portrait";
+import { MemorialName } from "./memorial-name";
 export function Avatar({
   person,
   large = false,
@@ -122,18 +122,19 @@ export function PersonPanel({
   return (
     <>
       <div className="profile-head">
-        {hasRecordedDeath(person) ? (
-          <MemorialPortrait key={person.id}>
-            <Avatar person={person} large />
-          </MemorialPortrait>
-        ) : (
-          <Avatar person={person} large />
-        )}
+        <Avatar person={person} large />
         <h2>
           {person.surname}
-          <br />
-          <span>
-            {person.name} {person.patronymic}
+          <span className="profile-given-name">
+            {hasRecordedDeath(person) ? (
+              <MemorialName key={person.id}>
+                {person.name} {person.patronymic}
+              </MemorialName>
+            ) : (
+              <>
+                {person.name} {person.patronymic}
+              </>
+            )}
           </span>
         </h2>
         {person.maidenName && (

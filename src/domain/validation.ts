@@ -1,5 +1,4 @@
 import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
-import { isSiblingLink, isSymmetricLink, validateSibling } from "./siblings.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
@@ -175,11 +174,11 @@ export function validateFamily(value: unknown): Family {
       (link.note !== undefined && typeof link.note !== "string")
     )
       throw new Error("Некорректная дополнительная связь");
-    const pair = isSymmetricLink(link.type)
-      ? [link.from, link.to].sort().join(":")
-      : `${link.from}:${link.to}`;
-    const key = `${isSiblingLink(link.type) ? "sibling" : link.type}:${pair}`;
-    validateSibling(link, map);
+    const pair =
+      link.type === "sworn_sibling"
+        ? [link.from, link.to].sort().join(":")
+        : `${link.from}:${link.to}`;
+    const key = `${link.type}:${pair}`;
     if (pairs.has(key)) throw new Error("Такая связь уже существует");
     if (
       ["adoptive_parent", "nurse"].includes(link.type) &&
