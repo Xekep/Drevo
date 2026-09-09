@@ -2009,33 +2009,6 @@ h1 {
   line-height: 1.9;
   margin-top: 17px;
 }
-.about-instructions {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  margin-top: 28px;
-  border-top: 1px solid #e4eadc;
-  padding-top: 24px;
-}
-.about-instructions > div {
-  display: flex;
-  gap: 14px;
-}
-.about-instructions > div > svg {
-  flex-shrink: 0;
-  margin-top: 3px;
-  color: #8ca476;
-}
-.about-instructions b {
-  font-size: 11px;
-  font-weight: 500;
-}
-.about-instructions p {
-  font-size: 10px;
-  color: #93a284;
-  line-height: 1.9;
-  margin-top: 5px;
-}
 .about-demo {
   display: flex;
   gap: 12px;

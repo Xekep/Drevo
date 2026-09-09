@@ -1037,24 +1037,6 @@
 .about-story > p {
   margin-top: 16px;
 }
-.about-story .about-instructions b {
-  font-size: 14px;
-  font-weight: 500;
-}
-.about-story .about-instructions {
-  gap: 18px;
-}
-.about-gestures {
-  margin-top: 22px;
-}
-.about-gestures summary {
-  cursor: pointer;
-  font-size: 13px;
-  color: #526b46;
-}
-.about-gestures p {
-  margin-top: 12px;
-}
 .name-sex-hint {
   display: flex !important;
   align-items: center;

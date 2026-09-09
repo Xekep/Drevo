@@ -741,11 +741,7 @@ function Canvas(props: Props) {
               Хронология
             </button>
           </div>
-          <ArchiveSummary
-            people={family.people}
-            shown={new Set(nodes.map((n) => n.data.person.id)).size}
-            busy={layoutBusy}
-          />
+          <ArchiveSummary people={family.people} busy={layoutBusy} />
           {!!family.links?.length && (
             <button
               className="tree-extra-toggle"

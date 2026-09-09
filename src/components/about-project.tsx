@@ -1,13 +1,15 @@
-import {
-  TreeDeciduous,
-  BookOpen,
-  Users,
-  Heart,
-  ArrowRight,
-} from "lucide-react";
+﻿import { TreeDeciduous, Heart, ArrowRight } from "lucide-react";
 import { EditorDialog } from "./editor-dialog";
+import { ArchiveSummary } from "./archive-summary";
+import type { Person } from "../domain";
 
-export function AboutProject({ onClose }: { onClose: () => void }) {
+export function AboutProject({
+  onClose,
+  people,
+}: {
+  onClose: () => void;
+  people?: Person[];
+}) {
   return (
     <EditorDialog title="О проекте" onClose={onClose}>
       <div className="about-story">
@@ -18,39 +20,18 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
           <br />с семьи<span>.</span>
         </h2>
         <p>«Древо» соединяет людей, события и эпохи в одну семейную историю.</p>
-        <div className="about-instructions">
-          <div>
-            <TreeDeciduous size={18} />
-            <span>
-              <b>Путешествуйте во времени</b>
-              <p>
-                Исследуйте поколения в «Древе» или переключитесь на
-                «Хронологию»: реальные годы жизни, века и исторические эпохи.
-              </p>
-            </span>
-          </div>
-          <div>
-            <BookOpen size={18} />
-            <span>
-              <b>Открывайте истории</b>
-              <p>
-                Нажмите на человека: откроются даты, места, портрет,
-                воспоминания и источники. В фотоальбоме — все снимки, на которых
-                он отмечен.
-              </p>
-            </span>
-          </div>
-          <div>
-            <Users size={18} />
-            <span>
-              <b>Находите общее</b>
-              <p>
-                Включите «Родство» и выберите двух людей. Узнайте, кем они
-                приходятся друг другу и кто их связывает.
-              </p>
-            </span>
-          </div>
-        </div>
+        {people && (
+          <section
+            className="about-archive"
+            aria-label="Семейный архив в цифрах"
+          >
+            <h3>Наша история в цифрах</h3>
+            <ArchiveSummary people={people} detailed />
+            {!!people.length && (
+              <p>По известным датам жизни и связям между поколениями.</p>
+            )}
+          </section>
+        )}
         <div className="about-demo">
           <Heart size={16} />
           <p>
@@ -58,22 +39,6 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
             архив.
           </p>
         </div>
-        <details className="about-gestures">
-          <summary>Как пользоваться деревом</summary>
-          <p>
-            Тяните фон мышью или перемещайте дерево пальцем. Масштаб — кнопками,
-            щипком или Ctrl + колесо. Shift + нажатие выбирает второго человека.
-            «Ветка» оставляет предков и потомков, стрелка под карточкой
-            сворачивает детей.
-          </p>
-          <p>
-            На компьютере можно соединять точки на карточках и править связи
-            нажатием на линию. Предложенная связь сохраняется после
-            подтверждения. Потяните линию в пустое место, чтобы добавить
-            родственника. На телефоне доступны дерево, истории, родство, карта и
-            фотографии; редактирование — с компьютера.
-          </p>
-        </details>
         <button className="dialog-done" onClick={onClose}>
           Перейти к истории <ArrowRight size={15} />
         </button>

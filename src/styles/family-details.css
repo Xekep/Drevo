@@ -20,6 +20,35 @@
 .archive-summary > div:first-child {
   color: #475f43;
 }
+.about-archive {
+  margin: 25px 0;
+  padding: 20px;
+  border: 1px solid #dfe4d4;
+  border-radius: 12px;
+  background: #f5f6ed;
+}
+.about-archive h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #68755a;
+}
+.about-archive .archive-summary-detailed {
+  background: none;
+  padding: 0;
+  font-size: 16px;
+  width: auto;
+}
+.about-archive .archive-summary > div {
+  gap: 0 10px;
+}
+.about-archive .archive-summary > div + div {
+  margin-top: 7px;
+}
+.about-archive p {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
 .summary-busy {
   position: absolute;
   top: 100%;
@@ -159,7 +188,7 @@
   color: #927966;
 }
 .memorial-portrait {
-  margin: 18px auto 13px;
+  margin: 40px auto 13px;
   position: relative;
   display: inline-block;
   isolation: isolate;
@@ -170,53 +199,38 @@
 .memorial-dove {
   position: absolute;
   z-index: 1;
-  width: 62px;
-  height: 52px;
-  right: -19px;
-  top: -28px;
+  width: 88px;
+  height: 88px;
+  right: -24px;
+  top: -73px;
   pointer-events: none;
-  filter: drop-shadow(0 2px 2px #52664415);
+  filter: drop-shadow(0 1px 1px #344d3430);
 }
-.memorial-dove svg {
+.dove-frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  opacity: 0;
 }
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .memorial-dove {
-    animation: dove-arrive 1.4s ease-out both;
-  }
-  .dove-wing {
-    transform-origin: 46px 35px;
-    animation: dove-settle 0.35s ease-in-out 3 alternate;
-  }
+.dove-frame-idle {
+  opacity: 1;
+}
+@media (min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .dove-departed .memorial-dove {
-    animation: dove-leave 0.8s ease-in both;
+    animation: dove-leave 0.9s ease-in both;
   }
-  .dove-departed .dove-wing {
-    animation: dove-flap 0.14s ease-in-out 6 alternate;
-  }
-}
-@keyframes dove-arrive {
-  0% {
+  .dove-departed .dove-frame-idle {
     opacity: 0;
-    transform: translate(40px, -28px) rotate(-12deg) scale(0.85);
   }
-  65% {
-    opacity: 1;
-    transform: translate(0, -4px) rotate(3deg);
+  .dove-departed .dove-frame-up {
+    animation: dove-up 0.3s step-end 3;
   }
-  100% {
-    opacity: 1;
-    transform: none;
+  .dove-departed .dove-frame-middle {
+    animation: dove-middle 0.3s step-end 3;
   }
-}
-@keyframes dove-settle {
-  from {
-    transform: rotate(-18deg) scaleY(0.55);
-  }
-  to {
-    transform: none;
+  .dove-departed .dove-frame-down {
+    animation: dove-down 0.3s step-end 3;
   }
 }
 @keyframes dove-leave {
@@ -224,21 +238,45 @@
     opacity: 1;
     transform: none;
   }
-  30% {
+  25% {
     opacity: 1;
-    transform: translate(6px, -10px) rotate(-9deg);
+    transform: translate(8px, -12px) rotate(-4deg);
   }
   100% {
     opacity: 0;
-    transform: translate(60px, -65px) rotate(-18deg) scale(0.65);
+    transform: translate(80px, -85px) rotate(-12deg) scale(0.8);
   }
 }
-@keyframes dove-flap {
-  from {
-    transform: rotate(-30deg) scaleY(0.3);
+@keyframes dove-up {
+  0% {
+    opacity: 1;
   }
-  to {
-    transform: rotate(25deg) scaleY(1.2);
+  33.33%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes dove-middle {
+  0% {
+    opacity: 0;
+  }
+  33.33% {
+    opacity: 1;
+  }
+  66.66%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes dove-down {
+  0% {
+    opacity: 0;
+  }
+  66.66% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 @media (max-width: 899px) {
@@ -259,13 +297,9 @@
     top: 124px !important;
   }
   .memorial-dove {
-    width: 51px;
-    height: 43px;
-    right: -16px;
-    top: -24px;
-    animation: none;
-  }
-  .memorial-dove .dove-wing {
-    animation: none;
+    width: 76px;
+    height: 76px;
+    right: -22px;
+    top: -64px;
   }
 }
