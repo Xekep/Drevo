@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
+  connectionKey,
   canChangeConnection,
   fullName,
   matchesPerson,
@@ -37,13 +38,13 @@ import {
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
-import { householdBands } from "../../domain/household-bands";
 import {
   RelationshipEdge,
   type RelationshipEdgeType,
 } from "./relationship-edge";
 import { EraOverlay } from "./era-overlay";
 import { routeKey } from "../../domain/edge-routing";
+import { crossingPaths } from "../../domain/route-crossings";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import {
   initialFamilyFocus,
@@ -177,6 +178,23 @@ function Canvas(props: Props) {
   const [mode, setMode] = useState<TreeMode>("generations"),
     [geometry, setGeometry] = useState<TreeGeometry | null>(null),
     [problem, setProblem] = useState("");
+  const [extraVisible, setExtraVisible] = useState(true);
+  const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
+  const choiceClose = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!edgeChoices.length) return;
+    const previous = document.activeElement;
+    choiceClose.current?.focus();
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setEdgeChoices([]);
+    };
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("keydown", escape);
+      if (previous instanceof HTMLElement && previous.isConnected)
+        previous.focus();
+    };
+  }, [edgeChoices.length]);
   const [collapsed, setCollapsed] = useState(new Set<string>()),
     [root, setRoot] = useState<string | null>(null);
   const flow = useReactFlow<
@@ -194,11 +212,17 @@ function Canvas(props: Props) {
       type: "module",
     });
     const timer = setTimeout(() => setLayoutBusy(true), 80);
-    worker.onmessage = (event: MessageEvent<TreeGeometry>) => {
-      layoutPeople.current = family.people;
+    worker.onmessage = (
+      event: MessageEvent<TreeGeometry | { error: string }>,
+    ) => {
       clearTimeout(timer);
-      setGeometry(event.data);
       setLayoutBusy(false);
+      if ("error" in event.data) {
+        setProblem(event.data.error);
+        return;
+      }
+      layoutPeople.current = family.people;
+      setGeometry(event.data);
       setProblem("");
     };
     worker.onerror = () => {
@@ -238,10 +262,6 @@ function Canvas(props: Props) {
       }),
     [],
   );
-  const actions = useMemo(
-    () => ({ choose: onChoose, collapse: toggleCollapse }),
-    [onChoose, toggleCollapse],
-  );
   const visible = useMemo(
     () => visibleBranch(family, root, collapsed, selected),
     [family, root, collapsed, selected],
@@ -254,21 +274,59 @@ function Canvas(props: Props) {
     return counts;
   }, [family.people]);
   const positions = useMemo(
-    () => new Map(geometry?.positions || []),
-    [geometry],
+    () => new Map(geometry?.mode === mode ? geometry.positions : []),
+    [geometry, mode],
+  );
+  const occurrences = useMemo(
+    () =>
+      geometry?.mode === mode
+        ? geometry.occurrences ||
+          family.people.map((p) => ({ id: p.id, personId: p.id, block: "" }))
+        : [],
+    [geometry, mode, family.people],
+  );
+  const occurrencePeople = useMemo(
+    () => new Map(occurrences.map((o) => [o.id, o.personId])),
+    [occurrences],
+  );
+  const personOccurrences = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const o of occurrences) {
+      const list = result.get(o.personId) || [];
+      list.push(o.id);
+      result.set(o.personId, list);
+    }
+    return result;
+  }, [occurrences]);
+  const actions = useMemo(
+    () => ({
+      choose: (id: string, additive: boolean) => {
+        setEdgeChoices([]);
+        onChoose(id, additive);
+      },
+      collapse: toggleCollapse,
+      reference: (personId: string, occurrenceId: string) => {
+        const ids = personOccurrences.get(personId) || [];
+        const next = ids[(ids.indexOf(occurrenceId) + 1) % ids.length];
+        if (next)
+          void flow.fitView({
+            nodes: [{ id: next }],
+            maxZoom: 1,
+            padding: 0.6,
+          });
+      },
+    }),
+    [onChoose, toggleCollapse, personOccurrences, flow],
   );
   const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
   const households = useMemo(
     () =>
-      mode === "generations"
-        ? householdBands(
-            family.people,
-            new Map([...positions].filter(([id]) => visible.has(id))),
-            TREE_NODE_WIDTH,
-            TREE_NODE_HEIGHT,
+      geometry?.mode === mode && mode === "generations"
+        ? (geometry.blocks || []).filter((block) =>
+            block.members.every((id) => visible.has(occurrencePeople.get(id)!)),
           )
         : [],
-    [mode, family.people, positions, visible],
+    [geometry, mode, occurrencePeople, visible],
   );
   const householdMembers = useMemo(
     () => new Set(households.flatMap((group) => group.members)),
@@ -279,9 +337,9 @@ function Canvas(props: Props) {
       households.map((group) => ({
         id: group.id,
         type: "household",
-        position: { x: group.x, y: group.y },
-        width: group.width,
-        height: group.height,
+        position: { x: group.x - 8, y: group.y - 8 },
+        width: group.width + 16,
+        height: group.height + 16,
         data: {},
         draggable: false,
         selectable: false,
@@ -293,28 +351,43 @@ function Canvas(props: Props) {
       })),
     [households],
   );
+  const peopleMap = useMemo(
+    () => new Map(family.people.map((p) => [p.id, p])),
+    [family.people],
+  );
   const nodes = useMemo<PersonNodeType[]>(
     () =>
-      family.people
-        .filter((p) => visible.has(p.id) && positions.has(p.id))
-        .map((p) => ({
-          id: p.id,
-          type: "person",
-          position: positions.get(p.id)!,
-          width: TREE_NODE_WIDTH,
-          height: TREE_NODE_HEIGHT,
-          selected: selected.includes(p.id),
-          data: {
-            person: p,
-            household: householdMembers.has(p.id),
-            collapsed: collapsed.has(p.id),
-            childrenCount: childrenCount.get(p.id) || 0,
-            dimmed: !matchesPerson(p, props.query),
-          },
-          draggable: false,
-        })),
+      occurrences
+        .filter(
+          (o) =>
+            visible.has(o.personId) &&
+            positions.has(o.id) &&
+            peopleMap.has(o.personId),
+        )
+        .map((o) => {
+          const p = peopleMap.get(o.personId)!;
+          return {
+            id: o.id,
+            type: "person",
+            position: positions.get(o.id)!,
+            width: TREE_NODE_WIDTH,
+            height: TREE_NODE_HEIGHT,
+            selected: selected.includes(p.id),
+            data: {
+              person: p,
+              household: householdMembers.has(o.id),
+              occurrences: personOccurrences.get(p.id)?.length || 1,
+              collapsed: collapsed.has(p.id),
+              childrenCount: childrenCount.get(p.id) || 0,
+              dimmed: !matchesPerson(p, props.query),
+            },
+            draggable: false,
+          };
+        }),
     [
-      family.people,
+      occurrences,
+      peopleMap,
+      personOccurrences,
       visible,
       positions,
       selected,
@@ -329,14 +402,18 @@ function Canvas(props: Props) {
     [householdNodes, nodes],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
-  const peopleMap = useMemo(
-    () => new Map(family.people.map((p) => [p.id, p])),
-    [family.people],
-  );
   const edges = useMemo<RelationshipEdgeType[]>(
     () =>
       connections
-        .filter((e) => visible.has(e.from) && visible.has(e.to))
+        .filter(
+          (e) =>
+            visible.has(e.from) &&
+            visible.has(e.to) &&
+            positions.has(e.from) &&
+            positions.has(e.to) &&
+            (!geometry?.branches || !["parent", "spouse"].includes(e.type)) &&
+            (extraVisible || ["parent", "spouse"].includes(e.type)),
+        )
         .map((e) => {
           const a = positions.get(e.from),
             b = positions.get(e.to),
@@ -416,15 +493,116 @@ function Canvas(props: Props) {
       family,
       user,
       peopleMap,
+      geometry,
+      extraVisible,
     ],
   );
+  const familyEdges = useMemo<RelationshipEdgeType[]>(() => {
+    const actual = new Map(connections.map((e) => [e.key, e]));
+    return (geometry?.mode === mode ? geometry.branches || [] : [])
+      .filter(
+        (b) =>
+          visible.has(occurrencePeople.get(b.source)!) &&
+          visible.has(occurrencePeople.get(b.target)!) &&
+          positions.has(b.source) &&
+          positions.has(b.target),
+      )
+      .flatMap((b) => {
+        const choices = b.relations
+          .filter((r) => visible.has(r.from) && visible.has(r.to))
+          .map((r) => actual.get(connectionKey(r)))
+          .filter((e): e is GraphConnection => !!e);
+        if (!choices.length) return [];
+        const e = choices[0];
+        const selected = choices.some((c) => c.key === props.selectedEdge);
+        const highlighted = choices.some((c) =>
+          props.highlighted.some(
+            (id, i) =>
+              i > 0 &&
+              ((id === c.to && props.highlighted[i - 1] === c.from) ||
+                (id === c.from && props.highlighted[i - 1] === c.to)),
+          ),
+        );
+        const select = () =>
+          choices.length === 1 ? onEdge(e) : setEdgeChoices(choices);
+        return [
+          {
+            id: b.id,
+            source: b.source,
+            target: b.target,
+            type: "relationship",
+            sourceHandle: b.route.sourceHandle,
+            targetHandle: b.route.targetHandle,
+            selected,
+            data: {
+              connection: e,
+              onSelect: select,
+              route: b.route,
+              junction:
+                b.id.startsWith("child:") && b.relations.length > 1
+                  ? b.route.points[0]
+                  : undefined,
+            },
+            style: {
+              stroke: e.type === "spouse" ? colors.spouse : colors.parent,
+              strokeWidth: selected || highlighted ? 2.8 : 1.6,
+            },
+            reconnectable: false,
+            focusable: true,
+            ariaLabel: choices
+              .map(
+                (c) =>
+                  `${fullName(peopleMap.get(c.from)!)} — ${fullName(peopleMap.get(c.to)!)}`,
+              )
+              .join("; "),
+            domAttributes: {
+              onKeyDown: (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  select();
+                }
+              },
+            },
+          },
+        ];
+      });
+  }, [
+    geometry,
+    mode,
+    connections,
+    visible,
+    positions,
+    occurrencePeople,
+    props.selectedEdge,
+    props.highlighted,
+    onEdge,
+    peopleMap,
+  ]);
+  const allEdges = useMemo(() => {
+    const combined = [...familyEdges, ...edges];
+    const groups = new Map(
+      (geometry?.branches || []).map((b) => [b.id, b.union]),
+    );
+    const paths = crossingPaths(
+      combined.map((e) => ({
+        id: e.id,
+        group: groups.get(e.id) || e.id,
+        route: e.data?.route,
+      })),
+    );
+    return combined.map((e) =>
+      paths.has(e.id)
+        ? { ...e, data: { ...e.data!, path: paths.get(e.id) } }
+        : e,
+    );
+  }, [familyEdges, edges, geometry]);
   const displayEdges = useMemo<RelationshipEdgeType[]>(
     () =>
       props.preview?.from &&
       props.preview.to &&
       props.preview.from !== props.preview.to
         ? [
-            ...edges,
+            ...allEdges,
             {
               id: "draft-preview",
               source: props.preview.from,
@@ -441,8 +619,8 @@ function Canvas(props: Props) {
               reconnectable: false,
             },
           ]
-        : edges,
-    [edges, props.preview],
+        : allEdges,
+    [allEdges, props.preview],
   );
   useEffect(() => {
     if (
@@ -528,13 +706,18 @@ function Canvas(props: Props) {
   const connect = useCallback(
     (c: FlowConnection) => {
       if (c.source && c.target)
-        onConnect({ from: c.source, to: c.target, type: "parent" });
+        onConnect({
+          from: occurrencePeople.get(c.source) || c.source,
+          to: occurrencePeople.get(c.target) || c.target,
+          type: "parent",
+        });
     },
-    [onConnect],
+    [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
     cameras.current[mode] = flow.getViewport();
     setMode(next);
+    setEdgeChoices([]);
   }
   return (
     <TreeActions.Provider value={actions}>
@@ -557,8 +740,18 @@ function Canvas(props: Props) {
           <span>
             {layoutBusy
               ? "Расставляем карточки…"
-              : `${nodes.length} из ${family.people.length} человек`}
+              : `${new Set(nodes.map((n) => n.data.person.id)).size} из ${family.people.length} человек`}
           </span>
+          {!!family.links?.length && (
+            <button
+              className="tree-extra-toggle"
+              aria-pressed={extraVisible}
+              onClick={() => setExtraVisible((v) => !v)}
+              title="Крёстные, усыновление, опека и другие дополнительные связи"
+            >
+              Доп. связи
+            </button>
+          )}
         </div>
         <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           nodes={displayNodes}
@@ -583,7 +776,7 @@ function Canvas(props: Props) {
             if (!box || !point) return;
             const handle = state.fromHandle?.id;
             setCreateAt({
-              id: state.fromNode.id,
+              id: occurrencePeople.get(state.fromNode.id) || state.fromNode.id,
               type: relativeAtHandle(handle, reverse),
               x: Math.max(
                 10,
@@ -598,17 +791,20 @@ function Canvas(props: Props) {
           onReconnect={(edge, c) => {
             if (edge.data && c.source && c.target)
               onConnect({
-                from: c.source,
-                to: c.target,
+                from: occurrencePeople.get(c.source) || c.source,
+                to: occurrencePeople.get(c.target) || c.target,
                 type: edge.data.connection.type,
                 original: edge.data.connection,
                 note: edge.data.connection.note,
               });
           }}
           onEdgeClick={(_, e) => {
-            if (e.data) onEdge(e.data.connection);
+            if (e.data) e.data.onSelect(e.data.connection);
           }}
-          onPaneClick={props.onClear}
+          onPaneClick={() => {
+            setEdgeChoices([]);
+            props.onClear();
+          }}
           nodesDraggable={false}
           nodesConnectable={props.canEdit && !props.busy}
           nodesFocusable={false}
@@ -676,6 +872,44 @@ function Canvas(props: Props) {
           )}
           <CameraTools selected={selected} />
         </ReactFlow>
+        {edgeChoices.length > 0 && (
+          <div
+            className="tree-edge-choices"
+            role="dialog"
+            aria-label="Связи семейной ветки"
+          >
+            <div>
+              <strong>Связи этой ветки</strong>
+              <button
+                aria-label="Закрыть выбор связи"
+                ref={choiceClose}
+                onClick={() => setEdgeChoices([])}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p>Выберите связь, чтобы открыть её сведения.</p>
+            {edgeChoices
+              .filter(
+                (e) =>
+                  peopleMap.has(e.from) &&
+                  peopleMap.has(e.to) &&
+                  connections.some((c) => c.key === e.key),
+              )
+              .map((e) => (
+                <button
+                  key={e.key}
+                  onClick={() => {
+                    setEdgeChoices([]);
+                    onEdge(e);
+                  }}
+                >
+                  <span>{fullName(peopleMap.get(e.from)!)}</span>
+                  <small>Родитель → {fullName(peopleMap.get(e.to)!)}</small>
+                </button>
+              ))}
+          </div>
+        )}
         {createAt && props.canEdit && (
           <div
             className="tree-create-at"

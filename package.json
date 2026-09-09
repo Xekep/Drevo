@@ -10,6 +10,7 @@
     "start": "node --experimental-strip-types src/server/index.ts --production",
     "build": "vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:worker": "node --test tests/built-worker.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests vite.config.ts",
     "preview:static": "vite preview --host 127.0.0.1",
@@ -21,6 +22,7 @@
   "dependencies": {
     "@vladmandic/face-api": "1.7.15",
     "@xyflow/react": "^12.11.6",
+    "elkjs": "^0.12.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.42.0",
     "react": "19.2.6",

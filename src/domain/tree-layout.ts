@@ -3,6 +3,11 @@ import { householdLevels } from "./household-levels.ts";
 import { arrangeHouseholds } from "./family-arrangement.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { Person, Family, FamilyLink } from "./types.ts";
+import type {
+  UnionOccurrence,
+  UnionBlock,
+  UnionBranch,
+} from "./union-layout.ts";
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
 import { yearY, START_YEAR } from "./layout.ts";
@@ -17,6 +22,9 @@ export type TreeGeometry = {
   start: number;
   offset: number;
   routes?: [string, EdgeRoute][];
+  occurrences?: UnionOccurrence[];
+  blocks?: UnionBlock[];
+  branches?: UnionBranch[];
 };
 /** Линейный обход DAG; не зависит от хранимого служебного generation. */
 export function generationLevels(people: LayoutPerson[]) {

@@ -13,6 +13,8 @@ export type RelationshipEdgeType = Edge<
     connection: GraphConnection;
     onSelect: (edge: GraphConnection) => void;
     route?: EdgeRoute;
+    path?: string;
+    junction?: { x: number; y: number };
   },
   "relationship" | "smoothstep"
 >;
@@ -30,11 +32,20 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   return (
     <>
       <BaseEdge
-        path={path}
+        path={props.data?.path || path}
         markerEnd={props.markerEnd}
         style={props.style}
         interactionWidth={24}
       />
+      {props.data?.junction && (
+        <circle
+          cx={props.data.junction.x}
+          cy={props.data.junction.y}
+          r={2.4}
+          fill={props.style?.stroke || "#58775a"}
+          pointerEvents="none"
+        />
+      )}
       {(props.selected || !["parent", "spouse"].includes(edge.type)) && (
         <EdgeLabelRenderer>
           <button

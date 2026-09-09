@@ -6,15 +6,17 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { fullName, years, type Person } from "../../domain";
 import { Avatar } from "../person-panel";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
   collapse: (id: string) => void;
+  reference: (personId: string, occurrenceId: string) => void;
 }>({
   choose: () => {},
   collapse: () => {},
+  reference: () => {},
 });
 export type PersonNodeType = Node<
   {
@@ -23,15 +25,17 @@ export type PersonNodeType = Node<
     childrenCount: number;
     dimmed: boolean;
     household?: boolean;
+    occurrences?: number;
   },
   "person"
 >;
 export const PersonNode = memo(function PersonNode({
   data,
+  id,
   selected,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
-  const { choose, collapse } = useContext(TreeActions);
+  const { choose, collapse, reference } = useContext(TreeActions);
   const compact = useStore((s) => s.transform[2] < 0.65);
   return (
     <div
@@ -70,6 +74,17 @@ export const PersonNode = memo(function PersonNode({
           )}
         </span>
       </button>
+      {(data.occurrences || 0) > 1 && (
+        <button
+          className="flow-reference nodrag nopan"
+          title="Этот же человек показан в нескольких семьях. Перейти к следующей карточке"
+          aria-label={`${fullName(data.person)}: перейти к другому отображению, всего ${data.occurrences}`}
+          onClick={() => reference(data.person.id, id)}
+        >
+          <Copy size={12} />
+          <span>{data.occurrences}</span>
+        </button>
+      )}
       {!compact && data.childrenCount > 0 && (
         <button
           className="flow-collapse nodrag nopan"
