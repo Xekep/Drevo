@@ -1,6 +1,7 @@
 import type { Person, Relation, KinshipRole, FamilyLink } from "./types.ts";
 import { fullName, plural } from "./dates.ts";
 import { resolvedSex } from "./name-hints.ts";
+import { completeParents, isSiblingLink, siblingRole } from "./siblings.ts";
 function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
   return {
     term:
@@ -63,9 +64,6 @@ function cousinAdjective(degree: number, female: boolean) {
   };
   return (stems[degree] || `${degree}-юродн`) + (female ? "ая" : "ый");
 }
-const completeParents = (p: Person) =>
-  p.parentageComplete === true ||
-  (p.parentageComplete !== false && p.parents.length >= 2);
 function bloodRole(
   subject: Person,
   reference: Person,
@@ -604,6 +602,7 @@ function analyzeBloodAndMarriage(
 }
 
 function specialRole(link: FamilyLink, subject: Person): KinshipRole {
+  if (isSiblingLink(link.type)) return siblingRole(link.type, subject);
   if (subject.sex === "u")
     return unspecifiedRole(
       specialRole(link, { ...subject, sex: "m" }),
@@ -673,6 +672,54 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
   }
 }
 
+/** Один подтверждённый мост между братьями; цепочки неполнородных не склеиваем. */
+function documentedSiblingRelation(
+  a: Person,
+  b: Person,
+  people: Person[],
+  links: FamilyLink[],
+): Relation | undefined {
+  if (!links.some((link) => isSiblingLink(link.type))) return;
+  const map = new Map(people.map((p) => [p.id, p]));
+  const ap = ancestors(a.id, map),
+    bp = ancestors(b.id, map);
+  const candidates: Relation[] = [];
+  for (const link of links) {
+    if (!isSiblingLink(link.type)) continue;
+    for (const [left, right] of [
+      [link.from, link.to],
+      [link.to, link.from],
+    ]) {
+      const pa = ap.get(left),
+        pb = bp.get(right);
+      if (!pa || !pb || pa.some((id) => pb.includes(id))) continue;
+      const direct = pa.length === 1 && pb.length === 1;
+      if (link.type === "step_sibling" && !direct) continue;
+      const distances: [number, number] = [pa.length, pb.length];
+      const roles: [KinshipRole, KinshipRole] = direct
+        ? [siblingRole(link.type, a), siblingRole(link.type, b)]
+        : [
+            bloodRole(a, b, ...distances, map),
+            bloodRole(b, a, distances[1], distances[0], map),
+          ];
+      candidates.push({
+        title: direct
+          ? "Братья и сёстры · указано напрямую"
+          : "Родство через братьев и сестёр",
+        explanation: direct
+          ? `${roles[0].description}${link.note ? ` ${link.note}` : ""}`
+          : `Расчёт опирается на указанное кровное родство между ${fullName(map.get(left)!)} и ${fullName(map.get(right)!)}. Личности их общих родителей могут быть неизвестны.`,
+        path: [...pa, ...[...pb].reverse()],
+        common: [],
+        roles,
+        distances,
+        kind: link.type === "step_sibling" ? "family" : "blood",
+      });
+    }
+  }
+  return candidates.sort((x, y) => x.path.length - y.path.length)[0];
+}
+
 export function analyzeKinship(
   a: Person,
   b: Person,
@@ -686,6 +733,7 @@ export function analyzeKinship(
   b = people.find((p) => p.id === b.id) || { ...b, sex: resolvedSex(b) };
   const base = analyzeBloodAndMarriage(a, b, people);
   if (a.id === b.id) return base;
+  const documented = documentedSiblingRelation(a, b, people, links);
   const extras: Relation[] = [];
   const add = (
     title: string,
@@ -703,8 +751,9 @@ export function analyzeKinship(
     });
   for (const link of links)
     if (
-      (link.from === a.id && link.to === b.id) ||
-      (link.from === b.id && link.to === a.id)
+      !isSiblingLink(link.type) &&
+      ((link.from === a.id && link.to === b.id) ||
+        (link.from === b.id && link.to === a.id))
     ) {
       const roles: [KinshipRole, KinshipRole] = [
         specialRole(link, a),
@@ -787,6 +836,34 @@ export function analyzeKinship(
             : "кузина",
       ];
     });
+  if (documented) {
+    const explicit = links.find(
+      (l) =>
+        isSiblingLink(l.type) &&
+        [l.from, l.to].includes(a.id) &&
+        [l.from, l.to].includes(b.id),
+    );
+    const prefer =
+      !["direct", "blood"].includes(base.kind) ||
+      documented.distances![0] + documented.distances![1] <
+        (base.distances?.[0] || 0) + (base.distances?.[1] || 0) ||
+      (base.distances?.[0] === 1 &&
+        base.distances[1] === 1 &&
+        explicit &&
+        explicit.type !== "sibling" &&
+        (!completeParents(a) || !completeParents(b)));
+    if (prefer) {
+      const others = [
+        ...(["blood", "marriage"].includes(base.kind) ? [base] : []),
+        ...extras,
+      ];
+      return {
+        ...documented,
+        ...(others.length ? { otherRelations: others } : {}),
+      };
+    }
+    extras.unshift(documented);
+  }
   if (base.kind !== "unknown")
     return { ...base, ...(extras.length ? { otherRelations: extras } : {}) };
   if (extras.length) return { ...extras[0], otherRelations: extras.slice(1) };
@@ -814,7 +891,7 @@ export function analyzeKinship(
         return {
           title: "Документированная семейная связь",
           explanation:
-            "Цепочка включает усыновление, духовную или другую явно указанную связь. Она не означает кровного родства.",
+            "Цепочка включает явно указанные семейные связи. Их типы нужно учитывать отдельно: не каждая такая связь означает кровное родство.",
           path: [...path, next],
           common: [],
           kind: "family",

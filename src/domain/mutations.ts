@@ -1,6 +1,7 @@
 import { validateFamily } from "./validation.ts";
 import { dateYear } from "./dates.ts";
 import type { Family, Person, ExtraLinkType } from "./types.ts";
+import { SIBLING_NAMES } from "./siblings.ts";
 export type ConnectionType = "parent" | "spouse" | ExtraLinkType;
 export type Connection = {
   from: string;
@@ -9,6 +10,7 @@ export type Connection = {
   id?: string;
 };
 export const CONNECTION_NAMES: Record<ConnectionType, string> = {
+  ...SIBLING_NAMES,
   parent: "Кровный родитель",
   spouse: "Супруг / супруга",
   adoptive_parent: "Приёмный родитель",

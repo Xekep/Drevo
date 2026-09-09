@@ -9,11 +9,15 @@ import {
   CONNECTION_NAMES,
   fullName,
   resolvedSex,
+  isSiblingLink,
+  siblingRole,
+  suggestConnectionOrder,
   type Family,
   type ArchiveUser,
   type ConnectionType,
 } from "../domain";
 import type { ConnectionDraft } from "./tree/tree-canvas";
+import { SiblingTypeField } from "./sibling-type-field";
 export function ConnectionInspector({
   family,
   user,
@@ -34,7 +38,8 @@ export function ConnectionInspector({
   canEdit?: boolean;
 }) {
   const [error, setError] = useState(""),
-    [confirm, setConfirm] = useState(false);
+    [confirm, setConfirm] = useState(false),
+    [manualOrder, setManualOrder] = useState(false);
   const readonly =
     !canEdit ||
     (!!draft.original && !canChangeConnection(family, user, draft.original));
@@ -44,8 +49,9 @@ export function ConnectionInspector({
   const from = people.find((p) => p.id === draft.from),
     to = people.find((p) => p.id === draft.to);
   const sex = from ? resolvedSex(from) : "u";
-  const role =
-    draft.type === "parent"
+  const role = isSiblingLink(draft.type)
+    ? siblingRole(draft.type, { sex }).term
+    : draft.type === "parent"
       ? sex === "m"
         ? "отец"
         : sex === "f"
@@ -61,7 +67,14 @@ export function ConnectionInspector({
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
-    onChange({ ...draft, hint: undefined, ...next });
+    const merged = { ...draft, hint: undefined, ...next };
+    onChange(
+      !draft.original &&
+        !manualOrder &&
+        Object.keys(next).some((key) => ["from", "to", "type"].includes(key))
+        ? suggestConnectionOrder(merged, people, family.links)
+        : merged,
+    );
   };
   async function submit(remove = false) {
     if (readonly) return;
@@ -163,18 +176,22 @@ export function ConnectionInspector({
         <label>
           Кем приходится
           <select
-            value={draft.type}
+            value={isSiblingLink(draft.type) ? "sibling" : draft.type}
             disabled={readonly || busy}
             onChange={(e) => update({ type: e.target.value as ConnectionType })}
           >
             <optgroup label="Семья">
-              {["parent", "spouse", "godparent", "adoptive_parent"].map(
-                (type) => (
-                  <option key={type} value={type}>
-                    {CONNECTION_NAMES[type as ConnectionType]}
-                  </option>
-                ),
-              )}
+              {[
+                "parent",
+                "spouse",
+                "sibling",
+                "godparent",
+                "adoptive_parent",
+              ].map((type) => (
+                <option key={type} value={type}>
+                  {CONNECTION_NAMES[type as ConnectionType]}
+                </option>
+              ))}
             </optgroup>
             <optgroup label="Другие связи">
               {["guardian", "nurse", "sworn_sibling"].map((type) => (
@@ -185,6 +202,13 @@ export function ConnectionInspector({
             </optgroup>
           </select>
         </label>
+        {isSiblingLink(draft.type) && (
+          <SiblingTypeField
+            value={draft.type}
+            disabled={readonly || busy}
+            onChange={(type) => update({ type })}
+          />
+        )}
         <label>
           Второй человек
           <select
@@ -207,7 +231,17 @@ export function ConnectionInspector({
           <button
             type="button"
             disabled={busy}
-            onClick={() => update({ from: draft.to, to: draft.from })}
+            onClick={() => {
+              setManualOrder(true);
+              setError("");
+              setConfirm(false);
+              onChange({
+                ...draft,
+                hint: undefined,
+                from: draft.to,
+                to: draft.from,
+              });
+            }}
           >
             <ArrowDownUp size={16} />
             Поменять местами
@@ -225,8 +259,8 @@ export function ConnectionInspector({
           </label>
         )}
         <p>
-          Братья, сёстры и более дальнее родство рассчитываются по родителям и
-          бракам.
+          Родство рассчитывается по родителям, бракам и указанным кровным
+          братьям и сёстрам. Связь сохранится только после подтверждения.
         </p>
         {readonly && (
           <p>

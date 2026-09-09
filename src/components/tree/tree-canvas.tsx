@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
+  isSymmetricLink,
+  isSiblingLink,
   connectionKey,
   canChangeConnection,
   fullName,
@@ -84,6 +86,11 @@ type Props = {
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
 const colors = {
+  sibling: "#668777",
+  full_sibling: "#668777",
+  paternal_sibling: "#668777",
+  maternal_sibling: "#668777",
+  step_sibling: "#9c8b71",
   parent: "#58775a",
   spouse: "#b38167",
   adoptive_parent: "#638fa0",
@@ -93,6 +100,11 @@ const colors = {
   sworn_sibling: "#748ca9",
 };
 const patterns = {
+  sibling: "5 3",
+  full_sibling: "5 3",
+  paternal_sibling: "5 3",
+  maternal_sibling: "5 3",
+  step_sibling: "3 4",
   parent: undefined,
   spouse: "7 4",
   adoptive_parent: "10 4",
@@ -416,12 +428,14 @@ function Canvas(props: Props) {
               (geometry.coveredRelations
                 ? !geometry.coveredRelations.includes(routeKey(e))
                 : !["parent", "spouse"].includes(e.type))) &&
-            (extraVisible || ["parent", "spouse"].includes(e.type)),
+            (extraVisible ||
+              isSiblingLink(e.type) ||
+              ["parent", "spouse"].includes(e.type)),
         )
         .map((e) => {
           const a = positions.get(e.from),
             b = positions.get(e.to),
-            side = ["spouse", "sworn_sibling"].includes(e.type);
+            side = isSymmetricLink(e.type);
           const route = routes.get(routeKey(e));
           const highlighted = props.highlighted.some(
             (id, i) =>

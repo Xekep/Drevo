@@ -4,6 +4,7 @@ import {
   availableColumn,
   connectPeople,
   CONNECTION_NAMES,
+  isSiblingLink,
   fullName,
   splitFullName,
   normalizeDateInput,
@@ -24,6 +25,7 @@ import {
 import { EditorDialog } from "./editor-dialog";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
+import { SiblingTypeField } from "./sibling-type-field";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
   isAdmin,
@@ -274,7 +276,7 @@ export function PersonEditor({
           <label>
             Кем новый человек приходится {fullName(relativeTo)}
             <select
-              value={relationship}
+              value={isSiblingLink(relationship) ? "sibling" : relationship}
               onChange={(e) =>
                 setRelationship(e.target.value as "child" | ConnectionType)
               }
@@ -284,11 +286,13 @@ export function PersonEditor({
                 <>
                   <option value="parent">Родитель</option>
                   <option value="spouse">Супруг / супруга</option>
+                  <option value="sibling">Брат / сестра</option>
                   <option value="godparent">Крёстный / крёстная</option>
                   <optgroup label="Другие связи">
                     {Object.entries(CONNECTION_NAMES)
                       .filter(
                         ([type]) =>
+                          !isSiblingLink(type) &&
                           !["parent", "spouse", "godparent"].includes(type),
                       )
                       .map(([type, label]) => (
@@ -301,6 +305,9 @@ export function PersonEditor({
               )}
             </select>
           </label>
+        )}
+        {relativeTo && !person && isSiblingLink(relationship) && (
+          <SiblingTypeField value={relationship} onChange={setRelationship} />
         )}
         <label className="name-entry">
           ФИО

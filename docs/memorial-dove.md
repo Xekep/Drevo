@@ -1,36 +1,15 @@
-# Белый 3D-голубь в карточке
+# Рисованный белый голубь
 
-В открытой карточке умершего на краю портрета уже сидит небольшая белая птица. При первом наведении мыши она взлетает за 1,65 секунды и не возвращается до повторного открытия карточки. Анимации прилёта и постоянного движения нет.
+[`src/assets/memorial-dove-drawn.png`](../src/assets/memorial-dove-drawn.png) — PNG RGBA 1254 × 1254, около 972 КиБ. Подготовлен встроенным **image_gen** 9 сентября 2026 года по предоставленному пользователем образцу рисованных белых голубей. Оригинальный альфа-канал сохранён; файл не перекрашивался и не обрезался. Трёхмерная модель и Three.js удалены из проекта.
 
-## Модель и авторство
+На портрете умершего птица сразу сидит. При первом наведении мыши проигрываются восемь фаз взмаха с частотой около 14 кадров/с, три цикла за 1,68 секунды. Это покадровая рисованная анимация; сглаживается траектория перемещения. Положение рисунков совмещено по голове, а области атласа показаны через вложенный SVG в `components/memorial-portrait.tsx`. Атлас загружается одним файлом; на странице одновременно отображается одна поза. Таймер работает только во время взлёта, очищается по окончании и при закрытии карточки. Новое наведение не возвращает птицу.
 
-Основа — **Animated bird / pigeon**, автор **Paul Spooner (dudecon)**: [страница модели](https://sketchfab.com/3d-models/animated-bird-pigeon-797d27b68af3453e865149435df6aa30), [исходник Blender на сайте автора](https://peripheralarbor.com/bird.blend). Используем с указанием автора по [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); авторство также показано в «О проекте». Автор оригинала не связан с проектом «Древо».
+На телефоне, при отсутствии мыши и при `prefers-reduced-motion: reduce` остаётся сидящая поза. Изменение настройки движения останавливает анимацию. Голубь не перехватывает клики, подпись для средств доступности — «Светлая память». Возраст не служит основанием считать человека умершим: нужна записанная дата или место смерти.
 
-Для проекта заменены материалы на белое оперение, приглушённые лапы и клюв, сглажена поверхность, убраны управляющие объекты исходного рига. Анимация Takeoff запечена в 16 объёмных форм поверхности с плавной интерполяцией. Это полноценная геометрия glTF с освещением и изменяемыми нормалями, а не последовательность плоских картинок. Предыдущий растровый атлас удалён.
+## Запрос генерации
 
-- `src/assets/memorial-dove.glb` — модель с материалами и анимацией, около 1,91 МиБ. Внешних текстур нет.
-- `src/assets/memorial-dove-rest.png` — прозрачный статичный рендер этой же модели, 384 × 384, около 45 КиБ.
-- `src/components/memorial-dove-scene.ts` — изолированная Three.js-сцена, [GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html) и [AnimationMixer](https://threejs.org/docs/pages/AnimationMixer.html).
-- `src/components/memorial-portrait.tsx` — загрузка, доступность и жизненный цикл.
+Использован встроенный инструмент, пользовательский образец передан как стилевой референс. CLI и внешний ключ API не применялись.
 
-## Загрузка и движение
-
-Сначала отображается статичный рендер. Только на компьютере с мышью, шириной от 900 px и разрешённой анимацией загружаются отдельный модуль Three.js и GLB. После первого рендера сцена останавливается; `requestAnimationFrame` работает только во время взлёта. Размер Canvas ограничен 184 × 184 CSS px, DPR — не больше 2. На полотне дерева сцен нет.
-
-На телефоне, при `prefers-reduced-motion: reduce`, ошибке загрузки или отсутствии WebGL остаётся неподвижный рендер той же модели. Изменение настройки движения учитывается без перезагрузки. Закрытие карточки отменяет загрузку и кадры, освобождает геометрию, материалы, анимацию и renderer. Птица не перехватывает нажатия; для средств доступности есть подпись «Светлая память».
-
-Символ появляется только при записанной дате или месте смерти. Возраст не служит основанием считать человека умершим.
-
-## Повторная подготовка
-
-Использован Blender 5.2. Исходный `.blend` не включён в репозиторий. Его SHA-256: `b44c94cbd1b3dff3a87da63a7f253b7fbc6b80cf3d898292ed56c22930fc4716`.
-
-Сохраните исходник автора как `outputs/dove-3d/bird.blend` и из корня проекта запустите:
-
-```powershell
-& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --disable-autoexec outputs/dove-3d/bird.blend --python src/tooling/export-memorial-dove.py
+```text
+Create a production-ready TRANSPARENT sprite sheet for a delicately hand-drawn animated WHITE DOVE, using the supplied image ONLY as a style and bird anatomy reference. Style: beautiful traditional hand-drawn Japanese animation, clean fine warm-gray pencil/ink contours, pure ivory-white feathers, pale cool-gray cel shadows, natural pigeon anatomy and small dark eye, elegant individual flight feathers. No 3D look, no polygons, no toy, no chunky icon, no blue sky, no clouds. This is for a subtle memorial bird perched on a 76px portrait then flying away. EXACTLY a 3 by 3 evenly spaced grid of 9 square cells, square sheet, ideally 1536x1536. Genuine transparent alpha background throughout; no painted checkerboard. No text, numbering, grid lines or separators. Each cell contains the SAME SINGLE bird, identical scale and head/body position facing RIGHT in a slightly three-quarter SIDE VIEW. Bird breast centered at x=50% y=56% of EVERY cell. Body including head/tail spans about 52% cell width; open wings fit completely inside 90% cell bounds. Do not crop wings. CELL 1 (top left): calm perched bird with wings fully folded, tiny pale pink feet at y=76%, alert natural white pigeon. CELLS 2 through 9 in reading order: EIGHT consecutive animation drawings covering ONE COMPLETE natural wingbeat cycle of the SAME bird in flight, suitable to loop seamlessly. 2: wings high at full upstroke; 3: wings 45 degrees above horizontal beginning power downstroke; 4: wings extended horizontally; 5: wings 45 degrees below horizontal; 6: wings at full downstroke; 7: wings partially folded recovering upward below horizontal; 8: wings partly folded passing horizontal on upstroke; 9: wings unfolding 45 degrees above horizontal approaching the first flight pose. Flight feet tucked. Keep each bird head, eye, beak, tail, torso SAME position and size in all 8 flight frames; only anatomically articulated wings and slight feather overlap vary. Delicate graceful shapes and convincing overlapping feathers similar to the reference. All 9 birds fully isolated on real transparent background.
 ```
-
-`--disable-autoexec` запрещает запуск встроенного в сторонний `.blend` Python-кода. Скрипт проекта создаёт GLB и статичный рендер в `src/assets`, контрольные кадры — в `outputs/dove-3d`. Это подготовка ассета разработчиком; Blender на сервере и во время обычной сборки не нужен.
-
-При подготовке проверены рендеры исходной и летящей поз в Blender и загрузка GLB через Three.js. Проверка анимации внутри браузера требует доступного браузера; рендеры Blender её не заменяют.

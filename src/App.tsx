@@ -9,7 +9,7 @@ import {
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
-  parentHints,
+  suggestConnectionOrder,
   owns,
   type Person,
   type GraphConnection,
@@ -146,27 +146,15 @@ export default function App() {
   const openConnection = useCallback(
     (draft: ConnectionDraft) => {
       if (!canEdit) return;
-      const source = map.get(draft.from),
-        target = map.get(draft.to);
-      if (!draft.original && draft.type === "parent" && source && target) {
-        const hints = parentHints(source, people, family?.links).filter(
-          (h) => h.person.id === target.id,
-        );
-        if (hints.length === 1)
-          draft = {
-            ...draft,
-            from: hints[0].from,
-            to: hints[0].to,
-            hint: hints[0].reason,
-          };
-      }
+      if (!draft.original)
+        draft = suggestConnectionOrder(draft, people, family?.links);
       setPersonDraft(null);
       setConnectionDraft(draft);
       setPreview(draft);
       dispatch({ type: "finishLink" });
       setAddMenu(false);
     },
-    [dispatch, canEdit, map, people, family?.links],
+    [dispatch, canEdit, people, family?.links],
   );
   const selectEdge = useCallback(
     (edge: GraphConnection) => {

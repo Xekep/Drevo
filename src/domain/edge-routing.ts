@@ -1,5 +1,6 @@
 import type { LayoutPerson } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
+import { isSymmetricLink } from "./siblings.ts";
 import { segmentsCross, type Point } from "./layout-order.ts";
 
 type Handle = "top" | "bottom" | "left" | "right";
@@ -165,7 +166,7 @@ export function routeRelationships(
   for (const edge of sorted) {
     const a = map.get(edge.from)!,
       b = map.get(edge.to)!;
-    const side = edge.type === "spouse" || edge.type === "sworn_sibling";
+    const side = isSymmetricLink(edge.type);
     let sourceHandle: Handle = side
       ? a.x > b.x
         ? "left"

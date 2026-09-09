@@ -81,25 +81,6 @@ export function AboutProject({
         <button className="dialog-done" onClick={onClose}>
           Перейти к истории <ArrowRight size={15} />
         </button>
-        <p className="about-credit">
-          3D-голубь:{" "}
-          <a
-            href="https://sketchfab.com/3d-models/animated-bird-pigeon-797d27b68af3453e865149435df6aa30"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Paul Spooner
-          </a>
-          ,{" "}
-          <a
-            href="https://creativecommons.org/licenses/by/4.0/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            CC BY 4.0
-          </a>
-          . Цвет и анимация адаптированы для «Древа».
-        </p>
       </div>
     </EditorDialog>
   );
