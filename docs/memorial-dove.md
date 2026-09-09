@@ -1,15 +1,36 @@
-# Белый голубь в карточке
+# Белый 3D-голубь в карточке
 
-Файл: [`src/assets/memorial-dove.png`](../src/assets/memorial-dove.png), 1254 × 1254, PNG RGBA, около 838 КиБ. Создан встроенным **image_gen** 9 сентября 2026 года. Оригинальный альфа-канал сохранён, растровый файл не перекрашен и не обрезан. Это сгенерированное фотореалистичное изображение, не фотография конкретной птицы.
+В открытой карточке умершего на краю портрета уже сидит небольшая белая птица. При первом наведении мыши она взлетает за 1,65 секунды и не возвращается до повторного открытия карточки. Анимации прилёта и постоянного движения нет.
 
-Атлас содержит четыре позы одной белой птицы: сидит, крылья вверх, промежуточный взмах, крылья вниз. Области атласа и их смещение заданы в `components/memorial-portrait.tsx`; вложенные SVG только отображают нужные фрагменты растрового файла. Все позы используют один URL и одинаковый масштаб. Файл включается Vite в сборку с хешем имени и загружается при открытии соответствующей карточки.
+## Модель и авторство
 
-При открытии голубь **уже сидит**. Первый заход мыши на портрет запускает взлёт длительностью 0,9 секунды с тремя взмахами. После взлёта птица не возвращается до повторного открытия карточки. Анимации приземления, таймеров и постоянных циклов нет. На телефонах, сенсорных устройствах и при `prefers-reduced-motion: reduce` остаётся сидящая поза. Изображение не перехватывает нажатия. Птица показана только при записанной дате или месте смерти, в открытой карточке человека.
+Основа — **Animated bird / pigeon**, автор **Paul Spooner (dudecon)**: [страница модели](https://sketchfab.com/3d-models/animated-bird-pigeon-797d27b68af3453e865149435df6aa30), [исходник Blender на сайте автора](https://peripheralarbor.com/bird.blend). Используем с указанием автора по [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); авторство также показано в «О проекте». Автор оригинала не связан с проектом «Древо».
 
-Проверенные готовые варианты: [полёт голубя Rawpixel](https://www.rawpixel.com/video/17219983/video-animal-bird-dove) и [иллюстрация LottieFiles](https://lottiefiles.com/free-animation/dove-lhgbAKhw0e). Их файлы и библиотеки не включены в проект: для нужных поз подготовлен собственный атлас.
+Для проекта заменены материалы на белое оперение, приглушённые лапы и клюв, сглажена поверхность, убраны управляющие объекты исходного рига. Анимация Takeoff запечена в 16 объёмных форм поверхности с плавной интерполяцией. Это полноценная геометрия glTF с освещением и изменяемыми нормалями, а не последовательность плоских картинок. Предыдущий растровый атлас удалён.
 
-## Точный запрос генерации
+- `src/assets/memorial-dove.glb` — модель с материалами и анимацией, около 1,91 МиБ. Внешних текстур нет.
+- `src/assets/memorial-dove-rest.png` — прозрачный статичный рендер этой же модели, 384 × 384, около 45 КиБ.
+- `src/components/memorial-dove-scene.ts` — изолированная Three.js-сцена, [GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html) и [AnimationMixer](https://threejs.org/docs/pages/AnimationMixer.html).
+- `src/components/memorial-portrait.tsx` — загрузка, доступность и жизненный цикл.
 
-```text
-Create a production-ready PHOTOREALISTIC sprite atlas of ONE identical real pure-white domestic rock dove (white homing pigeon, normal slender pigeon proportions, NOT a fantail breed, NOT a cartoon, NOT an illustration). Genuine transparent alpha background throughout, no checkerboard painted into image. Square image 1024x1024, precisely divided into a 2 by 2 equal 512px cells. No text, grid lines, borders, ground or branches. Each cell contains exactly one complete bird, no cropping, ample transparent padding for wings. Same side view facing RIGHT in every cell, same natural scale, lighting and body position. Beautiful natural WHITE individual feathers with extremely subtle gray shading, realistic small dark eye, small pale gray-pink pigeon beak with white cere, realistic pink feet. Body is centered at 50% cell width, 60% cell height. TOP LEFT CELL: calm seated/perched pigeon with both wings folded completely against body, feet at 80% cell height, tail to left, chest and head to right. This is the default resting pose and must look like an actual photograph of a white pigeon. TOP RIGHT CELL: same bird taking off with wings raised upward, fully spread feather tips, feet just leaving the invisible perch. BOTTOM LEFT CELL: same bird in intermediate wingbeat with wings spread laterally at shoulder height, real pigeon flight anatomy. BOTTOM RIGHT CELL: same bird with wings down in powerful downstroke, real natural feathers. Do not distort the bird or enlarge its eye. Four consistent photographic cutouts of the same real bird, suitable to animate discretely at 70px displayed size on a genealogy website.
+## Загрузка и движение
+
+Сначала отображается статичный рендер. Только на компьютере с мышью, шириной от 900 px и разрешённой анимацией загружаются отдельный модуль Three.js и GLB. После первого рендера сцена останавливается; `requestAnimationFrame` работает только во время взлёта. Размер Canvas ограничен 184 × 184 CSS px, DPR — не больше 2. На полотне дерева сцен нет.
+
+На телефоне, при `prefers-reduced-motion: reduce`, ошибке загрузки или отсутствии WebGL остаётся неподвижный рендер той же модели. Изменение настройки движения учитывается без перезагрузки. Закрытие карточки отменяет загрузку и кадры, освобождает геометрию, материалы, анимацию и renderer. Птица не перехватывает нажатия; для средств доступности есть подпись «Светлая память».
+
+Символ появляется только при записанной дате или месте смерти. Возраст не служит основанием считать человека умершим.
+
+## Повторная подготовка
+
+Использован Blender 5.2. Исходный `.blend` не включён в репозиторий. Его SHA-256: `b44c94cbd1b3dff3a87da63a7f253b7fbc6b80cf3d898292ed56c22930fc4716`.
+
+Сохраните исходник автора как `outputs/dove-3d/bird.blend` и из корня проекта запустите:
+
+```powershell
+& 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe' --background --factory-startup --disable-autoexec outputs/dove-3d/bird.blend --python src/tooling/export-memorial-dove.py
 ```
+
+`--disable-autoexec` запрещает запуск встроенного в сторонний `.blend` Python-кода. Скрипт проекта создаёт GLB и статичный рендер в `src/assets`, контрольные кадры — в `outputs/dove-3d`. Это подготовка ассета разработчиком; Blender на сервере и во время обычной сборки не нужен.
+
+При подготовке проверены рендеры исходной и летящей поз в Blender и загрузка GLB через Three.js. Проверка анимации внутри браузера требует доступного браузера; рендеры Blender её не заменяют.

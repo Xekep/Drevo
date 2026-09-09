@@ -34,6 +34,12 @@ export function FamiliesCatalog({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setQuery("");
+              }
+            }}
             placeholder="Фамилия или имя"
           />
         </label>

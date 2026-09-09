@@ -199,6 +199,18 @@ export function ArchiveHeader({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
+        e.key === "Escape" &&
+        !e.defaultPrevented &&
+        !(e.target as HTMLElement).closest("[role=dialog], dialog") &&
+        (e.target === ref.current ||
+          !(e.target as HTMLElement).closest(
+            "input,textarea,select,[contenteditable]",
+          ))
+      ) {
+        onQuery("");
+        setOpen(false);
+      }
+      if (
         e.key === "/" &&
         !(e.target as HTMLElement).closest(
           "input,textarea,select,[contenteditable]",
@@ -210,7 +222,7 @@ export function ArchiveHeader({
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, []);
+  }, [onQuery]);
   const matches = query.trim()
     ? people.filter((p) => matchesPerson(p, query)).slice(0, 8)
     : [];
@@ -237,7 +249,11 @@ export function ArchiveHeader({
               onSelect(matches[0].id);
               setOpen(false);
             }
-            if (e.key === "Escape") setOpen(false);
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              onQuery("");
+              setOpen(false);
+            }
           }}
           placeholder="Найти человека…"
           aria-label="Найти человека"

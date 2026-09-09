@@ -419,6 +419,31 @@ export function PersonEditor({
         )}
         <details className="form-details person-extra">
           <summary>Дополнительные сведения</summary>
+          {draft.parents.length > 0 && (
+            <details className="form-details">
+              <summary>Кровные родители · {draft.parents.length}</summary>
+              <p>
+                {draft.parents
+                  .map((id) => family.people.find((p) => p.id === id))
+                  .filter((p) => !!p)
+                  .map((p) => fullName(p))
+                  .join(" · ")}
+              </p>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  checked={draft.parentageComplete ?? draft.parents.length >= 2}
+                  onChange={(e) => field("parentageComplete", e.target.checked)}
+                />
+                Все кровные родители известны и указаны
+              </label>
+              <p className="field-hint">
+                Эта отметка помогает различать родных, неполнородных и сводных
+                братьев и сестёр. Если второй родитель неизвестен, оставьте её
+                выключенной. Связи добавляются из карточки через «Родственник».
+              </p>
+            </details>
+          )}
           <div className="form-grid">
             <label>
               Дата рождения
@@ -547,15 +572,7 @@ export function PersonEditor({
             </label>
           </details>
           <details className="form-details">
-            <summary>Источники и дополнительные настройки</summary>
-            <label className="check-field">
-              <input
-                type="checkbox"
-                checked={!!draft.parentageComplete}
-                onChange={(e) => field("parentageComplete", e.target.checked)}
-              />{" "}
-              Все кровные родители известны и указаны
-            </label>
+            <summary>Источники и прямые связи</summary>
             <section>
               <h3>Источники</h3>
               {draft.sources.map((s, i) => (

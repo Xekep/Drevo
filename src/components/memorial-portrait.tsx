@@ -1,45 +1,94 @@
-﻿import { useState, type ReactNode } from "react";
-import doveAtlas from "../assets/memorial-dove.png";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import doveRest from "../assets/memorial-dove-rest.png";
+import type { createDoveScene } from "./memorial-dove-scene";
 
-// Области оригинального прозрачного атласа. Все позы имеют одинаковый масштаб.
-const poses = [
-  { name: "idle", x: 0, y: 0, width: 650, height: 720, left: 0, top: 0 },
-  { name: "up", x: 650, y: 0, width: 604, height: 720, left: 0, top: 0 },
-  { name: "middle", x: 0, y: 730, width: 710, height: 524, left: 0, top: 160 },
-  { name: "down", x: 710, y: 730, width: 544, height: 524, left: 60, top: 160 },
-];
+const motionQuery =
+  "(min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
 
-/** Голубь уже сидит. Только первый заход мыши запускает короткий взлёт. */
+/** Голубь уже сидит; 3D загружается только для открытого портрета на компьютере. */
 export function MemorialPortrait({ children }: { children: ReactNode }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const scene = useRef<Awaited<ReturnType<typeof createDoveScene>> | null>(
+    null,
+  );
   const [departed, setDeparted] = useState(false);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia(motionQuery);
+    const element = canvas.current;
+    let controller: AbortController | undefined;
+    const lost = () => {
+      controller?.abort();
+      scene.current?.dispose();
+      scene.current = null;
+      setReady(false);
+      setDeparted(false);
+    };
+    const update = () => {
+      controller?.abort();
+      scene.current?.dispose();
+      scene.current = null;
+      setReady(false);
+      setDeparted(false);
+      if (!media.matches || !canvas.current) return;
+      const request = new AbortController();
+      controller = request;
+      const target = canvas.current;
+      void import("./memorial-dove-scene")
+        .then(({ createDoveScene }) => {
+          if (request.signal.aborted) return;
+          return createDoveScene(target, request.signal);
+        })
+        .then((loaded) => {
+          if (!loaded) return;
+          if (request.signal.aborted) {
+            loaded.dispose();
+            return;
+          }
+          scene.current = loaded;
+          setReady(true);
+        })
+        .catch(() => {
+          /* При недоступном WebGL остаётся тот же голубь на статичном рендере. */
+        });
+    };
+    update();
+    element?.addEventListener("webglcontextlost", lost);
+    media.addEventListener("change", update);
+    return () => {
+      element?.removeEventListener("webglcontextlost", lost);
+      media.removeEventListener("change", update);
+      controller?.abort();
+      scene.current?.dispose();
+      scene.current = null;
+    };
+  }, []);
   return (
     <span
       className={`memorial-portrait${departed ? " dove-departed" : ""}`}
       onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") setDeparted(true);
+        if (
+          event.pointerType === "mouse" &&
+          scene.current &&
+          window.matchMedia(motionQuery).matches
+        ) {
+          scene.current.fly();
+          setDeparted(true);
+        }
       }}
     >
       {children}
       <span className="memorial-dove" role="img" aria-label="Светлая память">
-        {poses.map((pose) => (
-          <svg
-            key={pose.name}
-            className={`dove-frame dove-frame-${pose.name}`}
-            viewBox="0 0 720 720"
-            aria-hidden="true"
-          >
-            <svg
-              x={pose.left}
-              y={pose.top}
-              width={pose.width}
-              height={pose.height}
-              viewBox={`${pose.x} ${pose.y} ${pose.width} ${pose.height}`}
-              overflow="hidden"
-            >
-              <image href={doveAtlas} width="1254" height="1254" />
-            </svg>
-          </svg>
-        ))}
+        <img
+          src={doveRest}
+          alt=""
+          className={ready ? "dove-hidden" : undefined}
+        />
+        <canvas
+          ref={canvas}
+          className={ready ? undefined : "dove-hidden"}
+          aria-hidden="true"
+        />
       </span>
     </span>
   );
