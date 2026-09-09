@@ -124,17 +124,13 @@ export function PersonPanel({
       <div className="profile-head">
         <Avatar person={person} large />
         <h2>
-          {person.surname}
+          {hasRecordedDeath(person) ? (
+            <MemorialName key={person.id}>{person.surname}</MemorialName>
+          ) : (
+            person.surname
+          )}
           <span className="profile-given-name">
-            {hasRecordedDeath(person) ? (
-              <MemorialName key={person.id}>
-                {person.name} {person.patronymic}
-              </MemorialName>
-            ) : (
-              <>
-                {person.name} {person.patronymic}
-              </>
-            )}
+            {person.name} {person.patronymic}
           </span>
         </h2>
         {person.maidenName && (

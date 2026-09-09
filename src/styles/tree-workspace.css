@@ -316,7 +316,7 @@
 .inspector-dock .profile-head h2 {
   font-size: 25px;
 }
-.inspector-dock .profile-head h2 > span {
+.inspector-dock .profile-head h2 > .profile-given-name {
   font-size: 20px;
 }
 .inspector-dock .profile-head p {
