@@ -111,6 +111,14 @@ export function dateLabel(value: string) {
     .format(new Date(dateBound(value, false) + "T12:00:00Z"))
     .replace(" г.", "");
 }
+function ageInMonths(birth: string, end: string) {
+  if (birth.length < 7 || end.length < 7) return null;
+  const [birthYear, birthMonth, birthDay = 1] = birth.split("-").map(Number);
+  const [endYear, endMonth, endDay = 1] = end.split("-").map(Number);
+  let months = (endYear - birthYear) * 12 + endMonth - birthMonth;
+  if (birth.length === 10 && end.length === 10 && endDay < birthDay) months--;
+  return Math.max(0, months);
+}
 export function ageLabel(p: Person) {
   if (!p.birth || (hasRecordedDeath(p) && !p.death)) return "";
   const end = p.death || new Date().toISOString().slice(0, 10);
@@ -120,6 +128,13 @@ export function ageLabel(p: Person) {
     (end.length > 4 && p.birth.length > 4 && end.slice(5) < p.birth.slice(5)
       ? 1
       : 0);
+  if (age < 1) {
+    const months = ageInMonths(p.birth, end);
+    if (months === null) return "меньше года";
+    if (months === 0) return "меньше месяца";
+    const approximate = p.birth.length < 10 || (p.death && p.death.length < 10);
+    return `${approximate ? "около " : ""}${months} ${plural(months, "месяц", "месяца", "месяцев")}`;
+  }
   return `${p.birth.length < 10 || (p.death && p.death.length < 10) ? "около " : ""}${age} ${plural(age, "год", "года", "лет")}`;
 }
 export function safeUrl(value?: string): string | undefined {
