@@ -54,12 +54,13 @@ export function authorizeArchive(
     };
   if (!isDeepStrictEqual(currentMeta, nextMeta)) deny();
   const people = new Map(next.people.map((p) => [p.id, p]));
+  const previousPeople = new Map(current.people.map((p) => [p.id, p]));
   for (const old of current.people) {
     const p = people.get(old.id);
     if (!p || (!own(old) && !isDeepStrictEqual(old, p))) deny();
   }
   for (const p of next.people) {
-    const old = current.people.find((x) => x.id === p.id);
+    const old = previousPeople.get(p.id);
     if (!own(p)) continue;
     const changedSpouses = new Set([
       ...(old?.spouses || []).filter((id) => !p.spouses.includes(id)),
@@ -87,12 +88,13 @@ export function authorizeArchive(
         deny();
   }
   const photos = new Map((next.photos || []).map((p) => [p.id, p]));
+  const previousPhotos = new Map((current.photos || []).map((p) => [p.id, p]));
   for (const old of current.photos || []) {
     const p = photos.get(old.id);
     if (!p || (!own(old) && !isDeepStrictEqual(old, p))) deny();
   }
   for (const p of next.photos || []) {
-    const old = current.photos?.find((x) => x.id === p.id);
+    const old = previousPhotos.get(p.id);
     if (old && old.url !== p.url) deny();
   }
   return next;

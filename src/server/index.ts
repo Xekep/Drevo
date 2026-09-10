@@ -21,6 +21,7 @@ import { restoreStore, RESTORE_LIMIT } from "./restore.ts";
 import { geocodingStore } from "./geocoding.ts";
 import { familyPlaces, placeKey } from "../domain/places.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
+import { assertProductionOrigin } from "./runtime-config.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const staticTypes: Record<string, string> = {
@@ -39,6 +40,10 @@ export async function startServer(
   production = process.argv.includes("--production"),
   oauthFetch?: typeof fetch,
 ) {
+  assertProductionOrigin(
+    process.env.NODE_ENV === "production",
+    process.env.PUBLIC_ORIGIN,
+  );
   const dbPath =
     databasePath ||
     process.env.DATABASE_PATH ||
@@ -570,6 +575,10 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
+  assertProductionOrigin(
+    process.argv.includes("--production"),
+    process.env.PUBLIC_ORIGIN,
+  );
   const app = await startServer();
   let closing = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const)

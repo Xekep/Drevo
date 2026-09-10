@@ -340,9 +340,6 @@
     font-size: 10px;
     min-width: 34px;
   }
-  .archive-workspace:has(.inspector-dock.expanded) .tree-canvas {
-    bottom: 84%;
-  }
   .inspector-dock .profile-head {
     padding: 16px;
   }
@@ -351,7 +348,7 @@
   }
   .inspector-dock .profile-avatar {
     width: 66px;
-    height: 76px;
+    height: 66px;
   }
   .dock-grip button {
     min-height: 30px;

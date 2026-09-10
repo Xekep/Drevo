@@ -441,7 +441,12 @@ export default function App() {
                       </InspectorDock>
                     ) : compare || chosen.length > 0 ? (
                       <InspectorDock
-                        key={compare ? "comparison" : chosen[0]?.id}
+                        key={
+                          compare
+                            ? `comparison:${chosen.length}`
+                            : chosen[0]?.id
+                        }
+                        initialExpanded={!compare || chosen.length === 2}
                         onClose={() => dispatch({ type: "clear" })}
                       >
                         {compare ? (

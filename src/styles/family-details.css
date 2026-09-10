@@ -214,24 +214,39 @@
   width: 100%;
   height: 100%;
 }
-@media (min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+@media (prefers-reduced-motion: no-preference) {
   .dove-departed .memorial-dove {
-    animation: dove-leave 1.68s ease-in both;
+    animation: dove-leave 1.9s ease-in-out both;
+  }
+  .dove-departed .memorial-dove > svg {
+    transform: scaleX(-1);
   }
 }
 @keyframes dove-leave {
-  0%,
-  20% {
+  0% {
     opacity: 1;
     transform: none;
   }
-  55% {
+  35% {
     opacity: 1;
-    transform: translate(12px, -14px);
+    transform: translate(-30px, -45px);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translate(-90px, -105px) scale(0.9);
   }
   100% {
     opacity: 0;
-    transform: translate(68px, -70px) scale(0.8);
+    transform: translate(-170px, -185px) scale(0.65);
+  }
+}
+/* На сенсорном полотне линии пропускают касание к панели React Flow.
+   Иначе служебный nopan на ребре блокирует перетаскивание и pinch. */
+@media (max-width: 899px), (pointer: coarse) {
+  .tree-canvas .react-flow__edge,
+  .tree-canvas .react-flow__edge *,
+  .tree-canvas .flow-edge-label {
+    pointer-events: none !important;
   }
 }
 @media (max-width: 899px) {

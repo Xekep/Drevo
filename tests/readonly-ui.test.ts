@@ -24,6 +24,24 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     const { PersonInspector } = await server.ssrLoadModule(
       "/src/components/person-inspector.tsx",
     );
+    const { InspectorDock } = await server.ssrLoadModule(
+      "/src/components/inspector-dock.tsx",
+    );
+    const dock = renderToStaticMarkup(
+      createElement(InspectorDock, { onClose: () => {} }, "Профиль"),
+    );
+    assert.match(dock, /class="inspector-dock expanded"/);
+    assert.match(dock, /aria-expanded="true"/);
+    assert.match(dock, /Свернуть панель/);
+    const choosingPair = renderToStaticMarkup(
+      createElement(
+        InspectorDock,
+        { onClose: () => {}, initialExpanded: false },
+        "Выберите второго человека",
+      ),
+    );
+    assert.match(choosingPair, /aria-expanded="false"/);
+    assert.match(choosingPair, /Развернуть панель/);
     const { ConnectionInspector } = await server.ssrLoadModule(
       "/src/components/connection-inspector.tsx",
     );

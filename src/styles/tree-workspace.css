@@ -1205,16 +1205,15 @@
     min-width: 40px;
   }
   .archive-workspace:has(.inspector-dock) .tree-canvas {
-    bottom: 44%;
-  }
-  .archive-workspace:has(.inspector-dock.expanded) .tree-canvas {
-    bottom: 44%;
+    bottom: 0;
   }
   .inspector-dock {
     left: 0;
     right: 0;
     bottom: 0;
     border-radius: 18px 18px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior: contain;
   }
   .about-story {
     padding: 8px 22px 24px;

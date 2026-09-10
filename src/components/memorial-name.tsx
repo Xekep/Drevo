@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import doveAtlas from "../assets/memorial-dove-drawn.png";
 
-const motionQuery =
-  "(min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)";
+const motionQuery = "(prefers-reduced-motion: no-preference)";
 // Области оригинального атласа; рисунки совмещены по положению головы.
 const poses = [
   { x: 0, y: 140, w: 430, h: 285, eyeX: 297, eyeY: 236 },
@@ -16,64 +15,70 @@ const poses = [
   { x: 870, y: 820, w: 384, h: 420, eyeX: 1173, eyeY: 1024 },
 ];
 
-/** Рисованная покадровая анимация: сидит сразу, один короткий взлёт. */
+/** Один пролёт при открытии профиля; вся анимация остаётся внутри этого компонента. */
 export function MemorialName({ children }: { children: ReactNode }) {
-  const [departed, setDeparted] = useState(false);
-  const [frame, setFrame] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    const image = new Image();
-    image.onload = () => setLoaded(true);
-    image.src = doveAtlas;
-    return () => {
-      image.onload = null;
-    };
-  }, []);
-  useEffect(() => {
-    if (!departed) return;
-    const started = performance.now();
-    const timer = window.setInterval(() => {
-      const elapsed = performance.now() - started;
-      if (elapsed >= 1680) {
-        window.clearInterval(timer);
-        setFrame(-1);
-      } else setFrame(1 + (Math.floor(elapsed / 70) % 8));
-    }, 35);
-    return () => window.clearInterval(timer);
-  }, [departed]);
+  const [flight, setFlight] = useState({ phase: "waiting", frame: 0 });
   useEffect(() => {
     const media = window.matchMedia(motionQuery);
-    const change = () => {
-      if (!media.matches) {
-        setDeparted(false);
-        setFrame(0);
+    const image = new Image();
+    let disposed = false,
+      timer = 0,
+      started = 0,
+      lastFrame = -1;
+    const stop = () => window.cancelAnimationFrame(timer);
+    const still = () => {
+      stop();
+      setFlight({ phase: "still", frame: 0 });
+    };
+    const tick = (now: number) => {
+      if (disposed) return;
+      const elapsed = now - started;
+      if (elapsed >= 1900) {
+        setFlight({ phase: "finished", frame: 0 });
+        return;
       }
+      const frame = 1 + (Math.floor(elapsed / 70) % 8);
+      if (frame !== lastFrame) {
+        lastFrame = frame;
+        setFlight({ phase: "flying", frame });
+      }
+      timer = window.requestAnimationFrame(tick);
+    };
+    image.onload = () => {
+      if (disposed) return;
+      if (!media.matches) return still();
+      started = performance.now();
+      timer = window.requestAnimationFrame(tick);
+    };
+    const change = () => {
+      // Включение уменьшенной анимации немедленно останавливает пролёт.
+      // Обратное переключение не запускает его повторно.
+      if (!media.matches) still();
     };
     media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
+    image.src = doveAtlas;
+    return () => {
+      disposed = true;
+      stop();
+      image.onload = null;
+      media.removeEventListener("change", change);
+    };
   }, []);
-  const pose = poses[Math.max(0, frame)];
+  const pose = poses[flight.frame];
   return (
     <span
-      className={`memorial-name${departed ? " dove-departed" : ""}`}
-      onPointerEnter={(event) => {
-        if (
-          !departed &&
-          loaded &&
-          event.pointerType === "mouse" &&
-          window.matchMedia(motionQuery).matches
-        ) {
-          setFrame(1);
-          setDeparted(true);
-        }
-      }}
+      className={`memorial-name${flight.phase === "flying" ? " dove-departed" : ""}`}
     >
       {children}
       <span className="memorial-dove" role="img" aria-label="Светлая память">
         <svg
           viewBox="0 0 500 500"
           aria-hidden="true"
-          style={{ visibility: frame < 0 ? "hidden" : undefined }}
+          style={{
+            visibility: ["waiting", "finished"].includes(flight.phase)
+              ? "hidden"
+              : undefined,
+          }}
         >
           <svg
             x={pose.x - pose.eyeX + 330}

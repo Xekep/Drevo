@@ -4,12 +4,14 @@ export function InspectorDock({
   children,
   onClose,
   editing = false,
+  initialExpanded = true,
 }: {
   children: ReactNode;
   onClose: () => void;
   editing?: boolean;
+  initialExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(editing);
+  const [expanded, setExpanded] = useState(initialExpanded);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (document.activeElement?.matches(":focus-visible")) {
@@ -31,7 +33,7 @@ export function InspectorDock({
     >
       <div className="dock-grip">
         <button
-          aria-label="Изменить высоту панели"
+          aria-label={expanded ? "Свернуть панель" : "Развернуть панель"}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
