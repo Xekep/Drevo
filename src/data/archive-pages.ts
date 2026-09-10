@@ -1,8 +1,5 @@
 import type { Family } from "../domain/types.ts";
-import {
-  personDetails,
-  type PersonDetails,
-} from "../domain/archive-projection.ts";
+import { personDetails } from "../domain/archive-projection.ts";
 export type ArchivePageHeader = {
   family: Family;
   revision: number;
@@ -30,12 +27,16 @@ export async function completeArchive<T extends ArchivePageHeader>(
     (initial.family.photos?.length || 0) !== 0
   )
     throw invalid();
+
   let family = initial.family;
+  const workingPeople = [...initial.family.people],
+    peopleIndex = new Map(workingPeople.map((person, index) => [person.id, index])),
+    workingPhotos = [...(initial.family.photos || [])];
+
   for (const collection of ["people", "photos"] as const) {
     const total = initial.totals[collection];
     if (!Number.isSafeInteger(total) || total < 0) throw invalid();
     const seen = new Set<string>();
-    const expected = new Set(initial.family.people.map((p) => p.id));
     let unpublished = 0;
     for (let offset = 0; offset < total;) {
       const response = await request(
@@ -54,36 +55,32 @@ export async function completeArchive<T extends ArchivePageHeader>(
         offset + data.items.length > total
       )
         throw invalid();
+
       for (const item of data.items) {
         if (
           !item ||
           typeof item.id !== "string" ||
           seen.has(item.id) ||
-          (collection === "people" && !expected.has(item.id))
+          (collection === "people" && !peopleIndex.has(item.id))
         )
           throw invalid();
         seen.add(item.id);
+        if (collection === "people") {
+          const index = peopleIndex.get(item.id)!;
+          workingPeople[index] = {
+            ...workingPeople[index],
+            ...personDetails(item),
+          };
+        } else workingPhotos.push(item);
       }
-      if (collection === "people") {
-        const page = new Map<string, PersonDetails>(
-          data.items.map((p: PersonDetails) => [p.id, personDetails(p)]),
-        );
-        family = {
-          ...family,
-          people: family.people.map((person) =>
-            page.has(person.id)
-              ? { ...person, ...page.get(person.id) }
-              : person,
-          ),
-        };
-      } else
-        family = {
-          ...family,
-          photos: [...(family.photos || []), ...data.items],
-        };
+
       offset += data.items.length;
       unpublished += data.items.length;
       if (unpublished >= archiveProgressBatchSize || offset === total) {
+        family =
+          collection === "people"
+            ? { ...family, people: [...workingPeople] }
+            : { ...family, photos: [...workingPhotos] };
         progress(family);
         unpublished = 0;
       }
