@@ -2,6 +2,24 @@
   display: none;
 }
 
+/* Photo gestures are owned by the lightbox, not by browser page zoom. */
+.photo-image-space {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.photo-slide-current .tag-image {
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* The opened person card should lead with the portrait, not a postage stamp. */
+.profile-avatar {
+  width: 112px;
+  height: 112px;
+  font-size: 36px;
+}
+
 @media (max-width: 899px) {
   .gallery-view {
     padding: 16px 12px 24px;
@@ -59,6 +77,12 @@
     align-self: flex-start;
     padding: 8px 10px;
     font-size: 12px;
+  }
+
+  .profile-avatar {
+    width: 96px;
+    height: 96px;
+    font-size: 32px;
   }
 
   .inspector-dock:has(.comparison-content.is-picking) {
