@@ -4,6 +4,7 @@ export const archivePaths = {
   families: "/families",
   gallery: "/photos",
   places: "/places",
+  insights: "/insights",
   admin: "/admin",
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
