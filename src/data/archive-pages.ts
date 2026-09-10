@@ -10,6 +10,10 @@ export type ArchivePageHeader = {
   pageToken?: string;
   totals?: { people: number; photos: number };
 };
+
+/** Не заставляем React пересобирать весь архив после каждой сетевой страницы. */
+export const archiveProgressBatchSize = 160;
+
 /** Все страницы относятся к одной ревизии и одному набору разрешений. */
 export async function completeArchive<T extends ArchivePageHeader>(
   initial: T,
@@ -32,6 +36,7 @@ export async function completeArchive<T extends ArchivePageHeader>(
     if (!Number.isSafeInteger(total) || total < 0) throw invalid();
     const seen = new Set<string>();
     const expected = new Set(initial.family.people.map((p) => p.id));
+    let unpublished = 0;
     for (let offset = 0; offset < total;) {
       const response = await request(
         `/api/family?projection=page&collection=${collection}&offset=${offset}&token=${encodeURIComponent(initial.pageToken!)}`,
@@ -77,7 +82,11 @@ export async function completeArchive<T extends ArchivePageHeader>(
           photos: [...(family.photos || []), ...data.items],
         };
       offset += data.items.length;
-      progress(family);
+      unpublished += data.items.length;
+      if (unpublished >= archiveProgressBatchSize || offset === total) {
+        progress(family);
+        unpublished = 0;
+      }
     }
   }
   return { ...initial, family, partial: false };
