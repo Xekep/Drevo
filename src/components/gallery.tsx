@@ -44,8 +44,8 @@ export function Gallery({
   const filterPerson = family.people.find((p) => p.id === personFilter);
   return (
     <section className="gallery-view" aria-label="Галерея семейных фотографий">
-      <div className="gallery-heading">
-        <div>
+      <div className="gallery-heading gallery-photo-heading">
+        <div className="gallery-heading-copy">
           <span className="section-label">СЕМЕЙНЫЙ АЛЬБОМ</span>
           <h2>
             {filterPerson
@@ -60,36 +60,38 @@ export function Gallery({
             на нём.
           </p>
         </div>
-        {canEdit && (
-          <button className="primary-action" onClick={onAdd}>
-            <ImagePlus size={18} />
-            Добавить фото
-          </button>
-        )}
-      </div>
-      <div
-        className="gallery-modes segmented"
-        aria-label="Группировка фотографий"
-      >
-        {(
-          [
-            ["all", "Все · по добавлению"],
-            ["people", "По людям"],
-            ["years", "По годам"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            aria-pressed={mode === value}
-            onClick={() => {
-              setMode(value);
-              setAlbumId("");
-              setLimit(30);
-            }}
+        <div className="gallery-heading-actions">
+          <div
+            className="gallery-modes segmented"
+            aria-label="Группировка фотографий"
           >
-            {label}
-          </button>
-        ))}
+            {(
+              [
+                ["all", "Все · по добавлению"],
+                ["people", "По людям"],
+                ["years", "По годам"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                aria-pressed={mode === value}
+                onClick={() => {
+                  setMode(value);
+                  setAlbumId("");
+                  setLimit(30);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {canEdit && (
+            <button className="primary-action" onClick={onAdd}>
+              <ImagePlus size={18} />
+              Добавить фото
+            </button>
+          )}
+        </div>
       </div>
       {album && (
         <div className="album-heading">

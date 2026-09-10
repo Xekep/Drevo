@@ -15,10 +15,6 @@ export function LoginDialog({ onClose }: { onClose: () => void }) {
   return (
     <EditorDialog title="Вход в семейный архив" onClose={onClose}>
       <div className="archive-form">
-        <p>
-          Войдите с Яндекс ID. Новые участники получают доступ для чтения.
-          Администратор может пригласить вас к редактированию.
-        </p>
         {enabled ? (
           <a className="yandex-login" href="/auth/yandex">
             <b>Я</b> Войти с Яндекс ID
