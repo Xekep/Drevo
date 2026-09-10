@@ -21,6 +21,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # HTTP-проверка публичной ссылки использует собранную HTML-оболочку.
+      - run: npm run build
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
         # Прямой запуск оставляет каждый файл в отдельном процессе, без IPC runner.
@@ -28,7 +30,6 @@ jobs:
           for test_file in tests/*.test.ts; do
             node --experimental-strip-types "$test_file"
           done
-      - run: npm run build
       - run: npm run test:worker
       - name: Configure SSH
         env:
