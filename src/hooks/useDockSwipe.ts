@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from "react";
 import { dockSwipeAction } from "../components/dock-swipe";
+import { bindDockContentSwipe } from "../components/dock-content-swipe";
 
 export function useDockSwipe(
   panel: RefObject<HTMLElement | null>,
@@ -8,11 +9,14 @@ export function useDockSwipe(
   enabled: boolean,
   onClose: () => void,
   onExpand: () => void,
+  wholePanel = false,
 ) {
   useEffect(() => {
     const element = panel.current,
       handle = heading.current;
     if (!element || !handle || !enabled) return;
+    if (wholePanel)
+      return bindDockContentSwipe(element, handle, expanded, onClose, onExpand);
     let gesture: { id: number; x: number; y: number; time: number } | null =
       null;
     let moved = false;
@@ -102,5 +106,5 @@ export function useDockSwipe(
       handle.removeEventListener("click", click, true);
       window.removeEventListener("resize", reset);
     };
-  }, [panel, heading, expanded, enabled, onClose, onExpand]);
+  }, [panel, heading, expanded, enabled, onClose, onExpand, wholePanel]);
 }

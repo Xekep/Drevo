@@ -31,8 +31,8 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       createElement(InspectorDock, { onClose: () => {} }, "Профиль"),
     );
     assert.match(dock, /class="inspector-dock expanded"/);
-    assert.match(dock, /aria-expanded="true"/);
-    assert.match(dock, /Свернуть панель/);
+    assert.doesNotMatch(dock, /Свернуть панель|Развернуть панель/);
+    assert.match(dock, /Закрыть панель/);
     const choosingPair = renderToStaticMarkup(
       createElement(
         InspectorDock,
@@ -171,6 +171,15 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       title: "Семейный снимок",
       tags: [
         { id: "tag", personId: p.id, x: 0.1, y: 0.1, width: 0.2, height: 0.3 },
+        { id: "tag-b", personId: "b", x: 0.4, y: 0.1, width: 0.2, height: 0.3 },
+        {
+          id: "tag-a-again",
+          personId: p.id,
+          x: 0.7,
+          y: 0.1,
+          width: 0.2,
+          height: 0.3,
+        },
       ],
     };
     const viewer = renderToStaticMarkup(
@@ -188,6 +197,12 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       }),
     );
     assert.match(viewer, /Открыть карточку: Иванов Иван/);
+    assert.match(viewer, /class="photo-people-names"/);
+    assert.equal(
+      (viewer.match(/class="photo-person-name"/g) || []).length,
+      2,
+      "repeated face tags do not duplicate the name",
+    );
     assert.match(viewer, /class="photo-lightbox"/);
     assert.doesNotMatch(viewer, /<h2>Фотография/);
     assert.match(
@@ -246,6 +261,52 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       "profile loads just three album covers",
     );
     assert.match(stack, /10 фото/);
+    const { PersonFullView } = await server.ssrLoadModule(
+      "/src/components/person-full-view.tsx",
+    );
+    const fullProps = {
+      person: p,
+      family,
+      readPhotos: true,
+      onClose: noop,
+      onCompare: noop,
+      onAlbum: noop,
+      save: async () => family,
+      uploadPortrait: async () => "/media/portrait.png",
+    };
+    const fullAdmin = renderToStaticMarkup(
+      createElement(PersonFullView, { ...fullProps, user, canEdit: true }),
+    );
+    assert.match(fullAdmin, /full-person-edit/);
+    const fullReader = renderToStaticMarkup(
+      createElement(PersonFullView, { ...fullProps, user, canEdit: false }),
+    );
+    assert.doesNotMatch(fullReader, /full-person-edit/);
+    const fullOther = renderToStaticMarkup(
+      createElement(PersonFullView, {
+        ...fullProps,
+        user: { ...user, role: "relative", id: "other" },
+        canEdit: true,
+      }),
+    );
+    assert.doesNotMatch(
+      fullOther,
+      /full-person-edit/,
+      "relatives cannot edit someone else's expanded profile",
+    );
+    const { ShareDialog } = await server.ssrLoadModule(
+      "/src/components/share-dialog.tsx",
+    );
+    const share = renderToStaticMarkup(
+      createElement(ShareDialog, {
+        anchor: p,
+        people: family.people,
+        revision: 1,
+        onClose: noop,
+      }),
+    );
+    assert.equal((share.match(/<dialog /g) || []).length, 1);
+    assert.match(share, /Создать и скопировать/);
   } finally {
     await server.close();
     rmSync(cacheDir, { recursive: true, force: true });

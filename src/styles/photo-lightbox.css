@@ -230,6 +230,36 @@
   background: #101b15e8;
   font-size: 12px;
 }
+.photo-lightbox .photo-people-names {
+  line-height: 1.9;
+  color: var(--ink);
+}
+.photo-people-names .photo-person-name {
+  display: inline;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  border-radius: 3px;
+}
+.photo-person-name:hover,
+.photo-person-name:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.photo-person-remove {
+  padding: 0 5px;
+  color: var(--photo-danger);
+}
+.photo-viewer .photo-tag.is-highlighted,
+.photo-viewer.is-viewing:not(.show-tags) .photo-tag.is-highlighted {
+  opacity: 1;
+  z-index: 3;
+  border-color: #eaffbf;
+  box-shadow:
+    0 0 0 2px #223425a6,
+    0 0 16px #eaffbf44;
+  background: #eaffbf18;
+}
 @media (max-width: 899px) {
   .photo-lightbox .photo-viewer {
     grid-template-columns: minmax(0, 1fr);

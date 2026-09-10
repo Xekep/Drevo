@@ -5,7 +5,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { ChevronsUpDown, X } from "lucide-react";
+import { ChevronUp, X } from "lucide-react";
 import { useDockSwipe } from "../hooks/useDockSwipe";
 export function InspectorDock({
   children,
@@ -22,7 +22,7 @@ export function InspectorDock({
   const ref = useRef<HTMLElement>(null);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
-  useDockSwipe(ref, heading, expanded, !editing, onClose, expand);
+  useDockSwipe(ref, heading, expanded, !editing, onClose, expand, true);
   useEffect(() => {
     if (document.activeElement?.matches(":focus-visible")) {
       const target =
@@ -46,16 +46,17 @@ export function InspectorDock({
         className={`inspector-heading ${editing ? "is-editing" : ""}`}
       >
         <span>В СЕМЕЙНОМ АРХИВЕ</span>
-        <div className="dock-grip">
-          <button
-            aria-label={expanded ? "Свернуть панель" : "Развернуть панель"}
-            aria-expanded={expanded}
-            title={editing ? undefined : "Потяните вниз, чтобы закрыть"}
-            onClick={() => setExpanded(!expanded)}
-          >
-            <ChevronsUpDown size={18} />
-          </button>
-        </div>
+        {!expanded && (
+          <div className="dock-grip">
+            <button
+              aria-label="Развернуть панель"
+              aria-expanded={false}
+              onClick={expand}
+            >
+              <ChevronUp size={18} />
+            </button>
+          </div>
+        )}
         <button aria-label="Закрыть панель" onClick={onClose}>
           <X size={20} />
         </button>

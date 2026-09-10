@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dockSwipeAction } from "../src/components/dock-swipe.ts";
+import {
+  dockSwipeAction,
+  dockSwipeIntent,
+} from "../src/components/dock-swipe.ts";
 
 test("a deliberate downward pull or a short flick closes the card", () => {
   assert.equal(dockSwipeAction(8, 90, 800, true), "close");
@@ -18,4 +21,14 @@ test("upward gestures expand only a collapsed card and never dismiss it", () => 
   assert.equal(dockSwipeAction(4, -70, 300, true), "reset");
   assert.equal(dockSwipeAction(0, -20, 20, false), "reset");
   assert.equal(dockSwipeAction(100, -70, 100, false), "reset");
+});
+
+test("content can dismiss at the top; scrolling, horizontal gestures and taps remain native", () => {
+  assert.equal(dockSwipeIntent(1, 6, true, false, true), "pending");
+  assert.equal(dockSwipeIntent(3, 20, true, false, true), "drag");
+  assert.equal(dockSwipeIntent(3, 20, false, false, true), "scroll");
+  assert.equal(dockSwipeIntent(3, -20, true, false, true), "scroll");
+  assert.equal(dockSwipeIntent(25, 20, true, false, true), "scroll");
+  assert.equal(dockSwipeIntent(0, 20, false, true, true), "drag");
+  assert.equal(dockSwipeIntent(0, -20, true, true, false), "drag");
 });

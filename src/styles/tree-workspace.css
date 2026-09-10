@@ -733,6 +733,8 @@
   }
   .inspector-dock.is-dragging {
     transition: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .inspector-heading,
   .inspector-heading.is-editing {
@@ -1285,9 +1287,9 @@
 }
 .flow-person .person-avatar {
   border-radius: 50%;
-  width: 60px;
-  min-width: 60px;
-  height: 60px;
+  width: 72px;
+  min-width: 72px;
+  height: 72px;
   font-family: var(--serif);
 }
 .flow-person-content strong {
@@ -1317,19 +1319,32 @@
   opacity: 1;
 }
 .flow-person.is-compact strong {
-  font-size: 16px;
+  font-size: 18px;
 }
 .flow-person.is-compact .flow-person-content > span > span {
-  font-size: 15px;
+  font-size: 16px;
 }
 .flow-person.is-overview .flow-person-content {
   padding: 12px 15px;
 }
 .flow-person.is-overview strong {
-  font-size: 20px;
+  font-size: 28px;
+  line-height: 1.15;
 }
 .flow-person.is-overview .flow-person-content > span > span {
-  font-size: 17px;
+  font-size: 22px;
+  line-height: 1.15;
+  display: block;
+  white-space: nowrap;
+}
+/* Two single lines use 66px, plus 24px padding, inside the 96px node. */
+.flow-person.is-distant strong {
+  font-size: 34px;
+  line-height: 1.05;
+}
+.flow-person.is-distant .flow-person-content > span > span {
+  font-size: 26px;
+  line-height: 1.05;
 }
 .tree-mode-bar {
   top: 18px;

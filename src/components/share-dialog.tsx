@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Copy, Link2 } from "lucide-react";
+import { Copy, Link2, Check } from "lucide-react";
 import { EditorDialog } from "./editor-dialog";
 import { fullName } from "../domain/dates";
 import type { Person } from "../domain/types";
@@ -14,18 +14,34 @@ export function ShareDialog({
   revision: number;
   onClose: () => void;
 }) {
-  const [title, setTitle] = useState(`Семья: ${anchor.name} ${anchor.surname}`),
-    [hours, setHours] = useState(168),
+  const [hours, setHours] = useState(168),
     [url, setUrl] = useState(""),
     [expires, setExpires] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [copied, setCopied] = useState(false);
-  async function create() {
+  async function copy(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setError("");
+    } catch {
+      setCopied(false);
+      setError(
+        "Не удалось скопировать автоматически. Выделите ссылку в поле ниже.",
+      );
+    }
+  }
+  async function createAndCopy() {
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/shares", {
+      if (url) {
+        await copy(url);
+        return;
+      }
+      const response = await fetch("/api/shares", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -35,13 +51,15 @@ export function ShareDialog({
           anchorId: anchor.id,
           personIds: people.map((p) => p.id),
           durationHours: hours,
-          title,
+          title: `Семья: ${anchor.name} ${anchor.surname}`.slice(0, 200),
         }),
       });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error);
-      setUrl(new URL(data.path, location.origin).href);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      const address = new URL(data.path, location.origin).href;
+      setUrl(address);
       setExpires(data.share.expiresAt);
+      await copy(address);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -51,6 +69,7 @@ export function ShareDialog({
   return (
     <EditorDialog
       title="Поделиться семьёй"
+      className="share-dialog"
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -59,86 +78,63 @@ export function ShareDialog({
         className="archive-form"
         onSubmit={(e) => {
           e.preventDefault();
-          void create();
+          void createAndCopy();
         }}
       >
-        {!url ? (
-          <>
-            <p>
-              Просмотр без входа: {people.length} человек, их карточки и
-              портреты. Состав ссылки останется таким же; сведения в карточках
-              будут обновляться.
-            </p>
-            <label>
-              Название
-              <input
-                value={title}
-                maxLength={200}
-                required
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </label>
-            <label>
-              Срок действия
-              <select
-                value={hours}
-                onChange={(e) => setHours(Number(e.target.value))}
-              >
-                <option value={1}>1 час</option>
-                <option value={24}>1 день</option>
-                <option value={168}>7 дней</option>
-                <option value={720}>30 дней</option>
-              </select>
-            </label>
-            <details className="share-members">
-              <summary>Кто будет виден · {people.length}</summary>
-              <ul>
-                {people.map((p) => (
-                  <li key={p.id}>{fullName(p)}</li>
-                ))}
-              </ul>
-            </details>
-            <p className="field-hint">
-              Альбомы и остальная часть архива по этой ссылке недоступны.
-              Отозвать её можно в админке.
-            </p>
-            <button className="primary-action" disabled={busy}>
-              <Link2 size={16} />
-              {busy ? "Создаём…" : "Создать ссылку"}
-            </button>
-          </>
-        ) : (
-          <>
-            <p>Действует до {new Date(expires).toLocaleString("ru-RU")}</p>
-            <label>
-              Ссылка
-              <input readOnly value={url} onFocus={(e) => e.target.select()} />
-            </label>
-            <button
-              type="button"
-              className="primary-action"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(url)
-                  .then(() => setCopied(true))
-                  .catch(() =>
-                    setError("Выделите и скопируйте ссылку из поля."),
-                  );
-              }}
-            >
-              <Copy size={16} />
-              {copied ? "Скопировано" : "Скопировать"}
-            </button>
-            <p className="field-hint">
-              Сохраните ссылку сейчас: в каталоге останутся её описание, автор и
-              срок, а секретный адрес повторно не показывается.
-            </p>
-          </>
+        <details className="share-members">
+          <summary>{people.length} человек · просмотр без входа</summary>
+          <ul>
+            {people.map((person) => (
+              <li key={person.id}>{fullName(person)}</li>
+            ))}
+          </ul>
+        </details>
+        <label>
+          Срок действия
+          <select
+            value={hours}
+            disabled={busy || !!url}
+            onChange={(e) => setHours(Number(e.target.value))}
+          >
+            <option value={1}>1 час</option>
+            <option value={24}>1 день</option>
+            <option value={168}>7 дней</option>
+            <option value={720}>30 дней</option>
+          </select>
+        </label>
+        <p className="field-hint">
+          Только выбранная семья. Ссылку можно отозвать в админке.
+        </p>
+        <button className="primary-action" disabled={busy}>
+          {copied ? (
+            <Check size={16} />
+          ) : url ? (
+            <Copy size={16} />
+          ) : (
+            <Link2 size={16} />
+          )}
+          {busy
+            ? "Подготавливаем…"
+            : url
+              ? "Скопировать ссылку"
+              : "Создать и скопировать"}
+        </button>
+        {url && (
+          <p className="share-result" role="status">
+            {copied ? "Ссылка скопирована. " : "Ссылка создана. "}Действует до{" "}
+            {new Date(expires).toLocaleString("ru-RU")}.
+          </p>
         )}
         {error && (
           <p role="alert" className="form-error">
             {error}
           </p>
+        )}
+        {url && !copied && (
+          <label>
+            Ссылка
+            <input readOnly value={url} onFocus={(e) => e.target.select()} />
+          </label>
         )}
       </form>
     </EditorDialog>

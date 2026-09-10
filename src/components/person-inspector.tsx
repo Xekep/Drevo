@@ -29,6 +29,7 @@ export function PersonInspector({
   onExistingRelative,
   onAlbum,
   save,
+  uploadPortrait,
   busy = false,
   onConnection,
 }: {
@@ -44,6 +45,7 @@ export function PersonInspector({
   onExistingRelative: (type: "child" | ConnectionType) => void;
   onAlbum: (id: string) => void;
   save?: (family: Family) => Promise<Family>;
+  uploadPortrait?: (file: File) => Promise<string>;
   busy?: boolean;
   onConnection?: (connection: Connection & { hint?: string }) => void;
 }) {
@@ -115,14 +117,11 @@ export function PersonInspector({
             onSelect(id);
             onCompare();
           }}
-          onEdit={
-            canEdit && owns(user, person)
-              ? () => {
-                  setExpanded(false);
-                  onEdit();
-                }
-              : undefined
-          }
+          user={user}
+          canEdit={canEdit}
+          save={save}
+          uploadPortrait={uploadPortrait}
+          busy={busy}
           onAlbum={onAlbum}
         />
       )}

@@ -43,16 +43,19 @@ export const PersonNode = memo(function PersonNode({
 }: NodeProps<PersonNodeType>) {
   const { choose, collapse, expand, reference } = useContext(TreeActions);
   const detail = useStore((s) =>
-    s.transform[2] < 0.32
-      ? "overview"
-      : s.transform[2] < 0.65
-        ? "compact"
-        : "full",
+    s.transform[2] < 0.18
+      ? "distant"
+      : s.transform[2] < 0.32
+        ? "overview"
+        : s.transform[2] < 0.65
+          ? "compact"
+          : "full",
   );
   const compact = detail !== "full";
+  const overview = detail === "overview" || detail === "distant";
   return (
     <div
-      className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${detail === "overview" ? "is-overview" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
@@ -77,7 +80,7 @@ export const PersonNode = memo(function PersonNode({
         onClick={(e) => choose(data.person.id, e.shiftKey)}
         aria-label={`${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}`}
       >
-        {detail !== "overview" && <Avatar person={data.person} />}
+        {!overview && <Avatar person={data.person} />}
         <span>
           <strong>{data.person.surname}</strong>
           <span>

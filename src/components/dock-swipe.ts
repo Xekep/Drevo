@@ -1,4 +1,4 @@
-/** Жест только за заголовок: короткое касание и боковое движение не закрывают карточку. */
+/** Короткое касание и боковое движение не закрывают карточку. */
 export function dockSwipeAction(
   dx: number,
   dy: number,
@@ -10,4 +10,19 @@ export function dockSwipeAction(
     return "close";
   if (!expanded && dy <= -48) return "expand";
   return "reset";
+}
+
+/** Decide once before taking over native scrolling; keep scroll gestures native. */
+export function dockSwipeIntent(
+  dx: number,
+  dy: number,
+  atTop: boolean,
+  fromHeading: boolean,
+  expanded: boolean,
+): "pending" | "scroll" | "drag" {
+  if (Math.hypot(dx, dy) < 8) return "pending";
+  if (Math.abs(dy) < Math.abs(dx) * 1.4) return "scroll";
+  if (dy > 0 && (atTop || fromHeading)) return "drag";
+  if (dy < 0 && fromHeading && !expanded) return "drag";
+  return "scroll";
 }

@@ -53,6 +53,15 @@ export function PhotoViewer({
   const next = photos[index + 1];
   const [editing, setEditing] = useState(initialEditing);
   const [showTags, setShowTags] = useState(false);
+  const [highlightedPerson, setHighlightedPerson] = useState<string | null>(
+    null,
+  );
+  const taggedPeople = [
+    ...new Set(photo.tags.map((tag) => tag.personId)),
+  ].flatMap((id) => {
+    const person = family.people.find((p) => p.id === id);
+    return person ? [person] : [];
+  });
   const canEdit = allowedEdit && editing;
   const navigationLocked = canEdit || busy;
   useEffect(() => {
@@ -287,7 +296,7 @@ export function PhotoViewer({
                   person && (
                     <button
                       key={tag.id}
-                      className="photo-tag"
+                      className={`photo-tag ${highlightedPerson === tag.personId ? "is-highlighted" : ""}`}
                       disabled={tagging}
                       style={{
                         left: `${tag.x * 100}%`,
@@ -417,27 +426,42 @@ export function PhotoViewer({
           {canEdit && photo.tags.length === 0 && (
             <p>На этом снимке пока никто не отмечен.</p>
           )}
-          {photo.tags.map((tag) => (
-            <div key={tag.id} className="connection-row">
-              <button onClick={() => onPerson(tag.personId)}>
-                {fullName(family.people.find((p) => p.id === tag.personId)!)}
-              </button>
-              {canEdit && (
-                <button
-                  disabled={busy}
-                  aria-label="Убрать отметку"
-                  onClick={() =>
-                    void update({
-                      ...photo,
-                      tags: photo.tags.filter((t) => t.id !== tag.id),
-                    })
-                  }
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
+          {taggedPeople.length > 0 && (
+            <p className="photo-people-names">
+              {taggedPeople.map((person, index) => (
+                <span key={person.id}>
+                  {index > 0 && ", "}
+                  <button
+                    className="photo-person-name"
+                    onMouseEnter={() => setHighlightedPerson(person.id)}
+                    onMouseLeave={() => setHighlightedPerson(null)}
+                    onFocus={() => setHighlightedPerson(person.id)}
+                    onBlur={() => setHighlightedPerson(null)}
+                    onClick={() => onPerson(person.id)}
+                  >
+                    {fullName(person)}
+                  </button>
+                  {canEdit && (
+                    <button
+                      className="photo-person-remove"
+                      disabled={busy}
+                      aria-label={`Убрать отметки: ${fullName(person)}`}
+                      onClick={() =>
+                        void update({
+                          ...photo,
+                          tags: photo.tags.filter(
+                            (tag) => tag.personId !== person.id,
+                          ),
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              ))}
+            </p>
+          )}
           {canEdit && (
             <>
               <p className="field-hint">

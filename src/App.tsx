@@ -500,6 +500,7 @@ export default function App() {
                               canEdit={canEdit}
                               readPhotos={readPhotos}
                               save={save}
+                              uploadPortrait={archive.uploadPortrait}
                               busy={busy}
                               onConnection={openConnection}
                               onSelect={showPerson}
