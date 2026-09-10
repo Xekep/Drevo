@@ -79,7 +79,7 @@ export const PersonNode = memo(function PersonNode({
       ))}
       <button
         className="flow-person-content"
-        {...longPress}
+        {...longPress.handlers}
         onContextMenu={(event) => {
           if (longPress.active() || longPress.suppressClick.current)
             event.preventDefault();
