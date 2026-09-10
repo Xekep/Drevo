@@ -24,3 +24,24 @@ test("App delegates secondary pages instead of importing their implementations",
   assert.match(section, /const PlacesMap = lazy/);
   assert.match(section, /const InsightsPage = lazy/);
 });
+
+test("App delegates photo viewer and upload state to photo workspace", () => {
+  const app = readFileSync(new URL("src/App.tsx", root), "utf8"),
+    workspace = readFileSync(
+      new URL("src/hooks/usePhotoWorkspace.ts", root),
+      "utf8",
+    ),
+    overlays = readFileSync(
+      new URL("src/components/photo-workspace-overlays.tsx", root),
+      "utf8",
+    );
+
+  assert.match(app, /usePhotoWorkspace\(family\)/);
+  assert.match(app, /<PhotoWorkspaceOverlays/);
+  for (const module of ["photo-viewer", "photo-upload", "photo-albums"])
+    assert.doesNotMatch(app, new RegExp(module));
+  assert.match(workspace, /const \[uploadOpen, setUploadOpen\]/);
+  assert.match(workspace, /const openPhoto = useCallback/);
+  assert.match(overlays, /<PhotoUpload/);
+  assert.match(overlays, /<PhotoViewer/);
+});
