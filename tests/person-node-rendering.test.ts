@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { samePersonNodeData } from "../src/components/tree/person-node.tsx";
+import { samePersonNodeData } from "../src/components/tree/person-node-data.ts";
 import type { Person } from "../src/domain/types.ts";
 
 const person: Person = {
