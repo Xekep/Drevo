@@ -820,6 +820,7 @@ function Canvas(props: Props) {
           )}
         </div>
         <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
+          proOptions={{ hideAttribution: true }}
           nodes={displayNodes}
           edges={displayEdges}
           nodeTypes={nodeTypes}
