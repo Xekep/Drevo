@@ -42,7 +42,9 @@ function reducer(state: State, action: Action): State {
       const comparison = state.compare || action.additive;
       const selected = comparison
         ? state.selected.includes(action.id)
-          ? state.selected.filter((id) => id !== action.id)
+          ? state.compare
+            ? state.selected.filter((id) => id !== action.id)
+            : state.selected
           : [...state.selected.slice(0, 1), action.id]
         : [action.id];
       return { ...state, selected, compare: comparison };
