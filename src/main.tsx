@@ -1,7 +1,5 @@
-import { StrictMode } from "react";
+import { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
-import SharedTree from "./components/shared-tree";
 import "@xyflow/react/dist/style.css";
 import "./styles/app.css";
 import "./styles/workspace.css";
@@ -16,9 +14,22 @@ import "./styles/archive-tools.css";
 import "./styles/photo-lightbox.css";
 import "./styles/insights.css";
 import "./styles/mobile-refinements.css";
+
 const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
+const Root = sharedToken
+  ? lazy(() => import("./components/shared-tree"))
+  : lazy(() => import("./App"));
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
+    <Suspense
+      fallback={
+        <main className="archive-status" role="status">
+          <p>Открываем семейный архив…</p>
+        </main>
+      }
+    >
+      {sharedToken ? <Root token={sharedToken} /> : <Root />}
+    </Suspense>
   </StrictMode>,
 );
