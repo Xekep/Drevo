@@ -1,19 +1,12 @@
-import { type TreeMode, type LayoutPerson } from "../../domain/tree-layout";
-import type { FamilyLink } from "../../domain/types";
 import { unionGeometry } from "../../domain/union-layout";
-import { layoutUnions } from "./elk-layout";
 import { unionTimeline } from "../../domain/union-timeline";
-self.onmessage = async (
-  event: MessageEvent<{
-    people: LayoutPerson[];
-    links: Pick<FamilyLink, "type" | "from" | "to">[];
-    mode: TreeMode;
-    reverse: boolean;
-  }>,
-) => {
-  const { people, links, mode, reverse } = event.data;
+import { layoutUnions } from "./elk-layout";
+import type { LayoutWorkerRequest } from "./layout-worker-protocol";
+
+self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
+  const { requestId, people, links, mode, reverse } = event.data;
   try {
-    self.postMessage(
+    const geometry =
       mode === "generations"
         ? await unionGeometry(people, layoutUnions, reverse, links)
         : unionTimeline(
@@ -21,12 +14,16 @@ self.onmessage = async (
             await unionGeometry(people, layoutUnions, false, links),
             reverse,
             links,
-          ),
+          );
+    // Совместимость с built-worker тестом и старым протоколом оставляем намеренно.
+    self.postMessage(
+      requestId === undefined ? geometry : { requestId, geometry },
     );
   } catch {
-    self.postMessage({
-      error:
-        "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
-    });
+    const error =
+      "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.";
+    self.postMessage(
+      requestId === undefined ? { error } : { requestId, error },
+    );
   }
 };
