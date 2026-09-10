@@ -46,9 +46,6 @@ export function openArchive(path: string, seed: Family) {
     actor?: ArchiveUser,
     operation?: string,
   ) {
-    const family = actor
-      ? authorizeArchive(value, read().family, actor)
-      : validateFamily(value);
     db.exec("BEGIN IMMEDIATE");
     try {
       const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
@@ -56,11 +53,18 @@ export function openArchive(path: string, seed: Family) {
         throw new ConflictError(
           "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
         );
-      if (old)
+      // Один согласованный снимок внутри write-lock используется и для проверки
+      // прав, и для history/audit. Раньше большой архив читался здесь до трёх раз.
+      const previous = old ? read().family : null;
+      const family = actor && previous
+        ? authorizeArchive(value, previous, actor)
+        : validateFamily(value);
+      if (old && previous)
         db.prepare(
           "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
-        ).run(Number(old.revision), JSON.stringify(read().family));
-      if (old) audit.archive(read().family, family, actor, expected + 1);
+        ).run(Number(old.revision), JSON.stringify(previous));
+      if (old && previous)
+        audit.archive(previous, family, actor, expected + 1);
       if (old && operation)
         audit.record(
           {
@@ -151,14 +155,21 @@ export function openArchive(path: string, seed: Family) {
 }
 
 export function readArchiveMeta(db: DatabaseSync) {
-  const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
+  const meta = db
+    .prepare(
+      `SELECT archive.*,
+        (SELECT count(*) FROM people) AS people_count,
+        (SELECT count(*) FROM photos) AS photos_count
+       FROM archive WHERE id=1`,
+    )
+    .get()!;
   return {
     title: String(meta.title),
     description: String(meta.description),
     demo: !!meta.demo,
     revision: Number(meta.revision),
-    people: Number(db.prepare("SELECT count(*) AS n FROM people").get()!.n),
-    photos: Number(db.prepare("SELECT count(*) AS n FROM photos").get()!.n),
+    people: Number(meta.people_count),
+    photos: Number(meta.photos_count),
   };
 }
 
