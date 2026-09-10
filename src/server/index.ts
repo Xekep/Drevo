@@ -23,11 +23,7 @@ import { familyPlaces, placeKey } from "../domain/places.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import { assertProductionOrigin } from "./runtime-config.ts";
 import { peopleSearchStore } from "./people-search.ts";
-import {
-  archiveOverview,
-  personDetails,
-  archivePageSize,
-} from "../domain/archive-projection.ts";
+import { personDetails, archivePageSize } from "../domain/archive-projection.ts";
 import { imagePreviews } from "./image-previews.ts";
 import { archiveViewAt } from "../domain/archive-routes.ts";
 import { sharingHttp } from "./sharing-http.ts";
@@ -507,20 +503,45 @@ export async function startServer(
           total: readPhotos ? meta.photos : 0,
         });
       }
-      const data = snapshot(req),
-        pageToken = `${data.revision}:${Number(data.readTree)}:${Number(data.readPhotos)}`;
-      if (projection === "overview")
+      if (projection === "overview") {
+        const readTree = !!visitor || access.publicTree,
+          readPhotos = !!visitor || access.publicAlbums;
+        let data: ReturnType<typeof archive.overview>;
+        if (readTree) data = archive.overview(readPhotos);
+        else {
+          const meta = archive.meta();
+          data = {
+            family: {
+              title: meta.title,
+              description: meta.description,
+              demo: meta.demo,
+              people: [],
+              links: [],
+              photos: [],
+            },
+            revision: meta.revision,
+            totals: { people: meta.people, photos: meta.photos },
+          };
+        }
+        const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}`;
         return json(res, 200, {
-          ...data,
-          family: archiveOverview(data.family),
+          family: data.family,
+          revision: data.revision,
+          canEdit: auth.canEdit(req),
+          local: auth.local,
+          user: visitor,
+          readTree,
+          readPhotos,
+          reverseTimeline: access.reverseTimeline,
           partial: true,
           pageToken,
           totals: {
-            people: data.family.people.length,
-            photos: data.family.photos?.length || 0,
+            people: readTree ? data.totals.people : 0,
+            photos: readPhotos ? data.totals.photos : 0,
           },
         });
-      return json(res, 200, data);
+      }
+      return json(res, 200, snapshot(req));
     }
     if (url === "/api/export" && req.method === "GET") {
       res.setHeader(
