@@ -11,6 +11,7 @@ import {
   CircleHelp,
   Menu,
   MapPin,
+  X,
 } from "lucide-react";
 import {
   fullName,
@@ -218,6 +219,11 @@ export function ArchiveHeader({
   const matches = query.trim()
     ? people.filter((p) => matchesPerson(p, query)).slice(0, 8)
     : [];
+  const clearQuery = () => {
+    onQuery("");
+    setOpen(false);
+    ref.current?.focus();
+  };
   return (
     <header className="archive-header">
       {navigation}
@@ -227,7 +233,7 @@ export function ArchiveHeader({
           if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
         }}
       >
-        <Search size={19} />
+        <Search size={19} aria-hidden="true" />
         <input
           ref={ref}
           value={query}
@@ -251,6 +257,18 @@ export function ArchiveHeader({
           aria-label="Найти человека"
         />
         <kbd>/</kbd>
+        {query && (
+          <button
+            type="button"
+            className="archive-search-clear"
+            aria-label="Очистить поиск"
+            title="Очистить поиск"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={clearQuery}
+          >
+            <X size={17} aria-hidden="true" />
+          </button>
+        )}
         {open && query.trim() && (
           <div className="archive-search-results">
             {matches.length ? (

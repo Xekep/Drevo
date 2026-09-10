@@ -20,6 +20,24 @@
   font-size: 42px;
 }
 
+/* Keep search clearing visible and finger-friendly instead of relying on keyboard Escape. */
+.archive-search-clear {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  margin: -5px -7px -5px 0;
+  border-radius: 8px;
+  color: #687761;
+}
+
+.archive-search-clear:hover,
+.archive-search-clear:focus-visible {
+  background: #e2e7dd;
+  color: var(--ink);
+}
+
 /* Fullscreen contains the whole tree view; keep its interactive inspector above the canvas. */
 .tree-view:has(.tree-canvas.is-fullscreen) > .inspector-dock {
   display: block;
@@ -90,6 +108,14 @@
     width: 128px;
     height: 128px;
     font-size: 38px;
+  }
+
+  .archive-search-clear {
+    flex-basis: 38px;
+    width: 38px;
+    height: 38px;
+    margin: -8px -10px -8px 0;
+    border-radius: 10px;
   }
 
   .archive-more .nav-bottom > p {
