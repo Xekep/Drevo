@@ -70,6 +70,11 @@ test("completeArchive batches React-facing progress while keeping every page", a
     "пять сетевых страниц публикуются в React только двумя пакетами",
   );
   assert.equal(snapshots[0].people[0].sources[0].reference, "p0");
+  assert.equal(
+    snapshots[0].people[199].sources.length,
+    0,
+    "последующая догрузка не мутирует уже опубликованный React snapshot",
+  );
   assert.equal(snapshots[1].people[199].sources[0].reference, "p199");
   assert.equal(result.partial, false);
   assert.equal(result.family.people[199].sources[0].reference, "p199");
