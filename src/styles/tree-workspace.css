@@ -1479,3 +1479,92 @@
     bottom: 74px !important;
   }
 }
+
+/* Keep mobile actions in one row, independent of the summary width. */
+@media (max-width: 899px) {
+  .tree-canvas .tree-mode-bar,
+  .tree-canvas.mode-timeline .tree-mode-bar {
+    left: 8px;
+    right: 8px;
+    max-width: none;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .tree-mode-bar .segmented {
+    flex-shrink: 0;
+  }
+  .tree-mode-bar .segmented button {
+    padding-inline: 7px;
+    font-size: 11px;
+  }
+  .tree-mode-bar .workspace-actions {
+    position: static;
+    margin: 0;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .tree-mode-bar .workspace-actions button,
+  .tree-mode-bar .tree-extra-toggle {
+    min-height: 36px;
+    padding: 6px;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .tree-mode-bar .workspace-actions svg {
+    display: none;
+  }
+  .tree-mode-bar .archive-summary,
+  .tree-canvas .flow-camera-tools,
+  .tree-canvas .timeline-quick-centuries {
+    display: none;
+  }
+  .tree-canvas .flow-fullscreen-tools {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(18px, env(safe-area-inset-bottom));
+    margin: 0;
+  }
+  .flow-fullscreen-tools button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid #e1e7db;
+    border-radius: 8px;
+    background: #fffffff0;
+  }
+}
+/* CSS viewport mode also works when native fullscreen is unavailable. */
+.archive-app:has(.tree-canvas.is-fullscreen) .archive-header,
+.archive-app:has(.tree-canvas.is-fullscreen) .archive-loading-details,
+.tree-view:has(.tree-canvas.is-fullscreen) > :not(.tree-canvas) {
+  display: none;
+}
+.archive-workspace .tree-canvas.is-fullscreen,
+.tree-canvas.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  z-index: 1000;
+  outline: none;
+}
+.tree-canvas.is-fullscreen .tree-mode-bar,
+.tree-canvas.is-fullscreen .workspace-actions,
+.tree-canvas.is-fullscreen .react-flow__panel,
+.tree-canvas.is-fullscreen .timeline-period-menu,
+.tree-canvas.is-fullscreen .timeline-quick-centuries,
+.tree-canvas.is-fullscreen .tree-edge-choices,
+.tree-canvas.is-fullscreen .tree-create-at,
+.tree-canvas.is-fullscreen .tree-notice {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .tree-canvas .timeline-period-menu {
+    top: 52px;
+    padding-block: 4px;
+  }
+  .tree-canvas .tree-family-count {
+    display: none;
+  }
+}

@@ -5,7 +5,8 @@
 }
 .mode-timeline .react-flow {
   left: var(--timeline-rail);
-  width: calc(100% - var(--timeline-rail));
+  /* React Flow sets width: 100% inline, which would push controls offscreen. */
+  width: calc(100% - var(--timeline-rail)) !important;
   background: transparent;
   z-index: 1;
 }

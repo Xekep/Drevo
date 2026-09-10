@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowDownUp,
   DatabaseBackup,
+  Download,
   Image,
   ShieldCheck,
   Users,
@@ -321,6 +322,13 @@ export function AdminPanel({
             <GedcomTransfer onImported={onChanged} />
             <hr />
             <h2>Настройки и перенос данных</h2>
+            <a href="/api/export.json?download=1" download="drevo-family.json">
+              <Download size={18} /> Экспорт JSON без фото
+            </a>
+            <p>
+              Карточки и связи для анализа. Для восстановления используйте
+              резервную копию.
+            </p>
             <p>Название архива, описание и импорт сохранённого JSON.</p>
             <button onClick={onSettings}>Открыть настройки данных</button>
           </section>

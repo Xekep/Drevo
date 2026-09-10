@@ -13,10 +13,11 @@ export function useTouchZoom(
     getViewport: () => ZoomViewport;
     setViewport: (viewport: ZoomViewport) => Promise<boolean>;
   },
+  enabled = true,
 ) {
   useEffect(() => {
     const element = container.current;
-    if (!element) return;
+    if (!element || !enabled) return;
     let previous: TimedTouch | null = null;
     let first: TimedTouch | null = null;
     let active: {
@@ -138,5 +139,5 @@ export function useTouchZoom(
       element.removeEventListener("touchend", end, options);
       element.removeEventListener("touchcancel", cancel, options);
     };
-  }, [container, flow]);
+  }, [container, flow, enabled]);
 }

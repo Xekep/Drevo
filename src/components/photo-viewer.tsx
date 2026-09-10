@@ -18,9 +18,10 @@ import {
 } from "../domain";
 import { photoLabel } from "../domain/photo-metadata";
 import { PersonSearch } from "./person-search";
+import { usePhotoSwipe } from "./use-photo-swipe";
 import { mediaPreview } from "../domain/media-preview";
 type Rect = Pick<PhotoTag, "x" | "y" | "width" | "height">;
-export function PhotoViewer({
+function PhotoViewerContent({
   photo,
   photos,
   onNavigate,
@@ -45,8 +46,6 @@ export function PhotoViewer({
   onPerson: (id: string) => void;
   initialEditing?: boolean;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const swipe = useRef<{ x: number; y: number; time: number } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const index = photos.findIndex((p) => p.id === photo.id);
   const previous = photos[index - 1];
@@ -65,11 +64,6 @@ export function PhotoViewer({
   const canEdit = allowedEdit && editing;
   const navigationLocked = canEdit || busy;
   useEffect(() => {
-    const node = dialog.current;
-    node?.showModal();
-    return () => node?.close();
-  }, []);
-  useEffect(() => {
     // Only the two adjacent display previews; original files remain on demand.
     for (const neighbor of [previous, next]) {
       if (neighbor) {
@@ -79,9 +73,16 @@ export function PhotoViewer({
       }
     }
   }, [previous, next]);
+  const imageSpace = useRef<HTMLDivElement>(null);
+  const slide = usePhotoSwipe({
+    previous: previous?.id,
+    next: next?.id,
+    locked: navigationLocked,
+    onNavigate,
+    onTap: () => setShowTags((value) => !value),
+  });
   function navigate(direction: -1 | 1) {
-    const target = direction < 0 ? previous : next;
-    if (target && !navigationLocked) onNavigate(target.id);
+    slide.navigate(direction, imageSpace.current?.clientWidth || 0);
   }
   const [requestedTagging, setTagging] = useState(false),
     [rect, setRect] = useState<Rect | null>(null),
@@ -156,33 +157,7 @@ export function PhotoViewer({
     }
   }
   return (
-    <dialog
-      ref={dialog}
-      className="photo-lightbox"
-      aria-label={`Просмотр фото: ${photoLabel(photo)}`}
-      onCancel={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (
-          navigationLocked ||
-          e.altKey ||
-          e.ctrlKey ||
-          e.metaKey ||
-          e.shiftKey ||
-          (e.target instanceof HTMLElement &&
-            e.target.closest("input, textarea, select, [contenteditable=true]"))
-        )
-          return;
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-          e.preventDefault();
-          navigate(e.key === "ArrowLeft" ? -1 : 1);
-        }
-      }}
-    >
+    <div className="photo-lightbox-content">
       <button
         className="photo-close"
         onClick={onClose}
@@ -194,137 +169,134 @@ export function PhotoViewer({
       <div
         className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""}`}
       >
-        <div
-          className="photo-stage"
-          onTouchStart={(e) => {
-            swipe.current = null;
-            if (
-              navigationLocked ||
-              e.touches.length !== 1 ||
-              (e.target instanceof HTMLElement && e.target.closest("button, a"))
-            )
-              return;
-            swipe.current = {
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY,
-              time: Date.now(),
-            };
-          }}
-          onTouchEnd={(e) => {
-            const from = swipe.current;
-            swipe.current = null;
-            if (!from || e.touches.length || !e.changedTouches.length) return;
-            const dx = e.changedTouches[0].clientX - from.x;
-            const dy = e.changedTouches[0].clientY - from.y;
-            if (
-              Date.now() - from.time < 800 &&
-              Math.abs(dx) > 55 &&
-              Math.abs(dx) > Math.abs(dy) * 2
-            )
-              navigate(dx < 0 ? 1 : -1);
-          }}
-          onTouchCancel={() => {
-            swipe.current = null;
-          }}
-        >
-          <div className="photo-image-space">
+        <div className="photo-stage">
+          <div
+            ref={imageSpace}
+            className="photo-image-space"
+            {...slide.handlers}
+          >
             <div
-              ref={area}
-              className={`tag-image ${tagging ? "tagging" : ""}`}
-              role="group"
-              aria-label="Фотография с отметками людей"
-              onPointerDown={(e) => {
-                if (!tagging || e.button !== 0) return;
-                e.preventDefault();
-                start.current = point(e);
-                setRect(null);
-                e.currentTarget.setPointerCapture(e.pointerId);
-              }}
-              onPointerMove={(e) => {
-                if (!tagging || !start.current) return;
-                const p = point(e),
-                  s = start.current;
-                setRect({
-                  x: Math.min(p.x, s.x),
-                  y: Math.min(p.y, s.y),
-                  width: Math.abs(p.x - s.x),
-                  height: Math.abs(p.y - s.y),
-                });
-              }}
-              onPointerUp={(e) => {
-                if (!start.current) return;
-                start.current = null;
-                e.currentTarget.releasePointerCapture(e.pointerId);
-                if (!rect || rect.width < 0.015 || rect.height < 0.015)
-                  setRect(null);
-              }}
-              onPointerCancel={() => {
-                start.current = null;
-                setRect(null);
-              }}
+              className={`photo-slide-track ${slide.settling ? "is-settling" : ""}`}
+              style={{ transform: `translate3d(${slide.offset}px, 0, 0)` }}
             >
-              <img
-                src={mediaPreview(photo.url, "display")}
-                alt={photoLabel(photo)}
-                draggable={false}
-                onLoad={() => {
-                  if (canEdit && !photo.tags.length && !scanned.current)
-                    void scan();
-                }}
-              />
-              {canEdit &&
-                suggestions.map((s, i) => (
-                  <button
-                    key={s.id}
-                    className="photo-tag suggested-tag"
-                    style={{
-                      left: `${s.box.x * 100}%`,
-                      top: `${s.box.y * 100}%`,
-                      width: `${s.box.width * 100}%`,
-                      height: `${s.box.height * 100}%`,
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => selectSuggestion(s)}
-                    aria-label={`Подтвердить лицо ${i + 1}`}
-                  >
-                    <span>{`Лицо ${i + 1}`}</span>
-                  </button>
-                ))}
-              {photo.tags.map((tag) => {
-                const person = family.people.find((p) => p.id === tag.personId);
-                return (
-                  person && (
-                    <button
-                      key={tag.id}
-                      className={`photo-tag ${highlightedPerson === tag.personId ? "is-highlighted" : ""}`}
-                      disabled={tagging}
-                      style={{
-                        left: `${tag.x * 100}%`,
-                        top: `${tag.y * 100}%`,
-                        width: `${tag.width * 100}%`,
-                        height: `${tag.height * 100}%`,
-                      }}
-                      onClick={() => onPerson(person.id)}
-                      aria-label={`Открыть карточку: ${fullName(person)}`}
+              {[previous, next].map(
+                (neighbor, i) =>
+                  neighbor && (
+                    <div
+                      key={i}
+                      className={`photo-slide-neighbor ${i === 0 ? "is-previous" : "is-next"}`}
+                      aria-hidden="true"
                     >
-                      <span>
-                        {person.name} {person.surname}
-                      </span>
-                    </button>
-                  )
-                );
-              })}
-              {canEdit && rect && (
-                <span
-                  className="photo-tag draft-tag"
-                  style={{
-                    left: `${rect.x * 100}%`,
-                    top: `${rect.y * 100}%`,
-                    width: `${rect.width * 100}%`,
-                    height: `${rect.height * 100}%`,
-                  }}
-                />
+                      <img
+                        src={mediaPreview(neighbor.url, "display")}
+                        alt=""
+                        draggable={false}
+                      />
+                    </div>
+                  ),
               )}
+              <div className="photo-slide-current">
+                <div
+                  ref={area}
+                  className={`tag-image ${tagging ? "tagging" : ""}`}
+                  role="group"
+                  aria-label="Фотография с отметками людей"
+                  onPointerDown={(e) => {
+                    if (!tagging || e.button !== 0) return;
+                    e.preventDefault();
+                    start.current = point(e);
+                    setRect(null);
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!tagging || !start.current) return;
+                    const p = point(e),
+                      s = start.current;
+                    setRect({
+                      x: Math.min(p.x, s.x),
+                      y: Math.min(p.y, s.y),
+                      width: Math.abs(p.x - s.x),
+                      height: Math.abs(p.y - s.y),
+                    });
+                  }}
+                  onPointerUp={(e) => {
+                    if (!start.current) return;
+                    start.current = null;
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    if (!rect || rect.width < 0.015 || rect.height < 0.015)
+                      setRect(null);
+                  }}
+                  onPointerCancel={() => {
+                    start.current = null;
+                    setRect(null);
+                  }}
+                >
+                  <img
+                    src={mediaPreview(photo.url, "display")}
+                    alt={photoLabel(photo)}
+                    draggable={false}
+                    onLoad={() => {
+                      if (canEdit && !photo.tags.length && !scanned.current)
+                        void scan();
+                    }}
+                  />
+                  {canEdit &&
+                    suggestions.map((s, i) => (
+                      <button
+                        key={s.id}
+                        className="photo-tag suggested-tag"
+                        style={{
+                          left: `${s.box.x * 100}%`,
+                          top: `${s.box.y * 100}%`,
+                          width: `${s.box.width * 100}%`,
+                          height: `${s.box.height * 100}%`,
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => selectSuggestion(s)}
+                        aria-label={`Подтвердить лицо ${i + 1}`}
+                      >
+                        <span>{`Лицо ${i + 1}`}</span>
+                      </button>
+                    ))}
+                  {photo.tags.map((tag) => {
+                    const person = family.people.find(
+                      (p) => p.id === tag.personId,
+                    );
+                    return (
+                      person && (
+                        <button
+                          key={tag.id}
+                          className={`photo-tag ${highlightedPerson === tag.personId ? "is-highlighted" : ""}`}
+                          disabled={tagging}
+                          style={{
+                            left: `${tag.x * 100}%`,
+                            top: `${tag.y * 100}%`,
+                            width: `${tag.width * 100}%`,
+                            height: `${tag.height * 100}%`,
+                          }}
+                          onClick={() => onPerson(person.id)}
+                          aria-label={`Открыть карточку: ${fullName(person)}`}
+                        >
+                          <span>
+                            {person.name} {person.surname}
+                          </span>
+                        </button>
+                      )
+                    );
+                  })}
+                  {canEdit && rect && (
+                    <span
+                      className="photo-tag draft-tag"
+                      style={{
+                        left: `${rect.x * 100}%`,
+                        top: `${rect.y * 100}%`,
+                        width: `${rect.width * 100}%`,
+                        height: `${rect.height * 100}%`,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </div>
           {photos.length > 1 && (
@@ -403,7 +375,7 @@ export function PhotoViewer({
             <button
               className="photo-edit-toggle"
               aria-pressed={editing}
-              disabled={busy}
+              disabled={busy || slide.settling}
               onClick={() => {
                 setEditing(!editing);
                 if (editing) {
@@ -576,7 +548,11 @@ export function PhotoViewer({
                               ...photo,
                               tags: [
                                 ...photo.tags,
-                                { ...rect, id: crypto.randomUUID(), personId },
+                                {
+                                  ...rect,
+                                  id: crypto.randomUUID(),
+                                  personId,
+                                },
                               ],
                             })
                           ) {
@@ -711,6 +687,50 @@ export function PhotoViewer({
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+type PhotoViewerProps = Parameters<typeof PhotoViewerContent>[0];
+export function PhotoViewer(props: PhotoViewerProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const node = dialog.current;
+    node?.showModal();
+    return () => node?.close();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="photo-lightbox"
+      aria-label={`Просмотр фото: ${photoLabel(props.photo)}`}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (
+          e.altKey ||
+          e.ctrlKey ||
+          e.metaKey ||
+          e.shiftKey ||
+          (e.target instanceof HTMLElement &&
+            e.target.closest("input, textarea, select, [contenteditable=true]"))
+        )
+          return;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          dialog.current
+            ?.querySelector<HTMLButtonElement>(
+              e.key === "ArrowLeft" ? ".photo-previous" : ".photo-next",
+            )
+            ?.click();
+        }
+      }}
+      onCancel={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        props.onClose();
+      }}
+    >
+      <PhotoViewerContent key={props.photo.id} {...props} />
     </dialog>
   );
 }
