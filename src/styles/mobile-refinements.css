@@ -1,0 +1,101 @@
+.gallery-title-mobile {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .gallery-view {
+    padding: 16px 12px 24px;
+  }
+
+  .gallery-photo-heading {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .gallery-photo-heading .section-label,
+  .gallery-photo-heading .gallery-heading-copy > p,
+  .gallery-title-desktop {
+    display: none;
+  }
+
+  .gallery-title-mobile {
+    display: inline;
+  }
+
+  .gallery-photo-heading h2 {
+    margin: 0 0 6px;
+    font-family: var(--sans);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.2px;
+  }
+
+  .gallery-photo-heading .gallery-heading-copy > button {
+    padding: 4px 0;
+    color: var(--green);
+    font-size: 12px;
+  }
+
+  .gallery-heading-actions {
+    width: 100%;
+    align-items: stretch;
+    gap: 8px;
+    margin-left: 0;
+  }
+
+  .gallery-modes {
+    width: 100%;
+  }
+
+  .gallery-modes button {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+
+  .gallery-heading-actions .primary-action {
+    align-self: flex-start;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .inspector-dock:has(.comparison-content.is-picking) {
+    height: auto;
+    max-height: 45dvh;
+  }
+
+  .inspector-dock:has(.comparison-content.is-picking) .inspector-heading {
+    min-height: 44px;
+    justify-content: flex-end;
+    padding-block: 0;
+  }
+
+  .inspector-dock:has(.comparison-content.is-picking) .inspector-heading > span,
+  .inspector-dock:has(.comparison-content.is-picking) .dock-grip {
+    display: none;
+  }
+
+  .comparison-content.is-picking {
+    padding: 10px 14px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .comparison-content.is-picking > :not(.comparison-people) {
+    display: none;
+  }
+
+  .comparison-content.is-picking .comparison-people {
+    margin: 0;
+    gap: 8px;
+  }
+
+  .comparison-content.is-picking :is(.selected-person, .empty-person) {
+    min-height: 58px;
+    padding: 9px 10px;
+  }
+
+  .flow-person-content {
+    -webkit-touch-callout: none;
+  }
+}
