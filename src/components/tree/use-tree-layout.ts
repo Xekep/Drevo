@@ -30,16 +30,26 @@ export function useTreeLayout(
   const [busy, setBusy] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
+  const pendingRef = useRef(false);
 
   useEffect(
     () => () => {
       workerRef.current?.terminate();
       workerRef.current = null;
+      pendingRef.current = false;
     },
     [],
   );
 
   useEffect(() => {
+    // Свободный worker переиспользуем. Если предыдущий ELK ещё считает уже
+    // устаревшую геометрию, terminate дешевле, чем разрешать двум layout идти
+    // параллельно и конкурировать за CPU.
+    if (pendingRef.current && workerRef.current) {
+      workerRef.current.terminate();
+      workerRef.current = null;
+      pendingRef.current = false;
+    }
     const worker =
       workerRef.current ||
       new Worker(new URL("./layout.worker.ts", import.meta.url), {
@@ -48,6 +58,7 @@ export function useTreeLayout(
     workerRef.current = worker;
 
     const requestId = ++requestRef.current;
+    pendingRef.current = true;
     const timer = setTimeout(() => {
       if (requestRef.current === requestId) setBusy(true);
     }, 80);
@@ -55,6 +66,7 @@ export function useTreeLayout(
       if (data.requestId !== requestId || requestRef.current !== requestId)
         return;
       clearTimeout(timer);
+      pendingRef.current = false;
       setBusy(false);
       setResult((previous) =>
         "error" in data
@@ -68,6 +80,7 @@ export function useTreeLayout(
     worker.onerror = () => {
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
+      pendingRef.current = false;
       finish({
         requestId,
         error:
