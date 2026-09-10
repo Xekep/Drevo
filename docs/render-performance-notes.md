@@ -1,0 +1,1 @@
+См. `docs/render-performance.md`.
