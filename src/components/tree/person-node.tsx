@@ -6,16 +6,18 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import { fullName, years, type Person } from "../../domain";
 import { Avatar } from "../person-panel";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
-  collapse: (id: string) => void;
+  collapse: (id: string, occurrenceId?: string) => void;
+  expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
 }>({
   choose: () => {},
   collapse: () => {},
+  expand: () => {},
   reference: () => {},
 });
 export type PersonNodeType = Node<
@@ -26,6 +28,10 @@ export type PersonNodeType = Node<
     dimmed: boolean;
     household?: boolean;
     occurrences?: number;
+    familyFocus?: boolean;
+    anchor?: boolean;
+    hiddenRelatives?: number;
+    expanded?: boolean;
   },
   "person"
 >;
@@ -35,13 +41,14 @@ export const PersonNode = memo(function PersonNode({
   selected,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
-  const { choose, collapse, reference } = useContext(TreeActions);
+  const { choose, collapse, expand, reference } = useContext(TreeActions);
   const compact = useStore((s) => s.transform[2] < 0.65);
   return (
     <div
       className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-household={data.household || undefined}
+      data-anchor={data.anchor || undefined}
     >
       {[
         ["top", Position.Top],
@@ -85,14 +92,31 @@ export const PersonNode = memo(function PersonNode({
           <span>{data.occurrences}</span>
         </button>
       )}
-      {!compact && data.childrenCount > 0 && (
+      {data.familyFocus && (!!data.hiddenRelatives || data.expanded) && (
+        <button
+          className="flow-expand-family nodrag nopan"
+          aria-label={`${data.expanded ? "Свернуть раскрытую ветвь" : `Показать ещё ${data.hiddenRelatives} родственников`}: ${fullName(data.person)}`}
+          onClick={() => expand(data.person.id, id)}
+          title={
+            data.expanded
+              ? "Свернуть раскрытую ветвь"
+              : "Показать скрытых родственников"
+          }
+        >
+          {data.expanded ? <ChevronUp size={15} /> : <Plus size={15} />}
+          <span>
+            {data.expanded ? "Свернуть" : `Ещё ${data.hiddenRelatives}`}
+          </span>
+        </button>
+      )}
+      {!data.familyFocus && !compact && data.childrenCount > 0 && (
         <button
           className="flow-collapse nodrag nopan"
           aria-label={
             data.collapsed ? "Развернуть потомков" : "Свернуть потомков"
           }
           title={data.collapsed ? "Развернуть потомков" : "Свернуть потомков"}
-          onClick={() => collapse(data.person.id)}
+          onClick={() => collapse(data.person.id, id)}
         >
           {data.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           <span>{data.childrenCount}</span>

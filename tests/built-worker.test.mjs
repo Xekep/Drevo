@@ -87,6 +87,50 @@ test(
           Array.from({ length: 18 }, (_, i) => positions.get(`child-${i}`).y),
         ).size > 1,
       );
+      const focusedIds = new Set([
+        "child-0",
+        "spouse-0",
+        "grand-0-0",
+        "grand-0-1",
+        "grand-0-2",
+      ]);
+      const project = (ids) =>
+        broad
+          .filter((p) => ids.has(p.id))
+          .map((p) => ({
+            ...p,
+            parents: p.parents.filter((id) => ids.has(id)),
+            spouses: p.spouses.filter((id) => ids.has(id)),
+          }));
+      const focused = await calculate(
+        worker,
+        "generations",
+        false,
+        project(focusedIds),
+      );
+      assert.equal(focused.error, undefined);
+      assert.deepEqual(
+        new Set(focused.occurrences.map((o) => o.personId)),
+        focusedIds,
+      );
+      focusedIds.add("root");
+      const expanded = await calculate(
+        worker,
+        "generations",
+        false,
+        project(focusedIds),
+      );
+      assert.equal(expanded.error, undefined);
+      assert.deepEqual(
+        new Set(expanded.occurrences.map((o) => o.personId)),
+        focusedIds,
+      );
+      const restored = await calculate(worker, "generations", false, broad);
+      assert.equal(restored.error, undefined);
+      assert.deepEqual(
+        new Set(restored.occurrences.map((o) => o.personId)),
+        new Set(broad.map((p) => p.id)),
+      );
     } finally {
       await worker.terminate();
     }

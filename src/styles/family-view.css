@@ -1,0 +1,101 @@
+.tree-family-row {
+  flex-basis: 100%;
+  order: 4;
+}
+.tree-family-tools {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 5px 9px;
+  color: #526747;
+  background: #fafbf5ed;
+  border-radius: 8px;
+  padding: 2px 7px;
+}
+.tree-family-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 230px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.tree-family-name svg {
+  flex-shrink: 0;
+}
+.tree-family-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-family-count {
+  font-size: 12px;
+  color: #76816d;
+  white-space: nowrap;
+}
+.tree-family-tools button {
+  min-height: 34px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  color: #49633f;
+}
+.tree-family-tools button:hover {
+  background: #e8efdf;
+}
+.tree-family-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.flow-person[data-anchor="true"]::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1px solid #80976d;
+  border-radius: 11px;
+  pointer-events: none;
+}
+.flow-expand-family {
+  position: absolute;
+  right: 10px;
+  bottom: -18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #cfddc3;
+  background: #f8fbf2;
+  color: #4b653e;
+  border-radius: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.flow-expand-family:hover {
+  background: #e9f1e1;
+}
+.tree-canvas .flow-household--siblings > span {
+  left: 14px;
+  right: auto;
+}
+@media (max-width: 899px) {
+  .tree-family-name {
+    max-width: 150px;
+  }
+  .tree-family-tools {
+    gap: 2px 5px;
+    padding: 2px 4px;
+  }
+  .tree-family-tools button {
+    min-height: 38px;
+  }
+  .flow-expand-family {
+    min-height: 38px;
+    bottom: -22px;
+    font-size: 14px;
+  }
+}

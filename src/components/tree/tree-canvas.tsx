@@ -18,7 +18,6 @@ import {
   Plus,
   GitBranch,
   X,
-  RotateCcw,
   Link2,
 } from "lucide-react";
 import {
@@ -29,12 +28,10 @@ import {
   matchesPerson,
   TREE_NODE_WIDTH,
   TREE_NODE_HEIGHT,
-  visibleBranch,
   type Family,
   type ArchiveUser,
   type GraphConnection,
   type TreeMode,
-  type TreeGeometry,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
@@ -46,6 +43,10 @@ import { EraOverlay } from "./era-overlay";
 import { routeKey } from "../../domain/edge-routing";
 import { crossingPaths } from "../../domain/route-crossings";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
+import { useFamilyView } from "./use-family-view";
+import { useTreeLayout } from "./use-tree-layout";
+import { FamilyViewTools } from "./family-view-tools";
+import "../../styles/family-view.css";
 import { ArchiveSummary } from "../archive-summary";
 import {
   initialFamilyFocus,
@@ -115,8 +116,8 @@ function CameraTools({ selected }: { selected: string[] }) {
       </button>
       <i />
       <button
-        title="Показать всё дерево"
-        aria-label="Показать всё дерево"
+        title="Вписать видимую часть дерева"
+        aria-label="Вписать видимую часть дерева"
         onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1 })}
       >
         <Maximize2 size={18} />
@@ -176,9 +177,7 @@ function Canvas(props: Props) {
     onConnect,
     focus,
   } = props;
-  const [mode, setMode] = useState<TreeMode>("generations"),
-    [geometry, setGeometry] = useState<TreeGeometry | null>(null),
-    [problem, setProblem] = useState("");
+  const [mode, setMode] = useState<TreeMode>("generations");
   const [extraVisible, setExtraVisible] = useState(true);
   const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
   const choiceClose = useRef<HTMLButtonElement>(null);
@@ -196,77 +195,37 @@ function Canvas(props: Props) {
         previous.focus();
     };
   }, [edgeChoices.length]);
-  const [collapsed, setCollapsed] = useState(new Set<string>()),
-    [root, setRoot] = useState<string | null>(null);
+  const familyView = useFamilyView(
+    family,
+    selected,
+    props.highlighted,
+    focus,
+    props.preview,
+  );
+  const { anchor: root, visible, collapsed, toggle: toggleView } = familyView;
   const flow = useReactFlow<
       PersonNodeType | HouseholdNodeType,
       RelationshipEdgeType
     >(),
-    cameras = useRef<Partial<Record<TreeMode, Viewport>>>({}),
+    cameras = useRef<Record<string, Viewport>>({}),
     lastFocus = useRef(-1),
-    previousMode = useRef<TreeMode>(mode);
-  const [layoutBusy, setLayoutBusy] = useState(false);
-  const layoutPeople = useRef(family.people),
+    previousContext = useRef(""),
     previousReverse = useRef(reverse);
-  useEffect(() => {
-    const worker = new Worker(new URL("./layout.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    const timer = setTimeout(() => setLayoutBusy(true), 80);
-    worker.onmessage = (
-      event: MessageEvent<TreeGeometry | { error: string }>,
-    ) => {
-      clearTimeout(timer);
-      setLayoutBusy(false);
-      if ("error" in event.data) {
-        setProblem(event.data.error);
-        return;
-      }
-      layoutPeople.current = family.people;
-      setGeometry(event.data);
-      setProblem("");
-    };
-    worker.onerror = () => {
-      clearTimeout(timer);
-      setLayoutBusy(false);
-      setProblem(
-        "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
-      );
-    };
-    worker.postMessage({
-      people: family.people.map(({ id, birth, parents, spouses }) => ({
-        id,
-        birth,
-        parents,
-        spouses,
-      })),
-      links: (family.links || []).map(({ type, from, to }) => ({
-        type,
-        from,
-        to,
-      })),
-      mode,
-      reverse,
-    });
-    return () => {
-      clearTimeout(timer);
-      worker.terminate();
-    };
-  }, [family.people, family.links, mode, reverse]);
-  const toggleCollapse = useCallback(
-    (id: string) =>
-      setCollapsed((value) => {
-        const next = new Set(value);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      }),
-    [],
+  const context = `${mode}:${root || "all"}`;
+  const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
+    family,
+    visible,
+    mode,
+    reverse,
   );
-  const visible = useMemo(
-    () => visibleBranch(family, root, collapsed, selected),
-    [family, root, collapsed, selected],
-  );
+  const pendingAnchor = useRef<{
+    id: string;
+    personId: string;
+    layoutKey: string;
+    x: number;
+    y: number;
+    zoom: number;
+  } | null>(null);
   const childrenCount = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of family.people)
@@ -299,13 +258,32 @@ function Canvas(props: Props) {
     }
     return result;
   }, [occurrences]);
+  const toggleBranch = useCallback(
+    (id: string, occurrenceId?: string) => {
+      const point = positions.get(occurrenceId || id);
+      if (point) {
+        const camera = flow.getViewport();
+        pendingAnchor.current = {
+          id: occurrenceId || id,
+          personId: id,
+          layoutKey,
+          x: point.x * camera.zoom + camera.x,
+          y: point.y * camera.zoom + camera.y,
+          zoom: camera.zoom,
+        };
+      }
+      toggleView(id);
+    },
+    [positions, flow, toggleView, layoutKey],
+  );
   const actions = useMemo(
     () => ({
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
         onChoose(id, additive);
       },
-      collapse: toggleCollapse,
+      collapse: toggleBranch,
+      expand: toggleBranch,
       reference: (personId: string, occurrenceId: string) => {
         const ids = personOccurrences.get(personId) || [];
         const next = ids[(ids.indexOf(occurrenceId) + 1) % ids.length];
@@ -317,7 +295,7 @@ function Canvas(props: Props) {
           });
       },
     }),
-    [onChoose, toggleCollapse, personOccurrences, flow],
+    [onChoose, toggleBranch, personOccurrences, flow],
   );
   const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
   const households = useMemo(
@@ -409,6 +387,10 @@ function Canvas(props: Props) {
               household: householdMembers.has(o.id),
               occurrences: personOccurrences.get(p.id)?.length || 1,
               collapsed: collapsed.has(p.id),
+              familyFocus: !!root,
+              anchor: p.id === root,
+              hiddenRelatives: familyView.hidden.get(p.id) || 0,
+              expanded: familyView.expanded.has(p.id),
               childrenCount: childrenCount.get(p.id) || 0,
               dimmed: !matchesPerson(p, props.query),
             },
@@ -423,6 +405,9 @@ function Canvas(props: Props) {
       positions,
       selected,
       collapsed,
+      root,
+      familyView.hidden,
+      familyView.expanded,
       childrenCount,
       props.query,
       householdMembers,
@@ -662,12 +647,21 @@ function Canvas(props: Props) {
       !nodes.length ||
       geometry.mode !== mode ||
       geometry.reverse !== reverse ||
-      layoutPeople.current !== family.people ||
+      !ready ||
       !canvasWidth ||
       !canvasHeight
     )
       return;
     const timer = setTimeout(() => {
+      const changedContext = previousContext.current !== context;
+      const switchedMode =
+        !!previousContext.current &&
+        previousContext.current.split(":")[0] !== mode;
+      const reverseChanged = previousReverse.current !== reverse;
+      previousContext.current = context;
+      previousReverse.current = reverse;
+      const anchor = pendingAnchor.current;
+      pendingAnchor.current = null;
       if (
         focus &&
         focus.token !== lastFocus.current &&
@@ -681,19 +675,39 @@ function Canvas(props: Props) {
           padding: 0.5,
         });
       } else if (
-        previousMode.current !== mode ||
-        previousReverse.current !== reverse
+        anchor &&
+        anchor.layoutKey !== layoutKey &&
+        !changedContext &&
+        (positions.has(anchor.id) || positions.has(anchor.personId))
       ) {
-        previousMode.current = mode;
-        previousReverse.current = reverse;
-        if (selected.length)
+        const point = (positions.get(anchor.id) ||
+          positions.get(anchor.personId))!;
+        void flow.setViewport({
+          x: anchor.x - point.x * anchor.zoom,
+          y: anchor.y - point.y * anchor.zoom,
+          zoom: anchor.zoom,
+        });
+      } else if (changedContext || reverseChanged) {
+        if ((switchedMode || reverseChanged) && selected.length)
           void flow.fitView({
             nodes: selected.map((id) => ({ id })),
             maxZoom: 1,
-            padding: 0.5,
+            minZoom: narrow ? 0.55 : 0.15,
+            padding: 0.4,
           });
-        else if (cameras.current[mode])
-          void flow.setViewport(cameras.current[mode]!);
+        else if (root)
+          void flow.fitView({
+            nodes: narrow
+              ? [root, ...(peopleMap.get(root)?.spouses || [])]
+                  .filter((id) => positions.has(id))
+                  .map((id) => ({ id }))
+              : undefined,
+            maxZoom: 0.95,
+            minZoom: narrow ? 0.55 : 0.25,
+            padding: 0.28,
+          });
+        else if (cameras.current[context] && !reverseChanged)
+          void flow.setViewport(cameras.current[context]);
         else
           void flow.fitView({
             maxZoom: 1,
@@ -708,7 +722,9 @@ function Canvas(props: Props) {
           if (!selected.length && !first) return;
           const ids = selected.length
             ? selected
-            : initialFamilyFocus(family.people);
+            : root
+              ? [root]
+              : initialFamilyFocus(family.people);
           void flow.fitView({
             nodes: ids.map((id) => ({ id })),
             minZoom: 0.55,
@@ -736,6 +752,12 @@ function Canvas(props: Props) {
     canvasHeight,
     childrenCount,
     peopleMap,
+    ready,
+    layoutKey,
+    context,
+    root,
+    familyView.expanded,
+    collapsed,
   ]);
   const connect = useCallback(
     (c: FlowConnection) => {
@@ -749,7 +771,8 @@ function Canvas(props: Props) {
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
-    cameras.current[mode] = flow.getViewport();
+    cameras.current[context] = flow.getViewport();
+    pendingAnchor.current = null;
     setMode(next);
     setEdgeChoices([]);
   }
@@ -781,6 +804,30 @@ function Canvas(props: Props) {
             >
               Доп. связи
             </button>
+          )}
+          {family.people.length > 0 && (
+            <FamilyViewTools
+              anchor={root ? peopleMap.get(root) : undefined}
+              selected={peopleMap.get(selected[0])}
+              count={visible.size}
+              total={family.people.length}
+              changed={root ? familyView.expanded.size > 0 : collapsed.size > 0}
+              onFamily={() => {
+                cameras.current[context] = flow.getViewport();
+                pendingAnchor.current = null;
+                familyView.enter();
+              }}
+              onAll={() => {
+                cameras.current[context] = flow.getViewport();
+                pendingAnchor.current = null;
+                familyView.showAll();
+              }}
+              onReset={() => {
+                previousContext.current = "";
+                pendingAnchor.current = null;
+                familyView.reset();
+              }}
+            />
           )}
         </div>
         <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
@@ -848,7 +895,7 @@ function Canvas(props: Props) {
           minZoom={0.15}
           maxZoom={1.8}
           onlyRenderVisibleElements
-          fitView={!narrow}
+          fitView={false}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
           ariaLabelConfig={{
             "controls.zoomIn.ariaLabel": "Увеличить",
@@ -858,33 +905,9 @@ function Canvas(props: Props) {
               "Нажмите Enter для выбора связи. Изменить участников можно в правой панели.",
           }}
           onMoveEnd={(_, camera) => {
-            cameras.current[mode] = camera;
+            cameras.current[context] = camera;
           }}
         >
-          {(selected.length > 0 || root || collapsed.size > 0) && (
-            <Panel position="top-right" className="flow-branch-tools">
-              <button
-                disabled={!selected.length}
-                onClick={() => setRoot(selected[0])}
-                title="Оставить предков и потомков выбранного человека"
-              >
-                <GitBranch size={17} />
-                Ветка
-              </button>
-              {root && (
-                <button onClick={() => setRoot(null)}>
-                  <X size={16} />
-                  Всё древо
-                </button>
-              )}
-              {collapsed.size > 0 && (
-                <button onClick={() => setCollapsed(new Set())}>
-                  <RotateCcw size={16} />
-                  Развернуть
-                </button>
-              )}
-            </Panel>
-          )}
           {props.canEdit && (
             <Panel position="bottom-left" className="flow-add-tools">
               <button onClick={props.onAdd}>
