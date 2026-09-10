@@ -34,7 +34,7 @@ export function ComparisonPanel({
 }) {
   const map = new Map(people.map((p) => [p.id, p]));
   return (
-    <div className="comparison-content">
+    <div className={`comparison-content${relation ? "" : " is-picking"}`}>
       <span className="comparison-symbol">
         <ArrowDownUp size={23} strokeWidth={1.3} />
       </span>
