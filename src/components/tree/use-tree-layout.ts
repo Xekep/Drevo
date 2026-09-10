@@ -65,18 +65,18 @@ export function useTreeLayout(
 
     worker.onmessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
       finish(event.data);
-    worker.onerror = () =>
+    worker.onerror = () => {
+      worker.terminate();
+      if (workerRef.current === worker) workerRef.current = null;
       finish({
         requestId,
         error:
           "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
       });
+    };
     worker.postMessage({ requestId, ...JSON.parse(key) });
 
-    return () => {
-      clearTimeout(timer);
-      if (requestRef.current === requestId) setBusy(false);
-    };
+    return () => clearTimeout(timer);
   }, [key]);
 
   return {
