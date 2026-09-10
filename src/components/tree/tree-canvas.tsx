@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -48,6 +56,7 @@ import { useFamilyView } from "./use-family-view";
 import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
+import { useTreeFullscreen } from "./use-tree-fullscreen";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 
@@ -61,6 +70,7 @@ export type ConnectionDraft = {
 };
 export type TreeFocus = { ids: string[]; token: number };
 type Props = {
+  comparisonAction?: ReactNode;
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
   family: Family;
@@ -144,6 +154,8 @@ function Canvas(props: Props) {
   const canvasWidth = useStore((s) => s.width),
     canvasHeight = useStore((s) => s.height);
   const container = useRef<HTMLDivElement>(null);
+  const screen = useTreeFullscreen(container);
+  const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
   const mobileCamera = useRef("");
   const [createAt, setCreateAt] = useState<{
     id: string;
@@ -212,7 +224,7 @@ function Canvas(props: Props) {
     previousContext = useRef(""),
     previousReverse = useRef(reverse);
   const context = `${mode}:${root || "all"}`;
-  useTouchZoom(container, flow);
+  useTouchZoom(container, flow, !screen.fullscreen);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
     visible,
@@ -771,7 +783,12 @@ function Canvas(props: Props) {
   }
   return (
     <TreeActions.Provider value={actions}>
-      <div ref={container} className={`tree-canvas mode-${mode}`}>
+      <div
+        ref={container}
+        className={`tree-canvas mode-${mode} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        tabIndex={-1}
+        aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
+      >
         <div className="tree-mode-bar">
           <div className="segmented" aria-label="Представление дерева">
             <button
@@ -787,7 +804,9 @@ function Canvas(props: Props) {
               Хронология
             </button>
           </div>
-          <ArchiveSummary people={family.people} busy={layoutBusy} />
+          {!narrow && (
+            <ArchiveSummary people={family.people} busy={layoutBusy} />
+          )}
           {!!family.links?.length && (
             <button
               className="tree-extra-toggle"
@@ -798,6 +817,7 @@ function Canvas(props: Props) {
               Доп. связи
             </button>
           )}
+          {narrow && props.comparisonAction}
           {family.people.length > 0 && !props.restricted && (
             <FamilyViewTools
               onShare={
@@ -828,6 +848,7 @@ function Canvas(props: Props) {
             />
           )}
         </div>
+        {!narrow && props.comparisonAction}
         <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           proOptions={{ hideAttribution: true }}
           nodes={displayNodes}
@@ -877,7 +898,24 @@ function Canvas(props: Props) {
           onEdgeClick={(_, e) => {
             if (e.data) e.data.onSelect(e.data.connection);
           }}
-          onPaneClick={() => {
+          onPaneClick={(event) => {
+            if (screen.fullscreen) {
+              const now = performance.now();
+              const last = lastPaneTap.current;
+              if (
+                now - last.time < 350 &&
+                Math.hypot(event.clientX - last.x, event.clientY - last.y) < 30
+              ) {
+                screen.exit();
+                lastPaneTap.current = { time: 0, x: 0, y: 0 };
+              } else
+                lastPaneTap.current = {
+                  time: now,
+                  x: event.clientX,
+                  y: event.clientY,
+                };
+              return;
+            }
             setEdgeChoices([]);
             props.onClear();
           }}
@@ -889,6 +927,7 @@ function Canvas(props: Props) {
           panOnScroll
           zoomOnScroll={false}
           zoomOnPinch
+          zoomOnDoubleClick={!screen.fullscreen}
           selectionOnDrag={false}
           panOnDrag={[0, 1]}
           minZoom={0.05}
@@ -922,7 +961,19 @@ function Canvas(props: Props) {
               </button>
             </Panel>
           )}
-          <CameraTools selected={selected} />
+          {narrow ? (
+            <Panel position="bottom-right" className="flow-fullscreen-tools">
+              <button
+                onClick={screen.enter}
+                aria-label="Развернуть на весь экран"
+                title="На весь экран · выход двойным тапом по фону или кнопкой Назад"
+              >
+                <Maximize2 size={20} />
+              </button>
+            </Panel>
+          ) : (
+            <CameraTools selected={selected} />
+          )}
         </ReactFlow>
         {edgeChoices.length > 0 && (
           <div

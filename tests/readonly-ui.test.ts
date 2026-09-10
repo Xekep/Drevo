@@ -91,6 +91,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       }),
     );
     assert.match(navigation, /О проекте/);
+    assert.doesNotMatch(navigation, /export\.json|Экспорт JSON без фото/);
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
     assert.doesNotMatch(navigation, /Админка|Админская панель/);
@@ -204,6 +205,9 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       "repeated face tags do not duplicate the name",
     );
     assert.match(viewer, /class="photo-lightbox"/);
+    assert.match(viewer, /class="photo-slide-track /);
+    assert.match(viewer, /class="photo-slide-neighbor is-next"/);
+    assert.equal((viewer.match(/<dialog/g) || []).length, 1);
     assert.doesNotMatch(viewer, /<h2>Фотография/);
     assert.match(
       viewer,

@@ -365,6 +365,21 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      comparisonAction={
+                        <div className="workspace-actions">
+                          <button
+                            className={compare ? "active" : ""}
+                            onClick={() => {
+                              setPersonDraft(null);
+                              closeConnection();
+                              dispatch({ type: "compare" });
+                            }}
+                          >
+                            <ArrowDownUp size={17} />
+                            Родство
+                          </button>
+                        </div>
+                      }
                       onShare={
                         user?.role === "admin" && canEdit
                           ? (anchorId, ids) => {
@@ -402,19 +417,6 @@ export default function App() {
                       query={query}
                       highlighted={highlighted}
                     />
-                    <div className="workspace-actions">
-                      <button
-                        className={compare ? "active" : ""}
-                        onClick={() => {
-                          setPersonDraft(null);
-                          closeConnection();
-                          dispatch({ type: "compare" });
-                        }}
-                      >
-                        <ArrowDownUp size={17} />
-                        Родство
-                      </button>
-                    </div>
                     {canEdit && linkFrom !== null && (
                       <div className="link-instruction" role="status">
                         <Link2 size={18} />
@@ -631,7 +633,6 @@ export default function App() {
       )}
       {photo && family && (
         <PhotoViewer
-          key={photo.id}
           photo={photo}
           photos={viewerPhotos(family.photos || [], photo.id, photoCollection)}
           onNavigate={(id) => {
