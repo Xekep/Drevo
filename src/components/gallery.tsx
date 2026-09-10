@@ -184,8 +184,6 @@ export function PhotoViewer({
   save,
   onClose,
   onPerson,
-  onCreatePerson,
-  initialPersonId = "",
   initialEditing = false,
 }: {
   photo: ArchivePhoto;
@@ -196,8 +194,6 @@ export function PhotoViewer({
   save: (f: Family) => Promise<Family>;
   onClose: () => void;
   onPerson: (id: string) => void;
-  onCreatePerson: () => void;
-  initialPersonId?: string;
   initialEditing?: boolean;
 }) {
   const [editing, setEditing] = useState(initialEditing);
@@ -205,7 +201,7 @@ export function PhotoViewer({
   const canEdit = allowedEdit && editing;
   const [requestedTagging, setTagging] = useState(false),
     [rect, setRect] = useState<Rect | null>(null),
-    [personId, setPersonId] = useState(initialPersonId),
+    [personId, setPersonId] = useState(""),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
   const tagging = canEdit && requestedTagging;
@@ -251,7 +247,7 @@ export function PhotoViewer({
   }
   function selectSuggestion(s: FaceSuggestion) {
     setRect(s.box);
-    setPersonId(initialPersonId);
+    setPersonId("");
     setSuggestionId(s.id);
     setTagging(true);
   }
@@ -442,12 +438,8 @@ export function PhotoViewer({
           {canEdit && (
             <>
               <p className="field-hint">
-                Выберите рамку на снимке и укажите человека. Не нашли его в
-                древе — создайте карточку здесь.
+                Выберите рамку и найдите человека по ФИО.
               </p>
-              <button onClick={onCreatePerson} disabled={busy}>
-                Добавить человека в древо
-              </button>
               <button disabled={scanning} onClick={() => void scan()}>
                 {scanning ? "Ищем лица…" : "Найти лица"}
               </button>

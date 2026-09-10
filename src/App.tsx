@@ -112,9 +112,7 @@ export default function App() {
   const [photoUpload, setPhotoUpload] = useState(false),
     [photoId, setPhotoId] = useState<string | null>(null),
     [editPhotoId, setEditPhotoId] = useState<string | null>(null),
-    [photoFilter, setPhotoFilter] = useState<string | null>(null),
-    [resumePhoto, setResumePhoto] = useState<string | null>(null),
-    [photoPersonId, setPhotoPersonId] = useState("");
+    [photoFilter, setPhotoFilter] = useState<string | null>(null);
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const chosen = useMemo(
@@ -142,7 +140,6 @@ export default function App() {
       setAddMenu(false);
       setPhotoFilter(null);
       setPhotoId(null);
-      setPhotoPersonId("");
       setEditPhotoId(null);
     };
     window.addEventListener("popstate", sync);
@@ -218,10 +215,6 @@ export default function App() {
   function closeEditor() {
     if (busy) return;
     setPersonDraft(null);
-    if (resumePhoto) {
-      setPhotoId(resumePhoto);
-      setResumePhoto(null);
-    }
   }
   function relative(
     type: "child" | ConnectionType,
@@ -242,7 +235,7 @@ export default function App() {
     <div hidden={!canEdit} inert={!canEdit}>
       <PersonEditor
         key={personDraft.key}
-        inline={!resumePhoto}
+        inline
         suspended={!canEdit}
         isAdmin={user?.role === "admin"}
         user={user}
@@ -254,10 +247,7 @@ export default function App() {
         save={save}
         busy={busy}
         onClose={closeEditor}
-        onSaved={(id) => {
-          if (resumePhoto) setPhotoPersonId(id);
-          else showPerson(id);
-        }}
+        onSaved={showPerson}
       />
     </div>
   );
@@ -417,7 +407,7 @@ export default function App() {
                         </button>
                       </div>
                     )}
-                    {personDraft && !resumePhoto ? (
+                    {personDraft ? (
                       <InspectorDock
                         key={personDraft.key}
                         onClose={closeEditor}
@@ -603,8 +593,7 @@ export default function App() {
           key={photo.id}
           photo={photo}
           family={family}
-          initialPersonId={photoPersonId}
-          initialEditing={editPhotoId === photo.id || !!photoPersonId}
+          initialEditing={editPhotoId === photo.id}
           canEdit={canEdit && owns(user, photo)}
           canDelete={canEdit && user?.role === "admin"}
           busy={busy}
@@ -612,24 +601,14 @@ export default function App() {
           onClose={() => {
             setEditPhotoId(null);
             setPhotoId(null);
-            setPhotoPersonId("");
           }}
           onPerson={(id) => {
             setEditPhotoId(null);
             setPhotoId(null);
-            setPhotoPersonId("");
             showPerson(id);
-          }}
-          onCreatePerson={() => {
-            setEditPhotoId(null);
-            setResumePhoto(photo.id);
-            setPhotoId(null);
-            setPhotoPersonId("");
-            setPersonDraft({ key: crypto.randomUUID() });
           }}
         />
       )}
-      {resumePhoto && personEditor}
       {settings && canEdit && family && user?.role === "admin" && (
         <ArchiveSettings
           family={family}
