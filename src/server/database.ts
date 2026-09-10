@@ -36,6 +36,8 @@ export function openArchive(path: string, seed: Family) {
   const audit = auditStore(db);
   const read = () => readArchive(db),
     meta = () => readArchiveMeta(db),
+    overview = (includePortraits = true) =>
+      readArchiveOverview(db, includePortraits),
     peoplePage = (offset: number, limit: number) =>
       readPeoplePage(db, offset, limit),
     photoPage = (offset: number, limit: number) =>
@@ -56,9 +58,10 @@ export function openArchive(path: string, seed: Family) {
       // Один согласованный снимок внутри write-lock используется и для проверки
       // прав, и для history/audit. Раньше большой архив читался здесь до трёх раз.
       const previous = old ? read().family : null;
-      const family = actor && previous
-        ? authorizeArchive(value, previous, actor)
-        : validateFamily(value);
+      const family =
+        actor && previous
+          ? authorizeArchive(value, previous, actor)
+          : validateFamily(value);
       if (old && previous)
         db.prepare(
           "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
@@ -146,6 +149,7 @@ export function openArchive(path: string, seed: Family) {
   return {
     read,
     meta,
+    overview,
     peoplePage,
     photoPage,
     write,
@@ -170,6 +174,80 @@ export function readArchiveMeta(db: DatabaseSync) {
     revision: Number(meta.revision),
     people: Number(meta.people_count),
     photos: Number(meta.photos_count),
+  };
+}
+
+function hydrateRelations(db: DatabaseSync, people: Person[]) {
+  const map = new Map(people.map((person) => [person.id, person])),
+    links: FamilyLink[] = [];
+  for (const row of db
+    .prepare("SELECT * FROM relations ORDER BY rowid")
+    .all()) {
+    const from = String(row.source),
+      to = String(row.target),
+      type = String(row.type);
+    if (type === "parent") map.get(to)!.parents.push(from);
+    else if (type === "spouse") {
+      map.get(from)!.spouses.push(to);
+      map.get(to)!.spouses.push(from);
+    } else
+      links.push({
+        id: String(row.id),
+        ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
+        from,
+        to,
+        type: type as FamilyLink["type"],
+        ...(row.note ? { note: String(row.note) } : {}),
+      });
+  }
+  return links;
+}
+
+/**
+ * Начальная проекция для ReactFlow: весь родственный граф, но без фотографий,
+ * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
+ * SQLite до передачи строки в Node.
+ */
+export function readArchiveOverview(
+  db: DatabaseSync,
+  includePortraits = true,
+) {
+  const meta = readArchiveMeta(db);
+  const remove = [
+    "$.sources",
+    "$.biography",
+    "$.occupation",
+    "$.awards",
+    "$.events",
+    ...(includePortraits ? [] : ["$.photo"]),
+  ];
+  const placeholders = remove.map(() => "?").join(", ");
+  const people = db
+    .prepare(
+      `SELECT json_set(json_remove(data, ${placeholders}), '$.sources', json('[]')) AS data
+       FROM people ORDER BY rowid`,
+    )
+    .all(...remove)
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+  const links = hydrateRelations(db, people);
+  return {
+    family: {
+      title: meta.title,
+      description: meta.description,
+      demo: meta.demo,
+      people,
+      links,
+      photos: [],
+    } as Family,
+    revision: meta.revision,
+    totals: { people: meta.people, photos: meta.photos },
   };
 }
 
@@ -228,28 +306,7 @@ export function readArchive(db: DatabaseSync) {
           spouses: [],
         }) as Person,
     );
-  const map = new Map(people.map((p) => [p.id, p]));
-  const links: FamilyLink[] = [];
-  for (const row of db
-    .prepare("SELECT * FROM relations ORDER BY rowid")
-    .all()) {
-    const from = String(row.source),
-      to = String(row.target),
-      type = String(row.type);
-    if (type === "parent") map.get(to)!.parents.push(from);
-    else if (type === "spouse") {
-      map.get(from)!.spouses.push(to);
-      map.get(to)!.spouses.push(from);
-    } else
-      links.push({
-        id: String(row.id),
-        ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
-        from,
-        to,
-        type: type as FamilyLink["type"],
-        ...(row.note ? { note: String(row.note) } : {}),
-      });
-  }
+  const links = hydrateRelations(db, people);
   const photos = db
     .prepare("SELECT data FROM photos ORDER BY rowid")
     .all()
