@@ -48,10 +48,7 @@ import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
 import { ArchiveSummary } from "../archive-summary";
-import {
-  initialFamilyFocus,
-  relativeAtHandle,
-} from "../../domain/tree-interactions";
+import { relativeAtHandle } from "../../domain/tree-interactions";
 
 export type ConnectionDraft = {
   from: string;
@@ -711,26 +708,18 @@ function Canvas(props: Props) {
         else
           void flow.fitView({
             maxZoom: 1,
-            minZoom: narrow ? 0.55 : 0.15,
+            minZoom: 0.05,
             padding: 0.25,
           });
       } else if (narrow) {
         const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
         if (mobileCamera.current !== key) {
-          const first = !mobileCamera.current;
           mobileCamera.current = key;
-          if (!selected.length && !first) return;
-          const ids = selected.length
-            ? selected
-            : root
-              ? [root]
-              : initialFamilyFocus(family.people);
+          if (!selected.length) return;
           void flow.fitView({
-            nodes: ids.map((id) => ({ id })),
+            nodes: selected.map((id) => ({ id })),
             minZoom: 0.55,
-            maxZoom: selected.length
-              ? Math.max(0.65, Math.min(0.9, flow.getZoom()))
-              : 0.8,
+            maxZoom: Math.max(0.65, Math.min(0.9, flow.getZoom())),
             padding: 0.18,
           });
         }
@@ -892,7 +881,7 @@ function Canvas(props: Props) {
           zoomOnPinch
           selectionOnDrag={false}
           panOnDrag={[0, 1]}
-          minZoom={0.15}
+          minZoom={0.05}
           maxZoom={1.8}
           onlyRenderVisibleElements
           fitView={false}

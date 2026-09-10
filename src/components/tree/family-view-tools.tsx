@@ -20,6 +20,7 @@ export function FamilyViewTools({
   onAll: () => void;
   onReset: () => void;
 }) {
+  if (!anchor && !selected && !changed) return null;
   return (
     <div className="tree-family-row">
       <div className="tree-family-tools" aria-label="Область просмотра">
@@ -39,16 +40,12 @@ export function FamilyViewTools({
             {count} из {total}
           </span>
         )}
-        {(!anchor || (selected && selected.id !== anchor.id)) && (
+        {selected && (!anchor || selected.id !== anchor.id) && (
           <button
             onClick={onFamily}
-            title={
-              selected
-                ? `Показать семью: ${fullName(selected)}`
-                : "Показать ближайшую семью"
-            }
+            title={`Показать семью: ${fullName(selected)}`}
           >
-            {selected ? "Семья выбранного" : "Ближайшая семья"}
+            Семья выбранного
           </button>
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}

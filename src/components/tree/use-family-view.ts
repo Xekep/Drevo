@@ -26,7 +26,7 @@ export function useFamilyView(
     [family.people],
   );
   const [view, setView] = useState(() => ({
-    family: family.people.length > 24,
+    family: false,
     anchor: selected[0] || defaultAnchor,
     expanded: new Set<string>(),
     revealed: focus?.ids || [],
