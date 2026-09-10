@@ -304,3 +304,39 @@ test("additional relationships avoid existing family rails without charging once
     routed,
   );
 });
+
+test("exhausting optional optimization cannot suppress a mandatory route through a narrow corridor", () => {
+  const people = [
+    person("a"),
+    person("b"),
+    person("left-wall"),
+    person("right-wall"),
+    person("middle-wall"),
+  ];
+  const positions: [string, Point][] = [
+    ["a", { x: 0, y: 0 }],
+    ["b", { x: 0, y: 500 }],
+    ["left-wall", { x: -220, y: 70 }],
+    ["right-wall", { x: 220, y: 70 }],
+    ["middle-wall", { x: 0, y: 200 }],
+  ];
+  const link = { type: "guardian" as const, from: "a", to: "b" },
+    searchBudget = { remaining: 0 };
+  const routes = routeRelationships(
+    people,
+    [link],
+    positions,
+    TREE_NODE_WIDTH,
+    TREE_NODE_HEIGHT,
+    new Set(),
+    [],
+    new Map([[routeKey(link), { searchBudget }]]),
+  );
+  assert.equal(routes.length, 1);
+  assert.ok(
+    routes[0][1].points.length >= 6,
+    "the mandatory route needs more than a single side corridor",
+  );
+  verifyRoutes(positions, routes);
+  assert.equal(searchBudget.remaining, 0);
+});

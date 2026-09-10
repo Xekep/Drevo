@@ -2,12 +2,20 @@ import type { LayoutPerson } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
 import { segmentsCross, type Point } from "./layout-order.ts";
 
-type Handle = "top" | "bottom" | "left" | "right";
+export type Handle = "top" | "bottom" | "left" | "right";
 type Relation = { from: string; to: string; type: string };
 export type EdgeRoute = {
   sourceHandle: Handle;
   targetHandle: Handle;
   points: Point[];
+};
+export type RouteHint = {
+  group?: string;
+  priority?: number;
+  sourceHandle?: Handle;
+  targetHandle?: Handle;
+  middle?: number;
+  searchBudget?: { remaining: number };
 };
 export type Box = { left: number; right: number; top: number; bottom: number };
 type Line = { a: Point; b: Point; group: string };
@@ -128,6 +136,7 @@ export function routeRelationships(
   height: number,
   pointNodes: Set<string> = new Set(),
   occupied: { group: string; route: EdgeRoute }[] = [],
+  hints: ReadonlyMap<string, RouteHint> = new Map(),
 ): [string, EdgeRoute][] {
   const map = new Map(positions),
     peopleMap = new Map(people.map((p) => [p.id, p]));
@@ -197,9 +206,15 @@ export function routeRelationships(
   const sorted = [...edges.values()].sort((a, b) => {
     const rank = (e: Relation) =>
       e.type === "spouse" ? 0 : e.type === "parent" ? 1 : 2;
-    return rank(a) - rank(b) || routeKey(a).localeCompare(routeKey(b));
+    return (
+      rank(a) - rank(b) ||
+      (hints.get(routeKey(a))?.priority || 0) -
+        (hints.get(routeKey(b))?.priority || 0) ||
+      routeKey(a).localeCompare(routeKey(b))
+    );
   });
   for (const edge of sorted) {
+    const hint = hints.get(routeKey(edge));
     const a = map.get(edge.from)!,
       b = map.get(edge.to)!;
     const side = edge.type === "spouse" || edge.type === "sworn_sibling";
@@ -231,6 +246,8 @@ export function routeRelationships(
       a.y <= b.y + height
     )
       targetHandle = a.x < b.x ? "left" : "right";
+    sourceHandle = hint?.sourceHandle || sourceHandle;
+    targetHandle = hint?.targetHandle || targetHandle;
     const start = port(a, sourceHandle, edge.from),
       end = port(b, targetHandle, edge.to),
       s = pointNodes.has(edge.from) ? start : escape(start, sourceHandle),
@@ -239,19 +256,26 @@ export function routeRelationships(
       .get(edge.to)!
       .parents.filter((id) => map.has(id))
       .sort();
-    const group = pointNodes.has(edge.from)
-      ? `junction:${edge.from}`
-      : pointNodes.has(edge.to)
-        ? `junction:${edge.to}`
-        : edge.type === "parent"
-          ? `family:${JSON.stringify(parents)}`
-          : routeKey(edge);
+    const group =
+      hint?.group ||
+      (pointNodes.has(edge.from)
+        ? `junction:${edge.from}`
+        : pointNodes.has(edge.to)
+          ? `junction:${edge.to}`
+          : edge.type === "parent"
+            ? `family:${JSON.stringify(parents)}`
+            : routeKey(edge));
     let middle = (s.y + t.y) / 2;
     if (edge.type === "parent") {
       const parentPoints = parents.map((id) => map.get(id)!);
       const sameRow = parentPoints.every((p) => p.y === a.y);
-      if (sameRow) middle = a.y > b.y ? a.y - 47 : a.y + height + 47;
+      if (sameRow)
+        middle =
+          a.y > b.y
+            ? a.y - 47
+            : a.y + (pointNodes.has(edge.from) ? 0 : height) + 47;
     }
+    if (hint?.middle !== undefined) middle = hint.middle;
     const candidates: Point[][] = [
       [s, { x: s.x, y: middle }, { x: t.x, y: middle }, t],
       [s, { x: s.x, y: t.y }, t],
@@ -300,9 +324,30 @@ export function routeRelationships(
       }
     }
     const directCost = Math.abs(s.x - t.x) + Math.abs(s.y - t.y);
-    if (!best || (bestCost > directCost + 1500 && nearby.length <= 160)) {
-      const found = corridorSearch(s, t, nearby, clear, (a, b) =>
-        cost(a, b, group),
+    if (
+      !best ||
+      (bestCost > directCost + 1500 &&
+        nearby.length <= 160 &&
+        (!hint?.searchBudget || hint.searchBudget.remaining > 0))
+    ) {
+      const guides = lines
+        .query({
+          left: Math.min(s.x, t.x) - 60,
+          right: Math.max(s.x, t.x) + 60,
+          top: Math.min(s.y, t.y) - 60,
+          bottom: Math.max(s.y, t.y) + 60,
+        })
+        .filter((line) => line.group !== group)
+        .slice(0, 80)
+        .flatMap((line) => [line.a, line.b]);
+      const found = corridorSearch(
+        s,
+        t,
+        nearby,
+        clear,
+        (a, b) => cost(a, b, group),
+        guides,
+        best ? hint?.searchBudget : undefined,
       );
       if (found) {
         const value = found
@@ -342,11 +387,14 @@ function corridorSearch(
   boxes: Box[],
   clear: (a: Point, b: Point) => boolean,
   cost: (a: Point, b: Point) => number,
+  guides: Point[] = [],
+  budget?: { remaining: number },
 ): Point[] | undefined {
   const xs = [
     ...new Set([
       start.x,
       end.x,
+      ...guides.flatMap((p) => [p.x - 12, p.x + 12]),
       ...boxes.flatMap((b) => [b.left - 8, b.right + 8]),
     ]),
   ].sort((a, b) => a - b);
@@ -354,6 +402,7 @@ function corridorSearch(
     ...new Set([
       start.y,
       end.y,
+      ...guides.flatMap((p) => [p.y - 12, p.y + 12]),
       ...boxes.flatMap((b) => [b.top - 8, b.bottom + 8]),
     ]),
   ].sort((a, b) => a - b);
@@ -401,7 +450,12 @@ function corridorSearch(
     g: 0,
     f: 0,
   });
-  for (let count = 0; heap.length && count < 60000; count++) {
+  for (
+    let count = 0;
+    heap.length && count < 60000 && (!budget || budget.remaining > 0);
+    count++
+  ) {
+    if (budget) budget.remaining--;
     const state = pop(),
       a = { x: xs[state.x], y: ys[state.y] };
     const key = (state.y * xs.length + state.x) * 3 + state.direction;

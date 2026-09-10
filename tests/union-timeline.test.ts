@@ -7,6 +7,7 @@ import { routeKey, segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { yearY } from "../src/domain/layout.ts";
 import { dateYear } from "../src/domain/dates.ts";
 import type { LayoutPerson } from "../src/domain/tree-layout.ts";
+import type { FamilyLink } from "../src/domain/types.ts";
 
 const person = (
   id: string,
@@ -14,11 +15,20 @@ const person = (
   parents: string[] = [],
   spouses: string[] = [],
 ): LayoutPerson => ({ id, birth, parents, spouses });
-async function verify(people: LayoutPerson[]) {
+async function verify(
+  people: LayoutPerson[],
+  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+) {
   const before = structuredClone(people);
-  const base = await unionGeometry(people, (g) => new ELK().layout(g));
+  const base = await unionGeometry(
+    people,
+    (g) => new ELK().layout(g),
+    false,
+    links,
+  );
+  const originalBase = structuredClone(base);
   for (const reverse of [false, true]) {
-    const g = unionTimeline(people, base, reverse);
+    const g = unionTimeline(people, base, reverse, links);
     const points = new Map(g.positions);
     for (const o of g.occurrences!) {
       const p = people.find((p) => p.id === o.personId)!;
@@ -47,6 +57,45 @@ async function verify(people: LayoutPerson[]) {
       ]),
     );
     assert.deepEqual(actual, expected);
+    assert.deepEqual(
+      new Set(g.routes!.map(([key]) => key)),
+      new Set(links.map(routeKey)),
+    );
+    for (const block of base.blocks!) {
+      const [a, b] = block.members.map((id) => points.get(id)!);
+      assert.ok(
+        Math.abs(Math.abs(a.x - b.x) - 252) < 0.01,
+        "a couple moves together even with unequal dates",
+      );
+    }
+    for (const pair of g.branches!.filter((b) => b.id.startsWith("pair:"))) {
+      for (let i = 2; i < pair.route.points.length; i++) {
+        const a = pair.route.points[i - 2],
+          b = pair.route.points[i - 1],
+          c = pair.route.points[i];
+        assert.ok(
+          (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) >= 0,
+          "a pair's route cannot double back through a dead-end junction",
+        );
+      }
+      for (const child of g.branches!.filter(
+        (b) => b.union === pair.union && b.id.startsWith("child:"),
+      )) {
+        const joint = child.route.points[0];
+        assert.ok(
+          pair.route.points.slice(1).some((b, i) => {
+            const a = pair.route.points[i];
+            return (
+              joint.x >= Math.min(a.x, b.x) - 0.01 &&
+              joint.x <= Math.max(a.x, b.x) + 0.01 &&
+              joint.y >= Math.min(a.y, b.y) - 0.01 &&
+              joint.y <= Math.max(a.y, b.y) + 0.01
+            );
+          }),
+          "children must connect to the actual pair line",
+        );
+      }
+    }
     for (let i = 0; i < g.positions.length; i++)
       for (let j = 0; j < i; j++) {
         const a = g.positions[i][1],
@@ -56,7 +105,10 @@ async function verify(people: LayoutPerson[]) {
           "cards do not overlap",
         );
       }
-    for (const branch of g.branches!)
+    for (const branch of [
+      ...g.branches!,
+      ...g.routes!.map(([id, route]) => ({ id, route })),
+    ])
       for (let i = 1; i < branch.route.points.length; i++) {
         const a = branch.route.points[i - 1],
           b = branch.route.points[i];
@@ -75,6 +127,11 @@ async function verify(people: LayoutPerson[]) {
       }
   }
   assert.deepEqual(people, before);
+  assert.deepEqual(
+    base,
+    originalBase,
+    "chronology cannot alter the generation layout",
+  );
 }
 test("chronology retains exact years and separate remarriages with undated spouses", async () => {
   await verify([
@@ -108,4 +165,35 @@ test("chronology routes dense equal-year families around unrelated cards", async
 });
 test("empty chronology works without fabricated dates", async () => {
   await verify([]);
+});
+
+test("a pair with nearby birth years has one connector and attached children without backtracking", async () => {
+  await verify([
+    person("mother", "1902", [], ["father"]),
+    person("father", "1900"),
+    person("one", "1926", ["mother", "father"]),
+    person("two", "1931", ["mother", "father"]),
+  ]);
+});
+
+test("chronology retains references in intermarriage and all additional relationship types", async () => {
+  const people = [
+    person("a", "1870", [], ["c"]),
+    person("b", "1890", ["a"]),
+    person("c", "1910", ["b"]),
+    person("child", "1932", ["a", "c"]),
+    person("godparent", "1905"),
+    person("adopter", "1900"),
+    person("adopted", "1930"),
+    person("guardian", "1895"),
+    person("nurse", "1898"),
+    person("friend", "1931"),
+  ];
+  await verify(people, [
+    { type: "godparent", from: "godparent", to: "child" },
+    { type: "adoptive_parent", from: "adopter", to: "adopted" },
+    { type: "guardian", from: "guardian", to: "child" },
+    { type: "nurse", from: "nurse", to: "child" },
+    { type: "sworn_sibling", from: "child", to: "friend" },
+  ]);
 });

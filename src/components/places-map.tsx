@@ -46,6 +46,7 @@ function MapSurface({
       zoomControl: false,
       scrollWheelZoom: true,
     }).setView([56, 60], 4);
+    instance.attributionControl.setPrefix(false);
     map.current = instance;
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,

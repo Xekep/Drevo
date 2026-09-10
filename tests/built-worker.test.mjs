@@ -82,6 +82,19 @@ test(
         broad.length,
       );
       const positions = new Map(packed.positions);
+      for (const reversed of [false, true]) {
+        const chronology = await calculate(worker, "timeline", reversed, broad);
+        assert.equal(chronology.error, undefined);
+        assert.equal(chronology.occurrences.length, packed.occurrences.length);
+        assert.equal(chronology.branches.length, packed.branches.length);
+        const dated = new Map(chronology.positions);
+        for (const p of broad)
+          assert.equal(
+            dated.get(p.id).y,
+            60 +
+              (reversed ? 2035 - Number(p.birth) : Number(p.birth) - 1830) * 8,
+          );
+      }
       assert.ok(
         new Set(
           Array.from({ length: 18 }, (_, i) => positions.get(`child-${i}`).y),
