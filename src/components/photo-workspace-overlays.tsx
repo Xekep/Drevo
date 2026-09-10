@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import type {
   ArchiveUser,
   Family,
@@ -6,8 +7,13 @@ import type {
 import { owns } from "../domain";
 import { viewerPhotos } from "../domain/photo-albums";
 import type { PhotoWorkspace } from "../hooks/usePhotoWorkspace";
-import { PhotoUpload } from "./photo-upload";
-import { PhotoViewer } from "./photo-viewer";
+
+const PhotoUpload = lazy(() =>
+  import("./photo-upload").then((module) => ({ default: module.PhotoUpload })),
+);
+const PhotoViewer = lazy(() =>
+  import("./photo-viewer").then((module) => ({ default: module.PhotoViewer })),
+);
 
 type Props = {
   family: Family;
@@ -36,38 +42,48 @@ export function PhotoWorkspaceOverlays({
   return (
     <>
       {workspace.uploadOpen && canEdit && (
-        <PhotoUpload
-          initialFile={workspace.droppedFile}
-          upload={upload}
-          busy={busy}
-          onClose={workspace.closeUpload}
-          onUploaded={(id) => {
-            workspace.uploaded(id);
-            onUploaded(id);
-          }}
-        />
+        <Suspense fallback={null}>
+          <PhotoUpload
+            initialFile={workspace.droppedFile}
+            upload={upload}
+            busy={busy}
+            onClose={workspace.closeUpload}
+            onUploaded={(id) => {
+              workspace.uploaded(id);
+              onUploaded(id);
+            }}
+          />
+        </Suspense>
       )}
       {photo && (
-        <PhotoViewer
-          photo={photo}
-          photos={viewerPhotos(
-            family.photos || [],
-            photo.id,
-            workspace.photoCollection,
-          )}
-          onNavigate={workspace.navigatePhoto}
-          family={family}
-          initialEditing={workspace.editPhotoId === photo.id}
-          canEdit={canEdit && owns(user, photo)}
-          canDelete={canEdit && user?.role === "admin"}
-          busy={busy}
-          save={save}
-          onClose={workspace.closePhoto}
-          onPerson={(id) => {
-            workspace.closePhoto();
-            onPerson(id);
-          }}
-        />
+        <Suspense
+          fallback={
+            <div className="archive-loading-details" role="status">
+              Открываем фотографию…
+            </div>
+          }
+        >
+          <PhotoViewer
+            photo={photo}
+            photos={viewerPhotos(
+              family.photos || [],
+              photo.id,
+              workspace.photoCollection,
+            )}
+            onNavigate={workspace.navigatePhoto}
+            family={family}
+            initialEditing={workspace.editPhotoId === photo.id}
+            canEdit={canEdit && owns(user, photo)}
+            canDelete={canEdit && user?.role === "admin"}
+            busy={busy}
+            save={save}
+            onClose={workspace.closePhoto}
+            onPerson={(id) => {
+              workspace.closePhoto();
+              onPerson(id);
+            }}
+          />
+        </Suspense>
       )}
     </>
   );
