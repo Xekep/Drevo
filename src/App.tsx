@@ -3,7 +3,6 @@ import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
   suggestConnectionOrder,
-  owns,
   type Person,
   type GraphConnection,
   type ConnectionType,
@@ -11,6 +10,7 @@ import {
 import { useArchive } from "./hooks/useArchive";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
+import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -26,9 +26,7 @@ import { ConnectionInspector } from "./components/connection-inspector";
 import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
 import { ArchiveSection } from "./components/archive-section";
-import { PhotoViewer } from "./components/photo-viewer";
-import { viewerPhotos } from "./domain/photo-albums";
-import { PhotoUpload } from "./components/photo-upload";
+import { PhotoWorkspaceOverlays } from "./components/photo-workspace-overlays";
 import { LoginDialog } from "./components/login-dialog";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
@@ -107,12 +105,7 @@ export default function App() {
       null,
     ),
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
-  const [photoUpload, setPhotoUpload] = useState(false),
-    [droppedPhoto, setDroppedPhoto] = useState<File | null>(null),
-    [photoId, setPhotoId] = useState<string | null>(null),
-    [photoCollection, setPhotoCollection] = useState<string[] | undefined>(),
-    [editPhotoId, setEditPhotoId] = useState<string | null>(null),
-    [photoFilter, setPhotoFilter] = useState<string | null>(null);
+  const photoWorkspace = usePhotoWorkspace(family);
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const chosen = useMemo(
@@ -131,20 +124,18 @@ export default function App() {
     (next: ArchiveView) => {
       setView(next);
       setAddMenu(false);
-      setPhotoFilter(null);
+      photoWorkspace.clearFilter();
     },
-    [setView],
+    [setView, photoWorkspace.clearFilter],
   );
   useEffect(() => {
     const sync = () => {
       setAddMenu(false);
-      setPhotoFilter(null);
-      setPhotoId(null);
-      setEditPhotoId(null);
+      photoWorkspace.resetNavigation();
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-  }, []);
+  }, [photoWorkspace.resetNavigation]);
   const closeConnection = useCallback(() => {
     setConnectionDraft(null);
     setPreview(null);
@@ -251,12 +242,6 @@ export default function App() {
       />
     </div>
   );
-  const photo = family?.photos?.find((p) => p.id === photoId);
-  function openPhoto(id: string, photoIds?: string[]) {
-    setEditPhotoId(null);
-    setPhotoCollection(photoIds);
-    setPhotoId(id);
-  }
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -294,7 +279,7 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                setPhotoUpload(true);
+                photoWorkspace.openUpload();
                 setAddMenu(false);
               }}
             >
@@ -508,7 +493,7 @@ export default function App() {
                                 relative(type, true)
                               }
                               onAlbum={(id) => {
-                                setPhotoFilter(id);
+                                photoWorkspace.filterPerson(id);
                                 setView("gallery");
                               }}
                             />
@@ -533,14 +518,11 @@ export default function App() {
                     setView("tree");
                     reveal(ids);
                   }}
-                  onPhoto={openPhoto}
-                  onAddPhoto={() => setPhotoUpload(true)}
-                  onDropPhoto={(file) => {
-                    setDroppedPhoto(file);
-                    setPhotoUpload(true);
-                  }}
-                  personFilter={photoFilter}
-                  onClearPhotoFilter={() => setPhotoFilter(null)}
+                  onPhoto={photoWorkspace.openPhoto}
+                  onAddPhoto={() => photoWorkspace.openUpload()}
+                  onDropPhoto={(file) => photoWorkspace.openUpload(file)}
+                  personFilter={photoWorkspace.personFilter}
+                  onClearPhotoFilter={photoWorkspace.clearFilter}
                 />
               </main>
             )}
@@ -580,46 +562,17 @@ export default function App() {
         </div>
       )}
       {login && <LoginDialog onClose={() => setLogin(false)} />}
-      {photoUpload && canEdit && (
-        <PhotoUpload
-          initialFile={droppedPhoto}
-          upload={upload}
-          busy={busy}
-          onClose={() => {
-            setPhotoUpload(false);
-            setDroppedPhoto(null);
-          }}
-          onUploaded={(id) => {
-            openPhoto(id);
-            setEditPhotoId(id);
-            setView("gallery");
-            setPhotoFilter(null);
-          }}
-        />
-      )}
-      {photo && family && (
-        <PhotoViewer
-          photo={photo}
-          photos={viewerPhotos(family.photos || [], photo.id, photoCollection)}
-          onNavigate={(id) => {
-            setEditPhotoId(null);
-            setPhotoId(id);
-          }}
+      {family && (
+        <PhotoWorkspaceOverlays
           family={family}
-          initialEditing={editPhotoId === photo.id}
-          canEdit={canEdit && owns(user, photo)}
-          canDelete={canEdit && user?.role === "admin"}
+          user={user}
+          workspace={photoWorkspace}
+          canEdit={canEdit}
           busy={busy}
           save={save}
-          onClose={() => {
-            setEditPhotoId(null);
-            setPhotoId(null);
-          }}
-          onPerson={(id) => {
-            setEditPhotoId(null);
-            setPhotoId(null);
-            showPerson(id);
-          }}
+          upload={upload}
+          onUploaded={() => setView("gallery")}
+          onPerson={showPerson}
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
