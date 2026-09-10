@@ -378,10 +378,6 @@
   padding: 14px 0;
   z-index: 1;
 }
-.inspector-dock .portrait-preview {
-  width: 66px;
-  height: 80px;
-}
 .inspector-dock .portrait-picker small {
   font-size: 11px;
 }

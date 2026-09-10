@@ -140,9 +140,12 @@
   max-height: 70dvh;
   overflow: auto;
 }
-.portrait-edit-button {
+.archive-form .portrait-edit-button {
   position: relative;
   padding: 0;
+  border-radius: 50%;
+  aspect-ratio: 1;
+  background: #f1f5ed;
   cursor: pointer;
 }
 .portrait-edit-overlay {

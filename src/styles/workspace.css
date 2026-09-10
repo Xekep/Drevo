@@ -557,6 +557,7 @@ body,
 .portrait-picker {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 20px;
   padding: 5px 0 15px;
 }
