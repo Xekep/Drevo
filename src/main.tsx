@@ -15,10 +15,9 @@ import "./styles/photo-lightbox.css";
 import "./styles/insights.css";
 import "./styles/mobile-refinements.css";
 
+const App = lazy(() => import("./App"));
+const SharedTree = lazy(() => import("./components/shared-tree"));
 const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
-const Root = sharedToken
-  ? lazy(() => import("./components/shared-tree"))
-  : lazy(() => import("./App"));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -29,7 +28,7 @@ createRoot(document.getElementById("root")!).render(
         </main>
       }
     >
-      {sharedToken ? <Root token={sharedToken} /> : <Root />}
+      {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
     </Suspense>
   </StrictMode>,
 );
