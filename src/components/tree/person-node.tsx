@@ -36,6 +36,40 @@ export type PersonNodeType = Node<
   },
   "person"
 >;
+
+export function samePersonNodeData(
+  a: PersonNodeType["data"],
+  b: PersonNodeType["data"],
+) {
+  return (
+    a.person === b.person &&
+    a.collapsed === b.collapsed &&
+    a.childrenCount === b.childrenCount &&
+    a.dimmed === b.dimmed &&
+    a.household === b.household &&
+    a.occurrences === b.occurrences &&
+    a.familyFocus === b.familyFocus &&
+    a.anchor === b.anchor &&
+    a.hiddenRelatives === b.hiddenRelatives &&
+    a.expanded === b.expanded
+  );
+}
+
+function samePersonNodeProps(
+  a: NodeProps<PersonNodeType>,
+  b: NodeProps<PersonNodeType>,
+) {
+  // Координаты и прочие служебные props ReactFlow относятся к внешней обёртке.
+  // Внутренняя карточка зависит только от этих четырёх входов. Context и
+  // useStore при необходимости всё равно инициируют собственный render.
+  return (
+    a.id === b.id &&
+    a.selected === b.selected &&
+    a.isConnectable === b.isConnectable &&
+    samePersonNodeData(a.data, b.data)
+  );
+}
+
 export const PersonNode = memo(function PersonNode({
   data,
   id,
@@ -149,4 +183,4 @@ export const PersonNode = memo(function PersonNode({
       )}
     </div>
   );
-});
+}, samePersonNodeProps);
