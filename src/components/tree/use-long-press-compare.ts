@@ -1,24 +1,26 @@
 import { useEffect, useRef, type PointerEvent } from "react";
 
+type Press = {
+  pointerId: number;
+  x: number;
+  y: number;
+  fired: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+};
+
 export function useLongPressCompare(onLongPress: () => void) {
-  const press = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-    fired: boolean;
-    timer: ReturnType<typeof setTimeout>;
-  } | null>(null);
+  const press = useRef<Press | null>(null);
   const suppressClick = useRef(false);
 
   function clearPress() {
     if (!press.current) return;
-    clearTimeout(press.current.timer);
+    if (press.current.timer) clearTimeout(press.current.timer);
     press.current = null;
   }
 
   useEffect(
     () => () => {
-      if (press.current) clearTimeout(press.current.timer);
+      if (press.current?.timer) clearTimeout(press.current.timer);
     },
     [],
   );
@@ -31,16 +33,16 @@ export function useLongPressCompare(onLongPress: () => void) {
         if (
           event.pointerType !== "touch" ||
           !event.isPrimary ||
-          event.button !== 0
+          event.button !== 0 ||
+          !window.matchMedia("(max-width: 899px)").matches
         )
           return;
         clearPress();
-        const current = {
+        const current: Press = {
           pointerId: event.pointerId,
           x: event.clientX,
           y: event.clientY,
           fired: false,
-          timer: undefined as unknown as ReturnType<typeof setTimeout>,
         };
         current.timer = setTimeout(() => {
           if (press.current !== current) return;
