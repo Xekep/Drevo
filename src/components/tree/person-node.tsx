@@ -9,6 +9,7 @@ import {
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import { fullName, years, type Person } from "../../domain";
 import { Avatar } from "../person-panel";
+import { useLongPressCompare } from "./use-long-press-compare";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
   collapse: (id: string, occurrenceId?: string) => void;
@@ -42,6 +43,7 @@ export const PersonNode = memo(function PersonNode({
   isConnectable,
 }: NodeProps<PersonNodeType>) {
   const { choose, collapse, expand, reference } = useContext(TreeActions);
+  const longPress = useLongPressCompare(() => choose(data.person.id, true));
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"
@@ -77,7 +79,20 @@ export const PersonNode = memo(function PersonNode({
       ))}
       <button
         className="flow-person-content"
-        onClick={(e) => choose(data.person.id, e.shiftKey)}
+        {...longPress}
+        onContextMenu={(event) => {
+          if (longPress.active() || longPress.suppressClick.current)
+            event.preventDefault();
+        }}
+        onClick={(event) => {
+          if (longPress.suppressClick.current) {
+            event.preventDefault();
+            event.stopPropagation();
+            longPress.suppressClick.current = false;
+            return;
+          }
+          choose(data.person.id, event.shiftKey);
+        }}
         aria-label={`${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}`}
       >
         {!overview && <Avatar person={data.person} />}
