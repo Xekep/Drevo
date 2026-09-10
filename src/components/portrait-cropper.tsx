@@ -183,7 +183,7 @@ export function PortraitCropper({
               onCrop(new File([blob], "portrait.png", { type: "image/png" }));
             } catch {
               setError(
-                "Не удалось обрезать снимок. Выберите фотографию из галереи или с компьютера.",
+                "Не удалось обрезать снимок. Попробуйте выбрать другую фотографию.",
               );
             } finally {
               setBusy(false);

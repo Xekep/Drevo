@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Camera, Images, UserRound } from "lucide-react";
+import { Pencil, UserRound } from "lucide-react";
 import {
   availableColumn,
   connectPeople,
@@ -101,11 +101,8 @@ export function PersonEditor({
     );
   const [galleryOpen, setGalleryOpen] = useState(false),
     [cropSource, setCropSource] = useState("");
-  useEffect(
-    () => () => {
-      if (cropSource.startsWith("blob:")) URL.revokeObjectURL(cropSource);
-    },
-    [cropSource],
+  const portraitPhotos = (family.photos || []).filter((photo) =>
+    photo.tags.some((tag) => tag.personId === draft.id),
   );
   const hintDraft = {
     ...draft,
@@ -254,61 +251,24 @@ export function PersonEditor({
             : "Достаточно фамилии и имени. Остальные сведения можно добавить позже."}
         </p>
         <div className="portrait-picker">
-          <span className="portrait-preview">
+          <button
+            type="button"
+            className="portrait-preview portrait-edit-button"
+            onClick={() => setGalleryOpen(true)}
+            disabled={busy}
+            aria-label="Выбрать портрет из фотографий человека"
+            aria-haspopup="dialog"
+            title="Изменить портрет"
+          >
             {portraitPreview || draft.photo ? (
-              <img
-                src={portraitPreview || draft.photo}
-                alt="Портрет человека"
-              />
+              <img src={portraitPreview || mediaPreview(draft.photo)} alt="" />
             ) : (
-              <UserRound size={34} strokeWidth={1.2} />
+              <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
             )}
-          </span>
-          <div>
-            <label className="upload-button">
-              <Camera size={16} />
-              {draft.photo || portraitFile
-                ? "Изменить портрет"
-                : "Добавить портрет"}
-              <input
-                type="file"
-                disabled={busy}
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  if (file.size > 20 * 1024 * 1024) {
-                    setError("Размер портрета — до 20 МБ");
-                    return;
-                  }
-                  setCropSource(URL.createObjectURL(file));
-                  e.target.value = "";
-                  setError("");
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => setGalleryOpen(true)}
-              disabled={busy}
-            >
-              <Images size={16} />
-              Из галереи
-            </button>
-            {(draft.photo || portraitFile) && (
-              <button
-                type="button"
-                onClick={() => {
-                  field("photo", "");
-                  setPortraitFile(null);
-                  setPortraitPreview("");
-                }}
-              >
-                Убрать портрет
-              </button>
-            )}
-            <small>Обрезка сохраняется только как портрет</small>
-          </div>
+            <span className="portrait-edit-overlay" aria-hidden="true">
+              <Pencil size={22} strokeWidth={1.6} />
+            </span>
+          </button>
         </div>
         {relativeTo && !person && (
           <label>
@@ -553,17 +513,6 @@ export function PersonEditor({
           onChange={(awards) => field("awards", awards)}
         />
         <details className="form-details">
-          <summary>Портрет по ссылке</summary>
-          <label>
-            Ссылка на портрет
-            <input
-              value={draft.photo || ""}
-              onChange={(e) => field("photo", e.target.value)}
-              placeholder="https://… или /media/…"
-            />
-          </label>
-        </details>
-        <details className="form-details">
           <summary>Источники</summary>
           <section>
             <h3>Источники</h3>
@@ -716,12 +665,12 @@ export function PersonEditor({
       </form>
       {galleryOpen && (
         <EditorDialog
-          title="Выбрать фотографию для портрета"
+          title="Выбрать портрет"
           onClose={() => setGalleryOpen(false)}
           wide
         >
           <div className="portrait-gallery">
-            {family.photos?.map((photo) => (
+            {portraitPhotos.map((photo) => (
               <button
                 type="button"
                 key={photo.id}
@@ -738,13 +687,30 @@ export function PersonEditor({
                 <span>{photoLabel(photo)}</span>
               </button>
             ))}
-            {!family.photos?.length && (
-              <p>
-                В галерее пока нет снимков. Можно выбрать фотографию с
-                компьютера.
+            {!portraitPhotos.length && (
+              <p className="portrait-gallery-empty">
+                {person
+                  ? "Пока нет снимков с отметкой этого человека. Отметьте его на фото в галерее."
+                  : "Сначала сохраните человека и отметьте его на фото."}
               </p>
             )}
           </div>
+          {(draft.photo || portraitFile) && (
+            <div className="portrait-gallery-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  field("photo", "");
+                  setPortraitFile(null);
+                  setPortraitPreview("");
+                  setGalleryOpen(false);
+                }}
+              >
+                Убрать портрет
+              </button>
+            </div>
+          )}
         </EditorDialog>
       )}
       {cropSource && (

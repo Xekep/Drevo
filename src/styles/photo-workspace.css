@@ -140,12 +140,47 @@
   max-height: 70dvh;
   overflow: auto;
 }
-.portrait-picker > div > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+.portrait-edit-button {
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+}
+.portrait-edit-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: #304b3a70;
+  opacity: 0;
+  transition: opacity 140ms;
+}
+.portrait-edit-button:hover .portrait-edit-overlay,
+.portrait-edit-button:focus-visible .portrait-edit-overlay {
+  opacity: 1;
+}
+.portrait-edit-button:focus-visible {
+  outline: 2px solid #829a72;
+  outline-offset: 3px;
+}
+.portrait-edit-button:disabled {
+  cursor: wait;
+}
+.portrait-gallery-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.portrait-gallery-actions {
+  padding: 0 22px 22px;
+  text-align: right;
   font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .portrait-edit-overlay {
+    transition: none;
+  }
 }
 .portrait-cropper {
   padding: 24px;
