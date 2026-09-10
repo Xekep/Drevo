@@ -15,9 +15,16 @@
 
 /* The opened person card should lead with the portrait, not a postage stamp. */
 .profile-avatar {
-  width: 112px;
-  height: 112px;
-  font-size: 36px;
+  width: 144px;
+  height: 144px;
+  font-size: 42px;
+}
+
+/* Fullscreen contains the whole tree view; keep its interactive inspector above the canvas. */
+.tree-view:has(.tree-canvas.is-fullscreen) > .inspector-dock {
+  display: block;
+  z-index: 1100;
+  pointer-events: auto;
 }
 
 @media (max-width: 899px) {
@@ -80,9 +87,13 @@
   }
 
   .profile-avatar {
-    width: 96px;
-    height: 96px;
-    font-size: 32px;
+    width: 128px;
+    height: 128px;
+    font-size: 38px;
+  }
+
+  .archive-more .nav-bottom > p {
+    display: none;
   }
 
   .inspector-dock:has(.comparison-content.is-picking) {
