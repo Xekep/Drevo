@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { suggestFaces, type FaceSuggestion } from "../vision/face-assistant";
-import { ImagePlus, ScanFace } from "lucide-react";
+import { ImagePlus, ScanFace, Pencil, Check } from "lucide-react";
 import {
   fullName,
   type ArchivePhoto,
@@ -8,6 +8,11 @@ import {
   type PhotoTag,
 } from "../domain";
 import { EditorDialog } from "./editor-dialog";
+import { photoCaption, photoLabel } from "../domain/photo-metadata";
+import { PersonSearch } from "./person-search";
+import { newestPhotos, photoAlbums } from "../domain/photo-albums";
+import { mediaPreview } from "../domain/media-preview";
+import { LoadMore } from "./load-more";
 type Rect = Pick<PhotoTag, "x" | "y" | "width" | "height">;
 export function Gallery({
   family,
@@ -24,10 +29,18 @@ export function Gallery({
   personFilter?: string | null;
   onClearFilter: () => void;
 }) {
-  const photos = (family.photos || []).filter(
+  const [mode, setMode] = useState<"all" | "people" | "years">("all"),
+    [albumId, setAlbumId] = useState(""),
+    [limit, setLimit] = useState(30);
+  const available = (family.photos || []).filter(
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),
   );
+  const albums =
+    mode === "all" ? [] : photoAlbums(available, family.people, mode);
+  const album = albums.find((item) => item.id === albumId);
+  const photos = album ? album.photos : newestPhotos(available);
+  const browsingAlbums = mode !== "all" && !album;
   const filterPerson = family.people.find((p) => p.id === personFilter);
   return (
     <section className="gallery-view" aria-label="Галерея семейных фотографий">
@@ -54,39 +67,108 @@ export function Gallery({
           </button>
         )}
       </div>
+      <div
+        className="gallery-modes segmented"
+        aria-label="Группировка фотографий"
+      >
+        {(
+          [
+            ["all", "Все · по добавлению"],
+            ["people", "По людям"],
+            ["years", "По годам"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            aria-pressed={mode === value}
+            onClick={() => {
+              setMode(value);
+              setAlbumId("");
+              setLimit(30);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {album && (
+        <div className="album-heading">
+          <button
+            onClick={() => {
+              setAlbumId("");
+              setLimit(30);
+            }}
+          >
+            ← Все альбомы
+          </button>
+          <h3>
+            {album.label} · {album.photos.length}
+          </h3>
+        </div>
+      )}
       {!photos.length ? (
         <div className="gallery-empty">
           <ImagePlus size={42} strokeWidth={1} />
           <h3>Первые страницы альбома</h3>
           <p>Добавьте семейную фотографию и отметьте на ней людей.</p>
         </div>
+      ) : browsingAlbums ? (
+        <div className="photo-albums">
+          {albums.slice(0, limit).map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setAlbumId(item.id);
+                setLimit(30);
+              }}
+            >
+              <img
+                src={mediaPreview(item.photos[0].url)}
+                alt=""
+                loading="lazy"
+              />
+              <span>
+                <b>{item.label}</b>
+                <small>{item.photos.length} фото</small>
+              </span>
+            </button>
+          ))}
+        </div>
       ) : (
         <div className="photo-grid">
-          {photos.map((photo) => (
+          {photos.slice(0, limit).map((photo) => (
             <button
               className="photo-tile"
               key={photo.id}
               onClick={() => onOpen(photo.id)}
             >
-              <img src={photo.url} alt={photo.title} loading="lazy" />
-              <span>
-                <b>{photo.title}</b>
-                {[photo.year || photo.takenAt, photo.place, photo.event].some(
-                  (value) => value?.trim(),
-                ) && (
-                  <small>
-                    {[photo.year || photo.takenAt, photo.place, photo.event]
-                      .filter((value) => value?.trim())
-                      .join(" · ")}
-                  </small>
-                )}
-                {photo.tags.length > 0 && (
-                  <small>Отметок: {photo.tags.length}</small>
-                )}
-              </span>
+              <img
+                src={mediaPreview(photo.url)}
+                alt={photoLabel(photo)}
+                loading="lazy"
+              />
+              {(photoCaption(photo) || photo.tags.length > 0) && (
+                <span>
+                  {[photo.year || photo.takenAt, photo.place, photo.event].some(
+                    (value) => value?.trim(),
+                  ) && (
+                    <small>
+                      {[photo.year || photo.takenAt, photo.place, photo.event]
+                        .filter((value) => value?.trim())
+                        .join(" · ")}
+                    </small>
+                  )}
+                  {photo.tags.length > 0 && (
+                    <small>Отметок: {photo.tags.length}</small>
+                  )}
+                </span>
+              )}
             </button>
           ))}
         </div>
+      )}
+      {(browsingAlbums ? albums.length : photos.length) > limit && (
+        <LoadMore onMore={() => setLimit((n) => n + 30)} />
       )}
     </section>
   );
@@ -94,7 +176,7 @@ export function Gallery({
 export function PhotoViewer({
   photo,
   family,
-  canEdit,
+  canEdit: allowedEdit,
   canDelete,
   busy,
   save,
@@ -102,6 +184,7 @@ export function PhotoViewer({
   onPerson,
   onCreatePerson,
   initialPersonId = "",
+  initialEditing = false,
 }: {
   photo: ArchivePhoto;
   family: Family;
@@ -113,15 +196,18 @@ export function PhotoViewer({
   onPerson: (id: string) => void;
   onCreatePerson: () => void;
   initialPersonId?: string;
+  initialEditing?: boolean;
 }) {
+  const [editing, setEditing] = useState(initialEditing);
+  const [showTags, setShowTags] = useState(false);
+  const canEdit = allowedEdit && editing;
   const [requestedTagging, setTagging] = useState(false),
     [rect, setRect] = useState<Rect | null>(null),
     [personId, setPersonId] = useState(initialPersonId),
     [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false);
   const tagging = canEdit && requestedTagging;
-  const [title, setTitle] = useState(photo.title),
-    [takenAt, setTakenAt] = useState(photo.takenAt || ""),
+  const [takenAt, setTakenAt] = useState(photo.takenAt || ""),
     [place, setPlace] = useState(photo.place || ""),
     [year, setYear] = useState(photo.year || ""),
     [event, setEvent] = useState(photo.event || ""),
@@ -135,8 +221,8 @@ export function PhotoViewer({
   const scanned = useRef(false),
     scanController = useRef<AbortController | null>(null);
   useEffect(() => () => scanController.current?.abort(), []);
-  async function scan() {
-    if (!canEdit || scanning) return;
+  async function scan(enterEditing = false) {
+    if (!(canEdit || (enterEditing && allowedEdit)) || scanning) return;
     scanned.current = true;
     const controller = new AbortController();
     scanController.current = controller;
@@ -188,8 +274,10 @@ export function PhotoViewer({
     }
   }
   return (
-    <EditorDialog title={photo.title} onClose={onClose} wide>
-      <div className="photo-viewer">
+    <EditorDialog title="Фотография" onClose={onClose} wide>
+      <div
+        className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""}`}
+      >
         <div className="photo-stage">
           <div
             ref={area}
@@ -227,8 +315,8 @@ export function PhotoViewer({
             }}
           >
             <img
-              src={photo.url}
-              alt={photo.title}
+              src={mediaPreview(photo.url, "display")}
+              alt={photoLabel(photo)}
               draggable={false}
               onLoad={() => {
                 if (canEdit && !photo.tags.length && !scanned.current)
@@ -291,6 +379,39 @@ export function PhotoViewer({
           </div>
         </div>
         <aside className="photo-tools">
+          {!canEdit && photo.tags.length > 0 && (
+            <button
+              className="photo-tags-toggle"
+              aria-pressed={showTags}
+              onClick={() => setShowTags(!showTags)}
+            >
+              {showTags ? "Скрыть отметки" : "Показать отметки"}
+            </button>
+          )}
+          <a className="photo-original" href={photo.url} download>
+            Скачать оригинал
+          </a>
+          {allowedEdit && (
+            <button
+              className="photo-edit-toggle"
+              aria-pressed={editing}
+              disabled={busy}
+              onClick={() => {
+                setEditing(!editing);
+                if (editing) {
+                  setConfirm(false);
+                  setTagging(false);
+                  setRect(null);
+                  scanController.current?.abort();
+                  setScanning(false);
+                } else if (!photo.tags.length && !scanned.current)
+                  void scan(true);
+              }}
+            >
+              {editing ? <Check size={16} /> : <Pencil size={16} />}
+              {editing ? "Завершить редактирование" : "Редактировать"}
+            </button>
+          )}
           <span className="section-label">ЛЮДИ НА ФОТО</span>
           {photo.tags.length === 0 && (
             <p>На этом снимке пока никто не отмечен.</p>
@@ -420,20 +541,12 @@ export function PhotoViewer({
                           ),
                         )}
                       </details>
-                      <label>
-                        Кто это?
-                        <select
-                          value={personId}
-                          onChange={(e) => setPersonId(e.target.value)}
-                        >
-                          <option value="">Выберите человека</option>
-                          {family.people.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {fullName(p)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <PersonSearch
+                        value={personId}
+                        selected={family.people.find((p) => p.id === personId)}
+                        onChange={setPersonId}
+                        disabled={busy}
+                      />
                       <button
                         disabled={!personId || busy}
                         onClick={async () => {
@@ -471,7 +584,6 @@ export function PhotoViewer({
                     e.preventDefault();
                     await update({
                       ...photo,
-                      title: title.trim(),
                       takenAt: takenAt.trim() || undefined,
                       place: place.trim() || undefined,
                       year: year.trim() || undefined,
@@ -480,14 +592,6 @@ export function PhotoViewer({
                     });
                   }}
                 >
-                  <label>
-                    Название
-                    <input
-                      required
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                    />
-                  </label>
                   <label>
                     Год
                     <input

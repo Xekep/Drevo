@@ -16,7 +16,7 @@ export function PhotoUpload({
 }) {
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState(""),
-    [metadata, setMetadata] = useState<PhotoMetadata>({ title: "" }),
+    [metadata, setMetadata] = useState<PhotoMetadata>({}),
     [error, setError] = useState("");
   useEffect(
     () => () => {
@@ -36,10 +36,6 @@ export function PhotoUpload({
     setError("");
     setFile(next);
     setPreview(URL.createObjectURL(next));
-    setMetadata((value) => ({
-      ...value,
-      title: value.title || next.name.replace(/\.[^.]+$/, "").slice(0, 250),
-    }));
   }
   return (
     <EditorDialog
@@ -97,18 +93,6 @@ export function PhotoUpload({
             />
           </label>
           <div className="photo-upload-fields">
-            <label>
-              Название{" "}
-              <input
-                required
-                maxLength={250}
-                value={metadata.title}
-                placeholder="Например, вся семья на даче"
-                onChange={(e) =>
-                  setMetadata({ ...metadata, title: e.target.value })
-                }
-              />
-            </label>
             <div className="form-grid">
               <label>
                 Год{" "}
@@ -178,10 +162,7 @@ export function PhotoUpload({
           </p>
         )}
         <footer>
-          <button
-            className="primary-action"
-            disabled={!file || !metadata.title.trim() || busy}
-          >
+          <button className="primary-action" disabled={!file || busy}>
             <Upload size={16} />
             {busy ? "Сохраняем снимок…" : "Сохранить и отметить людей"}
           </button>

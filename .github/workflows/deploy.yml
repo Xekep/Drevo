@@ -46,7 +46,8 @@ jobs:
           cp -R dist ops release/
           cp -R src/domain src/server release/src/
           cp -R public/data release/public/
-          cp package.json release/
+          cp ops/runtime/package.json ops/runtime/package-lock.json release/
+          npm ci --prefix release --omit=dev --no-audit --no-fund
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 "mkdir -p /var/www/drevo.kiiko.ru/releases/$RELEASE_ID"
           rsync -az --no-owner --no-group --chmod=Dg+rwx,Dg+s,Do-rwx,Fg+rw,Fo-rwx \
             -e 'ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes' \

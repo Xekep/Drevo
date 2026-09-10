@@ -22,6 +22,14 @@ import { geocodingStore } from "./geocoding.ts";
 import { familyPlaces, placeKey } from "../domain/places.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import { assertProductionOrigin } from "./runtime-config.ts";
+import { peopleSearchStore } from "./people-search.ts";
+import {
+  archiveOverview,
+  personDetails,
+  archivePageSize,
+} from "../domain/archive-projection.ts";
+import { imagePreviews } from "./image-previews.ts";
+import { archiveViewAt } from "../domain/archive-routes.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const staticTypes: Record<string, string> = {
@@ -58,8 +66,10 @@ export async function startServer(
   );
   removeStarterFamily(archive);
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
+  const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
   const restores = restoreStore(archive, dbPath);
   const geocoding = geocodingStore(archive.db);
+  const searchPeople = peopleSearchStore(archive.db);
   let restoreUploadBusy = false;
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const visibility = settingsStore(archive.db);
@@ -237,6 +247,16 @@ export async function startServer(
     }
     const visitor = auth.currentUser(req),
       access = visibility.read();
+    if (url === "/api/people/search") {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      if (!visitor && !access.publicTree)
+        return json(res, 401, { error: "Войдите для поиска людей" });
+      const query = (parsedUrl.searchParams.get("q") || "").trim();
+      if (query.length > 100)
+        return json(res, 400, { error: "Слишком длинный поисковый запрос" });
+      return json(res, 200, searchPeople(query));
+    }
     if (url === "/api/export.json") {
       if (req.method !== "GET") {
         res.setHeader("Allow", "GET");
@@ -267,7 +287,7 @@ export async function startServer(
     if (url === "/api/places/locate") {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
-      if (!visitor && !access.publicTree)
+      if (!visitor && !access.publicTree && !access.publicAlbums)
         return json(res, 401, { error: "Войдите для просмотра мест семьи" });
       if (
         req.headers["x-drevo-map"] !== "1" ||
@@ -276,19 +296,21 @@ export async function startServer(
       )
         return json(res, 403, { error: "Откройте карту в архиве" });
       const query = (parsedUrl.searchParams.get("q") || "").trim();
-      if (
-        !auth.canEdit(req) &&
-        !familyPlaces(archive.read().family.people).some(
+      const permittedQuery = () => {
+        if (auth.canEdit(req)) return true;
+        const { family } = snapshot(req);
+        return familyPlaces(family.people, family.photos).some(
           (p) => p.key === placeKey(query),
-        )
-      )
+        );
+      };
+      if (!permittedQuery())
         return json(res, 403, {
-          error: "Можно искать только места из доступного древа",
+          error: "Можно искать только места из доступного архива",
         });
       try {
         const result = await geocoding.locate(query);
-        if (!auth.currentUser(req) && !visibility.read().publicTree)
-          return json(res, 401, { error: "Доступ к древу закрыт" });
+        if (!permittedQuery())
+          return json(res, 403, { error: "Доступ к этому месту закрыт" });
         return json(res, 200, result);
       } catch (e) {
         return json(res, 400, { error: (e as Error).message });
@@ -370,12 +392,28 @@ export async function startServer(
     if (url.startsWith("/media/") && req.method === "GET") {
       const file = media.read(url);
       if (!file) return json(res, 404, { error: "Фото не найдено" });
+      let bytes: Buffer = file.bytes;
+      let type = file.type;
+      const variant = parsedUrl.searchParams.get("variant");
+      if (
+        (variant === "thumb" || variant === "display") &&
+        file.type !== "image/gif"
+      ) {
+        try {
+          bytes = await previewImage(file.bytes, variant);
+          type = "image/webp";
+        } catch {
+          /* При ошибке доступен оригинал. */
+        }
+        if (!auth.currentUser(req) && !visibility.read().publicAlbums)
+          return json(res, 401, { error: "Доступ к фотографиям закрыт" });
+      }
       res.writeHead(200, {
-        "Content-Type": file.type,
+        "Content-Type": type,
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=86400",
       });
-      res.end(file.bytes);
+      res.end(bytes);
       return;
     }
     if (!url.startsWith("/api/")) {
@@ -393,8 +431,7 @@ export async function startServer(
         path !== dist
       )
         return json(res, 403, { error: "Недоступный путь" });
-      if (url === "/" || url === "/admin" || url === "/admin/")
-        path = resolve(dist, "index.html");
+      if (archiveViewAt(url)) path = resolve(dist, "index.html");
       if (!existsSync(path))
         return json(res, 404, { error: "Страница не найдена" });
       try {
@@ -413,8 +450,50 @@ export async function startServer(
       }
       return;
     }
-    if (url === "/api/family" && req.method === "GET")
-      return json(res, 200, snapshot(req));
+    if (url === "/api/family" && req.method === "GET") {
+      const data = snapshot(req),
+        pageToken = `${data.revision}:${Number(data.readTree)}:${Number(data.readPhotos)}`;
+      if (parsedUrl.searchParams.get("projection") === "overview")
+        return json(res, 200, {
+          ...data,
+          family: archiveOverview(data.family),
+          partial: true,
+          pageToken,
+          totals: {
+            people: data.family.people.length,
+            photos: data.family.photos?.length || 0,
+          },
+        });
+      if (parsedUrl.searchParams.get("projection") === "page") {
+        if (parsedUrl.searchParams.get("token") !== pageToken)
+          return json(res, 409, {
+            error: "Архив или доступ к нему изменились. Обновите данные.",
+          });
+        const collection = parsedUrl.searchParams.get("collection"),
+          offset = Number(parsedUrl.searchParams.get("offset"));
+        if (
+          !["people", "photos"].includes(collection || "") ||
+          !Number.isInteger(offset) ||
+          offset < 0
+        )
+          return json(res, 400, { error: "Некорректная страница" });
+        const items =
+          collection === "people"
+            ? data.family.people
+            : data.family.photos || [];
+        return json(res, 200, {
+          pageToken,
+          items:
+            collection === "people"
+              ? data.family.people
+                  .slice(offset, offset + archivePageSize)
+                  .map(personDetails)
+              : items.slice(offset, offset + archivePageSize),
+          total: items.length,
+        });
+      }
+      return json(res, 200, data);
+    }
     if (url === "/api/export" && req.method === "GET") {
       res.setHeader(
         "Content-Disposition",
@@ -424,7 +503,7 @@ export async function startServer(
     }
     if (!(
       (url === "/api/family" && req.method === "PUT") ||
-      (url === "/api/photos" && req.method === "POST")
+      (["/api/photos", "/api/portraits"].includes(url) && req.method === "POST")
     ))
       return json(res, 404, { error: "Неизвестный запрос" });
     if (
@@ -453,7 +532,7 @@ export async function startServer(
     try {
       const chunks: Buffer[] = [];
       let size = 0;
-      const limit = (url === "/api/photos" ? 20 : 8) * 1024 * 1024;
+      const limit = (url === "/api/family" ? 8 : 20) * 1024 * 1024;
       for await (const chunk of req) {
         size += chunk.length;
         if (size > limit)
@@ -465,15 +544,18 @@ export async function startServer(
       const actor = auth.currentUser(req);
       if (!actor || actor.role === "reader")
         throw new ForbiddenError("Editing access is no longer available");
+      if (url === "/api/portraits") {
+        if (req.headers["x-drevo-upload"] !== "1")
+          return json(res, 400, { error: "Некорректная загрузка" });
+        const file = media.add(Buffer.concat(chunks));
+        return json(res, 201, { url: file.url });
+      }
       if (url === "/api/photos") {
         if (req.headers["x-drevo-upload"] !== "1")
           return json(res, 400, { error: "Некорректная загрузка" });
         const file = media.add(Buffer.concat(chunks));
         try {
-          const current = archive.read().family,
-            title = decodeURIComponent(
-              String(req.headers["x-file-name"] || "Фотография"),
-            ).slice(0, 250);
+          const current = archive.read().family;
           const metadata = JSON.parse(
             decodeURIComponent(
               String(req.headers["x-photo-metadata"] || "%7B%7D"),
@@ -503,7 +585,14 @@ export async function startServer(
                 ...current,
                 photos: [
                   ...(current.photos || []),
-                  { id: file.id, url: file.url, title, ...fields, tags: [] },
+                  {
+                    id: file.id,
+                    url: file.url,
+                    title: "",
+                    ...fields,
+                    createdAt: new Date().toISOString(),
+                    tags: [],
+                  },
                 ],
               },
               revision,

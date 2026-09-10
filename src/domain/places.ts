@@ -1,4 +1,4 @@
-import type { Person, PlaceLocation } from "./types.ts";
+import type { Person, PlaceLocation, ArchivePhoto } from "./types.ts";
 
 export const placeKey = (text: string) =>
   text
@@ -23,25 +23,38 @@ export type FamilyPlace = {
   key: string;
   name: string;
   events: PlaceEvent[];
+  photos: ArchivePhoto[];
   location?: PlaceLocation;
 };
-export function familyPlaces(people: Person[]): FamilyPlace[] {
+export function familyPlaces(
+  people: Person[],
+  photos: ArchivePhoto[] = [],
+): FamilyPlace[] {
   const places = new Map<string, FamilyPlace>();
   for (const person of people)
     for (const kind of ["birth", "death"] as const) {
       const name = (person[`${kind}Place`] || "").trim();
       if (!name) continue;
       const key = placeKey(name),
-        group = places.get(key) || { key, name, events: [] };
+        group = places.get(key) || { key, name, events: [], photos: [] };
       const location = person[`${kind}Location`];
       if (location && placeKey(location.place) === key)
         group.location ||= location;
       group.events.push({ person, kind, date: person[kind] || "", name });
       places.set(key, group);
     }
+  for (const photo of photos) {
+    const name = photo.place?.trim();
+    if (!name) continue;
+    const key = placeKey(name),
+      group = places.get(key) || { key, name, events: [], photos: [] };
+    group.photos.push(photo);
+    places.set(key, group);
+  }
   return [...places.values()].sort(
     (a, b) =>
-      b.events.length - a.events.length || a.name.localeCompare(b.name, "ru"),
+      b.events.length + b.photos.length - a.events.length - a.photos.length ||
+      a.name.localeCompare(b.name, "ru"),
   );
 }
 export type PlaceCandidate = {

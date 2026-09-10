@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Plus, Pencil, Images, Link2 } from "lucide-react";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
+import { photoCaption, photoLabel } from "../domain/photo-metadata";
+import { mediaPreview } from "../domain/media-preview";
 import type { Connection } from "../domain";
 import {
   owns,
@@ -121,6 +123,7 @@ export function PersonInspector({
         onCompare={onCompare}
         suggestions={
           canEdit &&
+          adding &&
           save &&
           onConnection && (
             <PersonHints
@@ -144,8 +147,12 @@ export function PersonInspector({
             <div className="person-photo-grid">
               {photos.slice(0, 6).map((p) => (
                 <button key={p.id} onClick={() => onPhoto(p.id)}>
-                  <img src={p.url} alt={p.title} loading="lazy" />
-                  <span>{p.title}</span>
+                  <img
+                    src={mediaPreview(p.url)}
+                    alt={photoLabel(p)}
+                    loading="lazy"
+                  />
+                  {photoCaption(p) && <span>{photoCaption(p)}</span>}
                 </button>
               ))}
             </div>

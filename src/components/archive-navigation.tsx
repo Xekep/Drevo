@@ -20,8 +20,8 @@ import {
   type Person,
   type ArchiveUser,
 } from "../domain";
-export type ArchiveView =
-  "tree" | "list" | "families" | "gallery" | "places" | "admin";
+import type { ArchiveView } from "../domain/archive-routes";
+export type { ArchiveView } from "../domain/archive-routes";
 export function ArchiveNavigation({
   view,
   onView,
@@ -80,7 +80,13 @@ export function ArchiveNavigation({
             ["places", "Места", MapPin],
           ] as const
         )
-          .filter(([id]) => (id === "gallery" ? readPhotos : readTree))
+          .filter(([id]) =>
+            id === "gallery"
+              ? readPhotos
+              : id === "places"
+                ? readTree || readPhotos
+                : readTree,
+          )
           .map(([id, label, Icon]) => (
             <button
               key={id}
@@ -107,7 +113,13 @@ export function ArchiveNavigation({
                 ["places", "Места", MapPin],
               ] as const
             )
-              .filter(([id]) => (id === "gallery" ? readPhotos : readTree))
+              .filter(([id]) =>
+                id === "gallery"
+                  ? readPhotos
+                  : id === "places"
+                    ? readTree || readPhotos
+                    : readTree,
+              )
               .map(([id, label, Icon]) => (
                 <button
                   key={id}

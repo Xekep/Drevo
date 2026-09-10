@@ -132,7 +132,7 @@ test("parent hints find both directions and preserve candidates until confirmati
     before = structuredClone(original);
   assert.deepEqual(
     parentHints(child, original.people).map((h) => h.from),
-    [father.id, namesake.id],
+    [father.id],
   );
   assert.equal(parentHints(father, original.people)[0].role, "child");
   assert.deepEqual(original, before);

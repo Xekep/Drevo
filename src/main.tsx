@@ -10,6 +10,7 @@ import "./styles/timeline.css";
 import "./styles/directory.css";
 import "./styles/places.css";
 import "./styles/family-details.css";
+import "./styles/photo-workspace.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

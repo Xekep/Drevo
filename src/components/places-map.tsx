@@ -10,6 +10,7 @@ import {
   type ArchiveUser,
   type PlaceLocation,
   type Person,
+  type ArchivePhoto,
 } from "../domain";
 import {
   familyPlaces,
@@ -20,8 +21,15 @@ import {
 import { Avatar } from "./person-panel";
 import { portraitMarker, markerPeople } from "./map-portrait-marker";
 import { useDockSwipe } from "../hooks/useDockSwipe";
+import { photoLabel } from "../domain/photo-metadata";
+import { mediaPreview } from "../domain/media-preview";
 
-type Point = PlaceCandidate & { key: string; title: string; people: Person[] };
+type Point = PlaceCandidate & {
+  key: string;
+  title: string;
+  people: Person[];
+  photos: ArchivePhoto[];
+};
 function MapSurface({
   points,
   selected,
@@ -88,7 +96,12 @@ function MapSurface({
     for (const group of buckets.values()) {
       const point = group.find((p) => p.key === selected) || group[0];
       const members = markerPeople(group.flatMap((p) => p.people));
-      const portrait = portraitMarker(members);
+      const photos = [
+        ...new Map(
+          group.flatMap((p) => p.photos).map((p) => [p.id, p]),
+        ).values(),
+      ];
+      const portrait = portraitMarker(members, photos);
       const marker = L.marker([point.lat, point.lon], {
         icon: L.divIcon({
           className: `family-map-pin${group.some((p) => p.key === selected) ? " selected" : ""}`,
@@ -96,7 +109,7 @@ function MapSurface({
           iconSize: [portrait.width, 48],
           iconAnchor: [portrait.width / 2, 24],
         }),
-        title: `${group.map((p) => p.title).join(" / ")} · ${members.length} чел.`,
+        title: `${group.map((p) => p.title).join(" / ")} · ${members.length} чел. · ${photos.length} фото`,
         keyboard: true,
         bubblingMouseEvents: false,
       }).addTo(layer);
@@ -165,6 +178,7 @@ export default function PlacesMap({
   busy,
   save,
   onPerson,
+  onPhoto,
 }: {
   family: Family;
   user: ArchiveUser | null;
@@ -172,8 +186,12 @@ export default function PlacesMap({
   busy: boolean;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
+  onPhoto: (id: string) => void;
 }) {
-  const places = useMemo(() => familyPlaces(family.people), [family.people]);
+  const places = useMemo(
+    () => familyPlaces(family.people, family.photos),
+    [family.people, family.photos],
+  );
   const [listOpen, setListOpen] = useState(false);
   const sidebar = useRef<HTMLElement>(null),
     drawerHeading = useRef<HTMLDivElement>(null),
@@ -266,6 +284,7 @@ export default function PlacesMap({
                 key: p.key,
                 title: p.name,
                 people: p.events.map((e) => e.person),
+                photos: p.photos,
               },
             ]
           : [];
@@ -347,6 +366,7 @@ export default function PlacesMap({
             key: current.key,
             title: current.name,
             people: current.events.map((event) => event.person),
+            photos: current.photos,
           },
         ]
       : points;
@@ -398,13 +418,13 @@ export default function PlacesMap({
           {!current ? (
             <>
               <p className="places-intro">
-                Места рождения и смерти из карточек появляются здесь
+                Места рождения, смерти и съёмки фотографий появляются здесь
                 автоматически. Точки обозначают населённые пункты; переезды по
                 ним не предполагаются.
               </p>
               {!places.length && (
                 <p>
-                  Укажите место рождения или смерти в карточке человека — оно
+                  Укажите место в карточке человека или фотографии — оно
                   появится на карте.
                 </p>
               )}
@@ -417,7 +437,9 @@ export default function PlacesMap({
                         <b>{p.name}</b>
                         <small>
                           {new Set(p.events.map((e) => e.person.id)).size} чел.
-                          ·{" "}
+                          {p.photos.length
+                            ? ` · ${p.photos.length} фото`
+                            : ""}·{" "}
                           {p.location
                             ? "Точка уточнена"
                             : results[p.key]?.automatic
@@ -488,6 +510,21 @@ export default function PlacesMap({
                   </li>
                 ))}
               </ul>
+              {current.photos.length > 0 && (
+                <section className="place-photos">
+                  <h3>Снимки в этом месте</h3>
+                  {current.photos.map((photo) => (
+                    <button key={photo.id} onClick={() => onPhoto(photo.id)}>
+                      <img
+                        src={mediaPreview(photo.url)}
+                        alt=""
+                        loading="lazy"
+                      />
+                      <span>{photoLabel(photo)}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
               {editable && (
                 <details
                   className="place-correction"

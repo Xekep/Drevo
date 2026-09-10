@@ -221,6 +221,12 @@ export function validateFamily(value: unknown): Family {
       typeof photo.url !== "string" ||
       !/^\/media\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/.test(photo.url) ||
       !Array.isArray(photo.tags) ||
+      (photo.createdAt !== undefined &&
+        (typeof photo.createdAt !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+            photo.createdAt,
+          ) ||
+          !Number.isFinite(Date.parse(photo.createdAt)))) ||
       (photo.takenAt !== undefined && typeof photo.takenAt !== "string") ||
       (photo.place !== undefined && typeof photo.place !== "string") ||
       (photo.event !== undefined && typeof photo.event !== "string") ||

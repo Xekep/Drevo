@@ -7,6 +7,7 @@ import {
   type PeopleSort,
 } from "../domain/people-directory";
 import { Avatar } from "./person-panel";
+import { LoadMore, useListLimit } from "./load-more";
 export function PeopleCatalog({
   people,
   query,
@@ -17,6 +18,7 @@ export function PeopleCatalog({
   onSelect: (id: string) => void;
 }) {
   const [sort, setSort] = useState<PeopleSort>("name");
+  const { limit, more } = useListLimit(`${sort}:${query}`);
   const list = useMemo(
     () => directoryPeople(people, query, sort),
     [people, query, sort],
@@ -57,7 +59,7 @@ export function PeopleCatalog({
         <span>Семья</span>
       </div>
       <ul>
-        {list.map((p) => {
+        {list.slice(0, limit).map((p) => {
           const count = children.get(p.id) || 0,
             life = directoryYears(p);
           return (
@@ -107,6 +109,7 @@ export function PeopleCatalog({
           );
         })}
       </ul>
+      {list.length > limit && <LoadMore onMore={more} />}
       {!list.length && (
         <p className="directory-empty">
           {query

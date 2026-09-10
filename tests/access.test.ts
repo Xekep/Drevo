@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { startServer } from "../src/server/index.ts";
+import sharp from "sharp";
 import { userStore } from "../src/server/users.ts";
 import {
   familyGroups,
@@ -94,6 +95,12 @@ test("OAuth roles, ownership, public sections and complete backup work through H
   try {
     assert.equal((await request("/api/login", "", "POST", {})).status, 404);
     assert.equal((await request("/api/family")).status, 401);
+    assert.equal(
+      (await request("/api/family?projection=overview")).status,
+      401,
+    );
+    assert.equal((await request("/api/people/search?q=Человек")).status, 401);
+    assert.equal((await request("/api/portraits", "", "POST")).status, 401);
     assert.equal((await request("/api/export.json")).status, 401);
     assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
     const admin = await login("first"),
@@ -107,6 +114,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "reader",
     );
     assert.equal((await request("/api/users", reader)).status, 403);
+    assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
     for (const cookie of [admin, reader]) {
       const exported = await request("/api/export.json", cookie);
       assert.equal(exported.status, 200);
@@ -249,9 +257,66 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     response = await request("/api/family", reader, "PUT", own, data.revision);
     assert.equal(response.status, 200);
     data = await response.json();
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aR9sAAAAASUVORK5CYII=",
-      "base64",
+    const png = await sharp({
+      create: { width: 4, height: 4, channels: 3, background: "green" },
+    })
+      .png()
+      .toBuffer();
+    const search = await request("/api/people/search?q=Своя", reader).then(
+      (r) => r.json(),
+    );
+    assert.equal(search.people[0].id, "own");
+    assert.deepEqual(Object.keys(search.people[0]).sort(), [
+      "detail",
+      "id",
+      "label",
+    ]);
+    const overview = await request(
+      "/api/family?projection=overview",
+      reader,
+    ).then((r) => r.json());
+    assert.equal(overview.partial, true);
+    assert.equal(overview.totals.people, data.family.people.length);
+    assert.equal(overview.family.people[0].awards, undefined);
+    const pageUrl = `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(overview.pageToken)}`;
+    const page = await request(pageUrl, reader).then((r) => r.json());
+    assert.ok(page.items[0].awards.length);
+    assert.equal(
+      (await request(pageUrl.replace("offset=0", "offset=-1"), reader)).status,
+      400,
+    );
+    assert.equal((await request(pageUrl + "wrong", reader)).status, 409);
+    response = await fetch(base + "/api/portraits", {
+      method: "POST",
+      headers: {
+        Cookie: reader,
+        "If-Match": String(data.revision),
+        "X-Drevo-Upload": "1",
+      },
+      body: png,
+    });
+    assert.equal(response.status, 201);
+    const portrait = (await response.json()).url;
+    const afterPortrait = await request("/api/family", reader).then((r) =>
+      r.json(),
+    );
+    assert.equal(afterPortrait.revision, data.revision);
+    assert.deepEqual(
+      afterPortrait.family,
+      data.family,
+      "обрезка не создаёт запись галереи",
+    );
+    assert.deepEqual(
+      Buffer.from(await (await request(portrait, reader)).arrayBuffer()),
+      png,
+    );
+    const portraitPreview = await request(portrait + "?variant=thumb", reader);
+    assert.equal(portraitPreview.headers.get("content-type"), "image/webp");
+    assert.deepEqual(
+      await sharp(Buffer.from(await portraitPreview.arrayBuffer()))
+        .raw()
+        .toBuffer(),
+      await sharp(png).raw().toBuffer(),
     );
     response = await fetch(base + "/api/photos", {
       method: "POST",
@@ -278,6 +343,12 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(photo.year, "1965");
     assert.equal(photo.place, "Москва");
     assert.equal(photo.event, "Встреча");
+    assert.ok(Number.isFinite(Date.parse(photo.createdAt)));
+    assert.equal(
+      (await request(pageUrl, reader)).status,
+      409,
+      "страницы старой ревизии отвергаются",
+    );
     photo.tags = [
       { id: "t", personId: "own", x: 0.1, y: 0.1, width: 0.4, height: 0.5 },
     ];
@@ -312,6 +383,21 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(publicData.reverseTimeline, true);
     assert.ok(publicData.family.people.length);
     assert.equal(publicData.family.photos.length, 0);
+    assert.equal((await request("/api/people/search?q=Человек")).status, 200);
+    const publicOverview = await request(
+      "/api/family?projection=overview",
+    ).then((r) => r.json());
+    assert.equal(publicOverview.totals.photos, 0);
+    assert.equal(
+      (
+        await fetch(
+          base + "/api/places/locate?q=" + encodeURIComponent("Москва"),
+          { headers: { "X-Drevo-Map": "1" } },
+        )
+      ).status,
+      403,
+      "место скрытого снимка недоступно",
+    );
     const exported = await request("/api/export.json").then((r) => r.json());
     assert.equal(exported.people.length, publicData.family.people.length);
     assert.equal(exported.photos, undefined);
@@ -331,6 +417,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       405,
     );
     assert.equal((await request(photo.url)).status, 401);
+    assert.equal((await request(photo.url + "?variant=thumb")).status, 401);
     await request("/api/settings", admin, "PUT", {
       publicTree: false,
       publicAlbums: true,
@@ -342,6 +429,44 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "старый формат обновления видимости не сбрасывает направление времени",
     );
     assert.equal(publicData.family.people.length, 0);
+    assert.equal((await request("/api/people/search?q=Человек")).status, 401);
+    const oldPublicPage = `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(publicOverview.pageToken)}`;
+    assert.equal(
+      (await request(oldPublicPage)).status,
+      409,
+      "страница с прежними правами не выдаётся",
+    );
+    const albumsOverview = await request(
+      "/api/family?projection=overview",
+    ).then((r) => r.json());
+    const albumPage = await request(
+      `/api/family?projection=page&collection=photos&offset=0&token=${encodeURIComponent(albumsOverview.pageToken)}`,
+    ).then((r) => r.json());
+    assert.equal(albumsOverview.totals.people, 0);
+    assert.equal(albumPage.items[0].tags.length, 0);
+    const cache = new DatabaseSync(join(dir, "drevo.sqlite"));
+    cache
+      .prepare("INSERT INTO geocode_cache(query,data,saved_at) VALUES(?,?,?)")
+      .run(
+        "https://photon.komoot.io/api/:https://www.wikidata.org/w/api.php:москва",
+        JSON.stringify({
+          query: "Москва",
+          candidates: [],
+          automatic: { lat: 55, lon: 37, name: "Москва", label: "Москва" },
+        }),
+        Date.now(),
+      );
+    cache.close();
+    assert.equal(
+      (
+        await fetch(
+          base + "/api/places/locate?q=" + encodeURIComponent("Москва"),
+          { headers: { "X-Drevo-Map": "1" } },
+        )
+      ).status,
+      200,
+      "место публичного снимка доступно без древа",
+    );
     assert.equal(
       (await request("/api/export.json")).status,
       401,
@@ -350,6 +475,21 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(publicData.family.photos[0].tags.length, 0);
     assert.equal((await request(photo.url)).status, 200);
     validateFamily(publicData.family);
+    const latest = await request("/api/family", reader).then((r) => r.json());
+    const untitled = await fetch(base + "/api/photos", {
+      method: "POST",
+      headers: {
+        Cookie: reader,
+        "If-Match": String(latest.revision),
+        "X-Drevo-Upload": "1",
+        "X-File-Name": "private-filename.png",
+      },
+      body: png,
+    });
+    assert.equal(untitled.status, 201);
+    const newPhoto = (await untitled.json()).family.photos.at(-1);
+    assert.equal(newPhoto.title, "");
+    assert.ok(newPhoto.createdAt);
     assert.equal((await request("/api/backup/full", reader)).status, 403);
     response = await request("/api/backup/full", admin);
     assert.equal(response.status, 200);
@@ -358,6 +498,12 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     const listing = execFileSync("tar", ["-tzf", full], { encoding: "utf8" });
     assert.match(listing, /drevo.sqlite/);
     assert.ok(listing.includes(photo.url.replace("/media/", "uploads/")));
+    assert.ok(listing.includes(portrait.replace("/media/", "uploads/")));
+    assert.equal(
+      listing.includes("previews/"),
+      false,
+      "производный кэш не раздувает бэкап",
+    );
     response = await request("/api/backup", admin);
     assert.equal(response.status, 200);
     const backup = join(dir, "backup.sqlite");

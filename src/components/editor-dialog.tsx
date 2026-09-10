@@ -43,7 +43,11 @@ export function EditorDialog({
     <dialog
       ref={ref}
       className={`editor-dialog ${wide ? "wide" : ""}`}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
       aria-label={title}
     >
       <header>

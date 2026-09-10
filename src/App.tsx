@@ -16,6 +16,7 @@ import {
   type ConnectionType,
 } from "./domain";
 import { useArchive } from "./hooks/useArchive";
+import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import {
   ArchiveNavigation,
@@ -84,19 +85,19 @@ export default function App() {
   const selection = useWorkspaceSelection(),
     { selected, compare, linkFrom, focus, choose, reveal, dispatch } =
       selection;
-  const [requestedView, setView] = useState<ArchiveView>(
-    window.location.pathname.startsWith("/admin") ? "admin" : "tree",
-  );
+  const [requestedView, setView] = useArchiveView();
   const view =
     requestedView === "admin" && desktop
       ? "admin"
-      : !readTree
-        ? "gallery"
-        : requestedView === "gallery" && !readPhotos
-          ? "tree"
-          : requestedView === "admin"
+      : requestedView === "places" && (readTree || readPhotos)
+        ? "places"
+        : !readTree
+          ? "gallery"
+          : requestedView === "gallery" && !readPhotos
             ? "tree"
-            : requestedView;
+            : requestedView === "admin"
+              ? "tree"
+              : requestedView;
   const [query, setQuery] = useState(""),
     [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
@@ -110,6 +111,7 @@ export default function App() {
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
   const [photoUpload, setPhotoUpload] = useState(false),
     [photoId, setPhotoId] = useState<string | null>(null),
+    [editPhotoId, setEditPhotoId] = useState<string | null>(null),
     [photoFilter, setPhotoFilter] = useState<string | null>(null),
     [resumePhoto, setResumePhoto] = useState<string | null>(null),
     [photoPersonId, setPhotoPersonId] = useState("");
@@ -127,15 +129,22 @@ export default function App() {
     [chosen, people, family?.links],
   );
   const highlighted = useMemo(() => relation?.path || [], [relation]);
-  const navigate = useCallback((next: ArchiveView) => {
-    setView(next);
-    window.history.pushState(null, "", next === "admin" ? "/admin" : "/");
-    setAddMenu(false);
-    setPhotoFilter(null);
-  }, []);
+  const navigate = useCallback(
+    (next: ArchiveView) => {
+      setView(next);
+      setAddMenu(false);
+      setPhotoFilter(null);
+    },
+    [setView],
+  );
   useEffect(() => {
-    const sync = () =>
-      setView(window.location.pathname.startsWith("/admin") ? "admin" : "tree");
+    const sync = () => {
+      setAddMenu(false);
+      setPhotoFilter(null);
+      setPhotoId(null);
+      setPhotoPersonId("");
+      setEditPhotoId(null);
+    };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
@@ -182,7 +191,7 @@ export default function App() {
       reveal([id]);
       closeConnection();
     },
-    [reveal, closeConnection],
+    [reveal, closeConnection, setView],
   );
   const clear = useCallback(() => {
     if (!personDraft && !connectionDraft) dispatch({ type: "clear" });
@@ -193,7 +202,7 @@ export default function App() {
     closeConnection();
     setAddMenu(false);
     setView("tree");
-  }, [canEdit, closeConnection]);
+  }, [canEdit, closeConnection, setView]);
   const startLink = useCallback(() => {
     if (!canEdit) return;
     closeConnection();
@@ -201,7 +210,7 @@ export default function App() {
     dispatch({ type: "link" });
     setAddMenu(false);
     setView("tree");
-  }, [canEdit, closeConnection, dispatch]);
+  }, [canEdit, closeConnection, dispatch, setView]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
     setConnectionDraft(draft);
     setPreview(draft);
@@ -241,7 +250,7 @@ export default function App() {
         person={personDraft.person}
         relativeTo={personDraft.relative}
         initialRelationship={personDraft.type}
-        upload={upload}
+        uploadPortrait={archive.uploadPortrait}
         save={save}
         busy={busy}
         onClose={closeEditor}
@@ -501,7 +510,7 @@ export default function App() {
                     onSelect={showPerson}
                   />
                 )}
-                {view === "places" && archive.readTree && (
+                {view === "places" && (archive.readTree || readPhotos) && (
                   <Suspense
                     fallback={
                       <div className="archive-status">Открываем карту…</div>
@@ -514,6 +523,7 @@ export default function App() {
                       busy={busy}
                       save={save}
                       onPerson={showPerson}
+                      onPhoto={setPhotoId}
                     />
                   </Suspense>
                 )}
@@ -569,6 +579,11 @@ export default function App() {
           </button>
         </div>
       )}
+      {archive.loadingDetails && (
+        <div className="archive-loading-details" role="status">
+          Подгружаем сведения и фотографии…
+        </div>
+      )}
       {login && <LoginDialog onClose={() => setLogin(false)} />}
       {photoUpload && canEdit && (
         <PhotoUpload
@@ -577,6 +592,7 @@ export default function App() {
           onClose={() => setPhotoUpload(false)}
           onUploaded={(id) => {
             setPhotoId(id);
+            setEditPhotoId(id);
             setView("gallery");
             setPhotoFilter(null);
           }}
@@ -588,20 +604,24 @@ export default function App() {
           photo={photo}
           family={family}
           initialPersonId={photoPersonId}
+          initialEditing={editPhotoId === photo.id || !!photoPersonId}
           canEdit={canEdit && owns(user, photo)}
           canDelete={canEdit && user?.role === "admin"}
           busy={busy}
           save={save}
           onClose={() => {
+            setEditPhotoId(null);
             setPhotoId(null);
             setPhotoPersonId("");
           }}
           onPerson={(id) => {
+            setEditPhotoId(null);
             setPhotoId(null);
             setPhotoPersonId("");
             showPerson(id);
           }}
           onCreatePerson={() => {
+            setEditPhotoId(null);
             setResumePhoto(photo.id);
             setPhotoId(null);
             setPhotoPersonId("");

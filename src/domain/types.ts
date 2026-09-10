@@ -62,6 +62,7 @@ export type PhotoTag = {
   height: number;
 };
 export type ArchivePhoto = {
+  createdAt?: string;
   createdBy?: string;
   id: string;
   url: string;
@@ -75,8 +76,8 @@ export type ArchivePhoto = {
 };
 export type PhotoMetadata = Pick<
   ArchivePhoto,
-  "title" | "year" | "place" | "event" | "description"
->;
+  "year" | "place" | "event" | "description"
+> & { title?: string };
 export const EXTRA_LINK_TYPES = [
   "adoptive_parent",
   "godparent",

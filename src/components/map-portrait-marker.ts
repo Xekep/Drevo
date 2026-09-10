@@ -1,4 +1,5 @@
-import { fullName, safeUrl, type Person } from "../domain";
+import { fullName, safeUrl, type Person, type ArchivePhoto } from "../domain";
+import { mediaPreview } from "../domain/media-preview";
 
 /** Один человек может иметь несколько событий и исторических названий в одной точке. */
 export function markerPeople(people: Person[]) {
@@ -10,7 +11,7 @@ export function markerPeople(people: Person[]) {
   );
 }
 
-export function portraitMarker(people: Person[]) {
+export function portraitMarker(people: Person[], photos: ArchivePhoto[] = []) {
   const members = markerPeople(people);
   const content = document.createElement("div");
   content.className = "map-portrait-stack";
@@ -24,7 +25,7 @@ export function portraitMarker(people: Person[]) {
     silhouette.className = "map-portrait-silhouette";
     silhouette.setAttribute("aria-hidden", "true");
     portrait.append(silhouette);
-    const src = safeUrl(person.photo);
+    const src = mediaPreview(safeUrl(person.photo));
     if (src) {
       const image = document.createElement("img");
       image.src = src;
@@ -42,8 +43,23 @@ export function portraitMarker(people: Person[]) {
     count.textContent = String(members.length);
     content.append(count);
   }
+  const width = 48 + Math.max(0, Math.min(3, members.length) - 1) * 16;
+  if (photos.length) {
+    const preview = document.createElement("span");
+    preview.className = "map-photo-preview";
+    preview.style.left = `${members.length ? width - 12 : 0}px`;
+    preview.title = `Фотографий: ${photos.length}`;
+    const image = document.createElement("img");
+    image.src = mediaPreview(safeUrl(photos[0].url)) || "";
+    image.alt = "";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    const count = document.createElement("b");
+    count.textContent = `▧ ${photos.length}`;
+    preview.append(image, count);
+    content.append(preview);
+  }
   return {
     content,
-    width: 48 + Math.max(0, Math.min(3, members.length) - 1) * 16,
+    width: photos.length && members.length ? width + 28 : width,
   };
 }

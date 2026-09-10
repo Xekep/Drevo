@@ -10,6 +10,7 @@ import {
   type ArchiveUser,
   type PhotoMetadata,
 } from "../domain";
+import { completeArchive } from "../data/archive-pages";
 export function useArchive() {
   const [reverseTimeline, setReverseTimeline] = useState(false);
   const [family, setFamily] = useState<Family | null>(null),
@@ -22,6 +23,7 @@ export function useArchive() {
     [readPhotos, setReadPhotos] = useState(true);
   const [local, setLocal] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const revision = useRef(0),
     saving = useRef(false);
   const snapshot = useRef<Family | null>(null),
@@ -43,10 +45,10 @@ export function useArchive() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 60000);
     async function load() {
       try {
-        const response = await fetch("/api/family", {
+        const response = await fetch("/api/family?projection=overview", {
           signal: controller.signal,
           cache: "no-store",
         });
@@ -66,8 +68,28 @@ export function useArchive() {
         if (!response.ok && response.status !== 404)
           throw new Error("Архив недоступен");
         if (response.ok && json) {
-          const result = await response.json(),
-            data = validateFamily(result.family);
+          const initial = await response.json();
+          if (active && initial.partial) {
+            setFamily(validateFamily(initial.family));
+            setCanEdit(false);
+            snapshot.current = null;
+            setReadTree(initial.readTree !== false);
+            setReadPhotos(initial.readPhotos !== false);
+            setReverseTimeline(initial.reverseTimeline === true);
+            setUser(initial.user || null);
+            setNeedsLogin(false);
+            setError("");
+            setLoadingDetails(true);
+          }
+          const result = await completeArchive(
+            initial,
+            (url) =>
+              fetch(url, { signal: controller.signal, cache: "no-store" }),
+            (data) => {
+              if (active) setFamily(data);
+            },
+          );
+          const data = validateFamily(result.family);
           if (active) {
             setFamily(data);
             snapshot.current = data;
@@ -96,14 +118,18 @@ export function useArchive() {
           }
         }
       } catch (reason) {
-        if (active)
+        if (active) {
+          setCanEdit(false);
+          setFamily(null);
           setError(
             reason instanceof Error && reason.name !== "AbortError"
               ? reason.message
               : "Сервер не отвечает. Попробуйте ещё раз.",
           );
+        }
       } finally {
         clearTimeout(timeout);
+        if (active) setLoadingDetails(false);
       }
     }
     void load();
@@ -211,12 +237,38 @@ export function useArchive() {
       write("/api/photos", file, {
         "Content-Type": file.type,
         "X-Drevo-Upload": "1",
-        "X-File-Name": encodeURIComponent(file.name),
         ...(metadata
           ? { "X-Photo-Metadata": encodeURIComponent(JSON.stringify(metadata)) }
           : {}),
       }),
     [write],
+  );
+  const uploadPortrait = useCallback(
+    async (file: File) => {
+      if (saving.current || !canEdit)
+        throw new Error("Загрузка сейчас недоступна");
+      saving.current = true;
+      setBusy(true);
+      try {
+        const response = await fetch("/api/portraits", {
+          method: "POST",
+          headers: {
+            "Content-Type": file.type,
+            "X-Drevo-Upload": "1",
+            "If-Match": String(revision.current),
+          },
+          body: file,
+        });
+        const data = await response.json();
+        if (!response.ok)
+          throw new Error(data.error || "Не удалось загрузить портрет");
+        return data.url as string;
+      } finally {
+        saving.current = false;
+        setBusy(false);
+      }
+    },
+    [canEdit],
   );
   const undo = useCallback(async () => {
     const last = history.current.at(-1),
@@ -246,12 +298,14 @@ export function useArchive() {
     readPhotos,
     needsLogin,
     family,
+    loadingDetails,
     error,
     canEdit,
     local,
     busy,
     save,
     upload,
+    uploadPortrait,
     reload: () => setAttempt((n) => n + 1),
   };
 }

@@ -1,0 +1,15 @@
+{
+  "name": "drevo-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/server/index.ts --production"
+  },
+  "dependencies": {
+    "sharp": "0.35.4"
+  }
+}

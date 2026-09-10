@@ -186,6 +186,15 @@ export function parentHints(
     return seen;
   };
   const draftAncestors = ancestors(draft.id);
+  const coparentIds = new Map<string, Set<string>>();
+  for (const child of all.values())
+    for (const id of child.parents) {
+      const partners = coparentIds.get(id) || new Set<string>();
+      child.parents
+        .filter((other) => other !== id)
+        .forEach((other) => partners.add(other));
+      coparentIds.set(id, partners);
+    }
   function plausible(father: Person, child: Person, sex: "m" | "f") {
     if (
       father.id === child.id ||
@@ -248,6 +257,8 @@ export function parentHints(
       child.id === draft.id ? draftAncestors : ancestors(child.id);
     if (parentAncestors.has(child.id) || childAncestors.has(father.id))
       return false;
+    // Уже известная боковая ветвь (например, дядя) — не основание предлагать отца.
+    if ([...parentAncestors].some((id) => childAncestors.has(id))) return false;
     return true;
   }
   for (const p of people) {
@@ -260,13 +271,26 @@ export function parentHints(
         !plausible(father, child, "m")
       )
         continue;
+      const birthSurname = (person: Person) => ({
+        ...person,
+        surname: person.maidenName || person.surname,
+      });
+      const matchingSurname = surnameMatch(
+        birthSurname(father),
+        birthSurname(child),
+      );
+      const throughMother = child.parents.some(
+        (id) =>
+          father.spouses.includes(id) || coparentIds.get(father.id)?.has(id),
+      );
+      if (!matchingSurname && !throughMother) continue;
       hints.push({
         from: father.id,
         to: child.id,
         person: p,
         role,
         parentSex: "m",
-        reason: `Имя ${father.name} соответствует отчеству ${child.patronymic}${surnameMatch(father, child) === 2 ? "; совпадает фамилия при рождении" : surnameMatch(father, child) ? "; совпадает фамилия" : ""}. Совпадение ФИО само по себе не доказывает родство.`,
+        reason: `Имя ${father.name} соответствует отчеству ${child.patronymic}${matchingSurname === 2 ? "; совпадает фамилия при рождении" : matchingSurname ? "; совпадает фамилия" : "; есть связь с указанной матерью"}. Совпадение само по себе не доказывает родство.`,
       });
     }
   }
@@ -475,6 +499,8 @@ export function siblingHints(
         ancestors(person).has(draft.id)
       )
         return [];
+      const otherAncestors = ancestors(person);
+      if ([...above].some((id) => otherAncestors.has(id))) return [];
       if (
         links.some(
           (l) =>

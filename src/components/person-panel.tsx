@@ -24,6 +24,7 @@ import {
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PersonAwards } from "./person-awards";
 import { MemorialName } from "./memorial-name";
+import { mediaPreview } from "../domain/media-preview";
 export function Avatar({
   person,
   large = false,
@@ -32,7 +33,7 @@ export function Avatar({
   large?: boolean;
 }) {
   const [failed, setFailed] = useState<string>();
-  const src = safeUrl(person.photo);
+  const src = mediaPreview(safeUrl(person.photo));
   return (
     <span
       className={`${large ? "profile-avatar" : "person-avatar"} ${resolvedSex(person) === "u" ? "unknown" : resolvedSex(person) === "f" ? "female" : "male"}`}

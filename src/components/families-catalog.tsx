@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { familyGroups, fullName, years, type Person } from "../domain";
 import { Avatar } from "./person-panel";
+import { LoadMore, useListLimit } from "./load-more";
 export function FamiliesCatalog({
   people,
   onPerson,
@@ -11,7 +12,9 @@ export function FamiliesCatalog({
   onReveal: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
-  const groups = familyGroups(people).filter((g) =>
+  const { limit, more } = useListLimit(query);
+  const allGroups = useMemo(() => familyGroups(people), [people]);
+  const groups = allGroups.filter((g) =>
     [...g.parents, ...g.children].some((p) =>
       fullName(p)
         .toLocaleLowerCase("ru")
@@ -45,7 +48,7 @@ export function FamiliesCatalog({
         </label>
       </div>
       <div className="family-catalog">
-        {groups.map((g) => (
+        {groups.slice(0, limit).map((g) => (
           <article className="family-group" key={g.id}>
             <div className="section-label">
               {g.parents.length === 1
@@ -88,6 +91,7 @@ export function FamiliesCatalog({
           </article>
         ))}
       </div>
+      {groups.length > limit && <LoadMore onMore={more} />}
       {groups.length === 0 && (
         <p className="gallery-empty">
           {query
