@@ -1,10 +1,37 @@
 import { roundedRoute, type EdgeRoute } from "./edge-routing.ts";
 import type { Point } from "./layout-order.ts";
 
+export type CrossingEdge = {
+  id: string;
+  group: string;
+  route?: EdgeRoute;
+};
+
+let cachedGeometry = "";
+let cachedPaths = new Map<string, string>();
+
+/**
+ * Визуальное состояние ребра (выбор, подсветка, толщина) сюда намеренно не
+ * попадает. ReactFlow может пересоздавать edge-объекты при клике, но если
+ * маршруты не изменились, повторно искать пересечения нет смысла.
+ */
+export function crossingGeometryKey(edges: readonly CrossingEdge[]) {
+  return JSON.stringify(
+    edges.map((edge) => [
+      edge.id,
+      edge.group,
+      edge.route?.sourceHandle,
+      edge.route?.targetHandle,
+      edge.route?.points.map(({ x, y }) => [x, y]),
+    ]),
+  );
+}
+
 /** Разрывы только на пересечениях разных ветвей, не на семейных развилках. */
-export function crossingPaths(
-  edges: { id: string; group: string; route?: EdgeRoute }[],
-) {
+export function crossingPaths(edges: CrossingEdge[]) {
+  const geometryKey = crossingGeometryKey(edges);
+  if (geometryKey === cachedGeometry) return cachedPaths;
+
   type Segment = {
     edge: string;
     group: string;
@@ -80,5 +107,7 @@ export function crossingPaths(
     chunks.push(chunk);
     paths.set(edge.id, chunks.map((part) => roundedRoute(part).path).join(" "));
   }
+  cachedGeometry = geometryKey;
+  cachedPaths = paths;
   return paths;
 }
