@@ -60,11 +60,28 @@
   overflow-wrap: anywhere;
   scrollbar-width: thin;
 }
+.photo-lightbox .is-editing .photo-tools {
+  --ink: #2c3c2d;
+  --muted: #667260;
+  --line: #dce3d4;
+  --green: #526f43;
+  --paper: #fafbf6;
+  --photo-field-bg: #fff;
+  --photo-field-border: #c7d2be;
+  --photo-button-bg: #f0f4e9;
+  --photo-selected-bg: #e6eedd;
+  --photo-accent: #46653b;
+  --photo-danger: #a15347;
+  background: var(--paper);
+  border-color: var(--line);
+  color: var(--ink);
+  color-scheme: light;
+}
 .photo-lightbox .photo-tools p {
   font-size: 13px;
 }
 .photo-lightbox .photo-tools .section-label {
-  color: #c2cbbf;
+  color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.13em;
 }
@@ -113,6 +130,25 @@
 .photo-lightbox a:hover {
   background-color: #ffffff18;
 }
+.photo-lightbox .is-editing .photo-tools :is(button, a):hover:not(:disabled) {
+  background-color: #e6eedd;
+}
+.photo-lightbox
+  .is-editing
+  .photo-tools
+  button.primary-action:hover:not(:disabled) {
+  background-color: #456247;
+}
+@media (min-width: 900px) {
+  .photo-lightbox:has(.is-editing) > .photo-close {
+    --green: #526f43;
+    color: #405738;
+    background: #e8eedf;
+  }
+  .photo-lightbox:has(.is-editing) > .photo-close:hover {
+    background: #dce6d1;
+  }
+}
 .photo-navigation {
   position: absolute;
   inset: 0 8px 60px;
@@ -160,30 +196,30 @@
 .photo-lightbox .photo-edit-toggle {
   margin: 0;
   font-size: 12px;
-  color: #d6e2cf;
+  color: var(--photo-accent, #d6e2cf);
 }
 .photo-lightbox .archive-form :is(input, textarea, select),
 .photo-lightbox .person-search-input,
 .photo-lightbox .person-search-results {
-  background: #252b27;
+  background: var(--photo-field-bg, #252b27);
   color: var(--ink);
-  border-color: #ffffff40;
+  border-color: var(--photo-field-border, #ffffff40);
 }
 .photo-lightbox .person-search-input input {
   background: transparent;
 }
 .photo-lightbox :is(input, textarea)::placeholder {
-  color: #adb6ae;
+  color: var(--muted);
 }
 .photo-lightbox .person-search-results [aria-selected="true"] {
-  background: #3f4d40;
+  background: var(--photo-selected-bg, #3f4d40);
 }
 .photo-lightbox .archive-form label {
-  color: #d4dbd1;
+  color: var(--ink);
 }
 .photo-lightbox .archive-form button {
   color: var(--ink);
-  background: #ffffff0d;
+  background: var(--photo-button-bg, #ffffff0d);
 }
 .photo-lightbox button.primary-action {
   background: #354d39;
@@ -191,7 +227,7 @@
   border-color: #647960;
 }
 .photo-lightbox button.danger-action {
-  color: #edb3a8;
+  color: var(--photo-danger, #edb3a8);
 }
 .photo-lightbox .photo-tag > span {
   background: #101b15e8;
