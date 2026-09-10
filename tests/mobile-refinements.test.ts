@@ -115,3 +115,30 @@ test("long press is touch-only, mobile-only and enters kinship selection", () =>
     /state\.selected\.includes\(action\.id\)[\s\S]*state\.compare[\s\S]*state\.selected/,
   );
 });
+
+test("photo lightbox owns pinch zoom and keeps page zoom out of the gesture", () => {
+  const gesture = readFileSync(
+    new URL("src/components/use-photo-swipe.ts", root),
+    "utf8",
+  );
+  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
+  assert.match(gesture, /const MAX_ZOOM = 4/);
+  assert.match(gesture, /touchPoints\(\)\.length >= 2/);
+  assert.match(gesture, /Math\.hypot\(p2\.x - p1\.x, p2\.y - p1\.y\)/);
+  assert.match(gesture, /panGesture\.current/);
+  assert.match(gesture, /scale\.current > 1\.01/);
+  assert.match(css, /\.photo-image-space\s*\{[\s\S]*touch-action: none/);
+  assert.match(css, /\.photo-slide-current \.tag-image[\s\S]*will-change: transform/);
+});
+
+test("opened person portrait is larger on desktop and mobile", () => {
+  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
+  assert.match(
+    css,
+    /\.profile-avatar\s*\{\s*width: 112px;\s*height: 112px;/,
+  );
+  assert.match(
+    css,
+    /@media \(max-width: 899px\)[\s\S]*\.profile-avatar\s*\{\s*width: 96px;\s*height: 96px;/,
+  );
+});
