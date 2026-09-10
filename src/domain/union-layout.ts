@@ -3,6 +3,7 @@ import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
 import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
+import { familyLeafGroups, compactFamilyLayout } from "./family-packing.ts";
 
 export type UnionOccurrence = { id: string; personId: string; block: string };
 export type UnionBranch = {
@@ -169,37 +170,55 @@ export async function unionGeometry(
   const nodeId = (unit: Unit, person: string) =>
     occurrence.get(JSON.stringify([unit.id, person]))!;
   const width = (u: Unit) => u.members.length * (W + 32) - 32;
+  const { groups, folded } = familyLeafGroups(
+    units,
+    attachments,
+    new Set(
+      links
+        .filter((l) => l.type === "adoptive_parent")
+        .flatMap((l) => [l.from, l.to]),
+    ),
+    new Map(people.map((p) => [p.id, p.birth])),
+  );
   const portId = (u: Unit, person: string) =>
     JSON.stringify([u.id, person, "in"]);
-  const nodes: ElkNode[] = units.map((u) => ({
-    id: u.id,
-    width: width(u),
-    height: H + 24,
-    layoutOptions: { "elk.portConstraints": "FIXED_POS" },
-    ports: [
-      {
-        id: `${u.id}:out`,
-        x: width(u) / 2,
-        y: H + 24,
-        width: 0,
-        height: 0,
-        layoutOptions: { "elk.port.side": "SOUTH" },
-      },
-      ...u.members.map((id, i) => ({
-        id: portId(u, id),
-        x: i * (W + 32) + W / 2,
-        y: 0,
-        width: 0,
-        height: 0,
-        layoutOptions: { "elk.port.side": "NORTH" },
-      })),
-    ],
-  }));
-  const elkEdges: ElkExtendedEdge[] = attachments.map((a, i) => ({
-    id: `branch:${i}`,
-    sources: [`${a.from.id}:out`],
-    targets: [portId(a.to, a.child)],
-  }));
+  const nodes: ElkNode[] = units
+    .filter((u) => !folded.has(u.id))
+    .map((u) => ({
+      id: u.id,
+      width: groups.get(u.id)?.width ?? width(u),
+      height: groups.get(u.id)?.height ?? H + 24,
+      layoutOptions: { "elk.portConstraints": "FIXED_POS" },
+      ports: [
+        {
+          id: `${u.id}:out`,
+          x: groups.has(u.id) ? 12 : width(u) / 2,
+          y: groups.get(u.id)?.height ?? H + 24,
+          width: 0,
+          height: 0,
+          layoutOptions: { "elk.port.side": "SOUTH" },
+        },
+        ...u.members.map((id, i) => ({
+          id: portId(u, id),
+          x: (groups.get(u.id)?.inset || 0) + i * (W + 32) + W / 2,
+          y: 0,
+          width: 0,
+          height: 0,
+          layoutOptions: { "elk.port.side": "NORTH" },
+        })),
+      ],
+    }));
+  const elkEdges: ElkExtendedEdge[] = attachments.flatMap((a, i) =>
+    folded.has(a.to.id)
+      ? []
+      : [
+          {
+            id: `branch:${i}`,
+            sources: [`${a.from.id}:out`],
+            targets: [portId(a.to, a.child)],
+          },
+        ],
+  );
   // Усыновление влияет на расположение одиночной карточки, но не на состав союза.
   const adoptions = links.filter(
     (l) =>
@@ -215,30 +234,41 @@ export async function unionGeometry(
       sources: [`${primary.get(a.from)!.id}:out`],
       targets: [portId(primary.get(a.to)!, a.to)],
     });
-  const graph = await layout({
-    id: "family-layout",
-    children: nodes,
-    edges: elkEdges,
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.randomSeed": "1",
-      "elk.spacing.nodeNode": "64",
-      "elk.spacing.componentComponent": "100",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "24",
-      "elk.layered.spacing.edgeEdgeBetweenLayers": "16",
-      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-      "elk.layered.thoroughness": "12",
-      "elk.separateConnectedComponents": "true",
+  const graph = await compactFamilyLayout(
+    {
+      id: "family-layout",
+      children: nodes,
+      edges: elkEdges,
+      layoutOptions: {
+        "elk.algorithm": "layered",
+        "elk.direction": "DOWN",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.randomSeed": "1",
+        "elk.spacing.nodeNode": "64",
+        "elk.spacing.componentComponent": "100",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "100",
+        "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+        "elk.layered.spacing.edgeEdgeBetweenLayers": "16",
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+        "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+        "elk.layered.thoroughness": "12",
+        "elk.separateConnectedComponents": "true",
+      },
     },
-  });
-  const placed = new Map(
-    graph.children!.map((n) => [n.id, { x: n.x!, y: n.y! }]),
+    layout,
   );
+  const placed = new Map(
+    graph.children!.map((n) => [
+      n.id,
+      { x: n.x! + (groups.get(n.id)?.inset || 0), y: n.y! },
+    ]),
+  );
+  for (const [id, group] of groups) {
+    const p = placed.get(id)!;
+    for (const leaf of group.leaves)
+      placed.set(leaf.unit, { x: p.x - group.inset + leaf.x, y: p.y + leaf.y });
+  }
   const positions: TreeGeometry["positions"] = [];
   const blocks: UnionBlock[] = [];
   for (const unit of units) {
@@ -283,12 +313,37 @@ export async function unionGeometry(
   }
   const laidEdges = new Map(graph.edges!.map((e) => [e.id, e]));
   for (const [i, a] of attachments.entries()) {
-    const route = laidEdges.get(`branch:${i}`)!.sections![0];
+    const route = laidEdges.get(`branch:${i}`)?.sections?.[0];
     const p = placed.get(a.from.id)!;
     const joint = {
       x: p.x + width(a.from) / 2,
       y: p.y + (a.from.members.length > 1 ? H / 2 : H),
     };
+    const group = groups.get(a.from.id);
+    const target = placed.get(a.to.id)!;
+    const trunk = group ? p.x - group.inset + 12 : joint.x;
+    const local = folded.has(a.to.id);
+    const points = local
+      ? [
+          joint,
+          { x: joint.x, y: p.y + H + 28 },
+          { x: trunk, y: p.y + H + 28 },
+          { x: trunk, y: target.y - 24 },
+          { x: target.x + W / 2, y: target.y - 24 },
+          { x: target.x + W / 2, y: target.y },
+        ]
+      : [
+          joint,
+          ...(group
+            ? [
+                { x: joint.x, y: p.y + H + 28 },
+                { x: trunk, y: p.y + H + 28 },
+              ]
+            : []),
+          route!.startPoint,
+          ...(route!.bendPoints || []),
+          route!.endPoint,
+        ];
     branches.push({
       id: `child:${JSON.stringify(a.child)}`,
       source: nodeId(a.from, a.from.members[0]),
@@ -302,12 +357,7 @@ export async function unionGeometry(
       route: {
         sourceHandle: "bottom",
         targetHandle: "top",
-        points: [
-          joint,
-          route.startPoint,
-          ...(route.bendPoints || []),
-          route.endPoint,
-        ],
+        points,
       },
     });
   }

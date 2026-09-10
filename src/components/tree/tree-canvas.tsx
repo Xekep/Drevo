@@ -732,7 +732,7 @@ function Canvas(props: Props) {
               aria-pressed={mode === "generations"}
               onClick={() => switchMode("generations")}
             >
-              Поколения
+              Древо
             </button>
             <button
               aria-pressed={mode === "timeline"}

@@ -26,6 +26,72 @@ const person = (
   parents: string[] = [],
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
+
+test("many terminal siblings stay below their own parents in compact local rows", async () => {
+  const children = Array.from({ length: 12 }, (_, i) => ({
+    ...person(`child-${i}`, ["a", "b"]),
+    birth: String(1950 + i),
+  }));
+  const people = [person("a", [], ["b"]), person("b", [], ["a"]), ...children];
+  const before = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const g = await unionGeometry(people, reverse);
+    verify(people, g);
+    const positions = new Map(g.positions),
+      parent = positions.get("a")!;
+    const childRows = new Set(children.map((p) => positions.get(p.id)!.y));
+    assert.ok(
+      childRows.size > 1,
+      "a large sibling group must not be forced onto one line",
+    );
+    assert.ok(
+      Math.max(...g.positions.map(([, p]) => p.x + 220)) -
+        Math.min(...g.positions.map(([, p]) => p.x)) <
+        1100,
+    );
+    for (const child of children)
+      assert.ok(
+        reverse
+          ? positions.get(child.id)!.y < parent.y
+          : positions.get(child.id)!.y > parent.y,
+      );
+    assert.ok(
+      positions.get("child-0")!.x < positions.get("child-1")!.x,
+      "known birth dates order the children",
+    );
+  }
+  assert.deepEqual(people, before);
+});
+
+test("broad descendant families use different heights while preserving every card and relation", async () => {
+  const people = [person("a", [], ["b"]), person("b", [], ["a"])];
+  for (let i = 0; i < 24; i++) {
+    people.push(
+      person(`c${i}`, ["a", "b"], [`s${i}`]),
+      person(`s${i}`, [], [`c${i}`]),
+    );
+    for (let j = 0; j < 3; j++)
+      people.push(person(`g${i}-${j}`, [`c${i}`, `s${i}`]));
+  }
+  const g = await unionGeometry(people);
+  verify(people, g);
+  const positions = new Map(g.positions);
+  assert.ok(
+    new Set(Array.from({ length: 24 }, (_, i) => positions.get(`c${i}`)!.y))
+      .size > 1,
+  );
+  assert.ok(
+    Math.max(...g.positions.map(([, p]) => p.x + 220)) -
+      Math.min(...g.positions.map(([, p]) => p.x)) <
+      9000,
+    "avoid the former 20,000px strip",
+  );
+  for (let i = 0; i < 24; i++) {
+    assert.equal(positions.get(`c${i}`)!.y, positions.get(`s${i}`)!.y);
+    const y = positions.get(`g${i}-0`)!.y;
+    for (let j = 1; j < 3; j++) assert.equal(positions.get(`g${i}-${j}`)!.y, y);
+  }
+});
 function verify(people: LayoutPerson[], g: TreeGeometry) {
   const occurrences = new Map(g.occurrences!.map((o) => [o.id, o.personId]));
   assert.deepEqual(
@@ -84,9 +150,13 @@ test("three marriages and a former spouse's new family remain four exact unions"
     person("d"),
     person("e"),
     person("ab", ["a", "b"]),
+    person("ab2", ["a", "b"]),
     person("ac", ["a", "c"]),
+    person("ac2", ["a", "c"]),
     person("ad", ["a", "d"]),
+    person("ad2", ["a", "d"]),
     person("be", ["b", "e"]),
+    person("be2", ["b", "e"]),
   ];
   const before = structuredClone(people);
   assert.equal(familyUnions(people).length, 4);

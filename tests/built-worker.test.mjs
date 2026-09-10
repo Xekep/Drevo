@@ -16,11 +16,11 @@ const people = [
   { id: "ab", birth: "1930", parents: ["a", "b"], spouses: [] },
   { id: "ac", birth: "1935", parents: ["a", "c"], spouses: [] },
 ];
-function calculate(worker, mode, reverse = false) {
+function calculate(worker, mode, reverse = false, data = people) {
   return new Promise((resolve, reject) => {
     worker.once("error", reject);
     worker.once("message", resolve);
-    worker.postMessage({ people, links: [], mode, reverse });
+    worker.postMessage({ people: data, links: [], mode, reverse });
   });
 }
 test(
@@ -51,6 +51,42 @@ test(
       assert.equal(reverse.error, undefined);
       assert.equal(reverse.reverse, true);
       assert.equal(reverse.branches.length, g.branches.length);
+      const broad = [{ id: "root", birth: "1900", parents: [], spouses: [] }];
+      for (let i = 0; i < 18; i++) {
+        broad.push(
+          {
+            id: `child-${i}`,
+            birth: "1930",
+            parents: ["root"],
+            spouses: [`spouse-${i}`],
+          },
+          {
+            id: `spouse-${i}`,
+            birth: "1930",
+            parents: [],
+            spouses: [`child-${i}`],
+          },
+        );
+        for (let j = 0; j < 3; j++)
+          broad.push({
+            id: `grand-${i}-${j}`,
+            birth: "1960",
+            parents: [`child-${i}`, `spouse-${i}`],
+            spouses: [],
+          });
+      }
+      const packed = await calculate(worker, "generations", false, broad);
+      assert.equal(packed.error, undefined);
+      assert.equal(
+        new Set(packed.occurrences.map((o) => o.personId)).size,
+        broad.length,
+      );
+      const positions = new Map(packed.positions);
+      assert.ok(
+        new Set(
+          Array.from({ length: 18 }, (_, i) => positions.get(`child-${i}`).y),
+        ).size > 1,
+      );
     } finally {
       await worker.terminate();
     }
