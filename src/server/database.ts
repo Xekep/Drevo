@@ -13,6 +13,8 @@ import {
 } from "../domain/index.ts";
 
 export class ConflictError extends Error {}
+export type ArchivePageCollection = "people" | "photos";
+
 export function openArchive(path: string, seed: Family) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -33,7 +35,10 @@ export function openArchive(path: string, seed: Family) {
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
   const audit = auditStore(db);
-  const read = () => readArchive(db);
+  const read = () => readArchive(db),
+    meta = () => readArchiveMeta(db),
+    page = (collection: ArchivePageCollection, offset: number, limit: number) =>
+      readArchivePage(db, collection, offset, limit);
   function write(
     value: unknown,
     expected: number,
@@ -133,7 +138,57 @@ export function openArchive(path: string, seed: Family) {
     }
   }
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
-  return { read, write, close: () => db.close(), db };
+  return { read, meta, page, write, close: () => db.close(), db };
+}
+
+export function readArchiveMeta(db: DatabaseSync) {
+  const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
+  return {
+    title: String(meta.title),
+    description: String(meta.description),
+    demo: !!meta.demo,
+    revision: Number(meta.revision),
+    people: Number(db.prepare("SELECT count(*) AS n FROM people").get()!.n),
+    photos: Number(db.prepare("SELECT count(*) AS n FROM photos").get()!.n),
+  };
+}
+
+export function readArchivePage(
+  db: DatabaseSync,
+  collection: ArchivePageCollection,
+  offset: number,
+  limit: number,
+): Person[] | ArchivePhoto[] {
+  if (collection === "people")
+    return db
+      .prepare("SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?")
+      .all(limit, offset)
+      .map(
+        (row) =>
+          ({
+            ...JSON.parse(String(row.data)),
+            parents: [],
+            spouses: [],
+          }) as Person,
+      );
+
+  const rows = db
+      .prepare("SELECT id,data FROM photos ORDER BY rowid LIMIT ? OFFSET ?")
+      .all(limit, offset),
+    photos = rows.map(
+      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
+    );
+  if (!photos.length) return photos;
+  const photoMap = new Map(photos.map((photo) => [photo.id, photo])),
+    placeholders = photos.map(() => "?").join(","),
+    tags = db
+      .prepare(
+        `SELECT photo_id,data FROM photo_tags WHERE photo_id IN (${placeholders}) ORDER BY rowid`,
+      )
+      .all(...photos.map((photo) => photo.id));
+  for (const row of tags)
+    photoMap.get(String(row.photo_id))?.tags.push(JSON.parse(String(row.data)));
+  return photos;
 }
 
 export function readArchive(db: DatabaseSync) {
