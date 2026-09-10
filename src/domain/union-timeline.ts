@@ -9,6 +9,7 @@ import { familyUnions, type UnionBranch } from "./union-layout.ts";
 import { dateYear } from "./dates.ts";
 import { START_YEAR, yearY } from "./layout.ts";
 import type { FamilyLink } from "./types.ts";
+import { optimizeBranches } from "./branch-routing.ts";
 
 /** Та же проекция союзов; известные даты сохраняют точную координату Y. */
 export function unionTimeline(
@@ -116,9 +117,9 @@ export function unionTimeline(
   for (const b of base.branches!.filter((b) => b.id.startsWith("child:")))
     projectedMap.get(b.target)!.parents = [hubs.get(b.union)!];
   const routes = new Map(
-    routeRelationships(projected, links, allPositions, W, H, virtual),
+    routeRelationships(projected, [], allPositions, W, H, virtual),
   );
-  const branches: UnionBranch[] = [];
+  let branches: UnionBranch[] = [];
   for (const b of base.branches!) {
     const hub = hubs.get(b.union)!;
     let route: EdgeRoute | undefined;
@@ -161,6 +162,7 @@ export function unionTimeline(
     }
     if (route) branches.push({ ...b, route });
   }
+  branches = optimizeBranches(branches, positions, W, H);
   const covered = new Set(
     branches.flatMap((b) =>
       b.relations
@@ -189,6 +191,8 @@ export function unionTimeline(
     positions,
     W,
     H,
+    new Set(),
+    branches.map((b) => ({ group: b.union, route: b.route })),
   );
   const blocks = (base.blocks || []).flatMap((b) => {
     const ps = b.members.map((id) => points.get(id)!);

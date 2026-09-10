@@ -9,12 +9,12 @@ export type EdgeRoute = {
   targetHandle: Handle;
   points: Point[];
 };
-type Box = { left: number; right: number; top: number; bottom: number };
+export type Box = { left: number; right: number; top: number; bottom: number };
 type Line = { a: Point; b: Point; group: string };
 export const routeKey = (e: Relation) => JSON.stringify([e.type, e.from, e.to]);
 
 /** Пространственный индекс: стоимость короткой связи не зависит от размера архива. */
-class Spatial<T extends Box> {
+export class Spatial<T extends Box> {
   cells = new Map<string, T[]>();
   add(item: T) {
     this.visit(item, (key) => {
@@ -50,7 +50,7 @@ class Spatial<T extends Box> {
         fn(`${x}:${y}`);
   }
 }
-const bounds = (a: Point, b: Point): Box => ({
+export const bounds = (a: Point, b: Point): Box => ({
   left: Math.min(a.x, b.x),
   right: Math.max(a.x, b.x),
   top: Math.min(a.y, b.y),
@@ -67,7 +67,42 @@ export function segmentHitsBox(a: Point, b: Point, box: Box) {
         Math.max(a.x, b.x) > box.left &&
         Math.min(a.x, b.x) < box.right;
 }
-function simplify(points: Point[]) {
+
+/** Учитываем и Т-касания: поворот на чужой линии выглядит как ложное родство. */
+export function segmentContact(a: Point, b: Point, c: Point, d: Point) {
+  const vertical = a.x === b.x,
+    otherVertical = c.x === d.x;
+  if (vertical !== otherVertical) {
+    const x = vertical ? a.x : c.x,
+      y = vertical ? c.y : a.y;
+    if (
+      x >= Math.min(a.x, b.x) &&
+      x <= Math.max(a.x, b.x) &&
+      y >= Math.min(a.y, b.y) &&
+      y <= Math.max(a.y, b.y) &&
+      x >= Math.min(c.x, d.x) &&
+      x <= Math.max(c.x, d.x) &&
+      y >= Math.min(c.y, d.y) &&
+      y <= Math.max(c.y, d.y)
+    )
+      return `cross:${x}:${y}`;
+  } else if (
+    vertical &&
+    a.x === c.x &&
+    Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) >
+      Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y))
+  )
+    return `vertical:${a.x}`;
+  else if (
+    !vertical &&
+    a.y === c.y &&
+    Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) >
+      Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x))
+  )
+    return `horizontal:${a.y}`;
+  return "";
+}
+export function simplifyRoute(points: Point[]) {
   const result: Point[] = [];
   for (const p of points) {
     const a = result.at(-2),
@@ -92,11 +127,25 @@ export function routeRelationships(
   width: number,
   height: number,
   pointNodes: Set<string> = new Set(),
+  occupied: { group: string; route: EdgeRoute }[] = [],
 ): [string, EdgeRoute][] {
   const map = new Map(positions),
     peopleMap = new Map(people.map((p) => [p.id, p]));
   const obstacles = new Spatial<Box>(),
     lines = new Spatial<Box & Line>();
+  const addRoute = (points: Point[], group: string) => {
+    for (let i = 1; i < points.length; i++) {
+      if (points[i - 1].x === points[i].x && points[i - 1].y === points[i].y)
+        continue;
+      lines.add({
+        ...bounds(points[i - 1], points[i]),
+        a: points[i - 1],
+        b: points[i],
+        group,
+      });
+    }
+  };
+  for (const edge of occupied) addRoute(edge.route.points, edge.group);
   for (const [id, p] of positions) {
     if (pointNodes.has(id)) continue;
     obstacles.add({
@@ -133,28 +182,16 @@ export function routeRelationships(
     !obstacles.query(bounds(a, b)).some((box) => segmentHitsBox(a, b, box));
   const cost = (a: Point, b: Point, group: string) => {
     let value = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    const conflicts = new Set<string>();
     for (const line of lines.query(bounds(a, b))) {
       if (line.group === group) {
         // Совместный участок допустим; собственный крест семьи всё же лучше обойти.
         if (segmentsCross([a, b], [line.a, line.b])) value += 300;
         continue;
       }
-      if (segmentsCross([a, b], [line.a, line.b])) value += 1800;
-      else if (
-        (a.x === b.x &&
-          a.x === line.a.x &&
-          a.x === line.b.x &&
-          Math.min(Math.max(a.y, b.y), Math.max(line.a.y, line.b.y)) >
-            Math.max(Math.min(a.y, b.y), Math.min(line.a.y, line.b.y))) ||
-        (a.y === b.y &&
-          a.y === line.a.y &&
-          a.y === line.b.y &&
-          Math.min(Math.max(a.x, b.x), Math.max(line.a.x, line.b.x)) >
-            Math.max(Math.min(a.x, b.x), Math.min(line.a.x, line.b.x)))
-      )
-        value += 1800;
+      if (segmentContact(a, b, line.a, line.b)) conflicts.add(line.group);
     }
-    return value;
+    return value + conflicts.size * 1800;
   };
   const result: [string, EdgeRoute][] = [];
   const sorted = [...edges.values()].sort((a, b) => {
@@ -248,7 +285,7 @@ export function routeRelationships(
     let best: Point[] | undefined,
       bestCost = Infinity;
     for (const raw of candidates) {
-      const points = simplify(raw);
+      const points = simplifyRoute(raw);
       let value = (points.length - 2) * 12 - (raw === familyPath ? 60 : 0);
       for (let i = 1; i < points.length; i++) {
         if (!clear(points[i - 1], points[i])) {
@@ -291,14 +328,8 @@ export function routeRelationships(
       best = corridorSearch(s, t, expanded, clear, (a, b) => cost(a, b, group));
     }
     if (!best) continue;
-    const points = simplify([start, ...best, end]);
-    for (let i = 1; i < points.length; i++)
-      lines.add({
-        ...bounds(points[i - 1], points[i]),
-        a: points[i - 1],
-        b: points[i],
-        group,
-      });
+    const points = simplifyRoute([start, ...best, end]);
+    addRoute(points, group);
     result.push([routeKey(edge), { sourceHandle, targetHandle, points }]);
   }
   return result;
@@ -383,7 +414,7 @@ function corridorSearch(
         points.push({ x: xs[prev.x], y: ys[prev.y] });
         prev = prev.previous;
       }
-      return simplify(points.reverse());
+      return simplifyRoute(points.reverse());
     }
     for (const [dx, dy] of [
       [1, 0],

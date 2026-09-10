@@ -4,6 +4,7 @@ import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
 import { familyLeafGroups, compactFamilyLayout } from "./family-packing.ts";
+import { optimizeBranches } from "./branch-routing.ts";
 
 export type UnionOccurrence = { id: string; personId: string; block: string };
 export type UnionBranch = {
@@ -285,7 +286,7 @@ export async function unionGeometry(
         height: H,
       });
   }
-  const branches: UnionBranch[] = [];
+  let branches: UnionBranch[] = [];
   const siblingGroups: UnionBlock[] = [];
   for (const [id, group] of groups) {
     // Рамка объединяет ряды братьев и сестёр; это не отдельные поколения.
@@ -341,12 +342,19 @@ export async function unionGeometry(
     const target = placed.get(a.to.id)!;
     const trunk = group ? p.x - group.inset + 12 : joint.x;
     const local = folded.has(a.to.id);
+    const firstRow = group
+      ? p.y + Math.min(...group.leaves.map((l) => l.y)) - 24
+      : p.y + H + 28;
     const points = local
       ? [
           joint,
-          { x: joint.x, y: p.y + H + 28 },
-          { x: trunk, y: p.y + H + 28 },
-          { x: trunk, y: target.y - 24 },
+          { x: joint.x, y: firstRow },
+          ...(target.y - 24 > firstRow
+            ? [
+                { x: trunk, y: firstRow },
+                { x: trunk, y: target.y - 24 },
+              ]
+            : []),
           { x: target.x + W / 2, y: target.y - 24 },
           { x: target.x + W / 2, y: target.y },
         ]
@@ -354,8 +362,8 @@ export async function unionGeometry(
           joint,
           ...(group
             ? [
-                { x: joint.x, y: p.y + H + 28 },
-                { x: trunk, y: p.y + H + 28 },
+                { x: joint.x, y: firstRow },
+                { x: trunk, y: firstRow },
               ]
             : []),
           route!.startPoint,
@@ -379,6 +387,7 @@ export async function unionGeometry(
       },
     });
   }
+  branches = optimizeBranches(branches, positions, W, H);
   if (reverse) {
     const maxY = Math.max(0, ...positions.map(([, p]) => p.y));
     for (const [, p] of positions) p.y = maxY - p.y;
@@ -397,7 +406,15 @@ export async function unionGeometry(
     parents: [],
     spouses: [],
   }));
-  const routes = routeRelationships(extraPeople, links, positions, W, H);
+  const routes = routeRelationships(
+    extraPeople,
+    links,
+    positions,
+    W,
+    H,
+    new Set(),
+    branches.map((b) => ({ group: b.union, route: b.route })),
+  );
   return {
     mode: "generations",
     reverse,

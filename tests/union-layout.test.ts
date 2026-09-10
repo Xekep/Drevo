@@ -217,6 +217,23 @@ test("shared parent branch has one route per child and no crossing in a nuclear 
   const children = g.branches!.filter((b) => b.id.startsWith("child:"));
   assert.equal(children.length, 3);
   assert.ok(children.every((b) => b.relations.length === 2));
+  for (const b of children) {
+    const points = b.route.points,
+      start = points[0],
+      end = points.at(-1)!;
+    const distance = points
+      .slice(1)
+      .reduce(
+        (sum, p, i) =>
+          sum + Math.abs(p.x - points[i].x) + Math.abs(p.y - points[i].y),
+        0,
+      );
+    assert.equal(
+      distance,
+      Math.abs(end.x - start.x) + Math.abs(end.y - start.y),
+      "first-row children do not detour through the outer family trunk",
+    );
+  }
   assert.deepEqual(
     children.map((b) => b.route.points[0]),
     Array(3).fill(children[0].route.points[0]),

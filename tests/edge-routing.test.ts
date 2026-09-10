@@ -260,3 +260,47 @@ test("routing can leave a card through the narrow twenty-pixel timeline gap", ()
   assert.equal(routes.length, 1);
   verifyRoutes(positions, routes);
 });
+
+test("additional relationships avoid existing family rails without charging once per sibling", () => {
+  const people = [person("a"), person("b")];
+  const positions: [string, Point][] = [
+    ["a", { x: 0, y: 0 }],
+    ["b", { x: 0, y: 500 }],
+  ];
+  const family = {
+    group: "family",
+    route: {
+      sourceHandle: "bottom" as const,
+      targetHandle: "top" as const,
+      points: [
+        { x: -50, y: 250 },
+        { x: 400, y: 250 },
+      ],
+    },
+  };
+  const relation = { type: "guardian" as const, from: "a", to: "b" };
+  const routed = routeRelationships(
+    people,
+    [relation],
+    positions,
+    TREE_NODE_WIDTH,
+    TREE_NODE_HEIGHT,
+    new Set(),
+    [family],
+  );
+  assert.equal(routed.length, 1);
+  verifyRoutes(positions, routed);
+  assert.equal(crossings([...routed, ["family", family.route]]), 0);
+  assert.deepEqual(
+    routeRelationships(
+      people,
+      [relation],
+      positions,
+      TREE_NODE_WIDTH,
+      TREE_NODE_HEIGHT,
+      new Set(),
+      Array(8).fill(family),
+    ),
+    routed,
+  );
+});

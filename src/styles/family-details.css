@@ -216,7 +216,8 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .dove-departed .memorial-dove {
-    animation: dove-leave 1.9s ease-in-out both;
+    transform-origin: 34% 47%;
+    animation: dove-leave 1.9s linear both;
   }
   .dove-departed .memorial-dove > svg {
     transform: scaleX(-1);
@@ -227,13 +228,8 @@
     opacity: 1;
     transform: none;
   }
-  35% {
-    opacity: 1;
-    transform: translate(-30px, -45px);
-  }
   70% {
     opacity: 0.9;
-    transform: translate(-90px, -105px) scale(0.9);
   }
   100% {
     opacity: 0;
