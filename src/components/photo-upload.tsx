@@ -1,41 +1,43 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus, ScanFace, Upload } from "lucide-react";
 import type { Family, PhotoMetadata } from "../domain";
 import { EditorDialog } from "./editor-dialog";
+import { photoFileError } from "../domain/photo-upload";
 
 export function PhotoUpload({
   upload,
   onClose,
   onUploaded,
   busy,
+  initialFile,
 }: {
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
   onClose: () => void;
   onUploaded: (id: string) => void;
   busy: boolean;
+  initialFile?: File | null;
 }) {
-  const [file, setFile] = useState<File | null>(null),
-    [preview, setPreview] = useState(""),
+  const [file, setFile] = useState<File | null>(() =>
+      initialFile && !photoFileError(initialFile) ? initialFile : null,
+    ),
     [metadata, setMetadata] = useState<PhotoMetadata>({}),
     [error, setError] = useState("");
-  useEffect(
-    () => () => {
-      if (preview) URL.revokeObjectURL(preview);
-    },
-    [preview],
-  );
+  const preview = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    if (preview.current) preview.current.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
   function choose(next?: File) {
     if (!next || busy) return;
-    if (
-      !/^image\/(jpeg|png|webp|gif)$/.test(next.type) ||
-      next.size > 20 * 1024 * 1024
-    ) {
-      setError("Выберите JPG, PNG, WebP или GIF размером до 20 МБ.");
+    const problem = photoFileError(next);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");
     setFile(next);
-    setPreview(URL.createObjectURL(next));
   }
   return (
     <EditorDialog
@@ -44,9 +46,10 @@ export function PhotoUpload({
         if (!busy) onClose();
       }}
       wide
+      className="photo-upload-dialog"
     >
       <form
-        className="archive-form"
+        className="archive-form photo-upload-form"
         onSubmit={async (e) => {
           e.preventDefault();
           if (!file) return;
@@ -60,20 +63,17 @@ export function PhotoUpload({
           }
         }}
       >
-        <p className="flow-intro">
-          Сначала снимок и его история. Затем — отметки людей.
-        </p>
         <div className="upload-layout">
           <label
-            className={`photo-dropzone ${preview ? "has-preview" : ""}`}
+            className={`photo-dropzone ${file ? "has-preview" : ""}`}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
               choose(e.dataTransfer.files[0]);
             }}
           >
-            {preview ? (
-              <img src={preview} alt="Предпросмотр выбранного снимка" />
+            {file ? (
+              <img ref={preview} alt="Предпросмотр выбранного снимка" />
             ) : (
               <ImagePlus size={44} strokeWidth={1.2} />
             )}
@@ -93,6 +93,9 @@ export function PhotoUpload({
             />
           </label>
           <div className="photo-upload-fields">
+            <p className="flow-intro">
+              Сначала снимок и его история. Затем — отметки людей.
+            </p>
             <div className="form-grid">
               <label>
                 Год{" "}
@@ -145,22 +148,22 @@ export function PhotoUpload({
             <p className="field-hint">
               Неизвестные сведения можно пропустить и добавить позже.
             </p>
+            <div className="scan-explainer">
+              <ScanFace size={22} />
+              <p>
+                <b>Поможем отметить людей</b>
+                <br />
+                После сохранения найдём лица и предложим рамки. Выберите
+                человека для каждой отметки.
+              </p>
+            </div>
+            {error && (
+              <p role="alert" className="form-error">
+                {error}
+              </p>
+            )}
           </div>
         </div>
-        <div className="scan-explainer">
-          <ScanFace size={22} />
-          <p>
-            <b>Поможем отметить людей</b>
-            <br />
-            После сохранения найдём лица и предложим рамки. Выберите человека
-            для каждой отметки.
-          </p>
-        </div>
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
         <footer>
           <button className="primary-action" disabled={!file || busy}>
             <Upload size={16} />

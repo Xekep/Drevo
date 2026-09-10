@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { Plus, Pencil, Images, Link2, History, Expand } from "lucide-react";
+import { Plus, Pencil, Link2, History, Expand } from "lucide-react";
 import { PersonFullView } from "./person-full-view";
 import { useDesktopEditing } from "../hooks/useDesktopEditing";
 import { AuditLog } from "./audit-log";
 import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
-import { photoCaption, photoLabel } from "../domain/photo-metadata";
-import { mediaPreview } from "../domain/media-preview";
+import { PersonPhotoAlbum } from "./person-photo-album";
 import type { Connection } from "../domain";
 import {
   owns,
@@ -29,7 +28,6 @@ export function PersonInspector({
   onNewRelative,
   onExistingRelative,
   onAlbum,
-  onPhoto,
   save,
   busy = false,
   onConnection,
@@ -44,8 +42,7 @@ export function PersonInspector({
   onEdit: () => void;
   onNewRelative: (type: "child" | ConnectionType) => void;
   onExistingRelative: (type: "child" | ConnectionType) => void;
-  onAlbum: () => void;
-  onPhoto: (id: string) => void;
+  onAlbum: (id: string) => void;
   save?: (family: Family) => Promise<Family>;
   busy?: boolean;
   onConnection?: (connection: Connection & { hint?: string }) => void;
@@ -61,6 +58,23 @@ export function PersonInspector({
   return (
     <>
       <div className="inspector-person-actions">
+        {canEdit && owns(user, person) && (
+          <button onClick={onEdit} className="person-edit-button">
+            <Pencil size={16} />
+            Изменить
+          </button>
+        )}
+        {canEdit && (
+          <button
+            className="person-action-icon"
+            onClick={() => setAdding(!adding)}
+            aria-expanded={adding}
+            title="Добавить родственника"
+            aria-label="Добавить родственника"
+          >
+            <Plus size={18} />
+          </button>
+        )}
         {desktop && (
           <button
             className="person-expand-button"
@@ -79,18 +93,6 @@ export function PersonInspector({
             onClick={() => setHistory(true)}
           >
             <History size={15} />
-          </button>
-        )}
-        {canEdit && owns(user, person) && (
-          <button onClick={onEdit}>
-            <Pencil size={16} />
-            Изменить
-          </button>
-        )}
-        {canEdit && (
-          <button onClick={() => setAdding(!adding)} aria-expanded={adding}>
-            <Plus size={16} />
-            Родственник
           </button>
         )}
       </div>
@@ -121,7 +123,7 @@ export function PersonInspector({
                 }
               : undefined
           }
-          onPhoto={onPhoto}
+          onAlbum={onAlbum}
         />
       )}
       {canEdit && adding && (
@@ -196,24 +198,7 @@ export function PersonInspector({
       />
       {readPhotos && (
         <section className="person-photos">
-          <button className="full-button" onClick={onAlbum}>
-            <Images size={18} />
-            Фотоальбом · {photos.length}
-          </button>
-          {photos.length > 0 && (
-            <div className="person-photo-grid">
-              {photos.slice(0, 6).map((p) => (
-                <button key={p.id} onClick={() => onPhoto(p.id)}>
-                  <img
-                    src={mediaPreview(p.url)}
-                    alt={photoLabel(p)}
-                    loading="lazy"
-                  />
-                  {photoCaption(p) && <span>{photoCaption(p)}</span>}
-                </button>
-              ))}
-            </div>
-          )}
+          <PersonPhotoAlbum photos={photos} onOpen={() => onAlbum(person.id)} />
         </section>
       )}
     </>

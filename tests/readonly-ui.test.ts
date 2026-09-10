@@ -49,7 +49,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       "/src/components/about-project.tsx",
     );
     const { PhotoViewer } = await server.ssrLoadModule(
-      "/src/components/gallery.tsx",
+      "/src/components/photo-viewer.tsx",
     );
     const user = {
       id: "admin",
@@ -107,7 +107,6 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
         onNewRelative: noop,
         onExistingRelative: noop,
         onAlbum: noop,
-        onPhoto: noop,
       }),
     );
     assert.match(inspector, /Фотоальбом/);
@@ -177,6 +176,8 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     const viewer = renderToStaticMarkup(
       createElement(PhotoViewer, {
         photo,
+        photos: [photo, { ...photo, id: "next" }],
+        onNavigate: noop,
         family,
         canEdit: false,
         canDelete: false,
@@ -184,14 +185,67 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
         save: async () => family,
         onClose: noop,
         onPerson: noop,
-        onCreatePerson: noop,
       }),
     );
     assert.match(viewer, /Открыть карточку: Иванов Иван/);
+    assert.match(viewer, /class="photo-lightbox"/);
+    assert.doesNotMatch(viewer, /<h2>Фотография/);
+    assert.match(
+      viewer,
+      /<footer class="photo-footer">[\s\S]*href="\/media\/example.jpg" download=""[\s\S]*<\/footer>/,
+    );
+    const previousButton = viewer.match(
+      /<button[^>]*aria-label="Предыдущая фотография"[^>]*>/,
+    )![0];
+    const nextButton = viewer.match(
+      /<button[^>]*aria-label="Следующая фотография"[^>]*>/,
+    )![0];
+    assert.match(previousButton, /disabled/);
+    assert.doesNotMatch(nextButton, /disabled/);
     assert.doesNotMatch(
       viewer,
       /Найти лица|Добавить человека в древо|Убрать отметку|<form/,
     );
+    const editing = renderToStaticMarkup(
+      createElement(PhotoViewer, {
+        photo,
+        photos: [photo, { ...photo, id: "next" }],
+        family,
+        canEdit: true,
+        initialEditing: true,
+        canDelete: true,
+        busy: false,
+        save: async () => family,
+        onClose: noop,
+        onPerson: noop,
+        onNavigate: noop,
+      }),
+    );
+    assert.match(
+      editing.match(/<button[^>]*aria-label="Следующая фотография"[^>]*>/)![0],
+      /disabled/,
+      "navigation cannot discard an active editor",
+    );
+    assert.match(editing, /Найти лица/);
+    const { PersonPhotoAlbum } = await server.ssrLoadModule(
+      "/src/components/person-photo-album.tsx",
+    );
+    const stack = renderToStaticMarkup(
+      createElement(PersonPhotoAlbum, {
+        photos: Array.from({ length: 10 }, (_, i) => ({
+          ...photo,
+          id: String(i),
+          url: `/media/photo-${i}.jpg`,
+        })),
+        onOpen: noop,
+      }),
+    );
+    assert.equal(
+      (stack.match(/<img /g) || []).length,
+      3,
+      "profile loads just three album covers",
+    );
+    assert.match(stack, /10 фото/);
   } finally {
     await server.close();
     rmSync(cacheDir, { recursive: true, force: true });

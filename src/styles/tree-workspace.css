@@ -460,24 +460,8 @@
   font-size: 12px;
   color: #61745e;
 }
-.flow-person .person-avatar {
-  width: 35px;
-  height: 43px;
-  min-width: 35px;
-  border-radius: 11px;
-  font-size: 16px;
-}
 .flow-person img {
   -webkit-user-drag: none;
-}
-.flow-person.is-compact .flow-person-content {
-  padding: 12px 15px;
-}
-.flow-person.is-compact strong {
-  font-size: 21px;
-}
-.flow-person.is-compact .flow-person-content > span > span {
-  font-size: 18px;
 }
 .flow-collapse {
   position: absolute;
@@ -1292,12 +1276,18 @@
 }
 .flow-person-content {
   border-radius: 8px;
+  padding: 10px;
+  gap: 10px;
+}
+.flow-person-content > span:last-child {
+  flex: 1;
+  gap: 3px;
 }
 .flow-person .person-avatar {
   border-radius: 50%;
-  width: 39px;
-  min-width: 39px;
-  height: 39px;
+  width: 60px;
+  min-width: 60px;
+  height: 60px;
   font-family: var(--serif);
 }
 .flow-person-content strong {
@@ -1307,6 +1297,11 @@
 .flow-person-content > span > span {
   font-size: 12px;
   color: #5f6e61;
+  line-height: 1.25;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .flow-person-content small {
   font-size: 11px;
@@ -1322,9 +1317,18 @@
   opacity: 1;
 }
 .flow-person.is-compact strong {
-  font-size: 20px;
+  font-size: 16px;
 }
 .flow-person.is-compact .flow-person-content > span > span {
+  font-size: 15px;
+}
+.flow-person.is-overview .flow-person-content {
+  padding: 12px 15px;
+}
+.flow-person.is-overview strong {
+  font-size: 20px;
+}
+.flow-person.is-overview .flow-person-content > span > span {
   font-size: 17px;
 }
 .tree-mode-bar {

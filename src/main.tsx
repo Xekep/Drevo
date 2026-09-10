@@ -13,6 +13,7 @@ import "./styles/places.css";
 import "./styles/family-details.css";
 import "./styles/photo-workspace.css";
 import "./styles/archive-tools.css";
+import "./styles/photo-lightbox.css";
 const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

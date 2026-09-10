@@ -171,7 +171,6 @@ export default function SharedTree({ token }: { token: string }) {
                         onNewRelative={noop}
                         onExistingRelative={noop}
                         onAlbum={noop}
-                        onPhoto={noop}
                         onSelect={(id) => reveal([id])}
                         onCompare={() => dispatch({ type: "compare" })}
                       />

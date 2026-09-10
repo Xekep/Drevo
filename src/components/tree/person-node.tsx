@@ -42,10 +42,17 @@ export const PersonNode = memo(function PersonNode({
   isConnectable,
 }: NodeProps<PersonNodeType>) {
   const { choose, collapse, expand, reference } = useContext(TreeActions);
-  const compact = useStore((s) => s.transform[2] < 0.65);
+  const detail = useStore((s) =>
+    s.transform[2] < 0.32
+      ? "overview"
+      : s.transform[2] < 0.65
+        ? "compact"
+        : "full",
+  );
+  const compact = detail !== "full";
   return (
     <div
-      className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${detail === "overview" ? "is-overview" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
@@ -70,7 +77,7 @@ export const PersonNode = memo(function PersonNode({
         onClick={(e) => choose(data.person.id, e.shiftKey)}
         aria-label={`${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}`}
       >
-        {!compact && <Avatar person={data.person} />}
+        {detail !== "overview" && <Avatar person={data.person} />}
         <span>
           <strong>{data.person.surname}</strong>
           <span>

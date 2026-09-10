@@ -1,6 +1,19 @@
 import { fullName } from "./dates.ts";
 import type { ArchivePhoto, Person } from "./types.ts";
 export type PhotoAlbum = { id: string; label: string; photos: ArchivePhoto[] };
+/** Preserve the opened album's order, excluding photographs removed since opening. */
+export function viewerPhotos(
+  photos: ArchivePhoto[],
+  selectedId: string,
+  collectionIds?: string[],
+): ArchivePhoto[] {
+  if (!collectionIds?.includes(selectedId)) return newestPhotos(photos);
+  const byId = new Map(photos.map((photo) => [photo.id, photo]));
+  return [...new Set(collectionIds)].flatMap((id) => {
+    const photo = byId.get(id);
+    return photo ? [photo] : [];
+  });
+}
 export function newestPhotos(photos: ArchivePhoto[]) {
   return photos
     .map((photo, index) => ({ photo, index }))

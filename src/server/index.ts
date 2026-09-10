@@ -76,7 +76,7 @@ export async function startServer(
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
-  const auth = createAuth(users, publicOrigin);
+  const auth = createAuth(users, archive.db, publicOrigin);
   const sharing = sharingHttp({
     archive,
     auth,
@@ -160,6 +160,7 @@ export async function startServer(
       return json(res, 403, { error: "Неизвестный адрес архива" });
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       url = parsedUrl.pathname;
+    if (url.startsWith("/api/")) auth.refreshSession(req, res);
     if (await sharing(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;

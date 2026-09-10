@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Images, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import type { Family, Person } from "../domain/types";
 import { fullName } from "../domain/dates";
 import {
@@ -9,7 +9,7 @@ import {
 import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
 import { TreeCanvas } from "./tree/tree-canvas";
-import { mediaPreview } from "../domain/media-preview";
+import { PersonPhotoAlbum } from "./person-photo-album";
 const noop = () => {};
 export function PersonFullView({
   person,
@@ -18,7 +18,7 @@ export function PersonFullView({
   onClose,
   onCompare,
   onEdit,
-  onPhoto,
+  onAlbum,
 }: {
   person: Person;
   family: Family;
@@ -26,7 +26,7 @@ export function PersonFullView({
   onClose: () => void;
   onCompare: (id: string) => void;
   onEdit?: () => void;
-  onPhoto: (id: string) => void;
+  onAlbum: (id: string) => void;
 }) {
   const [activeId, setActiveId] = useState(person.id);
   const active = family.people.find((p) => p.id === activeId) || person;
@@ -75,26 +75,15 @@ export function PersonFullView({
               onCompare(active.id);
             }}
           />
-          {!!photos.length && (
+          {readPhotos && (
             <section className="full-person-photos">
-              <h3>
-                <Images size={16} />
-                Фотографии · {photos.length}
-              </h3>
-              <div>
-                {photos.map((photo) => (
-                  <button
-                    key={photo.id}
-                    onClick={() => {
-                      onClose();
-                      onPhoto(photo.id);
-                    }}
-                    aria-label="Открыть фотографию"
-                  >
-                    <img src={mediaPreview(photo.url)} alt="" loading="lazy" />
-                  </button>
-                ))}
-              </div>
+              <PersonPhotoAlbum
+                photos={photos}
+                onOpen={() => {
+                  onClose();
+                  onAlbum(active.id);
+                }}
+              />
             </section>
           )}
         </section>

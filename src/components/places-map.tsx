@@ -186,7 +186,7 @@ export default function PlacesMap({
   busy: boolean;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
-  onPhoto: (id: string) => void;
+  onPhoto: (id: string, photoIds?: string[]) => void;
 }) {
   const places = useMemo(
     () => familyPlaces(family.people, family.photos),
@@ -531,7 +531,15 @@ export default function PlacesMap({
                 <section className="place-photos">
                   <h3>Снимки в этом месте</h3>
                   {current.photos.map((photo) => (
-                    <button key={photo.id} onClick={() => onPhoto(photo.id)}>
+                    <button
+                      key={photo.id}
+                      onClick={() =>
+                        onPhoto(
+                          photo.id,
+                          current.photos.map((p) => p.id),
+                        )
+                      }
+                    >
                       <img
                         src={mediaPreview(photo.url)}
                         alt=""

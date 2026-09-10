@@ -35,7 +35,9 @@ import { PersonEditor } from "./components/archive-editors";
 import { PeopleCatalog } from "./components/people-catalog";
 const PlacesMap = lazy(() => import("./components/places-map"));
 import { FamiliesCatalog } from "./components/families-catalog";
-import { Gallery, PhotoViewer } from "./components/gallery";
+import { Gallery } from "./components/gallery";
+import { PhotoViewer } from "./components/photo-viewer";
+import { viewerPhotos } from "./domain/photo-albums";
 import { PhotoUpload } from "./components/photo-upload";
 import { LoginDialog } from "./components/login-dialog";
 import { AdminPanel } from "./components/admin-panel";
@@ -116,7 +118,9 @@ export default function App() {
     ),
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
   const [photoUpload, setPhotoUpload] = useState(false),
+    [droppedPhoto, setDroppedPhoto] = useState<File | null>(null),
     [photoId, setPhotoId] = useState<string | null>(null),
+    [photoCollection, setPhotoCollection] = useState<string[] | undefined>(),
     [editPhotoId, setEditPhotoId] = useState<string | null>(null),
     [photoFilter, setPhotoFilter] = useState<string | null>(null);
   const people = useMemo(() => family?.people || [], [family]);
@@ -258,6 +262,11 @@ export default function App() {
     </div>
   );
   const photo = family?.photos?.find((p) => p.id === photoId);
+  function openPhoto(id: string, photoIds?: string[]) {
+    setEditPhotoId(null);
+    setPhotoCollection(photoIds);
+    setPhotoId(id);
+  }
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -505,11 +514,10 @@ export default function App() {
                               onExistingRelative={(type) =>
                                 relative(type, true)
                               }
-                              onAlbum={() => {
-                                setPhotoFilter(chosen[0].id);
+                              onAlbum={(id) => {
+                                setPhotoFilter(id);
                                 setView("gallery");
                               }}
-                              onPhoto={setPhotoId}
                             />
                           )
                         )}
@@ -537,7 +545,7 @@ export default function App() {
                       busy={busy}
                       save={save}
                       onPerson={showPerson}
-                      onPhoto={setPhotoId}
+                      onPhoto={openPhoto}
                     />
                   </Suspense>
                 )}
@@ -556,7 +564,11 @@ export default function App() {
                     family={family}
                     canEdit={canEdit}
                     onAdd={() => setPhotoUpload(true)}
-                    onOpen={setPhotoId}
+                    onDropPhoto={(file) => {
+                      setDroppedPhoto(file);
+                      setPhotoUpload(true);
+                    }}
+                    onOpen={openPhoto}
                     personFilter={photoFilter}
                     onClearFilter={() => setPhotoFilter(null)}
                   />
@@ -601,11 +613,15 @@ export default function App() {
       {login && <LoginDialog onClose={() => setLogin(false)} />}
       {photoUpload && canEdit && (
         <PhotoUpload
+          initialFile={droppedPhoto}
           upload={upload}
           busy={busy}
-          onClose={() => setPhotoUpload(false)}
+          onClose={() => {
+            setPhotoUpload(false);
+            setDroppedPhoto(null);
+          }}
           onUploaded={(id) => {
-            setPhotoId(id);
+            openPhoto(id);
             setEditPhotoId(id);
             setView("gallery");
             setPhotoFilter(null);
@@ -616,6 +632,11 @@ export default function App() {
         <PhotoViewer
           key={photo.id}
           photo={photo}
+          photos={viewerPhotos(family.photos || [], photo.id, photoCollection)}
+          onNavigate={(id) => {
+            setEditPhotoId(null);
+            setPhotoId(id);
+          }}
           family={family}
           initialEditing={editPhotoId === photo.id}
           canEdit={canEdit && owns(user, photo)}

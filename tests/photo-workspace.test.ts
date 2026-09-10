@@ -4,7 +4,12 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
-import { photoAlbums, newestPhotos } from "../src/domain/photo-albums.ts";
+import {
+  photoAlbums,
+  newestPhotos,
+  viewerPhotos,
+} from "../src/domain/photo-albums.ts";
+import { photoFileError } from "../src/domain/photo-upload.ts";
 import { photoCaption, photoLabel } from "../src/domain/photo-metadata.ts";
 import { familyPlaces } from "../src/domain/places.ts";
 import { portraitCrop } from "../src/domain/portrait-crop.ts";
@@ -98,6 +103,41 @@ test("photo albums preserve addition order, deduplicate tags, and separate unkno
     photoCaption(photo("p", { place: "Москва", event: "  " })),
     "Москва",
   );
+});
+
+test("viewer keeps album order and excludes deleted photos, duplicates and unrelated uploads", () => {
+  const photos = [photo("old"), photo("selected"), photo("new")];
+  const collection = ["selected", "deleted", "old", "selected"];
+  assert.deepEqual(
+    viewerPhotos(photos, "selected", collection).map((p) => p.id),
+    ["selected", "old"],
+  );
+  assert.deepEqual(
+    viewerPhotos(photos, "old", collection).map((p) => p.id),
+    ["selected", "old"],
+  );
+  assert.deepEqual(
+    viewerPhotos(photos, "new", collection).map((p) => p.id),
+    ["new", "selected", "old"],
+  );
+  assert.deepEqual(
+    viewerPhotos(photos, "old").map((p) => p.id),
+    ["new", "selected", "old"],
+  );
+  assert.deepEqual(viewerPhotos([], "deleted", collection), []);
+  assert.deepEqual(collection, ["selected", "deleted", "old", "selected"]);
+});
+
+test("dropped photos use the same size and format limits as the upload picker", () => {
+  for (const type of ["image/jpeg", "image/png", "image/webp", "image/gif"])
+    assert.equal(photoFileError({ type, size: 20 * 1024 * 1024 }), "");
+  for (const file of [
+    { type: "image/png", size: 0 },
+    { type: "image/png", size: 20 * 1024 * 1024 + 1 },
+    { type: "image/svg+xml", size: 1024 },
+    { type: "text/html", size: 1024 },
+  ])
+    assert.ok(photoFileError(file));
 });
 
 test("photo places merge with people places without inventing life events for tagged people", () => {
