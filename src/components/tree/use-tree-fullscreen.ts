@@ -12,15 +12,20 @@ export function useTreeFullscreen(container: RefObject<HTMLDivElement | null>) {
   const native = useRef(false);
   const trigger = useRef<HTMLElement | null>(null);
   const marker = "drevoTreeFullscreen";
+  const getHost = useCallback(
+    () =>
+      container.current?.closest<HTMLElement>(".tree-view") ?? container.current,
+    [container],
+  );
   const leave = useCallback(() => {
     if (!active.current) return;
     active.current = false;
     setFullscreen(false);
-    if (document.fullscreenElement === container.current)
+    if (document.fullscreenElement === getHost())
       void document.exitFullscreen().catch(() => {});
     native.current = false;
     trigger.current?.focus();
-  }, [container]);
+  }, [getHost]);
   const exit = useCallback(() => {
     if (window.history.state?.[marker]) window.history.back();
     leave();
@@ -35,8 +40,7 @@ export function useTreeFullscreen(container: RefObject<HTMLDivElement | null>) {
       }
     };
     const change = () => {
-      if (document.fullscreenElement === container.current)
-        native.current = true;
+      if (document.fullscreenElement === getHost()) native.current = true;
       else if (native.current) exit();
     };
     window.addEventListener("popstate", back);
@@ -52,15 +56,16 @@ export function useTreeFullscreen(container: RefObject<HTMLDivElement | null>) {
         window.history.replaceState(state, "");
       }
     };
-  }, [container, exit, leave]);
+  }, [exit, getHost, leave]);
   function enter() {
     if (active.current) return;
     trigger.current = document.activeElement as HTMLElement | null;
     window.history.pushState({ ...window.history.state, [marker]: true }, "");
     active.current = true;
     setFullscreen(true);
-    // iPhone and browsers without Fullscreen API use the same fixed viewport.
-    void container.current?.requestFullscreen?.().catch(() => {});
+    // Fullscreen the whole tree view so inspector and kinship UI remain interactive.
+    // iPhone and browsers without Fullscreen API still use the fixed CSS viewport.
+    void getHost()?.requestFullscreen?.().catch(() => {});
     container.current?.focus({ preventScroll: true });
   }
   return { fullscreen, enter, exit };
