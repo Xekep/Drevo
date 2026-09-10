@@ -1,11 +1,4 @@
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
@@ -32,10 +25,7 @@ import { PersonInspector } from "./components/person-inspector";
 import { ConnectionInspector } from "./components/connection-inspector";
 import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
-import { PeopleCatalog } from "./components/people-catalog";
-const PlacesMap = lazy(() => import("./components/places-map"));
-import { FamiliesCatalog } from "./components/families-catalog";
-import { Gallery } from "./components/gallery";
+import { ArchiveSection } from "./components/archive-section";
 import { PhotoViewer } from "./components/photo-viewer";
 import { viewerPhotos } from "./domain/photo-albums";
 import { PhotoUpload } from "./components/photo-upload";
@@ -528,54 +518,30 @@ export default function App() {
                     ) : null}
                   </div>
                 )}
-                {view === "list" && (
-                  <PeopleCatalog
-                    people={people}
-                    query={query}
-                    onSelect={showPerson}
-                  />
-                )}
-                {view === "places" && (archive.readTree || readPhotos) && (
-                  <Suspense
-                    fallback={
-                      <div className="archive-status">Открываем карту…</div>
-                    }
-                  >
-                    <PlacesMap
-                      family={family}
-                      user={user}
-                      canEdit={canEdit}
-                      busy={busy}
-                      save={save}
-                      onPerson={showPerson}
-                      onPhoto={openPhoto}
-                    />
-                  </Suspense>
-                )}
-                {view === "families" && (
-                  <FamiliesCatalog
-                    people={people}
-                    onPerson={showPerson}
-                    onReveal={(ids) => {
-                      setView("tree");
-                      reveal(ids);
-                    }}
-                  />
-                )}
-                {view === "gallery" && (
-                  <Gallery
-                    family={family}
-                    canEdit={canEdit}
-                    onAdd={() => setPhotoUpload(true)}
-                    onDropPhoto={(file) => {
-                      setDroppedPhoto(file);
-                      setPhotoUpload(true);
-                    }}
-                    onOpen={openPhoto}
-                    personFilter={photoFilter}
-                    onClearFilter={() => setPhotoFilter(null)}
-                  />
-                )}
+                <ArchiveSection
+                  view={view}
+                  family={family}
+                  people={people}
+                  query={query}
+                  user={user}
+                  canEdit={canEdit}
+                  busy={busy}
+                  loadingDetails={archive.loadingDetails}
+                  save={save}
+                  onPerson={showPerson}
+                  onReveal={(ids) => {
+                    setView("tree");
+                    reveal(ids);
+                  }}
+                  onPhoto={openPhoto}
+                  onAddPhoto={() => setPhotoUpload(true)}
+                  onDropPhoto={(file) => {
+                    setDroppedPhoto(file);
+                    setPhotoUpload(true);
+                  }}
+                  personFilter={photoFilter}
+                  onClearPhotoFilter={() => setPhotoFilter(null)}
+                />
               </main>
             )}
           </>
