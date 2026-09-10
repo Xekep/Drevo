@@ -3,6 +3,7 @@ import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { auditStore } from "./audit.ts";
 import {
   validateFamily,
   type Family,
@@ -31,8 +32,14 @@ export function openArchive(path: string, seed: Family) {
       .some((row) => row.name === "created_by")
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
+  const audit = auditStore(db);
   const read = () => readArchive(db);
-  function write(value: unknown, expected: number, actor?: ArchiveUser) {
+  function write(
+    value: unknown,
+    expected: number,
+    actor?: ArchiveUser,
+    operation?: string,
+  ) {
     const family = actor
       ? authorizeArchive(value, read().family, actor)
       : validateFamily(value);
@@ -47,6 +54,20 @@ export function openArchive(path: string, seed: Family) {
         db.prepare(
           "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
         ).run(Number(old.revision), JSON.stringify(read().family));
+      if (old) audit.archive(read().family, family, actor, expected + 1);
+      if (old && operation)
+        audit.record(
+          {
+            action: operation,
+            entity: "archive",
+            entityId: "archive",
+            label: "Семейный архив",
+            personIds: [],
+            details: [],
+          },
+          actor,
+          expected + 1,
+        );
       db.exec(
         "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
       );

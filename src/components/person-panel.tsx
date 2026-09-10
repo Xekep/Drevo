@@ -23,6 +23,7 @@ import {
 } from "../domain";
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PersonAwards } from "./person-awards";
+import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
 export function Avatar({
@@ -221,6 +222,7 @@ export function PersonPanel({
               </div>
             )}
             <PersonAwards awards={person.awards} />
+            <PersonEvents events={person.events} />
             <div className="relatives">
               <h3>
                 Семейные связи <span>{relatives.length}</span>

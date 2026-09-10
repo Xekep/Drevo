@@ -290,6 +290,7 @@ export function useArchive() {
   }, [write, publishHistory]);
   return {
     conflict,
+    getRevision: () => revision.current,
     undo,
     canUndo: undoCount > 0 && (user?.role === "admin" || !undoRemovesPerson),
     reverseTimeline,

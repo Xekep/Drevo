@@ -1,4 +1,5 @@
 import type { Person, PlaceLocation, ArchivePhoto } from "./types.ts";
+import { EVENT_NAMES } from "./person-events.ts";
 
 export const placeKey = (text: string) =>
   text
@@ -15,7 +16,9 @@ export function placeSearch(text: string) {
 }
 export type PlaceEvent = {
   person: Person;
-  kind: "birth" | "death";
+  kind: "birth" | "death" | "event";
+  eventId?: string;
+  label?: string;
   date: string;
   name: string;
 };
@@ -41,6 +44,24 @@ export function familyPlaces(
       if (location && placeKey(location.place) === key)
         group.location ||= location;
       group.events.push({ person, kind, date: person[kind] || "", name });
+      places.set(key, group);
+    }
+  for (const person of people)
+    for (const event of person.events || []) {
+      const name = event.place?.trim();
+      if (!name) continue;
+      const key = placeKey(name),
+        group = places.get(key) || { key, name, events: [], photos: [] };
+      if (event.location && placeKey(event.location.place) === key)
+        group.location ||= event.location;
+      group.events.push({
+        person,
+        kind: "event",
+        eventId: event.id,
+        label: event.title || EVENT_NAMES[event.type],
+        date: event.date || event.dateText || "",
+        name,
+      });
       places.set(key, group);
     }
   for (const photo of photos) {

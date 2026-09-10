@@ -43,6 +43,7 @@ import { ArchiveSettings } from "./components/archive-settings";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
+import { ShareDialog } from "./components/share-dialog";
 
 type PersonDraft = {
   person?: Person;
@@ -104,6 +105,11 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState("");
+  const [shareDraft, setShareDraft] = useState<{
+    anchor: Person;
+    people: Person[];
+    revision: number;
+  } | null>(null);
   const [personDraft, setPersonDraft] = useState<PersonDraft | null>(null),
     [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(
       null,
@@ -254,6 +260,9 @@ export default function App() {
   const photo = family?.photos?.find((p) => p.id === photoId);
   return (
     <div className="archive-app">
+      {shareDraft && (
+        <ShareDialog {...shareDraft} onClose={() => setShareDraft(null)} />
+      )}
       <div className="archive-main">
         <ArchiveHeader
           navigation={
@@ -347,6 +356,21 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      onShare={
+                        user?.role === "admin" && canEdit
+                          ? (anchorId, ids) => {
+                              const anchor = map.get(anchorId);
+                              if (anchor)
+                                setShareDraft({
+                                  anchor,
+                                  people: people.filter((p) =>
+                                    ids.includes(p.id),
+                                  ),
+                                  revision: archive.getRevision(),
+                                });
+                            }
+                          : undefined
+                      }
                       onAddRelative={(id, type) => {
                         closeConnection();
                         relative(type, false, id);

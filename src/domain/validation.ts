@@ -1,5 +1,6 @@
 import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
+import { validateEvents } from "./person-events.ts";
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -15,6 +16,9 @@ export function validateFamily(value: unknown): Family {
   const ids = new Set<string>();
   const today = new Date().toISOString().slice(0, 10);
   for (const p of data.people) {
+    validateEvents(p?.events);
+    if (p?.deceased !== undefined && typeof p.deceased !== "boolean")
+      throw new Error("Некорректный признак смерти");
     if (
       !p ||
       typeof p.id !== "string" ||

@@ -61,6 +61,8 @@ export type ConnectionDraft = {
 };
 export type TreeFocus = { ids: string[]; token: number };
 type Props = {
+  restricted?: boolean;
+  onShare?: (anchorId: string, personIds: string[]) => void;
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
@@ -796,8 +798,13 @@ function Canvas(props: Props) {
               Доп. связи
             </button>
           )}
-          {family.people.length > 0 && (
+          {family.people.length > 0 && !props.restricted && (
             <FamilyViewTools
+              onShare={
+                root && props.onShare
+                  ? () => props.onShare!(root, [...visible])
+                  : undefined
+              }
               anchor={root ? peopleMap.get(root) : undefined}
               selected={peopleMap.get(selected[0])}
               count={visible.size}

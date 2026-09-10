@@ -40,6 +40,7 @@ export function analysisExport(
       sex: p.sex,
       birth: p.birth,
       death: p.death,
+      deceased: p.deceased,
       birthPlace: p.birthPlace,
       deathPlace: p.deathPlace,
       birthLocation: p.birthLocation,
@@ -47,6 +48,7 @@ export function analysisExport(
       maidenName: p.maidenName,
       occupation: p.occupation,
       biography: p.biography,
+      events: p.events,
       awards: p.awards?.map((a) => ({
         id: a.id,
         name: a.name,

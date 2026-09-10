@@ -11,6 +11,29 @@ export type PersonAward = {
   year?: string;
   source?: { title: string; url?: string };
 };
+export type PersonEvent = {
+  id: string;
+  type:
+    | "residence"
+    | "move"
+    | "education"
+    | "work"
+    | "military"
+    | "marriage"
+    | "divorce"
+    | "baptism"
+    | "burial"
+    | "other";
+  title?: string;
+  date?: string;
+  endDate?: string;
+  /** Исходная приблизительная дата; не превращается в точный год. */
+  dateText?: string;
+  place?: string;
+  location?: PlaceLocation;
+  description?: string;
+  sources?: Source[];
+};
 export type Person = {
   createdBy?: string;
   id: string;
@@ -21,6 +44,7 @@ export type Person = {
   /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
   death?: string;
+  deceased?: boolean;
   birthPlace: string;
   deathPlace?: string;
   /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */
@@ -30,6 +54,7 @@ export type Person = {
   occupation?: string;
   biography?: string;
   awards?: PersonAward[];
+  events?: PersonEvent[];
   photo?: string;
   parents: string[];
   /** True only when the complete parent list is known. */

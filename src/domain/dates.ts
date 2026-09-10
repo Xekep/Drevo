@@ -65,8 +65,9 @@ export function splitFullName(value: string) {
 }
 export const initials = (p: Person) =>
   `${p.name.trim()[0] || ""}${p.surname.trim()[0] || ""}` || "?";
-export const hasRecordedDeath = (p: Pick<Person, "death" | "deathPlace">) =>
-  !!(p.death || p.deathPlace?.trim());
+export const hasRecordedDeath = (
+  p: Pick<Person, "death" | "deathPlace" | "deceased">,
+) => !!(p.deceased || p.death || p.deathPlace?.trim());
 export const years = (p: Person) =>
   p.birth
     ? `${dateYear(p.birth)} — ${p.death ? dateYear(p.death) : hasRecordedDeath(p) ? "?" : "н. в."}`

@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { Plus, Pencil, Images, Link2 } from "lucide-react";
+import { Plus, Pencil, Images, Link2, History, Expand } from "lucide-react";
+import { PersonFullView } from "./person-full-view";
+import { useDesktopEditing } from "../hooks/useDesktopEditing";
+import { AuditLog } from "./audit-log";
+import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
 import { photoCaption, photoLabel } from "../domain/photo-metadata";
@@ -48,12 +52,35 @@ export function PersonInspector({
 }) {
   const [adding, setAdding] = useState(false),
     [type, setType] = useState<"child" | ConnectionType>("child");
+  const [history, setHistory] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const desktop = useDesktopEditing();
   const photos = (family.photos || []).filter((p) =>
     p.tags.some((t) => t.personId === person.id),
   );
   return (
     <>
       <div className="inspector-person-actions">
+        {desktop && (
+          <button
+            className="person-expand-button"
+            title="Развернуть карточку"
+            aria-label="Развернуть карточку на весь экран"
+            onClick={() => setExpanded(true)}
+          >
+            <Expand size={16} />
+          </button>
+        )}
+        {user?.role === "admin" && (
+          <button
+            className="person-history-button"
+            title="История изменений"
+            aria-label="История изменений человека"
+            onClick={() => setHistory(true)}
+          >
+            <History size={15} />
+          </button>
+        )}
         {canEdit && owns(user, person) && (
           <button onClick={onEdit}>
             <Pencil size={16} />
@@ -67,6 +94,36 @@ export function PersonInspector({
           </button>
         )}
       </div>
+      {history && user?.role === "admin" && (
+        <EditorDialog
+          title="История изменений человека"
+          onClose={() => setHistory(false)}
+          wide
+        >
+          <AuditLog personId={person.id} />
+        </EditorDialog>
+      )}
+      {expanded && desktop && (
+        <PersonFullView
+          person={person}
+          family={family}
+          readPhotos={readPhotos}
+          onClose={() => setExpanded(false)}
+          onCompare={(id) => {
+            onSelect(id);
+            onCompare();
+          }}
+          onEdit={
+            canEdit && owns(user, person)
+              ? () => {
+                  setExpanded(false);
+                  onEdit();
+                }
+              : undefined
+          }
+          onPhoto={onPhoto}
+        />
+      )}
       {canEdit && adding && (
         <div className="relative-flow archive-form">
           <label>

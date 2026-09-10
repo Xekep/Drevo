@@ -24,6 +24,7 @@ import {
 import { EditorDialog } from "./editor-dialog";
 import { PlaceField } from "./place-field";
 import { AwardsEditor } from "./person-awards";
+import { EventsEditor } from "./person-events";
 import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
 import { photoLabel } from "../domain/photo-metadata";
@@ -180,6 +181,13 @@ export function PersonEditor({
         ...draft,
         birth,
         death,
+        events: draft.events?.map((event) => ({
+          ...event,
+          date: event.date ? normalizeDateInput(event.date) : undefined,
+          endDate: event.endDate
+            ? normalizeDateInput(event.endDate)
+            : undefined,
+        })),
         sex: autoSex ? guessSex(draft) : draft.sex,
         photo: portrait,
         name: draft.name.trim(),
@@ -508,6 +516,10 @@ export function PersonEditor({
             />
           </label>
         </details>
+        <EventsEditor
+          events={draft.events || []}
+          onChange={(events) => field("events", events)}
+        />
         <AwardsEditor
           awards={draft.awards || []}
           onChange={(awards) => field("awards", awards)}

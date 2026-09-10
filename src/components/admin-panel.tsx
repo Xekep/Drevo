@@ -6,6 +6,8 @@ import {
   Image,
   ShieldCheck,
   Users,
+  History,
+  Link2,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -14,6 +16,9 @@ import {
   type Family,
 } from "../domain";
 import { BackupRestore } from "./backup-restore";
+import { ShareCatalog } from "./share-catalog";
+import { AuditLog } from "./audit-log";
+import { GedcomTransfer } from "./gedcom-transfer";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -36,6 +41,7 @@ export function AdminPanel({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
+  const [auditActor, setAuditActor] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     void Promise.all([
@@ -89,6 +95,8 @@ export function AdminPanel({
             ["users", "Участники", Users],
             ["access", "Доступ и древо", ArrowDownUp],
             ["data", "Данные и копии", DatabaseBackup],
+            ["shares", "Временные ссылки", Link2],
+            ["audit", "Журнал правок", History],
           ].map(([id, label, Icon]) => {
             const ItemIcon = Icon as typeof Users;
             return (
@@ -269,6 +277,28 @@ export function AdminPanel({
             </footer>
           </form>
         )}
+        {section === "shares" && <ShareCatalog />}
+        {section === "audit" && (
+          <section className="admin-card archive-form">
+            <h2>Журнал правок</h2>
+            <label>
+              Кто изменил
+              <select
+                value={auditActor}
+                onChange={(e) => setAuditActor(e.target.value)}
+              >
+                <option value="">Все участники</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+                <option value="system">Система</option>
+              </select>
+            </label>
+            <AuditLog key={auditActor} actorId={auditActor || undefined} />
+          </section>
+        )}
         {section === "data" && (
           <section className="admin-card archive-form">
             <h2>Резервные копии</h2>
@@ -287,6 +317,8 @@ export function AdminPanel({
             </div>
             <hr />
             <BackupRestore onRestored={onChanged} />
+            <hr />
+            <GedcomTransfer onImported={onChanged} />
             <hr />
             <h2>Настройки и перенос данных</h2>
             <p>Название архива, описание и импорт сохранённого JSON.</p>

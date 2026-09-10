@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import SharedTree from "./components/shared-tree";
 import "@xyflow/react/dist/style.css";
 import "./styles/app.css";
 import "./styles/workspace.css";
@@ -11,8 +12,10 @@ import "./styles/directory.css";
 import "./styles/places.css";
 import "./styles/family-details.css";
 import "./styles/photo-workspace.css";
+import "./styles/archive-tools.css";
+const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
   </StrictMode>,
 );

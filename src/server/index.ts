@@ -30,6 +30,8 @@ import {
 } from "../domain/archive-projection.ts";
 import { imagePreviews } from "./image-previews.ts";
 import { archiveViewAt } from "../domain/archive-routes.ts";
+import { sharingHttp } from "./sharing-http.ts";
+import { gedcomHttp } from "./gedcom-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const staticTypes: Record<string, string> = {
@@ -75,6 +77,15 @@ export async function startServer(
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
   const auth = createAuth(users, publicOrigin);
+  const sharing = sharingHttp({
+    archive,
+    auth,
+    media,
+    previewImage,
+    visibility,
+    publicOrigin,
+  });
+  const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
   const yandex = createYandexOAuth({
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
@@ -149,6 +160,8 @@ export async function startServer(
       return json(res, 403, { error: "Неизвестный адрес архива" });
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       url = parsedUrl.pathname;
+    if (await sharing(req, res, parsedUrl)) return;
+    if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
     if (url === "/api/session" && req.method === "GET")
       return json(res, 200, {
@@ -237,6 +250,7 @@ export async function startServer(
             200,
             visibility.write(
               JSON.parse(Buffer.concat(chunks).toString("utf8")),
+              auth.currentUser(req)!,
             ),
           );
         } catch (error) {
@@ -431,7 +445,12 @@ export async function startServer(
         path !== dist
       )
         return json(res, 403, { error: "Недоступный путь" });
-      if (archiveViewAt(url)) path = resolve(dist, "index.html");
+      if (archiveViewAt(url) || /^\/s\/[A-Za-z0-9_-]{43}$/.test(url))
+        path = resolve(dist, "index.html");
+      if (url.startsWith("/s/")) {
+        res.setHeader("Referrer-Policy", "no-referrer");
+        res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+      }
       if (!existsSync(path))
         return json(res, 404, { error: "Страница не найдена" });
       try {
@@ -655,6 +674,7 @@ export async function startServer(
       server.closeAllConnections();
       await new Promise<void>((r) => server.close(() => r()));
       restores.close();
+      gedcom.close();
       geocoding.close();
       archive.close();
     },

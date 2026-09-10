@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ArchiveUser, Role } from "../domain/access.ts";
+import { ROLE_NAMES } from "../domain/access.ts";
+import { auditStore } from "./audit.ts";
 export class ForbiddenError extends Error {}
 export function userStore(db: DatabaseSync) {
+  const audit = auditStore(db);
   db.exec(
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))) STRICT;`,
   );
@@ -60,6 +63,24 @@ export function userStore(db: DatabaseSync) {
       )
         throw new Error("Нельзя убрать последнего администратора");
       db.prepare("UPDATE users SET role=? WHERE id=?").run(role, id);
+      if (target.role !== role)
+        audit.record(
+          {
+            action: "Изменена роль",
+            entity: "user",
+            entityId: id,
+            label: target.name,
+            personIds: [],
+            details: [
+              {
+                field: "Роль",
+                before: ROLE_NAMES[target.role],
+                after: ROLE_NAMES[role],
+              },
+            ],
+          },
+          actor,
+        );
       db.exec("COMMIT");
       return get(id)!;
     } catch (error) {

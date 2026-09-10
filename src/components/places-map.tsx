@@ -338,6 +338,20 @@ export default function PlacesMap({
         people: family.people.map((person) => {
           if (!owns(user, person)) return person;
           const updated = { ...person };
+          if (person.events)
+            updated.events = person.events.map((event) =>
+              event.place && placeKey(event.place) === current.key
+                ? {
+                    ...event,
+                    location: {
+                      place: event.place,
+                      lat: point.lat,
+                      lon: point.lon,
+                      label: point.label,
+                    },
+                  }
+                : event,
+            );
           for (const kind of ["birth", "death"] as const)
             if (placeKey(person[`${kind}Place`] || "") === current.key)
               updated[`${kind}Location`] = {
@@ -496,13 +510,16 @@ export default function PlacesMap({
               )}
               <ul className="place-events">
                 {current.events.map((event) => (
-                  <li key={`${event.person.id}:${event.kind}`}>
+                  <li
+                    key={`${event.person.id}:${event.kind}:${event.eventId || ""}`}
+                  >
                     <button onClick={() => onPerson(event.person.id)}>
                       <Avatar person={event.person} />
                       <span>
                         <b>{fullName(event.person)}</b>
                         <small>
-                          {event.kind === "birth" ? "Рождение" : "Смерть"}
+                          {event.label ||
+                            (event.kind === "birth" ? "Рождение" : "Смерть")}
                           {event.date ? ` · ${dateLabel(event.date)}` : ""}
                         </small>
                       </span>

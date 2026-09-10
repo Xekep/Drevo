@@ -1,4 +1,4 @@
-import { GitBranch, RotateCcw } from "lucide-react";
+import { GitBranch, RotateCcw, Share2 } from "lucide-react";
 import { fullName, type Person } from "../../domain";
 
 export function FamilyViewTools({
@@ -10,6 +10,7 @@ export function FamilyViewTools({
   onFamily,
   onAll,
   onReset,
+  onShare,
 }: {
   anchor?: Person;
   selected?: Person;
@@ -19,6 +20,7 @@ export function FamilyViewTools({
   onFamily: () => void;
   onAll: () => void;
   onReset: () => void;
+  onShare?: () => void;
 }) {
   if (!anchor && !selected && !changed) return null;
   return (
@@ -49,6 +51,12 @@ export function FamilyViewTools({
           </button>
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}
+        {anchor && onShare && (
+          <button onClick={onShare}>
+            <Share2 size={15} />
+            Поделиться
+          </button>
+        )}
         {changed && (
           <button
             className="tree-family-reset"

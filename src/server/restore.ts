@@ -299,7 +299,12 @@ export function restoreStore(
             url: urls.get(p.url) || p.url,
           })),
         };
-        result = archive.write(family, stage.revision, actor);
+        result = archive.write(
+          family,
+          stage.revision,
+          actor,
+          "Восстановление из бэкапа",
+        );
       } catch (error) {
         for (const path of created) rmSync(path, { force: true });
         throw error;

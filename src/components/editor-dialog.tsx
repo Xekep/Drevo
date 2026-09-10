@@ -7,6 +7,7 @@ export function EditorDialog({
   wide = false,
   inline = false,
   suspended = false,
+  className = "",
 }: {
   title: string;
   onClose: () => void;
@@ -14,6 +15,7 @@ export function EditorDialog({
   wide?: boolean;
   inline?: boolean;
   suspended?: boolean;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -42,7 +44,7 @@ export function EditorDialog({
   return (
     <dialog
       ref={ref}
-      className={`editor-dialog ${wide ? "wide" : ""}`}
+      className={`editor-dialog ${wide ? "wide" : ""} ${className}`}
       onCancel={(event) => {
         event.preventDefault();
         event.stopPropagation();
