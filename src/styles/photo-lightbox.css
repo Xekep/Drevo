@@ -338,6 +338,8 @@
   place-items: center;
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  container-type: size;
 }
 .photo-slide-neighbor.is-previous {
   transform: translateX(-100%);
@@ -345,9 +347,13 @@
 .photo-slide-neighbor.is-next {
   transform: translateX(100%);
 }
-.photo-slide-neighbor img {
-  max-width: 100%;
-  max-height: 100%;
+.photo-slide-neighbor img,
+.photo-lightbox .photo-slide-current .tag-image > img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100cqw;
+  max-height: 100cqh;
   object-fit: contain;
 }
 .photo-lightbox .tag-image.tagging {
