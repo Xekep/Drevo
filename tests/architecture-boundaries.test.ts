@@ -42,6 +42,17 @@ test("App delegates photo viewer and upload state to photo workspace", () => {
     assert.doesNotMatch(app, new RegExp(module));
   assert.match(workspace, /const \[uploadOpen, setUploadOpen\]/);
   assert.match(workspace, /const openPhoto = useCallback/);
-  assert.match(overlays, /<PhotoUpload/);
-  assert.match(overlays, /<PhotoViewer/);
+  assert.match(overlays, /const PhotoUpload = lazy/);
+  assert.match(overlays, /const PhotoViewer = lazy/);
+});
+
+test("entry point does not eagerly bundle App and shared tree together", () => {
+  const main = readFileSync(new URL("src/main.tsx", root), "utf8");
+  assert.doesNotMatch(main, /import App from/);
+  assert.doesNotMatch(main, /import SharedTree from/);
+  assert.match(main, /const App = lazy\(\(\) => import\("\.\/App"\)\)/);
+  assert.match(
+    main,
+    /const SharedTree = lazy\(\(\) => import\("\.\/components\/shared-tree"\)\)/,
+  );
 });
