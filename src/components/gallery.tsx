@@ -91,9 +91,21 @@ export function Gallery({
         <div className="gallery-heading-copy">
           <span className="section-label">СЕМЕЙНЫЙ АЛЬБОМ</span>
           <h2>
-            {filterPerson
-              ? `Фотоальбом: ${filterPerson.name} ${filterPerson.surname}`
-              : "Лица нашей истории"}
+            {filterPerson ? (
+              <>
+                <span className="gallery-title-desktop">
+                  Фотоальбом: {filterPerson.name} {filterPerson.surname}
+                </span>
+                <span className="gallery-title-mobile">
+                  {filterPerson.name} {filterPerson.surname}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="gallery-title-desktop">Лица нашей истории</span>
+                <span className="gallery-title-mobile">Семейный альбом</span>
+              </>
+            )}
           </h2>
           {personFilter && (
             <button onClick={onClearFilter}>Показать все фотографии</button>
