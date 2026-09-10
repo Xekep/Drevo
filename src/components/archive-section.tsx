@@ -1,9 +1,5 @@
-import { lazy, Suspense } from "react";
-import type {
-  ArchiveUser,
-  Family,
-  Person,
-} from "../domain";
+import { lazy, Suspense, type ReactNode } from "react";
+import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
 
 const PeopleCatalog = lazy(() =>
@@ -38,7 +34,7 @@ type Props = {
 };
 
 export function ArchiveSection(props: Props) {
-  let content = null;
+  let content: ReactNode = null;
   if (props.view === "list")
     content = (
       <PeopleCatalog
