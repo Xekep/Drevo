@@ -42,6 +42,45 @@ export function openArchive(path: string, seed: Family) {
       readPeoplePage(db, offset, limit),
     photoPage = (offset: number, limit: number) =>
       readPhotoPage(db, offset, limit);
+
+  const checkRevision = (expected: number) => {
+    const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
+    if (old && Number(old.revision) !== expected)
+      throw new ConflictError(
+        "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
+      );
+    return old ? Number(old.revision) : null;
+  };
+  const remember = (
+    previous: Family,
+    family: Family,
+    revision: number,
+    actor?: ArchiveUser,
+    operation?: string,
+  ) => {
+    db.prepare(
+      "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
+    ).run(revision, JSON.stringify(previous));
+    audit.archive(previous, family, actor, revision + 1);
+    if (operation)
+      audit.record(
+        {
+          action: operation,
+          entity: "archive",
+          entityId: "archive",
+          label: "Семейный архив",
+          personIds: [],
+          details: [],
+        },
+        actor,
+        revision + 1,
+      );
+  };
+  const finishWrite = () =>
+    db.exec(
+      "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50); COMMIT;",
+    );
+
   function write(
     value: unknown,
     expected: number,
@@ -50,37 +89,16 @@ export function openArchive(path: string, seed: Family) {
   ) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
-      if (old && Number(old.revision) !== expected)
-        throw new ConflictError(
-          "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
-        );
+      const oldRevision = checkRevision(expected);
       // Один согласованный снимок внутри write-lock используется и для проверки
-      // прав, и для history/audit. Раньше большой архив читался здесь до трёх раз.
-      const previous = old ? read().family : null;
+      // прав, и для history/audit. Раньше большой архив читался здесь несколько раз.
+      const previous = oldRevision === null ? null : read().family;
       const family =
         actor && previous
           ? authorizeArchive(value, previous, actor)
           : validateFamily(value);
-      if (old && previous)
-        db.prepare(
-          "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
-        ).run(Number(old.revision), JSON.stringify(previous));
-      if (old && previous)
-        audit.archive(previous, family, actor, expected + 1);
-      if (old && operation)
-        audit.record(
-          {
-            action: operation,
-            entity: "archive",
-            entityId: "archive",
-            label: "Семейный архив",
-            personIds: [],
-            details: [],
-          },
-          actor,
-          expected + 1,
-        );
+      if (previous && oldRevision !== null)
+        remember(previous, family, oldRevision, actor, operation);
       db.exec(
         "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
       );
@@ -136,15 +154,56 @@ export function openArchive(path: string, seed: Family) {
         Number(family.demo),
         expected + 1,
       );
-      db.exec(
-        "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50); COMMIT;",
-      );
-      return read();
+      finishWrite();
+      // family уже валидирован и именно его мы только что записали. Повторный
+      // readArchive здесь раньше зря парсил весь архив ещё раз.
+      return { family, revision: expected + 1 };
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
   }
+
+  function appendPhoto(value: ArchivePhoto, expected: number, actor: ArchiveUser) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const oldRevision = checkRevision(expected);
+      if (oldRevision === null)
+        throw new ConflictError("Архив ещё не создан");
+      const previous = read().family;
+      const family = authorizeArchive(
+        {
+          ...previous,
+          photos: [...(previous.photos || []), value],
+        },
+        previous,
+        actor,
+      );
+      const photo = family.photos!.find((item) => item.id === value.id)!;
+      remember(previous, family, oldRevision, actor);
+      db.prepare("INSERT INTO photos(id,data) VALUES(?,?)").run(
+        photo.id,
+        JSON.stringify({ ...photo, tags: undefined }),
+      );
+      const tagQuery = db.prepare(
+        "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
+      );
+      for (const tag of photo.tags)
+        tagQuery.run(
+          `${photo.id}:${tag.id}`,
+          photo.id,
+          tag.personId,
+          JSON.stringify(tag),
+        );
+      db.prepare("UPDATE archive SET revision=? WHERE id=1").run(expected + 1);
+      finishWrite();
+      return { family, revision: expected + 1 };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
   return {
     read,
@@ -153,6 +212,7 @@ export function openArchive(path: string, seed: Family) {
     peoplePage,
     photoPage,
     write,
+    appendPhoto,
     close: () => db.close(),
     db,
   };
