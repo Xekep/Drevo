@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Family } from "../../domain/types";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout";
 import { projectTree } from "../../domain/family-neighborhood";
+import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
 
 export function useTreeLayout(
   family: Family,
@@ -27,37 +28,57 @@ export function useTreeLayout(
     error: string;
   }>({ key: "", geometry: null, error: "" });
   const [busy, setBusy] = useState(false);
+  const workerRef = useRef<Worker | null>(null);
+  const requestRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    },
+    [],
+  );
+
   useEffect(() => {
-    let active = true;
-    const worker = new Worker(new URL("./layout.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    const timer = setTimeout(() => setBusy(true), 80);
-    const finish = (data: TreeGeometry | { error: string }) => {
-      if (!active) return;
+    const worker =
+      workerRef.current ||
+      new Worker(new URL("./layout.worker.ts", import.meta.url), {
+        type: "module",
+      });
+    workerRef.current = worker;
+
+    const requestId = ++requestRef.current;
+    const timer = setTimeout(() => {
+      if (requestRef.current === requestId) setBusy(true);
+    }, 80);
+    const finish = (data: TaggedLayoutWorkerResponse) => {
+      if (data.requestId !== requestId || requestRef.current !== requestId)
+        return;
       clearTimeout(timer);
       setBusy(false);
       setResult((previous) =>
         "error" in data
           ? { key, geometry: previous.geometry, error: data.error }
-          : { key, geometry: data, error: "" },
+          : { key, geometry: data.geometry, error: "" },
       );
     };
-    worker.onmessage = (
-      event: MessageEvent<TreeGeometry | { error: string }>,
-    ) => finish(event.data);
+
+    worker.onmessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
+      finish(event.data);
     worker.onerror = () =>
       finish({
+        requestId,
         error:
           "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
       });
-    worker.postMessage(JSON.parse(key));
+    worker.postMessage({ requestId, ...JSON.parse(key) });
+
     return () => {
-      active = false;
       clearTimeout(timer);
-      worker.terminate();
+      if (requestRef.current === requestId) setBusy(false);
     };
   }, [key]);
+
   return {
     geometry: result.geometry,
     ready: result.key === key && !result.error,
