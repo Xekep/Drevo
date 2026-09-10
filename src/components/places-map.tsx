@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { LocateFixed, MapPin, Search, X } from "lucide-react";
+import { List, LocateFixed, MapPin, Search, X } from "lucide-react";
 import {
   fullName,
   dateLabel,
@@ -19,6 +19,7 @@ import {
 } from "../domain/places";
 import { Avatar } from "./person-panel";
 import { portraitMarker, markerPeople } from "./map-portrait-marker";
+import { useDockSwipe } from "../hooks/useDockSwipe";
 
 type Point = PlaceCandidate & { key: string; title: string; people: Person[] };
 function MapSurface({
@@ -133,7 +134,7 @@ function MapSurface({
         className="family-map-tiles"
         ref={host}
         role="region"
-        aria-label="Карта мест рождения и смерти. Люди также доступны в списке рядом."
+        aria-label="Карта мест рождения и смерти. Сведения о людях доступны в списке мест."
       />
       <button
         className="map-fit"
@@ -173,6 +174,27 @@ export default function PlacesMap({
   onPerson: (id: string) => void;
 }) {
   const places = useMemo(() => familyPlaces(family.people), [family.people]);
+  const [listOpen, setListOpen] = useState(false);
+  const sidebar = useRef<HTMLElement>(null),
+    drawerHeading = useRef<HTMLDivElement>(null),
+    listButton = useRef<HTMLButtonElement>(null);
+  const closeList = useCallback(() => {
+    setListOpen(false);
+    listButton.current?.focus({ preventScroll: true });
+  }, []);
+  const expandList = useCallback(() => setListOpen(true), []);
+  useDockSwipe(sidebar, drawerHeading, true, listOpen, closeList, expandList);
+  useEffect(() => {
+    if (!listOpen || !matchMedia("(max-width: 899px)").matches) return;
+    drawerHeading.current
+      ?.querySelector("button")
+      ?.focus({ preventScroll: true });
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeList();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [listOpen, closeList]);
   const [selected, setSelected] = useState(""),
     [results, setResults] = useState<Record<string, PlaceResult>>({}),
     [errors, setErrors] = useState<Record<string, string>>({}),
@@ -255,6 +277,8 @@ export default function PlacesMap({
   function select(id: string) {
     request.current++;
     setSelected(id);
+    setListOpen(true);
+    sidebar.current?.scrollTo({ top: 0 });
     setCandidates([]);
     setSearch(places.find((p) => p.key === id)?.name || "");
     setError("");
@@ -346,7 +370,31 @@ export default function PlacesMap({
           picking={picking}
           onPoint={setPicked}
         />
-        <aside className="places-sidebar" aria-label="Места и люди">
+        <button
+          ref={listButton}
+          className="map-list-toggle"
+          aria-expanded={listOpen}
+          aria-controls="places-list-panel"
+          onClick={() => select("")}
+        >
+          <List size={18} />
+          Список мест · {places.length}
+        </button>
+        <aside
+          ref={sidebar}
+          id="places-list-panel"
+          className={`places-sidebar${listOpen ? " is-open" : ""}`}
+          aria-label="Места и люди"
+        >
+          <div ref={drawerHeading} className="places-drawer-heading">
+            <span>
+              <i aria-hidden="true" />
+              Места семьи
+            </span>
+            <button onClick={closeList} aria-label="Закрыть список мест">
+              <X size={20} />
+            </button>
+          </div>
           {!current ? (
             <>
               <p className="places-intro">

@@ -26,11 +26,16 @@
   margin: 0 0 4px;
 }
 .places-content {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   flex: 1;
   min-height: 0;
   border-top: 1px solid #dddcd0;
+}
+.map-list-toggle,
+.places-drawer-heading {
+  display: none;
 }
 .family-map-surface {
   position: relative;
@@ -315,23 +320,84 @@
 }
 @media (max-width: 899px) {
   .places-heading {
-    padding: 18px 16px 14px;
-    display: block;
-  }
-  .places-heading h1 {
-    font-size: 26px;
-  }
-  .places-heading p {
-    margin-top: 8px;
+    display: none;
   }
   .places-content {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(240px, 48%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+    border: 0;
   }
   .places-sidebar {
+    display: none;
+    position: absolute;
+    inset: auto 0 0;
+    z-index: 5;
+    height: min(78dvh, 100%);
     border-left: 0;
     border-top: 1px solid #dddcd0;
-    padding: 16px;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -8px 32px #243e3520;
+    padding: 0 max(16px, env(safe-area-inset-right))
+      max(18px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    transform: translateY(var(--dock-drag, 0px));
+    transition: transform 160ms ease-out;
+  }
+  .places-sidebar.is-open {
+    display: block;
+  }
+  .places-sidebar.is-dragging {
+    transition: none;
+  }
+  .places-drawer-heading {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: #fbfaf4;
+    margin: 0 -16px 14px;
+    padding: 6px 12px 6px 20px;
+    border-bottom: 1px solid #e5e6db;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .places-drawer-heading > span {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #657960;
+    font-size: 13px;
+  }
+  .places-drawer-heading i {
+    width: 28px;
+    height: 4px;
+    border-radius: 4px;
+    background: #bec8b7;
+  }
+  .places-drawer-heading button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .map-list-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    z-index: 2;
+    min-height: 40px;
+    padding: 9px 13px;
+    background: #fffef5f5;
+    border: 1px solid #cdd6c7;
+    border-radius: 20px;
+    box-shadow: 0 3px 12px #304d3520;
+    font-size: 12px;
   }
   .family-map-surface {
     min-height: 0;
@@ -348,5 +414,13 @@
     left: 10px;
     top: 10px;
     padding: 9px 11px;
+  }
+  .family-map-tiles .leaflet-bottom {
+    bottom: env(safe-area-inset-bottom);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .places-sidebar {
+    transition: none;
   }
 }

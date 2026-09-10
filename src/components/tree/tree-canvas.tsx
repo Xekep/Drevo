@@ -34,6 +34,7 @@ import {
   type TreeMode,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
 import {
   RelationshipEdge,
@@ -209,6 +210,7 @@ function Canvas(props: Props) {
     previousContext = useRef(""),
     previousReverse = useRef(reverse);
   const context = `${mode}:${root || "all"}`;
+  useTouchZoom(container, flow);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
     visible,

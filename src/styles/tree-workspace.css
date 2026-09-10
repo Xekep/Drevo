@@ -154,7 +154,6 @@
 .tree-view {
   position: absolute;
   inset: 0;
-  isolation: isolate;
 }
 .tree-view.is-hidden {
   /* React Flow задаёт своим узлам visibility: visible; прозрачность скрывает весь слой. */
@@ -163,6 +162,8 @@
   pointer-events: none;
 }
 .tree-canvas {
+  /* Слои React Flow остаются под панелями; мобильная карточка выше меню. */
+  isolation: isolate;
   user-select: none;
   -webkit-user-select: none;
   position: absolute;
@@ -231,7 +232,7 @@
 .inspector-dock {
   position: absolute;
   right: 16px;
-  top: 58px;
+  top: 12px;
   bottom: 16px;
   width: 332px;
   overflow: auto;
@@ -240,7 +241,7 @@
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 8px 32px #34512a12;
-  z-index: 15;
+  z-index: 45;
 }
 .inspector-heading,
 .inline-editor > header {
@@ -258,6 +259,15 @@
   font-size: 11px;
   letter-spacing: 1px;
   color: var(--muted);
+}
+.inspector-heading {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 4;
+}
+.inspector-heading.is-editing {
+  display: none;
 }
 .inspector-heading button,
 .inline-editor > header button {
@@ -281,6 +291,9 @@
   display: flex;
   gap: 8px;
   padding: 16px 22px 0;
+}
+.inspector-person-actions:empty {
+  display: none;
 }
 .inspector-person-actions button {
   display: flex;
@@ -720,35 +733,64 @@
     right: 0;
   }
   .inspector-dock {
+    position: fixed;
     top: auto;
-    bottom: 12px;
-    left: 12px;
-    right: 12px;
+    bottom: 0;
+    left: 0;
+    right: 0;
     width: auto;
-    height: 44%;
-    max-height: 85%;
-    border-radius: 20px;
+    height: 44dvh;
+    max-height: 100dvh;
+    border-radius: 18px 18px 0 0;
+    transform: translateY(var(--dock-drag, 0px));
+    transition: transform 160ms ease-out;
   }
   .inspector-dock.expanded {
-    height: 84%;
+    top: 0;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+  .inspector-dock.is-dragging {
+    transition: none;
+  }
+  .inspector-heading,
+  .inspector-heading.is-editing {
+    display: flex;
+    min-height: 52px;
+    padding: max(4px, env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right)) 4px
+      max(10px, env(safe-area-inset-left));
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .inspector-heading > span {
+    font-size: 10px;
+    letter-spacing: 0.6px;
+  }
+  .inspector-heading > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .inspector-heading.is-editing {
+    touch-action: auto;
   }
   .dock-grip {
     display: flex;
+    margin-left: auto;
     justify-content: center;
-    position: sticky;
-    top: 0;
-    background: #fff;
-    z-index: 4;
   }
   .dock-grip button {
-    width: 72px;
+    min-height: 44px;
+    width: 60px;
     display: flex;
     justify-content: center;
     padding: 5px;
     color: #7a8e70;
   }
   .inspector-dock .inline-editor > header {
-    top: 28px;
+    position: static;
   }
   .tree-mode-bar > span {
     display: none;
@@ -808,11 +850,6 @@
   }
   .flow-empty p {
     font-size: 13px;
-  }
-  .inspector-dock {
-    bottom: 8px;
-    right: 8px;
-    left: 8px;
   }
   .inspector-dock .archive-form .form-grid {
     grid-template-columns: 1fr;
@@ -1211,12 +1248,16 @@
     left: 0;
     right: 0;
     bottom: 0;
-    border-radius: 18px 18px 0 0;
     padding-bottom: env(safe-area-inset-bottom);
     overscroll-behavior: contain;
   }
   .about-story {
     padding: 8px 22px 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector-dock {
+    transition: none;
   }
 }
 .mobile-sections {
