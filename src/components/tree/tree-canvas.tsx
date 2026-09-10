@@ -352,6 +352,36 @@ function Canvas(props: Props) {
       })),
     [households],
   );
+  const siblingNodes = useMemo<HouseholdNodeType[]>(
+    () =>
+      geometry?.mode === mode
+        ? (geometry.siblingGroups || [])
+            .filter((group) =>
+              group.members.every((id) =>
+                visible.has(occurrencePeople.get(id)!),
+              ),
+            )
+            .map((group) => ({
+              id: group.id,
+              type: "household",
+              position: { x: group.x, y: group.y },
+              width: group.width,
+              height: group.height,
+              data: {
+                label: `Дети · ${group.members.length}`,
+                reverse: geometry.reverse,
+              },
+              draggable: false,
+              selectable: false,
+              connectable: false,
+              focusable: false,
+              zIndex: -1,
+              style: { pointerEvents: "none" },
+              domAttributes: { "aria-hidden": true },
+            }))
+        : [],
+    [geometry, mode, visible, occurrencePeople],
+  );
   const peopleMap = useMemo(
     () => new Map(family.people.map((p) => [p.id, p])),
     [family.people],
@@ -399,8 +429,8 @@ function Canvas(props: Props) {
     ],
   );
   const displayNodes = useMemo(
-    () => [...householdNodes, ...nodes],
-    [householdNodes, nodes],
+    () => [...householdNodes, ...siblingNodes, ...nodes],
+    [householdNodes, siblingNodes, nodes],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
   const edges = useMemo<RelationshipEdgeType[]>(

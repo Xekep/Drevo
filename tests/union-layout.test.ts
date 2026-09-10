@@ -40,6 +40,29 @@ test("many terminal siblings stay below their own parents in compact local rows"
     const positions = new Map(g.positions),
       parent = positions.get("a")!;
     const childRows = new Set(children.map((p) => positions.get(p.id)!.y));
+    assert.equal(g.siblingGroups!.length, 1);
+    const siblingGroup = g.siblingGroups![0];
+    assert.deepEqual(
+      [...siblingGroup.members].sort(),
+      children.map((c) => c.id).sort(),
+    );
+    for (const child of children) {
+      const p = positions.get(child.id)!;
+      assert.ok(
+        p.x >= siblingGroup.x &&
+          p.x + 220 <= siblingGroup.x + siblingGroup.width,
+      );
+      assert.ok(
+        p.y >= siblingGroup.y &&
+          p.y + 96 <= siblingGroup.y + siblingGroup.height,
+      );
+      // Подпись общей группы не закрывает карточки ни в одном направлении.
+      assert.ok(
+        reverse
+          ? p.y >= siblingGroup.y + 24
+          : p.y + 96 <= siblingGroup.y + siblingGroup.height - 24,
+      );
+    }
     assert.ok(
       childRows.size > 1,
       "a large sibling group must not be forced onto one line",

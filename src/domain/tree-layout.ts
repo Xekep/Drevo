@@ -24,6 +24,7 @@ export type TreeGeometry = {
   routes?: [string, EdgeRoute][];
   occurrences?: UnionOccurrence[];
   blocks?: UnionBlock[];
+  siblingGroups?: UnionBlock[];
   branches?: UnionBranch[];
   coveredRelations?: string[];
 };

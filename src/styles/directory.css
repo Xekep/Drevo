@@ -93,6 +93,25 @@
   border-color: transparent;
   box-shadow: none;
 }
+.flow-household--siblings {
+  position: relative;
+  border-color: #dfe6d7;
+  border-radius: 14px;
+  background: #eaf0e21a;
+  box-shadow: none;
+}
+.flow-household--siblings > span {
+  position: absolute;
+  right: 14px;
+  bottom: 5px;
+  color: #627657;
+  font-size: 12px;
+  line-height: 16px;
+}
+.flow-household--siblings[data-reverse="true"] > span {
+  top: 5px;
+  bottom: auto;
+}
 .people-directory header {
   display: flex;
   align-items: end;

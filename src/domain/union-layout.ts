@@ -286,6 +286,24 @@ export async function unionGeometry(
       });
   }
   const branches: UnionBranch[] = [];
+  const siblingGroups: UnionBlock[] = [];
+  for (const [id, group] of groups) {
+    // Рамка объединяет ряды братьев и сестёр; это не отдельные поколения.
+    if (new Set(group.leaves.map((l) => l.y)).size < 2) continue;
+    const p = placed.get(id)!;
+    const top = Math.min(...group.leaves.map((l) => l.y)) - 12;
+    const bottom = Math.max(...group.leaves.map((l) => l.y)) + H + 24;
+    siblingGroups.push({
+      id: `siblings:${id}`,
+      members: group.leaves.map((l) =>
+        occurrence.get(JSON.stringify([l.unit, l.person]))!,
+      ),
+      x: p.x - group.inset + 24,
+      y: p.y + top,
+      width: group.width - 48,
+      height: bottom - top,
+    });
+  }
   for (const unit of units) {
     if (unit.members.length !== 2) continue;
     const p = placed.get(unit.id)!;
@@ -365,6 +383,7 @@ export async function unionGeometry(
     const maxY = Math.max(0, ...positions.map(([, p]) => p.y));
     for (const [, p] of positions) p.y = maxY - p.y;
     for (const b of blocks) b.y = maxY - b.y;
+    for (const g of siblingGroups) g.y = maxY + H - g.y - g.height;
     for (const b of branches) {
       for (const p of b.route.points) p.y = maxY + H - p.y;
       if (b.route.sourceHandle === "bottom") b.route.sourceHandle = "top";
@@ -388,6 +407,7 @@ export async function unionGeometry(
     routes,
     occurrences,
     blocks,
+    siblingGroups,
     branches,
   };
 }

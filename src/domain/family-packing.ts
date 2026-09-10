@@ -1,5 +1,6 @@
 import type { ElkNode } from "elkjs";
 import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
+import { completeLayout, layoutCost, layoutQuality } from "./layout-quality.ts";
 
 type Unit = { id: string; members: string[]; children: string[] };
 type Attachment = { from: Unit; to: Unit; child: string };
@@ -72,23 +73,11 @@ export async function compactFamilyLayout(
   layout: (graph: ElkNode) => Promise<ElkNode>,
 ) {
   const baseline = await layout(structuredClone(graph));
-  const bounds = (g: ElkNode) => {
-    const nodes = g.children || [];
-    if (!nodes.length) return { width: 0, height: 0 };
-    return {
-      width:
-        Math.max(...nodes.map((n) => (n.x || 0) + (n.width || 0))) -
-        Math.min(...nodes.map((n) => n.x || 0)),
-      height:
-        Math.max(...nodes.map((n) => (n.y || 0) + (n.height || 0))) -
-        Math.min(...nodes.map((n) => n.y || 0)),
-    };
-  };
-  const before = bounds(baseline);
+  const before = layoutQuality(baseline);
   if (before.width < 2200 || before.width < before.height * 1.8)
     return baseline;
   let best = baseline,
-    score = Math.max(before.width, before.height);
+    score = layoutCost(before, before);
   for (const bound of [4, 2]) {
     try {
       const compact = await layout({
@@ -99,20 +88,15 @@ export async function compactFamilyLayout(
           "elk.layered.layering.minWidth.upperBoundOnWidth": String(bound),
         },
       });
-      if (
-        compact.children?.length !== baseline.children?.length ||
-        compact.edges?.length !== baseline.edges?.length ||
-        !compact.children?.every(
-          (n) => Number.isFinite(n.x) && Number.isFinite(n.y),
-        )
-      )
-        continue;
-      const after = bounds(compact),
-        candidate = Math.max(after.width, after.height);
+      if (!completeLayout(compact, baseline)) continue;
+      const after = layoutQuality(compact),
+        candidate = layoutCost(after, before);
       if (
         after.width < before.width * 0.9 &&
-        candidate < Math.max(before.width, before.height) * 0.88 &&
-        candidate < score
+        after.extent < before.extent * 0.9 &&
+        after.longest <= before.longest * 1.25 + W &&
+        after.crossedRoutes <= before.crossedRoutes &&
+        candidate < score * 0.95
       ) {
         best = compact;
         score = candidate;
