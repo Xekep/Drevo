@@ -135,10 +135,10 @@ test("opened person portrait is larger on desktop and mobile", () => {
   const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
   assert.match(
     css,
-    /\.profile-avatar\s*\{\s*width: 112px;\s*height: 112px;/,
+    /\.profile-avatar\s*\{\s*width: 144px;\s*height: 144px;/,
   );
   assert.match(
     css,
-    /@media \(max-width: 899px\)[\s\S]*\.profile-avatar\s*\{\s*width: 96px;\s*height: 96px;/,
+    /@media \(max-width: 899px\)[\s\S]*\.profile-avatar\s*\{\s*width: 128px;\s*height: 128px;/,
   );
 });
