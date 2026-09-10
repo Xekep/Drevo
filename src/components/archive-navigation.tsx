@@ -158,13 +158,6 @@ export function ArchiveNavigation({
               </button>
             </form>
           )}
-          {!desktop && (
-            <p>
-              Просмотр на телефоне.
-              <br />
-              Редактирование — с компьютера.
-            </p>
-          )}
         </div>
       </details>
     </nav>
