@@ -51,16 +51,6 @@
   max-width: 100cqw;
 }
 .photo-lightbox .photo-tools {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 76px 24px 28px;
-  background: #00000080;
-  border-left: 1px solid #ffffff0d;
-  gap: 18px;
-  overflow-wrap: anywhere;
-  scrollbar-width: thin;
-}
-.photo-lightbox .is-editing .photo-tools {
   --ink: #2c3c2d;
   --muted: #667260;
   --line: #dce3d4;
@@ -72,10 +62,20 @@
   --photo-selected-bg: #e6eedd;
   --photo-accent: #46653b;
   --photo-danger: #a15347;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 76px 24px 28px;
   background: var(--paper);
-  border-color: var(--line);
+  border-left: 1px solid var(--line);
+  gap: 18px;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
   color: var(--ink);
   color-scheme: light;
+}
+.photo-lightbox .photo-tools .photo-info-close {
+  color: var(--ink);
+  background: var(--photo-button-bg);
 }
 .photo-lightbox .photo-tools p {
   font-size: 13px;
@@ -130,22 +130,19 @@
 .photo-lightbox a:hover {
   background-color: #ffffff18;
 }
-.photo-lightbox .is-editing .photo-tools :is(button, a):hover:not(:disabled) {
+.photo-lightbox .photo-tools :is(button, a):hover:not(:disabled) {
   background-color: #e6eedd;
 }
-.photo-lightbox
-  .is-editing
-  .photo-tools
-  button.primary-action:hover:not(:disabled) {
+.photo-lightbox .photo-tools button.primary-action:hover:not(:disabled) {
   background-color: #456247;
 }
 @media (min-width: 900px) {
-  .photo-lightbox:has(.is-editing) > .photo-close {
+  .photo-lightbox > .photo-close {
     --green: #526f43;
     color: #405738;
     background: #e8eedf;
   }
-  .photo-lightbox:has(.is-editing) > .photo-close:hover {
+  .photo-lightbox > .photo-close:hover {
     background: #dce6d1;
   }
 }
@@ -246,11 +243,10 @@
     inset: auto 0 0;
     max-height: 75dvh;
     padding: 60px 22px max(24px, env(safe-area-inset-bottom));
-    border: 1px solid #ffffff20;
+    border: 1px solid var(--line);
     border-bottom: 0;
     border-radius: 18px 18px 0 0;
-    background: #111613ed;
-    backdrop-filter: blur(16px);
+    background: var(--paper);
     z-index: 4;
   }
   .photo-lightbox .info-open .photo-tools,
