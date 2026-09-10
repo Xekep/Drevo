@@ -18,6 +18,47 @@ export type RelationshipEdgeType = Edge<
   },
   "relationship" | "smoothstep"
 >;
+
+function shallowRecordEqual(a: unknown, b: unknown) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object")
+    return false;
+  const left = a as Record<string, unknown>,
+    right = b as Record<string, unknown>,
+    keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => left[key] === right[key])
+  );
+}
+
+function sameRelationshipEdgeProps(
+  a: EdgeProps<RelationshipEdgeType>,
+  b: EdgeProps<RelationshipEdgeType>,
+) {
+  const ad = a.data,
+    bd = b.data;
+  return (
+    a.id === b.id &&
+    a.selected === b.selected &&
+    a.sourceX === b.sourceX &&
+    a.sourceY === b.sourceY &&
+    a.targetX === b.targetX &&
+    a.targetY === b.targetY &&
+    a.sourcePosition === b.sourcePosition &&
+    a.targetPosition === b.targetPosition &&
+    shallowRecordEqual(a.style, b.style) &&
+    shallowRecordEqual(a.markerEnd, b.markerEnd) &&
+    ad?.connection === bd?.connection &&
+    ad?.onSelect === bd?.onSelect &&
+    ad?.route === bd?.route &&
+    ad?.path === bd?.path &&
+    (ad?.junction === bd?.junction ||
+      (ad?.junction?.x === bd?.junction?.x &&
+        ad?.junction?.y === bd?.junction?.y))
+  );
+}
+
 export const RelationshipEdge = memo(function RelationshipEdge(
   props: EdgeProps<RelationshipEdgeType>,
 ) {
@@ -64,4 +105,4 @@ export const RelationshipEdge = memo(function RelationshipEdge(
       )}
     </>
   );
-});
+}, sameRelationshipEdgeProps);
