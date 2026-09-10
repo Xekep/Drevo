@@ -63,6 +63,37 @@ test("storage exposes cheap archive metadata and stable row pages", () => {
   }
 });
 
+test("overview reads the graph without heavy person fields or photo rows", () => {
+  const linked = structuredClone(seed);
+  linked.people[0].spouses = ["b"];
+  linked.people[1].spouses = ["a"];
+  linked.people[2].parents = ["a", "b"];
+  linked.people[0].biography = "Большая биография, которая не нужна раскладке";
+  linked.people[0].photo = "/media/portrait.jpg";
+  const store = openArchive(":memory:", linked);
+  try {
+    const hiddenPortraits = store.overview(false),
+      a = hiddenPortraits.family.people.find((p) => p.id === "a")!,
+      c = hiddenPortraits.family.people.find((p) => p.id === "c")!;
+    assert.equal(hiddenPortraits.revision, 1);
+    assert.deepEqual(hiddenPortraits.totals, { people: 3, photos: 2 });
+    assert.equal(hiddenPortraits.family.photos?.length, 0);
+    assert.deepEqual(a.sources, []);
+    assert.equal(a.biography, undefined);
+    assert.equal(a.photo, undefined);
+    assert.deepEqual(a.spouses, ["b"]);
+    assert.deepEqual(c.parents, ["a", "b"]);
+
+    const withPortraits = store.overview(true);
+    assert.equal(
+      withPortraits.family.people.find((p) => p.id === "a")!.photo,
+      "/media/portrait.jpg",
+    );
+  } finally {
+    store.close();
+  }
+});
+
 test("page reads see the latest revision without rebuilding relationships", () => {
   const store = openArchive(":memory:", seed);
   try {
