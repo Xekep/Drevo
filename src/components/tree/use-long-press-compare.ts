@@ -26,49 +26,51 @@ export function useLongPressCompare(onLongPress: () => void) {
   return {
     suppressClick,
     active: () => !!press.current,
-    onPointerDown(event: PointerEvent<HTMLButtonElement>) {
-      if (
-        event.pointerType !== "touch" ||
-        !event.isPrimary ||
-        event.button !== 0
-      )
-        return;
-      clearPress();
-      const current = {
-        pointerId: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-        fired: false,
-        timer: undefined as unknown as ReturnType<typeof setTimeout>,
-      };
-      current.timer = setTimeout(() => {
-        if (press.current !== current) return;
-        current.fired = true;
-        suppressClick.current = true;
-        onLongPress();
-      }, 520);
-      press.current = current;
-    },
-    onPointerMove(event: PointerEvent<HTMLButtonElement>) {
-      const current = press.current;
-      if (!current || current.pointerId !== event.pointerId || current.fired)
-        return;
-      if (
-        Math.hypot(event.clientX - current.x, event.clientY - current.y) > 12
-      )
+    handlers: {
+      onPointerDown(event: PointerEvent<HTMLButtonElement>) {
+        if (
+          event.pointerType !== "touch" ||
+          !event.isPrimary ||
+          event.button !== 0
+        )
+          return;
         clearPress();
+        const current = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          fired: false,
+          timer: undefined as unknown as ReturnType<typeof setTimeout>,
+        };
+        current.timer = setTimeout(() => {
+          if (press.current !== current) return;
+          current.fired = true;
+          suppressClick.current = true;
+          onLongPress();
+        }, 520);
+        press.current = current;
+      },
+      onPointerMove(event: PointerEvent<HTMLButtonElement>) {
+        const current = press.current;
+        if (!current || current.pointerId !== event.pointerId || current.fired)
+          return;
+        if (
+          Math.hypot(event.clientX - current.x, event.clientY - current.y) > 12
+        )
+          clearPress();
+      },
+      onPointerUp(event: PointerEvent<HTMLButtonElement>) {
+        const current = press.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        const fired = current.fired;
+        clearPress();
+        if (fired)
+          setTimeout(() => {
+            suppressClick.current = false;
+          }, 0);
+      },
+      onPointerCancel: clearPress,
+      onLostPointerCapture: clearPress,
     },
-    onPointerUp(event: PointerEvent<HTMLButtonElement>) {
-      const current = press.current;
-      if (!current || current.pointerId !== event.pointerId) return;
-      const fired = current.fired;
-      clearPress();
-      if (fired)
-        setTimeout(() => {
-          suppressClick.current = false;
-        }, 0);
-    },
-    onPointerCancel: clearPress,
-    onLostPointerCapture: clearPress,
   };
 }
