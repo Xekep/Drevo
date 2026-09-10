@@ -403,7 +403,7 @@ export async function startServer(
       return;
     }
     if (url === "/api/health" && req.method === "GET")
-      return json(res, 200, { ok: true, revision: archive.read().revision });
+      return json(res, 200, { ok: true, revision: archive.meta().revision });
     if (url.startsWith("/media/") && req.method === "GET") {
       const file = media.read(url);
       if (!file) return json(res, 404, { error: "Фото не найдено" });
@@ -471,20 +471,12 @@ export async function startServer(
       return;
     }
     if (url === "/api/family" && req.method === "GET") {
-      const data = snapshot(req),
-        pageToken = `${data.revision}:${Number(data.readTree)}:${Number(data.readPhotos)}`;
-      if (parsedUrl.searchParams.get("projection") === "overview")
-        return json(res, 200, {
-          ...data,
-          family: archiveOverview(data.family),
-          partial: true,
-          pageToken,
-          totals: {
-            people: data.family.people.length,
-            photos: data.family.photos?.length || 0,
-          },
-        });
-      if (parsedUrl.searchParams.get("projection") === "page") {
+      const projection = parsedUrl.searchParams.get("projection");
+      if (projection === "page") {
+        const meta = archive.meta(),
+          readTree = !!visitor || access.publicTree,
+          readPhotos = !!visitor || access.publicAlbums,
+          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}`;
         if (parsedUrl.searchParams.get("token") !== pageToken)
           return json(res, 409, {
             error: "Архив или доступ к нему изменились. Обновите данные.",
@@ -497,21 +489,37 @@ export async function startServer(
           offset < 0
         )
           return json(res, 400, { error: "Некорректная страница" });
-        const items =
-          collection === "people"
-            ? data.family.people
-            : data.family.photos || [];
+        if (collection === "people")
+          return json(res, 200, {
+            pageToken,
+            items: readTree
+              ? archive.peoplePage(offset, archivePageSize).map(personDetails)
+              : [],
+            total: readTree ? meta.people : 0,
+          });
         return json(res, 200, {
           pageToken,
-          items:
-            collection === "people"
-              ? data.family.people
-                  .slice(offset, offset + archivePageSize)
-                  .map(personDetails)
-              : items.slice(offset, offset + archivePageSize),
-          total: items.length,
+          items: readPhotos
+            ? archive
+                .photoPage(offset, archivePageSize)
+                .map((photo) => (readTree ? photo : { ...photo, tags: [] }))
+            : [],
+          total: readPhotos ? meta.photos : 0,
         });
       }
+      const data = snapshot(req),
+        pageToken = `${data.revision}:${Number(data.readTree)}:${Number(data.readPhotos)}`;
+      if (projection === "overview")
+        return json(res, 200, {
+          ...data,
+          family: archiveOverview(data.family),
+          partial: true,
+          pageToken,
+          totals: {
+            people: data.family.people.length,
+            photos: data.family.photos?.length || 0,
+          },
+        });
       return json(res, 200, data);
     }
     if (url === "/api/export" && req.method === "GET") {
