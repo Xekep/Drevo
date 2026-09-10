@@ -13,7 +13,6 @@ import {
 } from "../domain/index.ts";
 
 export class ConflictError extends Error {}
-export type ArchivePageCollection = "people" | "photos";
 
 export function openArchive(path: string, seed: Family) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -37,8 +36,10 @@ export function openArchive(path: string, seed: Family) {
   const audit = auditStore(db);
   const read = () => readArchive(db),
     meta = () => readArchiveMeta(db),
-    page = (collection: ArchivePageCollection, offset: number, limit: number) =>
-      readArchivePage(db, collection, offset, limit);
+    peoplePage = (offset: number, limit: number) =>
+      readPeoplePage(db, offset, limit),
+    photoPage = (offset: number, limit: number) =>
+      readPhotoPage(db, offset, limit);
   function write(
     value: unknown,
     expected: number,
@@ -138,7 +139,15 @@ export function openArchive(path: string, seed: Family) {
     }
   }
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
-  return { read, meta, page, write, close: () => db.close(), db };
+  return {
+    read,
+    meta,
+    peoplePage,
+    photoPage,
+    write,
+    close: () => db.close(),
+    db,
+  };
 }
 
 export function readArchiveMeta(db: DatabaseSync) {
@@ -153,25 +162,29 @@ export function readArchiveMeta(db: DatabaseSync) {
   };
 }
 
-export function readArchivePage(
+export function readPeoplePage(
   db: DatabaseSync,
-  collection: ArchivePageCollection,
   offset: number,
   limit: number,
-): Person[] | ArchivePhoto[] {
-  if (collection === "people")
-    return db
-      .prepare("SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?")
-      .all(limit, offset)
-      .map(
-        (row) =>
-          ({
-            ...JSON.parse(String(row.data)),
-            parents: [],
-            spouses: [],
-          }) as Person,
-      );
+): Person[] {
+  return db
+    .prepare("SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?")
+    .all(limit, offset)
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+}
 
+export function readPhotoPage(
+  db: DatabaseSync,
+  offset: number,
+  limit: number,
+): ArchivePhoto[] {
   const rows = db
       .prepare("SELECT id,data FROM photos ORDER BY rowid LIMIT ? OFFSET ?")
       .all(limit, offset),
