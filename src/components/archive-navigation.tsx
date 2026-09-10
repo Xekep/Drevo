@@ -11,6 +11,7 @@ import {
   CircleHelp,
   Menu,
   MapPin,
+  Sparkles,
   X,
 } from "lucide-react";
 import {
@@ -78,6 +79,7 @@ export function ArchiveNavigation({
             ["families", "Семьи", Heart],
             ["gallery", "Фото", Image],
             ["places", "Места", MapPin],
+            ["insights", "Интересное", Sparkles],
           ] as const
         )
           .filter(([id]) =>
@@ -111,6 +113,7 @@ export function ArchiveNavigation({
                 ["families", "Семьи", Heart],
                 ["gallery", "Фото", Image],
                 ["places", "Места", MapPin],
+                ["insights", "Интересное", Sparkles],
               ] as const
             )
               .filter(([id]) =>
