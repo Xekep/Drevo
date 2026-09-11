@@ -584,12 +584,7 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {help && (
-        <AboutProject
-          people={readTree ? family?.people : undefined}
-          onClose={() => setHelp(false)}
-        />
-      )}
+      {help && <AboutProject onClose={() => setHelp(false)} />}
       {archive.conflict && family && (
         <ConflictDialog conflict={archive.conflict} family={family} />
       )}

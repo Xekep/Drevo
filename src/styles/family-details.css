@@ -20,35 +20,6 @@
 .archive-summary > div:first-child {
   color: #475f43;
 }
-.about-archive {
-  margin: 25px 0;
-  padding: 20px;
-  border: 1px solid #dfe4d4;
-  border-radius: 12px;
-  background: #f5f6ed;
-}
-.about-archive h3 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #68755a;
-}
-.about-archive .archive-summary-detailed {
-  background: none;
-  padding: 0;
-  font-size: 16px;
-  width: auto;
-}
-.about-archive .archive-summary > div {
-  gap: 0 10px;
-}
-.about-archive .archive-summary > div + div {
-  margin-top: 7px;
-}
-.about-archive p {
-  margin: 12px 0 0;
-  font-size: 12px;
-}
 .summary-busy {
   position: absolute;
   top: 100%;

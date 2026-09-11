@@ -6,16 +6,8 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { EditorDialog } from "./editor-dialog";
-import { ArchiveSummary } from "./archive-summary";
-import type { Person } from "../domain";
 
-export function AboutProject({
-  onClose,
-  people,
-}: {
-  onClose: () => void;
-  people?: Person[];
-}) {
+export function AboutProject({ onClose }: { onClose: () => void }) {
   return (
     <EditorDialog title="О проекте" onClose={onClose}>
       <div className="about-story">
@@ -59,18 +51,6 @@ export function AboutProject({
             </span>
           </div>
         </div>
-        {people && (
-          <section
-            className="about-archive"
-            aria-label="Семейный архив в цифрах"
-          >
-            <h3>Наша история в цифрах</h3>
-            <ArchiveSummary people={people} detailed />
-            {!!people.length && (
-              <p>По известным датам жизни и связям между поколениями.</p>
-            )}
-          </section>
-        )}
         <div className="about-demo">
           <Heart size={16} />
           <p>
