@@ -104,3 +104,26 @@ test("production static handler does not synchronously read request files", () =
   assert.match(source, /openFile\s*\(/);
   assert.match(source, /pipeline\s*\(/);
 });
+
+test("server entry wires one static handler into the HTTP chain", () => {
+  const entry = readFileSync("src/server/index.ts", "utf8"),
+    chain = readFileSync("src/server/sharing-http.ts", "utf8");
+  assert.equal(
+    (entry.match(/productionStaticHttp\s*\(/g) || []).length,
+    1,
+    "index creates exactly one production static handler",
+  );
+  assert.match(entry, /serveStatic,\s*\}\);/);
+  assert.doesNotMatch(entry, /if\s*\(productionStatic/);
+  assert.equal(
+    (chain.match(/productionStaticHttp\s*\(/g) || []).length,
+    0,
+    "the request chain does not create a second static handler",
+  );
+  const media = chain.indexOf("await serveMedia(req, res, url)"),
+    staticFallback = chain.indexOf("return await serveStatic(req, res, url)");
+  assert.ok(
+    media >= 0 && staticFallback > media,
+    "media runs before static files",
+  );
+});

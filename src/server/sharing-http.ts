@@ -19,7 +19,7 @@ import { currentGeocodingStore } from "./geocoding.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
-import { productionStaticHttp } from "./production-static-http.ts";
+import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import { currentRestoreStore } from "./restore.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
@@ -31,6 +31,7 @@ export function sharingHttp({
   previewImage,
   visibility,
   publicOrigin,
+  serveStatic,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
@@ -38,8 +39,8 @@ export function sharingHttp({
   previewImage: ReturnType<typeof imagePreviews>;
   visibility: ReturnType<typeof settingsStore>;
   publicOrigin?: string;
+  serveStatic: ReturnType<typeof productionStaticHttp>;
 }) {
-  const serveStatic = productionStaticHttp();
   const core = coreHttp({ archive, auth, publicOrigin });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
@@ -79,7 +80,6 @@ export function sharingHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
-    if (await serveStatic(req, res, url)) return true;
     if (await core(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
@@ -92,7 +92,8 @@ export function sharingHttp({
     if (await serveMedia(req, res, url)) return true;
 
     const path = url.pathname;
-    if (!path.startsWith("/api/shared/")) return false;
+    if (!path.startsWith("/api/shared/"))
+      return await serveStatic(req, res, url);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
