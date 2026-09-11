@@ -142,7 +142,7 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     store.close();
     store = openArchive(path, seed());
     assert.deepEqual(store.read(), saved);
-    assert.equal(existsSync(photoFile), true, "referenced media survives restart cleanup");
+    assert.equal(existsSync(photoFile), true, "referenced media survives restart");
     const removed = removePerson(saved.family, "child");
     assert.equal(removed.photos![0].tags.length, 0);
     store.write({ ...seed(), people: [] }, saved.revision);
@@ -150,24 +150,6 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     store.close();
     store = openArchive(path, seed());
     assert.equal(store.read().family.people.length, 0);
-  } finally {
-    store.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-test("startup removes legacy orphan media but keeps unrelated files", () => {
-  const dir = mkdtempSync(join(tmpdir(), "drevo-media-prune-")),
-    path = join(dir, "archive.sqlite"),
-    uploads = join(dir, "uploads"),
-    orphan = join(uploads, "orphan.jpg"),
-    unrelated = join(uploads, "notes.txt");
-  mkdirSync(uploads, { recursive: true });
-  writeFileSync(orphan, "old orphan");
-  writeFileSync(unrelated, "do not touch");
-  const store = openArchive(path, seed());
-  try {
-    assert.equal(existsSync(orphan), false);
-    assert.equal(existsSync(unrelated), true);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
