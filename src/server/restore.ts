@@ -15,7 +15,7 @@ import {
   openSync,
   readSync,
   rmSync,
-  writeFileSync,
+  writeSync,
 } from "node:fs";
 import { open as openFile, rename, unlink } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
@@ -101,14 +101,21 @@ async function unpack(source: Readable, directory: string) {
     remaining = 0,
     padding = 0,
     name = "",
-    content: Buffer[] = [],
-    files = 0;
+    paxContent: Buffer[] = [],
+    files = 0,
+    entryFd: number | undefined;
   let pax = false,
     nextPath: string | undefined;
   const seen = new Set<string>();
+
   function finish() {
-    const data = Buffer.concat(content);
+    if (entryFd !== undefined) {
+      const fd = entryFd;
+      entryFd = undefined;
+      closeSync(fd);
+    }
     if (pax) {
+      const data = Buffer.concat(paxContent);
       let offset = 0;
       while (offset < data.length) {
         const space = data.indexOf(32, offset),
@@ -127,81 +134,101 @@ async function unpack(source: Readable, directory: string) {
           throw new Error("Ссылки в бэкапе не поддерживаются");
         offset += length;
       }
-    } else if (name) {
-      if (seen.has(name)) throw new Error("Повторяющееся имя файла в бэкапе");
-      seen.add(name);
-      writeFileSync(join(directory, name), data, { flag: "wx", mode: 0o600 });
     }
-    content = [];
+    paxContent = [];
     name = "";
     pax = false;
   }
-  for await (const chunk of stream) {
-    total += chunk.length;
-    if (total > UNPACKED_LIMIT)
-      throw new Error("Распакованный бэкап больше 512 МБ");
-    pending = Buffer.concat([pending, chunk]);
-    while (pending.length) {
-      if (remaining) {
-        const take = Math.min(remaining, pending.length);
-        content.push(Buffer.from(pending.subarray(0, take)));
-        pending = pending.subarray(take);
-        remaining -= take;
-        if (!remaining) finish();
-      } else if (padding) {
-        const take = Math.min(padding, pending.length);
-        pending = pending.subarray(take);
-        padding -= take;
-      } else {
-        if (pending.length < 512) break;
-        const header = pending.subarray(0, 512);
-        pending = pending.subarray(512);
-        if (header.every((b) => b === 0)) continue;
-        const field = (start: number, end: number) =>
-          header.toString("utf8", start, end).split("\0")[0];
-        const checksum = parseInt(field(148, 156).trim(), 8);
-        if (
-          header.reduce(
-            (sum, b, i) => sum + (i >= 148 && i < 156 ? 32 : b),
-            0,
-          ) !== checksum
-        )
-          throw new Error("Повреждён заголовок TAR");
-        const sizeText = field(124, 136).trim();
-        if (!/^[0-7]+$/.test(sizeText))
-          throw new Error("Некорректный размер файла");
-        remaining = parseInt(sizeText, 8);
-        padding = (512 - (remaining % 512)) % 512;
-        const type = field(156, 157),
-          prefix = field(345, 500);
-        name = nextPath || (prefix ? `${prefix}/` : "") + field(0, 100);
-        nextPath = undefined;
-        pax = type === "x" || type === "g";
-        if (++files > 10000) throw new Error("В бэкапе слишком много файлов");
-        if (pax) {
-          if (remaining > 65536)
-            throw new Error("Слишком большой заголовок TAR");
-        } else if (type === "5" && name === "uploads/" && remaining === 0)
-          name = "";
-        else {
-          if (type !== "0" && type !== "")
-            throw new Error("В бэкапе допустимы только обычные файлы");
+
+  try {
+    for await (const chunk of stream) {
+      total += chunk.length;
+      if (total > UNPACKED_LIMIT)
+        throw new Error("Распакованный бэкап больше 512 МБ");
+      pending = Buffer.concat([pending, chunk]);
+      while (pending.length) {
+        if (remaining) {
+          const take = Math.min(remaining, pending.length),
+            bytes = pending.subarray(0, take);
+          if (pax) paxContent.push(Buffer.from(bytes));
+          else if (entryFd !== undefined) {
+            let offset = 0;
+            while (offset < bytes.length) {
+              const written = writeSync(
+                entryFd,
+                bytes,
+                offset,
+                bytes.length - offset,
+              );
+              if (!written) throw new Error("Не удалось распаковать файл");
+              offset += written;
+            }
+          }
+          pending = pending.subarray(take);
+          remaining -= take;
+          if (!remaining) finish();
+        } else if (padding) {
+          const take = Math.min(padding, pending.length);
+          pending = pending.subarray(take);
+          padding -= take;
+        } else {
+          if (pending.length < 512) break;
+          const header = pending.subarray(0, 512);
+          pending = pending.subarray(512);
+          if (header.every((b) => b === 0)) continue;
+          const field = (start: number, end: number) =>
+            header.toString("utf8", start, end).split("\0")[0];
+          const checksum = parseInt(field(148, 156).trim(), 8);
           if (
-            name !== "drevo.sqlite" &&
-            !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/.test(name)
+            header.reduce(
+              (sum, b, i) => sum + (i >= 148 && i < 156 ? 32 : b),
+              0,
+            ) !== checksum
           )
-            throw new Error("Недопустимый путь в бэкапе");
-          if (
-            remaining >
-            (name === "drevo.sqlite" ? SQLITE_LIMIT : 20 * 1024 * 1024)
-          )
-            throw new Error("Один из файлов бэкапа слишком большой");
+            throw new Error("Повреждён заголовок TAR");
+          const sizeText = field(124, 136).trim();
+          if (!/^[0-7]+$/.test(sizeText))
+            throw new Error("Некорректный размер файла");
+          remaining = parseInt(sizeText, 8);
+          padding = (512 - (remaining % 512)) % 512;
+          const type = field(156, 157),
+            prefix = field(345, 500);
+          name = nextPath || (prefix ? `${prefix}/` : "") + field(0, 100);
+          nextPath = undefined;
+          pax = type === "x" || type === "g";
+          if (++files > 10000) throw new Error("В бэкапе слишком много файлов");
+          if (pax) {
+            if (remaining > 65536)
+              throw new Error("Слишком большой заголовок TAR");
+          } else if (type === "5" && name === "uploads/" && remaining === 0)
+            name = "";
+          else {
+            if (type !== "0" && type !== "")
+              throw new Error("В бэкапе допустимы только обычные файлы");
+            if (
+              name !== "drevo.sqlite" &&
+              !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/.test(name)
+            )
+              throw new Error("Недопустимый путь в бэкапе");
+            if (
+              remaining >
+              (name === "drevo.sqlite" ? SQLITE_LIMIT : 20 * 1024 * 1024)
+            )
+              throw new Error("Один из файлов бэкапа слишком большой");
+            if (seen.has(name))
+              throw new Error("Повторяющееся имя файла в бэкапе");
+            seen.add(name);
+            entryFd = openSync(join(directory, name), "wx", 0o600);
+          }
+          if (!remaining) finish();
         }
-        if (!remaining) finish();
       }
     }
+    if (remaining || padding || pending.length)
+      throw new Error("Бэкап оборван");
+  } finally {
+    if (entryFd !== undefined) closeSync(entryFd);
   }
-  if (remaining || padding || pending.length) throw new Error("Бэкап оборван");
 }
 
 type Stage = {
