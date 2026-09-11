@@ -6,8 +6,10 @@ import type { createAuth } from "./auth.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import type { settingsStore } from "./settings.ts";
+import { userStore } from "./users.ts";
 import { sharesStore } from "./shares.ts";
 import { auditStore } from "./audit.ts";
+import { adminAccessHttp } from "./admin-access-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
@@ -35,6 +37,12 @@ export function sharingHttp({
 }) {
   const serveStatic = productionStaticHttp();
   const serveBackup = databaseBackupHttp({ archive, auth });
+  const adminAccess = adminAccessHttp({
+    auth,
+    users: userStore(archive.db),
+    visibility,
+    publicOrigin,
+  });
   const restore = restoreHttp({
     restores: () => currentRestoreStore(archive),
     auth,
@@ -52,6 +60,7 @@ export function sharingHttp({
   ): Promise<boolean> => {
     if (await serveStatic(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
+    if (await adminAccess(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
