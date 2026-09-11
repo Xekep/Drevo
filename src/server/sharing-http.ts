@@ -12,6 +12,7 @@ import { auditStore } from "./audit.ts";
 import { adminAccessHttp } from "./admin-access-http.ts";
 import { adminSharingHttp } from "./admin-sharing-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
+import { coreHttp } from "./core-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
 import { placesHttp } from "./places-http.ts";
 import { currentGeocodingStore } from "./geocoding.ts";
@@ -39,6 +40,7 @@ export function sharingHttp({
   publicOrigin?: string;
 }) {
   const serveStatic = productionStaticHttp();
+  const core = coreHttp({ archive, auth, publicOrigin });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
     auth,
@@ -78,6 +80,7 @@ export function sharingHttp({
     url: URL,
   ): Promise<boolean> => {
     if (await serveStatic(req, res, url)) return true;
+    if (await core(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
