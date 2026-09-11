@@ -1,81 +1,74 @@
-# Follow-up аудита Drevo — 11 сентября 2026
+# Итоговый follow-up аудит Drevo — 11 сентября 2026
 
-Этот документ продолжает `audit-2026-09-10.md` и фиксирует состояние `main` после серии проверок и исправлений 11 сентября. Старый аудит полезен как исходная точка, но часть его раздела «Оставшиеся задачи» уже не соответствует текущему коду.
+Документ закрывает технический аудит, начатый в `audit-2026-09-10.md`. Контрольная кодовая версия перед этим docs-only изменением — `53e9cc849a5b0635d432c3bdf8ed07a18c12bde2`.
 
-## Что подтверждённо закрыто
+## Закрыто
 
-| Область | Текущий статус |
+| Область | Результат |
 | --- | --- |
-| Полная запись архива при обычной правке | Закрыто PR #28. Обычные совместимые изменения SQLite применяются инкрементально; полный rewrite оставлен для reorder, restore/import и редких структурных конфликтов. |
-| Отправка всего архива при обычном save | Закрыто PR #29. Клиент отправляет `Change[]` в `/api/family/changes`, revision/conflict flow сохранён. |
-| Синхронная выдача `/media/*` | Закрыто PR #27. Оригиналы стримятся, preview работает по path/cache key. |
-| Shared portrait через `media.read()` | Закрыто PR #31. Thumb строится по path, GIF/fallback отдаются через file stream. |
-| Синхронная production static выдача | Закрыто PR #32–#33. Production static и hashed assets обслуживаются отдельными асинхронными handlers. |
-| Крупный `tree-canvas.tsx` со смешанными обязанностями | Существенно декомпозирован PR #37–#40. Edge adapter, node model/layout orchestration, UI controls и camera state вынесены. `tree-canvas.tsx` уменьшился примерно с 34 КБ до 16,9 КБ. |
-| Повторяющаяся same-origin проверка в выделенных HTTP handlers | Общий `isSameOriginRequest` добавлен PR #41; family changes, media upload, GEDCOM и shared-link mutations переведены на него PR #42. Старые копии внутри монолитного `index.ts` ещё остаются. |
-| GEDCOM pre-import backup держит полную SQLite в Buffer | Закрыто PR #43. `VACUUM INTO` пишет backup сразу в конечный файл с правами `0600`. |
-| Restore preview буферизует весь upload до 128 МБ в JS heap | Закрыто PR #44. Request stream сначала пишется в защищённый временный файл с лимитом, raw SQLite переименовывается без полной копии, gzip читается как stream. Старые restore E2E тесты проходят через новый ранний handler. |
-| `/api/backup/full` создаёт полный SQLite Buffer | Закрыто PR #45. SQLite snapshot пишется сразу во временный staging-файл перед tar.gz. |
-| `/api/backup` создаёт полный SQLite Buffer | Закрыто PR #46. Snapshot пишется во временный файл и отдаётся через stream; HTTP access test открывает полученный SQLite и проверяет `PRAGMA integrity_check`. |
-| Retention deploy-релизов и автоматических backup | Уже реализован: сохраняются 5 последних deploy-релизов и 30 автоматических deploy-backup; `before-import-*` намеренно не удаляются этим retention. |
+| Production schema v2 | Deploy run `34610028445` для `827b70c3` завершён `success`; `Upload isolated release` и `Activate and check release` успешны. |
+| Владелец SQLite-схемы | PR #62 удалил DDL из store-модулей. Основная схема создаётся только в `src/server/schema.ts`; source-тест запрещает `CREATE TABLE` и `CREATE INDEX` в остальных `src/server/*.ts`. |
+| Порядок инициализации | `openArchive()` синхронно вызывает `initializeArchiveSchema()` до создания stores и runtime cleanup. Seed настроек и marker удаления demo-данных остались runtime data logic. |
+| Миграции | Существуют последовательные v0→v1→v2 шаги. Каждый шаг выполняется в `BEGIN IMMEDIATE`; `user_version` меняется перед `COMMIT` только после успешного шага. Проверены legacy schema, v1→v2 с сохранением данных, отказ от future version и rollback частично выполненного DDL. |
+| Server routing | PR #63 удалил второй production static fallback и закрепил единый порядок handler chain. PR #67 вынес публичный shared HTTP; `src/server/index.ts` содержит 190 строк сборки и верхнего dispatch, `sharing-http.ts` — около 100 строк композиции handlers. |
+| Полотно дерева | Ранее выделены `tree-edge-adapter.ts`, node model, camera state/tools и UI-контролы. Текущий `tree-canvas.tsx` — 537 строк orchestration и interaction logic; повторное механическое дробление без нового устойчивого boundary не требуется. |
+| CSS дерева | PR #64 свёл соседние mobile media blocks и удалил точный дубль. Сравнение итоговой cascade map до/после показало одинаковые 938 selector/property declarations; число блоков `max-width: 899px` уменьшилось с 6 до 4. |
+| Media I/O | Upload и отдача оригиналов потоковые. PR #65 удалил неиспользуемые `mediaStore.add(Buffer)` и `mediaStore.read()` вместе с синхронным whole-file I/O; source-тест запрещает его возвращение. |
+| Backup I/O | HTTP backup создаёт SQLite snapshot во временном файле и стримит его. PR #68 удалил production helper, возвращавший всю SQLite в `Buffer`; byte-helper оставлен только в тестах upload/restore. |
+| Restore I/O | Upload и TAR entries пишутся прямо в staging. PR #69 заменил `copyFileSync` при apply на асинхронное exclusive-копирование media и сохранил rollback уже созданных файлов. |
+| Restore security | Сохранены лимиты upload 128 МБ, SQLite 32 МБ, media 20 МБ, unpacked 512 МБ и 10 000 entries; checksum TAR, запрет ссылок, whitelist путей, duplicate names, magic/extension, read-only SQLite validation, staging cleanup, revision conflict и media rollback. |
 
-## Проверки и production
+## Слитые PR этой серии
 
-Runtime PR #39–#46 перед merge проходили GitHub Actions: `npm ci`, `npm run typecheck`, `npm run lint`, `bash -n ops/deploy.sh`, `npm run build`, все `tests/*.test.ts` на Node 22 и `npm run test:worker`.
+- #62 — единый владелец SQLite DDL;
+- #63 — единый production static handler;
+- #64 — безопасная консолидация mobile CSS;
+- #65 — удаление мёртвого буферного media API;
+- #66 — regression-тест rollback миграции;
+- #67 — выделение public shared HTTP;
+- #68 — удаление буферного backup API из runtime;
+- #69 — асинхронное копирование restore media.
 
-После merge проверялись production workflow и health-check. Deploy #87–#94 завершились успешно, включая upload изолированного release, activation и `/api/health` после перезапуска.
+Незелёный старый PR #52 закрыт и заменён PR #67 от актуального `main` с исправленным source-regression тестом.
 
-Для backup/restore дополнительно фактически покрыты:
+## Автоматически проверено
 
-- права admin/reader/anonymous;
-- SQLite `PRAGMA integrity_check` после HTTP download;
-- полный tar.gz backup с SQLite и uploads;
-- restore preview/apply и revision conflict;
-- hostile TAR path, недопустимый тип/symlink и оборванные данные;
-- восстановление портрета, gallery photo и tags;
-- входной SQLite restore, разбитый на очень маленькие stream chunks.
+Каждый кодовый PR прошёл Linux CI:
 
-## Что осталось
+- `npm run typecheck`;
+- `npm run lint`;
+- `bash -n ops/deploy.sh`;
+- `npm run build`;
+- каждый `tests/*.test.ts` через Node 22 strip-types;
+- `npm run test:worker`.
 
-### P2 — мобильный CSS
+После каждого merge production workflow успешно выполнил isolated upload и activation/health check. Проверены runs `34610969398`, `34611667323`, `34612247061`, `34613065388`, `34613576622`, `34614128797`, `34614685388` и `34615203182`.
 
-`styles/tree-workspace.css` и `mobile-refinements.css` всё ещё содержат пересекающиеся правила для узкого экрана. Консолидацию нужно делать по одному компоненту и только вместе с реальной browser/mobile проверкой. Массовая перестановка `@media` без визуальной приёмки повышает риск регрессии сильнее, чем уменьшает технический долг.
+Restore интеграционные тесты проверяют read-only preview, обязательное подтверждение, revision conflict, backup текущей базы, сохранение настроек доступа, полный архив с media/tags, неперезапись существующих файлов, hostile path, symlink, oversized entry, truncated input и SQLite upload, разбитый на маленькие chunks.
 
-### P2 — browser/mobile acceptance
+## Остаётся
 
-Реальные Android/iOS жесты и геометрия интерфейса не проверялись браузером в этой серии работ. Нужно проверить как минимум:
+- Дополнительную консолидацию правил между `tree-workspace.css` и `mobile-refinements.css` делать по конкретному компоненту вместе с реальной browser/device проверкой. Массовая перестановка правил не имеет доказанной выгоды.
+- Синхронная SQLite API остаётся фундаментом server store. Короткие чтения magic header и startup-чтение seed ограничены; TAR parser использует прямую запись chunks в staging без накопления entries в памяти. Его перевод на полностью асинхронную state machine потребует отдельной security-рецензии и сейчас не оправдан.
 
-- pan/pinch с началом на линии в обоих режимах дерева;
-- swipe фотографий и tap для показа/скрытия отметок лиц;
+## Сознательно не делалось
+
+- `ComparisonPanel` повторно не выносился: прежний эксперимент дал mobile regression и не исключил основной shared graph bundle из eager path.
+- Lazy chunk `face-api` не оптимизировался только из-за размера: он загружается по требованию и не входит в начальный экран.
+- `tree-canvas.tsx` не переписывался ради числа строк: edge adapter, camera state и controls уже выделены, а оставшийся код связан жизненным циклом React Flow и жестами.
+- Restore parser и migration history v1/v2 не переписывались. Опубликованные migration steps являются воспроизводимой историей production баз.
+
+## Требует browser/device acceptance
+
+В этой серии выполнены source-проверки, HTTP integration, CI и production health check. Ручная визуальная приёмка в реальном браузере, Android и iOS не выполнялась. Отдельно следует проверить:
+
+- pan/pinch/double tap с началом жеста на node и edge;
+- открытие, прокрутку и swipe-close карточки;
 - fullscreen дерева и хронологии;
-- открытие, сворачивание, закрытие и прокрутку длинной карточки;
-- смену ориентации и safe area;
-- крупное дерево и фактический FPS/отзывчивость.
+- photo viewer, swipe и hover/tap подписей;
+- карту мест, список мест и safe areas;
+- большое реальное дерево: читаемость, пересечения и FPS.
 
-### P3 — версия схемы SQLite
+## Проверка docs-only deploy filter
 
-`database.ts` создаёт baseline через `CREATE TABLE IF NOT EXISTS`, а отдельные изменения схемы определяет инспекцией таблиц и `ALTER TABLE`. Централизованного `PRAGMA user_version` и последовательного списка миграций пока нет. Это не текущий production-инцидент, но по мере роста схемы такой подход повышает риск неоднозначного состояния базы.
-
-### P3 — `server/index.ts`
-
-Центральный router остаётся крупным и содержит часть старых fallback-блоков, которые для GET media/static/restore/backup уже перехватываются ранними handlers. Там же остаются локальные копии same-origin проверки для маршрутов, ещё не вынесенных из монолита.
-
-Удалять dead fallback и переносить оставшиеся маршруты лучше постепенно, вместе с декомпозицией router, а не полной заменой большого файла ради нескольких строк.
-
-### P3 — остаточная память restore
-
-PR #44 убрал максимальный 128-МБ request Buffer, но TAR parser пока собирает один распаковываемый файл в памяти перед записью. Лимит одного файла остаётся 32 МБ для SQLite и 20 МБ для media. При apply отдельные staged media также пока читаются целиком перед копированием.
-
-Следующий безопасный шаг: потоково писать обычные TAR entries в staging и копировать staged media без полного Buffer, сохранив PAX/checksum/path/type проверки и rollback созданных файлов.
-
-## Что сейчас не стоит делать
-
-- Не добавлять виртуализацию каталога людей без измерений: текущая реализация уже выдаёт записи порциями.
-- Не lazy-load панель родства ради размера chunk: предыдущая попытка показала, что сама панель мала, а основной вес принадлежит общему графовому стеку.
-- Не переписывать `tree-canvas` дальше только ради числа строк: после декомпозиции оставшийся файл в основном выполняет роль orchestration layer.
-- Не чистить CSS без browser/mobile regression check.
-- Не удалять старые блоки из `index.ts` массовой полной заменой файла без безопасного patch/decomposition шага.
-
-## Ограничение текущей приёмки
-
-CI, HTTP integration и production health-check подтверждены. Ручная или browser-driven визуальная приёмка опубликованного интерфейса в этой серии работ не выполнялась. Поэтому утверждать, что мобильный UX визуально проверен, нельзя.
+Этот документ меняется отдельным docs-only PR. После его squash merge для итогового SHA не должен появиться run workflow `Deploy Drevo`, поскольку `.github/workflows/deploy.yml` исключает `docs/**` и `**/*.md`. Результат acceptance фиксируется в PR и итоговом отчёте аудита.
