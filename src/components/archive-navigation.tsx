@@ -61,6 +61,19 @@ export function ArchiveNavigation({
       document.removeEventListener("keydown", escape);
     };
   }, []);
+  const logout = async () => {
+    if (menu.current) menu.current.open = false;
+    try {
+      const response = await fetch("/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        window.location.reload();
+        return;
+      }
+      window.location.replace("/");
+    } catch {
+      window.location.reload();
+    }
+  };
   return (
     <nav className="archive-nav" aria-label="Разделы архива">
       <button
@@ -155,12 +168,10 @@ export function ArchiveNavigation({
             </button>
           )}
           {user && !local && (
-            <form action="/auth/logout" method="post">
-              <button title="Выйти">
-                <LogOut size={20} />
-                <span>Выйти</span>
-              </button>
-            </form>
+            <button title="Выйти" onClick={() => void logout()}>
+              <LogOut size={20} />
+              <span>Выйти</span>
+            </button>
           )}
         </div>
       </details>
