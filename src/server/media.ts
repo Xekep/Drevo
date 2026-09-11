@@ -1,9 +1,6 @@
 import {
   createWriteStream,
   mkdirSync,
-  readFileSync,
-  writeFileSync,
-  unlinkSync,
 } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -57,17 +54,6 @@ export function mediaStore(directory: string) {
     };
   };
   return {
-    add(bytes: Buffer) {
-      const ext = imageExtension(bytes),
-        id = randomUUID(),
-        name = `${id}.${ext}`;
-      writeFileSync(resolve(directory, name), bytes, { flag: "wx" });
-      return {
-        id,
-        url: `/media/${name}`,
-        undo: () => unlinkSync(resolve(directory, name)),
-      };
-    },
     async addStream(source: Readable, limit: number) {
       const id = randomUUID(),
         temporary = resolve(directory, `.${id}.upload`),
@@ -111,17 +97,5 @@ export function mediaStore(directory: string) {
       }
     },
     open,
-    read(url: string) {
-      const file = open(url);
-      if (!file) return null;
-      try {
-        return {
-          bytes: readFileSync(file.path),
-          type: file.type,
-        };
-      } catch {
-        return null;
-      }
-    },
   };
 }
