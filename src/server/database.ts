@@ -1,8 +1,8 @@
 import { authorizeArchive } from "./permissions.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { auditStore } from "./audit.ts";
 import {
   validateFamily,
@@ -13,6 +13,54 @@ import {
 } from "../domain/index.ts";
 
 export class ConflictError extends Error {}
+
+const mediaNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/;
+function mediaReferences(family: Family) {
+  const result = new Set<string>();
+  for (const url of [
+    ...family.people.map((person) => person.photo),
+    ...(family.photos || []).map((photo) => photo.url),
+  ]) {
+    if (!url?.startsWith("/media/")) continue;
+    const name = url.slice("/media/".length);
+    if (mediaNamePattern.test(name)) result.add(name);
+  }
+  return result;
+}
+function removeMediaFiles(path: string, names: Iterable<string>) {
+  if (path === ":memory:") return;
+  const uploads = resolve(dirname(path), "uploads");
+  for (const name of names) {
+    if (!mediaNamePattern.test(name)) continue;
+    try {
+      rmSync(resolve(uploads, name), { force: true });
+    } catch (error) {
+      console.error(`Не удалось удалить бесхозное медиа ${name}`, error);
+    }
+  }
+}
+function removeDroppedMedia(path: string, before: Family, after: Family) {
+  const current = mediaReferences(after);
+  removeMediaFiles(
+    path,
+    [...mediaReferences(before)].filter((name) => !current.has(name)),
+  );
+}
+function pruneUnreferencedMedia(path: string, family: Family) {
+  if (path === ":memory:") return;
+  const uploads = resolve(dirname(path), "uploads"),
+    referenced = mediaReferences(family);
+  let names: string[];
+  try {
+    names = readdirSync(uploads);
+  } catch {
+    return;
+  }
+  removeMediaFiles(
+    path,
+    names.filter((name) => mediaNamePattern.test(name) && !referenced.has(name)),
+  );
+}
 
 export function openArchive(path: string, seed: Family) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -155,6 +203,7 @@ export function openArchive(path: string, seed: Family) {
         expected + 1,
       );
       finishWrite();
+      if (previous) removeDroppedMedia(path, previous, family);
       // family уже валидирован и именно его мы только что записали. Повторный
       // readArchive здесь раньше зря парсил весь архив ещё раз.
       return { family, revision: expected + 1 };
@@ -205,6 +254,7 @@ export function openArchive(path: string, seed: Family) {
   }
 
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
+  if (path !== ":memory:") pruneUnreferencedMedia(path, read().family);
   return {
     read,
     meta,
