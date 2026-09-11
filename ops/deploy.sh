@@ -35,6 +35,17 @@ if test "$healthy" != true; then
   echo "Deployment failed; previous code restored. Database backup retained." >&2
   exit 1
 fi
+# Старые незавершённые загрузки портретов не должны жить вечно. GC запускаем
+# только после успешного health-check и не считаем его ошибку причиной отката.
+# Внутри есть 24-часовой grace period, поэтому свежий staging/restore не трогаем.
+if test -f "$base/shared/drevo.sqlite"; then
+  if ! /opt/drevo-node/bin/node --experimental-strip-types \
+    "$release/src/server/media-gc.ts" \
+    "$base/shared/drevo.sqlite" \
+    "$base/shared/uploads"; then
+    echo "Media GC failed; deployment remains active." >&2
+  fi
+fi
 # Не превращаем сервер в археологический музей node_modules. Чистим только
 # автоматически именованные deploy-релизы/бэкапы; before-import-* не трогаем.
 python3 - "$base" <<'PY'
