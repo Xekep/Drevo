@@ -6,7 +6,6 @@ import { pipeline } from "node:stream/promises";
 import {
   closeSync,
   constants,
-  copyFileSync,
   createReadStream,
   createWriteStream,
   existsSync,
@@ -17,7 +16,13 @@ import {
   rmSync,
   writeSync,
 } from "node:fs";
-import { open as openFile, rename, unlink } from "node:fs/promises";
+import {
+  copyFile,
+  open as openFile,
+  rename,
+  rm,
+  unlink,
+} from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { readArchive, ConflictError, type openArchive } from "./database.ts";
@@ -354,7 +359,7 @@ function createRestoreStore(
     },
     previewStream,
     discard,
-    apply(token: string, actor: ArchiveUser) {
+    async apply(token: string, actor: ArchiveUser) {
       const stage = stages.get(token);
       if (
         actor.role !== "admin" ||
@@ -378,7 +383,7 @@ function createRestoreStore(
         for (const [url, path] of stage.files) {
           const name = `${randomUUID()}.${imageExtensionFile(path)}`,
             destination = join(dirname(dbPath), "uploads", name);
-          copyFileSync(path, destination, constants.COPYFILE_EXCL);
+          await copyFile(path, destination, constants.COPYFILE_EXCL);
           created.push(destination);
           urls.set(url, `/media/${name}`);
         }
@@ -400,7 +405,9 @@ function createRestoreStore(
           "Восстановление из бэкапа",
         );
       } catch (error) {
-        for (const path of created) rmSync(path, { force: true });
+        await Promise.allSettled(
+          created.map((path) => rm(path, { force: true })),
+        );
         throw error;
       }
       // Ошибка уборки временного каталога не должна удалять уже сохранённые фото.
