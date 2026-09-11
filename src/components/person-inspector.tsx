@@ -1,6 +1,5 @@
 import { lazy, Suspense, useState } from "react";
 import { Plus, Pencil, Link2, History, Expand } from "lucide-react";
-import { PersonFullView } from "./person-full-view";
 import { useDesktopEditing } from "../hooks/useDesktopEditing";
 import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
@@ -26,9 +25,19 @@ const AuditLog = lazy(() =>
   ),
 );
 
+const PersonFullView = lazy(() =>
+  loadLazyModule(
+    () =>
+      import("./person-full-view").then((module) => ({
+        default: module.PersonFullView,
+      })),
+    "person-full-view",
+  ),
+);
+
 export function PersonInspector({
   person,
- family,
+  family,
   user,
   canEdit,
   readPhotos,
@@ -128,22 +137,32 @@ export function PersonInspector({
         </EditorDialog>
       )}
       {expanded && desktop && (
-        <PersonFullView
-          person={person}
-          family={family}
-          readPhotos={readPhotos}
-          onClose={() => setExpanded(false)}
-          onCompare={(id) => {
-            onSelect(id);
-            onCompare();
-          }}
-          user={user}
-          canEdit={canEdit}
-          save={save}
-          uploadPortrait={uploadPortrait}
-          busy={busy}
-          onAlbum={onAlbum}
-        />
+        <LazyChunkBoundary message="Полная карточка не загрузилась. Обновите страницу и повторите открытие.">
+          <Suspense
+            fallback={
+              <div className="archive-status" role="status">
+                Открываем полную карточку…
+              </div>
+            }
+          >
+            <PersonFullView
+              person={person}
+              family={family}
+              readPhotos={readPhotos}
+              onClose={() => setExpanded(false)}
+              onCompare={(id) => {
+                onSelect(id);
+                onCompare();
+              }}
+              user={user}
+              canEdit={canEdit}
+              save={save}
+              uploadPortrait={uploadPortrait}
+              busy={busy}
+              onAlbum={onAlbum}
+            />
+          </Suspense>
+        </LazyChunkBoundary>
       )}
       {canEdit && adding && (
         <div className="relative-flow archive-form">
