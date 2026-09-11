@@ -13,6 +13,7 @@ import {
 } from "../domain/index.ts";
 
 export class ConflictError extends Error {}
+
 export function openArchive(path: string, seed: Family) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -33,41 +34,71 @@ export function openArchive(path: string, seed: Family) {
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
   const audit = auditStore(db);
-  const read = () => readArchive(db);
+  const read = () => readArchive(db),
+    meta = () => readArchiveMeta(db),
+    overview = (includePortraits = true) =>
+      readArchiveOverview(db, includePortraits),
+    peoplePage = (offset: number, limit: number) =>
+      readPeoplePage(db, offset, limit),
+    photoPage = (offset: number, limit: number) =>
+      readPhotoPage(db, offset, limit);
+
+  const checkRevision = (expected: number) => {
+    const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
+    if (old && Number(old.revision) !== expected)
+      throw new ConflictError(
+        "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
+      );
+    return old ? Number(old.revision) : null;
+  };
+  const remember = (
+    previous: Family,
+    family: Family,
+    revision: number,
+    actor?: ArchiveUser,
+    operation?: string,
+  ) => {
+    db.prepare(
+      "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
+    ).run(revision, JSON.stringify(previous));
+    audit.archive(previous, family, actor, revision + 1);
+    if (operation)
+      audit.record(
+        {
+          action: operation,
+          entity: "archive",
+          entityId: "archive",
+          label: "Семейный архив",
+          personIds: [],
+          details: [],
+        },
+        actor,
+        revision + 1,
+      );
+  };
+  const finishWrite = () =>
+    db.exec(
+      "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50); COMMIT;",
+    );
+
   function write(
     value: unknown,
     expected: number,
     actor?: ArchiveUser,
     operation?: string,
   ) {
-    const family = actor
-      ? authorizeArchive(value, read().family, actor)
-      : validateFamily(value);
     db.exec("BEGIN IMMEDIATE");
     try {
-      const old = db.prepare("SELECT revision FROM archive WHERE id=1").get();
-      if (old && Number(old.revision) !== expected)
-        throw new ConflictError(
-          "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
-        );
-      if (old)
-        db.prepare(
-          "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
-        ).run(Number(old.revision), JSON.stringify(read().family));
-      if (old) audit.archive(read().family, family, actor, expected + 1);
-      if (old && operation)
-        audit.record(
-          {
-            action: operation,
-            entity: "archive",
-            entityId: "archive",
-            label: "Семейный архив",
-            personIds: [],
-            details: [],
-          },
-          actor,
-          expected + 1,
-        );
+      const oldRevision = checkRevision(expected);
+      // Один согласованный снимок внутри write-lock используется и для проверки
+      // прав, и для history/audit. Раньше большой архив читался здесь несколько раз.
+      const previous = oldRevision === null ? null : read().family;
+      const family =
+        actor && previous
+          ? authorizeArchive(value, previous, actor)
+          : validateFamily(value);
+      if (previous && oldRevision !== null)
+        remember(previous, family, oldRevision, actor, operation);
       db.exec(
         "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
       );
@@ -123,34 +154,92 @@ export function openArchive(path: string, seed: Family) {
         Number(family.demo),
         expected + 1,
       );
-      db.exec(
-        "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50); COMMIT;",
-      );
-      return read();
+      finishWrite();
+      // family уже валидирован и именно его мы только что записали. Повторный
+      // readArchive здесь раньше зря парсил весь архив ещё раз.
+      return { family, revision: expected + 1 };
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
   }
+
+  function appendPhoto(value: ArchivePhoto, expected: number, actor: ArchiveUser) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const oldRevision = checkRevision(expected);
+      if (oldRevision === null)
+        throw new ConflictError("Архив ещё не создан");
+      const previous = read().family;
+      const family = authorizeArchive(
+        {
+          ...previous,
+          photos: [...(previous.photos || []), value],
+        },
+        previous,
+        actor,
+      );
+      const photo = family.photos!.find((item) => item.id === value.id)!;
+      remember(previous, family, oldRevision, actor);
+      db.prepare("INSERT INTO photos(id,data) VALUES(?,?)").run(
+        photo.id,
+        JSON.stringify({ ...photo, tags: undefined }),
+      );
+      const tagQuery = db.prepare(
+        "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
+      );
+      for (const tag of photo.tags)
+        tagQuery.run(
+          `${photo.id}:${tag.id}`,
+          photo.id,
+          tag.personId,
+          JSON.stringify(tag),
+        );
+      db.prepare("UPDATE archive SET revision=? WHERE id=1").run(expected + 1);
+      finishWrite();
+      return { family, revision: expected + 1 };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
-  return { read, write, close: () => db.close(), db };
+  return {
+    read,
+    meta,
+    overview,
+    peoplePage,
+    photoPage,
+    write,
+    appendPhoto,
+    close: () => db.close(),
+    db,
+  };
 }
 
-export function readArchive(db: DatabaseSync) {
-  const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
-  const people = db
-    .prepare("SELECT data FROM people ORDER BY rowid")
-    .all()
-    .map(
-      (row) =>
-        ({
-          ...JSON.parse(String(row.data)),
-          parents: [],
-          spouses: [],
-        }) as Person,
-    );
-  const map = new Map(people.map((p) => [p.id, p]));
-  const links: FamilyLink[] = [];
+export function readArchiveMeta(db: DatabaseSync) {
+  const meta = db
+    .prepare(
+      `SELECT archive.*,
+        (SELECT count(*) FROM people) AS people_count,
+        (SELECT count(*) FROM photos) AS photos_count
+       FROM archive WHERE id=1`,
+    )
+    .get()!;
+  return {
+    title: String(meta.title),
+    description: String(meta.description),
+    demo: !!meta.demo,
+    revision: Number(meta.revision),
+    people: Number(meta.people_count),
+    photos: Number(meta.photos_count),
+  };
+}
+
+function hydrateRelations(db: DatabaseSync, people: Person[]) {
+  const map = new Map(people.map((person) => [person.id, person])),
+    links: FamilyLink[] = [];
   for (const row of db
     .prepare("SELECT * FROM relations ORDER BY rowid")
     .all()) {
@@ -171,6 +260,113 @@ export function readArchive(db: DatabaseSync) {
         ...(row.note ? { note: String(row.note) } : {}),
       });
   }
+  return links;
+}
+
+/**
+ * Начальная проекция для ReactFlow: весь родственный граф, но без фотографий,
+ * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
+ * SQLite до передачи строки в Node.
+ */
+export function readArchiveOverview(
+  db: DatabaseSync,
+  includePortraits = true,
+) {
+  const meta = readArchiveMeta(db);
+  const remove = [
+    "$.sources",
+    "$.biography",
+    "$.occupation",
+    "$.awards",
+    "$.events",
+    ...(includePortraits ? [] : ["$.photo"]),
+  ];
+  const placeholders = remove.map(() => "?").join(", ");
+  const people = db
+    .prepare(
+      `SELECT json_set(json_remove(data, ${placeholders}), '$.sources', json('[]')) AS data
+       FROM people ORDER BY rowid`,
+    )
+    .all(...remove)
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+  const links = hydrateRelations(db, people);
+  return {
+    family: {
+      title: meta.title,
+      description: meta.description,
+      demo: meta.demo,
+      people,
+      links,
+      photos: [],
+    } as Family,
+    revision: meta.revision,
+    totals: { people: meta.people, photos: meta.photos },
+  };
+}
+
+export function readPeoplePage(
+  db: DatabaseSync,
+  offset: number,
+  limit: number,
+): Person[] {
+  return db
+    .prepare("SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?")
+    .all(limit, offset)
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+}
+
+export function readPhotoPage(
+  db: DatabaseSync,
+  offset: number,
+  limit: number,
+): ArchivePhoto[] {
+  const rows = db
+      .prepare("SELECT id,data FROM photos ORDER BY rowid LIMIT ? OFFSET ?")
+      .all(limit, offset),
+    photos = rows.map(
+      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
+    );
+  if (!photos.length) return photos;
+  const photoMap = new Map(photos.map((photo) => [photo.id, photo])),
+    placeholders = photos.map(() => "?").join(","),
+    tags = db
+      .prepare(
+        `SELECT photo_id,data FROM photo_tags WHERE photo_id IN (${placeholders}) ORDER BY rowid`,
+      )
+      .all(...photos.map((photo) => photo.id));
+  for (const row of tags)
+    photoMap.get(String(row.photo_id))?.tags.push(JSON.parse(String(row.data)));
+  return photos;
+}
+
+export function readArchive(db: DatabaseSync) {
+  const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
+  const people = db
+    .prepare("SELECT data FROM people ORDER BY rowid")
+    .all()
+    .map(
+      (row) =>
+        ({
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        }) as Person,
+    );
+  const links = hydrateRelations(db, people);
   const photos = db
     .prepare("SELECT data FROM photos ORDER BY rowid")
     .all()
