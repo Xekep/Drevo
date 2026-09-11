@@ -4,6 +4,7 @@ import type { createAuth } from "./auth.ts";
 import type { settingsStore } from "./settings.ts";
 import { peopleSearchStore } from "./people-search.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
+import { personDetails, archivePageSize } from "../domain/archive-projection.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -23,6 +24,37 @@ export function archiveQueryHttp({
     res.end(JSON.stringify(value));
     return true;
   };
+  const snapshot = (req: IncomingMessage) => {
+    const user = auth.currentUser(req),
+      settings = visibility.read(),
+      readTree = !!user || settings.publicTree,
+      readPhotos = !!user || settings.publicAlbums;
+    const data = archive.read();
+    if (!readTree) {
+      data.family.people = [];
+      data.family.links = [];
+      data.family.photos = data.family.photos?.map((photo) => ({
+        ...photo,
+        tags: [],
+      }));
+    }
+    if (!readPhotos) {
+      data.family.photos = [];
+      data.family.people = data.family.people.map((person) => ({
+        ...person,
+        photo: undefined,
+      }));
+    }
+    return {
+      ...data,
+      canEdit: auth.canEdit(req),
+      local: auth.local,
+      user,
+      readTree,
+      readPhotos,
+      reverseTimeline: settings.reverseTimeline,
+    };
+  };
 
   return async (
     req: IncomingMessage,
@@ -30,11 +62,108 @@ export function archiveQueryHttp({
     url: URL,
   ): Promise<boolean> => {
     const path = url.pathname;
-    if (path !== "/api/people/search" && path !== "/api/export.json")
+    if (
+      path !== "/api/people/search" &&
+      path !== "/api/export.json" &&
+      path !== "/api/family" &&
+      path !== "/api/export"
+    )
       return false;
 
     const visitor = auth.currentUser(req),
       access = visibility.read();
+
+    if (path === "/api/family") {
+      if (req.method !== "GET") return false;
+      if (!visitor && !access.publicTree && !access.publicAlbums)
+        return json(res, 401, { error: "Sign in to view this archive" });
+      const projection = url.searchParams.get("projection");
+      if (projection === "page") {
+        const meta = archive.meta(),
+          readTree = !!visitor || access.publicTree,
+          readPhotos = !!visitor || access.publicAlbums,
+          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}`;
+        if (url.searchParams.get("token") !== pageToken)
+          return json(res, 409, {
+            error: "Архив или доступ к нему изменились. Обновите данные.",
+          });
+        const collection = url.searchParams.get("collection"),
+          offset = Number(url.searchParams.get("offset"));
+        if (
+          !["people", "photos"].includes(collection || "") ||
+          !Number.isInteger(offset) ||
+          offset < 0
+        )
+          return json(res, 400, { error: "Некорректная страница" });
+        if (collection === "people")
+          return json(res, 200, {
+            pageToken,
+            items: readTree
+              ? archive.peoplePage(offset, archivePageSize).map(personDetails)
+              : [],
+            total: readTree ? meta.people : 0,
+          });
+        return json(res, 200, {
+          pageToken,
+          items: readPhotos
+            ? archive
+                .photoPage(offset, archivePageSize)
+                .map((photo) => (readTree ? photo : { ...photo, tags: [] }))
+            : [],
+          total: readPhotos ? meta.photos : 0,
+        });
+      }
+      if (projection === "overview") {
+        const readTree = !!visitor || access.publicTree,
+          readPhotos = !!visitor || access.publicAlbums;
+        let data: ReturnType<typeof archive.overview>;
+        if (readTree) data = archive.overview(readPhotos);
+        else {
+          const meta = archive.meta();
+          data = {
+            family: {
+              title: meta.title,
+              description: meta.description,
+              demo: meta.demo,
+              people: [],
+              links: [],
+              photos: [],
+            },
+            revision: meta.revision,
+            totals: { people: meta.people, photos: meta.photos },
+          };
+        }
+        const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}`;
+        return json(res, 200, {
+          family: data.family,
+          revision: data.revision,
+          canEdit: auth.canEdit(req),
+          local: auth.local,
+          user: visitor,
+          readTree,
+          readPhotos,
+          reverseTimeline: access.reverseTimeline,
+          partial: true,
+          pageToken,
+          totals: {
+            people: readTree ? data.totals.people : 0,
+            photos: readPhotos ? data.totals.photos : 0,
+          },
+        });
+      }
+      return json(res, 200, snapshot(req));
+    }
+
+    if (path === "/api/export") {
+      if (req.method !== "GET") return false;
+      if (!visitor && !access.publicTree && !access.publicAlbums)
+        return json(res, 401, { error: "Sign in to view this archive" });
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="drevo-archive.json"',
+      );
+      return json(res, 200, snapshot(req).family);
+    }
 
     if (path === "/api/people/search") {
       if (req.method !== "GET")
