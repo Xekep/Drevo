@@ -1,47 +1,32 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
 import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
-import {
-  clearLazySectionReload,
-  shouldReloadLazySection,
-} from "./lazy-section-recovery";
-
-async function loadSection<T>(loader: () => Promise<T>): Promise<T> {
-  try {
-    const module = await loader();
-    clearLazySectionReload(window.location.pathname, window.sessionStorage);
-    return module;
-  } catch (error) {
-    if (
-      shouldReloadLazySection(window.location.pathname, window.sessionStorage)
-    ) {
-      window.location.reload();
-      return await new Promise<T>(() => {});
-    }
-    throw error;
-  }
-}
+import { loadLazyModule } from "./lazy-section-recovery";
 
 const PeopleCatalog = lazy(() =>
-  loadSection(async () => {
+  loadLazyModule(async () => {
     const module = await import("./people-catalog");
     return { default: module.PeopleCatalog };
-  }),
+  }, "people"),
 );
 const FamiliesCatalog = lazy(() =>
-  loadSection(async () => {
+  loadLazyModule(async () => {
     const module = await import("./families-catalog");
     return { default: module.FamiliesCatalog };
-  }),
+  }, "families"),
 );
 const Gallery = lazy(() =>
-  loadSection(async () => {
+  loadLazyModule(async () => {
     const module = await import("./gallery");
     return { default: module.Gallery };
-  }),
+  }, "gallery"),
 );
-const PlacesMap = lazy(() => loadSection(() => import("./places-map")));
-const InsightsPage = lazy(() => loadSection(() => import("./insights-page")));
+const PlacesMap = lazy(() =>
+  loadLazyModule(() => import("./places-map"), "places"),
+);
+const InsightsPage = lazy(() =>
+  loadLazyModule(() => import("./insights-page"), "insights"),
+);
 
 type Props = {
   view: ArchiveView;
