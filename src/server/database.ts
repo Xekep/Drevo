@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { auditStore } from "./audit.ts";
+import { initializeArchiveSchema } from "./schema.ts";
 import {
   validateFamily,
   type Family,
@@ -314,22 +315,12 @@ function syncArchiveRows(
 export function openArchive(path: string, seed: Family) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
-    CREATE TABLE IF NOT EXISTS archive (id INTEGER PRIMARY KEY CHECK(id=1), title TEXT NOT NULL, description TEXT NOT NULL, demo INTEGER NOT NULL, revision INTEGER NOT NULL) STRICT;
-    CREATE TABLE IF NOT EXISTS people (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
-    CREATE TABLE IF NOT EXISTS relations (id TEXT PRIMARY KEY, source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE, target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE, type TEXT NOT NULL CHECK(type IN ('parent','spouse','adoptive_parent','godparent','nurse','sworn_sibling','guardian')), note TEXT NOT NULL DEFAULT '', CHECK(source<>target), UNIQUE(source,target,type)) STRICT;
-    CREATE INDEX IF NOT EXISTS relations_target ON relations(target);
-    CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
-    CREATE TABLE IF NOT EXISTS photo_tags (id TEXT PRIMARY KEY, photo_id TEXT NOT NULL REFERENCES photos(id) ON DELETE CASCADE, person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;
-    CREATE INDEX IF NOT EXISTS photo_tags_person ON photo_tags(person_id);
-    CREATE TABLE IF NOT EXISTS history (revision INTEGER PRIMARY KEY, saved_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), data TEXT NOT NULL CHECK(json_valid(data))) STRICT;`);
-  if (
-    !db
-      .prepare("PRAGMA table_info(relations)")
-      .all()
-      .some((row) => row.name === "created_by")
-  )
-    db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
+  try {
+    initializeArchiveSchema(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 
   const audit = auditStore(db);
   const read = () => readArchive(db),
