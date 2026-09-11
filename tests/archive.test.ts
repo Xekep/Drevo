@@ -145,7 +145,11 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     assert.equal(existsSync(photoFile), true, "referenced media survives restart");
     const removed = removePerson(saved.family, "child");
     assert.equal(removed.photos![0].tags.length, 0);
-    store.write({ ...seed(), people: [] }, saved.revision);
+    store.write(
+      { ...seed(), people: [] },
+      saved.revision,
+      { id: "admin", name: "Администратор", role: "admin", createdAt: "" },
+    );
     assert.equal(existsSync(photoFile), false, "dropped media is physically removed");
     store.close();
     store = openArchive(path, seed());
