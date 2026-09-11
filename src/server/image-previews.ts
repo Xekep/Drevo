@@ -4,6 +4,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export type ImagePreviewVariant = "thumb" | "display";
+export type ImagePreviewSource =
+  | Buffer
+  | { path: string; cacheKey: string };
 
 export const IMAGE_PREVIEW_SETTINGS = {
   thumb: { maxSize: 400, quality: 76 },
@@ -18,9 +21,12 @@ export const IMAGE_PREVIEW_CACHE_VERSION = 2;
 export function imagePreviews(directory: string) {
   const pending = new Map<string, Promise<Buffer>>();
   let tail = Promise.resolve();
-  return (original: Buffer, variant: ImagePreviewVariant) => {
+  return (original: ImagePreviewSource, variant: ImagePreviewVariant) => {
     const settings = IMAGE_PREVIEW_SETTINGS[variant];
-    const key = `${createHash("sha256").update(original).digest("hex")}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.webp`;
+    const sourceKey = Buffer.isBuffer(original)
+      ? createHash("sha256").update(original).digest("hex")
+      : `file-${original.cacheKey}`;
+    const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.webp`;
     if (pending.has(key)) return pending.get(key)!;
     const run = (async () => {
       try {
@@ -28,8 +34,11 @@ export function imagePreviews(directory: string) {
       } catch {
         /* Ещё не создано. */
       }
+      const source = Buffer.isBuffer(original)
+        ? original
+        : await readFile(original.path);
       const result = tail.then(async () => {
-        const input = sharp(original, { limitInputPixels: 50_000_000 });
+        const input = sharp(source, { limitInputPixels: 50_000_000 });
         const metadata = await input.metadata();
         if ((metadata.pages || 1) > 1)
           throw new Error("Для анимации используется оригинал");
