@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      - run: bash -n ops/deploy.sh
       - run: npm run build
       - name: Test all suites on Node 22
         # Node 22: ошибка IPC в node --test (nodejs/node#64061, #64706).
