@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { ConflictError } from "./database.ts";
 import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
-import { databaseBackup } from "./backup.ts";
+import { writeDatabaseBackup } from "./backup.ts";
 import { fullName } from "../domain/dates.ts";
 import type { Family } from "../domain/types.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -161,10 +161,9 @@ export function gedcomHttp(
           });
         const directory = join(dirname(dbPath), "backups");
         mkdirSync(directory, { recursive: true });
-        writeFileSync(
+        writeDatabaseBackup(
+          archive.db,
           join(directory, `before-gedcom-${Date.now()}-${randomUUID()}.sqlite`),
-          databaseBackup(archive.db),
-          { mode: 0o600, flag: "wx" },
         );
         const result = archive.write(
           {
