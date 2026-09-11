@@ -1,19 +1,20 @@
 import { MarkerType } from "@xyflow/react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { ArchiveUser } from "../../domain/access.ts";
 import {
   canChangeConnection,
   connectionKey,
-  fullName,
-  type ArchiveUser,
-  type Family,
   type GraphConnection,
-  type Person,
-  type TreeGeometry,
-  type TreeMode,
-} from "../../domain";
-import { routeKey } from "../../domain/edge-routing";
-import { crossingPaths } from "../../domain/route-crossings";
-import type { RelationshipEdgeType } from "./relationship-edge";
+} from "../../domain/connections.ts";
+import { fullName } from "../../domain/dates.ts";
+import { routeKey } from "../../domain/edge-routing.ts";
+import { crossingPaths } from "../../domain/route-crossings.ts";
+import type {
+  TreeGeometry,
+  TreeMode,
+} from "../../domain/tree-layout.ts";
+import type { Family, Person } from "../../domain/types.ts";
+import type { RelationshipEdgeType } from "./relationship-edge.tsx";
 
 const colors = {
   parent: "#58775a",
