@@ -1,10 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export function LoginDialog({ onClose }: { onClose: () => void }) {
+  const close = useRef(onClose);
+
   useEffect(() => {
-    window.location.assign("/auth/yandex");
+    try {
+      window.location.assign("/auth/yandex");
+    } catch {
+      close.current();
+    }
   }, []);
 
-  void onClose;
   return null;
 }
