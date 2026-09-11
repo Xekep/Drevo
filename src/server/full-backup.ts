@@ -18,7 +18,14 @@ function databasePath(db: DatabaseSync) {
   return path;
 }
 
-export async function fullBackup(db: DatabaseSync, res: ServerResponse) {
+export async function fullBackup(
+  db: DatabaseSync,
+  pathOrResponse: string | ServerResponse,
+  legacyResponse?: ServerResponse,
+) {
+  const dbPath =
+      typeof pathOrResponse === "string" ? pathOrResponse : databasePath(db),
+    res = typeof pathOrResponse === "string" ? legacyResponse! : pathOrResponse;
   const directory = await mkdtemp(join(tmpdir(), "drevo-full-"));
   try {
     writeDatabaseBackup(db, join(directory, "drevo.sqlite"));
@@ -33,7 +40,7 @@ export async function fullBackup(db: DatabaseSync, res: ServerResponse) {
           directory,
           "drevo.sqlite",
           "-C",
-          dirname(databasePath(db)),
+          dirname(dbPath),
           "uploads",
         ],
         { windowsHide: true, stdio: "ignore" },
