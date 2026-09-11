@@ -3,43 +3,27 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { readFileSync, existsSync } from "node:fs";
-import { resolve, dirname, extname } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openArchive, ConflictError } from "./database.ts";
+import { openArchive } from "./database.ts";
 import { removeStarterFamily } from "./demo-cleanup.ts";
 import { validateFamily } from "../domain/index.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
-import { userStore, ForbiddenError } from "./users.ts";
-import type { Role } from "../domain/access.ts";
+import { userStore } from "./users.ts";
 import { createAuth } from "./auth.ts";
-import { databaseBackup } from "./backup.ts";
-import { fullBackup } from "./full-backup.ts";
 import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
-import { restoreStore, RESTORE_LIMIT } from "./restore.ts";
+import { restoreStore } from "./restore.ts";
 import { geocodingStore } from "./geocoding.ts";
-import { familyPlaces, placeKey } from "../domain/places.ts";
-import { analysisExport } from "../domain/analysis-export.ts";
 import { assertProductionOrigin } from "./runtime-config.ts";
-import { peopleSearchStore } from "./people-search.ts";
-import { personDetails, archivePageSize } from "../domain/archive-projection.ts";
 import { imagePreviews } from "./image-previews.ts";
-import { archiveViewAt } from "../domain/archive-routes.ts";
 import { sharingHttp } from "./sharing-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
+import { productionStaticHttp } from "./production-static-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const staticTypes: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-};
+
 export async function startServer(
   port = Number(process.env.PORT || 3000),
   databasePath?: string,
@@ -63,12 +47,11 @@ export async function startServer(
     ),
   );
   removeStarterFamily(archive);
+
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
   const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
   const restores = restoreStore(archive, dbPath);
   const geocoding = geocodingStore(archive.db);
-  const searchPeople = peopleSearchStore(archive.db);
-  let restoreUploadBusy = false;
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
@@ -89,34 +72,11 @@ export async function startServer(
     issueSession: auth.issueSession,
     fetcher: oauthFetch,
   });
-  const snapshot = (req: IncomingMessage) => {
-    const user = auth.currentUser(req),
-      settings = visibility.read(),
-      readTree = !!user || settings.publicTree,
-      readPhotos = !!user || settings.publicAlbums;
-    const data = archive.read();
-    if (!readTree) {
-      data.family.people = [];
-      data.family.links = [];
-      data.family.photos = data.family.photos?.map((p) => ({ ...p, tags: [] }));
-    }
-    if (!readPhotos) {
-      data.family.photos = [];
-      data.family.people = data.family.people.map((p) => ({
-        ...p,
-        photo: undefined,
-      }));
-    }
-    return {
-      ...data,
-      canEdit: auth.canEdit(req),
-      local: auth.local,
-      user,
-      readTree,
-      readPhotos,
-      reverseTimeline: settings.reverseTimeline,
-    };
-  };
+  // production=true используется и тестами/встраиваемыми запусками без NODE_ENV.
+  // В штатном production запрос уже заберёт ранний static handler в sharingHttp.
+  const productionStatic = production
+    ? productionStaticHttp(resolve(root, "dist"), true)
+    : null;
   const vite = production
     ? null
     : await (
@@ -139,6 +99,7 @@ export async function startServer(
         },
         appType: "spa",
       });
+
   const json = (res: ServerResponse, status: number, data: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -146,539 +107,41 @@ export async function startServer(
     });
     res.end(JSON.stringify(data));
   };
+
   async function handle(req: IncomingMessage, res: ServerResponse) {
-    const host = req.headers.host || "",
-      origin = req.headers.origin;
+    const host = req.headers.host || "";
     if (
       !/^(127\.0\.0\.1|localhost):\d+$/.test(host) &&
       !(publicOrigin && host === new URL(publicOrigin).host)
     )
       return json(res, 403, { error: "Неизвестный адрес архива" });
+
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
-      url = parsedUrl.pathname;
-    if (url.startsWith("/api/")) auth.refreshSession(req, res);
+      path = parsedUrl.pathname;
+    if (path.startsWith("/api/")) auth.refreshSession(req, res);
     if (await sharing(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
-    if (url === "/api/session" && req.method === "GET")
+
+    if (path === "/api/session" && req.method === "GET")
       return json(res, 200, {
         canEdit: auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
         user: auth.currentUser(req),
       });
-    if (url === "/api/login")
-      return json(res, 404, { error: "Password sign-in has been removed" });
-    if (url === "/auth/logout" && req.method === "POST") {
-      if (
-        (origin && origin !== (publicOrigin || `http://${host}`)) ||
-        req.headers["sec-fetch-site"] === "cross-site"
-      )
-        return json(res, 403, { error: "Invalid origin" });
-      auth.logout(req, res);
-      return json(res, 200, { ok: true });
-    }
-    if (url === "/api/users" || url.startsWith("/api/users/")) {
-      if (!auth.isAdmin(req))
-        return json(res, auth.currentUser(req) ? 403 : 401, {
-          error: "Only administrators can manage access",
-        });
-      if (url === "/api/users" && req.method === "GET")
-        return json(res, 200, { users: users.list() });
-      if (url.startsWith("/api/users/") && req.method === "PATCH") {
-        if (
-          (origin && origin !== (publicOrigin || `http://${host}`)) ||
-          req.headers["sec-fetch-site"] === "cross-site"
-        )
-          return json(res, 403, { error: "Invalid origin" });
-        if (!req.headers["content-type"]?.startsWith("application/json"))
-          return json(res, 415, { error: "JSON required" });
-        try {
-          const chunks: Buffer[] = [];
-          let size = 0;
-          for await (const chunk of req) {
-            size += chunk.length;
-            if (size > 4096)
-              return json(res, 413, { error: "Request too large" });
-            chunks.push(Buffer.from(chunk));
-          }
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          users.setRole(
-            auth.currentUser(req)!,
-            decodeURIComponent(url.slice("/api/users/".length)),
-            body.role as Role,
-          );
-          return json(res, 200, { users: users.list() });
-        } catch (error) {
-          return json(res, error instanceof ForbiddenError ? 403 : 400, {
-            error: (error as Error).message,
-          });
-        }
-      }
-      return json(res, 405, { error: "Method not allowed" });
-    }
-    if (url === "/api/settings") {
-      if (!auth.isAdmin(req))
-        return json(res, auth.currentUser(req) ? 403 : 401, {
-          error: "Only administrators can change visibility",
-        });
-      if (req.method === "GET") return json(res, 200, visibility.read());
-      if (req.method === "PUT") {
-        if (
-          (origin && origin !== (publicOrigin || `http://${host}`)) ||
-          req.headers["sec-fetch-site"] === "cross-site"
-        )
-          return json(res, 403, { error: "Invalid origin" });
-        if (!req.headers["content-type"]?.startsWith("application/json"))
-          return json(res, 415, { error: "JSON required" });
-        try {
-          const chunks: Buffer[] = [];
-          let size = 0;
-          for await (const chunk of req) {
-            size += chunk.length;
-            if (size > 4096)
-              return json(res, 413, { error: "Request too large" });
-            chunks.push(Buffer.from(chunk));
-          }
-          if (!auth.isAdmin(req))
-            return json(res, 403, { error: "Access revoked" });
-          return json(
-            res,
-            200,
-            visibility.write(
-              JSON.parse(Buffer.concat(chunks).toString("utf8")),
-              auth.currentUser(req)!,
-            ),
-          );
-        } catch (error) {
-          return json(res, 400, { error: (error as Error).message });
-        }
-      }
-      return json(res, 405, { error: "Method not allowed" });
-    }
-    const visitor = auth.currentUser(req),
-      access = visibility.read();
-    if (url === "/api/people/search") {
-      if (req.method !== "GET")
-        return json(res, 405, { error: "Ожидается GET" });
-      if (!visitor && !access.publicTree)
-        return json(res, 401, { error: "Войдите для поиска людей" });
-      const query = (parsedUrl.searchParams.get("q") || "").trim();
-      if (query.length > 100)
-        return json(res, 400, { error: "Слишком длинный поисковый запрос" });
-      return json(res, 200, searchPeople(query));
-    }
-    if (url === "/api/export.json") {
-      if (req.method !== "GET") {
-        res.setHeader("Allow", "GET");
-        return json(res, 405, { error: "Ожидается GET" });
-      }
-      if (!visitor && !access.publicTree)
-        return json(res, 401, { error: "Войдите для экспорта древа" });
-      const { family, revision } = archive.read();
-      if (parsedUrl.searchParams.get("download") === "1")
-        res.setHeader(
-          "Content-Disposition",
-          'attachment; filename="drevo-family.json"',
-        );
-      return json(
-        res,
-        200,
-        analysisExport(family, revision, new Date().toISOString()),
-      );
-    }
-    if (
-      !visitor &&
-      ((url.startsWith("/media/") && !access.publicAlbums) ||
-        (["/api/family", "/api/export", "/data/family.json"].includes(url) &&
-          !access.publicTree &&
-          !access.publicAlbums))
-    )
-      return json(res, 401, { error: "Sign in to view this archive" });
-    if (url === "/api/places/locate") {
-      if (req.method !== "GET")
-        return json(res, 405, { error: "Ожидается GET" });
-      if (!visitor && !access.publicTree && !access.publicAlbums)
-        return json(res, 401, { error: "Войдите для просмотра мест семьи" });
-      if (
-        req.headers["x-drevo-map"] !== "1" ||
-        (origin && origin !== (publicOrigin || `http://${host}`)) ||
-        req.headers["sec-fetch-site"] === "cross-site"
-      )
-        return json(res, 403, { error: "Откройте карту в архиве" });
-      const query = (parsedUrl.searchParams.get("q") || "").trim();
-      const permittedQuery = () => {
-        if (auth.canEdit(req)) return true;
-        const { family } = snapshot(req);
-        return familyPlaces(family.people, family.photos).some(
-          (p) => p.key === placeKey(query),
-        );
-      };
-      if (!permittedQuery())
-        return json(res, 403, {
-          error: "Можно искать только места из доступного архива",
-        });
-      try {
-        const result = await geocoding.locate(query);
-        if (!permittedQuery())
-          return json(res, 403, { error: "Доступ к этому месту закрыт" });
-        return json(res, 200, result);
-      } catch (e) {
-        return json(res, 400, { error: (e as Error).message });
-      }
-    }
-    if (url === "/api/restore/preview" || url === "/api/restore/apply") {
-      if (req.method !== "POST")
-        return json(res, 405, { error: "Ожидается POST" });
-      if (!auth.isAdmin(req))
-        return json(res, auth.currentUser(req) ? 403 : 401, {
-          error: "Импорт доступен только администратору",
-        });
-      if (
-        (origin && origin !== (publicOrigin || `http://${host}`)) ||
-        req.headers["sec-fetch-site"] === "cross-site"
-      )
-        return json(res, 403, { error: "Недопустимый источник запроса" });
-      if (req.headers["x-drevo-restore"] !== "1")
-        return json(res, 400, { error: "Откройте импорт в админке" });
-      const preview = url.endsWith("preview");
-      if (preview && restoreUploadBusy)
-        return json(res, 429, {
-          error: "Уже загружается другой бэкап. Повторите позже.",
-        });
-      if (preview) restoreUploadBusy = true;
-      try {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        for await (const chunk of req) {
-          size += chunk.length;
-          if (size > (preview ? RESTORE_LIMIT : 4096))
-            return json(res, 413, {
-              error: "Файл слишком большой. Максимум 128 МБ.",
-            });
-          chunks.push(Buffer.from(chunk));
-        }
-        const actor = auth.currentUser(req);
-        if (!actor || !auth.isAdmin(req))
-          return json(res, 403, { error: "Доступ администратора отозван" });
-        const bytes = Buffer.concat(chunks);
-        if (preview)
-          return json(res, 200, await restores.preview(bytes, actor));
-        const body = JSON.parse(bytes.toString("utf8"));
-        if (body.confirm !== true || typeof body.token !== "string")
-          return json(res, 400, { error: "Подтвердите замену данных" });
-        return json(res, 200, restores.apply(body.token, actor));
-      } catch (e) {
-        return json(res, e instanceof ConflictError ? 409 : 400, {
-          error: (e as Error).message,
-        });
-      } finally {
-        if (preview) restoreUploadBusy = false;
-      }
-    }
-    if (url === "/api/backup/full" && req.method === "GET") {
-      if (!auth.isAdmin(req))
-        return json(res, visitor ? 403 : 401, {
-          error: "Only administrators can download backups",
-        });
-      await fullBackup(archive.db, dbPath, res);
-      return;
-    }
-    if (url === "/api/backup" && req.method === "GET") {
-      if (!auth.isAdmin(req))
-        return json(res, auth.currentUser(req) ? 403 : 401, {
-          error: "Only administrators can download database backups",
-        });
-      const bytes = databaseBackup(archive.db);
-      res.writeHead(200, {
-        "Content-Type": "application/vnd.sqlite3",
-        "Content-Disposition": `attachment; filename="drevo-${new Date().toISOString().slice(0, 10)}.sqlite"`,
-        "Cache-Control": "no-store",
-      });
-      res.end(bytes);
-      return;
-    }
-    if (url === "/api/health" && req.method === "GET")
-      return json(res, 200, { ok: true, revision: archive.meta().revision });
-    if (url.startsWith("/media/") && req.method === "GET") {
-      const file = media.read(url);
-      if (!file) return json(res, 404, { error: "Фото не найдено" });
-      let bytes: Buffer = file.bytes;
-      let type = file.type;
-      const variant = parsedUrl.searchParams.get("variant");
-      if (
-        (variant === "thumb" || variant === "display") &&
-        file.type !== "image/gif"
-      ) {
-        try {
-          bytes = await previewImage(file.bytes, variant);
-          type = "image/webp";
-        } catch {
-          /* При ошибке доступен оригинал. */
-        }
-        if (!auth.currentUser(req) && !visibility.read().publicAlbums)
-          return json(res, 401, { error: "Доступ к фотографиям закрыт" });
-      }
-      res.writeHead(200, {
-        "Content-Type": type,
-        "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, max-age=86400",
-      });
-      res.end(bytes);
-      return;
-    }
-    if (!url.startsWith("/api/")) {
+
+    if (productionStatic && (await productionStatic(req, res, parsedUrl))) return;
+    if (!path.startsWith("/api/")) {
       if (vite) {
         vite.middlewares(req, res);
         return;
       }
-      if (req.method !== "GET" && req.method !== "HEAD")
-        return json(res, 405, { error: "Метод не поддерживается" });
-      const dist = resolve(root, "dist");
-      let path = resolve(dist, "." + decodeURIComponent(url));
-      if (
-        !path.startsWith(dist + "/") &&
-        !path.startsWith(dist + "\\") &&
-        path !== dist
-      )
-        return json(res, 403, { error: "Недоступный путь" });
-      if (archiveViewAt(url) || /^\/s\/[A-Za-z0-9_-]{43}$/.test(url))
-        path = resolve(dist, "index.html");
-      if (url.startsWith("/s/")) {
-        res.setHeader("Referrer-Policy", "no-referrer");
-        res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
-      }
-      if (!existsSync(path))
-        return json(res, 404, { error: "Страница не найдена" });
-      try {
-        const bytes = readFileSync(path);
-        res.writeHead(200, {
-          "Content-Type":
-            staticTypes[extname(path)] || "application/octet-stream",
-          "X-Content-Type-Options": "nosniff",
-          "Cache-Control": url.startsWith("/assets/")
-            ? "public, max-age=31536000, immutable"
-            : "no-cache",
-        });
-        res.end(req.method === "HEAD" ? undefined : bytes);
-      } catch {
-        return json(res, 404, { error: "Страница не найдена" });
-      }
-      return;
+      return json(res, 404, { error: "Страница не найдена" });
     }
-    if (url === "/api/family" && req.method === "GET") {
-      const projection = parsedUrl.searchParams.get("projection");
-      if (projection === "page") {
-        const meta = archive.meta(),
-          readTree = !!visitor || access.publicTree,
-          readPhotos = !!visitor || access.publicAlbums,
-          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}`;
-        if (parsedUrl.searchParams.get("token") !== pageToken)
-          return json(res, 409, {
-            error: "Архив или доступ к нему изменились. Обновите данные.",
-          });
-        const collection = parsedUrl.searchParams.get("collection"),
-          offset = Number(parsedUrl.searchParams.get("offset"));
-        if (
-          !["people", "photos"].includes(collection || "") ||
-          !Number.isInteger(offset) ||
-          offset < 0
-        )
-          return json(res, 400, { error: "Некорректная страница" });
-        if (collection === "people")
-          return json(res, 200, {
-            pageToken,
-            items: readTree
-              ? archive.peoplePage(offset, archivePageSize).map(personDetails)
-              : [],
-            total: readTree ? meta.people : 0,
-          });
-        return json(res, 200, {
-          pageToken,
-          items: readPhotos
-            ? archive
-                .photoPage(offset, archivePageSize)
-                .map((photo) => (readTree ? photo : { ...photo, tags: [] }))
-            : [],
-          total: readPhotos ? meta.photos : 0,
-        });
-      }
-      if (projection === "overview") {
-        const readTree = !!visitor || access.publicTree,
-          readPhotos = !!visitor || access.publicAlbums;
-        let data: ReturnType<typeof archive.overview>;
-        if (readTree) data = archive.overview(readPhotos);
-        else {
-          const meta = archive.meta();
-          data = {
-            family: {
-              title: meta.title,
-              description: meta.description,
-              demo: meta.demo,
-              people: [],
-              links: [],
-              photos: [],
-            },
-            revision: meta.revision,
-            totals: { people: meta.people, photos: meta.photos },
-          };
-        }
-        const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}`;
-        return json(res, 200, {
-          family: data.family,
-          revision: data.revision,
-          canEdit: auth.canEdit(req),
-          local: auth.local,
-          user: visitor,
-          readTree,
-          readPhotos,
-          reverseTimeline: access.reverseTimeline,
-          partial: true,
-          pageToken,
-          totals: {
-            people: readTree ? data.totals.people : 0,
-            photos: readPhotos ? data.totals.photos : 0,
-          },
-        });
-      }
-      return json(res, 200, snapshot(req));
-    }
-    if (url === "/api/export" && req.method === "GET") {
-      res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="drevo-archive.json"',
-      );
-      return json(res, 200, snapshot(req).family);
-    }
-    if (!(
-      (url === "/api/family" && req.method === "PUT") ||
-      (["/api/photos", "/api/portraits"].includes(url) && req.method === "POST")
-    ))
-      return json(res, 404, { error: "Неизвестный запрос" });
-    if (
-      (origin && origin !== (publicOrigin || `http://${host}`)) ||
-      req.headers["sec-fetch-site"] === "cross-site"
-    )
-      return json(res, 403, {
-        error: "Сохранение разрешено только со страницы архива",
-      });
-    if (!auth.canEdit(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
-        error: "You do not have editing access",
-      });
-    if (
-      url === "/api/family" &&
-      !req.headers["content-type"]?.startsWith("application/json")
-    )
-      return json(res, 415, { error: "Ожидается JSON" });
-    const revision = Number(req.headers["if-match"]);
-    if (
-      req.headers["if-match"] === undefined ||
-      !Number.isInteger(revision) ||
-      revision < 0
-    )
-      return json(res, 428, { error: "Не указана версия архива" });
-    try {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      const limit = (url === "/api/family" ? 8 : 20) * 1024 * 1024;
-      for await (const chunk of req) {
-        size += chunk.length;
-        if (size > limit)
-          return json(res, 413, {
-            error: `Максимальный размер — ${limit / 1024 / 1024} МБ`,
-          });
-        chunks.push(Buffer.from(chunk));
-      }
-      const actor = auth.currentUser(req);
-      if (!actor || actor.role === "reader")
-        throw new ForbiddenError("Editing access is no longer available");
-      if (url === "/api/portraits") {
-        if (req.headers["x-drevo-upload"] !== "1")
-          return json(res, 400, { error: "Некорректная загрузка" });
-        const file = media.add(Buffer.concat(chunks));
-        return json(res, 201, { url: file.url });
-      }
-      if (url === "/api/photos") {
-        if (req.headers["x-drevo-upload"] !== "1")
-          return json(res, 400, { error: "Некорректная загрузка" });
-        const file = media.add(Buffer.concat(chunks));
-        try {
-          const current = archive.read().family;
-          const metadata = JSON.parse(
-            decodeURIComponent(
-              String(req.headers["x-photo-metadata"] || "%7B%7D"),
-            ),
-          );
-          if (
-            !metadata ||
-            typeof metadata !== "object" ||
-            Array.isArray(metadata)
-          )
-            throw new Error("Некорректное описание фотографии");
-          const fields: Record<string, string> = {};
-          for (const key of ["title", "year", "place", "event", "description"])
-            if (metadata[key] !== undefined) {
-              if (
-                typeof metadata[key] !== "string" ||
-                metadata[key].length > 1000
-              )
-                throw new Error("Слишком длинное описание фотографии");
-              if (metadata[key].trim()) fields[key] = metadata[key].trim();
-            }
-          return json(
-            res,
-            201,
-            archive.write(
-              {
-                ...current,
-                photos: [
-                  ...(current.photos || []),
-                  {
-                    id: file.id,
-                    url: file.url,
-                    title: "",
-                    ...fields,
-                    createdAt: new Date().toISOString(),
-                    tags: [],
-                  },
-                ],
-              },
-              revision,
-              actor,
-            ),
-          );
-        } catch (error) {
-          file.undo();
-          throw error;
-        }
-      }
-      return json(
-        res,
-        200,
-        archive.write(
-          JSON.parse(Buffer.concat(chunks).toString("utf8")),
-          revision,
-          actor,
-        ),
-      );
-    } catch (error) {
-      return json(
-        res,
-        error instanceof ConflictError
-          ? 409
-          : error instanceof ForbiddenError
-            ? 403
-            : 400,
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Не удалось сохранить данные",
-        },
-      );
-    }
+    return json(res, 404, { error: "Неизвестный запрос" });
   }
+
   const server = createServer((req, res) => {
     void handle(req, res).catch((error) => {
       console.error(error);
@@ -702,7 +165,7 @@ export async function startServer(
     close: async () => {
       await vite?.close();
       server.closeAllConnections();
-      await new Promise<void>((r) => server.close(() => r()));
+      await new Promise<void>((done) => server.close(() => done()));
       restores.close();
       gedcom.close();
       geocoding.close();
@@ -710,6 +173,7 @@ export async function startServer(
     },
   };
 }
+
 if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
