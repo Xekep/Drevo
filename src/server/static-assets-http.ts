@@ -1,7 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { open as openFile } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { dirname, extname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
+
+const defaultAssetDirectory = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../dist/assets",
+);
 
 const assetTypes: Record<string, string> = {
   ".avif": "image/avif",
@@ -25,7 +31,7 @@ const assetTypes: Record<string, string> = {
  * Отдаёт только Vite assets. Остальная статика остаётся у обычного SPA fallback.
  * Файлы открываются асинхронно и не буферизуются целиком в event loop.
  */
-export function staticAssetsHttp(assetDirectory: string) {
+export function staticAssetsHttp(assetDirectory = defaultAssetDirectory) {
   const root = resolve(assetDirectory);
 
   return async (
@@ -75,7 +81,8 @@ export function staticAssetsHttp(assetDirectory: string) {
         return false;
       }
       res.writeHead(200, {
-        "Content-Type": assetTypes[extname(path).toLowerCase()] || "application/octet-stream",
+        "Content-Type":
+          assetTypes[extname(path).toLowerCase()] || "application/octet-stream",
         "Content-Length": String(stat.size),
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "public, max-age=31536000, immutable",
