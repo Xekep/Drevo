@@ -10,6 +10,7 @@ import { sharesStore } from "./shares.ts";
 import { auditStore } from "./audit.ts";
 import { mediaHttp } from "./media-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
+import { staticAssetsHttp } from "./static-assets-http.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
 
 export function sharingHttp({
@@ -27,6 +28,7 @@ export function sharingHttp({
   visibility: ReturnType<typeof settingsStore>;
   publicOrigin?: string;
 }) {
+  const serveStaticAsset = staticAssetsHttp();
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const serveMedia = mediaHttp({ auth, media, previewImage, visibility });
   const shares = sharesStore(archive.db),
@@ -36,6 +38,7 @@ export function sharingHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
+    if (await serveStaticAsset(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
     const path = url.pathname;
