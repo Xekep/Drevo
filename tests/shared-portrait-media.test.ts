@@ -108,7 +108,7 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
 });
 
 test("shared portrait handler cannot regress to synchronous media.read", () => {
-  const source = readFileSync("src/server/sharing-http.ts", "utf8");
+  const source = readFileSync("src/server/public-sharing-http.ts", "utf8");
   assert.doesNotMatch(source, /media\.read\s*\(/);
   assert.match(source, /media\.open\s*\(/);
   assert.match(source, /pipeline\s*\(/);
