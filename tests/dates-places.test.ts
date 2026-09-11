@@ -17,6 +17,7 @@ import {
 } from "../src/domain/places.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { geocodingStore } from "../src/server/geocoding.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 import type { Person, Family } from "../src/domain/types.ts";
 const person: Person = {
   id: "a",
@@ -185,6 +186,7 @@ test("historical names use external aliases and Earth coordinates without city-s
   assert.equal(historicalCandidates(matches, alien).length, 0);
   const db = new DatabaseSync(":memory:"),
     calls: URL[] = [];
+  initializeArchiveSchema(db);
   const fetcher: typeof fetch = async (input) => {
     const url = new URL(String(input));
     calls.push(url);

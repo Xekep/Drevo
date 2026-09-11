@@ -22,9 +22,6 @@ export function geocodingStore(
   fetcher: typeof fetch = fetch,
   interval = 1200,
 ) {
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS geocode_cache (query TEXT PRIMARY KEY, data TEXT NOT NULL, saved_at INTEGER NOT NULL) STRICT",
-  );
   const pending = new Map<string, Promise<PlaceResult>>();
   let tail = Promise.resolve(),
     last = 0,

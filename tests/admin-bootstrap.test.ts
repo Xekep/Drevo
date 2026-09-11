@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { userStore } from "../src/server/users.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 function memory() {
   const db = new DatabaseSync(":memory:");
-  db.exec("PRAGMA foreign_keys=ON");
+  initializeArchiveSchema(db);
   return db;
 }
 
@@ -40,7 +41,10 @@ test("existing installations keep their administrator without bootstrap env", ()
   const db = memory();
   try {
     const legacy = userStore(db);
-    assert.equal(legacy.register("existing-admin", "Администратор").role, "admin");
+    assert.equal(
+      legacy.register("existing-admin", "Администратор").role,
+      "admin",
+    );
     const reopened = userStore(db, { requireInitialAdmin: true });
     assert.equal(reopened.get("existing-admin")?.role, "admin");
   } finally {

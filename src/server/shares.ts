@@ -8,11 +8,6 @@ export const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const hash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 export function sharesStore(db: DatabaseSync) {
-  db.exec(`CREATE TABLE IF NOT EXISTS share_links (
-    id TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, title TEXT NOT NULL, anchor_id TEXT NOT NULL,
-    person_ids TEXT NOT NULL CHECK(json_valid(person_ids)), created_at TEXT NOT NULL, expires_at TEXT NOT NULL,
-    created_by TEXT NOT NULL, created_name TEXT NOT NULL, revoked_at TEXT
-  ) STRICT;`);
   const audit = auditStore(db);
   const convert = (row: Record<string, unknown>): ShareLink => ({
     id: String(row.id),

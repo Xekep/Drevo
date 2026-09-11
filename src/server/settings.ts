@@ -8,12 +8,7 @@ export type Visibility = {
 };
 export function settingsStore(db: DatabaseSync) {
   const audit = auditStore(db);
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS access_settings (id INTEGER PRIMARY KEY CHECK(id=1), public_tree INTEGER NOT NULL CHECK(public_tree IN (0,1)), public_albums INTEGER NOT NULL CHECK(public_albums IN (0,1))) STRICT",
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS tree_settings (id INTEGER PRIMARY KEY CHECK(id=1), reverse_timeline INTEGER NOT NULL DEFAULT 0 CHECK(reverse_timeline IN (0,1))) STRICT; INSERT OR IGNORE INTO tree_settings VALUES(1,0)",
-  );
+  db.prepare("INSERT OR IGNORE INTO tree_settings VALUES(1,0)").run();
   const initial = process.env.ARCHIVE_PRIVATE === "1" ? 0 : 1;
   db.prepare(
     "INSERT OR IGNORE INTO access_settings(id,public_tree,public_albums) VALUES(1,?,?)",
