@@ -1,8 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { createGunzip } from "node:zlib";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
+  createReadStream,
+  createWriteStream,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -10,15 +13,18 @@ import {
   rmSync,
   existsSync,
 } from "node:fs";
+import { open as openFile, rename, unlink } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { readArchive, ConflictError, type openArchive } from "./database.ts";
-import { databaseBackup } from "./backup.ts";
+import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
 export const RESTORE_LIMIT = 128 * 1024 * 1024;
+export class RestoreTooLargeError extends Error {}
+
 function removeStage(directory: string) {
   const path = resolve(directory);
   if (
@@ -39,9 +45,42 @@ const references = (family: Family) => [
   ),
 ];
 
+async function streamUpload(source: Readable, file: string) {
+  let size = 0;
+  const guard = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      const bytes = Buffer.from(chunk);
+      size += bytes.length;
+      if (size > RESTORE_LIMIT) {
+        callback(new RestoreTooLargeError("Файл слишком большой. Максимум 128 МБ."));
+        return;
+      }
+      callback(null, bytes);
+    },
+  });
+  await pipeline(
+    source,
+    guard,
+    createWriteStream(file, { flags: "wx", mode: 0o600 }),
+  );
+  if (!size) throw new Error("Бэкап должен быть не больше 128 МБ");
+  return size;
+}
+
+async function fileHeader(file: string) {
+  const handle = await openFile(file, "r");
+  try {
+    const header = Buffer.alloc(16),
+      { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return header.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Читаем только ожидаемые файлы собственного бэкапа; ссылки и пути наружу запрещены. */
-async function unpack(bytes: Buffer, directory: string) {
-  const stream = Readable.from([bytes]).pipe(createGunzip());
+async function unpack(source: Readable, directory: string) {
+  const stream = source.pipe(createGunzip());
   let pending = Buffer.alloc(0),
     total = 0,
     remaining = 0,
@@ -158,7 +197,8 @@ type Stage = {
   expires: number;
   files: Map<string, string>;
 };
-export function restoreStore(
+
+function createRestoreStore(
   archive: ReturnType<typeof openArchive>,
   dbPath: string,
 ) {
@@ -173,89 +213,105 @@ export function restoreStore(
       if (stage.expires < Date.now()) discard(token);
   }, 60000);
   cleanup.unref();
+
+  async function previewStream(
+    sourceStream: Readable,
+    actor: ArchiveUser,
+    assertAccess?: () => void,
+  ) {
+    if (actor.role !== "admin")
+      throw new Error("Восстановление доступно администратору");
+    for (const [token, stage] of stages)
+      if (stage.actor === actor.id || stage.expires < Date.now())
+        discard(token);
+    if (stages.size >= 3)
+      throw new Error("Уже проверяется несколько бэкапов. Повторите позже.");
+
+    const directory = mkdtempSync(join(tmpdir(), "drevo-restore-")),
+      upload = join(directory, ".upload");
+    mkdirSync(join(directory, "uploads"));
+    try {
+      const size = await streamUpload(sourceStream, upload);
+      assertAccess?.();
+      const header = await fileHeader(upload);
+      if (header.toString("binary") === "SQLite format 3\0") {
+        if (size > SQLITE_LIMIT) throw new Error("База больше 32 МБ");
+        await rename(upload, join(directory, "drevo.sqlite"));
+      } else if (header[0] === 31 && header[1] === 139) {
+        await unpack(createReadStream(upload), directory);
+        await unlink(upload);
+      } else throw new Error("Выберите бэкап Drevo: .sqlite или .tar.gz");
+
+      const source = new DatabaseSync(join(directory, "drevo.sqlite"), {
+        readOnly: true,
+        allowExtension: false,
+      });
+      let family: Family;
+      try {
+        source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
+        const tables = source
+          .prepare(
+            "SELECT name,type FROM sqlite_schema WHERE name IN ('archive','people','relations','photos','photo_tags')",
+          )
+          .all();
+        if (tables.length !== 5 || tables.some((t) => t.type !== "table"))
+          throw new Error("Это не база семейного архива Drevo");
+        if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
+          throw new Error("База повреждена");
+        family = validateFamily(readArchive(source).family);
+      } finally {
+        source.close();
+      }
+      const files = new Map<string, string>();
+      let missing = 0;
+      for (const url of references(family)) {
+        const match = mediaPattern.exec(url);
+        if (!match) throw new Error("Недопустимое имя фотографии в базе");
+        const file = join(directory, "uploads", match[1]);
+        if (existsSync(file)) {
+          if (imageExtension(readFileSync(file)) !== match[2])
+            throw new Error(
+              "Содержимое фотографии не соответствует расширению",
+            );
+          files.set(url, file);
+        } else if (!existsSync(join(dirname(dbPath), "uploads", match[1])))
+          missing++;
+      }
+      const token = randomUUID(),
+        current = archive.read();
+      stages.set(token, {
+        directory,
+        family,
+        actor: actor.id,
+        revision: current.revision,
+        expires: Date.now() + 15 * 60000,
+        files,
+      });
+      return {
+        token,
+        revision: current.revision,
+        title: family.title,
+        people: family.people.length,
+        photos: family.photos?.length || 0,
+        files: files.size,
+        missing,
+        currentPeople: current.family.people.length,
+        currentPhotos: current.family.photos?.length || 0,
+      };
+    } catch (error) {
+      removeStage(directory);
+      throw error;
+    }
+  }
+
   return {
     async preview(bytes: Buffer, actor: ArchiveUser) {
-      if (actor.role !== "admin")
-        throw new Error("Восстановление доступно администратору");
       if (!bytes.length || bytes.length > RESTORE_LIMIT)
         throw new Error("Бэкап должен быть не больше 128 МБ");
-      for (const [token, stage] of stages)
-        if (stage.actor === actor.id || stage.expires < Date.now())
-          discard(token);
-      if (stages.size >= 3)
-        throw new Error("Уже проверяется несколько бэкапов. Повторите позже.");
-      const directory = mkdtempSync(join(tmpdir(), "drevo-restore-"));
-      mkdirSync(join(directory, "uploads"));
-      try {
-        if (bytes.subarray(0, 16).toString("binary") === "SQLite format 3\0") {
-          if (bytes.length > SQLITE_LIMIT) throw new Error("База больше 32 МБ");
-          writeFileSync(join(directory, "drevo.sqlite"), bytes, {
-            mode: 0o600,
-          });
-        } else if (bytes[0] === 31 && bytes[1] === 139)
-          await unpack(bytes, directory);
-        else throw new Error("Выберите бэкап Drevo: .sqlite или .tar.gz");
-        const source = new DatabaseSync(join(directory, "drevo.sqlite"), {
-          readOnly: true,
-          allowExtension: false,
-        });
-        let family: Family;
-        try {
-          source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
-          const tables = source
-            .prepare(
-              "SELECT name,type FROM sqlite_schema WHERE name IN ('archive','people','relations','photos','photo_tags')",
-            )
-            .all();
-          if (tables.length !== 5 || tables.some((t) => t.type !== "table"))
-            throw new Error("Это не база семейного архива Drevo");
-          if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
-            throw new Error("База повреждена");
-          family = validateFamily(readArchive(source).family);
-        } finally {
-          source.close();
-        }
-        const files = new Map<string, string>();
-        let missing = 0;
-        for (const url of references(family)) {
-          const match = mediaPattern.exec(url);
-          if (!match) throw new Error("Недопустимое имя фотографии в базе");
-          const file = join(directory, "uploads", match[1]);
-          if (existsSync(file)) {
-            if (imageExtension(readFileSync(file)) !== match[2])
-              throw new Error(
-                "Содержимое фотографии не соответствует расширению",
-              );
-            files.set(url, file);
-          } else if (!existsSync(join(dirname(dbPath), "uploads", match[1])))
-            missing++;
-        }
-        const token = randomUUID(),
-          current = archive.read();
-        stages.set(token, {
-          directory,
-          family,
-          actor: actor.id,
-          revision: current.revision,
-          expires: Date.now() + 15 * 60000,
-          files,
-        });
-        return {
-          token,
-          revision: current.revision,
-          title: family.title,
-          people: family.people.length,
-          photos: family.photos?.length || 0,
-          files: files.size,
-          missing,
-          currentPeople: current.family.people.length,
-          currentPhotos: current.family.photos?.length || 0,
-        };
-      } catch (error) {
-        removeStage(directory);
-        throw error;
-      }
+      return previewStream(Readable.from([bytes]), actor);
     },
+    previewStream,
+    discard,
     apply(token: string, actor: ArchiveUser) {
       const stage = stages.get(token);
       if (
@@ -272,10 +328,7 @@ export function restoreStore(
       const backups = join(dirname(dbPath), "backups");
       mkdirSync(backups, { recursive: true });
       const backupName = `before-import-${Date.now()}-${randomUUID()}.sqlite`;
-      writeFileSync(join(backups, backupName), databaseBackup(archive.db), {
-        flag: "wx",
-        mode: 0o600,
-      });
+      writeDatabaseBackup(archive.db, join(backups, backupName));
       const created: string[] = [],
         urls = new Map<string, string>();
       let result: ReturnType<typeof archive.write>;
@@ -322,4 +375,25 @@ export function restoreStore(
       for (const token of stages.keys()) discard(token);
     },
   };
+}
+
+export type RestoreStore = ReturnType<typeof createRestoreStore>;
+const restoreStores = new WeakMap<
+  ReturnType<typeof openArchive>,
+  RestoreStore
+>();
+
+export function restoreStore(
+  archive: ReturnType<typeof openArchive>,
+  dbPath: string,
+) {
+  const store = createRestoreStore(archive, dbPath);
+  restoreStores.set(archive, store);
+  return store;
+}
+
+export function currentRestoreStore(archive: ReturnType<typeof openArchive>) {
+  const store = restoreStores.get(archive);
+  if (!store) throw new Error("Хранилище восстановления не инициализировано");
+  return store;
 }
