@@ -1049,7 +1049,7 @@
   color: #8fa777;
 }
 .about-story p {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.8;
   color: #67745e;
 }
@@ -1317,31 +1317,31 @@
   opacity: 1;
 }
 .flow-person.is-compact strong {
-  font-size: 18px;
+  font-size: 19px;
 }
 .flow-person.is-compact .flow-person-content > span > span {
-  font-size: 16px;
+  font-size: 17px;
 }
 .flow-person.is-overview .flow-person-content {
   padding: 12px 15px;
 }
 .flow-person.is-overview strong {
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1.15;
 }
 .flow-person.is-overview .flow-person-content > span > span {
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1.15;
   display: block;
   white-space: nowrap;
 }
 /* Two single lines use 66px, plus 24px padding, inside the 96px node. */
 .flow-person.is-distant strong {
-  font-size: 34px;
+  font-size: 38px;
   line-height: 1.05;
 }
 .flow-person.is-distant .flow-person-content > span > span {
-  font-size: 26px;
+  font-size: 29px;
   line-height: 1.05;
 }
 .tree-mode-bar {

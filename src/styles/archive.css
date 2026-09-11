@@ -52,13 +52,13 @@
   padding: 12px 0;
 }
 .family-person b {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
 }
 .family-person small {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 5px;
 }
 .family-children {
@@ -182,7 +182,7 @@
   padding: 24px 26px;
 }
 .archive-form p {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--muted);
   margin: 0;
@@ -195,7 +195,7 @@
 .archive-form label {
   display: grid;
   gap: 7px;
-  font-size: 12px;
+  font-size: 13px;
 }
 .archive-form input,
 .archive-form select,
@@ -222,14 +222,14 @@
 }
 .archive-form summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 .archive-form details > div {
   margin-top: 12px;
 }
 .archive-form h3,
 .person-photos h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   margin: 0 0 12px;
 }
@@ -238,7 +238,7 @@
   padding: 9px 12px;
   border: 1px solid #dbe2d8;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
   background: white;
 }
 .archive-form footer {
@@ -289,7 +289,7 @@ button:disabled,
   gap: 10px;
   border-bottom: 1px solid var(--line);
   padding: 10px 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .connection-row > button:first-child {
@@ -347,7 +347,7 @@ button:disabled,
   margin: 9px 0;
 }
 .gallery-heading p {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.7;
   max-width: 470px;
@@ -401,15 +401,16 @@ button:disabled,
 .photo-tile > span {
   display: grid;
   gap: 8px;
-  padding: 15px;
+  padding: 14px 15px 16px;
 }
 .photo-tile b {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .photo-tile small {
-  font-size: 10px;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted);
 }
 .gallery-empty {

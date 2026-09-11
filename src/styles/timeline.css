@@ -114,7 +114,7 @@
 }
 .timeline-century > span {
   display: block;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 2.2px;
   margin-top: 7px;
   color: #8c9980;
@@ -140,7 +140,7 @@
 }
 .timeline-era small {
   color: #939c85;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 1px;
 }
 .timeline-era.soviet {
@@ -169,7 +169,7 @@
   color: #8b967f;
 }
 .timeline-undated > span {
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 2px;
 }
 .timeline-undated strong {
@@ -225,7 +225,7 @@
 .timeline-period-menu nav > span {
   display: block;
   color: #98a18d;
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 1.8px;
   margin: 8px 8px 10px;
 }
@@ -282,7 +282,7 @@
   pointer-events: auto;
 }
 .timeline-quick-centuries > span {
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 1.5px;
   color: #95a087;
   text-align: center;

@@ -102,7 +102,9 @@ export function Gallery({
               </>
             ) : (
               <>
-                <span className="gallery-title-desktop">Лица нашей истории</span>
+                <span className="gallery-title-desktop">
+                  Лица нашей истории
+                </span>
                 <span className="gallery-title-mobile">Семейный альбом</span>
               </>
             )}
@@ -122,13 +124,14 @@ export function Gallery({
           >
             {(
               [
-                ["all", "Все · по добавлению"],
-                ["people", "По людям"],
-                ["years", "По годам"],
+                ["all", "Все · по добавлению", "Все"],
+                ["people", "По людям", "Люди"],
+                ["years", "По годам", "Годы"],
               ] as const
-            ).map(([value, label]) => (
+            ).map(([value, label, compactLabel]) => (
               <button
                 key={value}
+                aria-label={label}
                 aria-pressed={mode === value}
                 onClick={() => {
                   setMode(value);
@@ -136,7 +139,10 @@ export function Gallery({
                   setLimit(30);
                 }}
               >
-                {label}
+                <span className="gallery-mode-label">{label}</span>
+                <span className="gallery-mode-label-compact" aria-hidden="true">
+                  {compactLabel}
+                </span>
               </button>
             ))}
           </div>

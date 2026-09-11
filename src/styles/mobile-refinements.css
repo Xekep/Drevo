@@ -94,7 +94,8 @@
 
   .gallery-modes button {
     flex: 1;
-    padding: 8px 6px;
+    min-height: 38px;
+    padding: 7px 8px;
     font-size: 12px;
   }
 

@@ -171,6 +171,9 @@
 .gallery-modes button {
   white-space: nowrap;
 }
+.gallery-mode-label-compact {
+  display: none;
+}
 @media (max-width: 760px) {
   .gallery-heading-actions {
     width: 100%;
@@ -178,6 +181,12 @@
   .gallery-modes button {
     padding: 7px 8px;
     white-space: normal;
+  }
+  .gallery-mode-label {
+    display: none;
+  }
+  .gallery-mode-label-compact {
+    display: inline;
   }
 }
 .album-heading {
