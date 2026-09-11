@@ -4,14 +4,18 @@ import { createGunzip } from "node:zlib";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
+  closeSync,
+  constants,
+  copyFileSync,
   createReadStream,
   createWriteStream,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  rmSync,
   existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { open as openFile, rename, unlink } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
@@ -75,6 +79,17 @@ async function fileHeader(file: string) {
     return header.subarray(0, bytesRead);
   } finally {
     await handle.close();
+  }
+}
+
+function imageExtensionFile(file: string) {
+  const fd = openSync(file, "r");
+  try {
+    const header = Buffer.alloc(16),
+      bytesRead = readSync(fd, header, 0, header.length, 0);
+    return imageExtension(header.subarray(0, bytesRead));
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -269,7 +284,7 @@ function createRestoreStore(
         if (!match) throw new Error("Недопустимое имя фотографии в базе");
         const file = join(directory, "uploads", match[1]);
         if (existsSync(file)) {
-          if (imageExtension(readFileSync(file)) !== match[2])
+          if (imageExtensionFile(file) !== match[2])
             throw new Error(
               "Содержимое фотографии не соответствует расширению",
             );
@@ -334,10 +349,9 @@ function createRestoreStore(
       let result: ReturnType<typeof archive.write>;
       try {
         for (const [url, path] of stage.files) {
-          const bytes = readFileSync(path),
-            name = `${randomUUID()}.${imageExtension(bytes)}`,
+          const name = `${randomUUID()}.${imageExtensionFile(path)}`,
             destination = join(dirname(dbPath), "uploads", name);
-          writeFileSync(destination, bytes, { flag: "wx" });
+          copyFileSync(path, destination, constants.COPYFILE_EXCL);
           created.push(destination);
           urls.set(url, `/media/${name}`);
         }
