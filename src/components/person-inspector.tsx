@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Plus, Pencil, Link2, History, Expand } from "lucide-react";
-import { PersonFullView } from "./person-full-view";
 import { useDesktopEditing } from "../hooks/useDesktopEditing";
-import { AuditLog } from "./audit-log";
 import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
 import { PersonPhotoAlbum } from "./person-photo-album";
+import { LazyChunkBoundary } from "./lazy-chunk-boundary";
+import { loadLazyModule } from "./lazy-section-recovery";
 import type { Connection } from "../domain";
 import {
   owns,
@@ -16,6 +16,25 @@ import {
   type Family,
   type ArchiveUser,
 } from "../domain";
+
+const AuditLog = lazy(() =>
+  loadLazyModule(
+    () =>
+      import("./audit-log").then((module) => ({ default: module.AuditLog })),
+    "person-audit-log",
+  ),
+);
+
+const PersonFullView = lazy(() =>
+  loadLazyModule(
+    () =>
+      import("./person-full-view").then((module) => ({
+        default: module.PersonFullView,
+      })),
+    "person-full-view",
+  ),
+);
+
 export function PersonInspector({
   person,
   family,
@@ -104,26 +123,46 @@ export function PersonInspector({
           onClose={() => setHistory(false)}
           wide
         >
-          <AuditLog personId={person.id} />
+          <LazyChunkBoundary message="Журнал изменений не загрузился. Обновите страницу и повторите открытие.">
+            <Suspense
+              fallback={
+                <div className="archive-status" role="status">
+                  Открываем журнал…
+                </div>
+              }
+            >
+              <AuditLog personId={person.id} />
+            </Suspense>
+          </LazyChunkBoundary>
         </EditorDialog>
       )}
       {expanded && desktop && (
-        <PersonFullView
-          person={person}
-          family={family}
-          readPhotos={readPhotos}
-          onClose={() => setExpanded(false)}
-          onCompare={(id) => {
-            onSelect(id);
-            onCompare();
-          }}
-          user={user}
-          canEdit={canEdit}
-          save={save}
-          uploadPortrait={uploadPortrait}
-          busy={busy}
-          onAlbum={onAlbum}
-        />
+        <LazyChunkBoundary message="Полная карточка не загрузилась. Обновите страницу и повторите открытие.">
+          <Suspense
+            fallback={
+              <div className="archive-status" role="status">
+                Открываем полную карточку…
+              </div>
+            }
+          >
+            <PersonFullView
+              person={person}
+              family={family}
+              readPhotos={readPhotos}
+              onClose={() => setExpanded(false)}
+              onCompare={(id) => {
+                onSelect(id);
+                onCompare();
+              }}
+              user={user}
+              canEdit={canEdit}
+              save={save}
+              uploadPortrait={uploadPortrait}
+              busy={busy}
+              onAlbum={onAlbum}
+            />
+          </Suspense>
+        </LazyChunkBoundary>
       )}
       {canEdit && adding && (
         <div className="relative-flow archive-form">
