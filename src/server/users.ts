@@ -13,8 +13,7 @@ export function userStore(
   db: DatabaseSync,
   options: UserStoreOptions = {
     initialAdminId: process.env.INITIAL_ADMIN_YANDEX_ID,
-    requireInitialAdmin:
-      process.env.NODE_ENV === "production" && !!process.env.PUBLIC_ORIGIN,
+    requireInitialAdmin: !!process.env.PUBLIC_ORIGIN,
   },
 ) {
   const audit = auditStore(db),
