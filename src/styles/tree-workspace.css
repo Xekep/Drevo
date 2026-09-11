@@ -1236,6 +1236,9 @@
   .about-story {
     padding: 8px 22px 24px;
   }
+  .archive-search kbd {
+    display: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .inspector-dock {
@@ -1244,11 +1247,6 @@
 }
 .mobile-sections {
   display: none;
-}
-@media (max-width: 899px) {
-  .archive-search kbd {
-    display: none;
-  }
 }
 @media (max-width: 380px) {
   .nav-brand span {
@@ -1458,10 +1456,6 @@
   .archive-nav .nav-brand {
     margin-right: 0;
   }
-  .archive-more[open] .nav-bottom {
-    left: auto;
-    right: 0;
-  }
   .tree-mode-bar {
     left: 12px;
     top: 14px;
@@ -1478,10 +1472,7 @@
     right: 10px !important;
     bottom: 74px !important;
   }
-}
-
-/* Keep mobile actions in one row, independent of the summary width. */
-@media (max-width: 899px) {
+  /* Keep mobile actions in one row, independent of the summary width. */
   .tree-canvas .tree-mode-bar,
   .tree-canvas.mode-timeline .tree-mode-bar {
     left: 8px;
