@@ -53,6 +53,7 @@ export async function startServer(
   const restores = restoreStore(archive, dbPath);
   const geocoding = geocodingStore(archive.db);
   const publicOrigin = process.env.PUBLIC_ORIGIN;
+  const serveStatic = productionStaticHttp(resolve(root, "dist"), production);
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
   const auth = createAuth(users, archive.db, publicOrigin);
@@ -63,6 +64,7 @@ export async function startServer(
     previewImage,
     visibility,
     publicOrigin,
+    serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
   const yandex = createYandexOAuth({
@@ -72,11 +74,6 @@ export async function startServer(
     issueSession: auth.issueSession,
     fetcher: oauthFetch,
   });
-  // production=true используется и тестами/встраиваемыми запусками без NODE_ENV.
-  // В штатном production запрос уже заберёт ранний static handler в sharingHttp.
-  const productionStatic = production
-    ? productionStaticHttp(resolve(root, "dist"), true)
-    : null;
   const vite = production
     ? null
     : await (
@@ -131,7 +128,6 @@ export async function startServer(
         user: auth.currentUser(req),
       });
 
-    if (productionStatic && (await productionStatic(req, res, parsedUrl))) return;
     if (!path.startsWith("/api/")) {
       if (vite) {
         vite.middlewares(req, res);
