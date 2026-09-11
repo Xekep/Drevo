@@ -7,9 +7,13 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
-import { fullName, years, type Person } from "../../domain";
+import { fullName, years } from "../../domain";
 import { Avatar } from "../person-panel";
 import { useLongPressCompare } from "./use-long-press-compare";
+import {
+  samePersonNodeData,
+  type PersonNodeData,
+} from "./person-node-data";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
   collapse: (id: string, occurrenceId?: string) => void;
@@ -21,21 +25,23 @@ export const TreeActions = createContext<{
   expand: () => {},
   reference: () => {},
 });
-export type PersonNodeType = Node<
-  {
-    person: Person;
-    collapsed: boolean;
-    childrenCount: number;
-    dimmed: boolean;
-    household?: boolean;
-    occurrences?: number;
-    familyFocus?: boolean;
-    anchor?: boolean;
-    hiddenRelatives?: number;
-    expanded?: boolean;
-  },
-  "person"
->;
+export type PersonNodeType = Node<PersonNodeData, "person">;
+
+function samePersonNodeProps(
+  a: NodeProps<PersonNodeType>,
+  b: NodeProps<PersonNodeType>,
+) {
+  // Координаты и прочие служебные props ReactFlow относятся к внешней обёртке.
+  // Внутренняя карточка зависит только от этих входов. Context и useStore при
+  // необходимости всё равно инициируют собственный render.
+  return (
+    a.id === b.id &&
+    a.selected === b.selected &&
+    a.isConnectable === b.isConnectable &&
+    samePersonNodeData(a.data, b.data)
+  );
+}
+
 export const PersonNode = memo(function PersonNode({
   data,
   id,
@@ -149,4 +155,4 @@ export const PersonNode = memo(function PersonNode({
       )}
     </div>
   );
-});
+}, samePersonNodeProps);
