@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { databaseBackup } from "../src/server/backup.ts";
+import { databaseBackupBytes } from "./helpers/database-backup.ts";
 import { openArchive } from "../src/server/database.ts";
 import { restoreStore } from "../src/server/restore.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
@@ -45,7 +45,7 @@ test("restore preview accepts a SQLite backup split into tiny stream chunks", as
     archive = openArchive(databasePath, family),
     restores = restoreStore(archive, databasePath);
   try {
-    const bytes = databaseBackup(archive.db);
+    const bytes = databaseBackupBytes(archive.db);
     async function* tinyChunks() {
       for (let offset = 0; offset < bytes.length; offset += 7)
         yield bytes.subarray(offset, offset + 7);

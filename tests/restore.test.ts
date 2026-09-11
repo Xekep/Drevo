@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { startServer } from "../src/server/index.ts";
-import { databaseBackup } from "../src/server/backup.ts";
+import { databaseBackupBytes } from "./helpers/database-backup.ts";
 import { readArchive } from "../src/server/database.ts";
 import { userStore } from "../src/server/users.ts";
 import { settingsStore } from "../src/server/settings.ts";
@@ -83,7 +83,7 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
     });
   try {
     app.archive.write(family, app.archive.read().revision);
-    const bytes = databaseBackup(app.archive.db);
+    const bytes = databaseBackupBytes(app.archive.db);
     const changed = {
       ...family,
       title: "После бэкапа",

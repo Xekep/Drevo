@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openArchive, ConflictError } from "../src/server/database.ts";
-import { databaseBackup } from "../src/server/backup.ts";
+import { writeDatabaseBackup } from "../src/server/backup.ts";
 import {
   analyzeKinship,
   connectPeople,
@@ -128,7 +128,7 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     assert.throws(() => store.write(invalid, saved.revision));
     assert.deepEqual(store.read(), saved);
     const backup = join(dir, "backup.sqlite");
-    writeFileSync(backup, databaseBackup(store.db));
+    writeDatabaseBackup(store.db, backup);
     const db = new DatabaseSync(backup);
     assert.equal(
       db.prepare("SELECT count(*) AS n FROM photo_tags").get()!.n,
