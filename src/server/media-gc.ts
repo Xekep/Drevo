@@ -56,7 +56,10 @@ export function pruneOrphanMedia(
   return removed;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolveCli(process.argv[1])) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   const databasePath = process.argv[2],
     uploads = process.argv[3];
   if (!databasePath || !uploads) {
@@ -70,13 +73,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolveCli(process.arg
     } finally {
       db.close();
     }
-  }
-}
-
-function resolveCli(path: string) {
-  try {
-    return fileURLToPath(new URL(`file://${resolve(path)}`));
-  } catch {
-    return resolve(path);
   }
 }
