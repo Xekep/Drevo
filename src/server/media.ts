@@ -1,4 +1,10 @@
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  unlinkSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 export const mediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif))$/;
@@ -26,6 +32,22 @@ export function imageExtension(bytes: Buffer) {
 }
 export function mediaStore(directory: string) {
   mkdirSync(directory, { recursive: true });
+  const open = (url: string) => {
+    const match = mediaPattern.exec(url);
+    if (!match) return null;
+    const path = resolve(directory, match[1]);
+    try {
+      const stat = statSync(path);
+      if (!stat.isFile()) return null;
+      return {
+        path,
+        size: stat.size,
+        type: mimeTypes[match[2]],
+      };
+    } catch {
+      return null;
+    }
+  };
   return {
     add(bytes: Buffer) {
       const ext = imageExtension(bytes),
@@ -38,13 +60,14 @@ export function mediaStore(directory: string) {
         undo: () => unlinkSync(resolve(directory, name)),
       };
     },
+    open,
     read(url: string) {
-      const match = mediaPattern.exec(url);
-      if (!match) return null;
+      const file = open(url);
+      if (!file) return null;
       try {
         return {
-          bytes: readFileSync(resolve(directory, match[1])),
-          type: mimeTypes[match[2]],
+          bytes: readFileSync(file.path),
+          type: file.type,
         };
       } catch {
         return null;
