@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { Plus, Pencil, Link2, History, Expand } from "lucide-react";
 import { useDesktopEditing } from "../hooks/useDesktopEditing";
 import { EditorDialog } from "./editor-dialog";
+import { InspectorActions } from "./inspector-dock";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
 import { PersonPhotoAlbum } from "./person-photo-album";
@@ -78,45 +79,47 @@ export function PersonInspector({
   );
   return (
     <>
-      <div className="inspector-person-actions">
-        {canEdit && owns(user, person) && (
-          <button onClick={onEdit} className="person-edit-button">
-            <Pencil size={16} />
-            Изменить
-          </button>
-        )}
-        {canEdit && (
-          <button
-            className="person-action-icon"
-            onClick={() => setAdding(!adding)}
-            aria-expanded={adding}
-            title="Добавить родственника"
-            aria-label="Добавить родственника"
-          >
-            <Plus size={18} />
-          </button>
-        )}
-        {desktop && (
-          <button
-            className="person-expand-button"
-            title="Развернуть карточку"
-            aria-label="Развернуть карточку на весь экран"
-            onClick={() => setExpanded(true)}
-          >
-            <Expand size={16} />
-          </button>
-        )}
-        {user?.role === "admin" && (
-          <button
-            className="person-history-button"
-            title="История изменений"
-            aria-label="История изменений человека"
-            onClick={() => setHistory(true)}
-          >
-            <History size={15} />
-          </button>
-        )}
-      </div>
+      <InspectorActions>
+        <div className="inspector-person-actions">
+          {canEdit && owns(user, person) && (
+            <button onClick={onEdit} className="person-edit-button">
+              <Pencil size={16} />
+              Изменить
+            </button>
+          )}
+          {canEdit && (
+            <button
+              className="person-action-icon"
+              onClick={() => setAdding(!adding)}
+              aria-expanded={adding}
+              title="Добавить родственника"
+              aria-label="Добавить родственника"
+            >
+              <Plus size={18} />
+            </button>
+          )}
+          {desktop && (
+            <button
+              className="person-expand-button"
+              title="Развернуть карточку"
+              aria-label="Развернуть карточку на весь экран"
+              onClick={() => setExpanded(true)}
+            >
+              <Expand size={16} />
+            </button>
+          )}
+          {user?.role === "admin" && (
+            <button
+              className="person-history-button"
+              title="История изменений"
+              aria-label="История изменений человека"
+              onClick={() => setHistory(true)}
+            >
+              <History size={15} />
+            </button>
+          )}
+        </div>
+      </InspectorActions>
       {history && user?.role === "admin" && (
         <EditorDialog
           title="История изменений человека"

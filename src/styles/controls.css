@@ -172,6 +172,23 @@
   padding: 7px 10px;
   border-radius: var(--control-radius);
 }
+.inspector-actions-slot {
+  margin-left: auto;
+}
+.inspector-actions-slot:empty {
+  display: none;
+}
+.inspector-heading .inspector-person-actions {
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+}
+.inspector-heading .inspector-person-actions:empty {
+  display: none;
+}
+.inspector-heading:has(.person-edit-button) > span {
+  display: none;
+}
 .inspector-dock .archive-form {
   padding: 18px;
 }
