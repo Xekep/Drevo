@@ -30,8 +30,14 @@ export function imagePreviews(directory: string) {
       }
       const result = tail.then(async () => {
         const input = sharp(original, { limitInputPixels: 50_000_000 });
-        if (((await input.metadata()).pages || 1) > 1)
+        const metadata = await input.metadata();
+        if ((metadata.pages || 1) > 1)
           throw new Error("Для анимации используется оригинал");
+        // Для крошечных иконок lossy WebP бессмысленен: экономия ничтожна,
+        // а цвет может сдвинуться даже на однотонном изображении. Обычные
+        // фотографии остаются lossy и используют quality варианта.
+        const tiny =
+          (metadata.width || 0) <= 32 && (metadata.height || 0) <= 32;
         const bytes = await input
           .rotate()
           .resize({
@@ -43,6 +49,7 @@ export function imagePreviews(directory: string) {
           .keepIccProfile()
           .webp({
             quality: settings.quality,
+            lossless: tiny,
             effort: 4,
             smartSubsample: true,
           })
