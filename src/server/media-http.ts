@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { open as openFile } from "node:fs/promises";
+import { open as openFile, type FileHandle } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { imagePreviews, ImagePreviewVariant } from "./image-previews.ts";
@@ -65,7 +65,7 @@ export function mediaHttp({
       }
     }
 
-    let handle;
+    let handle: FileHandle | undefined;
     try {
       handle = await openFile(file.path, "r");
       const stat = await handle.stat();
