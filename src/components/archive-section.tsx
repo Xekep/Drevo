@@ -1,18 +1,47 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { Component, lazy, Suspense, type ReactNode } from "react";
 import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
+import {
+  clearLazySectionReload,
+  shouldReloadLazySection,
+} from "./lazy-section-recovery";
+
+async function loadSection<T>(loader: () => Promise<T>): Promise<T> {
+  try {
+    const module = await loader();
+    clearLazySectionReload(window.location.pathname, window.sessionStorage);
+    return module;
+  } catch (error) {
+    if (
+      shouldReloadLazySection(window.location.pathname, window.sessionStorage)
+    ) {
+      window.location.reload();
+      return await new Promise<T>(() => {});
+    }
+    throw error;
+  }
+}
 
 const PeopleCatalog = lazy(() =>
-  import("./people-catalog").then((module) => ({ default: module.PeopleCatalog })),
+  loadSection(async () => {
+    const module = await import("./people-catalog");
+    return { default: module.PeopleCatalog };
+  }),
 );
 const FamiliesCatalog = lazy(() =>
-  import("./families-catalog").then((module) => ({ default: module.FamiliesCatalog })),
+  loadSection(async () => {
+    const module = await import("./families-catalog");
+    return { default: module.FamiliesCatalog };
+  }),
 );
 const Gallery = lazy(() =>
-  import("./gallery").then((module) => ({ default: module.Gallery })),
+  loadSection(async () => {
+    const module = await import("./gallery");
+    return { default: module.Gallery };
+  }),
 );
-const PlacesMap = lazy(() => import("./places-map"));
-const InsightsPage = lazy(() => import("./insights-page"));
+const PlacesMap = lazy(() => loadSection(() => import("./places-map")));
+const InsightsPage = lazy(() => loadSection(() => import("./insights-page")));
 
 type Props = {
   view: ArchiveView;
@@ -32,6 +61,42 @@ type Props = {
   personFilter: string | null;
   onClearPhotoFilter: () => void;
 };
+
+type BoundaryProps = { children: ReactNode };
+type BoundaryState = { failed: boolean };
+
+class SectionErrorBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): BoundaryState {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("Не удалось открыть раздел архива", error);
+  }
+
+  render() {
+    if (this.state.failed)
+      return (
+        <div className="archive-status" role="alert">
+          <h1>Раздел не открылся</h1>
+          <p>
+            Приложение могло обновиться или файл раздела не загрузился. Обновите
+            страницу и повторите переход.
+          </p>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={() => window.location.reload()}
+          >
+            Обновить страницу
+          </button>
+        </div>
+      );
+    return this.props.children;
+  }
+}
 
 export function ArchiveSection(props: Props) {
   let content: ReactNode = null;
@@ -86,8 +151,12 @@ export function ArchiveSection(props: Props) {
 
   if (!content) return null;
   return (
-    <Suspense fallback={<div className="archive-status">Открываем раздел…</div>}>
-      {content}
-    </Suspense>
+    <SectionErrorBoundary key={props.view}>
+      <Suspense
+        fallback={<div className="archive-status">Открываем раздел…</div>}
+      >
+        {content}
+      </Suspense>
+    </SectionErrorBoundary>
   );
 }
