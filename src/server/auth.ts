@@ -12,12 +12,6 @@ export function createAuth(
 ) {
   const local = !publicOrigin,
     secure = publicOrigin?.startsWith("https://") ? "; Secure" : "";
-  db.exec(`CREATE TABLE IF NOT EXISTS auth_sessions (
-    token_hash TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-  ) STRICT;
-  CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at);`);
   const removeExpired = db.prepare(
     "DELETE FROM auth_sessions WHERE expires_at <= ?",
   );

@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { startServer } from "../src/server/index.ts";
 import sharp from "sharp";
 import { userStore } from "../src/server/users.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 import {
   familyGroups,
   validateFamily,
@@ -19,6 +20,7 @@ test("first Yandex account becomes admin once; roles persist and last admin is p
     path = join(dir, "users.sqlite");
   let db = new DatabaseSync(path);
   try {
+    initializeArchiveSchema(db);
     let store = userStore(db);
     const a = store.register("a", "Первый"),
       b = store.register("b", "Второй");

@@ -3,9 +3,6 @@ import { DEMO_IDENTITIES, DEMO_TITLE } from "./demo-ids.ts";
 
 /** Однократное удаление стартового примера, с сохранением добавленных данных. */
 export function removeStarterFamily(archive: ReturnType<typeof openArchive>) {
-  archive.db.exec(
-    "CREATE TABLE IF NOT EXISTS migrations (id TEXT PRIMARY KEY) STRICT",
-  );
   const migration = "remove-starter-family-2026-09-v2";
   if (archive.db.prepare("SELECT id FROM migrations WHERE id=?").get(migration))
     return;

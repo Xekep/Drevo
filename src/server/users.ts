@@ -22,10 +22,9 @@ export function userStore(
   const audit = auditStore(db),
     initialAdminId = options.initialAdminId?.trim() || "";
   if (initialAdminId.length > 100)
-    throw new Error("INITIAL_ADMIN_YANDEX_ID должен быть не длиннее 100 символов");
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))) STRICT;`,
-  );
+    throw new Error(
+      "INITIAL_ADMIN_YANDEX_ID должен быть не длиннее 100 символов",
+    );
   const adminCount = () =>
     Number(
       db.prepare("SELECT count(*) AS n FROM users WHERE role='admin'").get()!.n,
@@ -82,11 +81,7 @@ export function userStore(
         throw new Error("Неизвестная роль");
       const target = get(id);
       if (!target) throw new Error("Пользователь не найден");
-      if (
-        target.role === "admin" &&
-        role !== "admin" &&
-        adminCount() <= 1
-      )
+      if (target.role === "admin" && role !== "admin" && adminCount() <= 1)
         throw new Error("Нельзя убрать последнего администратора");
       db.prepare("UPDATE users SET role=? WHERE id=?").run(role, id);
       if (target.role !== role)

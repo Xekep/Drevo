@@ -7,12 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAuth, SESSION_MAX_AGE } from "../src/server/auth.ts";
 import { userStore } from "../src/server/users.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 test("persistent sessions survive server restart, renew on activity and revoke on logout", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-sessions-"));
   function open() {
     const db = new DatabaseSync(join(directory, "sessions.sqlite"));
-    db.exec("PRAGMA foreign_keys=ON");
+    initializeArchiveSchema(db);
     const users = userStore(db);
     const auth = createAuth(users, db, "https://drevo.kiiko.ru");
     const server = createServer((req, res) => {

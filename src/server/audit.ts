@@ -8,15 +8,6 @@ import {
 import type { Family } from "../domain/types.ts";
 
 export function auditStore(db: DatabaseSync) {
-  db.exec(`CREATE TABLE IF NOT EXISTS audit_entries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor_id TEXT NOT NULL,
-    actor_name TEXT NOT NULL, action TEXT NOT NULL, entity TEXT NOT NULL,
-    entity_id TEXT NOT NULL, label TEXT NOT NULL, revision INTEGER, details TEXT NOT NULL CHECK(json_valid(details))
-  ) STRICT;
-  CREATE TABLE IF NOT EXISTS audit_people (entry_id INTEGER NOT NULL REFERENCES audit_entries(id) ON DELETE CASCADE,
-    person_id TEXT NOT NULL, PRIMARY KEY(entry_id,person_id)) STRICT;
-  CREATE INDEX IF NOT EXISTS audit_people_person ON audit_people(person_id,entry_id);
-  CREATE INDEX IF NOT EXISTS audit_actor ON audit_entries(actor_id,id);`);
   function record(
     draft: AuditDraft,
     actor?: ArchiveUser,

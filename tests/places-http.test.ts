@@ -10,6 +10,7 @@ import {
   geocodingStore,
   type GeocodingStore,
 } from "../src/server/geocoding.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 import { placesHttp } from "../src/server/places-http.ts";
 import type { Family } from "../src/domain/types.ts";
 
@@ -107,8 +108,13 @@ test("places HTTP searches only visible family places and rechecks access after 
 });
 
 test("geocoding registry exposes the active store and clears it on close", () => {
-  const db = new DatabaseSync(":memory:"),
-    store = geocodingStore(db, async () => Response.json({ features: [] }), 0);
+  const db = new DatabaseSync(":memory:");
+  initializeArchiveSchema(db);
+  const store = geocodingStore(
+    db,
+    async () => Response.json({ features: [] }),
+    0,
+  );
   try {
     assert.equal(currentGeocodingStore(db), store);
     store.close();
