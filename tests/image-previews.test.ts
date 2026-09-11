@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -56,5 +56,35 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.ok(files.some((file) => file.endsWith("-thumb-v2.webp")));
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cached path preview does not need the original file again", async () => {
+  const root = await mkdtemp(join(tmpdir(), "drevo-preview-path-"));
+  const directory = join(root, "cache");
+  const sourcePath = join(root, "immutable-photo.jpg");
+  try {
+    const original = await sharp({
+      create: {
+        width: 800,
+        height: 600,
+        channels: 3,
+        background: { r: 120, g: 90, b: 70 },
+      },
+    })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    await writeFile(sourcePath, original);
+    const preview = imagePreviews(directory);
+    const source = { path: sourcePath, cacheKey: "immutable-photo.jpg" };
+
+    const first = await preview(source, "thumb");
+    await unlink(sourcePath);
+    const cached = await preview(source, "thumb");
+
+    assert.deepEqual(cached, first);
+    assert.equal((await readdir(directory)).length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
