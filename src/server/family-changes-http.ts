@@ -84,8 +84,10 @@ export function familyChangesHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
-    if (url.pathname !== "/api/family/changes") return false;
-    if (req.method !== "POST")
+    const delta = url.pathname === "/api/family/changes",
+      full = url.pathname === "/api/family" && req.method === "PUT";
+    if (!delta && !full) return false;
+    if (delta && req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, {
@@ -105,7 +107,7 @@ export function familyChangesHttp({
       revision < 0
     )
       return json(res, 428, { error: "Не указана версия архива" });
-    if (archive.meta().revision !== revision) return conflict(res);
+    if (delta && archive.meta().revision !== revision) return conflict(res);
 
     try {
       const chunks: Buffer[] = [];
@@ -120,11 +122,13 @@ export function familyChangesHttp({
       if (!actor || actor.role === "reader")
         throw new ForbiddenError("Editing access is no longer available");
 
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (full)
+        return json(res, 200, archive.write(body, revision, actor));
+
       const current = archive.read();
       if (current.revision !== revision) return conflict(res);
-      const changes = parseChanges(
-        JSON.parse(Buffer.concat(chunks).toString("utf8")),
-      );
+      const changes = parseChanges(body);
       if (!changes.length) return json(res, 200, current);
 
       const merged = validatedChanges(current.family, changes);
@@ -146,7 +150,9 @@ export function familyChangesHttp({
           error:
             error instanceof Error
               ? error.message
-              : "Не удалось сохранить изменения",
+              : full
+                ? "Не удалось сохранить данные"
+                : "Не удалось сохранить изменения",
         },
       );
     }
