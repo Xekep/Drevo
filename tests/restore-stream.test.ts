@@ -36,6 +36,7 @@ const admin: ArchiveUser = {
   id: "admin",
   name: "Администратор",
   role: "admin",
+  createdAt: "2026-01-01T00:00:00.000Z",
 };
 
 test("restore preview accepts a SQLite backup split into tiny stream chunks", async () => {
