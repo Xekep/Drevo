@@ -183,7 +183,7 @@ export default function InsightsPage({
           <header>
             <div>
               <span className="section-label">МАТЕРИАЛЫ</span>
-              <h2>Насколько архив уже живой</h2>
+              <h2>Что уже есть в архиве</h2>
             </div>
             <Camera size={20} />
           </header>
