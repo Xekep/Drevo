@@ -10,6 +10,7 @@ import { userStore } from "./users.ts";
 import { sharesStore } from "./shares.ts";
 import { auditStore } from "./audit.ts";
 import { adminAccessHttp } from "./admin-access-http.ts";
+import { adminSharingHttp } from "./admin-sharing-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
 import { placesHttp } from "./places-http.ts";
@@ -20,7 +21,6 @@ import { familyChangesHttp } from "./family-changes-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import { currentRestoreStore } from "./restore.ts";
-import { isSameOriginRequest } from "./same-origin.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
 
 export function sharingHttp({
@@ -54,6 +54,15 @@ export function sharingHttp({
     geocoding: () => currentGeocodingStore(archive.db),
     publicOrigin,
   });
+  const shares = sharesStore(archive.db),
+    audit = auditStore(archive.db),
+    adminSharing = adminSharingHttp({
+      archive,
+      auth,
+      shares,
+      audit,
+      publicOrigin,
+    });
   const restore = restoreHttp({
     restores: () => currentRestoreStore(archive),
     auth,
@@ -62,8 +71,7 @@ export function sharingHttp({
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({ archive, auth, media, publicOrigin });
   const serveMedia = mediaHttp({ auth, media, previewImage, visibility });
-  const shares = sharesStore(archive.db),
-    audit = auditStore(archive.db);
+
   return async (
     req: IncomingMessage,
     res: ServerResponse,
@@ -74,18 +82,14 @@ export function sharingHttp({
     if (await adminAccess(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await places(req, res, url)) return true;
+    if (await adminSharing(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
+
     const path = url.pathname;
-    if (
-      !path.startsWith("/api/shared/") &&
-      path !== "/api/audit" &&
-      path !== "/api/shares" &&
-      !path.startsWith("/api/shares/")
-    )
-      return false;
+    if (!path.startsWith("/api/shared/")) return false;
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
@@ -98,149 +102,81 @@ export function sharingHttp({
     };
     const shared =
       /^\/api\/shared\/([A-Za-z0-9_-]{43})(?:\/portrait\/([^/]+))?$/.exec(path);
-    if (path.startsWith("/api/shared/")) {
-      if (req.method !== "GET")
-        return json(405, { error: "Доступен только просмотр" });
-      const share = shared && shares.get(shared[1]);
-      if (!share)
-        return json(410, {
-          error: "Ссылка недействительна, отозвана или срок её действия истёк.",
-        });
-      const { family } = archive.read();
-      if (shared![2]) {
-        const token = shared![1],
-          id = decodeURIComponent(shared![2]);
-        const person =
-          share.personIds.includes(id) &&
-          family.people.find((p) => p.id === id);
-        const file =
-          person && person.photo?.startsWith("/media/")
-            ? media.open(person.photo)
-            : null;
-        if (!file) return json(404, { error: "Портрет не найден" });
+    if (req.method !== "GET")
+      return json(405, { error: "Доступен только просмотр" });
+    const share = shared && shares.get(shared[1]);
+    if (!share)
+      return json(410, {
+        error: "Ссылка недействительна, отозвана или срок её действия истёк.",
+      });
+    const { family } = archive.read();
+    if (shared![2]) {
+      const token = shared![1],
+        id = decodeURIComponent(shared![2]);
+      const person =
+        share.personIds.includes(id) && family.people.find((p) => p.id === id);
+      const file =
+        person && person.photo?.startsWith("/media/")
+          ? media.open(person.photo)
+          : null;
+      if (!file) return json(404, { error: "Портрет не найден" });
 
-        if (file.type !== "image/gif") {
-          try {
-            const bytes = await previewImage(
-              { path: file.path, cacheKey: file.name },
-              "thumb",
-            );
-            if (!shares.get(token))
-              return json(410, { error: "Срок ссылки истёк" });
-            res.writeHead(200, {
-              "Content-Type": "image/webp",
-              "Content-Length": String(bytes.length),
-              "X-Content-Type-Options": "nosniff",
-            });
-            res.end(bytes);
-            return true;
-          } catch {
-            /* Если превью не удалось получить, потоково отдаём исходный файл. */
-          }
-        }
-
-        let handle;
+      if (file.type !== "image/gif") {
         try {
-          handle = await openFile(file.path, "r");
-          const stat = await handle.stat();
-          if (!stat.isFile()) {
-            await handle.close();
-            return json(404, { error: "Портрет не найден" });
-          }
-          if (!shares.get(token)) {
-            await handle.close();
+          const bytes = await previewImage(
+            { path: file.path, cacheKey: file.name },
+            "thumb",
+          );
+          if (!shares.get(token))
             return json(410, { error: "Срок ссылки истёк" });
-          }
           res.writeHead(200, {
-            "Content-Type": file.type,
-            "Content-Length": String(stat.size),
+            "Content-Type": "image/webp",
+            "Content-Length": String(bytes.length),
             "X-Content-Type-Options": "nosniff",
           });
-          try {
-            await pipeline(handle.createReadStream(), res);
-          } catch {
-            if (!res.destroyed) res.destroy();
-          }
+          res.end(bytes);
           return true;
         } catch {
-          if (handle) await handle.close().catch(() => {});
-          if (!res.headersSent)
-            return json(404, { error: "Портрет не найден" });
+          /* Если превью не удалось получить, потоково отдаём исходный файл. */
+        }
+      }
+
+      let handle;
+      try {
+        handle = await openFile(file.path, "r");
+        const stat = await handle.stat();
+        if (!stat.isFile()) {
+          await handle.close();
+          return json(404, { error: "Портрет не найден" });
+        }
+        if (!shares.get(token)) {
+          await handle.close();
+          return json(410, { error: "Срок ссылки истёк" });
+        }
+        res.writeHead(200, {
+          "Content-Type": file.type,
+          "Content-Length": String(stat.size),
+          "X-Content-Type-Options": "nosniff",
+        });
+        try {
+          await pipeline(handle.createReadStream(), res);
+        } catch {
           if (!res.destroyed) res.destroy();
-          return true;
         }
+        return true;
+      } catch {
+        if (handle) await handle.close().catch(() => {});
+        if (!res.headersSent)
+          return json(404, { error: "Портрет не найден" });
+        if (!res.destroyed) res.destroy();
+        return true;
       }
-      return json(200, {
-        family: sharedFamily(family, share, shared![1]),
-        expiresAt: share.expiresAt,
-        serverTime: new Date().toISOString(),
-        reverseTimeline: visibility.read().reverseTimeline,
-      });
     }
-    const actor = auth.currentUser(req);
-    if (!actor || actor.role !== "admin")
-      return json(actor ? 403 : 401, { error: "Доступно администратору" });
-    if (path === "/api/audit" && req.method === "GET") {
-      const before = Number(url.searchParams.get("before") || 0);
-      if (!Number.isSafeInteger(before) || before < 0)
-        return json(400, { error: "Некорректная страница журнала" });
-      return json(
-        200,
-        audit.list({
-          before,
-          personId: url.searchParams.get("personId") || undefined,
-          actorId: url.searchParams.get("actorId") || undefined,
-        }),
-      );
-    }
-    if (path === "/api/shares" && req.method === "GET") {
-      const before = url.searchParams.get("before") || "";
-      if (!Number.isSafeInteger(Number(before)) || Number(before) < 0)
-        return json(400, { error: "Некорректная страница ссылок" });
-      return json(200, shares.list(before));
-    }
-    if (!isSameOriginRequest(req, publicOrigin))
-      return json(403, { error: "Недопустимый источник запроса" });
-    try {
-      if (path.startsWith("/api/shares/") && req.method === "DELETE") {
-        shares.revoke(
-          decodeURIComponent(path.slice("/api/shares/".length)),
-          actor,
-        );
-        return json(200, { ok: true });
-      }
-      if (path === "/api/shares" && req.method === "POST") {
-        if (!req.headers["content-type"]?.startsWith("application/json"))
-          return json(415, { error: "Ожидается JSON" });
-        const chunks: Buffer[] = [];
-        let size = 0;
-        for await (const chunk of req) {
-          size += chunk.length;
-          if (size > 1024 * 1024)
-            return json(413, { error: "Слишком большой запрос" });
-          chunks.push(Buffer.from(chunk));
-        }
-        const currentActor = auth.currentUser(req);
-        if (currentActor?.role !== "admin")
-          return json(403, { error: "Доступ отозван" });
-        const current = archive.read();
-        if (
-          !req.headers["if-match"] ||
-          Number(req.headers["if-match"]) !== current.revision
-        )
-          return json(409, {
-            error: "Архив изменился. Обновите древо и проверьте состав семьи.",
-          });
-        const result = shares.create(
-          JSON.parse(Buffer.concat(chunks).toString("utf8")),
-          current.family,
-          currentActor,
-        );
-        return json(201, { share: result.share, path: `/s/${result.token}` });
-      }
-      return json(405, { error: "Метод не поддерживается" });
-    } catch (e) {
-      return json(400, { error: (e as Error).message });
-    }
+    return json(200, {
+      family: sharedFamily(family, share, shared![1]),
+      expiresAt: share.expiresAt,
+      serverTime: new Date().toISOString(),
+      reverseTimeline: visibility.read().reverseTimeline,
+    });
   };
 }
