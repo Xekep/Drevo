@@ -20,17 +20,40 @@ function columns(db: DatabaseSync, table: string) {
     .map((row) => String(row.name));
 }
 
+function tableNames(db: DatabaseSync) {
+  return new Set(
+    db
+      .prepare("SELECT name FROM sqlite_schema WHERE type='table'")
+      .all()
+      .map((row) => String(row.name)),
+  );
+}
+
 test("fresh SQLite archive gets current schema version", () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.ok(columns(db, "relations").includes("created_by"));
-    assert.ok(
-      db
-        .prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='archive'")
-        .get(),
-    );
+    const tables = tableNames(db);
+    for (const table of [
+      "archive",
+      "people",
+      "relations",
+      "photos",
+      "photo_tags",
+      "history",
+      "users",
+      "auth_sessions",
+      "access_settings",
+      "tree_settings",
+      "audit_entries",
+      "audit_people",
+      "share_links",
+      "geocode_cache",
+      "migrations",
+    ])
+      assert.ok(tables.has(table), `missing table ${table}`);
     initializeArchiveSchema(db);
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
   } finally {
@@ -38,7 +61,7 @@ test("fresh SQLite archive gets current schema version", () => {
   }
 });
 
-test("legacy version 0 relations table is migrated to schema v1", () => {
+test("legacy version 0 relations table migrates through all schema versions", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(`
@@ -63,11 +86,46 @@ test("legacy version 0 relations table is migrated to schema v1", () => {
 
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.equal(columns(db, "relations").includes("created_by"), true);
-    assert.ok(
-      db
-        .prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='history'")
-        .get(),
+    assert.ok(tableNames(db).has("history"));
+    assert.ok(tableNames(db).has("auth_sessions"));
+  } finally {
+    db.close();
+  }
+});
+
+test("schema v1 upgrades service tables to v2 without losing existing users", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      INSERT INTO users(id,name,role) VALUES('legacy-user','Старый пользователь','admin');
+      PRAGMA user_version=1;
+    `);
+
+    initializeArchiveSchema(db);
+
+    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.equal(
+      String(db.prepare("SELECT name FROM users WHERE id='legacy-user'").get()!.name),
+      "Старый пользователь",
     );
+    const tables = tableNames(db);
+    for (const table of [
+      "auth_sessions",
+      "access_settings",
+      "tree_settings",
+      "audit_entries",
+      "audit_people",
+      "share_links",
+      "geocode_cache",
+      "migrations",
+    ])
+      assert.ok(tables.has(table), `missing table ${table}`);
   } finally {
     db.close();
   }
