@@ -110,11 +110,15 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
   assert.equal(boris.data.household, true);
   assert.equal(boris.data.dimmed, false);
 
-  assert.equal(model.displayNodes[0].id, "family:1");
-  assert.equal(model.displayNodes[0].position.x, -8);
-  assert.equal(model.displayNodes[1].id, "siblings:1");
-  assert.equal(model.displayNodes[1].data.label, "Дети · 2");
-  assert.equal(model.displayNodes[1].data.reverse, true);
+  const household = model.displayNodes[0],
+    siblings = model.displayNodes[1];
+  assert.equal(household.id, "family:1");
+  assert.equal(household.position.x, -8);
+  assert.equal(siblings.id, "siblings:1");
+  assert.equal(siblings.type, "household");
+  if (siblings.type !== "household") assert.fail("Ожидался фоновый узел");
+  assert.equal(siblings.data.label, "Дети · 2");
+  assert.equal(siblings.data.reverse, true);
 });
 
 test("tree node model excludes hidden people and ignores geometry for another mode", () => {
