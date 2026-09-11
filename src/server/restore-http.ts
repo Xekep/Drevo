@@ -82,7 +82,7 @@ export function restoreHttp({
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
         return json(res, 400, { error: "Подтвердите замену данных" });
-      return json(res, 200, restores().apply(body.token, actor));
+      return json(res, 200, await restores().apply(body.token, actor));
     } catch (error) {
       return json(
         res,
