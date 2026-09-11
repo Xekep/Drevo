@@ -30,9 +30,6 @@ import {
 import {
   archiveConnections,
   fullName,
-  matchesPerson,
-  TREE_NODE_WIDTH,
-  TREE_NODE_HEIGHT,
   type Family,
   type ArchiveUser,
   type GraphConnection,
@@ -55,6 +52,7 @@ import { useTreeFullscreen } from "./use-tree-fullscreen";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 import { buildTreeEdges } from "./tree-edge-adapter";
+import { buildTreeNodeModel } from "./tree-node-model";
 
 export type ConnectionDraft = {
   from: string;
@@ -217,38 +215,42 @@ function Canvas(props: Props) {
     y: number;
     zoom: number;
   } | null>(null);
-  const childrenCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const p of family.people)
-      for (const parent of p.parents)
-        counts.set(parent, (counts.get(parent) || 0) + 1);
-    return counts;
-  }, [family.people]);
-  const positions = useMemo(
-    () => new Map(geometry?.mode === mode ? geometry.positions : []),
-    [geometry, mode],
-  );
-  const occurrences = useMemo(
+  const nodeModel = useMemo(
     () =>
-      geometry?.mode === mode
-        ? geometry.occurrences ||
-          family.people.map((p) => ({ id: p.id, personId: p.id, block: "" }))
-        : [],
-    [geometry, mode, family.people],
+      buildTreeNodeModel({
+        family,
+        geometry,
+        mode,
+        visible,
+        selected,
+        collapsed,
+        root,
+        hidden: familyView.hidden,
+        expanded: familyView.expanded,
+        query: props.query,
+      }),
+    [
+      family,
+      geometry,
+      mode,
+      visible,
+      selected,
+      collapsed,
+      root,
+      familyView.hidden,
+      familyView.expanded,
+      props.query,
+    ],
   );
-  const occurrencePeople = useMemo(
-    () => new Map(occurrences.map((o) => [o.id, o.personId])),
-    [occurrences],
-  );
-  const personOccurrences = useMemo(() => {
-    const result = new Map<string, string[]>();
-    for (const o of occurrences) {
-      const list = result.get(o.personId) || [];
-      list.push(o.id);
-      result.set(o.personId, list);
-    }
-    return result;
-  }, [occurrences]);
+  const {
+    childrenCount,
+    positions,
+    occurrencePeople,
+    personOccurrences,
+    peopleMap,
+    nodes,
+    displayNodes,
+  } = nodeModel;
   const toggleBranch = useCallback(
     (id: string, occurrenceId?: string) => {
       const point = positions.get(occurrenceId || id);
@@ -287,125 +289,6 @@ function Canvas(props: Props) {
       },
     }),
     [onChoose, toggleBranch, personOccurrences, flow],
-  );
-  const households = useMemo(
-    () =>
-      geometry?.mode === mode
-        ? (geometry.blocks || []).filter((block) =>
-            block.members.every((id) => visible.has(occurrencePeople.get(id)!)),
-          )
-        : [],
-    [geometry, mode, occurrencePeople, visible],
-  );
-  const householdMembers = useMemo(
-    () => new Set(households.flatMap((group) => group.members)),
-    [households],
-  );
-  const householdNodes = useMemo<HouseholdNodeType[]>(
-    () =>
-      households.map((group) => ({
-        id: group.id,
-        type: "household",
-        position: { x: group.x - 8, y: group.y - 8 },
-        width: group.width + 16,
-        height: group.height + 16,
-        data: {},
-        draggable: false,
-        selectable: false,
-        connectable: false,
-        focusable: false,
-        zIndex: -1,
-        style: { pointerEvents: "none" },
-        domAttributes: { "aria-hidden": true },
-      })),
-    [households],
-  );
-  const siblingNodes = useMemo<HouseholdNodeType[]>(
-    () =>
-      geometry?.mode === mode
-        ? (geometry.siblingGroups || [])
-            .filter((group) =>
-              group.members.every((id) =>
-                visible.has(occurrencePeople.get(id)!),
-              ),
-            )
-            .map((group) => ({
-              id: group.id,
-              type: "household",
-              position: { x: group.x, y: group.y },
-              width: group.width,
-              height: group.height,
-              data: {
-                label: `Дети · ${group.members.length}`,
-                reverse: geometry.reverse,
-              },
-              draggable: false,
-              selectable: false,
-              connectable: false,
-              focusable: false,
-              zIndex: -1,
-              style: { pointerEvents: "none" },
-              domAttributes: { "aria-hidden": true },
-            }))
-        : [],
-    [geometry, mode, visible, occurrencePeople],
-  );
-  const peopleMap = useMemo(
-    () => new Map(family.people.map((p) => [p.id, p])),
-    [family.people],
-  );
-  const nodes = useMemo<PersonNodeType[]>(
-    () =>
-      occurrences
-        .filter(
-          (o) =>
-            visible.has(o.personId) &&
-            positions.has(o.id) &&
-            peopleMap.has(o.personId),
-        )
-        .map((o) => {
-          const p = peopleMap.get(o.personId)!;
-          return {
-            id: o.id,
-            type: "person",
-            position: positions.get(o.id)!,
-            width: TREE_NODE_WIDTH,
-            height: TREE_NODE_HEIGHT,
-            selected: selected.includes(p.id),
-            data: {
-              person: p,
-              household: householdMembers.has(o.id),
-              occurrences: personOccurrences.get(p.id)?.length || 1,
-              collapsed: collapsed.has(p.id),
-              familyFocus: !!root,
-              anchor: p.id === root,
-              hiddenRelatives: familyView.hidden.get(p.id) || 0,
-              expanded: familyView.expanded.has(p.id),
-              childrenCount: childrenCount.get(p.id) || 0,
-              dimmed: !matchesPerson(p, props.query),
-            },
-            draggable: false,
-          };
-        }),
-    [
-      occurrences,
-      peopleMap,
-      personOccurrences,
-      visible,
-      positions,
-      selected,
-      collapsed,
-      root,
-      familyView.hidden,
-      familyView.expanded,
-      childrenCount,
-      props.query,
-      householdMembers,
-    ],
-  );
-  const displayNodes = useMemo(
-    () => [...householdNodes, ...siblingNodes, ...nodes],
-    [householdNodes, siblingNodes, nodes],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
   const displayEdges = useMemo<RelationshipEdgeType[]>(
