@@ -168,8 +168,7 @@ export function geocodingStore(
     return result;
   }
 
-  let store: GeocodingStore;
-  store = {
+  const store: GeocodingStore = {
     locate,
     close: () => {
       closed = true;
