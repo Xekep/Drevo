@@ -11,7 +11,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   ConnectionMode,
-  MarkerType,
   Panel,
   useReactFlow,
   useViewport,
@@ -30,8 +29,6 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
-  connectionKey,
-  canChangeConnection,
   fullName,
   matchesPerson,
   TREE_NODE_WIDTH,
@@ -49,8 +46,6 @@ import {
   type RelationshipEdgeType,
 } from "./relationship-edge";
 import { EraOverlay } from "./era-overlay";
-import { routeKey } from "../../domain/edge-routing";
-import { crossingPaths } from "../../domain/route-crossings";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
 import { useTreeLayout } from "./use-tree-layout";
@@ -59,6 +54,7 @@ import "../../styles/family-view.css";
 import { useTreeFullscreen } from "./use-tree-fullscreen";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
+import { buildTreeEdges } from "./tree-edge-adapter";
 
 export type ConnectionDraft = {
   from: string;
@@ -94,24 +90,6 @@ type Props = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
-const colors = {
-  parent: "#58775a",
-  spouse: "#b38167",
-  adoptive_parent: "#638fa0",
-  godparent: "#9b83ac",
-  guardian: "#8d9860",
-  nurse: "#a58958",
-  sworn_sibling: "#748ca9",
-};
-const patterns = {
-  parent: undefined,
-  spouse: "7 4",
-  adoptive_parent: "10 4",
-  godparent: "2 5",
-  guardian: "10 3 2 3",
-  nurse: "2 3",
-  sworn_sibling: "7 3 2 3",
-};
 function CameraTools({ selected }: { selected: string[] }) {
   const flow = useReactFlow(),
     { zoom } = useViewport();
@@ -310,7 +288,6 @@ function Canvas(props: Props) {
     }),
     [onChoose, toggleBranch, personOccurrences, flow],
   );
-  const routes = useMemo(() => new Map(geometry?.routes || []), [geometry]);
   const households = useMemo(
     () =>
       geometry?.mode === mode
@@ -431,228 +408,45 @@ function Canvas(props: Props) {
     [householdNodes, siblingNodes, nodes],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
-  const edges = useMemo<RelationshipEdgeType[]>(
+  const displayEdges = useMemo<RelationshipEdgeType[]>(
     () =>
-      connections
-        .filter(
-          (e) =>
-            visible.has(e.from) &&
-            visible.has(e.to) &&
-            positions.has(e.from) &&
-            positions.has(e.to) &&
-            (!geometry?.branches ||
-              (geometry.coveredRelations
-                ? !geometry.coveredRelations.includes(routeKey(e))
-                : !["parent", "spouse"].includes(e.type))) &&
-            (extraVisible || ["parent", "spouse"].includes(e.type)),
-        )
-        .map((e) => {
-          const a = positions.get(e.from),
-            b = positions.get(e.to),
-            side = ["spouse", "sworn_sibling"].includes(e.type);
-          const route = routes.get(routeKey(e));
-          const highlighted = props.highlighted.some(
-            (id, i) =>
-              i > 0 &&
-              ((id === e.to && props.highlighted[i - 1] === e.from) ||
-                (id === e.from && props.highlighted[i - 1] === e.to)),
-          );
-          return {
-            id: e.key,
-            source: e.from,
-            target: e.to,
-            type: "relationship",
-            sourceHandle:
-              route?.sourceHandle ??
-              (side
-                ? a && b && a.x > b.x
-                  ? "left"
-                  : "right"
-                : a && b && a.y > b.y
-                  ? "top"
-                  : "bottom"),
-            targetHandle:
-              route?.targetHandle ??
-              (side
-                ? a && b && a.x > b.x
-                  ? "right"
-                  : "left"
-                : a && b && a.y > b.y
-                  ? "bottom"
-                  : "top"),
-            selected: props.selectedEdge === e.key,
-            data: { connection: e, onSelect: onEdge, route },
-            style: {
-              stroke: colors[e.type],
-              strokeWidth:
-                highlighted || props.selectedEdge === e.key ? 3 : 1.6,
-              strokeDasharray: patterns[e.type],
-            },
-            markerEnd: side
-              ? undefined
-              : {
-                  type: MarkerType.ArrowClosed,
-                  color: colors[e.type],
-                  width: 16,
-                  height: 16,
-                },
-            reconnectable:
-              props.canEdit &&
-              !props.busy &&
-              canChangeConnection(family, user, e, peopleMap),
-            focusable: true,
-            domAttributes: {
-              onKeyDown: (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onEdge(e);
-                }
-              },
-            },
-            ariaLabel: `${fullName(peopleMap.get(e.from)!)} — ${fullName(peopleMap.get(e.to)!)}`,
-          };
-        }),
+      buildTreeEdges({
+        family,
+        user,
+        mode,
+        geometry,
+        connections,
+        visible,
+        positions,
+        occurrencePeople,
+        peopleMap,
+        highlighted: props.highlighted,
+        selectedEdge: props.selectedEdge,
+        canEdit: props.canEdit,
+        busy: props.busy,
+        extraVisible,
+        preview: props.preview,
+        onEdge,
+        onChoices: setEdgeChoices,
+      }),
     [
+      family,
+      user,
+      mode,
+      geometry,
       connections,
       visible,
       positions,
-      routes,
+      occurrencePeople,
+      peopleMap,
       props.highlighted,
       props.selectedEdge,
-      props.busy,
       props.canEdit,
-      onEdge,
-      family,
-      user,
-      peopleMap,
-      geometry,
+      props.busy,
       extraVisible,
+      props.preview,
+      onEdge,
     ],
-  );
-  const familyEdges = useMemo<RelationshipEdgeType[]>(() => {
-    const actual = new Map(connections.map((e) => [e.key, e]));
-    return (geometry?.mode === mode ? geometry.branches || [] : [])
-      .filter(
-        (b) =>
-          visible.has(occurrencePeople.get(b.source)!) &&
-          visible.has(occurrencePeople.get(b.target)!) &&
-          positions.has(b.source) &&
-          positions.has(b.target),
-      )
-      .flatMap((b) => {
-        const choices = b.relations
-          .filter((r) => visible.has(r.from) && visible.has(r.to))
-          .map((r) => actual.get(connectionKey(r)))
-          .filter((e): e is GraphConnection => !!e);
-        if (!choices.length) return [];
-        const e = choices[0];
-        const selected = choices.some((c) => c.key === props.selectedEdge);
-        const highlighted = choices.some((c) =>
-          props.highlighted.some(
-            (id, i) =>
-              i > 0 &&
-              ((id === c.to && props.highlighted[i - 1] === c.from) ||
-                (id === c.from && props.highlighted[i - 1] === c.to)),
-          ),
-        );
-        const select = () =>
-          choices.length === 1 ? onEdge(e) : setEdgeChoices(choices);
-        return [
-          {
-            id: b.id,
-            source: b.source,
-            target: b.target,
-            type: "relationship",
-            sourceHandle: b.route.sourceHandle,
-            targetHandle: b.route.targetHandle,
-            selected,
-            data: {
-              connection: e,
-              onSelect: select,
-              route: b.route,
-              junction:
-                b.id.startsWith("child:") && b.relations.length > 1
-                  ? b.route.points[0]
-                  : undefined,
-            },
-            style: {
-              stroke: e.type === "spouse" ? colors.spouse : colors.parent,
-              strokeWidth: selected || highlighted ? 2.8 : 1.6,
-            },
-            reconnectable: false,
-            focusable: true,
-            ariaLabel: choices
-              .map(
-                (c) =>
-                  `${fullName(peopleMap.get(c.from)!)} — ${fullName(peopleMap.get(c.to)!)}`,
-              )
-              .join("; "),
-            domAttributes: {
-              onKeyDown: (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  select();
-                }
-              },
-            },
-          },
-        ];
-      });
-  }, [
-    geometry,
-    mode,
-    connections,
-    visible,
-    positions,
-    occurrencePeople,
-    props.selectedEdge,
-    props.highlighted,
-    onEdge,
-    peopleMap,
-  ]);
-  const allEdges = useMemo(() => {
-    const combined = [...familyEdges, ...edges];
-    const groups = new Map(
-      (geometry?.branches || []).map((b) => [b.id, b.union]),
-    );
-    const paths = crossingPaths(
-      combined.map((e) => ({
-        id: e.id,
-        group: groups.get(e.id) || e.id,
-        route: e.data?.route,
-      })),
-    );
-    return combined.map((e) =>
-      paths.has(e.id)
-        ? { ...e, data: { ...e.data!, path: paths.get(e.id) } }
-        : e,
-    );
-  }, [familyEdges, edges, geometry]);
-  const displayEdges = useMemo<RelationshipEdgeType[]>(
-    () =>
-      props.preview?.from &&
-      props.preview.to &&
-      props.preview.from !== props.preview.to
-        ? [
-            ...allEdges,
-            {
-              id: "draft-preview",
-              source: props.preview.from,
-              target: props.preview.to,
-              sourceHandle: "bottom",
-              targetHandle: "top",
-              type: "smoothstep",
-              label: "Предпросмотр",
-              style: {
-                stroke: "#527d67",
-                strokeWidth: 3,
-                strokeDasharray: "5 5",
-              },
-              reconnectable: false,
-            },
-          ]
-        : allEdges,
-    [allEdges, props.preview],
   );
   useEffect(() => {
     if (
