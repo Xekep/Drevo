@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import type { ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
-import { databaseBackup } from "./backup.ts";
+import { writeDatabaseBackup } from "./backup.ts";
 export async function fullBackup(
   db: DatabaseSync,
   dbPath: string,
@@ -14,7 +14,7 @@ export async function fullBackup(
 ) {
   const directory = await mkdtemp(join(tmpdir(), "drevo-full-"));
   try {
-    await writeFile(join(directory, "drevo.sqlite"), databaseBackup(db));
+    writeDatabaseBackup(db, join(directory, "drevo.sqlite"));
     const destination = join(directory, "drevo.tar.gz");
     await new Promise<void>((done, reject) => {
       const process = spawn(
