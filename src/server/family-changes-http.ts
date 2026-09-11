@@ -5,6 +5,7 @@ import {
 } from "../domain/changes.ts";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 
 const MAX_CHANGES = 10_000;
@@ -86,12 +87,7 @@ export function familyChangesHttp({
     if (url.pathname !== "/api/family/changes") return false;
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
-    if (
-      (req.headers.origin &&
-        req.headers.origin !==
-          (publicOrigin || `http://${req.headers.host}`)) ||
-      req.headers["sec-fetch-site"] === "cross-site"
-    )
+    if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, {
         error: "Сохранение разрешено только со страницы архива",
       });
