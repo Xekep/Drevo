@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import doveAtlas from "../assets/memorial-dove-drawn.png";
 
-const motionQuery = "(prefers-reduced-motion: no-preference)";
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
 // Области оригинального атласа; рисунки совмещены по положению головы.
 const poses = [
   { x: 0, y: 140, w: 430, h: 285, eyeX: 297, eyeY: 236 },
@@ -19,7 +19,7 @@ const poses = [
 export function MemorialName({ children }: { children: ReactNode }) {
   const [flight, setFlight] = useState({ phase: "waiting", frame: 0 });
   useEffect(() => {
-    const media = window.matchMedia(motionQuery);
+    const media = window.matchMedia(reducedMotionQuery);
     const image = new Image();
     let disposed = false,
       timer = 0,
@@ -46,14 +46,14 @@ export function MemorialName({ children }: { children: ReactNode }) {
     };
     image.onload = () => {
       if (disposed) return;
-      if (!media.matches) return still();
+      if (media.matches) return still();
       started = performance.now();
       timer = window.requestAnimationFrame(tick);
     };
     const change = () => {
-      // Включение уменьшенной анимации немедленно останавливает пролёт.
+      // Явный reduce немедленно останавливает пролёт.
       // Обратное переключение не запускает его повторно.
-      if (!media.matches) still();
+      if (media.matches) still();
     };
     media.addEventListener("change", change);
     image.src = doveAtlas;
