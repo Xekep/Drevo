@@ -74,10 +74,9 @@ export function useTreeLayout(
           : { key, geometry: data.geometry, error: "" },
       );
     };
-
-    worker.onmessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
+    const onMessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
       finish(event.data);
-    worker.onerror = () => {
+    const onError = () => {
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
       pendingRef.current = false;
@@ -87,9 +86,16 @@ export function useTreeLayout(
           "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
       });
     };
+
+    worker.addEventListener("message", onMessage);
+    worker.addEventListener("error", onError);
     worker.postMessage({ requestId, ...JSON.parse(key) });
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      worker.removeEventListener("message", onMessage);
+      worker.removeEventListener("error", onError);
+    };
   }, [key]);
 
   return {
