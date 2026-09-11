@@ -11,6 +11,15 @@ import {
   type PhotoMetadata,
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
+import {
+  fetchWithTimeout,
+  RequestTimeoutError,
+} from "../data/request-timeout";
+
+const WRITE_TIMEOUT_MS = 45000;
+const UPLOAD_TIMEOUT_MS = 90000;
+const RECONCILE_TIMEOUT_MS = 15000;
+
 export function useArchive() {
   const [reverseTimeline, setReverseTimeline] = useState(false);
   const [family, setFamily] = useState<Family | null>(null),
@@ -139,6 +148,36 @@ export function useArchive() {
       controller.abort();
     };
   }, [attempt]);
+
+  const reconcileAfterUnknownWrite = useCallback(async () => {
+    const response = await fetchWithTimeout(
+      "/api/family",
+      { cache: "no-store" },
+      RECONCILE_TIMEOUT_MS,
+    );
+    if (response.status === 401) {
+      setCanEdit(false);
+      setNeedsLogin(true);
+      return false;
+    }
+    if (!response.ok) return false;
+    const result = await response.json(),
+      data = validateFamily(result.family);
+    snapshot.current = data;
+    revision.current = result.revision;
+    history.current = [];
+    setFamily(data);
+    setCanEdit(result.canEdit === true);
+    setLocal(result.local === true);
+    setUser(result.user || null);
+    setReadTree(result.readTree !== false);
+    setReadPhotos(result.readPhotos !== false);
+    setReverseTimeline(result.reverseTimeline === true);
+    setNeedsLogin(false);
+    publishHistory();
+    return true;
+  }, [publishHistory]);
+
   const write = useCallback(
     async (
       url: string,
@@ -153,11 +192,31 @@ export function useArchive() {
       try {
         let base = snapshot.current;
         for (let attempt = 0; attempt < 3; attempt++) {
-          const response = await fetch(url, {
-            method: url === "/api/family" ? "PUT" : "POST",
-            headers: { ...headers, "If-Match": String(revision.current) },
-            body,
-          });
+          let response: Response;
+          try {
+            response = await fetchWithTimeout(
+              url,
+              {
+                method: url === "/api/family" ? "PUT" : "POST",
+                headers: { ...headers, "If-Match": String(revision.current) },
+                body,
+              },
+              url === "/api/family" ? WRITE_TIMEOUT_MS : UPLOAD_TIMEOUT_MS,
+            );
+          } catch (reason) {
+            if (!(reason instanceof RequestTimeoutError)) throw reason;
+            let reconciled = false;
+            try {
+              reconciled = await reconcileAfterUnknownWrite();
+            } catch {
+              /* Не маскируем исходный неопределённый результат второй ошибкой. */
+            }
+            throw new Error(
+              reconciled
+                ? "Сервер не подтвердил сохранение вовремя. Архив перечитан с сервера. Проверьте черновик перед повторным сохранением."
+                : "Сервер не подтвердил сохранение вовремя. Не повторяйте действие вслепую: черновик остаётся открытым, обновите архив перед повтором.",
+            );
+          }
           const result = await response.json();
           if (
             response.status === 409 &&
@@ -165,9 +224,20 @@ export function useArchive() {
             base &&
             typeof body === "string"
           ) {
-            const freshResponse = await fetch("/api/family", {
-              cache: "no-store",
-            });
+            let freshResponse: Response;
+            try {
+              freshResponse = await fetchWithTimeout(
+                "/api/family",
+                { cache: "no-store" },
+                RECONCILE_TIMEOUT_MS,
+              );
+            } catch (reason) {
+              if (reason instanceof RequestTimeoutError)
+                throw new Error(
+                  "Не удалось сверить конфликт изменений: сервер не ответил вовремя. Черновик остаётся открытым.",
+                );
+              throw reason;
+            }
             if (!freshResponse.ok)
               throw new Error(
                 "Не удалось сверить изменения. Черновик остаётся открытым.",
@@ -223,7 +293,7 @@ export function useArchive() {
         setBusy(false);
       }
     },
-    [canEdit, publishHistory],
+    [canEdit, publishHistory, reconcileAfterUnknownWrite],
   );
   const save = useCallback(
     (data: Family) =>
@@ -250,15 +320,28 @@ export function useArchive() {
       saving.current = true;
       setBusy(true);
       try {
-        const response = await fetch("/api/portraits", {
-          method: "POST",
-          headers: {
-            "Content-Type": file.type,
-            "X-Drevo-Upload": "1",
-            "If-Match": String(revision.current),
-          },
-          body: file,
-        });
+        let response: Response;
+        try {
+          response = await fetchWithTimeout(
+            "/api/portraits",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": file.type,
+                "X-Drevo-Upload": "1",
+                "If-Match": String(revision.current),
+              },
+              body: file,
+            },
+            UPLOAD_TIMEOUT_MS,
+          );
+        } catch (reason) {
+          if (reason instanceof RequestTimeoutError)
+            throw new Error(
+              "Сервер не подтвердил загрузку портрета вовремя. Повторите загрузку; незавершённый файл будет удалён автоматически.",
+            );
+          throw reason;
+        }
         const data = await response.json();
         if (!response.ok)
           throw new Error(data.error || "Не удалось загрузить портрет");
