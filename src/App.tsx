@@ -105,7 +105,8 @@ export default function App() {
       null,
     ),
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
-  const photoWorkspace = usePhotoWorkspace(family);
+  const photoWorkspace = usePhotoWorkspace(family),
+    { clearFilter, resetNavigation } = photoWorkspace;
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const chosen = useMemo(
@@ -124,18 +125,18 @@ export default function App() {
     (next: ArchiveView) => {
       setView(next);
       setAddMenu(false);
-      photoWorkspace.clearFilter();
+      clearFilter();
     },
-    [setView, photoWorkspace.clearFilter],
+    [setView, clearFilter],
   );
   useEffect(() => {
     const sync = () => {
       setAddMenu(false);
-      photoWorkspace.resetNavigation();
+      resetNavigation();
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-  }, [photoWorkspace.resetNavigation]);
+  }, [resetNavigation]);
   const closeConnection = useCallback(() => {
     setConnectionDraft(null);
     setPreview(null);
