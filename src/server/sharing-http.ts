@@ -8,6 +8,7 @@ import type { imagePreviews } from "./image-previews.ts";
 import type { settingsStore } from "./settings.ts";
 import { sharesStore } from "./shares.ts";
 import { auditStore } from "./audit.ts";
+import { databaseBackupHttp } from "./database-backup-http.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
@@ -33,6 +34,7 @@ export function sharingHttp({
   publicOrigin?: string;
 }) {
   const serveStatic = productionStaticHttp();
+  const serveBackup = databaseBackupHttp({ archive, auth });
   const restore = restoreHttp({
     restores: () => currentRestoreStore(archive),
     auth,
@@ -49,6 +51,7 @@ export function sharingHttp({
     url: URL,
   ): Promise<boolean> => {
     if (await serveStatic(req, res, url)) return true;
+    if (await serveBackup(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
