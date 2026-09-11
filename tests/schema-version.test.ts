@@ -131,6 +131,39 @@ test("schema v1 upgrades service tables to v2 without losing existing users", ()
   }
 });
 
+test("failed migration rolls back its DDL and keeps the previous version", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE TABLE audit_entries (id INTEGER PRIMARY KEY) STRICT;
+      PRAGMA user_version=1;
+    `);
+
+    assert.throws(() => initializeArchiveSchema(db));
+
+    assert.equal(userVersion(db), 1);
+    const objects = new Map(
+      db
+        .prepare(
+          "SELECT name,type FROM sqlite_schema WHERE name IN ('auth_sessions','access_settings','audit_entries')",
+        )
+        .all()
+        .map((row) => [String(row.name), String(row.type)]),
+    );
+    assert.equal(objects.has("auth_sessions"), false);
+    assert.equal(objects.has("access_settings"), false);
+    assert.equal(objects.get("audit_entries"), "table");
+  } finally {
+    db.close();
+  }
+});
+
 test("future schema version is rejected without changing the database", () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-schema-test-")),
     file = join(directory, "future.sqlite"),
