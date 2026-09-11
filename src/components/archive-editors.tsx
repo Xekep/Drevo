@@ -5,6 +5,8 @@ import type {
   Family,
   Person,
 } from "../domain";
+import { LazyChunkBoundary } from "./lazy-chunk-boundary";
+import { loadLazyModule } from "./lazy-section-recovery";
 
 type Save = (data: Family) => Promise<Family>;
 
@@ -25,21 +27,27 @@ type PersonEditorProps = {
 };
 
 const PersonEditorContent = lazy(() =>
-  import("./archive-editors-content").then((module) => ({
-    default: module.PersonEditor,
-  })),
+  loadLazyModule(
+    () =>
+      import("./archive-editors-content").then((module) => ({
+        default: module.PersonEditor,
+      })),
+    "person-editor",
+  ),
 );
 
 export function PersonEditor(props: PersonEditorProps) {
   return (
-    <Suspense
-      fallback={
-        <div className="archive-status" role="status">
-          Открываем редактор…
-        </div>
-      }
-    >
-      <PersonEditorContent {...props} />
-    </Suspense>
+    <LazyChunkBoundary message="Редактор не загрузился. Обновите страницу, изменения в открытой карточке не отправлялись.">
+      <Suspense
+        fallback={
+          <div className="archive-status" role="status">
+            Открываем редактор…
+          </div>
+        }
+      >
+        <PersonEditorContent {...props} />
+      </Suspense>
+    </LazyChunkBoundary>
   );
 }
