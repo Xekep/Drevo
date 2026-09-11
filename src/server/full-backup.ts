@@ -7,11 +7,25 @@ import { pipeline } from "node:stream/promises";
 import type { ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 import { writeDatabaseBackup } from "./backup.ts";
+
+function databasePath(db: DatabaseSync) {
+  const main = db
+    .prepare("PRAGMA database_list")
+    .all()
+    .find((row) => String(row.name) === "main"),
+    path = String(main?.file || "");
+  if (!path) throw new Error("Полный бэкап доступен только для файловой базы");
+  return path;
+}
+
 export async function fullBackup(
   db: DatabaseSync,
-  dbPath: string,
-  res: ServerResponse,
+  pathOrResponse: string | ServerResponse,
+  legacyResponse?: ServerResponse,
 ) {
+  const dbPath =
+      typeof pathOrResponse === "string" ? pathOrResponse : databasePath(db),
+    res = typeof pathOrResponse === "string" ? legacyResponse! : pathOrResponse;
   const directory = await mkdtemp(join(tmpdir(), "drevo-full-"));
   try {
     writeDatabaseBackup(db, join(directory, "drevo.sqlite"));

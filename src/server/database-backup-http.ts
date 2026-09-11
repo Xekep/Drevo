@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
+import { fullBackup } from "./full-backup.ts";
 
 export function databaseBackupHttp({
   archive,
@@ -29,11 +30,20 @@ export function databaseBackupHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
-    if (url.pathname !== "/api/backup" || req.method !== "GET") return false;
+    const full = url.pathname === "/api/backup/full";
+    if ((!full && url.pathname !== "/api/backup") || req.method !== "GET")
+      return false;
     if (!auth.isAdmin(req))
       return json(res, auth.currentUser(req) ? 403 : 401, {
-        error: "Only administrators can download database backups",
+        error: full
+          ? "Only administrators can download backups"
+          : "Only administrators can download database backups",
       });
+
+    if (full) {
+      await fullBackup(archive.db, res);
+      return true;
+    }
 
     const directory = await mkdtemp(join(tmpdir(), "drevo-download-")),
       file = join(directory, "drevo.sqlite");
