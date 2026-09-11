@@ -9,6 +9,7 @@ import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
 import { databaseBackup } from "./backup.ts";
 import { fullName } from "../domain/dates.ts";
 import type { Family } from "../domain/types.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 export function gedcomHttp(
   archive: ReturnType<typeof openArchive>,
   auth: ReturnType<typeof createAuth>,
@@ -63,12 +64,7 @@ export function gedcomHttp(
         !["/api/gedcom/preview", "/api/gedcom/import"].includes(url.pathname)
       )
         return json(405, { error: "Метод не поддерживается" });
-      if (
-        (req.headers.origin &&
-          req.headers.origin !==
-            (publicOrigin || `http://${req.headers.host}`)) ||
-        req.headers["sec-fetch-site"] === "cross-site"
-      )
+      if (!isSameOriginRequest(req, publicOrigin))
         return json(403, { error: "Недопустимый источник запроса" });
       if (req.headers["x-drevo-import"] !== "1")
         return json(400, { error: "Откройте импорт GEDCOM в админке" });

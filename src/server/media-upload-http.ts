@@ -5,6 +5,7 @@ import {
   MediaTooLargeError,
   type mediaStore,
 } from "./media.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
@@ -59,12 +60,7 @@ export function mediaUploadHttp({
     if (!portrait && url.pathname !== "/api/photos") return false;
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
-    if (
-      (req.headers.origin &&
-        req.headers.origin !==
-          (publicOrigin || `http://${req.headers.host}`)) ||
-      req.headers["sec-fetch-site"] === "cross-site"
-    )
+    if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, {
         error: "Сохранение разрешено только со страницы архива",
       });
