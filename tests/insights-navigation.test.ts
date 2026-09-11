@@ -23,6 +23,8 @@ test("secondary archive sections are code-split away from App", () => {
     );
   assert.match(app, /<ArchiveSection/);
   assert.doesNotMatch(app, /from "\.\/components\/places-map"/);
-  assert.match(section, /lazy\(\(\) => import\("\.\/places-map"\)\)/);
-  assert.match(section, /lazy\(\(\) => import\("\.\/insights-page"\)\)/);
+  assert.match(section, /const PlacesMap = lazy/);
+  assert.match(section, /import\("\.\/places-map"\)/);
+  assert.match(section, /const InsightsPage = lazy/);
+  assert.match(section, /import\("\.\/insights-page"\)/);
 });
