@@ -13,8 +13,6 @@ import {
   ConnectionMode,
   Panel,
   useReactFlow,
-  useStore,
-  type Viewport,
   type Connection as FlowConnection,
 } from "@xyflow/react";
 import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
@@ -49,6 +47,7 @@ import {
   TreeCreateAt,
   type TreeCreateAtDraft,
 } from "./tree-create-at";
+import { useTreeCameraState } from "./use-tree-camera-state";
 
 export type ConnectionDraft = {
   from: string;
@@ -86,12 +85,9 @@ const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
 function Canvas(props: Props) {
   const narrow = useNarrowScreen();
-  const canvasWidth = useStore((s) => s.width),
-    canvasHeight = useStore((s) => s.height);
   const container = useRef<HTMLDivElement>(null);
   const screen = useTreeFullscreen(container);
   const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
-  const mobileCamera = useRef("");
   const [createAt, setCreateAt] = useState<TreeCreateAtDraft | null>(null);
   useEffect(() => {
     if (!createAt) return;
@@ -146,13 +142,9 @@ function Canvas(props: Props) {
   );
   const { anchor: root, visible, collapsed, toggle: toggleView } = familyView;
   const flow = useReactFlow<
-      PersonNodeType | HouseholdNodeType,
-      RelationshipEdgeType
-    >(),
-    cameras = useRef<Record<string, Viewport>>({}),
-    lastFocus = useRef(-1),
-    previousContext = useRef(""),
-    previousReverse = useRef(reverse);
+    PersonNodeType | HouseholdNodeType,
+    RelationshipEdgeType
+  >();
   const context = `${mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
@@ -161,14 +153,6 @@ function Canvas(props: Props) {
     mode,
     reverse,
   );
-  const pendingAnchor = useRef<{
-    id: string;
-    personId: string;
-    layoutKey: string;
-    x: number;
-    y: number;
-    zoom: number;
-  } | null>(null);
   const nodeModel = useMemo(
     () =>
       buildTreeNodeModel({
@@ -205,23 +189,37 @@ function Canvas(props: Props) {
     nodes,
     displayNodes,
   } = nodeModel;
+  const {
+    captureAnchor,
+    rememberContext,
+    resetContext,
+    rememberViewport,
+  } = useTreeCameraState({
+    flow,
+    geometry,
+    nodeCount: nodes.length,
+    mode,
+    reverse,
+    ready,
+    focus,
+    positions,
+    selected,
+    narrow,
+    peopleMap,
+    layoutKey,
+    context,
+    root,
+    familyPeople: family.people,
+    childrenCount,
+    expanded: familyView.expanded,
+    collapsed,
+  });
   const toggleBranch = useCallback(
     (id: string, occurrenceId?: string) => {
-      const point = positions.get(occurrenceId || id);
-      if (point) {
-        const camera = flow.getViewport();
-        pendingAnchor.current = {
-          id: occurrenceId || id,
-          personId: id,
-          layoutKey,
-          x: point.x * camera.zoom + camera.x,
-          y: point.y * camera.zoom + camera.y,
-          zoom: camera.zoom,
-        };
-      }
+      captureAnchor(occurrenceId || id, id);
       toggleView(id);
     },
-    [positions, flow, toggleView, layoutKey],
+    [captureAnchor, toggleView],
   );
   const actions = useMemo(
     () => ({
@@ -285,116 +283,6 @@ function Canvas(props: Props) {
       onEdge,
     ],
   );
-  useEffect(() => {
-    if (
-      !geometry ||
-      !nodes.length ||
-      geometry.mode !== mode ||
-      geometry.reverse !== reverse ||
-      !ready ||
-      !canvasWidth ||
-      !canvasHeight
-    )
-      return;
-    const timer = setTimeout(() => {
-      const changedContext = previousContext.current !== context;
-      const switchedMode =
-        !!previousContext.current &&
-        previousContext.current.split(":")[0] !== mode;
-      const reverseChanged = previousReverse.current !== reverse;
-      previousContext.current = context;
-      previousReverse.current = reverse;
-      const anchor = pendingAnchor.current;
-      pendingAnchor.current = null;
-      if (
-        focus &&
-        focus.token !== lastFocus.current &&
-        focus.ids.every((id) => positions.has(id))
-      ) {
-        lastFocus.current = focus.token;
-        void flow.fitView({
-          nodes: focus.ids.map((id) => ({ id })),
-          maxZoom: 1,
-          minZoom: narrow ? 0.55 : 0.15,
-          padding: 0.5,
-        });
-      } else if (
-        anchor &&
-        anchor.layoutKey !== layoutKey &&
-        !changedContext &&
-        (positions.has(anchor.id) || positions.has(anchor.personId))
-      ) {
-        const point = (positions.get(anchor.id) ||
-          positions.get(anchor.personId))!;
-        void flow.setViewport({
-          x: anchor.x - point.x * anchor.zoom,
-          y: anchor.y - point.y * anchor.zoom,
-          zoom: anchor.zoom,
-        });
-      } else if (changedContext || reverseChanged) {
-        if ((switchedMode || reverseChanged) && selected.length)
-          void flow.fitView({
-            nodes: selected.map((id) => ({ id })),
-            maxZoom: 1,
-            minZoom: narrow ? 0.55 : 0.15,
-            padding: 0.4,
-          });
-        else if (root)
-          void flow.fitView({
-            nodes: narrow
-              ? [root, ...(peopleMap.get(root)?.spouses || [])]
-                  .filter((id) => positions.has(id))
-                  .map((id) => ({ id }))
-              : undefined,
-            maxZoom: 0.95,
-            minZoom: narrow ? 0.55 : 0.25,
-            padding: 0.28,
-          });
-        else if (cameras.current[context] && !reverseChanged)
-          void flow.setViewport(cameras.current[context]);
-        else
-          void flow.fitView({
-            maxZoom: 1,
-            minZoom: 0.05,
-            padding: 0.25,
-          });
-      } else if (narrow) {
-        const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
-        if (mobileCamera.current !== key) {
-          mobileCamera.current = key;
-          if (!selected.length) return;
-          void flow.fitView({
-            nodes: selected.map((id) => ({ id })),
-            minZoom: 0.55,
-            maxZoom: Math.max(0.65, Math.min(0.9, flow.getZoom())),
-            padding: 0.18,
-          });
-        }
-      }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [
-    geometry,
-    nodes.length,
-    mode,
-    reverse,
-    family.people,
-    focus,
-    positions,
-    selected,
-    flow,
-    narrow,
-    canvasWidth,
-    canvasHeight,
-    childrenCount,
-    peopleMap,
-    ready,
-    layoutKey,
-    context,
-    root,
-    familyView.expanded,
-    collapsed,
-  ]);
   const connect = useCallback(
     (c: FlowConnection) => {
       if (c.source && c.target)
@@ -407,8 +295,7 @@ function Canvas(props: Props) {
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
-    cameras.current[context] = flow.getViewport();
-    pendingAnchor.current = null;
+    rememberContext();
     setMode(next);
     setEdgeChoices([]);
   }
@@ -462,18 +349,15 @@ function Canvas(props: Props) {
               total={family.people.length}
               changed={root ? familyView.expanded.size > 0 : collapsed.size > 0}
               onFamily={() => {
-                cameras.current[context] = flow.getViewport();
-                pendingAnchor.current = null;
+                rememberContext();
                 familyView.enter();
               }}
               onAll={() => {
-                cameras.current[context] = flow.getViewport();
-                pendingAnchor.current = null;
+                rememberContext();
                 familyView.showAll();
               }}
               onReset={() => {
-                previousContext.current = "";
-                pendingAnchor.current = null;
+                resetContext();
                 familyView.reset();
               }}
             />
@@ -573,9 +457,7 @@ function Canvas(props: Props) {
             "edge.a11yDescription.default":
               "Нажмите Enter для выбора связи. Изменить участников можно в правой панели.",
           }}
-          onMoveEnd={(_, camera) => {
-            cameras.current[context] = camera;
-          }}
+          onMoveEnd={(_, camera) => rememberViewport(camera)}
         >
           {props.canEdit && (
             <Panel position="bottom-left" className="flow-add-tools">
