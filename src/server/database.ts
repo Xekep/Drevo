@@ -15,6 +15,7 @@ import {
 export class ConflictError extends Error {}
 
 const mediaNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/;
+
 function mediaReferences(family: Family) {
   const result = new Set<string>();
   for (const url of [
@@ -27,6 +28,7 @@ function mediaReferences(family: Family) {
   }
   return result;
 }
+
 function removeMediaFiles(path: string, names: Iterable<string>) {
   if (path === ":memory:") return;
   const uploads = resolve(dirname(path), "uploads");
@@ -39,12 +41,274 @@ function removeMediaFiles(path: string, names: Iterable<string>) {
     }
   }
 }
+
 function removeDroppedMedia(path: string, before: Family, after: Family) {
   const current = mediaReferences(after);
   removeMediaFiles(
     path,
     [...mediaReferences(before)].filter((name) => !current.has(name)),
   );
+}
+
+type JsonRow = { id: string; data: string };
+type RelationRow = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  note: string;
+  createdBy: string | null;
+};
+type TagRow = {
+  id: string;
+  photoId: string;
+  personId: string;
+  data: string;
+};
+
+type ArchiveRows = {
+  people: JsonRow[];
+  relations: RelationRow[];
+  photos: JsonRow[];
+  tags: TagRow[];
+};
+
+function archiveRows(family: Family): ArchiveRows {
+  const people = family.people.map((person) => ({
+    id: person.id,
+    data: JSON.stringify({
+      ...person,
+      parents: undefined,
+      spouses: undefined,
+    }),
+  }));
+  const relations: RelationRow[] = [];
+  const spouses = new Set<string>();
+  for (const person of family.people) {
+    for (const parent of person.parents)
+      relations.push({
+        id: `parent:${parent}:${person.id}`,
+        source: parent,
+        target: person.id,
+        type: "parent",
+        note: "",
+        createdBy: null,
+      });
+    for (const spouse of person.spouses) {
+      const pair = [person.id, spouse].sort(),
+        key = JSON.stringify(pair);
+      if (spouses.has(key)) continue;
+      spouses.add(key);
+      relations.push({
+        id: `spouse:${key}`,
+        source: pair[0],
+        target: pair[1],
+        type: "spouse",
+        note: "",
+        createdBy: null,
+      });
+    }
+  }
+  for (const link of family.links || [])
+    relations.push({
+      id: link.id,
+      source: link.from,
+      target: link.to,
+      type: link.type,
+      note: link.note || "",
+      createdBy: link.createdBy || null,
+    });
+
+  const photos: JsonRow[] = [],
+    tags: TagRow[] = [];
+  for (const photo of family.photos || []) {
+    photos.push({
+      id: photo.id,
+      data: JSON.stringify({ ...photo, tags: undefined }),
+    });
+    for (const tag of photo.tags)
+      tags.push({
+        id: `${photo.id}:${tag.id}`,
+        photoId: photo.id,
+        personId: tag.personId,
+        data: JSON.stringify(tag),
+      });
+  }
+  return { people, relations, photos, tags };
+}
+
+function preservesRowOrder(before: string[], after: string[]) {
+  const beforeSet = new Set(before),
+    afterSet = new Set(after),
+    survivingBefore = before.filter((id) => afterSet.has(id)),
+    survivingAfter = after.filter((id) => beforeSet.has(id));
+  if (
+    survivingBefore.length !== survivingAfter.length ||
+    survivingBefore.some((id, index) => id !== survivingAfter[index])
+  )
+    return false;
+  let sawNew = false;
+  for (const id of after) {
+    if (!beforeSet.has(id)) sawNew = true;
+    else if (sawNew) return false;
+  }
+  return true;
+}
+
+function canPersistIncrementally(before: ArchiveRows, after: ArchiveRows) {
+  const ordered = (
+    previous: { id: string }[],
+    next: { id: string }[],
+  ) => preservesRowOrder(
+    previous.map((row) => row.id),
+    next.map((row) => row.id),
+  );
+  if (
+    !ordered(before.people, after.people) ||
+    !ordered(before.relations, after.relations) ||
+    !ordered(before.photos, after.photos) ||
+    !ordered(before.tags, after.tags)
+  )
+    return false;
+
+  // source/target/type участвуют в UNIQUE. При их замене два живых ряда могут
+  // временно конфликтовать друг с другом, поэтому такой редкий случай безопаснее
+  // отдать полному rewrite. note/created_by обновляются на месте.
+  const oldRelations = new Map(before.relations.map((row) => [row.id, row]));
+  return after.relations.every((row) => {
+    const old = oldRelations.get(row.id);
+    return (
+      !old ||
+      (old.source === row.source &&
+        old.target === row.target &&
+        old.type === row.type)
+    );
+  });
+}
+
+function replaceArchiveRows(db: DatabaseSync, rows: ArchiveRows) {
+  db.exec(
+    "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
+  );
+  const personQuery = db.prepare("INSERT INTO people(id,data) VALUES(?,?)");
+  for (const row of rows.people) personQuery.run(row.id, row.data);
+
+  const relationQuery = db.prepare(
+    "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
+  );
+  for (const row of rows.relations)
+    relationQuery.run(
+      row.id,
+      row.source,
+      row.target,
+      row.type,
+      row.note,
+      row.createdBy,
+    );
+
+  const photoQuery = db.prepare("INSERT INTO photos(id,data) VALUES(?,?)"),
+    tagQuery = db.prepare(
+      "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
+    );
+  for (const row of rows.photos) photoQuery.run(row.id, row.data);
+  for (const row of rows.tags)
+    tagQuery.run(row.id, row.photoId, row.personId, row.data);
+}
+
+function syncJsonRows(
+  db: DatabaseSync,
+  table: "people" | "photos",
+  before: JsonRow[],
+  after: JsonRow[],
+  deleteRemoved = true,
+) {
+  const previous = new Map(before.map((row) => [row.id, row.data]));
+  const nextIds = new Set(after.map((row) => row.id));
+  const insert = db.prepare(`INSERT INTO ${table}(id,data) VALUES(?,?)`),
+    update = db.prepare(`UPDATE ${table} SET data=? WHERE id=?`),
+    remove = db.prepare(`DELETE FROM ${table} WHERE id=?`);
+  for (const row of after) {
+    if (!previous.has(row.id)) insert.run(row.id, row.data);
+    else if (previous.get(row.id) !== row.data) update.run(row.data, row.id);
+  }
+  if (deleteRemoved)
+    for (const row of before) if (!nextIds.has(row.id)) remove.run(row.id);
+}
+
+function syncRelations(
+  db: DatabaseSync,
+  before: RelationRow[],
+  after: RelationRow[],
+) {
+  const previous = new Map(before.map((row) => [row.id, row])),
+    nextIds = new Set(after.map((row) => row.id)),
+    remove = db.prepare("DELETE FROM relations WHERE id=?"),
+    insert = db.prepare(
+      "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
+    ),
+    update = db.prepare(
+      "UPDATE relations SET note=?,created_by=? WHERE id=?",
+    );
+  for (const row of before) if (!nextIds.has(row.id)) remove.run(row.id);
+  for (const row of after) {
+    const old = previous.get(row.id);
+    if (!old)
+      insert.run(
+        row.id,
+        row.source,
+        row.target,
+        row.type,
+        row.note,
+        row.createdBy,
+      );
+    else if (old.note !== row.note || old.createdBy !== row.createdBy)
+      update.run(row.note, row.createdBy, row.id);
+  }
+}
+
+function syncTags(db: DatabaseSync, before: TagRow[], after: TagRow[]) {
+  const previous = new Map(before.map((row) => [row.id, row])),
+    nextIds = new Set(after.map((row) => row.id)),
+    remove = db.prepare("DELETE FROM photo_tags WHERE id=?"),
+    insert = db.prepare(
+      "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
+    ),
+    update = db.prepare(
+      "UPDATE photo_tags SET photo_id=?,person_id=?,data=? WHERE id=?",
+    );
+  for (const row of before) if (!nextIds.has(row.id)) remove.run(row.id);
+  for (const row of after) {
+    const old = previous.get(row.id);
+    if (!old) insert.run(row.id, row.photoId, row.personId, row.data);
+    else if (
+      old.photoId !== row.photoId ||
+      old.personId !== row.personId ||
+      old.data !== row.data
+    )
+      update.run(row.photoId, row.personId, row.data, row.id);
+  }
+}
+
+function syncArchiveRows(
+  db: DatabaseSync,
+  before: ArchiveRows,
+  after: ArchiveRows,
+) {
+  // Сначала создаём новые основные сущности, чтобы связи могли ссылаться на них.
+  // Удаление старых people/photos откладываем до обновления зависимых строк.
+  syncJsonRows(db, "people", before.people, after.people, false);
+  syncJsonRows(db, "photos", before.photos, after.photos, false);
+  syncRelations(db, before.relations, after.relations);
+  syncTags(db, before.tags, after.tags);
+
+  const nextPhotoIds = new Set(after.photos.map((row) => row.id)),
+    nextPeopleIds = new Set(after.people.map((row) => row.id)),
+    removePhoto = db.prepare("DELETE FROM photos WHERE id=?"),
+    removePerson = db.prepare("DELETE FROM people WHERE id=?");
+  for (const row of before.photos)
+    if (!nextPhotoIds.has(row.id)) removePhoto.run(row.id);
+  for (const row of before.people)
+    if (!nextPeopleIds.has(row.id)) removePerson.run(row.id);
 }
 
 export function openArchive(path: string, seed: Family) {
@@ -66,6 +330,7 @@ export function openArchive(path: string, seed: Family) {
       .some((row) => row.name === "created_by")
   )
     db.exec("ALTER TABLE relations ADD COLUMN created_by TEXT");
+
   const audit = auditStore(db);
   const read = () => readArchive(db),
     meta = () => readArchiveMeta(db),
@@ -123,8 +388,6 @@ export function openArchive(path: string, seed: Family) {
     db.exec("BEGIN IMMEDIATE");
     try {
       const oldRevision = checkRevision(expected);
-      // Один согласованный снимок внутри write-lock используется и для проверки
-      // прав, и для history/audit. Раньше большой архив читался здесь несколько раз.
       const previous = oldRevision === null ? null : read().family;
       const family =
         actor && previous
@@ -132,53 +395,16 @@ export function openArchive(path: string, seed: Family) {
           : validateFamily(value);
       if (previous && oldRevision !== null)
         remember(previous, family, oldRevision, actor, operation);
-      db.exec(
-        "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
-      );
-      const personQuery = db.prepare("INSERT INTO people(id,data) VALUES(?,?)");
-      for (const p of family.people)
-        personQuery.run(
-          p.id,
-          JSON.stringify({ ...p, parents: undefined, spouses: undefined }),
-        );
-      const edgeQuery = db.prepare(
-        "INSERT INTO relations(id,source,target,type,note) VALUES(?,?,?,?,?)",
-      );
-      const spouses = new Set<string>();
-      for (const p of family.people) {
-        for (const parent of p.parents)
-          edgeQuery.run(`parent:${parent}:${p.id}`, parent, p.id, "parent", "");
-        for (const spouse of p.spouses) {
-          const pair = [p.id, spouse].sort(),
-            key = JSON.stringify(pair);
-          if (!spouses.has(key)) {
-            edgeQuery.run(`spouse:${key}`, pair[0], pair[1], "spouse", "");
-            spouses.add(key);
-          }
-        }
+
+      const nextRows = archiveRows(family);
+      if (!previous || operation) replaceArchiveRows(db, nextRows);
+      else {
+        const previousRows = archiveRows(previous);
+        if (canPersistIncrementally(previousRows, nextRows))
+          syncArchiveRows(db, previousRows, nextRows);
+        else replaceArchiveRows(db, nextRows);
       }
-      for (const l of family.links || []) {
-        edgeQuery.run(l.id, l.from, l.to, l.type, l.note || "");
-        if (l.createdBy)
-          db.prepare("UPDATE relations SET created_by=? WHERE id=?").run(
-            l.createdBy,
-            l.id,
-          );
-      }
-      const photoQuery = db.prepare("INSERT INTO photos(id,data) VALUES(?,?)"),
-        tagQuery = db.prepare(
-          "INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES(?,?,?,?)",
-        );
-      for (const photo of family.photos || []) {
-        photoQuery.run(photo.id, JSON.stringify({ ...photo, tags: undefined }));
-        for (const tag of photo.tags)
-          tagQuery.run(
-            `${photo.id}:${tag.id}`,
-            photo.id,
-            tag.personId,
-            JSON.stringify(tag),
-          );
-      }
+
       db.prepare(
         "INSERT INTO archive VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,demo=excluded.demo,revision=excluded.revision",
       ).run(
@@ -188,13 +414,8 @@ export function openArchive(path: string, seed: Family) {
         expected + 1,
       );
       finishWrite();
-      // Только обычное пользовательское сохранение удаляет старые медиа.
-      // Restore/import используют именованную operation и должны сохранять файлы,
-      // на которые может ссылаться резервная копия предыдущей базы.
       if (previous && actor && !operation)
         removeDroppedMedia(path, previous, family);
-      // family уже валидирован и именно его мы только что записали. Повторный
-      // readArchive здесь раньше зря парсил весь архив ещё раз.
       return { family, revision: expected + 1 };
     } catch (error) {
       db.exec("ROLLBACK");
@@ -411,7 +632,7 @@ export function readArchive(db: DatabaseSync) {
     .map(
       (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
     );
-  const photoMap = new Map(photos.map((p) => [p.id, p]));
+  const photoMap = new Map(photos.map((photo) => [photo.id, photo]));
   for (const row of db
     .prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid")
     .all())
