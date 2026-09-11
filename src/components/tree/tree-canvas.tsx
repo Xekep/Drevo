@@ -13,23 +13,13 @@ import {
   ConnectionMode,
   Panel,
   useReactFlow,
-  useViewport,
   useStore,
   type Viewport,
   type Connection as FlowConnection,
 } from "@xyflow/react";
-import {
-  Focus,
-  Maximize2,
-  Minus,
-  Plus,
-  GitBranch,
-  X,
-  Link2,
-} from "lucide-react";
+import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
 import {
   archiveConnections,
-  fullName,
   type Family,
   type ArchiveUser,
   type GraphConnection,
@@ -53,6 +43,12 @@ import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
 import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
+import { TreeCameraTools } from "./tree-camera-tools";
+import { TreeEdgeChoices } from "./tree-edge-choices";
+import {
+  TreeCreateAt,
+  type TreeCreateAtDraft,
+} from "./tree-create-at";
 
 export type ConnectionDraft = {
   from: string;
@@ -88,43 +84,6 @@ type Props = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
-function CameraTools({ selected }: { selected: string[] }) {
-  const flow = useReactFlow(),
-    { zoom } = useViewport();
-  return (
-    <Panel position="bottom-center" className="flow-camera-tools">
-      <button aria-label="Уменьшить" onClick={() => void flow.zoomOut()}>
-        <Minus size={18} />
-      </button>
-      <span>{Math.round(zoom * 100)}%</span>
-      <button aria-label="Увеличить" onClick={() => void flow.zoomIn()}>
-        <Plus size={18} />
-      </button>
-      <i />
-      <button
-        title="Вписать видимую часть дерева"
-        aria-label="Вписать видимую часть дерева"
-        onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1 })}
-      >
-        <Maximize2 size={18} />
-      </button>
-      <button
-        disabled={!selected.length}
-        title="К выбранному человеку"
-        aria-label="К выбранному человеку"
-        onClick={() =>
-          void flow.fitView({
-            nodes: selected.map((id) => ({ id })),
-            maxZoom: 1,
-            padding: 0.4,
-          })
-        }
-      >
-        <Focus size={18} />
-      </button>
-    </Panel>
-  );
-}
 function Canvas(props: Props) {
   const narrow = useNarrowScreen();
   const canvasWidth = useStore((s) => s.width),
@@ -133,12 +92,7 @@ function Canvas(props: Props) {
   const screen = useTreeFullscreen(container);
   const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
   const mobileCamera = useRef("");
-  const [createAt, setCreateAt] = useState<{
-    id: string;
-    type: "parent" | "child" | "spouse";
-    x: number;
-    y: number;
-  } | null>(null);
+  const [createAt, setCreateAt] = useState<TreeCreateAtDraft | null>(null);
   useEffect(() => {
     if (!createAt) return;
     const dismiss = (event: PointerEvent) => {
@@ -649,72 +603,24 @@ function Canvas(props: Props) {
               </button>
             </Panel>
           ) : (
-            <CameraTools selected={selected} />
+            <TreeCameraTools selected={selected} />
           )}
         </ReactFlow>
-        {edgeChoices.length > 0 && (
-          <div
-            className="tree-edge-choices"
-            role="dialog"
-            aria-label="Связи семейной ветки"
-          >
-            <div>
-              <strong>Связи этой ветки</strong>
-              <button
-                aria-label="Закрыть выбор связи"
-                ref={choiceClose}
-                onClick={() => setEdgeChoices([])}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <p>Выберите связь, чтобы открыть её сведения.</p>
-            {edgeChoices
-              .filter(
-                (e) =>
-                  peopleMap.has(e.from) &&
-                  peopleMap.has(e.to) &&
-                  connections.some((c) => c.key === e.key),
-              )
-              .map((e) => (
-                <button
-                  key={e.key}
-                  onClick={() => {
-                    setEdgeChoices([]);
-                    onEdge(e);
-                  }}
-                >
-                  <span>{fullName(peopleMap.get(e.from)!)}</span>
-                  <small>Родитель → {fullName(peopleMap.get(e.to)!)}</small>
-                </button>
-              ))}
-          </div>
-        )}
-        {createAt && props.canEdit && (
-          <div
-            className="tree-create-at"
-            style={{ left: createAt.x, top: createAt.y }}
-          >
-            <button
-              disabled={props.busy}
-              onClick={() => {
-                props.onAddRelative(createAt.id, createAt.type);
-                setCreateAt(null);
-              }}
-            >
-              <Plus size={20} />
-              <span>
-                Добавить{" "}
-                {createAt.type === "parent"
-                  ? "родителя"
-                  : createAt.type === "child"
-                    ? "ребёнка"
-                    : "супруга / супругу"}
-                <small>Связь с {peopleMap.get(createAt.id)?.name}</small>
-              </span>
-            </button>
-          </div>
-        )}
+        <TreeEdgeChoices
+          choices={edgeChoices}
+          peopleMap={peopleMap}
+          connections={connections}
+          closeRef={choiceClose}
+          onClose={() => setEdgeChoices([])}
+          onSelect={onEdge}
+        />
+        <TreeCreateAt
+          draft={props.canEdit ? createAt : null}
+          busy={props.busy}
+          personName={createAt ? peopleMap.get(createAt.id)?.name : undefined}
+          onAdd={props.onAddRelative}
+          onClose={() => setCreateAt(null)}
+        />
         {mode === "timeline" && geometry?.mode === "timeline" && (
           <EraOverlay geometry={geometry} />
         )}
