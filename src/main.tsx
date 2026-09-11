@@ -14,6 +14,7 @@ import "./styles/archive-tools.css";
 import "./styles/photo-lightbox.css";
 import "./styles/insights.css";
 import "./styles/mobile-refinements.css";
+import "./styles/controls.css";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));

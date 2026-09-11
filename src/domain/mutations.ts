@@ -55,19 +55,24 @@ export function connectPeople(
   return validateFamily(next);
 }
 export function removeConnection(family: Family, edge: Connection): Family {
+  return removeConnections(family, [edge]);
+}
+export function removeConnections(family: Family, edges: Connection[]): Family {
   const next = structuredClone(family);
-  if (edge.type === "parent") {
-    const child = next.people.find((p) => p.id === edge.to)!;
-    child.parents = child.parents.filter((id) => id !== edge.from);
-    child.parentageComplete = false;
-  } else if (edge.type === "spouse")
-    for (const p of next.people) {
-      if (p.id === edge.from)
-        p.spouses = p.spouses.filter((id) => id !== edge.to);
-      if (p.id === edge.to)
-        p.spouses = p.spouses.filter((id) => id !== edge.from);
-    }
-  else next.links = (next.links || []).filter((l) => l.id !== edge.id);
+  for (const edge of edges) {
+    if (edge.type === "parent") {
+      const child = next.people.find((p) => p.id === edge.to)!;
+      child.parents = child.parents.filter((id) => id !== edge.from);
+      child.parentageComplete = false;
+    } else if (edge.type === "spouse")
+      for (const p of next.people) {
+        if (p.id === edge.from)
+          p.spouses = p.spouses.filter((id) => id !== edge.to);
+        if (p.id === edge.to)
+          p.spouses = p.spouses.filter((id) => id !== edge.from);
+      }
+    else next.links = (next.links || []).filter((l) => l.id !== edge.id);
+  }
   return validateFamily(next);
 }
 export function removePerson(family: Family, id: string): Family {

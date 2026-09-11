@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Pencil, UserRound } from "lucide-react";
+import { useEffect, useRef, useState, useId, type FormEvent } from "react";
+import { Pencil, UserRound, Trash2, Undo2 } from "lucide-react";
 import {
   availableColumn,
   connectPeople,
@@ -13,7 +13,6 @@ import {
   siblingHints,
   birthSurnameHints,
   removePerson,
-  removeConnection,
   type Connection,
   type ConnectionType,
   type Family,
@@ -29,6 +28,11 @@ import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
+import { applyPersonDraft } from "../domain/person-draft";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 type Save = (data: Family) => Promise<Family>;
 export function PersonEditor({
   isAdmin,
@@ -40,6 +44,7 @@ export function PersonEditor({
   save,
   onClose,
   onSaved,
+  onDirtyChange,
   busy,
   inline = false,
   suspended = false,
@@ -54,6 +59,7 @@ export function PersonEditor({
   save: Save;
   onClose: () => void;
   onSaved: (id: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   busy: boolean;
   inline?: boolean;
   suspended?: boolean;
@@ -102,6 +108,48 @@ export function PersonEditor({
     );
   const [galleryOpen, setGalleryOpen] = useState(false),
     [cropSource, setCropSource] = useState("");
+  const [removedConnections, setRemovedConnections] = useState<Connection[]>(
+    [],
+  );
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const formRef = useRef<HTMLFormElement>(null);
+  const fieldId = useId();
+  const snapshot = JSON.stringify([
+    draft,
+    nameText,
+    birthText,
+    deathText,
+    autoSex,
+    relationship,
+    accepted,
+    removedConnections,
+    !!portraitFile,
+  ]);
+  const [initialSnapshot] = useState(snapshot);
+  const dirty = initialSnapshot !== snapshot;
+  useUnsavedChanges(dirty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  const close = () => {
+    if (busy || !confirmDiscardChanges(dirty)) return;
+    onDirtyChange?.(false);
+    onClose();
+  };
+  function validateField(key: "name" | "birth" | "death", value: string) {
+    let problem = "";
+    try {
+      if (key === "name") {
+        const parts = splitFullName(value);
+        if (!parts.name.trim() || !parts.surname.trim())
+          problem = "Укажите фамилию и имя. Отчество необязательно.";
+      } else normalizeDateInput(value);
+    } catch (error) {
+      problem = (error as Error).message;
+    }
+    setFieldErrors((current) => ({ ...current, [key]: problem }));
+    return problem;
+  }
   const portraitPhotos = (family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === draft.id),
   );
@@ -163,7 +211,29 @@ export function PersonEditor({
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     setError("");
+    const invalid = (
+      [
+        ["name", nameText],
+        ["birth", birthText],
+        ["death", deathText],
+      ] as const
+    )
+      .map(([key, value]) => (validateField(key, value) ? key : null))
+      .filter(Boolean);
+    if (invalid.length) {
+      const input = formRef.current?.querySelector<HTMLInputElement>(
+        `[data-field="${invalid[0]}"]`,
+      );
+      let parent = input?.parentElement;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      input?.focus();
+      return;
+    }
     try {
       if (!draft.name.trim() || !draft.surname.trim())
         throw new Error("Укажите фамилию и имя. Отчество можно пропустить.");
@@ -201,12 +271,7 @@ export function PersonEditor({
                 birth,
               ),
       };
-      let next = {
-        ...current,
-        people: person
-          ? current.people.map((x) => (x.id === p.id ? p : x))
-          : [...current.people, p],
-      };
+      let next = applyPersonDraft(current, p, removedConnections);
       if (!person && relativeTo) {
         next =
           relationship === "child"
@@ -216,6 +281,7 @@ export function PersonEditor({
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
       await save(next);
+      onDirtyChange?.(false);
       onSaved(p.id);
       onClose();
     } catch (e) {
@@ -248,36 +314,44 @@ export function PersonEditor({
       inline={inline}
       suspended={suspended}
       title={person ? "Редактировать человека" : "Новый человек"}
-      onClose={() => {
-        if (!busy) onClose();
-      }}
+      onClose={close}
     >
-      <form onSubmit={submit} className="archive-form">
+      <form
+        ref={formRef}
+        noValidate
+        onSubmit={submit}
+        className="archive-form person-editor-form"
+      >
         <p className="flow-intro">
           {person
             ? "Дополните историю и сохраните изменения."
             : "Достаточно фамилии и имени. Остальные сведения можно добавить позже."}
         </p>
-        <div className="portrait-picker">
-          <button
-            type="button"
-            className="portrait-preview portrait-edit-button"
-            onClick={() => setGalleryOpen(true)}
-            disabled={busy}
-            aria-label="Выбрать портрет из фотографий человека"
-            aria-haspopup="dialog"
-            title="Изменить портрет"
-          >
-            {portraitPreview || draft.photo ? (
-              <img src={portraitPreview || mediaPreview(draft.photo)} alt="" />
-            ) : (
-              <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
-            )}
-            <span className="portrait-edit-overlay" aria-hidden="true">
-              <Pencil size={22} strokeWidth={1.6} />
-            </span>
-          </button>
-        </div>
+        {person && (
+          <div className="portrait-picker">
+            <button
+              type="button"
+              className="portrait-preview portrait-edit-button"
+              onClick={() => setGalleryOpen(true)}
+              disabled={busy}
+              aria-label="Выбрать портрет из фотографий человека"
+              aria-haspopup="dialog"
+              title="Изменить портрет"
+            >
+              {portraitPreview || draft.photo ? (
+                <img
+                  src={portraitPreview || mediaPreview(draft.photo)}
+                  alt=""
+                />
+              ) : (
+                <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
+              )}
+              <span className="portrait-edit-overlay" aria-hidden="true">
+                <Pencil size={22} strokeWidth={1.6} />
+              </span>
+            </button>
+          </div>
+        )}
         {relativeTo && !person && (
           <label>
             Кем новый человек приходится {fullName(relativeTo)}
@@ -314,10 +388,13 @@ export function PersonEditor({
           ФИО
           <input
             required
+            data-field="name"
+            aria-invalid={!!fieldErrors.name}
             autoComplete="off"
             value={nameText}
             placeholder="Иванов Иван Иванович"
-            aria-describedby="name-order-hint"
+            aria-describedby={`${fieldId}-name-hint ${fieldId}-name-error`}
+            onBlur={() => validateField("name", nameText)}
             onChange={(e) => {
               setNameText(e.target.value);
               setDraft((value) => ({
@@ -326,8 +403,15 @@ export function PersonEditor({
               }));
             }}
           />
-          <small id="name-order-hint">
+          <small id={`${fieldId}-name-hint`}>
             Фамилия, имя, отчество. Отчество необязательно.
+          </small>
+          <small
+            id={`${fieldId}-name-error`}
+            className="field-error"
+            role="alert"
+          >
+            {fieldErrors.name}
           </small>
         </label>
         <label className="name-sex-hint">
@@ -350,6 +434,71 @@ export function PersonEditor({
             <option value="f">Женский</option>
           </select>
         </label>
+        <details className="form-details person-extra" open={!!person}>
+          <summary>Рождение и смерть</summary>
+          {(["birth", "death"] as const).map((kind) => (
+            <section className="person-date-group" key={kind}>
+              <h3>{kind === "birth" ? "Рождение" : "Смерть"}</h3>
+              <div className="form-grid">
+                <label>
+                  Дата
+                  <input
+                    data-field={kind}
+                    aria-invalid={!!fieldErrors[kind]}
+                    aria-describedby={`${fieldId}-${kind}-error`}
+                    value={kind === "birth" ? birthText : deathText}
+                    placeholder="1.5.1980, 05.1980 или 1980"
+                    onChange={(e) =>
+                      (kind === "birth" ? setBirthText : setDeathText)(
+                        e.target.value,
+                      )
+                    }
+                    onBlur={() => {
+                      validateField(
+                        kind,
+                        kind === "birth" ? birthText : deathText,
+                      );
+                      try {
+                        (kind === "birth" ? setBirthText : setDeathText)(
+                          dateInputLabel(
+                            normalizeDateInput(
+                              kind === "birth" ? birthText : deathText,
+                            ),
+                          ),
+                        );
+                      } catch {
+                        /* Проверяется при сохранении. */
+                      }
+                    }}
+                  />
+                  <small
+                    id={`${fieldId}-${kind}-error`}
+                    className="field-error"
+                    role="alert"
+                  >
+                    {fieldErrors[kind]}
+                  </small>
+                </label>
+                <PlaceField
+                  label="Место"
+                  value={
+                    draft[kind === "birth" ? "birthPlace" : "deathPlace"] || ""
+                  }
+                  onChange={(value) =>
+                    field(kind === "birth" ? "birthPlace" : "deathPlace", value)
+                  }
+                  onLocation={(location) =>
+                    setDraft((current) => ({
+                      ...current,
+                      [kind === "birth" ? "birthLocation" : "deathLocation"]:
+                        location,
+                    }))
+                  }
+                />
+              </div>
+            </section>
+          ))}
+        </details>
         {suggestions.length > 0 && (
           <details className="name-suggestions" open>
             <summary>
@@ -426,57 +575,6 @@ export function PersonEditor({
             </button>
           </p>
         )}
-        <details className="form-details person-extra" open={!!person}>
-          <summary>Рождение и смерть</summary>
-          {(["birth", "death"] as const).map((kind) => (
-            <section className="person-date-group" key={kind}>
-              <h3>{kind === "birth" ? "Рождение" : "Смерть"}</h3>
-              <div className="form-grid">
-                <label>
-                  Дата
-                  <input
-                    value={kind === "birth" ? birthText : deathText}
-                    placeholder="1.5.1980, 05.1980 или 1980"
-                    onChange={(e) =>
-                      (kind === "birth" ? setBirthText : setDeathText)(
-                        e.target.value,
-                      )
-                    }
-                    onBlur={() => {
-                      try {
-                        (kind === "birth" ? setBirthText : setDeathText)(
-                          dateInputLabel(
-                            normalizeDateInput(
-                              kind === "birth" ? birthText : deathText,
-                            ),
-                          ),
-                        );
-                      } catch {
-                        /* Проверяется при сохранении. */
-                      }
-                    }}
-                  />
-                </label>
-                <PlaceField
-                  label="Место"
-                  value={
-                    draft[kind === "birth" ? "birthPlace" : "deathPlace"] || ""
-                  }
-                  onChange={(value) =>
-                    field(kind === "birth" ? "birthPlace" : "deathPlace", value)
-                  }
-                  onLocation={(location) =>
-                    setDraft((current) => ({
-                      ...current,
-                      [kind === "birth" ? "birthLocation" : "deathLocation"]:
-                        location,
-                    }))
-                  }
-                />
-              </div>
-            </section>
-          ))}
-        </details>
         <details className="form-details">
           <summary>ФИО и фамилия при рождении</summary>
           <div className="form-grid">
@@ -556,6 +654,9 @@ export function PersonEditor({
                 ))}
                 <button
                   type="button"
+                  className="icon-button source-remove"
+                  aria-label={`Убрать источник ${i + 1}`}
+                  title="Убрать источник"
                   onClick={() =>
                     field(
                       "sources",
@@ -563,7 +664,7 @@ export function PersonEditor({
                     )
                   }
                 >
-                  Убрать источник
+                  <Trash2 size={16} />
                 </button>
               </div>
             ))}
@@ -608,29 +709,53 @@ export function PersonEditor({
           {person && (
             <section>
               <h3>Прямые связи</h3>
-              {connections.map((edge, i) => (
-                <div className="connection-row" key={i}>
-                  <span>
-                    {fullName(family.people.find((p) => p.id === edge.from)!)} →{" "}
-                    {CONNECTION_NAMES[edge.type]} →{" "}
-                    {fullName(family.people.find((p) => p.id === edge.to)!)}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={async () => {
-                      try {
-                        await save(removeConnection(family, edge));
-                        onClose();
-                      } catch (e) {
-                        setError((e as Error).message);
-                      }
-                    }}
+              {connections.map((edge, i) => {
+                const removed = removedConnections.some(
+                  (item) =>
+                    item.from === edge.from &&
+                    item.to === edge.to &&
+                    item.type === edge.type,
+                );
+                return (
+                  <div
+                    className={`connection-row${removed ? " is-removed" : ""}`}
+                    key={i}
                   >
-                    Убрать
-                  </button>
-                </div>
-              ))}
+                    <span>
+                      {fullName(family.people.find((p) => p.id === edge.from)!)}{" "}
+                      → {CONNECTION_NAMES[edge.type]} →{" "}
+                      {fullName(family.people.find((p) => p.id === edge.to)!)}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      title={
+                        removed
+                          ? "Восстановить связь"
+                          : "Убрать связь при сохранении"
+                      }
+                      aria-label={`${removed ? "Восстановить" : "Убрать"} связь: ${fullName(family.people.find((p) => p.id === edge.from)!)} — ${fullName(family.people.find((p) => p.id === edge.to)!)}`}
+                      disabled={busy}
+                      onClick={() =>
+                        setRemovedConnections((items) =>
+                          removed
+                            ? items.filter(
+                                (item) =>
+                                  !(
+                                    item.from === edge.from &&
+                                    item.to === edge.to &&
+                                    item.type === edge.type
+                                  ),
+                              )
+                            : [...items, edge],
+                        )
+                      }
+                    >
+                      {removed ? <Undo2 size={16} /> : <Trash2 size={16} />}
+                    </button>
+                  </div>
+                );
+              })}
             </section>
           )}
         </details>
@@ -643,8 +768,13 @@ export function PersonEditor({
           <button type="submit" className="primary-action" disabled={busy}>
             {busy ? "Сохраняем…" : "Сохранить"}
           </button>
-          <button type="button" onClick={onClose}>
-            Отмена
+          <button
+            type="button"
+            className="text-action"
+            disabled={busy}
+            onClick={close}
+          >
+            Закрыть
           </button>
           {person && isAdmin && (
             <button
@@ -658,6 +788,7 @@ export function PersonEditor({
                 }
                 try {
                   await save(removePerson(family, person.id));
+                  onDirtyChange?.(false);
                   onClose();
                 } catch (e) {
                   setError((e as Error).message);

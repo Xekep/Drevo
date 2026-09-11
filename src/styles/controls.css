@@ -1,0 +1,239 @@
+/* Общие размеры элементов управления. Мобильные области нажатия не уменьшаем. */
+:root {
+  --control-height: 36px;
+  --field-height: 38px;
+  --control-radius: 8px;
+}
+
+.archive-form {
+  gap: 14px;
+}
+.archive-form
+  :is(input, select, textarea):where(
+    :not([type="checkbox"], [type="radio"], [type="file"], [type="range"])
+  ) {
+  min-height: var(--field-height);
+  padding: 8px 10px;
+  border-radius: var(--control-radius);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.archive-form label {
+  gap: 6px;
+}
+.archive-form .name-entry input {
+  font-size: 16px;
+  padding: 9px 10px;
+  border-radius: var(--control-radius);
+}
+.archive-form button,
+.primary-action,
+.photo-edit-toggle {
+  min-height: var(--control-height);
+  border-radius: var(--control-radius);
+}
+.archive-form button {
+  padding: 7px 11px;
+}
+.icon-button,
+.archive-form .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.icon-button:hover:not(:disabled) {
+  background: #edf2e8;
+  border-color: #dce5d5;
+}
+.archive-form .text-action {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.archive-form > footer {
+  align-items: center;
+  gap: 8px;
+}
+.archive-form > footer .danger-action {
+  margin-left: auto;
+}
+.archive-form [aria-invalid="true"] {
+  border-color: #ac5546;
+  box-shadow: 0 0 0 2px #ac554610;
+}
+.archive-form .field-error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a04738;
+}
+.field-error:empty {
+  display: none;
+}
+.connection-row.is-removed > span {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.connection-row .icon-button {
+  color: #936254;
+}
+.connection-row.is-removed .icon-button {
+  color: var(--green);
+}
+.connection-inspector .person-search {
+  margin: 0;
+}
+.archive-form .person-search-input {
+  padding: 0 8px;
+  border-radius: var(--control-radius);
+}
+.archive-form .person-search-input input {
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+}
+.archive-form .person-search-input button {
+  border: 0;
+  padding: 0;
+  width: var(--control-height);
+  flex-shrink: 0;
+}
+.connection-inspector .connection-swap {
+  justify-self: end;
+  margin-top: -6px;
+}
+.person-editor-form .portrait-picker {
+  margin: 0;
+}
+.person-editor-form .portrait-edit-button {
+  width: 72px;
+  height: 72px;
+  min-height: 72px;
+  border-radius: 50%;
+}
+.person-editor-form > .form-details {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.person-editor-form > .form-details > summary {
+  padding-block: 4px;
+}
+.person-editor-form .source-editor {
+  position: relative;
+}
+.source-editor .source-remove {
+  justify-self: end;
+}
+.maiden-name {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.panel-tabs > :not(.active),
+.lifespan-dates,
+.lifespan-legend {
+  color: #687660;
+}
+.editor-dialog {
+  width: min(640px, calc(100vw - 32px));
+}
+.editor-dialog.share-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+.editor-dialog > header {
+  padding: 16px 20px;
+}
+.editor-dialog > header h2 {
+  font-size: 20px;
+}
+.inline-editor > header {
+  padding: 12px 18px;
+}
+.inline-editor > header h2 {
+  font-size: 17px;
+}
+.inspector-heading > button,
+.person-expand-button,
+.inspector-person-actions :is(.person-action-icon, .person-history-button) {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--control-height);
+  padding: 0;
+}
+.inspector-person-actions .person-edit-button {
+  min-height: var(--control-height);
+  padding: 7px 10px;
+  border-radius: var(--control-radius);
+}
+.inspector-dock .archive-form {
+  padding: 18px;
+}
+.inspector-dock .profile-content {
+  padding: 20px;
+}
+.archive-search-results button[aria-selected="true"] {
+  background: #edf4e7;
+}
+.photo-load-status {
+  position: fixed;
+  left: 50%;
+  top: 45%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 12px;
+  padding: 16px 22px;
+  border-radius: 12px;
+  background: #202922ee;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  z-index: 5;
+}
+.photo-load-status button {
+  color: #fff;
+  text-decoration: underline;
+  min-height: 36px;
+}
+
+@media (min-width: 900px) {
+  .archive-workspace {
+    --inspector-width: clamp(340px, 26vw, 380px);
+  }
+  .archive-workspace:has(.inspector-dock[data-editing="true"]) {
+    --inspector-width: clamp(400px, 34vw, 480px);
+  }
+  .inspector-dock[data-editing="true"] .archive-form .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .person-editor-form .person-date-group .form-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+  .person-editor-form .name-suggestions-list {
+    max-height: 180px;
+  }
+}
+@media (max-width: 899px), (pointer: coarse) {
+  :root {
+    --control-height: 44px;
+    --field-height: 44px;
+  }
+  .icon-button,
+  .archive-form .icon-button {
+    min-width: 44px;
+  }
+  .archive-form
+    :is(input, select, textarea):where(
+      :not([type="checkbox"], [type="radio"], [type="file"], [type="range"])
+    ) {
+    font-size: 16px;
+  }
+}

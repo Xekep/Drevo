@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { confirmDiscardChanges } from "../hooks/useUnsavedChanges";
 import { Pencil } from "lucide-react";
 import type { Family, Person } from "../domain/types";
 import { fullName } from "../domain/dates";
@@ -40,6 +41,7 @@ export function PersonFullView({
 }) {
   const [activeId, setActiveId] = useState(person.id);
   const [editing, setEditing] = useState(false);
+  const dirty = useRef(false);
   const active = family.people.find((p) => p.id === activeId) || person;
   const editable = canEdit && owns(user, active) && !!save && !!uploadPortrait;
   const neighborhood = useMemo(() => {
@@ -66,7 +68,7 @@ export function PersonFullView({
     <EditorDialog
       title={fullName(active)}
       onClose={() => {
-        if (!busy) onClose();
+        if (!busy && confirmDiscardChanges(dirty.current)) onClose();
       }}
       className="person-full-dialog"
     >
@@ -85,6 +87,9 @@ export function PersonFullView({
               save={save}
               uploadPortrait={uploadPortrait}
               busy={busy}
+              onDirtyChange={(value) => {
+                dirty.current = value;
+              }}
               onClose={() => setEditing(false)}
               onSaved={(id) => {
                 setActiveId(id);

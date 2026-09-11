@@ -202,6 +202,7 @@ export function ArchiveHeader({
   navigation: ReactNode;
 }) {
   const [open, setOpen] = useState(false),
+    [active, setActive] = useState(0),
     ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -254,11 +255,23 @@ export function ArchiveHeader({
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             onQuery(e.target.value);
+            setActive(0);
             setOpen(true);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && matches[0]) {
-              onSelect(matches[0].id);
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              setOpen(true);
+              setActive((index) =>
+                matches.length
+                  ? (index + (e.key === "ArrowDown" ? 1 : matches.length - 1)) %
+                    matches.length
+                  : 0,
+              );
+            }
+            if (e.key === "Enter" && matches[active]) {
+              e.preventDefault();
+              onSelect(matches[active].id);
               setOpen(false);
             }
             if (e.key === "Escape") {
@@ -269,6 +282,17 @@ export function ArchiveHeader({
           }}
           placeholder="Найти человека…"
           aria-label="Найти человека"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open && !!query.trim()}
+          aria-controls={
+            open && query.trim() ? "archive-search-options" : undefined
+          }
+          aria-activedescendant={
+            open && matches[active]
+              ? `archive-search-option-${active}`
+              : undefined
+          }
         />
         <kbd>/</kbd>
         {query && (
@@ -284,11 +308,21 @@ export function ArchiveHeader({
           </button>
         )}
         {open && query.trim() && (
-          <div className="archive-search-results">
+          <div
+            className="archive-search-results"
+            id="archive-search-options"
+            role="listbox"
+            aria-label="Найденные люди"
+          >
             {matches.length ? (
-              matches.map((p) => (
+              matches.map((p, index) => (
                 <button
                   key={p.id}
+                  id={`archive-search-option-${index}`}
+                  role="option"
+                  aria-selected={active === index}
+                  tabIndex={-1}
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     onSelect(p.id);
                     setOpen(false);

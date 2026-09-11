@@ -20,6 +20,11 @@ import { photoLabel } from "../domain/photo-metadata";
 import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
 import { mediaPreview } from "../domain/media-preview";
+import { PlaceField } from "./place-field";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 type Rect = Pick<PhotoTag, "x" | "y" | "width" | "height">;
 function PhotoViewerContent({
   photo,
@@ -33,6 +38,7 @@ function PhotoViewerContent({
   onClose,
   onPerson,
   initialEditing = false,
+  onDirtyChange,
 }: {
   photo: ArchivePhoto;
   photos: ArchivePhoto[];
@@ -45,8 +51,13 @@ function PhotoViewerContent({
   onClose: () => void;
   onPerson: (id: string) => void;
   initialEditing?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+  const [imageState, setImageState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [imageAttempt, setImageAttempt] = useState(0);
   const index = photos.findIndex((p) => p.id === photo.id);
   const previous = photos[index - 1];
   const next = photos[index + 1];
@@ -103,6 +114,17 @@ function PhotoViewerContent({
     [suggestionId, setSuggestionId] = useState<string | null>(null);
   const scanned = useRef(false),
     scanController = useRef<AbortController | null>(null);
+  const dirty =
+    takenAt !== (photo.takenAt || "") ||
+    place !== (photo.place || "") ||
+    year !== (photo.year || "") ||
+    event !== (photo.event || "") ||
+    description !== (photo.description || "") ||
+    !!rect;
+  useUnsavedChanges(dirty);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
   useEffect(() => () => scanController.current?.abort(), []);
   async function scan(enterEditing = false) {
     if (!(canEdit || (enterEditing && allowedEdit)) || scanning) return;
@@ -232,14 +254,38 @@ function PhotoViewerContent({
                   }}
                 >
                   <img
+                    key={imageAttempt}
                     src={mediaPreview(photo.url, "display")}
                     alt={photoLabel(photo)}
                     draggable={false}
                     onLoad={() => {
+                      setImageState("ready");
                       if (canEdit && !photo.tags.length && !scanned.current)
                         void scan();
                     }}
+                    onError={() => setImageState("error")}
                   />
+                  {imageState !== "ready" && (
+                    <div className="photo-load-status" role="status">
+                      {imageState === "loading" ? (
+                        "Загружаем фотографию…"
+                      ) : (
+                        <>
+                          Не удалось загрузить снимок.
+                          <button
+                            type="button"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={() => {
+                              setImageState("loading");
+                              setImageAttempt((n) => n + 1);
+                            }}
+                          >
+                            Повторить
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {canEdit &&
                     suggestions.map((s, i) => (
                       <button
@@ -377,8 +423,14 @@ function PhotoViewerContent({
               aria-pressed={editing}
               disabled={busy || slide.settling}
               onClick={() => {
+                if (editing && !confirmDiscardChanges(dirty)) return;
                 setEditing(!editing);
                 if (editing) {
+                  setTakenAt(photo.takenAt || "");
+                  setPlace(photo.place || "");
+                  setYear(photo.year || "");
+                  setEvent(photo.event || "");
+                  setDescription(photo.description || "");
                   setConfirm(false);
                   setTagging(false);
                   setRect(null);
@@ -579,7 +631,7 @@ function PhotoViewerContent({
                   className="archive-form photo-metadata"
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    await update({
+                    const saved = await update({
                       ...photo,
                       takenAt: takenAt.trim() || undefined,
                       place: place.trim() || undefined,
@@ -587,6 +639,13 @@ function PhotoViewerContent({
                       event: event.trim() || undefined,
                       description: description.trim() || undefined,
                     });
+                    if (saved) {
+                      setTakenAt(takenAt.trim());
+                      setPlace(place.trim());
+                      setYear(year.trim());
+                      setEvent(event.trim());
+                      setDescription(description.trim());
+                    }
                   }}
                 >
                   <label>
@@ -600,14 +659,7 @@ function PhotoViewerContent({
                       onChange={(e) => setYear(e.target.value)}
                     />
                   </label>
-                  <label>
-                    Место
-                    <input
-                      value={place}
-                      placeholder="Город, деревня или адрес"
-                      onChange={(e) => setPlace(e.target.value)}
-                    />
-                  </label>
+                  <PlaceField label="Место" value={place} onChange={setPlace} />
                   <label>
                     Событие
                     <input
@@ -649,6 +701,7 @@ function PhotoViewerContent({
                         ...family,
                         photos: family.photos!.filter((p) => p.id !== photo.id),
                       });
+                      onDirtyChange?.(false);
                       onClose();
                     } catch (e) {
                       setError((e as Error).message);
@@ -691,9 +744,19 @@ function PhotoViewerContent({
   );
 }
 
-type PhotoViewerProps = Parameters<typeof PhotoViewerContent>[0];
+type PhotoViewerProps = Omit<
+  Parameters<typeof PhotoViewerContent>[0],
+  "onDirtyChange"
+>;
 export function PhotoViewer(props: PhotoViewerProps) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const dirty = useRef(false);
+  const setDirty = (value: boolean) => {
+    dirty.current = value;
+  };
+  const close = () => {
+    if (!props.busy && confirmDiscardChanges(dirty.current)) props.onClose();
+  };
   useEffect(() => {
     const node = dialog.current;
     node?.showModal();
@@ -727,10 +790,15 @@ export function PhotoViewer(props: PhotoViewerProps) {
       onCancel={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        props.onClose();
+        close();
       }}
     >
-      <PhotoViewerContent key={props.photo.id} {...props} />
+      <PhotoViewerContent
+        key={props.photo.id}
+        {...props}
+        onClose={close}
+        onDirtyChange={setDirty}
+      />
     </dialog>
   );
 }

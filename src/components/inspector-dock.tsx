@@ -40,6 +40,7 @@ export function InspectorDock({
       ref={ref}
       className={`inspector-dock ${expanded ? "expanded" : ""}`}
       aria-label="Выбранный объект"
+      data-editing={editing || undefined}
     >
       <div
         ref={heading}

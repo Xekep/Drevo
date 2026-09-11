@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
@@ -100,11 +101,32 @@ export default function App() {
     people: Person[];
     revision: number;
   } | null>(null);
-  const [personDraft, setPersonDraft] = useState<PersonDraft | null>(null),
+  const [personDraft, setPersonDraftState] = useState<PersonDraft | null>(null),
     [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(
       null,
     ),
     [preview, setPreview] = useState<ConnectionDraft | null>(null);
+  const personDirty = useRef(false);
+  const [connectionDirty, setConnectionDirty] = useState(false);
+  const finishConnection = useCallback(() => {
+    setConnectionDirty(false);
+    setConnectionDraft(null);
+    setPreview(null);
+  }, []);
+  const closeConnection = useCallback(() => {
+    if (busy || !confirmDiscardChanges(connectionDirty)) return false;
+    finishConnection();
+    return true;
+  }, [busy, connectionDirty, finishConnection]);
+  const onPersonDirtyChange = useCallback((dirty: boolean) => {
+    personDirty.current = dirty;
+  }, []);
+  const setPersonDraft = useCallback((next: PersonDraft | null) => {
+    if (!confirmDiscardChanges(personDirty.current)) return false;
+    personDirty.current = false;
+    setPersonDraftState(next);
+    return true;
+  }, []);
   const photoWorkspace = usePhotoWorkspace(family),
     { clearFilter, resetNavigation } = photoWorkspace;
   const people = useMemo(() => family?.people || [], [family]);
@@ -123,11 +145,21 @@ export default function App() {
   const highlighted = useMemo(() => relation?.path || [], [relation]);
   const navigate = useCallback(
     (next: ArchiveView) => {
+      if (next !== view && personDraft && !setPersonDraft(null)) return;
+      if (next !== view && connectionDraft && !closeConnection()) return;
       setView(next);
       setAddMenu(false);
       clearFilter();
     },
-    [setView, clearFilter],
+    [
+      setView,
+      clearFilter,
+      view,
+      personDraft,
+      setPersonDraft,
+      connectionDraft,
+      closeConnection,
+    ],
   );
   useEffect(() => {
     const sync = () => {
@@ -137,31 +169,29 @@ export default function App() {
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, [resetNavigation]);
-  const closeConnection = useCallback(() => {
-    setConnectionDraft(null);
-    setPreview(null);
-  }, []);
   const openConnection = useCallback(
     (draft: ConnectionDraft) => {
       if (!canEdit) return;
       if (!draft.original)
         draft = suggestConnectionOrder(draft, people, family?.links);
-      setPersonDraft(null);
+      if (!setPersonDraft(null)) return;
+      if (!closeConnection()) return;
       setConnectionDraft(draft);
       setPreview(draft);
       dispatch({ type: "finishLink" });
       setAddMenu(false);
     },
-    [dispatch, canEdit, people, family?.links],
+    [dispatch, canEdit, people, family?.links, setPersonDraft, closeConnection],
   );
   const selectEdge = useCallback(
     (edge: GraphConnection) => {
-      setPersonDraft(null);
+      if (!setPersonDraft(null)) return;
+      if (!closeConnection()) return;
       setConnectionDraft({ ...edge, original: edge });
       setPreview(null);
       dispatch({ type: "finishLink" });
     },
-    [dispatch],
+    [dispatch, setPersonDraft, closeConnection],
   );
   const choosePerson = useCallback(
     (id: string, additive = false) => {
@@ -169,16 +199,16 @@ export default function App() {
         openConnection({ from: linkFrom, to: id, type: "parent" });
         return;
       }
-      closeConnection();
+      if (!closeConnection()) return;
       choose(id, additive);
     },
     [canEdit, linkFrom, openConnection, closeConnection, choose],
   );
   const showPerson = useCallback(
     (id: string) => {
+      if (!closeConnection()) return;
       setView("tree");
       reveal([id]);
-      closeConnection();
     },
     [reveal, closeConnection, setView],
   );
@@ -187,20 +217,21 @@ export default function App() {
   }, [dispatch, personDraft, connectionDraft]);
   const newPerson = useCallback(() => {
     if (!canEdit) return;
-    setPersonDraft({ key: crypto.randomUUID() });
-    closeConnection();
+    if (!closeConnection()) return;
+    if (!setPersonDraft({ key: crypto.randomUUID() })) return;
     setAddMenu(false);
     setView("tree");
-  }, [canEdit, closeConnection, setView]);
+  }, [canEdit, closeConnection, setView, setPersonDraft]);
   const startLink = useCallback(() => {
     if (!canEdit) return;
-    closeConnection();
-    setPersonDraft(null);
+    if (!closeConnection()) return;
+    if (!setPersonDraft(null)) return;
     dispatch({ type: "link" });
     setAddMenu(false);
     setView("tree");
-  }, [canEdit, closeConnection, dispatch, setView]);
+  }, [canEdit, closeConnection, dispatch, setView, setPersonDraft]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
+    setConnectionDirty(true);
     setConnectionDraft(draft);
     setPreview(draft);
   }, []);
@@ -240,6 +271,7 @@ export default function App() {
         busy={busy}
         onClose={closeEditor}
         onSaved={showPerson}
+        onDirtyChange={onPersonDirtyChange}
       />
     </div>
   );
@@ -346,8 +378,8 @@ export default function App() {
                           <button
                             className={compare ? "active" : ""}
                             onClick={() => {
-                              setPersonDraft(null);
-                              closeConnection();
+                              if (!setPersonDraft(null)) return;
+                              if (!closeConnection()) return;
                               dispatch({ type: "compare" });
                             }}
                           >
@@ -372,7 +404,7 @@ export default function App() {
                           : undefined
                       }
                       onAddRelative={(id, type) => {
-                        closeConnection();
+                        if (!closeConnection()) return;
                         relative(type, false, id);
                       }}
                       family={family}
@@ -447,6 +479,8 @@ export default function App() {
                           save={save}
                           busy={busy}
                           onClose={closeConnection}
+                          onSaved={finishConnection}
+                          dirty={connectionDirty}
                         />
                       </InspectorDock>
                     ) : compare || chosen.length > 0 ? (

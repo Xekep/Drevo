@@ -3,6 +3,11 @@ import { ImagePlus, ScanFace, Upload } from "lucide-react";
 import type { Family, PhotoMetadata } from "../domain";
 import { EditorDialog } from "./editor-dialog";
 import { photoFileError } from "../domain/photo-upload";
+import { PlaceField } from "./place-field";
+import {
+  confirmDiscardChanges,
+  useUnsavedChanges,
+} from "../hooks/useUnsavedChanges";
 
 export function PhotoUpload({
   upload,
@@ -23,6 +28,11 @@ export function PhotoUpload({
     [metadata, setMetadata] = useState<PhotoMetadata>({}),
     [error, setError] = useState("");
   const preview = useRef<HTMLImageElement>(null);
+  const dirty = !!file || Object.values(metadata).some(Boolean);
+  useUnsavedChanges(dirty);
+  const close = () => {
+    if (!busy && confirmDiscardChanges(dirty)) onClose();
+  };
   useEffect(() => {
     if (!file) return;
     const url = URL.createObjectURL(file);
@@ -42,9 +52,7 @@ export function PhotoUpload({
   return (
     <EditorDialog
       title="Добавить фотографию"
-      onClose={() => {
-        if (!busy) onClose();
-      }}
+      onClose={close}
       wide
       className="photo-upload-dialog"
     >
@@ -110,17 +118,12 @@ export function PhotoUpload({
                   }
                 />
               </label>
-              <label>
-                Место{" "}
-                <input
-                  maxLength={200}
-                  placeholder="Город или деревня"
-                  value={metadata.place || ""}
-                  onChange={(e) =>
-                    setMetadata({ ...metadata, place: e.target.value })
-                  }
-                />
-              </label>
+              <PlaceField
+                label="Место"
+                maxLength={200}
+                value={metadata.place || ""}
+                onChange={(place) => setMetadata({ ...metadata, place })}
+              />
             </div>
             <label>
               Событие{" "}
@@ -169,8 +172,13 @@ export function PhotoUpload({
             <Upload size={16} />
             {busy ? "Сохраняем снимок…" : "Сохранить и отметить людей"}
           </button>
-          <button type="button" disabled={busy} onClick={onClose}>
-            Отмена
+          <button
+            type="button"
+            className="text-action"
+            disabled={busy}
+            onClick={close}
+          >
+            Закрыть
           </button>
         </footer>
       </form>

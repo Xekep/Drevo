@@ -7,11 +7,13 @@ export function PlaceField({
   value,
   onChange,
   onLocation,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  onLocation: (location: PlaceLocation) => void;
+  onLocation?: (location: PlaceLocation) => void;
+  maxLength?: number;
 }) {
   const [notice, setNotice] = useState("");
   const sequence = useRef(0);
@@ -28,7 +30,7 @@ export function PlaceField({
       const result: PlaceResult = await response.json();
       if (request !== sequence.current) return;
       if (result.automatic) {
-        onLocation({ place: value.trim(), ...result.automatic });
+        onLocation?.({ place: value.trim(), ...result.automatic });
         setNotice(
           `На карте: ${result.automatic.label}. Историческое название сохранится.`,
         );
@@ -50,7 +52,8 @@ export function PlaceField({
       {label}
       <input
         value={value}
-        placeholder="Название в то время, например Свердловск-44"
+        maxLength={maxLength}
+        placeholder="Название в то время"
         onChange={(e) => {
           sequence.current++;
           setNotice("");
@@ -58,7 +61,7 @@ export function PlaceField({
         }}
         onBlur={() => void locate()}
       />
-      <small className="place-input-notice" role="status">
+      <small className="place-input-notice" role="status" hidden={!notice}>
         {notice}
       </small>
     </label>

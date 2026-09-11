@@ -1,10 +1,5 @@
 import { lazy, Suspense } from "react";
-import type {
-  ArchiveUser,
-  ConnectionType,
-  Family,
-  Person,
-} from "../domain";
+import type { ArchiveUser, ConnectionType, Family, Person } from "../domain";
 import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
 
@@ -20,6 +15,7 @@ type PersonEditorProps = {
   save: Save;
   onClose: () => void;
   onSaved: (id: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
   busy: boolean;
   inline?: boolean;
   suspended?: boolean;

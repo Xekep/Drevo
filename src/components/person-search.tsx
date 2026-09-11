@@ -8,11 +8,15 @@ export function PersonSearch({
   selected,
   onChange,
   disabled = false,
+  label = "Кто это?",
+  excludeId,
 }: {
   value: string;
   selected?: Person;
   onChange: (id: string) => void;
   disabled?: boolean;
+  label?: string;
+  excludeId?: string;
 }) {
   const id = useId();
   const [query, setQuery] = useState(""),
@@ -58,7 +62,10 @@ export function PersonSearch({
       clearTimeout(timer);
     };
   }, [needle, open, disabled, value, attempt]);
-  const options = result.query === needle ? result.people : [];
+  const options =
+    result.query === needle
+      ? result.people.filter((p) => p.id !== excludeId)
+      : [];
   const visible = open && !value && !disabled;
   function choose(person: PersonOption) {
     setPicked(person);
@@ -74,7 +81,7 @@ export function PersonSearch({
           setOpen(false);
       }}
     >
-      <label htmlFor={`${id}-input`}>Кто это?</label>
+      <label htmlFor={`${id}-input`}>{label}</label>
       <div className="person-search-input">
         <Search size={16} aria-hidden="true" />
         <input

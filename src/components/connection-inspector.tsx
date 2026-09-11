@@ -14,6 +14,8 @@ import {
   type ArchiveUser,
   type ConnectionType,
 } from "../domain";
+import { PersonSearch } from "./person-search";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import type { ConnectionDraft } from "./tree/tree-canvas";
 export function ConnectionInspector({
   family,
@@ -23,6 +25,8 @@ export function ConnectionInspector({
   save,
   busy,
   onClose,
+  onSaved,
+  dirty = false,
   canEdit = true,
 }: {
   family: Family;
@@ -32,8 +36,11 @@ export function ConnectionInspector({
   save: (family: Family) => Promise<Family>;
   busy: boolean;
   onClose: () => void;
+  onSaved: () => void;
+  dirty?: boolean;
   canEdit?: boolean;
 }) {
+  useUnsavedChanges(dirty);
   const [error, setError] = useState(""),
     [confirm, setConfirm] = useState(false),
     [manualOrder, setManualOrder] = useState(false);
@@ -97,7 +104,7 @@ export function ConnectionInspector({
       if (!remove && archiveConnections(next).length === 0)
         throw new Error("Связь не создана");
       await save(next);
-      onClose();
+      onSaved();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -150,25 +157,25 @@ export function ConnectionInspector({
             "Выберите участников и тип связи. Линия на дереве — предварительная."
           )}
         </p>
-        <label>
-          Первый человек
-          {draft.hint && (
-            <small>{draft.hint} Проверьте перед сохранением.</small>
-          )}
-          <select
-            required
-            value={draft.from}
-            disabled={readonly || busy}
-            onChange={(e) => update({ from: e.target.value })}
-          >
-            <option value="">Выберите человека</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {fullName(p)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <PersonSearch
+          label={
+            draft.type === "parent"
+              ? "Родитель"
+              : draft.type === "godparent"
+                ? "Крёстный родитель"
+                : "Кто"
+          }
+          value={draft.from}
+          selected={from}
+          excludeId={draft.to}
+          onChange={(id) => update({ from: id })}
+          disabled={busy}
+        />
+        {draft.hint && (
+          <p className="field-hint" role="status">
+            {draft.hint}
+          </p>
+        )}
         <label>
           Кем приходится
           <select
@@ -194,27 +201,26 @@ export function ConnectionInspector({
             </optgroup>
           </select>
         </label>
-        <label>
-          Второй человек
-          <select
-            required
-            value={draft.to}
-            disabled={readonly || busy}
-            onChange={(e) => update({ to: e.target.value })}
-          >
-            <option value="">Выберите человека</option>
-            {people
-              .filter((p) => p.id !== draft.from)
-              .map((p) => (
-                <option key={p.id} value={p.id}>
-                  {fullName(p)}
-                </option>
-              ))}
-          </select>
-        </label>
+        <PersonSearch
+          label={
+            draft.type === "parent"
+              ? "Ребёнок"
+              : draft.type === "godparent"
+                ? "Крестник / крестница"
+                : "С кем связан"
+          }
+          value={draft.to}
+          selected={to}
+          excludeId={draft.from}
+          onChange={(id) => update({ to: id })}
+          disabled={busy}
+        />
         {!readonly && (
           <button
             type="button"
+            className="icon-button connection-swap"
+            aria-label="Поменять участников местами"
+            title="Поменять участников местами"
             disabled={busy}
             onClick={() => {
               setManualOrder(true);
@@ -229,7 +235,6 @@ export function ConnectionInspector({
             }}
           >
             <ArrowDownUp size={16} />
-            Поменять местами
           </button>
         )}
         {!["parent", "spouse"].includes(draft.type) && (

@@ -227,14 +227,14 @@
   background: #e4eddc;
 }
 .archive-workspace:has(.inspector-dock) .tree-canvas {
-  right: 356px;
+  right: calc(var(--inspector-width, 332px) + 24px);
 }
 .inspector-dock {
   position: absolute;
   right: 16px;
   top: 12px;
   bottom: 16px;
-  width: 332px;
+  width: var(--inspector-width, 332px);
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid #dde6d7;
