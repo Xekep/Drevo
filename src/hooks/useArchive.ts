@@ -180,18 +180,24 @@ export function useArchive() {
 
   const write = useCallback(
     async (
-      url: string,
-      body: BodyInit,
+      initialUrl: string,
+      initialBody: BodyInit,
       headers: Record<string, string>,
       track = true,
+      initialChanges?: Change[],
     ) => {
       if (saving.current) throw new Error("Дождитесь завершения сохранения");
       if (!canEdit) throw new Error("Войдите в архив для сохранения изменений");
       saving.current = true;
       setBusy(true);
       try {
-        let base = snapshot.current;
+        let base = snapshot.current,
+          url = initialUrl,
+          body = initialBody,
+          pendingChanges = initialChanges;
         for (let attempt = 0; attempt < 3; attempt++) {
+          const familyWrite =
+            url === "/api/family" || url === "/api/family/changes";
           let response: Response;
           try {
             response = await fetchWithTimeout(
@@ -201,7 +207,7 @@ export function useArchive() {
                 headers: { ...headers, "If-Match": String(revision.current) },
                 body,
               },
-              url === "/api/family" ? WRITE_TIMEOUT_MS : UPLOAD_TIMEOUT_MS,
+              familyWrite ? WRITE_TIMEOUT_MS : UPLOAD_TIMEOUT_MS,
             );
           } catch (reason) {
             if (!(reason instanceof RequestTimeoutError)) throw reason;
@@ -220,7 +226,7 @@ export function useArchive() {
           const result = await response.json();
           if (
             response.status === 409 &&
-            url === "/api/family" &&
+            familyWrite &&
             base &&
             typeof body === "string"
           ) {
@@ -244,10 +250,9 @@ export function useArchive() {
               );
             const fresh = await freshResponse.json(),
               current = validateFamily(fresh.family);
-            const changes = archiveChanges(
-              base,
-              validateFamily(JSON.parse(body)),
-            );
+            const changes =
+              pendingChanges ||
+              archiveChanges(base, validateFamily(JSON.parse(body)));
             let merged = applyArchiveChanges(current, changes);
             if (merged.conflicts.length) {
               const choice = await new Promise<"local" | "remote" | "cancel">(
@@ -260,7 +265,10 @@ export function useArchive() {
                 );
               merged = applyArchiveChanges(current, changes, choice);
             }
-            body = JSON.stringify(validateFamily(merged.family));
+            const mergedFamily = validateFamily(merged.family);
+            pendingChanges = archiveChanges(current, mergedFamily);
+            body = JSON.stringify({ changes: pendingChanges });
+            url = "/api/family/changes";
             base = current;
             snapshot.current = current;
             revision.current = fresh.revision;
@@ -274,11 +282,11 @@ export function useArchive() {
           if (!response.ok)
             throw new Error(result.error || "Не удалось сохранить изменения");
           const data = validateFamily(result.family);
-          if (url === "/api/family" && track && base) {
+          if (familyWrite && track && base) {
             const changes = archiveChanges(base, data);
             if (changes.length)
               history.current = [...history.current.slice(-19), changes];
-          } else if (url !== "/api/family") history.current = [];
+          } else if (!familyWrite) history.current = [];
           snapshot.current = data;
           revision.current = result.revision;
           setFamily(data);
@@ -296,10 +304,23 @@ export function useArchive() {
     [canEdit, publishHistory, reconcileAfterUnknownWrite],
   );
   const save = useCallback(
-    (data: Family) =>
-      write("/api/family", JSON.stringify(validateFamily(data)), {
-        "Content-Type": "application/json",
-      }),
+    (data: Family) => {
+      const next = validateFamily(data),
+        base = snapshot.current;
+      if (!base)
+        return write("/api/family", JSON.stringify(next), {
+          "Content-Type": "application/json",
+        });
+      const changes = archiveChanges(base, next);
+      if (!changes.length) return Promise.resolve(base);
+      return write(
+        "/api/family/changes",
+        JSON.stringify({ changes }),
+        { "Content-Type": "application/json" },
+        true,
+        changes,
+      );
+    },
     [write],
   );
   const upload = useCallback(
@@ -357,16 +378,18 @@ export function useArchive() {
     const last = history.current.at(-1),
       current = snapshot.current;
     if (!last || !current) return;
-    const reversed = applyArchiveChanges(current, inverseChanges(last));
+    const changes = inverseChanges(last),
+      reversed = applyArchiveChanges(current, changes);
     if (reversed.conflicts.length)
       throw new Error(
         "Эти сведения уже изменились. Отмена могла бы затронуть новые правки.",
       );
     await write(
-      "/api/family",
-      JSON.stringify(validateFamily(reversed.family)),
+      "/api/family/changes",
+      JSON.stringify({ changes }),
       { "Content-Type": "application/json" },
       false,
+      changes,
     );
     history.current.pop();
     publishHistory();
