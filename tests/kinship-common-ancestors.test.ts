@@ -47,6 +47,6 @@ test("равноудалённые отец и мать оба показыва�
   assert.equal(relation.kind, "blood");
   assert.deepEqual(new Set(relation.common), new Set([father.id, mother.id]));
   assert.match(relation.explanation, /^Общие предки —/u);
-  assert.match(relation.explanation, /Александр Тестов/u);
-  assert.match(relation.explanation, /Мария Тестова/u);
+  assert.match(relation.explanation, /Тестов Александр/u);
+  assert.match(relation.explanation, /Тестова Мария/u);
 });
