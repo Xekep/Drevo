@@ -12,6 +12,8 @@ import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
+import { restoreHttp } from "./restore-http.ts";
+import { currentRestoreStore } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
 
@@ -31,6 +33,11 @@ export function sharingHttp({
   publicOrigin?: string;
 }) {
   const serveStatic = productionStaticHttp();
+  const restore = restoreHttp({
+    restores: () => currentRestoreStore(archive),
+    auth,
+    publicOrigin,
+  });
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({ archive, auth, media, publicOrigin });
   const serveMedia = mediaHttp({ auth, media, previewImage, visibility });
@@ -42,6 +49,7 @@ export function sharingHttp({
     url: URL,
   ): Promise<boolean> => {
     if (await serveStatic(req, res, url)) return true;
+    if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
