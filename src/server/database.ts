@@ -1,7 +1,7 @@
 import { authorizeArchive } from "./permissions.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { auditStore } from "./audit.ts";
 import {
@@ -44,21 +44,6 @@ function removeDroppedMedia(path: string, before: Family, after: Family) {
   removeMediaFiles(
     path,
     [...mediaReferences(before)].filter((name) => !current.has(name)),
-  );
-}
-function pruneUnreferencedMedia(path: string, family: Family) {
-  if (path === ":memory:") return;
-  const uploads = resolve(dirname(path), "uploads"),
-    referenced = mediaReferences(family);
-  let names: string[];
-  try {
-    names = readdirSync(uploads);
-  } catch {
-    return;
-  }
-  removeMediaFiles(
-    path,
-    names.filter((name) => mediaNamePattern.test(name) && !referenced.has(name)),
   );
 }
 
@@ -254,7 +239,6 @@ export function openArchive(path: string, seed: Family) {
   }
 
   if (!db.prepare("SELECT id FROM archive WHERE id=1").get()) write(seed, 0);
-  if (path !== ":memory:") pruneUnreferencedMedia(path, read().family);
   return {
     read,
     meta,
