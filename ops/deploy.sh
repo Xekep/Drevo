@@ -35,4 +35,34 @@ if test "$healthy" != true; then
   echo "Deployment failed; previous code restored. Database backup retained." >&2
   exit 1
 fi
+# Не превращаем сервер в археологический музей node_modules. Чистим только
+# автоматически именованные deploy-релизы/бэкапы; before-import-* не трогаем.
+python3 - "$base" <<'PY'
+from pathlib import Path
+import os, re, shutil, sys
+
+base = Path(sys.argv[1])
+release_re = re.compile(r"^[0-9a-f]{40}-[0-9]+$")
+backup_re = re.compile(r"^[0-9a-f]{40}-[0-9]+\.sqlite$")
+current = Path(os.path.realpath(base / "current"))
+
+releases = sorted(
+    (p for p in (base / "releases").iterdir() if p.is_dir() and release_re.fullmatch(p.name)),
+    key=lambda p: p.stat().st_mtime,
+    reverse=True,
+)
+keep = set(releases[:5]) | {current}
+for path in releases:
+    if path not in keep:
+        shutil.rmtree(path)
+
+backups_dir = base / "shared" / "backups"
+backups = sorted(
+    (p for p in backups_dir.iterdir() if p.is_file() and backup_re.fullmatch(p.name)),
+    key=lambda p: p.stat().st_mtime,
+    reverse=True,
+)
+for path in backups[30:]:
+    path.unlink()
+PY
 echo "Deployed $release_id to https://drevo.kiiko.ru"

@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -81,9 +87,13 @@ test("adoption, milk and sworn relationships do not invent blood parents", () =>
 });
 test("SQLite persists graph and photo tags, rejects stale writes, makes readable standalone backup", () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-test-")),
-    path = join(dir, "archive.sqlite");
+    path = join(dir, "archive.sqlite"),
+    uploads = join(dir, "uploads"),
+    photoFile = join(uploads, "photo.png");
   let store = openArchive(path, seed());
   try {
+    mkdirSync(uploads, { recursive: true });
+    writeFileSync(photoFile, "test image placeholder");
     const first = store.read();
     const family = connectPeople(first.family, "father", "child", "parent");
     family.photos = [
@@ -107,6 +117,7 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
       },
     ];
     const saved = store.write(family, first.revision);
+    assert.equal(existsSync(photoFile), true);
     assert.throws(
       () => store.write(first.family, first.revision),
       ConflictError,
@@ -131,9 +142,15 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     store.close();
     store = openArchive(path, seed());
     assert.deepEqual(store.read(), saved);
+    assert.equal(existsSync(photoFile), true, "referenced media survives restart");
     const removed = removePerson(saved.family, "child");
     assert.equal(removed.photos![0].tags.length, 0);
-    store.write({ ...seed(), people: [] }, saved.revision);
+    store.write(
+      { ...seed(), people: [] },
+      saved.revision,
+      { id: "admin", name: "Администратор", role: "admin", createdAt: "" },
+    );
+    assert.equal(existsSync(photoFile), false, "dropped media is physically removed");
     store.close();
     store = openArchive(path, seed());
     assert.equal(store.read().family.people.length, 0);
