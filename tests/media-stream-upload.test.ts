@@ -70,3 +70,8 @@ test("upload HTTP handler does not collect the whole request in memory", () => {
   assert.doesNotMatch(source, /const chunks|Buffer\.concat/);
   assert.match(source, /media\.addStream\s*\(req, MAX_UPLOAD\)/);
 });
+
+test("media store does not expose whole-file synchronous I/O", () => {
+  const source = readFileSync("src/server/media.ts", "utf8");
+  assert.doesNotMatch(source, /\b(?:readFileSync|writeFileSync)\b/);
+});
