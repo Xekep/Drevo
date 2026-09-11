@@ -3,11 +3,35 @@ import type { ArchiveUser, Role } from "../domain/access.ts";
 import { ROLE_NAMES } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 export class ForbiddenError extends Error {}
-export function userStore(db: DatabaseSync) {
-  const audit = auditStore(db);
+
+type UserStoreOptions = {
+  initialAdminId?: string;
+  requireInitialAdmin?: boolean;
+};
+
+export function userStore(
+  db: DatabaseSync,
+  options: UserStoreOptions = {
+    initialAdminId: process.env.INITIAL_ADMIN_YANDEX_ID,
+    requireInitialAdmin:
+      process.env.NODE_ENV === "production" && !!process.env.PUBLIC_ORIGIN,
+  },
+) {
+  const audit = auditStore(db),
+    initialAdminId = options.initialAdminId?.trim() || "";
+  if (initialAdminId.length > 100)
+    throw new Error("INITIAL_ADMIN_YANDEX_ID должен быть не длиннее 100 символов");
   db.exec(
     `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))) STRICT;`,
   );
+  const adminCount = () =>
+    Number(
+      db.prepare("SELECT count(*) AS n FROM users WHERE role='admin'").get()!.n,
+    );
+  if (options.requireInitialAdmin && adminCount() === 0 && !initialAdminId)
+    throw new Error(
+      "Для первого запуска production задайте INITIAL_ADMIN_YANDEX_ID в /etc/drevo.env",
+    );
   const convert = (row: Record<string, unknown>): ArchiveUser => ({
     id: String(row.id),
     name: String(row.name),
@@ -25,12 +49,16 @@ export function userStore(db: DatabaseSync) {
       if (existing)
         db.prepare("UPDATE users SET name=? WHERE id=?").run(name, id);
       else {
-        const first =
-          Number(db.prepare("SELECT count(*) AS n FROM users").get()!.n) === 0;
+        const firstAdmin =
+          adminCount() === 0 &&
+          (initialAdminId
+            ? id === initialAdminId
+            : Number(db.prepare("SELECT count(*) AS n FROM users").get()!.n) ===
+              0);
         db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
           id,
           name,
-          first ? "admin" : "reader",
+          firstAdmin ? "admin" : "reader",
         );
       }
       const user = get(id)!;
@@ -55,11 +83,7 @@ export function userStore(db: DatabaseSync) {
       if (
         target.role === "admin" &&
         role !== "admin" &&
-        Number(
-          db
-            .prepare("SELECT count(*) AS n FROM users WHERE role='admin'")
-            .get()!.n,
-        ) <= 1
+        adminCount() <= 1
       )
         throw new Error("Нельзя убрать последнего администратора");
       db.prepare("UPDATE users SET role=? WHERE id=?").run(role, id);
