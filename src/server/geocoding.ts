@@ -9,6 +9,13 @@ import {
   type PlaceResult,
 } from "../domain/places.ts";
 
+export type GeocodingStore = {
+  locate(text: string): Promise<PlaceResult>;
+  close(): void;
+};
+
+const geocodingStores = new WeakMap<DatabaseSync, GeocodingStore>();
+
 /** Один общий последовательный поиск; постоянный кэш не зависит от посетителя. */
 export function geocodingStore(
   db: DatabaseSync,
@@ -160,10 +167,20 @@ export function geocodingStore(
     );
     return result;
   }
-  return {
+
+  const store: GeocodingStore = {
     locate,
     close: () => {
       closed = true;
+      if (geocodingStores.get(db) === store) geocodingStores.delete(db);
     },
   };
+  geocodingStores.set(db, store);
+  return store;
+}
+
+export function currentGeocodingStore(db: DatabaseSync) {
+  const store = geocodingStores.get(db);
+  if (!store) throw new Error("Хранилище геокодирования не инициализировано");
+  return store;
 }
