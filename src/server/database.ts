@@ -468,7 +468,7 @@ export function openArchive(path: string, seed: Family) {
   };
 }
 
-export function readArchiveMeta(db: DatabaseSync) {
+function readArchiveMeta(db: DatabaseSync) {
   const meta = db
     .prepare(
       `SELECT archive.*,
@@ -518,7 +518,7 @@ function hydrateRelations(db: DatabaseSync, people: Person[]) {
  * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
  * SQLite до передачи строки в Node.
  */
-export function readArchiveOverview(
+function readArchiveOverview(
   db: DatabaseSync,
   includePortraits = true,
 ) {
@@ -561,7 +561,7 @@ export function readArchiveOverview(
   };
 }
 
-export function readPeoplePage(
+function readPeoplePage(
   db: DatabaseSync,
   offset: number,
   limit: number,
@@ -579,7 +579,7 @@ export function readPeoplePage(
     );
 }
 
-export function readPhotoPage(
+function readPhotoPage(
   db: DatabaseSync,
   offset: number,
   limit: number,

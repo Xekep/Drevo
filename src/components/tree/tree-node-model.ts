@@ -9,8 +9,8 @@ import {
 } from "../../domain/index.ts";
 import type { PersonNodeData } from "./person-node-data.ts";
 
-export type TreePersonNode = Node<PersonNodeData, "person">;
-export type TreeHouseholdNode = Node<
+type TreePersonNode = Node<PersonNodeData, "person">;
+type TreeHouseholdNode = Node<
   { label?: string; reverse?: boolean },
   "household"
 >;

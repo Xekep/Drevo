@@ -2,10 +2,7 @@ import type { Person } from "./types.ts";
 import { dateYear } from "./dates.ts";
 export const START_YEAR = 1830;
 export const END_YEAR = 2035;
-export const YEAR_HEIGHT = 8;
-export const NODE_WIDTH = 220;
-export const NODE_HEIGHT = 110;
-export const RAIL_WIDTH = 92;
+const YEAR_HEIGHT = 8;
 export function centuryLabel(value: number) {
   const values = [
     [1000, "M"],

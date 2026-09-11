@@ -5,7 +5,7 @@ import type {
   TreeMode,
 } from "../../domain/tree-layout";
 
-export type LayoutWorkerInput = {
+type LayoutWorkerInput = {
   people: LayoutPerson[];
   links: Pick<FamilyLink, "type" | "from" | "to">[];
   mode: TreeMode;

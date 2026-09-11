@@ -63,8 +63,6 @@ export function splitFullName(value: string) {
   const [surname = "", name = "", ...rest] = value.trim().split(/\s+/);
   return { surname, name, patronymic: rest.join(" ") };
 }
-export const initials = (p: Person) =>
-  `${p.name.trim()[0] || ""}${p.surname.trim()[0] || ""}` || "?";
 export const hasRecordedDeath = (
   p: Pick<Person, "death" | "deathPlace" | "deceased">,
 ) => !!(p.deceased || p.death || p.deathPlace?.trim());

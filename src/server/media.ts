@@ -9,7 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
 
 export const mediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif))$/;
-export const mimeTypes: Record<string, string> = {
+const mimeTypes: Record<string, string> = {
   jpg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",

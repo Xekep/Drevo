@@ -31,7 +31,7 @@ import { imageExtension, mediaPattern } from "./media.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
-export const RESTORE_LIMIT = 128 * 1024 * 1024;
+const RESTORE_LIMIT = 128 * 1024 * 1024;
 export class RestoreTooLargeError extends Error {}
 
 function removeStage(directory: string) {

@@ -4,7 +4,7 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
 import type { ShareLink } from "../domain/shared-family.ts";
 import { auditStore } from "./audit.ts";
-export const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
+const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const hash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 export function sharesStore(db: DatabaseSync) {

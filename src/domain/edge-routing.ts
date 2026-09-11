@@ -2,7 +2,7 @@ import type { LayoutPerson } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
 import { segmentsCross, type Point } from "./layout-order.ts";
 
-export type Handle = "top" | "bottom" | "left" | "right";
+type Handle = "top" | "bottom" | "left" | "right";
 type Relation = { from: string; to: string; type: string };
 export type EdgeRoute = {
   sourceHandle: Handle;

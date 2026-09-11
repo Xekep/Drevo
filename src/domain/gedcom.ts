@@ -82,7 +82,7 @@ function parse(text: string): Node[] {
     throw new Error("В GEDCOM отсутствует начало HEAD или завершение TRLR");
   return roots;
 }
-export function gedcomDate(text: string): string | undefined {
+function gedcomDate(text: string): string | undefined {
   const match = /^(?:(\d{1,2}) )?(?:([A-Z]{3}) )?(\d{4})$/.exec(
     text.trim().toUpperCase(),
   );

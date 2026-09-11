@@ -3,7 +3,7 @@ import { fullName } from "./dates.ts";
 import type { Family } from "./types.ts";
 import { EVENT_NAMES } from "./person-events.ts";
 
-export type AuditDetail = { field: string; before: string; after: string };
+type AuditDetail = { field: string; before: string; after: string };
 export type AuditEntry = {
   id: number;
   at: string;

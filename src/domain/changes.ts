@@ -9,7 +9,7 @@ export type Change = {
   after: unknown;
 };
 export type ChangeConflict = { change: Change; current: unknown };
-export function sameValue(a: unknown, b: unknown): boolean {
+function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
   if (Array.isArray(a) || Array.isArray(b))

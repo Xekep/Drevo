@@ -7,26 +7,26 @@ import {
 } from "./dates.ts";
 import type { Family, Person } from "./types.ts";
 
-export type InsightFact = {
+type InsightFact = {
   title: string;
   value: string;
   detail: string;
   personIds?: string[];
 };
 
-export type InsightWarning = {
+type InsightWarning = {
   title: string;
   detail: string;
   personIds: string[];
 };
 
-export type InsightCompleteness = {
+type InsightCompleteness = {
   label: string;
   value: number;
   total: number;
 };
 
-export type InsightGeneration = {
+type InsightGeneration = {
   generation: number;
   people: number;
   knownBirths: number;

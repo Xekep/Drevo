@@ -14,7 +14,7 @@ export const placeKey = (text: string) =>
 export function placeSearch(text: string) {
   return text.trim();
 }
-export type PlaceEvent = {
+type PlaceEvent = {
   person: Person;
   kind: "birth" | "death" | "event";
   eventId?: string;

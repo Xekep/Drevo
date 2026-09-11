@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export const DESKTOP_EDITING_QUERY =
+const DESKTOP_EDITING_QUERY =
   "(min-width: 900px) and (any-pointer: fine)";
 const subscribe = (notify: () => void) => {
   const media = window.matchMedia(DESKTOP_EDITING_QUERY);
