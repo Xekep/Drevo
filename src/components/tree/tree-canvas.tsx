@@ -615,7 +615,7 @@ function Canvas(props: Props) {
           onSelect={onEdge}
         />
         <TreeCreateAt
-          draft={createAt}
+          draft={props.canEdit ? createAt : null}
           busy={props.busy}
           personName={createAt ? peopleMap.get(createAt.id)?.name : undefined}
           onAdd={props.onAddRelative}
