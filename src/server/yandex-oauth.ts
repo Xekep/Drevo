@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createOAuthStartLimiter, oauthClientKey } from "./oauth-rate-limit.ts";
 type Options = {
   origin?: string;
   clientId?: string;
@@ -19,7 +20,8 @@ export function createYandexOAuth(options: Options) {
     options.clientSecret
   );
   const pending = new Map<string, { verifier: string; expires: number }>(),
-    fetcher = options.fetcher || fetch;
+    fetcher = options.fetcher || fetch,
+    starts = createOAuthStartLimiter();
   const callback = options.origin
     ? `${options.origin}/auth/yandex/callback`
     : "";
@@ -52,15 +54,26 @@ export function createYandexOAuth(options: Options) {
         return true;
       }
       if (url.pathname === "/auth/yandex") {
+        const now = Date.now();
         for (const [key, value] of pending)
-          if (value.expires < Date.now()) pending.delete(key);
+          if (value.expires < now) pending.delete(key);
+        const client = oauthClientKey(
+          req.headers["x-real-ip"],
+          req.socket.remoteAddress,
+        );
+        if (!starts.allow(client)) {
+          res.setHeader("Retry-After", "600");
+          fail(res, 429, "Слишком много попыток входа. Попробуйте позже.");
+          return true;
+        }
         if (pending.size >= 1000) {
+          res.setHeader("Retry-After", "600");
           fail(res, 429, "Слишком много запросов. Попробуйте позже.");
           return true;
         }
         const state = randomBytes(32).toString("base64url"),
           verifier = randomBytes(32).toString("base64url");
-        pending.set(state, { verifier, expires: Date.now() + 10 * 60 * 1000 });
+        pending.set(state, { verifier, expires: now + 10 * 60 * 1000 });
         res.setHeader(
           "Set-Cookie",
           `drevo_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/auth/yandex; Max-Age=600${secure}`,
