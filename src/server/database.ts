@@ -188,7 +188,11 @@ export function openArchive(path: string, seed: Family) {
         expected + 1,
       );
       finishWrite();
-      if (previous) removeDroppedMedia(path, previous, family);
+      // Только обычное пользовательское сохранение удаляет старые медиа.
+      // Restore/import используют именованную operation и должны сохранять файлы,
+      // на которые может ссылаться резервная копия предыдущей базы.
+      if (previous && actor && !operation)
+        removeDroppedMedia(path, previous, family);
       // family уже валидирован и именно его мы только что записали. Повторный
       // readArchive здесь раньше зря парсил весь архив ещё раз.
       return { family, revision: expected + 1 };
