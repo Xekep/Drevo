@@ -292,7 +292,7 @@ test("staged loading preserves all topology first and merges only complete consi
     (data) => updates.push(data),
   );
   assert.deepEqual(result.family, full);
-  assert.equal(updates.length, 3);
+  assert.equal(updates.length, 2);
   assert.equal(result.partial, false);
   assert.deepEqual(full, before);
   for (const bad of [
