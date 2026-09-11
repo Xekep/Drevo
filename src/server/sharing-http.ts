@@ -12,6 +12,7 @@ import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
 
 export function sharingHttp({
@@ -165,12 +166,7 @@ export function sharingHttp({
         return json(400, { error: "Некорректная страница ссылок" });
       return json(200, shares.list(before));
     }
-    if (
-      (req.headers.origin &&
-        req.headers.origin !==
-          (publicOrigin || `http://${req.headers.host}`)) ||
-      req.headers["sec-fetch-site"] === "cross-site"
-    )
+    if (!isSameOriginRequest(req, publicOrigin))
       return json(403, { error: "Недопустимый источник запроса" });
     try {
       if (path.startsWith("/api/shares/") && req.method === "DELETE") {
