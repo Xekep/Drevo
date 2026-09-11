@@ -109,7 +109,8 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
     withExtras.map((edge) => edge.id),
     [parent.key, godparent.key, "draft-preview"],
   );
-  assert.equal(withExtras[1].markerEnd, undefined);
+  assert.ok(withExtras[1].markerEnd);
+  assert.equal(withExtras[1].style?.strokeDasharray, "2 5");
   assert.equal(withExtras[2].type, "smoothstep");
 });
 
