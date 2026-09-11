@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
-import { userStore, ForbiddenError } from "./users.ts";
-import { settingsStore } from "./settings.ts";
+import type { userStore } from "./users.ts";
+import { ForbiddenError } from "./users.ts";
+import type { settingsStore } from "./settings.ts";
 import type { Role } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
@@ -18,16 +18,16 @@ async function readJson(req: IncomingMessage) {
 }
 
 export function adminAccessHttp({
-  archive,
   auth,
+  users,
+  visibility,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
+  users: ReturnType<typeof userStore>;
+  visibility: ReturnType<typeof settingsStore>;
   publicOrigin?: string;
 }) {
-  const users = userStore(archive.db),
-    visibility = settingsStore(archive.db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
