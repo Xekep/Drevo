@@ -1,5 +1,7 @@
 import { lazy, Suspense } from "react";
 import type { Family } from "../domain";
+import { LazyChunkBoundary } from "./lazy-chunk-boundary";
+import { loadLazyModule } from "./lazy-section-recovery";
 
 type AdminPanelProps = {
   family: Family;
@@ -9,23 +11,29 @@ type AdminPanelProps = {
 };
 
 const AdminPanelContent = lazy(() =>
-  import("./admin-panel-content").then((module) => ({
-    default: module.AdminPanel,
-  })),
+  loadLazyModule(
+    () =>
+      import("./admin-panel-content").then((module) => ({
+        default: module.AdminPanel,
+      })),
+    "admin-panel",
+  ),
 );
 
 export function AdminPanel(props: AdminPanelProps) {
   return (
-    <Suspense
-      fallback={
-        <main className="admin-page">
-          <div className="archive-status" role="status">
-            Открываем управление архивом…
-          </div>
-        </main>
-      }
-    >
-      <AdminPanelContent {...props} />
-    </Suspense>
+    <LazyChunkBoundary message="Управление архивом не загрузилось. Обновите страницу и повторите вход в админку.">
+      <Suspense
+        fallback={
+          <main className="admin-page">
+            <div className="archive-status" role="status">
+              Открываем управление архивом…
+            </div>
+          </main>
+        }
+      >
+        <AdminPanelContent {...props} />
+      </Suspense>
+    </LazyChunkBoundary>
   );
 }
