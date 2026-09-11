@@ -20,8 +20,11 @@ export const mimeTypes: Record<string, string> = {
 };
 
 export class MediaTooLargeError extends Error {
-  constructor(public readonly limit: number) {
+  readonly limit: number;
+
+  constructor(limit: number) {
     super(`Максимальный размер — ${limit / 1024 / 1024} МБ`);
+    this.limit = limit;
   }
 }
 
