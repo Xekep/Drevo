@@ -12,6 +12,8 @@ import { auditStore } from "./audit.ts";
 import { adminAccessHttp } from "./admin-access-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
+import { placesHttp } from "./places-http.ts";
+import { currentGeocodingStore } from "./geocoding.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
@@ -45,6 +47,13 @@ export function sharingHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({ archive, auth, visibility });
+  const places = placesHttp({
+    archive,
+    auth,
+    visibility,
+    geocoding: () => currentGeocodingStore(archive.db),
+    publicOrigin,
+  });
   const restore = restoreHttp({
     restores: () => currentRestoreStore(archive),
     auth,
@@ -64,6 +73,7 @@ export function sharingHttp({
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
+    if (await places(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
