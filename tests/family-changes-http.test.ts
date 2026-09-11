@@ -3,8 +3,49 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { archiveChanges, validateFamily } from "../src/domain/index.ts";
+import {
+  archiveChanges,
+  validateFamily,
+  type Family,
+} from "../src/domain/index.ts";
 import { startServer } from "../src/server/index.ts";
+
+const seed: Family = {
+  title: "Delta HTTP",
+  description: "",
+  demo: false,
+  people: [
+    {
+      id: "person-a",
+      name: "Иван",
+      surname: "Тестов",
+      patronymic: "",
+      sex: "m",
+      birth: "1950",
+      birthPlace: "",
+      parents: [],
+      spouses: [],
+      sources: [],
+      column: 0,
+      generation: 1,
+    },
+    {
+      id: "person-b",
+      name: "Пётр",
+      surname: "Тестов",
+      patronymic: "",
+      sex: "m",
+      birth: "1980",
+      birthPlace: "",
+      parents: ["person-a"],
+      spouses: [],
+      sources: [],
+      column: 0,
+      generation: 2,
+    },
+  ],
+  photos: [],
+};
 
 test("family change endpoint saves a small delta and rejects stale or unsafe changes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-family-changes-"));
@@ -13,12 +54,14 @@ test("family change endpoint saves a small delta and rejects stale or unsafe cha
   const app = await startServer(0, join(dir, "drevo.sqlite"), true),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
+    const emptyRevision = app.archive.meta().revision;
+    app.archive.write(seed, emptyRevision);
+
     const initialResponse = await fetch(base + "/api/family");
     assert.equal(initialResponse.status, 200);
     const initial = await initialResponse.json(),
       before = validateFamily(initial.family),
       next = structuredClone(before);
-    assert.ok(next.people.length > 0);
     next.people[0].name = `${next.people[0].name} изменён`;
     const changes = archiveChanges(before, next),
       deltaBody = JSON.stringify({ changes });
