@@ -1,6 +1,5 @@
 import { MarkerType } from "@xyflow/react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { CSSProperties } from "react";
 import type { ArchiveUser } from "../../domain/access.ts";
 import {
   canChangeConnection,
@@ -16,6 +15,7 @@ import type {
 } from "../../domain/tree-layout.ts";
 import type { Family, Person } from "../../domain/types.ts";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
+import { treeEdgeGrowthStyle } from "./tree-growth.ts";
 
 const colors = {
   parent: "#58775a",
@@ -59,11 +59,6 @@ type EdgeAdapterInput = {
   onChoices: (edges: GraphConnection[]) => void;
   growthLevels: ReadonlyMap<string, number>;
 };
-
-type GrowthStyle = CSSProperties & { "--tree-growth-delay": string };
-const growthStyle = (level: number): GrowthStyle => ({
-  "--tree-growth-delay": `${Math.max(0, Math.min(14, level) * 110 - 55)}ms`,
-});
 
 function isHighlighted(
   highlighted: string[],
@@ -157,7 +152,7 @@ export function buildTreeEdges({
           stroke: colors[edge.type],
           strokeWidth: active || selectedEdge === edge.key ? 3 : 1.6,
           strokeDasharray: patterns[edge.type],
-          ...growthStyle(
+          ...treeEdgeGrowthStyle(
             Math.max(
               growthLevels.get(edge.from) || 0,
               growthLevels.get(edge.to) || 0,
@@ -226,7 +221,7 @@ export function buildTreeEdges({
           style: {
             stroke: edge.type === "spouse" ? colors.spouse : colors.parent,
             strokeWidth: selected || active ? 2.8 : 1.6,
-            ...growthStyle(
+            ...treeEdgeGrowthStyle(
               Math.max(
                 growthLevels.get(occurrencePeople.get(branch.source)!) || 0,
                 growthLevels.get(occurrencePeople.get(branch.target)!) || 0,

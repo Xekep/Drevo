@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type CSSProperties } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -70,12 +70,17 @@ export const RelationshipEdge = memo(function RelationshipEdge(
     ? roundedRoute(props.data.route.points)
     : { path: fallback[0], x: fallback[1], y: fallback[2] };
   const edge = props.data!.connection;
+  const animatedStyle = {
+    ...props.style,
+    "--tree-marker-end": props.markerEnd || "none",
+  } as CSSProperties;
   return (
     <>
       <BaseEdge
         path={props.data?.path || path}
+        pathLength={1}
         markerEnd={props.markerEnd}
-        style={props.style}
+        style={animatedStyle}
         interactionWidth={24}
       />
       {props.data?.junction && (

@@ -44,6 +44,7 @@ import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
 import { TreeCameraTools } from "./tree-camera-tools";
 import { TreeEdgeChoices } from "./tree-edge-choices";
+import { treeGrowthDuration } from "./tree-growth";
 import {
   TreeCreateAt,
   type TreeCreateAtDraft,
@@ -202,7 +203,7 @@ function Canvas(props: Props) {
     if (!growing || !ready || !nodes.length) return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      Math.min(14, maxGrowthLevel) * 110 + 700,
+      treeGrowthDuration(maxGrowthLevel),
     );
     return () => window.clearTimeout(timer);
   }, [growing, ready, nodes.length, maxGrowthLevel]);

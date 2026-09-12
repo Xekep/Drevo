@@ -49,8 +49,22 @@ test("the initial tree grows from roots toward descendants", async ({
       .map((item) => getComputedStyle(item).animationDelay)
       .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
   );
-  expect(delays).toEqual(["0s", "0.11s", "0.22s"]);
+  expect(delays).toEqual(["0s", "0.65s", "1.3s"]);
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
+  const firstEdge = page
+    .locator(".tree-grow-edge .react-flow__edge-path")
+    .first();
+  await expect(firstEdge).toHaveAttribute("pathLength", "1");
+  await expect(firstEdge).toHaveCSS("animation-name", "tree-edge-draw");
+  await expect(firstEdge).toHaveCSS("animation-duration", "0.33s");
+  const edgeDelays = await page
+    .locator(".tree-grow-edge .react-flow__edge-path")
+    .evaluateAll((items) =>
+      items
+        .map((item) => getComputedStyle(item).animationDelay)
+        .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
+    );
+  expect(edgeDelays).toEqual(["0.32s", "0.97s"]);
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
@@ -58,6 +72,9 @@ test("the initial tree grows from roots toward descendants", async ({
     "animation-name",
     "none",
   );
+  await expect(
+    page.locator(".tree-grow-edge .react-flow__edge-path").first(),
+  ).toHaveCSS("animation-name", "none");
 });
 
 test("mobile person card stays below the project menu and starts the memorial flight", async ({
