@@ -64,3 +64,26 @@ test("restore preview accepts a SQLite backup split into tiny stream chunks", as
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("restore stage survives store restart and can be applied by another instance", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-restore-restart-test-")),
+    databasePath = join(directory, "drevo.sqlite"),
+    archive = openArchive(databasePath, family);
+  let restores = restoreStore(archive, databasePath);
+  try {
+    const bytes = databaseBackupBytes(archive.db);
+    archive.write(
+      { ...family, title: "Изменённый архив" },
+      archive.read().revision,
+    );
+    const preview = await restores.preview(bytes, admin);
+    restores.close();
+    restores = restoreStore(archive, databasePath);
+    const result = await restores.apply(preview.token, admin);
+    assert.equal(result.family.title, family.title);
+  } finally {
+    restores.close();
+    archive.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

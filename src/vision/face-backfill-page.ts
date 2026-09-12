@@ -1,6 +1,6 @@
-import * as faceapi from "@vladmandic/face-api";
+import { Human } from "@vladmandic/human";
 
-const MODEL_URI = "/models/face-api-1.7.15";
+const MODEL_URI = "/models/human-3.3.6";
 
 type Tag = {
   id: string;
@@ -30,16 +30,31 @@ async function run() {
   const photos = (await fetch("/__face_backfill/manifest").then((response) =>
     response.json(),
   )) as Photo[];
-  await (faceapi.tf as unknown as { ready: () => Promise<void> }).ready();
-  await Promise.all([
-    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URI),
-    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URI),
-    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URI),
-  ]);
+  const human = new Human({
+    modelBasePath: MODEL_URI,
+    face: {
+      enabled: true,
+      detector: { rotation: true, maxDetected: 100, minConfidence: 0.3 },
+      mesh: { enabled: true },
+      description: { enabled: true },
+      iris: { enabled: false },
+      emotion: { enabled: false },
+      antispoof: { enabled: false },
+      liveness: { enabled: false },
+    },
+    body: { enabled: false },
+    hand: { enabled: false },
+    object: { enabled: false },
+    gesture: { enabled: false },
+    segmentation: { enabled: false },
+  });
+  await human.load();
   const descriptors: Array<{
     id: string;
     personId: string;
     descriptor: number[];
+    sourcePhotoId: string;
+    model: string;
   }> = [];
   let unmatched = 0;
   const errors: string[] = [];
@@ -58,34 +73,27 @@ async function run() {
       canvas
         .getContext("2d")!
         .drawImage(image, 0, 0, canvas.width, canvas.height);
-      const faces = await faceapi
-        .detectAllFaces(
-          canvas,
-          new faceapi.SsdMobilenetv1Options({
-            minConfidence: 0.55,
-            maxResults: 100,
-          }),
-        )
-        .withFaceLandmarks()
-        .withFaceDescriptors();
+      const faces = (await human.detect(canvas)).face;
       for (const tag of photo.tags) {
         const face = faces.find((candidate) => {
-          const box = candidate.detection.box;
+          const box = candidate.boxRaw;
           return contains(tag, {
-            x: box.x / canvas.width,
-            y: box.y / canvas.height,
-            width: box.width / canvas.width,
-            height: box.height / canvas.height,
+            x: box[0],
+            y: box[1],
+            width: box[2],
+            height: box[3],
           });
         });
-        if (!face) {
+        if (!face?.embedding || face.embedding.length !== 1024) {
           unmatched++;
           continue;
         }
         descriptors.push({
           id: `tag:${photo.id}:${tag.id}`,
           personId: tag.personId,
-          descriptor: Array.from(face.descriptor),
+          descriptor: face.embedding,
+          sourcePhotoId: photo.id,
+          model: "human-faceres-3.3.6",
         });
       }
     } catch (error) {

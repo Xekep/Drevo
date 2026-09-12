@@ -25,7 +25,8 @@ test("writeDatabaseBackup creates a standalone private SQLite file", () => {
   try {
     writeDatabaseBackup(store.db, destination);
 
-    assert.equal(statSync(destination).mode & 0o777, 0o600);
+    if (process.platform !== "win32")
+      assert.equal(statSync(destination).mode & 0o777, 0o600);
     const backup = new DatabaseSync(destination);
     try {
       const row = backup

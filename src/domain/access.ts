@@ -4,6 +4,7 @@ export type ArchiveUser = {
   name: string;
   role: Role;
   createdAt: string;
+  approved?: boolean;
 };
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "Администратор",

@@ -9,6 +9,8 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
+const MAX_MEDIA_FILES = 20_000;
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024 * 1024;
 
 function photoFields(req: IncomingMessage) {
   const metadata = JSON.parse(
@@ -38,6 +40,7 @@ export function mediaUploadHttp({
   media: ReturnType<typeof mediaStore>;
   publicOrigin?: string;
 }) {
+  const uploads = new Map<string, { since: number; count: number }>();
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -68,6 +71,19 @@ export function mediaUploadHttp({
       return json(res, auth.currentUser(req) ? 403 : 401, {
         error: "You do not have editing access",
       });
+    const requester = auth.currentUser(req)!;
+    const now = Date.now(), window = uploads.get(requester.id);
+    if (!window || now - window.since >= 60 * 60 * 1000)
+      uploads.set(requester.id, { since: now, count: 1 });
+    else if (++window.count > 60) {
+      res.setHeader("Retry-After", "3600");
+      return json(res, 429, { error: "Слишком много загрузок. Повторите позже" });
+    }
+    const usage = await media.usage();
+    if (usage.files >= MAX_MEDIA_FILES || usage.bytes >= MAX_MEDIA_BYTES)
+      return json(res, 507, {
+        error: "Хранилище фотографий достигло установленного лимита",
+      });
     if (req.headers["x-drevo-upload"] !== "1")
       return json(res, 400, { error: "Некорректная загрузка" });
 
@@ -83,6 +99,17 @@ export function mediaUploadHttp({
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
     try {
       file = await media.addStream(req, MAX_UPLOAD);
+      const afterUpload = await media.usage();
+      if (
+        afterUpload.files > MAX_MEDIA_FILES ||
+        afterUpload.bytes > MAX_MEDIA_BYTES
+      ) {
+        await file.undo();
+        file = undefined;
+        return json(res, 507, {
+          error: "Загрузка превысит установленный лимит хранилища",
+        });
+      }
       const actor = auth.currentUser(req);
       if (!actor || actor.role === "reader")
         throw new ForbiddenError("Editing access is no longer available");

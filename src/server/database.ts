@@ -1,8 +1,8 @@
 import { authorizeArchive } from "./permissions.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { auditStore } from "./audit.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import {
@@ -14,42 +14,14 @@ import {
 } from "../domain/index.ts";
 
 export class ConflictError extends Error {}
-
-const mediaNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/;
-
-function mediaReferences(family: Family) {
-  const result = new Set<string>();
-  for (const url of [
-    ...family.people.map((person) => person.photo),
-    ...(family.photos || []).map((photo) => photo.url),
-  ]) {
-    if (!url?.startsWith("/media/")) continue;
-    const name = url.slice("/media/".length);
-    if (mediaNamePattern.test(name)) result.add(name);
-  }
-  return result;
-}
-
-function removeMediaFiles(path: string, names: Iterable<string>) {
-  if (path === ":memory:") return;
-  const uploads = resolve(dirname(path), "uploads");
-  for (const name of names) {
-    if (!mediaNamePattern.test(name)) continue;
-    try {
-      rmSync(resolve(uploads, name), { force: true });
-    } catch (error) {
-      console.error(`Не удалось удалить бесхозное медиа ${name}`, error);
-    }
-  }
-}
-
-function removeDroppedMedia(path: string, before: Family, after: Family) {
-  const current = mediaReferences(after);
-  removeMediaFiles(
-    path,
-    [...mediaReferences(before)].filter((name) => !current.has(name)),
-  );
-}
+export type StoredFaceDescriptor = {
+  id: string;
+  personId: string;
+  data: string;
+  createdBy?: string;
+  sourcePhotoId?: string;
+  model: string;
+};
 
 type JsonRow = { id: string; data: string };
 type RelationRow = {
@@ -138,55 +110,6 @@ function archiveRows(family: Family): ArchiveRows {
   return { people, relations, photos, tags };
 }
 
-function preservesRowOrder(before: string[], after: string[]) {
-  const beforeSet = new Set(before),
-    afterSet = new Set(after),
-    survivingBefore = before.filter((id) => afterSet.has(id)),
-    survivingAfter = after.filter((id) => beforeSet.has(id));
-  if (
-    survivingBefore.length !== survivingAfter.length ||
-    survivingBefore.some((id, index) => id !== survivingAfter[index])
-  )
-    return false;
-  let sawNew = false;
-  for (const id of after) {
-    if (!beforeSet.has(id)) sawNew = true;
-    else if (sawNew) return false;
-  }
-  return true;
-}
-
-function canPersistIncrementally(before: ArchiveRows, after: ArchiveRows) {
-  const ordered = (
-    previous: { id: string }[],
-    next: { id: string }[],
-  ) => preservesRowOrder(
-    previous.map((row) => row.id),
-    next.map((row) => row.id),
-  );
-  if (
-    !ordered(before.people, after.people) ||
-    !ordered(before.relations, after.relations) ||
-    !ordered(before.photos, after.photos) ||
-    !ordered(before.tags, after.tags)
-  )
-    return false;
-
-  // source/target/type участвуют в UNIQUE. При их замене два живых ряда могут
-  // временно конфликтовать друг с другом, поэтому такой редкий случай безопаснее
-  // отдать полному rewrite. note/created_by обновляются на месте.
-  const oldRelations = new Map(before.relations.map((row) => [row.id, row]));
-  return after.relations.every((row) => {
-    const old = oldRelations.get(row.id);
-    return (
-      !old ||
-      (old.source === row.source &&
-        old.target === row.target &&
-        old.type === row.type)
-    );
-  });
-}
-
 function replaceArchiveRows(db: DatabaseSync, rows: ArchiveRows) {
   db.exec(
     "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
@@ -242,7 +165,6 @@ function syncRelations(
   after: RelationRow[],
 ) {
   const previous = new Map(before.map((row) => [row.id, row])),
-    nextIds = new Set(after.map((row) => row.id)),
     remove = db.prepare("DELETE FROM relations WHERE id=?"),
     insert = db.prepare(
       "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
@@ -250,10 +172,24 @@ function syncRelations(
     update = db.prepare(
       "UPDATE relations SET note=?,created_by=? WHERE id=?",
     );
-  for (const row of before) if (!nextIds.has(row.id)) remove.run(row.id);
+  for (const row of before) {
+    const next = after.find((item) => item.id === row.id);
+    if (
+      !next ||
+      next.source !== row.source ||
+      next.target !== row.target ||
+      next.type !== row.type
+    )
+      remove.run(row.id);
+  }
   for (const row of after) {
     const old = previous.get(row.id);
-    if (!old)
+    if (
+      !old ||
+      old.source !== row.source ||
+      old.target !== row.target ||
+      old.type !== row.type
+    )
       insert.run(
         row.id,
         row.source,
@@ -308,8 +244,29 @@ function syncArchiveRows(
     removePerson = db.prepare("DELETE FROM people WHERE id=?");
   for (const row of before.photos)
     if (!nextPhotoIds.has(row.id)) removePhoto.run(row.id);
+  db.exec(
+    "DELETE FROM face_descriptors WHERE source_photo_id IS NOT NULL AND source_photo_id NOT IN (SELECT id FROM photos)",
+  );
   for (const row of before.people)
     if (!nextPeopleIds.has(row.id)) removePerson.run(row.id);
+  const restoreOrder = (
+    table: "people" | "relations" | "photos" | "photo_tags",
+    beforeRows: Array<{ id: string }>,
+    rows: Array<{ id: string }>,
+  ) => {
+    if (
+      beforeRows.length === rows.length &&
+      beforeRows.every((row, index) => row.id === rows[index]?.id)
+    )
+      return;
+    const move = db.prepare(`UPDATE ${table} SET rowid=? WHERE id=?`);
+    rows.forEach((row, index) => move.run(-(index + 1), row.id));
+    rows.forEach((row, index) => move.run(index + 1, row.id));
+  };
+  restoreOrder("people", before.people, after.people);
+  restoreOrder("relations", before.relations, after.relations);
+  restoreOrder("photos", before.photos, after.photos);
+  restoreOrder("photo_tags", before.tags, after.tags);
 }
 
 export function openArchive(path: string, seed: Family) {
@@ -375,11 +332,14 @@ export function openArchive(path: string, seed: Family) {
     expected: number,
     actor?: ArchiveUser,
     operation?: string,
+    knownPrevious?: Family,
+    faceDescriptors?: StoredFaceDescriptor[],
   ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       const oldRevision = checkRevision(expected);
-      const previous = oldRevision === null ? null : read().family;
+      const previous =
+        oldRevision === null ? null : knownPrevious || read().family;
       const family =
         actor && previous
           ? authorizeArchive(value, previous, actor)
@@ -388,12 +348,10 @@ export function openArchive(path: string, seed: Family) {
         remember(previous, family, oldRevision, actor, operation);
 
       const nextRows = archiveRows(family);
-      if (!previous || operation) replaceArchiveRows(db, nextRows);
+      if (!previous) replaceArchiveRows(db, nextRows);
       else {
         const previousRows = archiveRows(previous);
-        if (canPersistIncrementally(previousRows, nextRows))
-          syncArchiveRows(db, previousRows, nextRows);
-        else replaceArchiveRows(db, nextRows);
+        syncArchiveRows(db, previousRows, nextRows);
       }
 
       db.prepare(
@@ -404,9 +362,24 @@ export function openArchive(path: string, seed: Family) {
         Number(family.demo),
         expected + 1,
       );
+      if (faceDescriptors) {
+        db.exec("DELETE FROM face_descriptors");
+        const insert = db.prepare(
+          `INSERT INTO face_descriptors
+             (id,person_id,data,created_by,source_photo_id,model)
+           VALUES(?,?,?,?,?,?)`,
+        );
+        for (const sample of faceDescriptors)
+          insert.run(
+            sample.id,
+            sample.personId,
+            sample.data,
+            sample.createdBy || null,
+            sample.sourcePhotoId || null,
+            sample.model,
+          );
+      }
       finishWrite();
-      if (previous && actor && !operation)
-        removeDroppedMedia(path, previous, family);
       return { family, revision: expected + 1 };
     } catch (error) {
       db.exec("ROLLBACK");

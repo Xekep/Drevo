@@ -169,4 +169,55 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const extension = "2026-09-access-media-index-face-provenance";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(extension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 1 CHECK(approved IN (0,1));
+        ALTER TABLE face_descriptors ADD COLUMN created_by TEXT;
+        ALTER TABLE face_descriptors ADD COLUMN source_photo_id TEXT;
+        ALTER TABLE face_descriptors ADD COLUMN model TEXT NOT NULL DEFAULT 'face-api-1.7.15';
+        CREATE TABLE oauth_transactions (
+          state_hash TEXT PRIMARY KEY,
+          verifier TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        ) STRICT;
+        CREATE INDEX oauth_transactions_expiry ON oauth_transactions(expires_at);
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(extension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  if (
+    db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='photo_tags'").get()
+  )
+    db.exec("CREATE INDEX IF NOT EXISTS photo_tags_photo ON photo_tags(photo_id)");
+  const workflowExtension = "2026-09-persistent-workflow-stages";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(workflowExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE workflow_stages (
+          token TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore')),
+          actor_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          data TEXT NOT NULL CHECK(json_valid(data)),
+          directory TEXT,
+          UNIQUE(kind, actor_id)
+        ) STRICT;
+        CREATE INDEX workflow_stages_expiry ON workflow_stages(expires_at);
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(workflowExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

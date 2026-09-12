@@ -22,6 +22,7 @@ export function MemorialName({ children }: { children: ReactNode }) {
     const media = window.matchMedia(reducedMotionQuery);
     const image = new Image();
     let disposed = false,
+      begun = false,
       timer = 0,
       started = 0,
       lastFrame = -1;
@@ -44,10 +45,12 @@ export function MemorialName({ children }: { children: ReactNode }) {
       }
       timer = window.requestAnimationFrame(tick);
     };
-    image.onload = () => {
-      if (disposed) return;
+    const begin = () => {
+      if (disposed || begun) return;
+      begun = true;
       if (media.matches) return still();
       started = performance.now();
+      setFlight({ phase: "flying", frame: 1 });
       timer = window.requestAnimationFrame(tick);
     };
     const change = () => {
@@ -56,11 +59,20 @@ export function MemorialName({ children }: { children: ReactNode }) {
       if (media.matches) still();
     };
     media.addEventListener("change", change);
+    image.onload = begin;
+    // A failed preload must not leave the memorial permanently hidden. The
+    // nested SVG image can still be served from cache or finish separately.
+    image.onerror = begin;
     image.src = doveAtlas;
+    if (image.complete) begin();
+    // decode() is reliable on mobile browsers that can skip a cached load
+    // event; onload remains the fallback for older engines.
+    void image.decode?.().then(begin, begin);
     return () => {
       disposed = true;
       stop();
       image.onload = null;
+      image.onerror = null;
       media.removeEventListener("change", change);
     };
   }, []);

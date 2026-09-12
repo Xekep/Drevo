@@ -1,0 +1,16 @@
+[Unit]
+Description=Drevo full off-host backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=site_drevo
+Group=site_drevo_grp
+EnvironmentFile=-/etc/drevo-backup.env
+ExecStart=/usr/bin/bash /var/www/drevo.kiiko.ru/current/ops/backup.sh
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/www/drevo.kiiko.ru/shared

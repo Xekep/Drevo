@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Drevo full backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target

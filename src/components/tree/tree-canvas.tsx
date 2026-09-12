@@ -18,6 +18,7 @@ import {
 import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
 import {
   archiveConnections,
+  generationLevels,
   type Family,
   type ArchiveUser,
   type GraphConnection,
@@ -116,6 +117,7 @@ function Canvas(props: Props) {
     focus,
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
+  const [growing, setGrowing] = useState(true);
   const [extraVisible, setExtraVisible] = useState(true);
   const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
   const choiceClose = useRef<HTMLButtonElement>(null);
@@ -153,6 +155,10 @@ function Canvas(props: Props) {
     mode,
     reverse,
   );
+  const growthLevels = useMemo(
+    () => generationLevels(family.people),
+    [family.people],
+  );
   const nodeModel = useMemo(
     () =>
       buildTreeNodeModel({
@@ -166,6 +172,7 @@ function Canvas(props: Props) {
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
+        growthLevels,
       }),
     [
       family,
@@ -178,6 +185,7 @@ function Canvas(props: Props) {
       familyView.hidden,
       familyView.expanded,
       props.query,
+      growthLevels,
     ],
   );
   const {
@@ -188,7 +196,16 @@ function Canvas(props: Props) {
     peopleMap,
     nodes,
     displayNodes,
+    maxGrowthLevel,
   } = nodeModel;
+  useEffect(() => {
+    if (!growing || !ready || !nodes.length) return;
+    const timer = window.setTimeout(
+      () => setGrowing(false),
+      Math.min(14, maxGrowthLevel) * 110 + 700,
+    );
+    return () => window.clearTimeout(timer);
+  }, [growing, ready, nodes.length, maxGrowthLevel]);
   const {
     captureAnchor,
     rememberContext,
@@ -263,6 +280,7 @@ function Canvas(props: Props) {
         preview: props.preview,
         onEdge,
         onChoices: setEdgeChoices,
+        growthLevels,
       }),
     [
       family,
@@ -281,6 +299,7 @@ function Canvas(props: Props) {
       extraVisible,
       props.preview,
       onEdge,
+      growthLevels,
     ],
   );
   const connect = useCallback(
@@ -303,7 +322,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         tabIndex={-1}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >

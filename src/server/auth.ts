@@ -68,6 +68,7 @@ export function createAuth(
         name: "На этом компьютере",
         role: "admin",
         createdAt: "",
+        approved: true,
       };
     const session = sessionFor(req);
     return session ? users.get(session.userId) : null;
@@ -106,9 +107,12 @@ export function createAuth(
       setCookie(res, session.token);
     },
     privateArchive: process.env.ARCHIVE_PRIVATE === "1",
+    canRead: (req: IncomingMessage) => currentUser(req)?.approved === true,
     canEdit: (req: IncomingMessage) =>
+      currentUser(req)?.approved === true &&
       ["admin", "relative"].includes(currentUser(req)?.role || ""),
-    isAdmin: (req: IncomingMessage) => currentUser(req)?.role === "admin",
+    isAdmin: (req: IncomingMessage) =>
+      currentUser(req)?.approved === true && currentUser(req)?.role === "admin",
     logout(req: IncomingMessage, res: ServerResponse) {
       revoke.run(hash(cookie(req)));
       setCookie(res, "", 0);

@@ -7,6 +7,7 @@ import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
+import { isInfrastructureError } from "./infrastructure-error.ts";
 
 const MAX_CHANGES = 10_000;
 const MAX_BODY = 8 * 1024 * 1024;
@@ -136,9 +137,10 @@ export function familyChangesHttp({
       return json(
         res,
         200,
-        archive.write(merged.family, revision, actor),
+        archive.write(merged.family, revision, actor, undefined, current.family),
       );
     } catch (error) {
+      if (isInfrastructureError(error)) throw error;
       return json(
         res,
         error instanceof ConflictError

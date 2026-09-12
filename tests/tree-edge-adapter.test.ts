@@ -42,6 +42,11 @@ const basePositions = new Map([
 ]);
 const visible = new Set(["a", "b", "c"]);
 const occurrencePeople = new Map(people.map((item) => [item.id, item.id]));
+const growthLevels = new Map([
+  ["a", 0],
+  ["b", 1],
+  ["c", 0],
+]);
 const parent: GraphConnection = {
   from: "a",
   to: "b",
@@ -87,6 +92,7 @@ function baseInput() {
     preview: null,
     onEdge: () => {},
     onChoices: () => {},
+    growthLevels,
   };
 }
 
@@ -99,6 +105,11 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(edges[0].style?.strokeWidth, 3);
   assert.ok(edges[0].markerEnd);
   assert.equal(edges[0].reconnectable, false);
+  assert.equal(edges[0].className, "tree-grow-edge");
+  assert.equal(
+    (edges[0].style as Record<string, unknown>)["--tree-growth-delay"],
+    "55ms",
+  );
 
   const withExtras = buildTreeEdges({
     ...baseInput(),

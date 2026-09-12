@@ -4,6 +4,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openArchive } from "./database.ts";
@@ -73,6 +74,7 @@ export async function startServer(
     clientSecret: process.env.YANDEX_CLIENT_SECRET,
     issueSession: auth.issueSession,
     fetcher: oauthFetch,
+    db: archive.db,
   });
   const vite = production
     ? null
@@ -138,12 +140,49 @@ export async function startServer(
     return json(res, 404, { error: "Неизвестный запрос" });
   }
 
+  let activeRequests = 0;
   const server = createServer((req, res) => {
-    void handle(req, res).catch((error) => {
-      console.error(error);
-      if (!res.headersSent) json(res, 500, { error: "Ошибка сервера" });
-      else res.end();
-    });
+    const requestId = randomUUID(), started = Date.now();
+    res.setHeader("X-Request-ID", requestId);
+    activeRequests++;
+    void handle(req, res)
+      .catch((error) => {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            event: "request_failed",
+            requestId,
+            method: req.method,
+            route: (req.url || "").startsWith("/s/")
+              ? "/s/[redacted]"
+              : (req.url || "").startsWith("/api/shared/")
+                ? "/api/shared/[redacted]"
+                : (req.url || "").split("?")[0],
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+        if (!res.headersSent) json(res, 500, { error: "Ошибка сервера" });
+        else res.end();
+      })
+      .finally(() => {
+        activeRequests--;
+        const path = (req.url || "").split("?")[0];
+        if (production) console.log(
+          JSON.stringify({
+            level: "info",
+            event: "request",
+            requestId,
+            method: req.method,
+            route: /^\/(?:s|api\/shared)\//.test(path)
+              ? path.startsWith("/s/")
+                ? "/s/[redacted]"
+                : "/api/shared/[redacted]"
+              : path,
+            status: res.statusCode,
+            durationMs: Date.now() - started,
+          }),
+        );
+      });
   });
   await new Promise<void>((done, reject) => {
     server.once("error", reject);
@@ -160,8 +199,13 @@ export async function startServer(
     archive,
     close: async () => {
       await vite?.close();
-      server.closeAllConnections();
-      await new Promise<void>((done) => server.close(() => done()));
+      const closed = new Promise<void>((done) => server.close(() => done()));
+      server.closeIdleConnections();
+      const deadline = Date.now() + 15000;
+      while (activeRequests > 0 && Date.now() < deadline)
+        await new Promise((done) => setTimeout(done, 25));
+      if (activeRequests > 0) server.closeAllConnections();
+      await closed;
       restores.close();
       gedcom.close();
       geocoding.close();

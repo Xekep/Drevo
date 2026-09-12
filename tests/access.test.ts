@@ -117,6 +117,18 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     );
     assert.equal((await request("/api/users", reader)).status, 403);
     assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
+    assert.equal((await request("/api/export.json", reader)).status, 401);
+    assert.equal(
+      (
+        await request(
+          "/api/users/second",
+          admin,
+          "PATCH",
+          { approved: true },
+        )
+      ).status,
+      200,
+    );
     for (const cookie of [admin, reader]) {
       const exported = await request("/api/export.json", cookie);
       assert.equal(exported.status, 200);

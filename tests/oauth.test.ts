@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { createYandexOAuth } from "../src/server/yandex-oauth.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes the callback once", async () => {
   let tokenCalls = 0,
@@ -33,6 +35,8 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     assert.ok(!String(input).includes("private-token"));
     return Response.json({ id: profileId });
   };
+  const db = new DatabaseSync(":memory:");
+  initializeArchiveSchema(db);
   const oauth = createYandexOAuth({
     origin: "https://drevo.kiiko.ru",
     clientId: "client",
@@ -41,6 +45,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     issueSession: () => {
       issued++;
     },
+    db,
   });
   const server = createServer((req, res) => {
     void oauth
@@ -103,6 +108,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     assert.equal(tokenCalls, 2);
   } finally {
     server.closeAllConnections();
-    await new Promise<void>((r) => server.close(() => r()));
+  await new Promise<void>((r) => server.close(() => r()));
+  db.close();
   }
 });

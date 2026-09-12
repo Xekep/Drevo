@@ -1,5 +1,8 @@
 import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
-import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
+import {
+  TREE_NODE_WIDTH as W,
+  TREE_NODE_HEIGHT as H,
+} from "./tree-layout-constants.ts";
 import {
   routeRelationships,
   routeKey,

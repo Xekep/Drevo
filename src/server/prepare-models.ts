@@ -1,16 +1,19 @@
-import { mkdirSync, copyFileSync } from "node:fs";
+import { mkdirSync, copyFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
-const directory = resolve("public/models/face-api-1.7.15");
+const directory = resolve("public/models/human-3.3.6");
+rmSync(resolve("public/models/face-api-1.7.15"), {
+  recursive: true,
+  force: true,
+});
 mkdirSync(directory, { recursive: true });
 for (const model of [
-  "tiny_face_detector_model",
-  "ssd_mobilenetv1_model",
-  "face_landmark_68_model",
-  "face_recognition_model",
+  "blazeface",
+  "facemesh",
+  "faceres",
 ]) {
-  for (const suffix of [".bin", "-weights_manifest.json"])
+  for (const suffix of [".bin", ".json"])
     copyFileSync(
-      resolve("node_modules/@vladmandic/face-api/model", model + suffix),
+      resolve("node_modules/@vladmandic/human/models", model + suffix),
       resolve(directory, model + suffix),
     );
 }

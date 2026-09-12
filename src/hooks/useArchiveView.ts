@@ -5,7 +5,7 @@ import {
   type ArchiveView,
 } from "../domain/archive-routes";
 
-export function useArchiveView() {
+export function useArchiveView(canLeave: () => boolean = () => true) {
   const [view, update] = useState<ArchiveView>(
     () => archiveViewAt(window.location.pathname) || "tree",
   );
@@ -16,10 +16,17 @@ export function useArchiveView() {
     update(next);
   }, []);
   useEffect(() => {
-    const sync = () =>
-      update(archiveViewAt(window.location.pathname) || "tree");
+    let currentPath = window.location.pathname;
+    const sync = () => {
+      if (!canLeave()) {
+        window.history.pushState(null, "", currentPath);
+        return;
+      }
+      currentPath = window.location.pathname;
+      update(archiveViewAt(currentPath) || "tree");
+    };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-  }, []);
+  }, [canLeave]);
   return [view, navigate] as const;
 }

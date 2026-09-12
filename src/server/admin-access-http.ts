@@ -68,11 +68,11 @@ export function adminAccessHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = await readJson(req);
-        users.setRole(
-          auth.currentUser(req)!,
-          decodeURIComponent(path.slice("/api/users/".length)),
-          body.role as Role,
-        );
+        const id = decodeURIComponent(path.slice("/api/users/".length));
+        if (typeof body.approved === "boolean")
+          users.setApproved(auth.currentUser(req)!, id, body.approved);
+        if (body.role !== undefined)
+          users.setRole(auth.currentUser(req)!, id, body.role as Role);
         return json(res, 200, { users: users.list() });
       } catch (error) {
         if (error instanceof RangeError)

@@ -77,7 +77,14 @@ export default function App() {
   const selection = useWorkspaceSelection(),
     { selected, compare, linkFrom, focus, choose, reveal, dispatch } =
       selection;
-  const [requestedView, setView] = useArchiveView();
+  const navigationDirty = useRef(false);
+  const [requestedView, setView] = useArchiveView(
+    useCallback(() => {
+      const leave = confirmDiscardChanges(navigationDirty.current);
+      if (leave) navigationDirty.current = false;
+      return leave;
+    }, []),
+  );
   const view =
     requestedView === "admin" && desktop
       ? "admin"
@@ -112,6 +119,7 @@ export default function App() {
     setConnectionDirty(false);
     setConnectionDraft(null);
     setPreview(null);
+    navigationDirty.current = false;
   }, []);
   const closeConnection = useCallback(() => {
     if (busy || !confirmDiscardChanges(connectionDirty)) return false;
@@ -120,10 +128,12 @@ export default function App() {
   }, [busy, connectionDirty, finishConnection]);
   const onPersonDirtyChange = useCallback((dirty: boolean) => {
     personDirty.current = dirty;
+    navigationDirty.current = dirty;
   }, []);
   const setPersonDraft = useCallback((next: PersonDraft | null) => {
     if (!confirmDiscardChanges(personDirty.current)) return false;
     personDirty.current = false;
+    navigationDirty.current = false;
     setPersonDraftState(next);
     return true;
   }, []);
@@ -232,6 +242,7 @@ export default function App() {
   }, [canEdit, closeConnection, dispatch, setView, setPersonDraft]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
     setConnectionDirty(true);
+    navigationDirty.current = true;
     setConnectionDraft(draft);
     setPreview(draft);
   }, []);
@@ -602,6 +613,9 @@ export default function App() {
           family={family}
           user={user}
           workspace={photoWorkspace}
+          onDirtyChange={(dirty) => {
+            navigationDirty.current = dirty;
+          }}
           canEdit={canEdit}
           busy={busy}
           save={save}

@@ -18,7 +18,7 @@ export function mediaHttp({
   visibility: ReturnType<typeof settingsStore>;
 }) {
   const permitted = (req: IncomingMessage) =>
-    !!auth.currentUser(req) || visibility.read().publicAlbums;
+    auth.canRead(req) || visibility.read().publicAlbums;
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -56,7 +56,7 @@ export function mediaHttp({
           "Content-Type": "image/webp",
           "Content-Length": String(bytes.length),
           "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "private, max-age=86400",
+          "Cache-Control": "private, no-store",
         });
         res.end(bytes);
         return true;
@@ -81,7 +81,7 @@ export function mediaHttp({
         "Content-Type": file.type,
         "Content-Length": String(stat.size),
         "X-Content-Type-Options": "nosniff",
-        "Cache-Control": "private, max-age=86400",
+        "Cache-Control": "private, no-store",
       });
       try {
         await pipeline(handle.createReadStream(), res);

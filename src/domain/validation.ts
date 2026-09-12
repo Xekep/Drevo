@@ -150,17 +150,33 @@ export function validateFamily(value: unknown): Family {
     )
       throw new Error("Родитель должен родиться раньше ребёнка");
   }
-  const visited = new Set<string>(),
-    active = new Set<string>();
-  function visit(id: string) {
-    if (active.has(id)) throw new Error("В родительских связях найден цикл");
-    if (visited.has(id)) return;
-    active.add(id);
-    map.get(id)!.parents.forEach(visit);
-    active.delete(id);
-    visited.add(id);
-  }
-  data.people.forEach((p) => visit(p.id));
+  const assertAcyclic = (graph: Map<string, string[]>, message: string) => {
+    const visited = new Set<string>(), active = new Set<string>();
+    for (const start of graph.keys()) {
+      if (visited.has(start)) continue;
+      const stack: Array<{ id: string; leave: boolean }> = [
+        { id: start, leave: false },
+      ];
+      while (stack.length) {
+        const item = stack.pop()!;
+        if (item.leave) {
+          active.delete(item.id);
+          visited.add(item.id);
+          continue;
+        }
+        if (visited.has(item.id)) continue;
+        if (active.has(item.id)) throw new Error(message);
+        active.add(item.id);
+        stack.push({ id: item.id, leave: true });
+        for (const parent of [...graph.get(item.id)!].reverse())
+          stack.push({ id: parent, leave: false });
+      }
+    }
+  };
+  assertAcyclic(
+    new Map(data.people.map((p) => [p.id, p.parents])),
+    "В родительских связях найден цикл",
+  );
   if (data.links !== undefined && !Array.isArray(data.links))
     throw new Error("Некорректный список дополнительных связей");
   const linkIds = new Set<string>(),
@@ -200,18 +216,10 @@ export function validateFamily(value: unknown): Family {
   for (const link of data.links || [])
     if (link.type === "adoptive_parent")
       parentGraph.get(link.to)!.push(link.from);
-  visited.clear();
-  active.clear();
-  function visitParent(id: string) {
-    if (active.has(id))
-      throw new Error("Усыновление создаёт цикл в родительских связях");
-    if (visited.has(id)) return;
-    active.add(id);
-    parentGraph.get(id)!.forEach(visitParent);
-    active.delete(id);
-    visited.add(id);
-  }
-  data.people.forEach((p) => visitParent(p.id));
+  assertAcyclic(
+    parentGraph,
+    "Усыновление создаёт цикл в родительских связях",
+  );
   if (data.photos !== undefined && !Array.isArray(data.photos))
     throw new Error("Некорректная галерея");
   const photoIds = new Set<string>();

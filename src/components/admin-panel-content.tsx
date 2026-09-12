@@ -148,9 +148,9 @@ export function AdminPanel({
           <section className="admin-card archive-form">
             <h2>Участники и роли</h2>
             <p>
-              Новые участники могут читать архив. Родственник добавляет и
-              редактирует свои карточки и снимки. Администратор управляет всем
-              архивом.
+              Новые пользователи ожидают одобрения. Читатель видит закрытый
+              архив после допуска, родственник редактирует свои объекты,
+              администратор управляет всем архивом.
             </p>
             {!users.length && (
               <p>
@@ -163,8 +163,24 @@ export function AdminPanel({
                 <span className="member-avatar">{user.name.slice(0, 1)}</span>
                 <div>
                   <b>{user.name}</b>
-                  <small>{ROLE_NAMES[user.role]}</small>
+                  <small>
+                    {user.approved ? ROLE_NAMES[user.role] : "Ожидает одобрения"}
+                  </small>
                 </div>
+                <button
+                  type="button"
+                  disabled={busy || user.role === "admin"}
+                  onClick={async () => {
+                    const data = await change(
+                      `/api/users/${encodeURIComponent(user.id)}`,
+                      "PATCH",
+                      { approved: !user.approved },
+                    );
+                    if (data) setUsers(data.users);
+                  }}
+                >
+                  {user.approved ? "Закрыть доступ" : "Одобрить"}
+                </button>
                 <label>
                   Роль
                   <select

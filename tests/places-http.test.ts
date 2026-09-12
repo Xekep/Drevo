@@ -43,6 +43,7 @@ test("places HTTP searches only visible family places and rechecks access after 
     revokeOnLocate = false;
   const auth = {
       currentUser: () => null,
+      canRead: () => false,
       canEdit: () => false,
     } as unknown as ReturnType<typeof createAuth>,
     visibility = {

@@ -641,6 +641,7 @@ function PhotoViewerContent({
                                 await saveFaceDescriptor(
                                   personId,
                                   sample.descriptor,
+                                  photo.id,
                                 );
                               } catch {
                                 setScanStatus(
@@ -786,12 +787,13 @@ function PhotoViewerContent({
 type PhotoViewerProps = Omit<
   Parameters<typeof PhotoViewerContent>[0],
   "onDirtyChange"
->;
+> & { onDirtyChange?: (dirty: boolean) => void };
 export function PhotoViewer(props: PhotoViewerProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const dirty = useRef(false);
   const setDirty = (value: boolean) => {
     dirty.current = value;
+    props.onDirtyChange?.(value);
   };
   const close = () => {
     if (!props.busy && confirmDiscardChanges(dirty.current)) props.onClose();

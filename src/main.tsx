@@ -1,4 +1,4 @@
-import { StrictMode, lazy, Suspense } from "react";
+import { Component, StrictMode, lazy, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "@xyflow/react/dist/style.css";
 import "./styles/app.css";
@@ -20,9 +20,30 @@ const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
 const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
 
+class RootErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed)
+      return (
+        <main className="archive-status" role="alert">
+          <h1>Не удалось открыть архив</h1>
+          <p>Проверьте соединение и загрузите актуальную версию страницы.</p>
+          <button onClick={() => location.reload()}>Повторить</button>
+        </main>
+      );
+    return this.props.children;
+  }
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Suspense
+    <RootErrorBoundary><Suspense
       fallback={
         <main className="archive-status" role="status">
           <p>Открываем семейный архив…</p>
@@ -30,6 +51,6 @@ createRoot(document.getElementById("root")!).render(
       }
     >
       {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
-    </Suspense>
+    </Suspense></RootErrorBoundary>
   </StrictMode>,
 );

@@ -109,12 +109,17 @@ src/
   components/              # Карточки, сравнение, редакторы, галерея, вход
   components/tree/         # React Flow, карточки, связи, эпохи и Worker
   hooks/                   # Выбор людей, AJAX, отмена и конфликты
+  data/                    # Клиентские запросы и постраничная загрузка архива
   domain/                  # Модель, даты, родство, проверки, изменения графа
   server/                  # HTTP API, SQLite, авторизация, фото, бэкап
+  vision/                  # Браузерный поиск лиц и подготовка дескрипторов
+  assets/                  # Импортируемые Vite статические ресурсы
   styles/                  # Оформление приложения
 public/                    # Иконки, логотип, модели, пустой стартовый архив
-tests/                     # Проверки родства, базы, авторизации и API
+tests/                     # Unit/integration/API проверки на временных базах
+tests/e2e/                 # Production browser-сценарии Playwright
 ops/                       # Nginx, systemd и сценарии установки/деплоя
+ops/runtime/               # Минимальный серверный package manifest и lock-файл
 docs/                      # Документация на русском
 .github/workflows/         # Проверки и деплой через GitHub Actions
 data/                      # Локальная SQLite и uploads; не хранится в Git

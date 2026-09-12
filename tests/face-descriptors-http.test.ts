@@ -26,6 +26,15 @@ const family: Family = {
   description: "",
   demo: false,
   people: [person("first"), person("second")],
+  photos: [
+    {
+      id: "source-photo",
+      url: "/media/source-photo.jpg",
+      title: "",
+      createdBy: "editor",
+      tags: [{ id: "tag-first", personId: "first", x: 0, y: 0, width: 1, height: 1 }],
+    },
+  ],
 };
 
 test("face matching stays server-side and saving still requires confirmation", async () => {
@@ -45,7 +54,8 @@ test("face matching stays server-side and saving still requires confirmation", a
   let canEdit = true;
   const auth = {
     canEdit: () => canEdit,
-    currentUser: () => (canEdit ? { id: "editor" } : null),
+    currentUser: () =>
+      canEdit ? { id: "editor", role: "admin", approved: true } : null,
   } as unknown as ReturnType<typeof createAuth>;
   const handler = faceDescriptorsHttp({ archive, auth });
   const server = createServer(async (req, res) => {
@@ -85,6 +95,24 @@ test("face matching stays server-side and saving still requires confirmation", a
     });
     assert.deepEqual(await response.json(), { match: null });
 
+    archive.db
+      .prepare(
+        "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
+      )
+      .run(
+        "human-first",
+        "first",
+        JSON.stringify(Array(1024).fill(0.04)),
+        "human-faceres-3.3.6",
+      );
+    response = await post("/api/faces/match", {
+      descriptor: Array(1024).fill(0.04),
+      model: "human-faceres-3.3.6",
+    });
+    assert.deepEqual(await response.json(), {
+      match: { personId: "first", distance: 0 },
+    });
+
     response = await post(
       "/api/faces/match",
       { descriptor: Array(128).fill(0.19) },
@@ -96,12 +124,14 @@ test("face matching stays server-side and saving still requires confirmation", a
       id: "confirmed",
       personId: "first",
       descriptor: Array(128).fill(0.01),
+      sourcePhotoId: "source-photo",
+      model: "face-api-1.7.15",
     });
     assert.equal(response.status, 201);
     const count = archive.db
       .prepare("SELECT COUNT(*) AS count FROM face_descriptors")
       .get() as { count: number };
-    assert.equal(Number(count.count), 3);
+    assert.equal(Number(count.count), 4);
 
     canEdit = false;
     response = await post("/api/faces/match", {

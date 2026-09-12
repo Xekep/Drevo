@@ -33,7 +33,9 @@ export function Gallery({
   useEffect(() => {
     if (!canEdit) return;
     const timer = window.setTimeout(() => {
-      void warmFaceAssistant().catch(() => {});
+      void warmFaceAssistant().catch((error) =>
+        console.error("Не удалось загрузить модель поиска лиц", error),
+      );
     }, 600);
     return () => window.clearTimeout(timer);
   }, [canEdit]);

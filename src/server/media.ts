@@ -2,11 +2,12 @@ import {
   createWriteStream,
   mkdirSync,
 } from "node:fs";
-import { rename, unlink } from "node:fs/promises";
+import { readdir, rename, stat, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 
 export const mediaPattern = /^\/media\/([a-zA-Z0-9-]+\.(jpg|png|webp|gif))$/;
 const mimeTypes: Record<string, string> = {
@@ -44,6 +45,9 @@ export function imageExtension(bytes: Buffer) {
 
 export function mediaStore(directory: string) {
   mkdirSync(directory, { recursive: true });
+  let cachedUsage: { files: number; bytes: number } | undefined,
+    usageCheckedAt = 0,
+    usageWork: Promise<{ files: number; bytes: number }> | undefined;
   const open = (url: string) => {
     const match = mediaPattern.exec(url);
     if (!match) return null;
@@ -54,6 +58,31 @@ export function mediaStore(directory: string) {
     };
   };
   return {
+    async usage() {
+      if (cachedUsage && Date.now() - usageCheckedAt < 30_000)
+        return cachedUsage;
+      if (usageWork) return usageWork;
+      usageWork = (async () => {
+        let files = 0,
+          bytes = 0;
+        for (const name of await readdir(directory).catch(
+          () => [] as string[],
+        )) {
+          if (!mediaPattern.test(`/media/${name}`)) continue;
+          const info = await stat(resolve(directory, name)).catch(() => null);
+          if (info?.isFile()) {
+            files++;
+            bytes += info.size;
+          }
+        }
+        cachedUsage = { files, bytes };
+        usageCheckedAt = Date.now();
+        return cachedUsage;
+      })().finally(() => {
+        usageWork = undefined;
+      });
+      return usageWork;
+    },
     async addStream(source: Readable, limit: number) {
       const id = randomUUID(),
         temporary = resolve(directory, `.${id}.upload`),
@@ -82,14 +111,38 @@ export function mediaStore(directory: string) {
           guard,
           createWriteStream(temporary, { flags: "wx" }),
         );
-        const ext = imageExtension(Buffer.concat(headerParts, headerLength)),
+        const ext = imageExtension(Buffer.concat(headerParts, headerLength));
+        await sharp(temporary, { limitInputPixels: 50_000_000 })
+          .rotate()
+          .resize({ width: 1, height: 1, fit: "inside" })
+          .toBuffer();
+        const
           name = `${id}.${ext}`,
           target = resolve(directory, name);
         await rename(temporary, target);
+        if (cachedUsage) {
+          cachedUsage = {
+            files: cachedUsage.files + 1,
+            bytes: cachedUsage.bytes + size,
+          };
+          usageCheckedAt = Date.now();
+        }
+        let present = true;
         return {
           id,
           url: `/media/${name}`,
-          undo: () => unlink(target).catch(() => {}),
+          undo: async () => {
+            if (!present) return;
+            present = false;
+            await unlink(target).catch(() => {});
+            if (cachedUsage) {
+              cachedUsage = {
+                files: Math.max(0, cachedUsage.files - 1),
+                bytes: Math.max(0, cachedUsage.bytes - size),
+              };
+              usageCheckedAt = Date.now();
+            }
+          },
         };
       } catch (error) {
         await unlink(temporary).catch(() => {});

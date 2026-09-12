@@ -1,4 +1,7 @@
-import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
+import {
+  TREE_NODE_WIDTH as W,
+  TREE_NODE_HEIGHT as H,
+} from "./tree-layout-constants.ts";
 import type { Point } from "./layout-order.ts";
 import { Spatial, type Box } from "./edge-routing.ts";
 import type { UnionBranch } from "./union-layout.ts";

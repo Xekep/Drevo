@@ -1,4 +1,5 @@
 import type { Node } from "@xyflow/react";
+import type { CSSProperties } from "react";
 import {
   matchesPerson,
   TREE_NODE_HEIGHT,
@@ -26,7 +27,13 @@ type TreeNodeModelInput = {
   hidden: ReadonlyMap<string, number>;
   expanded: ReadonlySet<string>;
   query: string;
+  growthLevels: ReadonlyMap<string, number>;
 };
+
+type GrowthStyle = CSSProperties & { "--tree-growth-delay": string };
+const growthStyle = (level: number): GrowthStyle => ({
+  "--tree-growth-delay": `${Math.min(14, Math.max(0, level)) * 110}ms`,
+});
 
 export function buildTreeNodeModel({
   family,
@@ -39,6 +46,7 @@ export function buildTreeNodeModel({
   hidden,
   expanded,
   query,
+  growthLevels,
 }: TreeNodeModelInput) {
   const childrenCount = new Map<string, number>();
   for (const person of family.people)
@@ -88,7 +96,18 @@ export function buildTreeNodeModel({
     connectable: false,
     focusable: false,
     zIndex: -1,
-    style: { pointerEvents: "none" },
+    className: "tree-grow-surface",
+    style: {
+      pointerEvents: "none",
+      ...growthStyle(
+        Math.max(
+          0,
+          ...group.members.map(
+            (id) => growthLevels.get(occurrencePeople.get(id)!) || 0,
+          ),
+        ),
+      ),
+    },
     domAttributes: { "aria-hidden": true },
   }));
   const siblingNodes: TreeHouseholdNode[] =
@@ -114,7 +133,19 @@ export function buildTreeNodeModel({
             connectable: false,
             focusable: false,
             zIndex: -1,
-            style: { pointerEvents: "none" },
+            className: "tree-grow-surface",
+            style: {
+              pointerEvents: "none",
+              ...growthStyle(
+                Math.max(
+                  0,
+                  ...group.members.map(
+                    (id) =>
+                      growthLevels.get(occurrencePeople.get(id)!) || 0,
+                  ),
+                ),
+              ),
+            },
             domAttributes: { "aria-hidden": true },
           }))
       : [];
@@ -136,6 +167,8 @@ export function buildTreeNodeModel({
         width: TREE_NODE_WIDTH,
         height: TREE_NODE_HEIGHT,
         selected: selected.includes(person.id),
+        className: "tree-grow-node",
+        style: growthStyle(growthLevels.get(person.id) || 0),
         data: {
           person,
           household: householdMembers.has(occurrence.id),
@@ -159,6 +192,10 @@ export function buildTreeNodeModel({
     occurrencePeople,
     personOccurrences,
     peopleMap,
+    maxGrowthLevel: Math.max(
+      0,
+      ...nodes.map((node) => growthLevels.get(node.data.person.id) || 0),
+    ),
     nodes,
     displayNodes: [...householdNodes, ...siblingNodes, ...nodes] as Array<
       TreePersonNode | TreeHouseholdNode

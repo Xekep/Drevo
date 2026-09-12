@@ -24,8 +24,8 @@ export function BackupRestore({ onRestored }: { onRestored: () => void }) {
     setError("");
     setNotice("");
     try {
-      if (file && file.size > 128 * 1024 * 1024)
-        throw new Error("Максимальный размер — 128 МБ");
+      if (file && file.size > 12 * 1024 * 1024 * 1024)
+        throw new Error("Максимальный размер — 12 ГиБ");
       const response = await fetch(
         `/api/restore/${apply ? "apply" : "preview"}`,
         {
@@ -69,7 +69,7 @@ export function BackupRestore({ onRestored }: { onRestored: () => void }) {
       <h2>Восстановить из бэкапа</h2>
       <p>
         Выберите базу <b>.sqlite</b> или полный архив <b>.tar.gz</b> с
-        фотографиями. До 128 МБ.
+        фотографиями. До 12 ГиБ.
       </p>
       <label className="restore-file">
         <FileUp size={22} />

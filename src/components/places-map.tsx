@@ -225,6 +225,10 @@ export default function PlacesMap({
     [error, setError] = useState(""),
     [picking, setPicking] = useState(false),
     [picked, setPicked] = useState<PlaceCandidate | null>(null);
+  const [manualCoordinates, setManualCoordinates] = useState({
+    lat: "",
+    lon: "",
+  });
   const request = useRef(0),
     resultRef = useRef(results);
   useEffect(() => {
@@ -303,7 +307,31 @@ export default function PlacesMap({
     setError("");
     setSearching(false);
     setPicked(null);
+    setManualCoordinates({ lat: "", lon: "" });
     setPicking(false);
+  }
+  function setManualCoordinate(field: "lat" | "lon", value: string) {
+    const next = { ...manualCoordinates, [field]: value };
+    setManualCoordinates(next);
+    const lat = Number(next.lat),
+      lon = Number(next.lon);
+    setPicked(
+      next.lat !== "" &&
+        next.lon !== "" &&
+        Number.isFinite(lat) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        Number.isFinite(lon) &&
+        lon >= -180 &&
+        lon <= 180
+        ? {
+            lat,
+            lon,
+            label: "Координаты указаны вручную",
+            name: "",
+          }
+        : null,
+    );
   }
   async function find() {
     const id = ++request.current;
@@ -402,7 +430,13 @@ export default function PlacesMap({
           selected={selected}
           onSelect={select}
           picking={picking}
-          onPoint={setPicked}
+          onPoint={(point) => {
+            setPicked(point);
+            setManualCoordinates({
+              lat: String(point.lat),
+              lon: String(point.lon),
+            });
+          }}
         />
         <button
           ref={listButton}
@@ -598,11 +632,42 @@ export default function PlacesMap({
                     onClick={() => {
                       setPicking(!picking);
                       setPicked(null);
+                      setManualCoordinates({ lat: "", lon: "" });
                     }}
                   >
                     <MapPin size={16} />
                     {picking ? "Завершить выбор точки" : "Указать на карте"}
                   </button>
+                  {picking && (
+                    <div className="form-grid">
+                      <label>
+                        Широта
+                        <input
+                          type="number"
+                          min={-90}
+                          max={90}
+                          step="any"
+                          value={manualCoordinates.lat}
+                          onChange={(event) =>
+                            setManualCoordinate("lat", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Долгота
+                        <input
+                          type="number"
+                          min={-180}
+                          max={180}
+                          step="any"
+                          value={manualCoordinates.lon}
+                          onChange={(event) =>
+                            setManualCoordinate("lon", event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
                   {picked && (
                     <button
                       className="primary-action"

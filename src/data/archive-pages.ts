@@ -10,6 +10,7 @@ export type ArchivePageHeader = {
 
 /** Не заставляем React пересобирать весь архив после каждой сетевой страницы. */
 export const archiveProgressBatchSize = 160;
+const archivePageConcurrency = 4;
 
 /** Все страницы относятся к одной ревизии и одному набору разрешений. */
 export async function completeArchive<T extends ArchivePageHeader>(
@@ -34,25 +35,35 @@ export async function completeArchive<T extends ArchivePageHeader>(
     workingPhotos = [...(initial.family.photos || [])];
 
   for (const collection of ["people", "photos"] as const) {
-    const total = initial.totals[collection];
+    const total: number = Number(initial.totals[collection]);
     if (!Number.isSafeInteger(total) || total < 0) throw invalid();
     const seen = new Set<string>();
     let unpublished = 0;
     for (let offset = 0; offset < total;) {
-      const response = await request(
-        `/api/family?projection=page&collection=${collection}&offset=${offset}&token=${encodeURIComponent(initial.pageToken!)}`,
+      const offsets: number[] = Array.from(
+        { length: Math.min(archivePageConcurrency, Math.ceil((total - offset) / 40)) },
+        (_, index) => offset + index * 40,
       );
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(
-          data.error || "Не удалось загрузить следующую часть архива",
-        );
+      const pages = await Promise.all(
+        offsets.map(async (pageOffset) => {
+          const response = await request(
+            `/api/family?projection=page&collection=${collection}&offset=${pageOffset}&token=${encodeURIComponent(initial.pageToken!)}`,
+          );
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(
+              data.error || "Не удалось загрузить следующую часть архива",
+            );
+          return { data, pageOffset };
+        }),
+      );
+      for (const { data, pageOffset } of pages) {
       if (
         data.pageToken !== initial.pageToken ||
         !Array.isArray(data.items) ||
         !data.items.length ||
         data.total !== total ||
-        offset + data.items.length > total
+        pageOffset + data.items.length > total
       )
         throw invalid();
 
@@ -74,7 +85,7 @@ export async function completeArchive<T extends ArchivePageHeader>(
         } else workingPhotos.push(item);
       }
 
-      offset += data.items.length;
+      offset = pageOffset + data.items.length;
       unpublished += data.items.length;
       if (unpublished >= archiveProgressBatchSize || offset === total) {
         family =
@@ -83,6 +94,7 @@ export async function completeArchive<T extends ArchivePageHeader>(
             : { ...family, photos: [...workingPhotos] };
         progress(family);
         unpublished = 0;
+      }
       }
     }
   }

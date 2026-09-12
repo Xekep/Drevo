@@ -28,7 +28,7 @@ import { SiblingSuggestions } from "./sibling-suggestions";
 import { PortraitCropper } from "./portrait-cropper";
 import { photoLabel } from "../domain/photo-metadata";
 import { mediaPreview } from "../domain/media-preview";
-import { applyPersonDraft } from "../domain/person-draft";
+import { applyPersonDraft, rebasePersonDraft } from "../domain/person-draft";
 import {
   confirmDiscardChanges,
   useUnsavedChanges,
@@ -247,7 +247,7 @@ export function PersonEditor({
         setPortraitFile(null);
         setPortraitPreview("");
       }
-      const p = {
+      let p: Person = {
         ...draft,
         birth,
         death,
@@ -271,6 +271,11 @@ export function PersonEditor({
                 birth,
               ),
       };
+      p = rebasePersonDraft(
+        person,
+        current.people.find((item) => item.id === draft.id),
+        p,
+      );
       let next = applyPersonDraft(current, p, removedConnections);
       if (!person && relativeTo) {
         next =

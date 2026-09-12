@@ -10,18 +10,18 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import sharp from "sharp";
 import {
   MediaTooLargeError,
   mediaStore,
 } from "../src/server/media.ts";
 
-const pngLike = Buffer.from([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 1, 2, 3, 4,
-]);
-
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-media-stream-"));
   try {
+    const pngLike = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "green" },
+    }).png().toBuffer();
     const media = mediaStore(directory);
     const file = await media.addStream(
       Readable.from([
@@ -51,7 +51,10 @@ test("oversized streamed media is rejected and leaves no temporary file", async 
     const media = mediaStore(directory);
     await assert.rejects(
       media.addStream(
-        Readable.from([pngLike.subarray(0, 10), Buffer.alloc(32)]),
+        Readable.from([
+          Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0]),
+          Buffer.alloc(32),
+        ]),
         20,
       ),
       (error) =>

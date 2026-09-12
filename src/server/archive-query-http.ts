@@ -27,8 +27,8 @@ export function archiveQueryHttp({
   const snapshot = (req: IncomingMessage) => {
     const user = auth.currentUser(req),
       settings = visibility.read(),
-      readTree = !!user || settings.publicTree,
-      readPhotos = !!user || settings.publicAlbums;
+      readTree = auth.canRead(req) || settings.publicTree,
+      readPhotos = auth.canRead(req) || settings.publicAlbums;
     const data = archive.read();
     if (!readTree) {
       data.family.people = [];
@@ -75,13 +75,13 @@ export function archiveQueryHttp({
 
     if (path === "/api/family") {
       if (req.method !== "GET") return false;
-      if (!visitor && !access.publicTree && !access.publicAlbums)
+      if (!auth.canRead(req) && !access.publicTree && !access.publicAlbums)
         return json(res, 401, { error: "Sign in to view this archive" });
       const projection = url.searchParams.get("projection");
       if (projection === "page") {
         const meta = archive.meta(),
-          readTree = !!visitor || access.publicTree,
-          readPhotos = !!visitor || access.publicAlbums,
+          readTree = auth.canRead(req) || access.publicTree,
+          readPhotos = auth.canRead(req) || access.publicAlbums,
           pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}`;
         if (url.searchParams.get("token") !== pageToken)
           return json(res, 409, {
@@ -114,8 +114,8 @@ export function archiveQueryHttp({
         });
       }
       if (projection === "overview") {
-        const readTree = !!visitor || access.publicTree,
-          readPhotos = !!visitor || access.publicAlbums;
+        const readTree = auth.canRead(req) || access.publicTree,
+          readPhotos = auth.canRead(req) || access.publicAlbums;
         let data: ReturnType<typeof archive.overview>;
         if (readTree) data = archive.overview(readPhotos);
         else {
@@ -156,7 +156,7 @@ export function archiveQueryHttp({
 
     if (path === "/api/export") {
       if (req.method !== "GET") return false;
-      if (!visitor && !access.publicTree && !access.publicAlbums)
+      if (!auth.canRead(req) && !access.publicTree && !access.publicAlbums)
         return json(res, 401, { error: "Sign in to view this archive" });
       res.setHeader(
         "Content-Disposition",
@@ -168,7 +168,7 @@ export function archiveQueryHttp({
     if (path === "/api/people/search") {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
-      if (!visitor && !access.publicTree)
+      if (!auth.canRead(req) && !access.publicTree)
         return json(res, 401, { error: "Войдите для поиска людей" });
       const query = (url.searchParams.get("q") || "").trim();
       if (query.length > 100)
@@ -180,7 +180,7 @@ export function archiveQueryHttp({
       res.setHeader("Allow", "GET");
       return json(res, 405, { error: "Ожидается GET" });
     }
-    if (!visitor && !access.publicTree)
+    if (!auth.canRead(req) && !access.publicTree)
       return json(res, 401, { error: "Войдите для экспорта древа" });
     const { family, revision } = archive.read();
     if (url.searchParams.get("download") === "1")

@@ -150,7 +150,11 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
       saved.revision,
       { id: "admin", name: "Администратор", role: "admin", createdAt: "" },
     );
-    assert.equal(existsSync(photoFile), false, "dropped media is physically removed");
+    assert.equal(
+      existsSync(photoFile),
+      true,
+      "dropped media remains available to history and backup restoration",
+    );
     store.close();
     store = openArchive(path, seed());
     assert.equal(store.read().family.people.length, 0);

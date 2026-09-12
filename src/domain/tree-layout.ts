@@ -11,9 +11,12 @@ import type {
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
 import { yearY, START_YEAR } from "./layout.ts";
+import {
+  TREE_NODE_HEIGHT,
+  TREE_NODE_WIDTH,
+} from "./tree-layout-constants.ts";
 
-export const TREE_NODE_WIDTH = 220,
-  TREE_NODE_HEIGHT = 96;
+export { TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "./tree-layout-constants.ts";
 export type TreeMode = "generations" | "timeline";
 export type TreeGeometry = {
   mode: TreeMode;

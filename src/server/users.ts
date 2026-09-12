@@ -38,6 +38,7 @@ export function userStore(
     name: String(row.name),
     role: row.role as Role,
     createdAt: String(row.created_at),
+    approved: !!row.approved,
   });
   function get(id: string) {
     const row = db.prepare("SELECT * FROM users WHERE id=?").get(id);
@@ -56,10 +57,11 @@ export function userStore(
             ? id === initialAdminId
             : Number(db.prepare("SELECT count(*) AS n FROM users").get()!.n) ===
               0);
-        db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
+        db.prepare("INSERT INTO users(id,name,role,approved) VALUES(?,?,?,?)").run(
           id,
           name,
           firstAdmin ? "admin" : "reader",
+          Number(firstAdmin),
         );
       }
       const user = get(id)!;
@@ -83,8 +85,8 @@ export function userStore(
       if (!target) throw new Error("Пользователь не найден");
       if (target.role === "admin" && role !== "admin" && adminCount() <= 1)
         throw new Error("Нельзя убрать последнего администратора");
-      db.prepare("UPDATE users SET role=? WHERE id=?").run(role, id);
-      if (target.role !== role)
+      db.prepare("UPDATE users SET role=?,approved=1 WHERE id=?").run(role, id);
+      if (target.role !== role || !target.approved)
         audit.record(
           {
             action: "Изменена роль",
@@ -109,10 +111,23 @@ export function userStore(
       throw error;
     }
   }
+  function setApproved(actor: ArchiveUser, id: string, approved: boolean) {
+    if (actor.id !== "local" && get(actor.id)?.role !== "admin")
+      throw new ForbiddenError("Управлять доступом может только администратор");
+    const target = get(id);
+    if (!target) throw new Error("Пользователь не найден");
+    if (target.role === "admin" && !approved)
+      throw new Error("Нельзя заблокировать администратора");
+    db.prepare("UPDATE users SET approved=? WHERE id=?").run(Number(approved), id);
+    if (!approved)
+      db.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(id);
+    return get(id)!;
+  }
   return {
     get,
     register,
     setRole,
+    setApproved,
     list: () =>
       db
         .prepare("SELECT * FROM users ORDER BY created_at,id")

@@ -1,5 +1,8 @@
 import type { ElkNode } from "elkjs";
-import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
+import {
+  TREE_NODE_WIDTH as W,
+  TREE_NODE_HEIGHT as H,
+} from "./tree-layout-constants.ts";
 import { completeLayout, layoutCost, layoutQuality } from "./layout-quality.ts";
 
 type Unit = { id: string; members: string[]; children: string[] };

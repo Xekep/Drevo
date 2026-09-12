@@ -7,6 +7,7 @@ import {
 } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
+import { isInfrastructureError } from "./infrastructure-error.ts";
 
 export function restoreHttp({
   restores,
@@ -72,7 +73,7 @@ export function restoreHttp({
         size += chunk.length;
         if (size > 4096)
           return json(res, 413, {
-            error: "Файл слишком большой. Максимум 128 МБ.",
+            error: "Запрос подтверждения слишком большой.",
           });
         chunks.push(Buffer.from(chunk));
       }
@@ -84,6 +85,7 @@ export function restoreHttp({
         return json(res, 400, { error: "Подтвердите замену данных" });
       return json(res, 200, await restores().apply(body.token, actor));
     } catch (error) {
+      if (isInfrastructureError(error)) throw error;
       return json(
         res,
         error instanceof RestoreTooLargeError

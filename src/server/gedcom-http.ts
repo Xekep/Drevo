@@ -16,20 +16,30 @@ export function gedcomHttp(
   dbPath: string,
   publicOrigin?: string,
 ) {
-  const stages = new Map<
-    string,
-    { family: Family; actor: string; revision: number; expires: number }
-  >();
-  const clean = () => {
-    for (const [token, stage] of stages)
-      if (stage.expires <= Date.now()) stages.delete(token);
+  type Stage = { family: Family; actor: string; revision: number; expires: number };
+  const clean = () =>
+    archive.db
+      .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND expires_at<=?")
+      .run(Date.now());
+  const getStage = (token: string): Stage | undefined => {
+    const row = archive.db
+      .prepare(
+        "SELECT actor_id,revision,expires_at,data FROM workflow_stages WHERE kind='gedcom' AND token=?",
+      )
+      .get(token);
+    if (!row) return undefined;
+    return {
+      family: JSON.parse(String(row.data)),
+      actor: String(row.actor_id),
+      revision: Number(row.revision),
+      expires: Number(row.expires_at),
+    };
   };
   const timer = setInterval(clean, 60000);
   timer.unref();
   return {
     close() {
       clearInterval(timer);
-      stages.clear();
     },
     async handle(
       req: IncomingMessage,
@@ -100,19 +110,31 @@ export function gedcomHttp(
             return json(400, {
               error: "После импорта получится больше 10 000 людей",
             });
-          for (const [token, s] of stages)
-            if (s.actor === actor.id) stages.delete(token);
-          if (stages.size >= 3)
+          archive.db
+            .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND actor_id=?")
+            .run(actor.id);
+          const active = Number(
+            archive.db
+              .prepare("SELECT count(*) AS count FROM workflow_stages WHERE kind='gedcom'")
+              .get()!.count,
+          );
+          if (active >= 3)
             return json(429, {
               error: "Уже проверяется несколько импортов. Повторите позже.",
             });
           const token = randomUUID();
-          stages.set(token, {
-            family: parsed.family,
-            actor: actor.id,
-            revision: current.revision,
-            expires: Date.now() + 15 * 60000,
-          });
+          archive.db
+            .prepare(
+              `INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data)
+               VALUES(?,'gedcom',?,?,?,?)`,
+            )
+            .run(
+              token,
+              actor.id,
+              current.revision,
+              Date.now() + 15 * 60000,
+              JSON.stringify(parsed.family),
+            );
           const existing = new Set(
             current.family.people.map(
               (p) => `${fullName(p).toLocaleLowerCase("ru")}|${p.birth}`,
@@ -149,7 +171,7 @@ export function gedcomHttp(
         }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const stage =
-          typeof body.token === "string" ? stages.get(body.token) : undefined;
+          typeof body.token === "string" ? getStage(body.token) : undefined;
         if (body.confirm !== true || !stage || stage.actor !== actor.id)
           return json(400, {
             error: "Проверьте файл и подтвердите импорт заново",
@@ -178,7 +200,9 @@ export function gedcomHttp(
           currentActor,
           "Импорт GEDCOM",
         );
-        stages.delete(body.token);
+        archive.db
+          .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?")
+          .run(body.token);
         return json(200, {
           revision: result.revision,
           added: stage.family.people.length,

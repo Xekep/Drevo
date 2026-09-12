@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { mediaPattern } from "./media.ts";
@@ -7,7 +8,7 @@ import { mediaPattern } from "./media.ts";
 const DEFAULT_GRACE_MS = 24 * 60 * 60 * 1000;
 const fileNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/;
 
-function referencedMedia(db: DatabaseSync) {
+function referencedMedia(db: DatabaseSync, includeBackups = true) {
   const result = new Set<string>();
   for (const row of db.prepare("SELECT data FROM people").all()) {
     const value = JSON.parse(String(row.data)) as { photo?: unknown };
@@ -20,6 +21,44 @@ function referencedMedia(db: DatabaseSync) {
     if (typeof value.url !== "string") continue;
     const match = mediaPattern.exec(value.url);
     if (match) result.add(match[1]);
+  }
+  // История является частью поддерживаемой отмены/восстановления. Пока ссылка
+  // присутствует хотя бы в одном снимке, оригинал не является бесхозным.
+  if (
+    db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='history'").get()
+  )
+    for (const row of db.prepare("SELECT data FROM history").all()) {
+      const matches = String(row.data).matchAll(
+        /\/media\/([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif))/g,
+      );
+      for (const match of matches) result.add(match[1]);
+    }
+  if (includeBackups) {
+    const file = String(
+      db.prepare("PRAGMA database_list").all().find((row) => row.name === "main")
+        ?.file || "",
+    );
+    if (file) {
+      const backups = join(dirname(file), "backups");
+      for (const name of (() => {
+        try {
+          return readdirSync(backups);
+        } catch {
+          return [];
+        }
+      })()) {
+        if (!name.endsWith(".sqlite")) continue;
+        let backup: DatabaseSync | undefined;
+        try {
+          backup = new DatabaseSync(join(backups, name), { readOnly: true });
+          for (const media of referencedMedia(backup, false)) result.add(media);
+        } catch {
+          // Повреждённая копия не должна останавливать GC остальных файлов.
+        } finally {
+          backup?.close();
+        }
+      }
+    }
   }
   return result;
 }

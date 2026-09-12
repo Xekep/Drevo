@@ -74,6 +74,11 @@ const geometry: TreeGeometry = {
     },
   ],
 };
+const growthLevels = new Map([
+  ["a", 0],
+  ["b", 1],
+  ["c", 1],
+]);
 
 test("tree node model keeps occurrences, family state, backgrounds and query dimming", () => {
   const model = buildTreeNodeModel({
@@ -87,6 +92,7 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
     hidden: new Map([["a", 2]]),
     expanded: new Set(["b"]),
     query: "Борис",
+    growthLevels,
   });
 
   assert.equal(model.positions.get("b:1")?.y, 140);
@@ -104,11 +110,21 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
   assert.equal(anna.data.childrenCount, 2);
   assert.equal(anna.data.household, true);
   assert.equal(anna.data.dimmed, true);
+  assert.equal(anna.className, "tree-grow-node");
+  assert.equal(
+    (anna.style as Record<string, unknown>)["--tree-growth-delay"],
+    "0ms",
+  );
 
   const boris = model.nodes.find((node) => node.id === "b:1")!;
   assert.equal(boris.data.expanded, true);
   assert.equal(boris.data.household, true);
   assert.equal(boris.data.dimmed, false);
+  assert.equal(
+    (boris.style as Record<string, unknown>)["--tree-growth-delay"],
+    "110ms",
+  );
+  assert.equal(model.maxGrowthLevel, 1);
 
   const household = model.displayNodes[0],
     siblings = model.displayNodes[1];
@@ -133,6 +149,7 @@ test("tree node model excludes hidden people and ignores geometry for another mo
     hidden: new Map(),
     expanded: new Set(),
     query: "",
+    growthLevels,
   });
   assert.deepEqual(
     hidden.nodes.map((node) => node.data.person.id),
@@ -154,6 +171,7 @@ test("tree node model excludes hidden people and ignores geometry for another mo
     hidden: new Map(),
     expanded: new Set(),
     query: "",
+    growthLevels,
   });
   assert.equal(otherMode.nodes.length, 0);
   assert.equal(otherMode.displayNodes.length, 0);

@@ -17,6 +17,7 @@ export const IMAGE_PREVIEW_SETTINGS = {
 >;
 
 export const IMAGE_PREVIEW_CACHE_VERSION = 2;
+const MAX_PENDING_PREVIEWS = 32;
 
 export function imagePreviews(directory: string) {
   const pending = new Map<string, Promise<Buffer>>();
@@ -28,16 +29,18 @@ export function imagePreviews(directory: string) {
       : `file-${original.cacheKey}`;
     const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.webp`;
     if (pending.has(key)) return pending.get(key)!;
+    if (pending.size >= MAX_PENDING_PREVIEWS)
+      return Promise.reject(new Error("Очередь подготовки фотографий заполнена"));
     const run = (async () => {
       try {
         return await readFile(join(directory, key));
       } catch {
         /* Ещё не создано. */
       }
-      const source = Buffer.isBuffer(original)
-        ? original
-        : await readFile(original.path);
       const result = tail.then(async () => {
+        const source = Buffer.isBuffer(original)
+          ? original
+          : await readFile(original.path);
         const input = sharp(source, { limitInputPixels: 50_000_000 });
         const metadata = await input.metadata();
         if ((metadata.pages || 1) > 1)

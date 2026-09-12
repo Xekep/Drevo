@@ -37,9 +37,8 @@ export function placesHttp({
     if (req.method !== "GET")
       return json(res, 405, { error: "Ожидается GET" });
 
-    const visitor = auth.currentUser(req),
-      access = visibility.read();
-    if (!visitor && !access.publicTree && !access.publicAlbums)
+    const access = visibility.read();
+    if (!auth.canRead(req) && !access.publicTree && !access.publicAlbums)
       return json(res, 401, { error: "Войдите для просмотра мест семьи" });
     if (
       req.headers["x-drevo-map"] !== "1" ||
@@ -50,11 +49,10 @@ export function placesHttp({
     const query = (url.searchParams.get("q") || "").trim();
     const permittedQuery = () => {
       if (auth.canEdit(req)) return true;
-      const currentUser = auth.currentUser(req),
-        settings = visibility.read(),
+      const settings = visibility.read(),
         { family } = archive.read(),
-        people = currentUser || settings.publicTree ? family.people : [],
-        photos = currentUser || settings.publicAlbums ? family.photos : [];
+        people = auth.canRead(req) || settings.publicTree ? family.people : [],
+        photos = auth.canRead(req) || settings.publicAlbums ? family.photos : [];
       return familyPlaces(people, photos).some(
         (place) => place.key === placeKey(query),
       );

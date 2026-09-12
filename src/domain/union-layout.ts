@@ -1,6 +1,9 @@
 import type { ElkNode, ElkExtendedEdge } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
-import { TREE_NODE_WIDTH as W, TREE_NODE_HEIGHT as H } from "./tree-layout.ts";
+import {
+  TREE_NODE_WIDTH as W,
+  TREE_NODE_HEIGHT as H,
+} from "./tree-layout-constants.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
 import { familyLeafGroups, compactFamilyLayout } from "./family-packing.ts";

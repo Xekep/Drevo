@@ -31,6 +31,14 @@ if test "$healthy" != true; then
     ln -s "$previous" "$base/current-rollback"
     mv -Tf "$base/current-rollback" "$base/current"
     sudo /usr/local/sbin/drevo-service-restart
+    rollback_healthy=false
+    for attempt in $(seq 1 30); do
+      if curl --fail --silent --max-time 2 http://127.0.0.1:3107/api/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["ok"] is True' 2>/dev/null; then rollback_healthy=true; break; fi
+      sleep 1
+    done
+    if test "$rollback_healthy" != true; then
+      echo "Rollback failed health-check; manual database recovery may be required." >&2
+    fi
   fi
   echo "Deployment failed; previous code restored. Database backup retained." >&2
   exit 1

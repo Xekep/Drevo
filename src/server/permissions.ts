@@ -31,8 +31,10 @@ export function authorizeArchive(
       if (old) {
         if (item.createdBy !== old.createdBy) deny();
       } else {
-        if (item.createdBy && item.createdBy !== user.id) deny();
-        item.createdBy = user.id;
+        if (!admin) {
+          if (item.createdBy && item.createdBy !== user.id) deny();
+          item.createdBy = user.id;
+        }
       }
     }
   }

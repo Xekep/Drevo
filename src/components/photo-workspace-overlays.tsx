@@ -25,6 +25,7 @@ type Props = {
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
   onUploaded: (id: string) => void;
   onPerson: (id: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 };
 
 export function PhotoWorkspaceOverlays({
@@ -37,6 +38,7 @@ export function PhotoWorkspaceOverlays({
   upload,
   onUploaded,
   onPerson,
+  onDirtyChange,
 }: Props) {
   const photo = workspace.photo;
   return (
@@ -82,6 +84,7 @@ export function PhotoWorkspaceOverlays({
               workspace.closePhoto();
               onPerson(id);
             }}
+            onDirtyChange={onDirtyChange}
           />
         </Suspense>
       )}

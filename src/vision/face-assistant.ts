@@ -17,17 +17,41 @@ export type FaceSuggestion = {
   descriptor: number[];
   match?: { personId: string; distance: number };
 };
-const MODEL_URI = "/models/face-api-1.7.15";
-let engine: Promise<typeof import("@vladmandic/face-api")> | undefined,
-  quickModels: Promise<void> | undefined,
-  preciseModel: Promise<void> | undefined;
+export const FACE_MODEL = "human-faceres-3.3.6";
+const MODEL_URI = "/models/human-3.3.6";
+let engine:
+  | Promise<InstanceType<(typeof import("@vladmandic/human"))["Human"]>>
+  | undefined;
 const cache = new Map<string, Promise<FaceSample[]>>();
 async function loadApi() {
   if (!engine)
     engine = (async () => {
-      const api = await import("@vladmandic/face-api");
-      await (api.tf as unknown as { ready: () => Promise<void> }).ready();
-      return api;
+      const { Human } = await import("@vladmandic/human");
+      const human = new Human({
+        modelBasePath: MODEL_URI,
+        cacheModels: true,
+        face: {
+          enabled: true,
+          detector: {
+            rotation: true,
+            maxDetected: 100,
+            minConfidence: 0.45,
+          },
+          mesh: { enabled: true },
+          description: { enabled: true },
+          iris: { enabled: false },
+          emotion: { enabled: false },
+          antispoof: { enabled: false },
+          liveness: { enabled: false },
+        },
+        body: { enabled: false },
+        hand: { enabled: false },
+        object: { enabled: false },
+        gesture: { enabled: false },
+        segmentation: { enabled: false },
+      });
+      await human.load();
+      return human;
     })().catch((e) => {
       engine = undefined;
       throw e;
@@ -35,38 +59,8 @@ async function loadApi() {
   return engine;
 }
 
-async function loadQuickEngine() {
-  const api = await loadApi();
-  if (!quickModels)
-    quickModels = Promise.all([
-      api.nets.tinyFaceDetector.loadFromUri(MODEL_URI),
-      api.nets.faceLandmark68Net.loadFromUri(MODEL_URI),
-      api.nets.faceRecognitionNet.loadFromUri(MODEL_URI),
-    ])
-      .then(() => undefined)
-      .catch((error) => {
-        quickModels = undefined;
-        throw error;
-      });
-  await quickModels;
-  return api;
-}
-
-async function loadPreciseEngine() {
-  const api = await loadQuickEngine();
-  if (!preciseModel)
-    preciseModel = api.nets.ssdMobilenetv1
-      .loadFromUri(MODEL_URI)
-      .catch((error) => {
-        preciseModel = undefined;
-        throw error;
-      });
-  await preciseModel;
-  return api;
-}
-
 export async function warmFaceAssistant() {
-  await loadQuickEngine();
+  await loadApi();
 }
 
 function imageCanvas(image: HTMLImageElement, maximumSide: number) {
@@ -89,63 +83,37 @@ async function detect(
   const key = `${precise ? "precise" : "quick"}:${url}`;
   if (cache.has(key)) return cache.get(key)!;
   const work = (async () => {
-    const api = precise ? await loadPreciseEngine() : await loadQuickEngine();
+    const human = await loadApi();
     const image = new Image();
     image.src = url;
     await image.decode();
-    let canvas = imageCanvas(image, precise ? 1800 : 1200);
-    let result = precise
-      ? await api
-          .detectAllFaces(
-            canvas,
-            new api.SsdMobilenetv1Options({
-              minConfidence: 0.55,
-              maxResults: 100,
-            }),
-          )
-          .withFaceLandmarks()
-          .withFaceDescriptors()
-      : await api
-          .detectAllFaces(
-            canvas,
-            new api.TinyFaceDetectorOptions({
-              inputSize: 608,
-              scoreThreshold: 0.45,
-            }),
-          )
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-    if (!precise && !result.length) {
-      onProgress("Быстрый поиск не нашёл лиц — запускаем точный…");
-      await loadPreciseEngine();
-      canvas = imageCanvas(image, 1800);
-      result = await api
-        .detectAllFaces(
-          canvas,
-          new api.SsdMobilenetv1Options({
-            minConfidence: 0.55,
-            maxResults: 100,
-          }),
-        )
-        .withFaceLandmarks()
-        .withFaceDescriptors();
-    }
-    return result
+    const canvas = imageCanvas(image, precise ? 1800 : 1200);
+    if (human.config.face.detector)
+      human.config.face.detector.minConfidence = precise ? 0.3 : 0.45;
+    const result = await human.detect(canvas);
+    if (!precise && !result.face.length)
+      onProgress("Лица не найдены — попробуйте точный режим…");
+    return result.face
       .map((face) => {
-        const b = face.detection.box,
-          x = Math.max(0, b.x / canvas.width),
-          y = Math.max(0, b.y / canvas.height);
+        const [rawX, rawY, rawWidth, rawHeight] = face.boxRaw,
+          x = Math.max(0, rawX),
+          y = Math.max(0, rawY);
         return {
           box: {
             x,
             y,
-            width: Math.min(1 - x, b.width / canvas.width),
-            height: Math.min(1 - y, b.height / canvas.height),
+            width: Math.min(1 - x, rawWidth),
+            height: Math.min(1 - y, rawHeight),
           },
-          descriptor: Array.from(face.descriptor),
+          descriptor: face.embedding || [],
         };
       })
-      .filter((f) => f.box.width > 0 && f.box.height > 0);
+      .filter(
+        (f) =>
+          f.box.width > 0 &&
+          f.box.height > 0 &&
+          f.descriptor.length === 1024,
+      );
   })().catch((error) => {
     cache.delete(key);
     throw error;
@@ -162,7 +130,7 @@ async function matchFaceDescriptor(
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ descriptor }),
+    body: JSON.stringify({ descriptor, model: FACE_MODEL }),
     signal,
   });
   if (!response.ok) throw new Error("Не удалось сравнить отпечаток лица");
@@ -186,12 +154,19 @@ async function matchFaceDescriptor(
 export async function saveFaceDescriptor(
   personId: string,
   descriptor: number[],
+  sourcePhotoId: string,
 ) {
   const response = await fetch("/api/faces/descriptors", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: crypto.randomUUID(), personId, descriptor }),
+    body: JSON.stringify({
+      id: crypto.randomUUID(),
+      personId,
+      descriptor,
+      sourcePhotoId,
+      model: FACE_MODEL,
+    }),
   });
   if (!response.ok) throw new Error("Не удалось сохранить отпечаток лица");
 }

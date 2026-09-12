@@ -10,6 +10,7 @@
     "start": "node --experimental-strip-types src/server/index.ts --production",
     "build": "vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:e2e": "playwright test",
     "test:worker": "node --test tests/built-worker.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests vite.config.ts",
@@ -22,7 +23,7 @@
     "prebuild": "npm run prepare:models"
   },
   "dependencies": {
-    "@vladmandic/face-api": "1.7.15",
+    "@vladmandic/human": "3.3.6",
     "@xyflow/react": "^12.11.6",
     "elkjs": "^0.12.0",
     "leaflet": "^1.9.4",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/leaflet": "^1.9.21",
     "@types/node": "22.19.19",

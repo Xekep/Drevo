@@ -24,27 +24,31 @@ import {
   unlink,
 } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
-import { tmpdir } from "node:os";
-import { readArchive, ConflictError, type openArchive } from "./database.ts";
+import {
+  readArchive,
+  ConflictError,
+  type openArchive,
+  type StoredFaceDescriptor,
+} from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
-const RESTORE_LIMIT = 128 * 1024 * 1024;
+const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
 export class RestoreTooLargeError extends Error {}
 
-function removeStage(directory: string) {
+function removeStage(directory: string, stagingRoot: string) {
   const path = resolve(directory);
   if (
-    dirname(path) !== resolve(tmpdir()) ||
-    !basename(path).startsWith("drevo-restore-")
+    dirname(path) !== resolve(stagingRoot) ||
+    !basename(path).startsWith("restore-")
   )
     throw new Error("Недопустимый временный каталог");
   rmSync(path, { recursive: true, force: true });
 }
-const SQLITE_LIMIT = 32 * 1024 * 1024,
-  UNPACKED_LIMIT = 512 * 1024 * 1024;
+const SQLITE_LIMIT = 512 * 1024 * 1024,
+  UNPACKED_LIMIT = 12 * 1024 * 1024 * 1024;
 const references = (family: Family) => [
   ...new Set(
     [
@@ -61,7 +65,7 @@ async function streamUpload(source: Readable, file: string) {
       const bytes = Buffer.from(chunk);
       size += bytes.length;
       if (size > RESTORE_LIMIT) {
-        callback(new RestoreTooLargeError("Файл слишком большой. Максимум 128 МБ."));
+        callback(new RestoreTooLargeError("Файл слишком большой. Максимум 12 ГиБ."));
         return;
       }
       callback(null, bytes);
@@ -72,7 +76,7 @@ async function streamUpload(source: Readable, file: string) {
     guard,
     createWriteStream(file, { flags: "wx", mode: 0o600 }),
   );
-  if (!size) throw new Error("Бэкап должен быть не больше 128 МБ");
+  if (!size) throw new Error("Бэкап должен быть не больше 12 ГиБ");
   return size;
 }
 
@@ -149,7 +153,7 @@ async function unpack(source: Readable, directory: string) {
     for await (const chunk of stream) {
       total += chunk.length;
       if (total > UNPACKED_LIMIT)
-        throw new Error("Распакованный бэкап больше 512 МБ");
+        throw new Error("Распакованный бэкап больше 12 ГиБ");
       pending = Buffer.concat([pending, chunk]);
       while (pending.length) {
         if (remaining) {
@@ -243,21 +247,51 @@ type Stage = {
   revision: number;
   expires: number;
   files: Map<string, string>;
+  faceDescriptors: StoredFaceDescriptor[];
 };
 
 function createRestoreStore(
   archive: ReturnType<typeof openArchive>,
   dbPath: string,
 ) {
-  const stages = new Map<string, Stage>();
+  const stagingRoot = join(dirname(dbPath), "staging");
+  mkdirSync(stagingRoot, { recursive: true });
+  const readStage = (token: string): Stage | undefined => {
+    const row = archive.db
+      .prepare(
+        "SELECT actor_id,revision,expires_at,data,directory FROM workflow_stages WHERE kind='restore' AND token=?",
+      )
+      .get(token);
+    if (!row) return undefined;
+    const data = JSON.parse(String(row.data)) as {
+      family: Family;
+      files: [string, string][];
+      faceDescriptors: StoredFaceDescriptor[];
+    };
+    return {
+      directory: String(row.directory),
+      family: data.family,
+      actor: String(row.actor_id),
+      revision: Number(row.revision),
+      expires: Number(row.expires_at),
+      files: new Map(data.files),
+      faceDescriptors: data.faceDescriptors,
+    };
+  };
   const discard = (token: string) => {
-    const stage = stages.get(token);
-    if (stage) removeStage(stage.directory);
-    stages.delete(token);
+    const stage = readStage(token);
+    if (stage) removeStage(stage.directory, stagingRoot);
+    archive.db
+      .prepare("DELETE FROM workflow_stages WHERE kind='restore' AND token=?")
+      .run(token);
   };
   const cleanup = setInterval(() => {
-    for (const [token, stage] of stages)
-      if (stage.expires < Date.now()) discard(token);
+    const expired = archive.db
+      .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='restore' AND expires_at<?",
+      )
+      .all(Date.now());
+    for (const row of expired) discard(String(row.token));
   }, 60000);
   cleanup.unref();
 
@@ -268,13 +302,21 @@ function createRestoreStore(
   ) {
     if (actor.role !== "admin")
       throw new Error("Восстановление доступно администратору");
-    for (const [token, stage] of stages)
-      if (stage.actor === actor.id || stage.expires < Date.now())
-        discard(token);
-    if (stages.size >= 3)
+    const obsolete = archive.db
+      .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='restore' AND (actor_id=? OR expires_at<?)",
+      )
+      .all(actor.id, Date.now());
+    for (const row of obsolete) discard(String(row.token));
+    const active = Number(
+      archive.db
+        .prepare("SELECT count(*) AS count FROM workflow_stages WHERE kind='restore'")
+        .get()!.count,
+    );
+    if (active >= 3)
       throw new Error("Уже проверяется несколько бэкапов. Повторите позже.");
 
-    const directory = mkdtempSync(join(tmpdir(), "drevo-restore-")),
+    const directory = mkdtempSync(join(stagingRoot, "restore-")),
       upload = join(directory, ".upload");
     mkdirSync(join(directory, "uploads"));
     try {
@@ -282,7 +324,7 @@ function createRestoreStore(
       assertAccess?.();
       const header = await fileHeader(upload);
       if (header.toString("binary") === "SQLite format 3\0") {
-        if (size > SQLITE_LIMIT) throw new Error("База больше 32 МБ");
+        if (size > SQLITE_LIMIT) throw new Error("База больше 512 МБ");
         await rename(upload, join(directory, "drevo.sqlite"));
       } else if (header[0] === 31 && header[1] === 139) {
         await unpack(createReadStream(upload), directory);
@@ -293,7 +335,7 @@ function createRestoreStore(
         readOnly: true,
         allowExtension: false,
       });
-      let family: Family;
+      let family: Family, faceDescriptors: StoredFaceDescriptor[] = [];
       try {
         source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
         const tables = source
@@ -306,6 +348,54 @@ function createRestoreStore(
         if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
           throw new Error("База повреждена");
         family = validateFamily(readArchive(source).family);
+        if (
+          source.prepare(
+            "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='face_descriptors'",
+          ).get()
+        ) {
+          const people = new Set(family.people.map((person) => person.id));
+          const photos = new Set((family.photos || []).map((photo) => photo.id));
+          faceDescriptors = source
+            .prepare("SELECT * FROM face_descriptors ORDER BY rowid")
+            .all()
+            .flatMap((row) => {
+              let descriptor: unknown;
+              try {
+                descriptor = JSON.parse(String(row.data));
+              } catch {
+                return [];
+              }
+              const personId = String(row.person_id),
+                sourcePhotoId = row.source_photo_id
+                  ? String(row.source_photo_id)
+                  : undefined,
+                model = row.model ? String(row.model) : "face-api-1.7.15",
+                dimensions =
+                  model === "face-api-1.7.15"
+                    ? 128
+                    : model === "human-faceres-3.3.6"
+                      ? 1024
+                      : 0;
+              if (
+                !people.has(personId) ||
+                (sourcePhotoId && !photos.has(sourcePhotoId)) ||
+                !Array.isArray(descriptor) ||
+                descriptor.length !== dimensions ||
+                !descriptor.every(
+                  (item) => typeof item === "number" && Number.isFinite(item),
+                )
+              )
+                return [];
+              return [{
+                id: String(row.id),
+                personId,
+                data: JSON.stringify(descriptor),
+                createdBy: row.created_by ? String(row.created_by) : undefined,
+                sourcePhotoId,
+                model,
+              }];
+            });
+        }
       } finally {
         source.close();
       }
@@ -326,14 +416,32 @@ function createRestoreStore(
       }
       const token = randomUUID(),
         current = archive.read();
-      stages.set(token, {
+      const stage: Stage = {
         directory,
         family,
         actor: actor.id,
         revision: current.revision,
         expires: Date.now() + 15 * 60000,
         files,
-      });
+        faceDescriptors,
+      };
+      archive.db
+        .prepare(
+          `INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data,directory)
+           VALUES(?,'restore',?,?,?,?,?)`,
+        )
+        .run(
+          token,
+          actor.id,
+          current.revision,
+          stage.expires,
+          JSON.stringify({
+            family,
+            files: [...files],
+            faceDescriptors,
+          }),
+          directory,
+        );
       return {
         token,
         revision: current.revision,
@@ -346,7 +454,7 @@ function createRestoreStore(
         currentPhotos: current.family.photos?.length || 0,
       };
     } catch (error) {
-      removeStage(directory);
+      removeStage(directory, stagingRoot);
       throw error;
     }
   }
@@ -354,13 +462,13 @@ function createRestoreStore(
   return {
     async preview(bytes: Buffer, actor: ArchiveUser) {
       if (!bytes.length || bytes.length > RESTORE_LIMIT)
-        throw new Error("Бэкап должен быть не больше 128 МБ");
+        throw new Error("Бэкап должен быть не больше 12 ГБ");
       return previewStream(Readable.from([bytes]), actor);
     },
     previewStream,
     discard,
     async apply(token: string, actor: ArchiveUser) {
-      const stage = stages.get(token);
+      const stage = readStage(token);
       if (
         actor.role !== "admin" ||
         !stage ||
@@ -403,6 +511,8 @@ function createRestoreStore(
           stage.revision,
           actor,
           "Восстановление из бэкапа",
+          undefined,
+          stage.faceDescriptors,
         );
       } catch (error) {
         await Promise.allSettled(
@@ -414,13 +524,14 @@ function createRestoreStore(
       try {
         discard(token);
       } catch {
-        stages.delete(token);
+        archive.db
+          .prepare("DELETE FROM workflow_stages WHERE kind='restore' AND token=?")
+          .run(token);
       }
       return { ...result, backupName };
     },
     close() {
       clearInterval(cleanup);
-      for (const token of stages.keys()) discard(token);
     },
   };
 }
