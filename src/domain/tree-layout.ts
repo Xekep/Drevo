@@ -11,10 +11,7 @@ import type {
 export type LayoutPerson = Pick<Person, "id" | "birth" | "parents" | "spouses">;
 import { dateYear } from "./dates.ts";
 import { yearY, START_YEAR } from "./layout.ts";
-import {
-  TREE_NODE_HEIGHT,
-  TREE_NODE_WIDTH,
-} from "./tree-layout-constants.ts";
+import { TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "./tree-layout-constants.ts";
 
 export { TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "./tree-layout-constants.ts";
 export type TreeMode = "generations" | "timeline";
@@ -33,33 +30,7 @@ export type TreeGeometry = {
 };
 /** Линейный обход DAG; не зависит от хранимого служебного generation. */
 export function generationLevels(people: LayoutPerson[]) {
-  const levels = new Map<string, number>(),
-    incoming = new Map<string, number>(),
-    children = new Map<string, string[]>();
-  const ids = new Set(people.map((p) => p.id));
-  for (const p of people) {
-    const parents = p.parents.filter((id) => ids.has(id));
-    incoming.set(p.id, parents.length);
-    for (const id of parents) {
-      const list = children.get(id) || [];
-      list.push(p.id);
-      children.set(id, list);
-    }
-  }
-  const queue = people.filter((p) => !incoming.get(p.id)).map((p) => p.id);
-  const processed = new Set<string>();
-  for (let i = 0; i < queue.length; i++) {
-    const id = queue[i],
-      level = levels.get(id) || 0;
-    levels.set(id, level);
-    processed.add(id);
-    for (const child of children.get(id) || []) {
-      levels.set(child, Math.max(levels.get(child) || 0, level + 1));
-      incoming.set(child, incoming.get(child)! - 1);
-      if (!incoming.get(child)) queue.push(child);
-    }
-  }
-  return new Map([...levels].filter(([id]) => processed.has(id)));
+  return householdLevels(people);
 }
 export function treeGeometry(
   people: LayoutPerson[],

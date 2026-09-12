@@ -64,20 +64,36 @@ test("the initial tree grows from roots toward descendants", async ({
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
-  await expect(nodes).toHaveCount(5);
+  await expect(nodes).toHaveCount(7);
   const delays = await nodes.evaluateAll((items) =>
     items
       .map((item) => getComputedStyle(item).animationDelay)
       .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
   );
-  expect(delays).toEqual(["0s", "0.8s", "0.8s", "1.6s", "1.6s"]);
+  expect(delays).toEqual([
+    "0s",
+    "0.7s",
+    "0.7s",
+    "0.7s",
+    "0.7s",
+    "1.4s",
+    "1.4s",
+  ]);
+  await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
+    "animation-delay",
+    "0.7s",
+  );
+  await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCSS(
+    "animation-delay",
+    "0.7s",
+  );
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
   const firstEdge = page
     .locator(".tree-grow-edge .react-flow__edge-path")
     .first();
   await expect(firstEdge).toHaveAttribute("pathLength", "1");
   await expect(firstEdge).toHaveCSS("animation-name", "tree-edge-draw");
-  await expect(firstEdge).toHaveCSS("animation-duration", "0.56s");
+  await expect(firstEdge).toHaveCSS("animation-duration", "0.5s");
   await expect(
     page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
   ).toHaveCSS("animation-name", "tree-edge-reveal");
@@ -88,13 +104,13 @@ test("the initial tree grows from roots toward descendants", async ({
         .map((item) => getComputedStyle(item).animationDelay)
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
-  expect(edgeDelays).toEqual(["0.24s", "0.24s", "1.04s", "1.04s", "1.04s"]);
+  expect(edgeDelays).toEqual(["0.2s", "0.2s", "0.2s", "0.9s", "0.9s", "0.9s"]);
   const godparent = page.getByRole("button", {
     name: "Связь: Крёстный родитель",
   });
   await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
-  await expect(godparent).toHaveCSS("animation-delay", "1.6s");
+  await expect(godparent).toHaveCSS("animation-delay", "1.4s");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
