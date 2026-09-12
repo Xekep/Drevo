@@ -287,6 +287,17 @@ test("layout handles 10000 people and a deep lineage without recursive stack gro
   );
 });
 
+test("a spouse without recorded parents grows together with their partner", () => {
+  const ancestor = person("ancestor"),
+    descendant = person("descendant", ["ancestor"]),
+    spouse = person("spouse");
+  descendant.spouses = [spouse.id];
+  spouse.spouses = [descendant.id];
+  const levels = generationLevels([ancestor, descendant, spouse]);
+  assert.equal(levels.get(descendant.id), 1);
+  assert.equal(levels.get(spouse.id), 1);
+});
+
 test("family layout centers children below co-parents and gives branches room without inventing marriages", () => {
   const data = family(
     person("father"),

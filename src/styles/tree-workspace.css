@@ -444,12 +444,12 @@
 }
 .tree-canvas.is-growing .tree-grow-edge .tree-grow-edge-visual {
   opacity: 0;
-  animation: tree-edge-reveal 560ms ease-out var(--tree-growth-delay) both;
+  animation: tree-edge-reveal 500ms ease-out var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-edge .react-flow__edge-path {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: tree-edge-draw 560ms ease-in-out var(--tree-growth-delay) both;
+  animation: tree-edge-draw 500ms ease-in-out var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-edge-label {
   opacity: 0;
@@ -457,7 +457,7 @@
 }
 .tree-canvas.is-growing .tree-grow-node .flow-person {
   transform-origin: 50% 100%;
-  animation: tree-card-grow 520ms cubic-bezier(0.2, 0.75, 0.25, 1)
+  animation: tree-card-grow 460ms cubic-bezier(0.2, 0.75, 0.25, 1)
     var(--tree-growth-delay) both;
 }
 .tree-canvas:not(.is-growing) .react-flow__node {

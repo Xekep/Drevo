@@ -1,8 +1,8 @@
 import type { CSSProperties } from "react";
 
-export const TREE_GROWTH_LEVEL_MS = 800;
-export const TREE_GROWTH_EDGE_MS = 560;
-export const TREE_GROWTH_NODE_MS = 520;
+export const TREE_GROWTH_LEVEL_MS = 700;
+export const TREE_GROWTH_EDGE_MS = 500;
+export const TREE_GROWTH_NODE_MS = 460;
 export const TREE_GROWTH_MAX_LEVEL = 5;
 export const TREE_LAYOUT_TRANSITION_MS = 440;
 
