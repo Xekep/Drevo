@@ -55,10 +55,7 @@ test("opened person portrait is substantially larger on desktop and mobile", () 
     new URL("src/styles/mobile-refinements.css", root),
     "utf8",
   );
-  assert.match(
-    css,
-    /\.profile-avatar\s*\{\s*width: 144px;\s*height: 144px;/,
-  );
+  assert.match(css, /\.profile-avatar\s*\{\s*width: 144px;\s*height: 144px;/);
   assert.match(
     css,
     /@media \(max-width: 899px\)[\s\S]*\.profile-avatar\s*\{\s*width: 128px;\s*height: 128px;/,
@@ -69,10 +66,7 @@ test("age under one year is shown in months", () => {
   assert.equal(ageLabel(person("2020-01-15", "2020-09-15")), "8 месяцев");
   assert.equal(ageLabel(person("2020-01-15", "2020-02-15")), "1 месяц");
   assert.equal(ageLabel(person("2020-01-15", "2020-02-14")), "меньше месяца");
-  assert.equal(
-    ageLabel(person("2020-01", "2020-09")),
-    "около 8 месяцев",
-  );
+  assert.equal(ageLabel(person("2020-01", "2020-09")), "около 8 месяцев");
   assert.equal(ageLabel(person("2020", "2020")), "меньше года");
 });
 
