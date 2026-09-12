@@ -122,7 +122,7 @@ test("tree node model keeps occurrences, family state, backgrounds and query dim
   assert.equal(boris.data.dimmed, false);
   assert.equal(
     (boris.style as Record<string, unknown>)["--tree-growth-delay"],
-    "650ms",
+    "800ms",
   );
   assert.equal(model.maxGrowthLevel, 1);
 

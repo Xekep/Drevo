@@ -1,9 +1,9 @@
 import type { CSSProperties } from "react";
 
-export const TREE_GROWTH_LEVEL_MS = 650;
-export const TREE_GROWTH_EDGE_MS = 330;
+export const TREE_GROWTH_LEVEL_MS = 800;
+export const TREE_GROWTH_EDGE_MS = 560;
 export const TREE_GROWTH_NODE_MS = 520;
-export const TREE_GROWTH_MAX_LEVEL = 6;
+export const TREE_GROWTH_MAX_LEVEL = 5;
 
 type GrowthStyle = CSSProperties & { "--tree-growth-delay": string };
 
