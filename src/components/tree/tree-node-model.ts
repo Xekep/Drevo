@@ -1,5 +1,4 @@
 import type { Node } from "@xyflow/react";
-import type { CSSProperties } from "react";
 import {
   matchesPerson,
   TREE_NODE_HEIGHT,
@@ -9,6 +8,7 @@ import {
   type TreeMode,
 } from "../../domain/index.ts";
 import type { PersonNodeData } from "./person-node-data.ts";
+import { treeNodeGrowthStyle } from "./tree-growth.ts";
 
 type TreePersonNode = Node<PersonNodeData, "person">;
 type TreeHouseholdNode = Node<
@@ -29,11 +29,6 @@ type TreeNodeModelInput = {
   query: string;
   growthLevels: ReadonlyMap<string, number>;
 };
-
-type GrowthStyle = CSSProperties & { "--tree-growth-delay": string };
-const growthStyle = (level: number): GrowthStyle => ({
-  "--tree-growth-delay": `${Math.min(14, Math.max(0, level)) * 110}ms`,
-});
 
 export function buildTreeNodeModel({
   family,
@@ -99,7 +94,7 @@ export function buildTreeNodeModel({
     className: "tree-grow-surface",
     style: {
       pointerEvents: "none",
-      ...growthStyle(
+      ...treeNodeGrowthStyle(
         Math.max(
           0,
           ...group.members.map(
@@ -136,7 +131,7 @@ export function buildTreeNodeModel({
             className: "tree-grow-surface",
             style: {
               pointerEvents: "none",
-              ...growthStyle(
+              ...treeNodeGrowthStyle(
                 Math.max(
                   0,
                   ...group.members.map(
@@ -168,7 +163,7 @@ export function buildTreeNodeModel({
         height: TREE_NODE_HEIGHT,
         selected: selected.includes(person.id),
         className: "tree-grow-node",
-        style: growthStyle(growthLevels.get(person.id) || 0),
+        style: treeNodeGrowthStyle(growthLevels.get(person.id) || 0),
         data: {
           person,
           household: householdMembers.has(occurrence.id),

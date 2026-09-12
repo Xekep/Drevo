@@ -108,7 +108,7 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(edges[0].className, "tree-grow-edge");
   assert.equal(
     (edges[0].style as Record<string, unknown>)["--tree-growth-delay"],
-    "55ms",
+    "320ms",
   );
 
   const withExtras = buildTreeEdges({

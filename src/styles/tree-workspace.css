@@ -418,10 +418,18 @@
     border-color 0.12s;
 }
 .tree-canvas.is-growing .tree-grow-node,
-.tree-canvas.is-growing .tree-grow-surface,
-.tree-canvas.is-growing .tree-grow-edge {
+.tree-canvas.is-growing .tree-grow-surface {
   opacity: 0;
   animation: tree-branch-reveal 480ms ease-out var(--tree-growth-delay) both;
+}
+.tree-canvas.is-growing .tree-grow-edge {
+  opacity: 0;
+  animation: tree-edge-reveal 330ms ease-out var(--tree-growth-delay) both;
+}
+.tree-canvas.is-growing .tree-grow-edge .react-flow__edge-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tree-edge-draw 330ms ease-in-out var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-node .flow-person {
   transform-origin: 50% 100%;
@@ -431,6 +439,29 @@
 @keyframes tree-branch-reveal {
   to {
     opacity: 1;
+  }
+}
+@keyframes tree-edge-reveal {
+  from {
+    opacity: 0.08;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes tree-edge-draw {
+  from {
+    marker-end: none;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+  99% {
+    marker-end: none;
+  }
+  to {
+    marker-end: var(--tree-marker-end);
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
   }
 }
 @keyframes tree-card-grow {
@@ -894,6 +925,7 @@
   .tree-canvas.is-growing .tree-grow-node,
   .tree-canvas.is-growing .tree-grow-surface,
   .tree-canvas.is-growing .tree-grow-edge,
+  .tree-canvas.is-growing .tree-grow-edge .react-flow__edge-path,
   .tree-canvas.is-growing .tree-grow-node .flow-person {
     transition: none;
     animation: none;
