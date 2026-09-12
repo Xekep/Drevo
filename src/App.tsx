@@ -35,6 +35,7 @@ import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
+import { ArchiveLoading } from "./components/archive-loading";
 
 type PersonDraft = {
   person?: Person;
@@ -573,22 +574,22 @@ export default function App() {
               </main>
             )}
           </>
-        ) : (
+        ) : archive.needsLogin ? (
           <main className="archive-status">
-            <h1>
-              {archive.needsLogin ? "Семейный архив" : "Открываем архив…"}
-            </h1>
-            <p>{archive.error || "Загружаем людей, связи и фотографии."}</p>
-            {archive.needsLogin ? (
-              <button className="primary-action" onClick={() => setLogin(true)}>
-                Войти через Яндекс
-              </button>
-            ) : (
-              archive.error && (
-                <button onClick={archive.reload}>Повторить загрузку</button>
-              )
-            )}
+            <h1>Семейный архив</h1>
+            <p>{archive.error}</p>
+            <button className="primary-action" onClick={() => setLogin(true)}>
+              Войти через Яндекс
+            </button>
           </main>
+        ) : archive.error ? (
+          <main className="archive-status" role="alert">
+            <h1>Не удалось открыть архив</h1>
+            <p>{archive.error}</p>
+            <button onClick={archive.reload}>Повторить загрузку</button>
+          </main>
+        ) : (
+          <ArchiveLoading />
         )}
       </div>
       {notice && (

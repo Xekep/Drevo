@@ -9,6 +9,14 @@ const current = app.archive.read();
 app.archive.write(
   {
     ...current.family,
+    links: [
+      {
+        id: "e2e-godparent",
+        from: "e2e-memorial-person",
+        to: "e2e-sibling-child",
+        type: "godparent",
+      },
+    ],
     people: [
       {
         id: "e2e-memorial-person",
@@ -51,6 +59,34 @@ app.archive.write(
         spouses: [],
         generation: 3,
         column: 0,
+        sources: [],
+      },
+      {
+        id: "e2e-sibling",
+        surname: "РўРµСЃС‚РѕРІР°",
+        name: "РњР°СЂРёСЏ",
+        patronymic: "РРІР°РЅРѕРІРЅР°",
+        sex: "f",
+        birth: "1968-01-01",
+        birthPlace: "РњРѕСЃРєРІР°",
+        parents: ["e2e-memorial-person"],
+        spouses: [],
+        generation: 2,
+        column: 1,
+        sources: [],
+      },
+      {
+        id: "e2e-sibling-child",
+        surname: "РўРµСЃС‚РѕРІР°",
+        name: "РћР»СЊРіР°",
+        patronymic: "",
+        sex: "f",
+        birth: "1992-01-01",
+        birthPlace: "РњРѕСЃРєРІР°",
+        parents: ["e2e-sibling"],
+        spouses: [],
+        generation: 3,
+        column: 1,
         sources: [],
       },
     ],

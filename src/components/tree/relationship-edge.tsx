@@ -21,8 +21,7 @@ export type RelationshipEdgeType = Edge<
 
 function shallowRecordEqual(a: unknown, b: unknown) {
   if (a === b) return true;
-  if (!a || !b || typeof a !== "object" || typeof b !== "object")
-    return false;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
   const left = a as Record<string, unknown>,
     right = b as Record<string, unknown>,
     keys = Object.keys(left);
@@ -73,9 +72,16 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const animatedStyle = {
     ...props.style,
     "--tree-marker-end": props.markerEnd || "none",
-  } as CSSProperties & { "--tree-growth-delay"?: string };
+  } as CSSProperties & {
+    "--tree-growth-delay"?: string;
+    "--tree-edge-label-delay"?: string;
+  };
   const visualStyle = {
     "--tree-growth-delay": animatedStyle["--tree-growth-delay"] || "0ms",
+  } as CSSProperties;
+  const labelStyle = {
+    transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
+    "--tree-growth-delay": animatedStyle["--tree-edge-label-delay"] || "0ms",
   } as CSSProperties;
   return (
     <>
@@ -100,10 +106,8 @@ export const RelationshipEdge = memo(function RelationshipEdge(
       {(props.selected || !["parent", "spouse"].includes(edge.type)) && (
         <EdgeLabelRenderer>
           <button
-            className={`flow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
-            style={{
-              transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
-            }}
+            className={`flow-edge-label tree-grow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
+            style={labelStyle}
             onClick={() => props.data!.onSelect(edge)}
             aria-label={`Связь: ${CONNECTION_NAMES[edge.type]}`}
           >
