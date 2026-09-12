@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
 import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
+import { ArchiveLoading } from "./archive-loading";
 import { loadLazyModule } from "./lazy-section-recovery";
 
 const PeopleCatalog = lazy(() =>
@@ -137,11 +138,7 @@ export function ArchiveSection(props: Props) {
   if (!content) return null;
   return (
     <SectionErrorBoundary key={props.view}>
-      <Suspense
-        fallback={<div className="archive-status">Открываем раздел…</div>}
-      >
-        {content}
-      </Suspense>
+      <Suspense fallback={<ArchiveLoading />}>{content}</Suspense>
     </SectionErrorBoundary>
   );
 }

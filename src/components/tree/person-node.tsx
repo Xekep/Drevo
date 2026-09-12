@@ -10,10 +10,7 @@ import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import { fullName, years } from "../../domain";
 import { Avatar } from "../person-panel";
 import { useLongPressCompare } from "./use-long-press-compare";
-import {
-  samePersonNodeData,
-  type PersonNodeData,
-} from "./person-node-data";
+import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
   collapse: (id: string, occurrenceId?: string) => void;
@@ -55,7 +52,7 @@ export const PersonNode = memo(function PersonNode({
       ? "distant"
       : s.transform[2] < 0.32
         ? "overview"
-        : s.transform[2] < 0.65
+        : s.transform[2] < 0.75
           ? "compact"
           : "full",
   );

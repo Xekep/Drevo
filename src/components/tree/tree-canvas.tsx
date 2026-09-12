@@ -190,7 +190,6 @@ function Canvas(props: Props) {
     ],
   );
   const {
-    childrenCount,
     positions,
     occurrencePeople,
     personOccurrences,
@@ -235,7 +234,6 @@ function Canvas(props: Props) {
       context,
       root,
       familyPeople: family.people,
-      childrenCount,
       expanded: familyView.expanded,
       collapsed,
     });
