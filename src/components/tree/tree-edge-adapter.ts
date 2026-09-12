@@ -9,10 +9,7 @@ import {
 import { fullName } from "../../domain/dates.ts";
 import { routeKey } from "../../domain/edge-routing.ts";
 import { crossingPaths } from "../../domain/route-crossings.ts";
-import type {
-  TreeGeometry,
-  TreeMode,
-} from "../../domain/tree-layout.ts";
+import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
 import type { Family, Person } from "../../domain/types.ts";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
 import { treeEdgeGrowthStyle } from "./tree-growth.ts";
@@ -31,7 +28,7 @@ const patterns = {
   parent: undefined,
   spouse: "7 4",
   adoptive_parent: "10 4",
-  godparent: "2 5",
+  godparent: "5 5",
   guardian: "10 3 2 3",
   nurse: "2 3",
   sworn_sibling: "7 3 2 3",
@@ -146,7 +143,7 @@ export function buildTreeEdges({
               ? "bottom"
               : "top"),
         selected: selectedEdge === edge.key,
-        className: "tree-grow-edge",
+        className: `tree-grow-edge relationship-${edge.type}`,
         data: { connection: edge, onSelect: onEdge, route },
         style: {
           stroke: colors[edge.type],
@@ -190,7 +187,9 @@ export function buildTreeEdges({
     )
     .flatMap((branch) => {
       const choices = branch.relations
-        .filter((relation) => visible.has(relation.from) && visible.has(relation.to))
+        .filter(
+          (relation) => visible.has(relation.from) && visible.has(relation.to),
+        )
         .map((relation) => actual.get(connectionKey(relation)))
         .filter((edge): edge is GraphConnection => !!edge);
       if (!choices.length) return [];
@@ -208,7 +207,7 @@ export function buildTreeEdges({
           sourceHandle: branch.route.sourceHandle,
           targetHandle: branch.route.targetHandle,
           selected,
-          className: "tree-grow-edge",
+          className: `tree-grow-edge relationship-${edge.type}`,
           data: {
             connection: edge,
             onSelect: select,

@@ -15,6 +15,7 @@ import "./styles/photo-lightbox.css";
 import "./styles/insights.css";
 import "./styles/mobile-refinements.css";
 import "./styles/controls.css";
+import { ArchiveLoading } from "./components/archive-loading";
 
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
@@ -43,14 +44,10 @@ class RootErrorBoundary extends Component<
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <RootErrorBoundary><Suspense
-      fallback={
-        <main className="archive-status" role="status">
-          <p>Открываем семейный архив…</p>
-        </main>
-      }
-    >
-      {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
-    </Suspense></RootErrorBoundary>
+    <RootErrorBoundary>
+      <Suspense fallback={<ArchiveLoading />}>
+        {sharedToken ? <SharedTree token={sharedToken} /> : <App />}
+      </Suspense>
+    </RootErrorBoundary>
   </StrictMode>,
 );

@@ -27,22 +27,12 @@ type TreeCameraStateInput = {
   selected: string[];
   narrow: boolean;
   peopleMap: Map<string, Person>;
-  layoutKey: string;
   context: string;
   root: string | null;
   familyPeople: Person[];
   childrenCount: Map<string, number>;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
-};
-
-type PendingAnchor = {
-  id: string;
-  personId: string;
-  layoutKey: string;
-  x: number;
-  y: number;
-  zoom: number;
 };
 
 /** Сохраняет и восстанавливает viewport дерева, не вмешиваясь в расчёт геометрии. */
@@ -58,7 +48,6 @@ export function useTreeCameraState({
   selected,
   narrow,
   peopleMap,
-  layoutKey,
   context,
   root,
   familyPeople,
@@ -73,33 +62,12 @@ export function useTreeCameraState({
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const mobileCamera = useRef("");
-  const pendingAnchor = useRef<PendingAnchor | null>(null);
-
-  const captureAnchor = useCallback(
-    (id: string, personId: string) => {
-      const point = positions.get(id);
-      if (!point) return;
-      const camera = flow.getViewport();
-      pendingAnchor.current = {
-        id,
-        personId,
-        layoutKey,
-        x: point.x * camera.zoom + camera.x,
-        y: point.y * camera.zoom + camera.y,
-        zoom: camera.zoom,
-      };
-    },
-    [positions, flow, layoutKey],
-  );
-
   const rememberContext = useCallback(() => {
     cameras.current[context] = flow.getViewport();
-    pendingAnchor.current = null;
   }, [context, flow]);
 
   const resetContext = useCallback(() => {
     previousContext.current = "";
-    pendingAnchor.current = null;
   }, []);
 
   const rememberViewport = useCallback(
@@ -128,8 +96,6 @@ export function useTreeCameraState({
       const reverseChanged = previousReverse.current !== reverse;
       previousContext.current = context;
       previousReverse.current = reverse;
-      const anchor = pendingAnchor.current;
-      pendingAnchor.current = null;
       if (
         focus &&
         focus.token !== lastFocus.current &&
@@ -141,19 +107,6 @@ export function useTreeCameraState({
           maxZoom: 1,
           minZoom: narrow ? 0.55 : 0.15,
           padding: 0.5,
-        });
-      } else if (
-        anchor &&
-        anchor.layoutKey !== layoutKey &&
-        !changedContext &&
-        (positions.has(anchor.id) || positions.has(anchor.personId))
-      ) {
-        const point = (positions.get(anchor.id) ||
-          positions.get(anchor.personId))!;
-        void flow.setViewport({
-          x: anchor.x - point.x * anchor.zoom,
-          y: anchor.y - point.y * anchor.zoom,
-          zoom: anchor.zoom,
         });
       } else if (changedContext || reverseChanged) {
         if ((switchedMode || reverseChanged) && selected.length)
@@ -213,7 +166,6 @@ export function useTreeCameraState({
     childrenCount,
     peopleMap,
     ready,
-    layoutKey,
     context,
     root,
     expanded,
@@ -221,7 +173,6 @@ export function useTreeCameraState({
   ]);
 
   return {
-    captureAnchor,
     rememberContext,
     resetContext,
     rememberViewport,

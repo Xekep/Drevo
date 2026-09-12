@@ -1,0 +1,11 @@
+export function ArchiveLoading() {
+  return (
+    <main
+      className="archive-status archive-status-loading"
+      role="status"
+      aria-label="Загрузка архива"
+    >
+      <span className="archive-loader-ring" aria-hidden="true" />
+    </main>
+  );
+}

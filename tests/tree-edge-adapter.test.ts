@@ -105,7 +105,7 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(edges[0].style?.strokeWidth, 3);
   assert.ok(edges[0].markerEnd);
   assert.equal(edges[0].reconnectable, false);
-  assert.equal(edges[0].className, "tree-grow-edge");
+  assert.equal(edges[0].className, "tree-grow-edge relationship-parent");
   assert.equal(
     (edges[0].style as Record<string, unknown>)["--tree-growth-delay"],
     "240ms",
@@ -121,7 +121,15 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
     [parent.key, godparent.key, "draft-preview"],
   );
   assert.ok(withExtras[1].markerEnd);
-  assert.equal(withExtras[1].style?.strokeDasharray, "2 5");
+  assert.equal(
+    withExtras[1].className,
+    "tree-grow-edge relationship-godparent",
+  );
+  assert.equal(withExtras[1].style?.strokeDasharray, "5 5");
+  assert.equal(
+    (withExtras[1].style as Record<string, unknown>)["--tree-edge-label-delay"],
+    "800ms",
+  );
   assert.equal(withExtras[2].type, "smoothstep");
 });
 

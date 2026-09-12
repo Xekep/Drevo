@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,11 +45,8 @@ import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
 import { TreeCameraTools } from "./tree-camera-tools";
 import { TreeEdgeChoices } from "./tree-edge-choices";
-import { treeGrowthDuration } from "./tree-growth";
-import {
-  TreeCreateAt,
-  type TreeCreateAtDraft,
-} from "./tree-create-at";
+import { TREE_LAYOUT_TRANSITION_MS, treeGrowthDuration } from "./tree-growth";
+import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 
 export type ConnectionDraft = {
@@ -119,6 +117,8 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [growing, setGrowing] = useState(true);
+  const [layoutSettling, setLayoutSettling] = useState(false);
+  const settledLayout = useRef("");
   const [extraVisible, setExtraVisible] = useState(true);
   const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
   const choiceClose = useRef<HTMLButtonElement>(null);
@@ -207,37 +207,44 @@ function Canvas(props: Props) {
     );
     return () => window.clearTimeout(timer);
   }, [growing, ready, nodes.length, maxGrowthLevel]);
-  const {
-    captureAnchor,
-    rememberContext,
-    resetContext,
-    rememberViewport,
-  } = useTreeCameraState({
-    flow,
-    geometry,
-    nodeCount: nodes.length,
-    mode,
-    reverse,
-    ready,
-    focus,
-    positions,
-    selected,
-    narrow,
-    peopleMap,
-    layoutKey,
-    context,
-    root,
-    familyPeople: family.people,
-    childrenCount,
-    expanded: familyView.expanded,
-    collapsed,
-  });
+  useLayoutEffect(() => {
+    if (!ready || !geometry) return;
+    const previous = settledLayout.current;
+    settledLayout.current = layoutKey;
+    if (!previous || previous === layoutKey) return;
+    setLayoutSettling(true);
+    const timer = window.setTimeout(
+      () => setLayoutSettling(false),
+      TREE_LAYOUT_TRANSITION_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [geometry, layoutKey, ready]);
+  const { rememberContext, resetContext, rememberViewport } =
+    useTreeCameraState({
+      flow,
+      geometry,
+      nodeCount: nodes.length,
+      mode,
+      reverse,
+      ready,
+      focus,
+      positions,
+      selected,
+      narrow,
+      peopleMap,
+      context,
+      root,
+      familyPeople: family.people,
+      childrenCount,
+      expanded: familyView.expanded,
+      collapsed,
+    });
   const toggleBranch = useCallback(
-    (id: string, occurrenceId?: string) => {
-      captureAnchor(occurrenceId || id, id);
+    (id: string) => {
+      setGrowing(false);
       toggleView(id);
     },
-    [captureAnchor, toggleView],
+    [toggleView],
   );
   const actions = useMemo(
     () => ({
@@ -323,7 +330,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         tabIndex={-1}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >

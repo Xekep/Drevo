@@ -4,8 +4,12 @@ export const TREE_GROWTH_LEVEL_MS = 800;
 export const TREE_GROWTH_EDGE_MS = 560;
 export const TREE_GROWTH_NODE_MS = 520;
 export const TREE_GROWTH_MAX_LEVEL = 5;
+export const TREE_LAYOUT_TRANSITION_MS = 440;
 
-type GrowthStyle = CSSProperties & { "--tree-growth-delay": string };
+type GrowthStyle = CSSProperties & {
+  "--tree-growth-delay": string;
+  "--tree-edge-label-delay"?: string;
+};
 
 function cappedGrowthLevel(level: number) {
   return Math.min(TREE_GROWTH_MAX_LEVEL, Math.max(0, level));
@@ -24,7 +28,10 @@ export function treeNodeGrowthStyle(level: number): GrowthStyle {
 }
 
 export function treeEdgeGrowthStyle(level: number): GrowthStyle {
-  return { "--tree-growth-delay": `${treeEdgeGrowthDelay(level)}ms` };
+  return {
+    "--tree-growth-delay": `${treeEdgeGrowthDelay(level)}ms`,
+    "--tree-edge-label-delay": `${treeNodeGrowthDelay(level)}ms`,
+  };
 }
 
 export function treeGrowthDuration(maxLevel: number) {

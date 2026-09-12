@@ -154,6 +154,26 @@
 .archive-status button {
   padding: 12px 22px;
 }
+.archive-status-loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+}
+.archive-loader-ring {
+  width: 38px;
+  height: 38px;
+  border: 2px solid #dce6d7;
+  border-top-color: #527550;
+  border-right-color: #8eaa7f;
+  border-radius: 50%;
+  box-shadow: 0 0 0 7px #6f91650a;
+  animation: archive-loader-spin 760ms linear infinite;
+}
+@keyframes archive-loader-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
 .tree-view {
   position: absolute;
   inset: 0;
@@ -431,10 +451,20 @@
   stroke-dashoffset: 1;
   animation: tree-edge-draw 560ms ease-in-out var(--tree-growth-delay) both;
 }
+.tree-canvas.is-growing .tree-grow-edge-label {
+  opacity: 0;
+  animation: tree-edge-label-reveal 200ms ease-out var(--tree-growth-delay) both;
+}
 .tree-canvas.is-growing .tree-grow-node .flow-person {
   transform-origin: 50% 100%;
   animation: tree-card-grow 520ms cubic-bezier(0.2, 0.75, 0.25, 1)
     var(--tree-growth-delay) both;
+}
+.tree-canvas:not(.is-growing) .react-flow__node {
+  transition: transform 440ms cubic-bezier(0.22, 0.75, 0.2, 1);
+}
+.tree-canvas.is-layout-settling .react-flow__edge {
+  animation: tree-edge-settle 440ms ease-out both;
 }
 @keyframes tree-branch-reveal {
   to {
@@ -462,6 +492,19 @@
     marker-end: var(--tree-marker-end);
     stroke-dasharray: 1;
     stroke-dashoffset: 0;
+  }
+}
+@keyframes tree-edge-settle {
+  from {
+    opacity: 0.12;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes tree-edge-label-reveal {
+  to {
+    opacity: 1;
   }
 }
 @keyframes tree-card-grow {

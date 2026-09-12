@@ -22,6 +22,27 @@ test("production build opens the archive and navigates without console errors", 
   expect(errors).toEqual([]);
 });
 
+test("initial archive loading uses one quiet progress indicator", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const loader = page.getByRole("status", { name: "Загрузка архива" });
+  await expect(loader).toBeVisible();
+  await expect(loader.locator(".archive-loader-ring")).toHaveCSS(
+    "animation-name",
+    "archive-loader-spin",
+  );
+  await expect(page.getByText(/Открываем .*архив/i)).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "Разделы архива" }),
+  ).toBeVisible();
+});
+
 test("mobile archive does not overflow the viewport", async ({ page }) => {
   await page.goto("/tree");
   await expect(
@@ -43,13 +64,13 @@ test("the initial tree grows from roots toward descendants", async ({
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
-  await expect(nodes).toHaveCount(3);
+  await expect(nodes).toHaveCount(5);
   const delays = await nodes.evaluateAll((items) =>
     items
       .map((item) => getComputedStyle(item).animationDelay)
       .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
   );
-  expect(delays).toEqual(["0s", "0.8s", "1.6s"]);
+  expect(delays).toEqual(["0s", "0.8s", "0.8s", "1.6s", "1.6s"]);
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
   const firstEdge = page
     .locator(".tree-grow-edge .react-flow__edge-path")
@@ -67,7 +88,13 @@ test("the initial tree grows from roots toward descendants", async ({
         .map((item) => getComputedStyle(item).animationDelay)
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
-  expect(edgeDelays).toEqual(["0.24s", "1.04s"]);
+  expect(edgeDelays).toEqual(["0.24s", "0.24s", "1.04s", "1.04s", "1.04s"]);
+  const godparent = page.getByRole("button", {
+    name: "Связь: Крёстный родитель",
+  });
+  await expect(godparent).toHaveClass(/tree-grow-edge-label/);
+  await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
+  await expect(godparent).toHaveCSS("animation-delay", "1.6s");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
@@ -81,6 +108,57 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(
     page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
   ).toHaveCSS("animation-name", "none");
+  await expect(godparent).toHaveCSS("animation-name", "none");
+});
+
+test("collapsing descendants moves the remaining cards smoothly", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+
+  const child = page.getByTestId("rf__node-e2e-child");
+  const sibling = page.getByTestId("rf__node-e2e-sibling");
+  const before = await Promise.all([
+    child.boundingBox(),
+    sibling.boundingBox(),
+  ]);
+  await child.getByRole("button", { name: "Свернуть потомков" }).click();
+
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+  await expect(canvas).toHaveClass(/is-layout-settling/);
+  await expect(child).toHaveCSS("transition-duration", "0.44s");
+  const hasTransformTransition = await page
+    .locator(
+      "[data-testid='rf__node-e2e-child'], [data-testid='rf__node-e2e-sibling']",
+    )
+    .evaluateAll((nodes) =>
+      nodes.some((node) =>
+        node
+          .getAnimations()
+          .some(
+            (animation) =>
+              animation instanceof CSSTransition &&
+              animation.transitionProperty === "transform",
+          ),
+      ),
+    );
+  expect(hasTransformTransition).toBe(true);
+
+  await expect(canvas).not.toHaveClass(/is-layout-settling/, {
+    timeout: 1_000,
+  });
+  const after = await Promise.all([child.boundingBox(), sibling.boundingBox()]);
+  expect(
+    after.some(
+      (box, index) =>
+        !!box &&
+        !!before[index] &&
+        Math.hypot(box.x - before[index]!.x, box.y - before[index]!.y) > 1,
+    ),
+  ).toBe(true);
 });
 
 test("mobile person card stays below the project menu and starts the memorial flight", async ({
@@ -111,7 +189,9 @@ test("mobile person card stays below the project menu and starts the memorial fl
   ).toBe(true);
 });
 
-test("face assistant loads the versioned Human models", async ({ page }, testInfo) => {
+test("face assistant loads the versioned Human models", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -119,10 +199,13 @@ test("face assistant loads the versioned Human models", async ({ page }, testInf
     if (message.type() === "error") errors.push(message.text());
   });
   const models = ["blazeface.bin", "facemesh.bin", "faceres.bin"].map((name) =>
-    page.waitForResponse((response) => response.url().endsWith(`/models/human-3.3.6/${name}`)),
+    page.waitForResponse((response) =>
+      response.url().endsWith(`/models/human-3.3.6/${name}`),
+    ),
   );
   await page.goto("/photos");
-  for (const response of await Promise.all(models)) expect(response.ok()).toBe(true);
+  for (const response of await Promise.all(models))
+    expect(response.ok()).toBe(true);
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
 });
