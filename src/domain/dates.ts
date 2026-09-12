@@ -131,9 +131,10 @@ export function ageLabel(p: Person) {
     if (months === null) return "меньше года";
     if (months === 0) return "меньше месяца";
     const approximate = p.birth.length < 10 || (p.death && p.death.length < 10);
-    return `${approximate ? "около " : ""}${months} ${plural(months, "месяц", "месяца", "месяцев")}`;
+    return `${approximate ? "около " : ""}${months} ${approximate ? plural(months, "месяца", "месяцев", "месяцев") : plural(months, "месяц", "месяца", "месяцев")}`;
   }
-  return `${p.birth.length < 10 || (p.death && p.death.length < 10) ? "около " : ""}${age} ${plural(age, "год", "года", "лет")}`;
+  const approximate = p.birth.length < 10 || (p.death && p.death.length < 10);
+  return `${approximate ? "около " : ""}${age} ${approximate ? plural(age, "года", "лет", "лет") : plural(age, "год", "года", "лет")}`;
 }
 export function safeUrl(value?: string): string | undefined {
   if (!value) return;

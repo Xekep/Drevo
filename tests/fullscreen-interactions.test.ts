@@ -75,3 +75,11 @@ test("age under one year is shown in months", () => {
   );
   assert.equal(ageLabel(person("2020", "2020")), "меньше года");
 });
+
+test("approximate age uses the genitive form after около", () => {
+  assert.equal(ageLabel(person("1908-01-01", "1981-01-01")), "73 года");
+  assert.equal(ageLabel(person("1908", "1981")), "около 73 лет");
+  assert.equal(ageLabel(person("2000", "2021")), "около 21 года");
+  assert.equal(ageLabel(person("2020-01", "2020-02")), "около 1 месяца");
+  assert.equal(ageLabel(person("2020-01", "2020-03")), "около 2 месяцев");
+});
