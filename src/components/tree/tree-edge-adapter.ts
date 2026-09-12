@@ -12,7 +12,7 @@ import { crossingPaths } from "../../domain/route-crossings.ts";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
 import type { Family, Person } from "../../domain/types.ts";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
-import { treeEdgeGrowthStyle } from "./tree-growth.ts";
+import { treeConnectionGrowthStyle } from "./tree-growth.ts";
 
 const colors = {
   parent: "#58775a",
@@ -54,7 +54,7 @@ type EdgeAdapterInput = {
   preview: { from: string; to: string } | null;
   onEdge: (edge: GraphConnection) => void;
   onChoices: (edges: GraphConnection[]) => void;
-  growthLevels: ReadonlyMap<string, number>;
+  growthDelays: ReadonlyMap<string, number>;
 };
 
 function isHighlighted(
@@ -96,7 +96,7 @@ export function buildTreeEdges({
   preview,
   onEdge,
   onChoices,
-  growthLevels,
+  growthDelays,
 }: EdgeAdapterInput): RelationshipEdgeType[] {
   const routes = new Map(geometry?.routes || []);
   const edges: RelationshipEdgeType[] = connections
@@ -149,12 +149,7 @@ export function buildTreeEdges({
           stroke: colors[edge.type],
           strokeWidth: active || selectedEdge === edge.key ? 3 : 1.6,
           strokeDasharray: patterns[edge.type],
-          ...treeEdgeGrowthStyle(
-            Math.max(
-              growthLevels.get(edge.from) || 0,
-              growthLevels.get(edge.to) || 0,
-            ),
-          ),
+          ...treeConnectionGrowthStyle(edge, growthDelays),
         },
         markerEnd: side
           ? undefined
@@ -220,12 +215,7 @@ export function buildTreeEdges({
           style: {
             stroke: edge.type === "spouse" ? colors.spouse : colors.parent,
             strokeWidth: selected || active ? 2.8 : 1.6,
-            ...treeEdgeGrowthStyle(
-              Math.max(
-                growthLevels.get(occurrencePeople.get(branch.source)!) || 0,
-                growthLevels.get(occurrencePeople.get(branch.target)!) || 0,
-              ),
-            ),
+            ...treeConnectionGrowthStyle(edge, growthDelays),
           },
           reconnectable: false,
           focusable: true,

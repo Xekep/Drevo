@@ -77,7 +77,7 @@ export async function compactFamilyLayout(
 ) {
   const baseline = await layout(structuredClone(graph));
   const before = layoutQuality(baseline);
-  if (before.width < 2200 || before.width < before.height * 1.8)
+  if (before.width < 1800 || before.width < before.height * 1.6)
     return baseline;
   let best = baseline,
     score = layoutCost(before, before);
@@ -99,7 +99,7 @@ export async function compactFamilyLayout(
         after.extent < before.extent * 0.9 &&
         after.longest <= before.longest * 1.25 + W &&
         after.crossedRoutes <= before.crossedRoutes &&
-        candidate < score * 0.95
+        candidate < score * 0.98
       ) {
         best = compact;
         score = candidate;

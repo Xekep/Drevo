@@ -19,7 +19,6 @@ import {
 import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
 import {
   archiveConnections,
-  generationLevels,
   type Family,
   type ArchiveUser,
   type GraphConnection,
@@ -45,7 +44,11 @@ import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
 import { TreeCameraTools } from "./tree-camera-tools";
 import { TreeEdgeChoices } from "./tree-edge-choices";
-import { TREE_LAYOUT_TRANSITION_MS, treeGrowthDuration } from "./tree-growth";
+import {
+  TREE_LAYOUT_TRANSITION_MS,
+  treeGrowthDelays,
+  treeGrowthDuration,
+} from "./tree-growth";
 import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 
@@ -156,8 +159,8 @@ function Canvas(props: Props) {
     mode,
     reverse,
   );
-  const growthLevels = useMemo(
-    () => generationLevels(family.people),
+  const growthDelays = useMemo(
+    () => treeGrowthDelays(family.people),
     [family.people],
   );
   const nodeModel = useMemo(
@@ -173,7 +176,7 @@ function Canvas(props: Props) {
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
-        growthLevels,
+        growthDelays,
       }),
     [
       family,
@@ -186,7 +189,7 @@ function Canvas(props: Props) {
       familyView.hidden,
       familyView.expanded,
       props.query,
-      growthLevels,
+      growthDelays,
     ],
   );
   const {
@@ -196,16 +199,16 @@ function Canvas(props: Props) {
     peopleMap,
     nodes,
     displayNodes,
-    maxGrowthLevel,
+    maxGrowthDelay,
   } = nodeModel;
   useEffect(() => {
     if (!growing || !ready || !nodes.length) return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      treeGrowthDuration(maxGrowthLevel),
+      treeGrowthDuration(maxGrowthDelay),
     );
     return () => window.clearTimeout(timer);
-  }, [growing, ready, nodes.length, maxGrowthLevel]);
+  }, [growing, ready, nodes.length, maxGrowthDelay]);
   useLayoutEffect(() => {
     if (!ready || !geometry) return;
     const previous = settledLayout.current;
@@ -286,7 +289,7 @@ function Canvas(props: Props) {
         preview: props.preview,
         onEdge,
         onChoices: setEdgeChoices,
-        growthLevels,
+        growthDelays,
       }),
     [
       family,
@@ -305,7 +308,7 @@ function Canvas(props: Props) {
       extraVisible,
       props.preview,
       onEdge,
-      growthLevels,
+      growthDelays,
     ],
   );
   const connect = useCallback(
@@ -469,7 +472,7 @@ function Canvas(props: Props) {
           zoomOnPinch
           zoomOnDoubleClick={!screen.fullscreen}
           selectionOnDrag={false}
-          panOnDrag={[0, 1]}
+          panOnDrag={growing ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
           onlyRenderVisibleElements

@@ -61,6 +61,21 @@ test("a broad tree may use several family rows when overall geometry improves", 
   assert.ok(layoutCost(layoutQuality(compact), layoutQuality(baseline)) < 1);
 });
 
+test("a moderately wide tree may fill vertical space when every route stays safe", async () => {
+  const baseline = drawing(1800, 600);
+  const compact = drawing(1200, 900);
+  const attempts: string[] = [];
+  const result = await compactFamilyLayout(baseline, async (request) => {
+    const strategy =
+      request.layoutOptions?.["elk.layered.layering.strategy"] || "baseline";
+    attempts.push(strategy);
+    return structuredClone(strategy === "MIN_WIDTH" ? compact : baseline);
+  });
+
+  assert.ok(attempts.includes("MIN_WIDTH"));
+  assert.deepEqual(result, compact);
+});
+
 test("a compact result cannot silently drop an edge route or replace a person", async () => {
   const baseline = drawing(20000, 500);
   for (const damage of ["route", "person"]) {
