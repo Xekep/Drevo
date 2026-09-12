@@ -68,11 +68,9 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const { path, x, y } = props.data?.route
     ? roundedRoute(props.data.route.points)
     : { path: fallback[0], x: fallback[1], y: fallback[2] };
+  const renderedPath = props.data?.path || path;
   const edge = props.data!.connection;
-  const animatedStyle = {
-    ...props.style,
-    "--tree-marker-end": props.markerEnd || "none",
-  } as CSSProperties & {
+  const animatedStyle = { ...props.style } as CSSProperties & {
     "--tree-growth-delay"?: string;
     "--tree-edge-label-delay"?: string;
   };
@@ -87,14 +85,23 @@ export const RelationshipEdge = memo(function RelationshipEdge(
     <>
       <g className="tree-grow-edge-visual" style={visualStyle}>
         <BaseEdge
-          path={props.data?.path || path}
-          pathLength={1}
+          className="tree-edge-final-path"
+          path={renderedPath}
           markerEnd={props.markerEnd}
           style={animatedStyle}
           interactionWidth={24}
         />
+        <path
+          aria-hidden="true"
+          className="react-flow__edge-path tree-edge-growth-path"
+          d={renderedPath}
+          fill="none"
+          pathLength={1}
+          style={{ ...animatedStyle, strokeDasharray: undefined }}
+        />
         {props.data?.junction && (
           <circle
+            className="tree-grow-edge-junction"
             cx={props.data.junction.x}
             cy={props.data.junction.y}
             r={2.4}

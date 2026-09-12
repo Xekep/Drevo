@@ -27,7 +27,7 @@ type TreeNodeModelInput = {
   hidden: ReadonlyMap<string, number>;
   expanded: ReadonlySet<string>;
   query: string;
-  growthLevels: ReadonlyMap<string, number>;
+  growthDelays: ReadonlyMap<string, number>;
 };
 
 export function buildTreeNodeModel({
@@ -41,16 +41,14 @@ export function buildTreeNodeModel({
   hidden,
   expanded,
   query,
-  growthLevels,
+  growthDelays,
 }: TreeNodeModelInput) {
   const childrenCount = new Map<string, number>();
   for (const person of family.people)
     for (const parent of person.parents)
       childrenCount.set(parent, (childrenCount.get(parent) || 0) + 1);
 
-  const positions = new Map(
-    geometry?.mode === mode ? geometry.positions : [],
-  );
+  const positions = new Map(geometry?.mode === mode ? geometry.positions : []);
   const occurrences =
     geometry?.mode === mode
       ? geometry.occurrences ||
@@ -98,7 +96,7 @@ export function buildTreeNodeModel({
         Math.max(
           0,
           ...group.members.map(
-            (id) => growthLevels.get(occurrencePeople.get(id)!) || 0,
+            (id) => growthDelays.get(occurrencePeople.get(id)!) || 0,
           ),
         ),
       ),
@@ -109,9 +107,7 @@ export function buildTreeNodeModel({
     geometry?.mode === mode
       ? (geometry.siblingGroups || [])
           .filter((group) =>
-            group.members.every((id) =>
-              visible.has(occurrencePeople.get(id)!),
-            ),
+            group.members.every((id) => visible.has(occurrencePeople.get(id)!)),
           )
           .map((group) => ({
             id: group.id,
@@ -135,8 +131,7 @@ export function buildTreeNodeModel({
                 Math.max(
                   0,
                   ...group.members.map(
-                    (id) =>
-                      growthLevels.get(occurrencePeople.get(id)!) || 0,
+                    (id) => growthDelays.get(occurrencePeople.get(id)!) || 0,
                   ),
                 ),
               ),
@@ -163,7 +158,7 @@ export function buildTreeNodeModel({
         height: TREE_NODE_HEIGHT,
         selected: selected.includes(person.id),
         className: "tree-grow-node",
-        style: treeNodeGrowthStyle(growthLevels.get(person.id) || 0),
+        style: treeNodeGrowthStyle(growthDelays.get(person.id) || 0),
         data: {
           person,
           household: householdMembers.has(occurrence.id),
@@ -187,9 +182,9 @@ export function buildTreeNodeModel({
     occurrencePeople,
     personOccurrences,
     peopleMap,
-    maxGrowthLevel: Math.max(
+    maxGrowthDelay: Math.max(
       0,
-      ...nodes.map((node) => growthLevels.get(node.data.person.id) || 0),
+      ...nodes.map((node) => growthDelays.get(node.data.person.id) || 0),
     ),
     nodes,
     displayNodes: [...householdNodes, ...siblingNodes, ...nodes] as Array<

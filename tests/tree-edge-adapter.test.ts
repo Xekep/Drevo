@@ -42,10 +42,10 @@ const basePositions = new Map([
 ]);
 const visible = new Set(["a", "b", "c"]);
 const occurrencePeople = new Map(people.map((item) => [item.id, item.id]));
-const growthLevels = new Map([
+const growthDelays = new Map([
   ["a", 0],
-  ["b", 1],
-  ["c", 0],
+  ["b", 640],
+  ["c", 45],
 ]);
 const parent: GraphConnection = {
   from: "a",
@@ -92,7 +92,7 @@ function baseInput() {
     preview: null,
     onEdge: () => {},
     onChoices: () => {},
-    growthLevels,
+    growthDelays,
   };
 }
 
@@ -108,7 +108,7 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(edges[0].className, "tree-grow-edge relationship-parent");
   assert.equal(
     (edges[0].style as Record<string, unknown>)["--tree-growth-delay"],
-    "200ms",
+    "340ms",
   );
 
   const withExtras = buildTreeEdges({
@@ -128,7 +128,7 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(withExtras[1].style?.strokeDasharray, "5 5");
   assert.equal(
     (withExtras[1].style as Record<string, unknown>)["--tree-edge-label-delay"],
-    "700ms",
+    "1280ms",
   );
   assert.equal(withExtras[2].type, "smoothstep");
 });

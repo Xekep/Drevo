@@ -133,45 +133,103 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   expect(delays).toEqual([
     "0s",
-    "0.7s",
-    "0.7s",
-    "0.7s",
-    "0.7s",
-    "1.4s",
-    "1.4s",
+    "0.64s",
+    "0.64s",
+    "0.685s",
+    "0.73s",
+    "1.37s",
+    "1.415s",
   ]);
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
     "animation-delay",
-    "0.7s",
+    "0.64s",
   );
   await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCSS(
     "animation-delay",
-    "0.7s",
+    "0.685s",
+  );
+  await expect(page.getByTestId("rf__node-e2e-sibling")).toHaveCSS(
+    "animation-delay",
+    "0.73s",
   );
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
-  const firstEdge = page
-    .locator(".tree-grow-edge .react-flow__edge-path")
+  await expect(nodes.last()).toHaveCSS("animation-duration", "0.34s");
+  const firstGrowthEdge = page
+    .locator(".tree-grow-edge .tree-edge-growth-path")
     .first();
-  await expect(firstEdge).toHaveAttribute("pathLength", "1");
-  await expect(firstEdge).toHaveCSS("animation-name", "tree-edge-draw");
-  await expect(firstEdge).toHaveCSS("animation-duration", "0.5s");
-  await expect(
-    page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
-  ).toHaveCSS("animation-name", "tree-edge-reveal");
+  await expect(firstGrowthEdge).toHaveAttribute("pathLength", "1");
+  await expect(firstGrowthEdge).toHaveCSS("animation-name", "tree-edge-draw");
+  await expect(firstGrowthEdge).toHaveCSS("animation-duration", "0.3s");
+  const firstFinalEdge = page
+    .locator(".tree-grow-edge .tree-edge-final-path")
+    .first();
+  await expect(firstFinalEdge).not.toHaveAttribute("pathLength", "1");
+  await expect(firstFinalEdge).toHaveCSS(
+    "animation-name",
+    "tree-edge-final-reveal",
+  );
   const edgeDelays = await page
-    .locator(".tree-grow-edge .react-flow__edge-path")
+    .locator(".tree-grow-edge .tree-edge-growth-path")
     .evaluateAll((items) =>
       items
         .map((item) => getComputedStyle(item).animationDelay)
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
-  expect(edgeDelays).toEqual(["0.2s", "0.2s", "0.2s", "0.9s", "0.9s", "0.9s"]);
+  expect(edgeDelays).toEqual([
+    "0.34s",
+    "0.43s",
+    "0.685s",
+    "1.07s",
+    "1.115s",
+    "1.755s",
+  ]);
   const godparent = page.getByRole("button", {
     name: "Связь: Крёстный родитель",
   });
   await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
-  await expect(godparent).toHaveCSS("animation-delay", "1.4s");
+  await expect(godparent).toHaveCSS("animation-delay", "2.055s");
+
+  const pane = page.locator(".react-flow__pane");
+  const box = await pane.boundingBox();
+  expect(box).not.toBeNull();
+  const x = box!.x + box!.width * 0.8;
+  const y = box!.y + box!.height * 0.8;
+  await expect(canvas).toHaveClass(/is-growing/);
+  const viewport = page.locator(".react-flow__viewport");
+  const transform = await viewport.getAttribute("style");
+  for (const button of ["left", "right"] as const) {
+    await page.mouse.move(x, y);
+    await page.mouse.down({ button });
+    await page.mouse.move(x - 30, y - 20, { steps: 3 });
+    await page.mouse.up({ button });
+  }
+  await expect(viewport).toHaveAttribute("style", transform!);
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
+  await expect(finalPaths).toHaveCount(6);
+  expect(
+    await finalPaths.evaluateAll((paths) =>
+      paths.every((path) => {
+        const style = getComputedStyle(path);
+        return style.visibility === "visible" && Number(style.opacity) === 1;
+      }),
+    ),
+  ).toBe(true);
+  const godparentPath = page.locator(
+    ".relationship-godparent .tree-edge-final-path",
+  );
+  expect(
+    await godparentPath.evaluate(
+      (path) => getComputedStyle(path).strokeDasharray,
+    ),
+  ).toContain("5px");
+  await expect(
+    page.locator(".relationship-godparent .tree-edge-growth-path"),
+  ).toHaveCSS("marker-end", "none");
+  expect(
+    await godparentPath.evaluate((path) => getComputedStyle(path).markerEnd),
+  ).not.toBe("none");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
@@ -180,11 +238,11 @@ test("the initial tree grows from roots toward descendants", async ({
     "none",
   );
   await expect(
-    page.locator(".tree-grow-edge .react-flow__edge-path").first(),
+    page.locator(".tree-grow-edge .tree-edge-final-path").first(),
   ).toHaveCSS("animation-name", "none");
   await expect(
-    page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
-  ).toHaveCSS("animation-name", "none");
+    page.locator(".tree-grow-edge .tree-edge-growth-path").first(),
+  ).toHaveCSS("display", "none");
   await expect(godparent).toHaveCSS("animation-name", "none");
 });
 
