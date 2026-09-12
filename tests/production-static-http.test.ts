@@ -40,10 +40,23 @@ async function listen(
 test("production static streams SPA routes, files and shared page", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-production-static-"));
   mkdirSync(join(directory, "assets"), { recursive: true });
+  mkdirSync(join(directory, "models", "face-api-1.7.15"), {
+    recursive: true,
+  });
   const html = "<!doctype html><title>Drevo</title>";
   const icon = "<svg></svg>";
+  const model = '{"weightsManifest":[]}';
   writeFileSync(join(directory, "index.html"), html);
   writeFileSync(join(directory, "favicon.svg"), icon);
+  writeFileSync(
+    join(
+      directory,
+      "models",
+      "face-api-1.7.15",
+      "tiny_face_detector_model-weights_manifest.json",
+    ),
+    model,
+  );
   const app = await listen(productionStaticHttp(directory, true));
   const token = "a".repeat(43);
 
@@ -51,7 +64,10 @@ test("production static streams SPA routes, files and shared page", async () => 
     for (const path of ["/", "/tree", "/people"]) {
       const response = await fetch(app.base + path);
       assert.equal(response.status, 200);
-      assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+      assert.equal(
+        response.headers.get("content-type"),
+        "text/html; charset=utf-8",
+      );
       assert.equal(response.headers.get("cache-control"), "no-cache");
       assert.equal(await response.text(), html);
     }
@@ -61,15 +77,32 @@ test("production static streams SPA routes, files and shared page", async () => 
     assert.equal(favicon.headers.get("content-type"), "image/svg+xml");
     assert.equal(await favicon.text(), icon);
 
+    const cachedModel = await fetch(
+      app.base +
+        "/models/face-api-1.7.15/tiny_face_detector_model-weights_manifest.json",
+    );
+    assert.equal(cachedModel.status, 200);
+    assert.equal(
+      cachedModel.headers.get("cache-control"),
+      "public, max-age=31536000, immutable",
+    );
+    assert.equal(await cachedModel.text(), model);
+
     const shared = await fetch(app.base + `/s/${token}`);
     assert.equal(shared.status, 200);
     assert.equal(shared.headers.get("referrer-policy"), "no-referrer");
-    assert.equal(shared.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+    assert.equal(
+      shared.headers.get("x-robots-tag"),
+      "noindex, nofollow, noarchive",
+    );
     assert.equal(await shared.text(), html);
 
     const head = await fetch(app.base + "/tree", { method: "HEAD" });
     assert.equal(head.status, 200);
-    assert.equal(head.headers.get("content-length"), String(Buffer.byteLength(html)));
+    assert.equal(
+      head.headers.get("content-length"),
+      String(Buffer.byteLength(html)),
+    );
     assert.equal((await head.arrayBuffer()).byteLength, 0);
 
     assert.equal((await fetch(app.base + "/missing.txt")).status, 404);

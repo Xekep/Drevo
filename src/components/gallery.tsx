@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import type { Family } from "../domain";
 import { photoCaption, photoLabel } from "../domain/photo-metadata";
@@ -6,6 +6,7 @@ import { newestPhotos, photoAlbums } from "../domain/photo-albums";
 import { mediaPreview } from "../domain/media-preview";
 import { LoadMore } from "./load-more";
 import { photoFileError } from "../domain/photo-upload";
+import { warmFaceAssistant } from "../vision/face-assistant";
 export function Gallery({
   family,
   canEdit,
@@ -29,6 +30,13 @@ export function Gallery({
   const [mode, setMode] = useState<"all" | "people" | "years">("all"),
     [albumId, setAlbumId] = useState(""),
     [limit, setLimit] = useState(30);
+  useEffect(() => {
+    if (!canEdit) return;
+    const timer = window.setTimeout(() => {
+      void warmFaceAssistant().catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [canEdit]);
   const available = (family.photos || []).filter(
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),

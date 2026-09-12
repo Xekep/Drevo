@@ -17,18 +17,16 @@ export type FaceSuggestion = {
   descriptor: number[];
   match?: { personId: string; distance: number };
 };
-let engine: Promise<typeof import("@vladmandic/face-api")> | undefined;
+const MODEL_URI = "/models/face-api-1.7.15";
+let engine: Promise<typeof import("@vladmandic/face-api")> | undefined,
+  quickModels: Promise<void> | undefined,
+  preciseModel: Promise<void> | undefined;
 const cache = new Map<string, Promise<FaceSample[]>>();
-async function loadEngine() {
+async function loadApi() {
   if (!engine)
     engine = (async () => {
       const api = await import("@vladmandic/face-api");
       await (api.tf as unknown as { ready: () => Promise<void> }).ready();
-      await Promise.all([
-        api.nets.ssdMobilenetv1.loadFromUri("/models"),
-        api.nets.faceLandmark68Net.loadFromUri("/models"),
-        api.nets.faceRecognitionNet.loadFromUri("/models"),
-      ]);
       return api;
     })().catch((e) => {
       engine = undefined;
@@ -36,30 +34,102 @@ async function loadEngine() {
     });
   return engine;
 }
-async function detect(url: string): Promise<FaceSample[]> {
-  if (cache.has(url)) return cache.get(url)!;
+
+async function loadQuickEngine() {
+  const api = await loadApi();
+  if (!quickModels)
+    quickModels = Promise.all([
+      api.nets.tinyFaceDetector.loadFromUri(MODEL_URI),
+      api.nets.faceLandmark68Net.loadFromUri(MODEL_URI),
+      api.nets.faceRecognitionNet.loadFromUri(MODEL_URI),
+    ])
+      .then(() => undefined)
+      .catch((error) => {
+        quickModels = undefined;
+        throw error;
+      });
+  await quickModels;
+  return api;
+}
+
+async function loadPreciseEngine() {
+  const api = await loadQuickEngine();
+  if (!preciseModel)
+    preciseModel = api.nets.ssdMobilenetv1
+      .loadFromUri(MODEL_URI)
+      .catch((error) => {
+        preciseModel = undefined;
+        throw error;
+      });
+  await preciseModel;
+  return api;
+}
+
+export async function warmFaceAssistant() {
+  await loadQuickEngine();
+}
+
+function imageCanvas(image: HTMLImageElement, maximumSide: number) {
+  const scale = Math.min(
+    1,
+    maximumSide / Math.max(image.naturalWidth, image.naturalHeight),
+  );
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+async function detect(
+  url: string,
+  precise: boolean,
+  onProgress: (message: string) => void,
+): Promise<FaceSample[]> {
+  const key = `${precise ? "precise" : "quick"}:${url}`;
+  if (cache.has(key)) return cache.get(key)!;
   const work = (async () => {
-    const api = await loadEngine(),
-      image = new Image();
+    const api = precise ? await loadPreciseEngine() : await loadQuickEngine();
+    const image = new Image();
     image.src = url;
     await image.decode();
-    const scale = Math.min(
-      1,
-      1800 / Math.max(image.naturalWidth, image.naturalHeight),
-    );
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    canvas
-      .getContext("2d")!
-      .drawImage(image, 0, 0, canvas.width, canvas.height);
-    const result = await api
-      .detectAllFaces(
-        canvas,
-        new api.SsdMobilenetv1Options({ minConfidence: 0.55, maxResults: 100 }),
-      )
-      .withFaceLandmarks()
-      .withFaceDescriptors();
+    let canvas = imageCanvas(image, precise ? 1800 : 1200);
+    let result = precise
+      ? await api
+          .detectAllFaces(
+            canvas,
+            new api.SsdMobilenetv1Options({
+              minConfidence: 0.55,
+              maxResults: 100,
+            }),
+          )
+          .withFaceLandmarks()
+          .withFaceDescriptors()
+      : await api
+          .detectAllFaces(
+            canvas,
+            new api.TinyFaceDetectorOptions({
+              inputSize: 608,
+              scoreThreshold: 0.45,
+            }),
+          )
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+    if (!precise && !result.length) {
+      onProgress("Быстрый поиск не нашёл лиц — запускаем точный…");
+      await loadPreciseEngine();
+      canvas = imageCanvas(image, 1800);
+      result = await api
+        .detectAllFaces(
+          canvas,
+          new api.SsdMobilenetv1Options({
+            minConfidence: 0.55,
+            maxResults: 100,
+          }),
+        )
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+    }
     return result
       .map((face) => {
         const b = face.detection.box,
@@ -77,10 +147,10 @@ async function detect(url: string): Promise<FaceSample[]> {
       })
       .filter((f) => f.box.width > 0 && f.box.height > 0);
   })().catch((error) => {
-    cache.delete(url);
+    cache.delete(key);
     throw error;
   });
-  cache.set(url, work);
+  cache.set(key, work);
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
   return work;
 }
@@ -130,13 +200,14 @@ export async function suggestFaces(
   photo: ArchivePhoto,
   signal: AbortSignal,
   onProgress: (message: string) => void,
+  precise = false,
 ): Promise<FaceSuggestion[]> {
   const check = () => {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
   };
   check();
-  onProgress("Ищем лица на снимке…");
-  const faces = await detect(photo.url);
+  onProgress(precise ? "Ищем лица в точном режиме…" : "Ищем лица на снимке…");
+  const faces = await detect(photo.url, precise, onProgress);
   check();
   const newFaces = faces.filter(
     (face) => !photo.tags.some((tag) => containsFace(tag, face.box)),

@@ -16,6 +16,7 @@
     "preview:static": "vite preview --host 127.0.0.1",
     "format": "prettier --write src tests docs README.md",
     "backfill:faces": "node --experimental-strip-types src/server/browser-face-backfill.ts",
+    "prebackfill:faces": "npm run prepare:models",
     "prepare:models": "node --experimental-strip-types src/server/prepare-models.ts",
     "predev": "npm run prepare:models",
     "prebuild": "npm run prepare:models"

@@ -69,17 +69,15 @@ export function productionStaticHttp(
     } catch {
       return jsonError(res, 404, "Страница не найдена");
     }
-    if (decoded.includes("\0")) return jsonError(res, 404, "Страница не найдена");
+    if (decoded.includes("\0"))
+      return jsonError(res, 404, "Страница не найдена");
 
     const shared = /^\/s\/[A-Za-z0-9_-]{43}$/.test(pathname);
     const filePath =
       archiveViewAt(pathname) || shared
         ? resolve(root, "index.html")
         : resolve(root, "." + decoded);
-    if (
-      filePath !== root &&
-      !filePath.startsWith(root + sep)
-    )
+    if (filePath !== root && !filePath.startsWith(root + sep))
       return jsonError(res, 403, "Недоступный путь");
 
     let handle;
@@ -100,9 +98,10 @@ export function productionStaticHttp(
           "application/octet-stream",
         "Content-Length": String(stat.size),
         "X-Content-Type-Options": "nosniff",
-        "Cache-Control": pathname.startsWith("/assets/")
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
+        "Cache-Control":
+          pathname.startsWith("/assets/") || pathname.startsWith("/models/")
+            ? "public, max-age=31536000, immutable"
+            : "no-cache",
       });
       if (req.method === "HEAD") {
         await handle.close();

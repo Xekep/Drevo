@@ -130,7 +130,7 @@ function PhotoViewerContent({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useEffect(() => () => scanController.current?.abort(), []);
-  async function scan(enterEditing = false) {
+  async function scan(enterEditing = false, precise = false) {
     if (!(canEdit || (enterEditing && allowedEdit)) || scanning) return;
     scanned.current = true;
     const controller = new AbortController();
@@ -138,7 +138,12 @@ function PhotoViewerContent({
     setScanning(true);
     setScanStatus("Загружаем модель поиска лиц…");
     try {
-      const found = await suggestFaces(photo, controller.signal, setScanStatus);
+      const found = await suggestFaces(
+        photo,
+        controller.signal,
+        setScanStatus,
+        precise,
+      );
       if (!controller.signal.aborted) {
         setSuggestions(found);
         setScanStatus(
@@ -498,6 +503,11 @@ function PhotoViewerContent({
               <button disabled={scanning} onClick={() => void scan()}>
                 {scanning ? "Ищем лица…" : "Найти лица"}
               </button>
+              {!scanning && scanStatus && (
+                <button onClick={() => void scan(false, true)}>
+                  Найти лица точнее
+                </button>
+              )}
               {scanStatus && <p role="status">{scanStatus}</p>}
               {scanning && (
                 <button

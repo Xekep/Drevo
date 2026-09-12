@@ -1,5 +1,7 @@
 import * as faceapi from "@vladmandic/face-api";
 
+const MODEL_URI = "/models/face-api-1.7.15";
+
 type Tag = {
   id: string;
   personId: string;
@@ -30,9 +32,9 @@ async function run() {
   )) as Photo[];
   await (faceapi.tf as unknown as { ready: () => Promise<void> }).ready();
   await Promise.all([
-    faceapi.nets.ssdMobilenetv1.loadFromUri("/models"),
-    faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
-    faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URI),
+    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URI),
+    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URI),
   ]);
   const descriptors: Array<{
     id: string;
