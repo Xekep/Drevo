@@ -73,25 +73,30 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const animatedStyle = {
     ...props.style,
     "--tree-marker-end": props.markerEnd || "none",
+  } as CSSProperties & { "--tree-growth-delay"?: string };
+  const visualStyle = {
+    "--tree-growth-delay": animatedStyle["--tree-growth-delay"] || "0ms",
   } as CSSProperties;
   return (
     <>
-      <BaseEdge
-        path={props.data?.path || path}
-        pathLength={1}
-        markerEnd={props.markerEnd}
-        style={animatedStyle}
-        interactionWidth={24}
-      />
-      {props.data?.junction && (
-        <circle
-          cx={props.data.junction.x}
-          cy={props.data.junction.y}
-          r={2.4}
-          fill={props.style?.stroke || "#58775a"}
-          pointerEvents="none"
+      <g className="tree-grow-edge-visual" style={visualStyle}>
+        <BaseEdge
+          path={props.data?.path || path}
+          pathLength={1}
+          markerEnd={props.markerEnd}
+          style={animatedStyle}
+          interactionWidth={24}
         />
-      )}
+        {props.data?.junction && (
+          <circle
+            cx={props.data.junction.x}
+            cy={props.data.junction.y}
+            r={2.4}
+            fill={props.style?.stroke || "#58775a"}
+            pointerEvents="none"
+          />
+        )}
+      </g>
       {(props.selected || !["parent", "spouse"].includes(edge.type)) && (
         <EdgeLabelRenderer>
           <button

@@ -49,14 +49,17 @@ test("the initial tree grows from roots toward descendants", async ({
       .map((item) => getComputedStyle(item).animationDelay)
       .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
   );
-  expect(delays).toEqual(["0s", "0.65s", "1.3s"]);
+  expect(delays).toEqual(["0s", "0.8s", "1.6s"]);
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
   const firstEdge = page
     .locator(".tree-grow-edge .react-flow__edge-path")
     .first();
   await expect(firstEdge).toHaveAttribute("pathLength", "1");
   await expect(firstEdge).toHaveCSS("animation-name", "tree-edge-draw");
-  await expect(firstEdge).toHaveCSS("animation-duration", "0.33s");
+  await expect(firstEdge).toHaveCSS("animation-duration", "0.56s");
+  await expect(
+    page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
+  ).toHaveCSS("animation-name", "tree-edge-reveal");
   const edgeDelays = await page
     .locator(".tree-grow-edge .react-flow__edge-path")
     .evaluateAll((items) =>
@@ -64,7 +67,7 @@ test("the initial tree grows from roots toward descendants", async ({
         .map((item) => getComputedStyle(item).animationDelay)
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
-  expect(edgeDelays).toEqual(["0.32s", "0.97s"]);
+  expect(edgeDelays).toEqual(["0.24s", "1.04s"]);
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
@@ -74,6 +77,9 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   await expect(
     page.locator(".tree-grow-edge .react-flow__edge-path").first(),
+  ).toHaveCSS("animation-name", "none");
+  await expect(
+    page.locator(".tree-grow-edge .tree-grow-edge-visual").first(),
   ).toHaveCSS("animation-name", "none");
 });
 
