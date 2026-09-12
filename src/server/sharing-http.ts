@@ -21,6 +21,7 @@ import { familyChangesHttp } from "./family-changes-http.ts";
 import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import { currentRestoreStore } from "./restore.ts";
+import { faceDescriptorsHttp } from "./face-descriptors-http.ts";
 
 export function sharingHttp({
   archive,
@@ -78,6 +79,7 @@ export function sharingHttp({
   });
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({ archive, auth, media, publicOrigin });
+  const faceDescriptors = faceDescriptorsHttp({ archive, auth, publicOrigin });
   const serveMedia = mediaHttp({ auth, media, previewImage, visibility });
 
   return async (
@@ -94,6 +96,7 @@ export function sharingHttp({
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
+    if (await faceDescriptors(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
     if (await publicSharing(req, res, url)) return true;
     return await serveStatic(req, res, url);

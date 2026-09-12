@@ -42,6 +42,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "relations",
       "photos",
       "photo_tags",
+      "face_descriptors",
       "history",
       "users",
       "auth_sessions",
@@ -111,7 +112,9 @@ test("schema v1 upgrades service tables to v2 without losing existing users", ()
 
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.equal(
-      String(db.prepare("SELECT name FROM users WHERE id='legacy-user'").get()!.name),
+      String(
+        db.prepare("SELECT name FROM users WHERE id='legacy-user'").get()!.name,
+      ),
       "Старый пользователь",
     );
     const tables = tableNames(db);
@@ -182,7 +185,9 @@ test("future schema version is rejected without changing the database", () => {
       assert.equal(userVersion(reopened), future);
       assert.equal(
         reopened
-          .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE name='archive'")
+          .prepare(
+            "SELECT count(*) AS n FROM sqlite_schema WHERE name='archive'",
+          )
           .get()!.n,
         0,
       );

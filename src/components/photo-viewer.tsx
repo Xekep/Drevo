@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { suggestFaces, type FaceSuggestion } from "../vision/face-assistant";
+import {
+  loadFaceDescriptors,
+  saveFaceDescriptor,
+  suggestFaces,
+  type FaceSuggestion,
+} from "../vision/face-assistant";
 import {
   ScanFace,
   Pencil,
@@ -134,7 +139,13 @@ function PhotoViewerContent({
     setScanning(true);
     setScanStatus("Загружаем модель поиска лиц…");
     try {
-      const found = await suggestFaces(photo, controller.signal, setScanStatus);
+      const known = await loadFaceDescriptors();
+      const found = await suggestFaces(
+        photo,
+        known,
+        controller.signal,
+        setScanStatus,
+      );
       if (!controller.signal.aborted) {
         setSuggestions(found);
         setScanStatus(
@@ -154,7 +165,7 @@ function PhotoViewerContent({
   }
   function selectSuggestion(s: FaceSuggestion) {
     setRect(s.box);
-    setPersonId("");
+    setPersonId(s.match?.personId || "");
     setSuggestionId(s.id);
     setTagging(true);
   }
@@ -508,6 +519,17 @@ function PhotoViewerContent({
               )}
               {suggestions.map((s, i) => (
                 <div key={s.id} className="connection-row">
+                  {s.match &&
+                    family.people.some((p) => p.id === s.match!.personId) && (
+                      <small>
+                        Возможно,{" "}
+                        {fullName(
+                          family.people.find(
+                            (p) => p.id === s.match!.personId,
+                          )!,
+                        )}
+                      </small>
+                    )}
                   <button onClick={() => selectSuggestion(s)}>
                     {`Лицо ${i + 1}: выбрать человека`}
                   </button>
@@ -608,6 +630,20 @@ function PhotoViewerContent({
                               ],
                             })
                           ) {
+                            const sample = suggestionId
+                              ? suggestions.find((s) => s.id === suggestionId)
+                              : undefined;
+                            if (sample)
+                              try {
+                                await saveFaceDescriptor(
+                                  personId,
+                                  sample.descriptor,
+                                );
+                              } catch {
+                                setScanStatus(
+                                  "Отметка сохранена, но отпечаток лица не удалось запомнить.",
+                                );
+                              }
                             setRect(null);
                             setPersonId("");
                             setTagging(false);
