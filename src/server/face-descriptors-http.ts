@@ -5,6 +5,7 @@ import { isSameOriginRequest } from "./same-origin.ts";
 
 const DIMENSIONS = 128;
 const MAX_BODY = 16 * 1024;
+const MATCH_DISTANCE = 0.52;
 
 type FaceDescriptor = { id: string; personId: string; descriptor: number[] };
 
@@ -40,6 +41,55 @@ function parseDescriptor(value: unknown): FaceDescriptor {
   return { id, personId, descriptor };
 }
 
+function parseMatchDescriptor(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Ожидается отпечаток лица");
+  const { descriptor } = value as Record<string, unknown>;
+  if (
+    !Array.isArray(descriptor) ||
+    descriptor.length !== DIMENSIONS ||
+    !descriptor.every(
+      (item) =>
+        typeof item === "number" &&
+        Number.isFinite(item) &&
+        Math.abs(item) <= 2,
+    )
+  )
+    throw new Error("Некорректный отпечаток лица");
+  return descriptor;
+}
+
+function closestMatch(
+  descriptor: number[],
+  rows: Array<Record<string, unknown>>,
+) {
+  let match: { personId: string; squaredDistance: number } | undefined;
+  for (const row of rows) {
+    let known: unknown;
+    try {
+      known = JSON.parse(String(row.data));
+    } catch {
+      continue;
+    }
+    if (
+      !Array.isArray(known) ||
+      known.length !== DIMENSIONS ||
+      !known.every((item) => typeof item === "number" && Number.isFinite(item))
+    )
+      continue;
+    let squaredDistance = 0;
+    for (let index = 0; index < DIMENSIONS; index++)
+      squaredDistance += (descriptor[index] - known[index]) ** 2;
+    if (!match || squaredDistance < match.squaredDistance)
+      match = { personId: String(row.person_id), squaredDistance };
+  }
+  if (!match || match.squaredDistance > MATCH_DISTANCE ** 2) return null;
+  return {
+    personId: match.personId,
+    distance: Math.sqrt(match.squaredDistance),
+  };
+}
+
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -62,27 +112,13 @@ export function faceDescriptorsHttp({
   publicOrigin?: string;
 }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
-    if (url.pathname !== "/api/faces/descriptors") return false;
+    const saving = url.pathname === "/api/faces/descriptors";
+    const matching = url.pathname === "/api/faces/match";
+    if (!saving && !matching) return false;
     if (!auth.canEdit(req))
       return json(res, auth.currentUser(req) ? 403 : 401, {
         error: "You do not have editing access",
       });
-    if (req.method === "GET") {
-      const rows = archive.db
-        .prepare(
-          "SELECT id,person_id,data FROM face_descriptors ORDER BY rowid",
-        )
-        .all();
-      return json(
-        res,
-        200,
-        rows.map((row) => ({
-          id: String(row.id),
-          personId: String(row.person_id),
-          descriptor: JSON.parse(String(row.data)),
-        })),
-      );
-    }
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
@@ -90,7 +126,15 @@ export function faceDescriptorsHttp({
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "Ожидается JSON" });
     try {
-      const sample = parseDescriptor(await readJson(req));
+      const body = await readJson(req);
+      if (matching) {
+        const descriptor = parseMatchDescriptor(body);
+        const rows = archive.db
+          .prepare("SELECT person_id,data FROM face_descriptors ORDER BY rowid")
+          .all();
+        return json(res, 200, { match: closestMatch(descriptor, rows) });
+      }
+      const sample = parseDescriptor(body);
       const person = archive.db
         .prepare("SELECT 1 FROM people WHERE id=?")
         .get(sample.personId);

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import {
-  loadFaceDescriptors,
   saveFaceDescriptor,
   suggestFaces,
   type FaceSuggestion,
@@ -139,13 +138,7 @@ function PhotoViewerContent({
     setScanning(true);
     setScanStatus("Загружаем модель поиска лиц…");
     try {
-      const known = await loadFaceDescriptors();
-      const found = await suggestFaces(
-        photo,
-        known,
-        controller.signal,
-        setScanStatus,
-      );
+      const found = await suggestFaces(photo, controller.signal, setScanStatus);
       if (!controller.signal.aborted) {
         setSuggestions(found);
         setScanStatus(

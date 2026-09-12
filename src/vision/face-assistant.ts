@@ -11,33 +11,14 @@ function containsFace(tag: FaceRect, face: FaceRect) {
   );
 }
 import type { ArchivePhoto } from "../domain";
-export type StoredFaceDescriptor = {
-  id: string;
-  personId: string;
-  descriptor: number[];
-};
 export type FaceSuggestion = {
   id: string;
   box: FaceRect;
   descriptor: number[];
   match?: { personId: string; distance: number };
 };
-const MATCH_DISTANCE = 0.52;
 let engine: Promise<typeof import("@vladmandic/face-api")> | undefined;
 const cache = new Map<string, Promise<FaceSample[]>>();
-function closestMatch(descriptor: number[], known: StoredFaceDescriptor[]) {
-  let match: { personId: string; distance: number } | undefined;
-  for (const sample of known) {
-    if (sample.descriptor.length !== descriptor.length) continue;
-    let squared = 0;
-    for (let index = 0; index < descriptor.length; index++)
-      squared += (descriptor[index] - sample.descriptor[index]) ** 2;
-    const distance = Math.sqrt(squared);
-    if (!match || distance < match.distance)
-      match = { personId: sample.personId, distance };
-  }
-  return match && match.distance <= MATCH_DISTANCE ? match : undefined;
-}
 async function loadEngine() {
   if (!engine)
     engine = (async () => {
@@ -103,24 +84,33 @@ async function detect(url: string): Promise<FaceSample[]> {
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
   return work;
 }
-export async function loadFaceDescriptors(): Promise<StoredFaceDescriptor[]> {
-  const response = await fetch("/api/faces/descriptors", {
+async function matchFaceDescriptor(
+  descriptor: number[],
+  signal: AbortSignal,
+): Promise<{ personId: string; distance: number } | undefined> {
+  const response = await fetch("/api/faces/match", {
+    method: "POST",
     credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ descriptor }),
+    signal,
   });
-  if (!response.ok) throw new Error("Не удалось загрузить отпечатки лиц");
+  if (!response.ok) throw new Error("Не удалось сравнить отпечаток лица");
   const value: unknown = await response.json();
-  if (!Array.isArray(value))
-    throw new Error("Некорректный ответ отпечатков лиц");
-  return value.filter(
-    (item): item is StoredFaceDescriptor =>
-      !!item &&
-      typeof item === "object" &&
-      typeof (item as StoredFaceDescriptor).id === "string" &&
-      typeof (item as StoredFaceDescriptor).personId === "string" &&
-      Array.isArray((item as StoredFaceDescriptor).descriptor) &&
-      (item as StoredFaceDescriptor).descriptor.length === 128 &&
-      (item as StoredFaceDescriptor).descriptor.every(Number.isFinite),
-  );
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Некорректный ответ сравнения лиц");
+  const match = (value as { match?: unknown }).match;
+  if (match === null) return undefined;
+  if (
+    !match ||
+    typeof match !== "object" ||
+    Array.isArray(match) ||
+    typeof (match as { personId?: unknown }).personId !== "string" ||
+    typeof (match as { distance?: unknown }).distance !== "number" ||
+    !Number.isFinite((match as { distance: number }).distance)
+  )
+    throw new Error("Некорректный ответ сравнения лиц");
+  return match as { personId: string; distance: number };
 }
 
 export async function saveFaceDescriptor(
@@ -138,7 +128,6 @@ export async function saveFaceDescriptor(
 
 export async function suggestFaces(
   photo: ArchivePhoto,
-  known: StoredFaceDescriptor[],
   signal: AbortSignal,
   onProgress: (message: string) => void,
 ): Promise<FaceSuggestion[]> {
@@ -149,12 +138,19 @@ export async function suggestFaces(
   onProgress("Ищем лица на снимке…");
   const faces = await detect(photo.url);
   check();
-  return faces
-    .filter((face) => !photo.tags.some((tag) => containsFace(tag, face.box)))
-    .map((face) => ({
+  const newFaces = faces.filter(
+    (face) => !photo.tags.some((tag) => containsFace(tag, face.box)),
+  );
+  if (newFaces.length) onProgress("Сравниваем найденные лица…");
+  const suggestions: FaceSuggestion[] = [];
+  for (const face of newFaces) {
+    check();
+    suggestions.push({
       id: crypto.randomUUID(),
       box: face.box,
       descriptor: face.descriptor,
-      match: closestMatch(face.descriptor, known),
-    }));
+      match: await matchFaceDescriptor(face.descriptor, signal),
+    });
+  }
+  return suggestions;
 }
