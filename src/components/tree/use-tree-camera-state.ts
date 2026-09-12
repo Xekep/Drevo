@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
+import { initialFamilyFocus } from "../../domain/tree-interactions.ts";
 import type { Person } from "../../domain/types.ts";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
 
@@ -30,7 +31,6 @@ type TreeCameraStateInput = {
   context: string;
   root: string | null;
   familyPeople: Person[];
-  childrenCount: Map<string, number>;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
 };
@@ -51,7 +51,6 @@ export function useTreeCameraState({
   context,
   root,
   familyPeople,
-  childrenCount,
   expanded,
   collapsed,
 }: TreeCameraStateInput) {
@@ -129,12 +128,19 @@ export function useTreeCameraState({
           });
         else if (cameras.current[context] && !reverseChanged)
           void flow.setViewport(cameras.current[context]);
-        else
+        else {
+          const initialNodes = narrow
+            ? initialFamilyFocus(familyPeople)
+                .filter((id) => positions.has(id))
+                .map((id) => ({ id }))
+            : undefined;
           void flow.fitView({
-            maxZoom: 1,
-            minZoom: 0.05,
-            padding: 0.25,
+            nodes: initialNodes?.length ? initialNodes : undefined,
+            maxZoom: narrow ? 0.9 : 1,
+            minZoom: narrow ? 0.65 : 0.05,
+            padding: narrow ? 0.32 : 0.25,
           });
+        }
       } else if (narrow) {
         const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
         if (mobileCamera.current !== key) {
@@ -163,7 +169,6 @@ export function useTreeCameraState({
     narrow,
     canvasWidth,
     canvasHeight,
-    childrenCount,
     peopleMap,
     ready,
     context,

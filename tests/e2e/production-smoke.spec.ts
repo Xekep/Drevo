@@ -43,6 +43,25 @@ test("initial archive loading uses one quiet progress indicator", async ({
   ).toBeVisible();
 });
 
+test("lazy archive sections use the same quiet progress indicator", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  let sectionRequested = false;
+  await page.route(/\/assets\/people-catalog-[^/]+\.js$/, async (route) => {
+    sectionRequested = true;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await route.continue();
+  });
+  await page.goto("/people", { waitUntil: "domcontentloaded" });
+  await expect.poll(() => sectionRequested).toBe(true);
+  const loader = page.getByRole("status", { name: "Загрузка архива" });
+  await expect(loader).toBeVisible();
+  await expect(loader.locator(".archive-loader-ring")).toBeVisible();
+  await expect(page.getByText(/Открываем раздел/i)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Люди/ })).toBeVisible();
+});
+
 test("mobile archive does not overflow the viewport", async ({ page }) => {
   await page.goto("/tree");
   await expect(
@@ -54,6 +73,48 @@ test("mobile archive does not overflow the viewport", async ({ page }) => {
       document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("mobile tree starts with readable family cards", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto("/tree");
+  await page.locator(".flow-person").first().waitFor({ state: "visible" });
+  await expect
+    .poll(async () => {
+      const card = await page.locator(".flow-person").first().boundingBox();
+      return card?.width || 0;
+    })
+    .toBeGreaterThanOrEqual(130);
+  await expect(page.locator(".flow-person").first()).toHaveClass(/is-compact/);
+  await expect
+    .poll(async () =>
+      page
+        .locator(".flow-person")
+        .first()
+        .evaluate((card) => {
+          const strong = card.querySelector("strong");
+          if (!strong) return 0;
+          const scale = card.getBoundingClientRect().width / card.clientWidth;
+          return Number.parseFloat(getComputedStyle(strong).fontSize) * scale;
+        }),
+    )
+    .toBeGreaterThanOrEqual(12);
+  expect(
+    await page.locator(".flow-person").evaluateAll((cards) =>
+      cards.some((card) => {
+        const rect = card.getBoundingClientRect();
+        return (
+          rect.right > 0 &&
+          rect.left < innerWidth &&
+          rect.bottom > 0 &&
+          rect.top < innerHeight
+        );
+      }),
+    ),
+  ).toBe(true);
 });
 
 test("the initial tree grows from roots toward descendants", async ({
