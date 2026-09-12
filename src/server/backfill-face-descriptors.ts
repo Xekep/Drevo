@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import sharp from "sharp";
 import * as faceapi from "@vladmandic/face-api";
+import { initializeArchiveSchema } from "./schema.ts";
 
 type Tag = {
   id: string;
@@ -50,16 +51,7 @@ try {
     `before-face-descriptor-backfill-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`,
   );
   db.prepare("VACUUM INTO ?").run(backupPath);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS face_descriptors (
-      id TEXT PRIMARY KEY,
-      person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-      data TEXT NOT NULL CHECK(json_valid(data)),
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ) STRICT;
-    CREATE INDEX IF NOT EXISTS face_descriptors_person ON face_descriptors(person_id);
-    PRAGMA user_version=3;
-  `);
+  initializeArchiveSchema(db);
 
   const modelDirectory = resolve("node_modules/@vladmandic/face-api/model");
   await Promise.all([

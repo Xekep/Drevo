@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { initializeArchiveSchema } from "./schema.ts";
 
 type Descriptor = { id: string; personId: string; descriptor: number[] };
 const [databasePath, inputPath] = process.argv.slice(2);
@@ -26,16 +27,7 @@ if (descriptors.length !== values.length)
 const db = new DatabaseSync(databasePath);
 db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
 try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS face_descriptors (
-      id TEXT PRIMARY KEY,
-      person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-      data TEXT NOT NULL CHECK(json_valid(data)),
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ) STRICT;
-    CREATE INDEX IF NOT EXISTS face_descriptors_person ON face_descriptors(person_id);
-    PRAGMA user_version=3;
-  `);
+  initializeArchiveSchema(db);
   const person = db.prepare("SELECT 1 FROM people WHERE id=?");
   const insert = db.prepare(
     "INSERT OR IGNORE INTO face_descriptors(id,person_id,data) VALUES(?,?,?)",
