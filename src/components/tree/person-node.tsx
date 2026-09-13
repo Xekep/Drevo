@@ -50,7 +50,7 @@ export const PersonNode = memo(function PersonNode({
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"
-      : s.transform[2] < 0.32
+      : s.transform[2] < 0.4
         ? "overview"
         : s.transform[2] < 0.75
           ? "compact"
