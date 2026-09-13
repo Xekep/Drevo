@@ -1405,7 +1405,7 @@
 }
 .flow-person-content {
   border-radius: 8px;
-  padding: 10px;
+  padding: 7px;
   gap: 10px;
 }
 .flow-person-content > span:last-child {
@@ -1414,17 +1414,17 @@
 }
 .flow-person .person-avatar {
   border-radius: 50%;
-  width: 72px;
-  min-width: 72px;
-  height: 72px;
+  width: 80px;
+  min-width: 80px;
+  height: 80px;
   font-family: var(--serif);
 }
 .flow-person-content strong {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 .flow-person-content > span > span {
-  font-size: 12px;
+  font-size: 13px;
   color: #5f6e61;
   line-height: 1.25;
   white-space: normal;
@@ -1433,8 +1433,8 @@
   -webkit-line-clamp: 2;
 }
 .flow-person-content small {
-  font-size: 11px;
-  color: #82917a;
+  font-size: 12px;
+  color: #61745e;
 }
 .flow-person .react-flow__handle {
   opacity: 0;
@@ -1446,25 +1446,25 @@
   opacity: 1;
 }
 .flow-person.is-compact strong {
-  font-size: 19px;
+  font-size: 20px;
 }
 .flow-person.is-compact .flow-person-content > span > span {
-  font-size: 17px;
+  font-size: 18px;
 }
 .flow-person.is-overview .flow-person-content {
-  padding: 12px 15px;
+  padding: 9px 12px;
 }
 .flow-person.is-overview strong {
-  font-size: 30px;
-  line-height: 1.15;
+  font-size: 36px;
+  line-height: 1.05;
 }
 .flow-person.is-overview .flow-person-content > span > span {
-  font-size: 24px;
-  line-height: 1.15;
+  font-size: 28px;
+  line-height: 1.05;
   display: block;
   white-space: nowrap;
 }
-/* Two single lines use 66px, plus 24px padding, inside the 96px node. */
+/* Larger labels compensate for the canvas transform at overview zoom levels. */
 .flow-person.is-distant strong {
   font-size: 38px;
   line-height: 1.05;
