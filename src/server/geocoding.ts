@@ -4,6 +4,9 @@ import {
   photonResult,
   historicalMatches,
   historicalCandidates,
+  historicalSearchTerm,
+  mergeNearbyPlaceCandidates,
+  placeCandidateMatchesQuery,
   placeKey,
   placeSearch,
   type PlaceResult,
@@ -36,7 +39,7 @@ export function geocodingStore(
       wiki =
         process.env.HISTORICAL_GEOCODER_URL ||
         "https://www.wikidata.org/w/api.php",
-      key = provider + ":" + wiki + ":" + placeKey(query);
+      key = "v2:" + provider + ":" + wiki + ":" + placeKey(query);
     if (closed || query.length < 2 || query.length > 250)
       return Promise.reject(
         new Error("Укажите название населённого пункта (до 250 символов)"),
@@ -133,12 +136,12 @@ export function geocodingStore(
           const search = new URL(wiki);
           search.search = new URLSearchParams({
             action: "wbsearchentities",
-            search: query,
+            search: historicalSearchTerm(query),
             language: "ru",
             uselang: "ru",
             type: "item",
             format: "json",
-            limit: "8",
+            limit: "20",
             maxlag: "5",
           }).toString();
           const matches = historicalMatches(query, await request(search));
@@ -156,14 +159,19 @@ export function geocodingStore(
               await request(entities),
             );
             // Неоднозначность обычного геопоиска не снимается первым ответом справочника.
-            const exactCurrent = data.candidates.filter(
-              (p) => placeKey(p.name) === placeKey(query),
-            );
+            const exactCurrent = data.candidates.filter((candidate) =>
+                placeCandidateMatchesQuery(query, candidate),
+              ),
+              combined = mergeNearbyPlaceCandidates(data.candidates, historic),
+              contextual = combined.filter((candidate) =>
+                placeCandidateMatchesQuery(query, candidate),
+              );
             data = {
               ...data,
-              candidates: [...historic, ...data.candidates],
+              candidates: contextual.length ? contextual : combined,
               ...(historic.length === 1 &&
               matches.length === 1 &&
+              matches[0]?.contextMatched === true &&
               exactCurrent.length < 2
                 ? { automatic: historic[0] }
                 : {}),

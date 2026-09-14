@@ -14,6 +14,30 @@ export const placeKey = (text: string) =>
 export function placeSearch(text: string) {
   return text.trim();
 }
+export function historicalSearchTerm(text: string) {
+  return placeSearch(text).split(",")[0]?.trim() || placeSearch(text);
+}
+
+const placeWords = (text: string) =>
+  placeKey(text).match(/[\p{L}\p{N}]+/gu) || [];
+
+function samePlaceWord(left: string, right: string) {
+  if (left === right) return true;
+  const shorter = Math.min(left.length, right.length);
+  if (shorter >= 3 && (left.startsWith(right) || right.startsWith(left)))
+    return true;
+  if (shorter < 5) return false;
+  let common = 0;
+  while (common < shorter && left[common] === right[common]) common++;
+  return common >= Math.min(7, shorter - 1);
+}
+
+function placeTextContains(text: string, qualifier: string) {
+  const words = placeWords(text);
+  return placeWords(qualifier).every((expected) =>
+    words.some((actual) => samePlaceWord(expected, actual)),
+  );
+}
 type PlaceEvent = {
   person: Person;
   kind: "birth" | "death" | "event";
@@ -91,6 +115,41 @@ export type PlaceResult = {
   automatic?: PlaceCandidate;
   notice?: string;
 };
+export function placeCandidateMatchesQuery(
+  query: string,
+  candidate: PlaceCandidate,
+) {
+  const [name, ...qualifiers] = placeKey(query)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return (
+    placeKey(candidate.name) === name &&
+    qualifiers.every((qualifier) =>
+      placeTextContains(candidate.label, qualifier),
+    )
+  );
+}
+
+export function mergeNearbyPlaceCandidates(
+  preferred: PlaceCandidate[],
+  supplemental: PlaceCandidate[],
+) {
+  const merged = [...preferred];
+  for (const candidate of supplemental) {
+    const duplicate = merged.some((existing) => {
+      if (placeKey(existing.name) !== placeKey(candidate.name)) return false;
+      const latitudeKm = (existing.lat - candidate.lat) * 111.32,
+        meanLatitude = ((existing.lat + candidate.lat) / 2) * (Math.PI / 180),
+        longitudeKm =
+          (existing.lon - candidate.lon) * 111.32 * Math.cos(meanLatitude);
+      return Math.hypot(latitudeKm, longitudeKm) <= 1;
+    });
+    if (!duplicate) merged.push(candidate);
+  }
+  return merged;
+}
+
 export function photonResult(query: string, value: unknown): PlaceResult {
   const features = (value as { features?: unknown[] })?.features;
   if (!Array.isArray(features))
@@ -118,7 +177,7 @@ export function photonResult(query: string, value: unknown): PlaceResult {
     if (p.osm_key !== "place") continue;
     const label = [
       ...new Set(
-        [p.name, p.city, p.district, p.state, p.country].filter(
+        [p.name, p.city, p.district, p.county, p.state, p.country].filter(
           (v): v is string => typeof v === "string" && !!v,
         ),
       ),
@@ -126,21 +185,25 @@ export function photonResult(query: string, value: unknown): PlaceResult {
     if (!candidates.some((v) => v.lat === c[1] && v.lon === c[0]))
       candidates.push({ lat: c[1], lon: c[0], label, name: p.name });
   }
-  const needle = placeKey(query),
-    exact = candidates.filter((c) => {
-      const tokens = needle
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-      return tokens.every((token, i) =>
-        i === 0
-          ? placeKey(c.name) === token
-          : placeKey(c.label).includes(token),
-      );
-    });
+  const labelCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    const key = placeKey(candidate.label);
+    labelCounts.set(key, (labelCounts.get(key) || 0) + 1);
+  }
+  const distinguished = candidates.map((candidate) =>
+      (labelCounts.get(placeKey(candidate.label)) || 0) > 1
+        ? {
+            ...candidate,
+            label: `${candidate.label} · координаты ${candidate.lat.toFixed(5)}, ${candidate.lon.toFixed(5)}`,
+          }
+        : candidate,
+    ),
+    exact = distinguished.filter((candidate) =>
+      placeCandidateMatchesQuery(query, candidate),
+    );
   return {
     query,
-    candidates,
+    candidates: distinguished,
     ...(exact.length === 1 ? { automatic: exact[0] } : {}),
   };
 }
@@ -150,23 +213,52 @@ export type WikiMatch = {
   description?: string;
   match?: { text?: string };
   aliases?: string[];
+  contextMatched?: boolean;
 };
 export function historicalMatches(query: string, value: unknown): WikiMatch[] {
   const search = (value as { search?: WikiMatch[] })?.search;
   if (!Array.isArray(search)) throw new Error("Справочник названий недоступен");
-  return search
-    .slice(0, 8)
-    .filter(
-      (p) =>
-        typeof p?.id === "string" &&
-        /^Q\d+$/.test(p.id) &&
-        typeof p.label === "string" &&
+  const [name, ...qualifiers] = placeKey(query)
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+    named = search
+      .slice(0, 50)
+      .filter(
+        (p) =>
+          typeof p?.id === "string" &&
+          /^Q\d+$/.test(p.id) &&
+          typeof p.label === "string" &&
+          [
+            p.label,
+            p.match?.text,
+            ...(Array.isArray(p.aliases) ? p.aliases : []),
+          ].some((v) => typeof v === "string" && placeKey(v) === name),
+      );
+  if (!qualifiers.length)
+    return named.slice(0, 8).map((match) => ({
+      ...match,
+      contextMatched: true,
+    }));
+  const contextual = named.filter((match) =>
+    qualifiers.every((qualifier) =>
+      placeTextContains(
         [
-          p.label,
-          p.match?.text,
-          ...(Array.isArray(p.aliases) ? p.aliases : []),
-        ].some((v) => typeof v === "string" && placeKey(v) === placeKey(query)),
-    );
+          match.label,
+          match.description,
+          match.match?.text,
+          ...(match.aliases || []),
+        ]
+          .filter(Boolean)
+          .join(" "),
+        qualifier,
+      ),
+    ),
+  );
+  return (contextual.length ? contextual : named).slice(0, 8).map((match) => ({
+    ...match,
+    contextMatched: contextual.length > 0,
+  }));
 }
 export function historicalCandidates(
   matches: WikiMatch[],
