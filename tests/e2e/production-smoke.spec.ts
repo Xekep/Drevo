@@ -133,33 +133,33 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   expect(delays).toEqual([
     "0s",
-    "0.64s",
-    "0.64s",
-    "0.685s",
-    "0.73s",
-    "1.37s",
-    "1.415s",
+    "0.52s",
+    "0.52s",
+    "0.55s",
+    "0.58s",
+    "1.07s",
+    "1.13s",
   ]);
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
     "animation-delay",
-    "0.64s",
+    "0.52s",
   );
   await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCSS(
     "animation-delay",
-    "0.685s",
+    "0.55s",
   );
   await expect(page.getByTestId("rf__node-e2e-sibling")).toHaveCSS(
     "animation-delay",
-    "0.73s",
+    "0.58s",
   );
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
-  await expect(nodes.last()).toHaveCSS("animation-duration", "0.34s");
+  await expect(nodes.last()).toHaveCSS("animation-duration", "0.28s");
   const firstGrowthEdge = page
     .locator(".tree-grow-edge .tree-edge-growth-path")
     .first();
   await expect(firstGrowthEdge).toHaveAttribute("pathLength", "1");
   await expect(firstGrowthEdge).toHaveCSS("animation-name", "tree-edge-draw");
-  await expect(firstGrowthEdge).toHaveCSS("animation-duration", "0.3s");
+  await expect(firstGrowthEdge).toHaveCSS("animation-duration", "0.24s");
   const firstFinalEdge = page
     .locator(".tree-grow-edge .tree-edge-final-path")
     .first();
@@ -176,19 +176,19 @@ test("the initial tree grows from roots toward descendants", async ({
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
   expect(edgeDelays).toEqual([
+    "0.28s",
     "0.34s",
-    "0.43s",
-    "0.685s",
-    "1.07s",
-    "1.115s",
-    "1.755s",
+    "0.55s",
+    "0.83s",
+    "0.89s",
+    "1.41s",
   ]);
   const godparent = page.getByRole("button", {
     name: "Связь: Крёстный родитель",
   });
   await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
-  await expect(godparent).toHaveCSS("animation-delay", "2.055s");
+  await expect(godparent).toHaveCSS("animation-delay", "1.65s");
 
   const pane = page.locator(".react-flow__pane");
   const box = await pane.boundingBox();
