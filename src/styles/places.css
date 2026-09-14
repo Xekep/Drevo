@@ -253,9 +253,10 @@
   color: #748172;
 }
 .place-events .person-avatar {
-  width: 36px;
+  width: 42px;
   height: 42px;
-  flex-shrink: 0;
+  flex: 0 0 42px;
+  aspect-ratio: 1;
 }
 .map-back {
   display: flex;
