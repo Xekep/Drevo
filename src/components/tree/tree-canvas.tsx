@@ -46,6 +46,7 @@ import { TreeCameraTools } from "./tree-camera-tools";
 import { TreeEdgeChoices } from "./tree-edge-choices";
 import {
   TREE_LAYOUT_TRANSITION_MS,
+  treeGrowthCanvasStyle,
   treeGrowthDelays,
   treeGrowthDuration,
 } from "./tree-growth";
@@ -163,6 +164,10 @@ function Canvas(props: Props) {
     () => treeGrowthDelays(family.people),
     [family.people],
   );
+  const growthCanvasStyle = useMemo(
+    () => treeGrowthCanvasStyle(growthDelays),
+    [growthDelays],
+  );
   const nodeModel = useMemo(
     () =>
       buildTreeNodeModel({
@@ -205,10 +210,10 @@ function Canvas(props: Props) {
     if (!growing || !ready || !nodes.length) return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      treeGrowthDuration(maxGrowthDelay),
+      treeGrowthDuration(maxGrowthDelay, growthDelays),
     );
     return () => window.clearTimeout(timer);
-  }, [growing, ready, nodes.length, maxGrowthDelay]);
+  }, [growing, ready, nodes.length, maxGrowthDelay, growthDelays]);
   useLayoutEffect(() => {
     if (!ready || !geometry) return;
     const previous = settledLayout.current;
@@ -332,6 +337,7 @@ function Canvas(props: Props) {
       <div
         ref={container}
         className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        style={growthCanvasStyle}
         tabIndex={-1}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >

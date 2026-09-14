@@ -440,7 +440,8 @@
 .tree-canvas.is-growing .tree-grow-node,
 .tree-canvas.is-growing .tree-grow-surface {
   opacity: 0;
-  animation: tree-branch-reveal 340ms ease-out var(--tree-growth-delay) both;
+  animation: tree-branch-reveal var(--tree-growth-node-duration, 280ms) ease-out
+    var(--tree-growth-delay) both;
 }
 .tree-grow-edge .tree-edge-growth-path {
   display: none;
@@ -448,13 +449,15 @@
 }
 .tree-canvas.is-growing .tree-grow-edge .tree-edge-final-path {
   opacity: 0;
-  animation: tree-edge-final-reveal 300ms linear var(--tree-growth-delay) both;
+  animation: tree-edge-final-reveal var(--tree-growth-edge-duration, 240ms)
+    linear var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-edge .tree-edge-growth-path {
   display: block;
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: tree-edge-draw 300ms ease-in-out var(--tree-growth-delay) both;
+  animation: tree-edge-draw var(--tree-growth-edge-duration, 240ms) ease-in-out
+    var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-edge-junction {
   opacity: 0;
@@ -467,8 +470,8 @@
 }
 .tree-canvas.is-growing .tree-grow-node .flow-person {
   transform-origin: 50% 100%;
-  animation: tree-card-grow 340ms cubic-bezier(0.2, 0.75, 0.25, 1)
-    var(--tree-growth-delay) both;
+  animation: tree-card-grow var(--tree-growth-node-duration, 280ms)
+    cubic-bezier(0.2, 0.75, 0.25, 1) var(--tree-growth-delay) both;
 }
 .tree-canvas:not(.is-growing) .react-flow__node {
   transition: transform 440ms cubic-bezier(0.22, 0.75, 0.2, 1);

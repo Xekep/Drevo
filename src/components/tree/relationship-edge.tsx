@@ -76,6 +76,8 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   };
   const visualStyle = {
     "--tree-growth-delay": animatedStyle["--tree-growth-delay"] || "0ms",
+    "--tree-edge-label-delay":
+      animatedStyle["--tree-edge-label-delay"] || "0ms",
   } as CSSProperties;
   const labelStyle = {
     transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
