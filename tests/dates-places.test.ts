@@ -13,6 +13,9 @@ import {
   photonResult,
   historicalMatches,
   historicalCandidates,
+  historicalSearchTerm,
+  mergeNearbyPlaceCandidates,
+  placeCandidateMatchesQuery,
   placeSearch,
 } from "../src/domain/places.ts";
 import { validateFamily } from "../src/domain/validation.ts";
@@ -112,8 +115,13 @@ test("places derive only from recorded events and stale coordinates do not follo
     ),
   );
 });
-const feature = (name: string, lon = 60, lat = 55) => ({
-  properties: { name, osm_key: "place", state: "Тестовая область" },
+const feature = (name: string, lon = 60, lat = 55, county = "") => ({
+  properties: {
+    name,
+    osm_key: "place",
+    state: "Тестовая область",
+    ...(county ? { county } : {}),
+  },
   geometry: { coordinates: [lon, lat] },
 });
 test("automatic geocoding requires an exact unambiguous match", () => {
@@ -138,6 +146,68 @@ test("automatic geocoding requires an exact unambiguous match", () => {
       .length,
     0,
   );
+});
+test("place candidates show municipalities and coordinates only for remaining duplicate labels", () => {
+  const municipalities = photonResult("Мурзинка, Тестовая область", {
+    features: [
+      feature("Мурзинка", 61.025337, 57.688824, "Первый округ"),
+      feature("Мурзинка", 60.096289, 57.17419, "Второй округ"),
+      feature("Мурзинка", 60.404949, 57.033039, "Третий округ"),
+    ],
+  });
+  assert.deepEqual(
+    municipalities.candidates.map((candidate) => candidate.label),
+    [
+      "Мурзинка, Первый округ, Тестовая область",
+      "Мурзинка, Второй округ, Тестовая область",
+      "Мурзинка, Третий округ, Тестовая область",
+    ],
+  );
+
+  const duplicates = photonResult("Мурзинка, Тестовая область", {
+    features: [
+      feature("Мурзинка", 61.025337, 57.688824),
+      feature("Мурзинка", 60.096289, 57.17419),
+    ],
+  });
+  assert.equal(
+    new Set(duplicates.candidates.map((candidate) => candidate.label)).size,
+    2,
+  );
+  assert.match(
+    duplicates.candidates[0].label,
+    /координаты 57\.68882, 61\.02534/,
+  );
+});
+test("candidate context tolerates inflection and nearby providers do not duplicate a place", () => {
+  const current = {
+      lat: 57.688824,
+      lon: 61.025337,
+      name: "Мурзинка",
+      label:
+        "Мурзинка, Горноуральский муниципальный округ, Свердловская область, Россия",
+    },
+    wikidata = {
+      lat: 57.690277777778,
+      lon: 61.016944444444,
+      name: "Мурзинка",
+      label:
+        "Мурзинка — село в Горноуральском городском округе Свердловской области России",
+    },
+    another = {
+      lat: 57.17551,
+      lon: 60.09333,
+      name: "Мурзинка",
+      label: "Мурзинка — посёлок в Свердловской области",
+    };
+  assert.equal(
+    placeCandidateMatchesQuery("Мурзинка, Свердловская область", wikidata),
+    true,
+  );
+  assert.deepEqual(mergeNearbyPlaceCandidates([current], [wikidata, another]), [
+    current,
+    another,
+  ]);
 });
 const search = {
   search: [
@@ -217,6 +287,104 @@ test("historical names use external aliases and Earth coordinates without city-s
     await reopened.locate("Старое имя");
     assert.equal(calls.length, 3);
     reopened.close();
+  } finally {
+    store.close();
+    db.close();
+  }
+});
+
+test("qualified historical lookup searches the name and matches inflected region descriptions", () => {
+  assert.equal(historicalSearchTerm("Нижнее, Луганская область"), "Нижнее");
+  const result = historicalMatches("Нижнее, Луганская область", {
+    search: [
+      {
+        id: "Q4318774",
+        label: "Нижнее",
+        description: "деревня в Вологодском районе Вологодской области России",
+      },
+      {
+        id: "Q4318776",
+        label: "Нижнее",
+        description: "посёлок в Северскодонецком районе Луганской области",
+      },
+      {
+        id: "Q4318779",
+        label: "Нижнее",
+        description: "село во Львовской области",
+      },
+    ],
+  });
+  assert.deepEqual(
+    result.map((match) => match.id),
+    ["Q4318776"],
+  );
+  assert.equal(result[0].contextMatched, true);
+
+  const unknownRegion = historicalMatches("Нижнее, Несуществующая область", {
+    search: [
+      {
+        id: "Q4318776",
+        label: "Нижнее",
+        description: "посёлок в Северскодонецком районе Луганской области",
+      },
+    ],
+  });
+  assert.equal(unknownRegion[0].contextMatched, false);
+});
+
+test("qualified historical geocoding locates a settlement absent from Photon", async () => {
+  const db = new DatabaseSync(":memory:"),
+    calls: URL[] = [];
+  initializeArchiveSchema(db);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    if (url.hostname === "photon.komoot.io")
+      return Response.json({ features: [] });
+    if (url.searchParams.get("action") === "wbsearchentities")
+      return Response.json({
+        search: [
+          {
+            id: "Q4318776",
+            label: "Нижнее",
+            description: "посёлок в Северскодонецком районе Луганской области",
+          },
+        ],
+      });
+    return Response.json({
+      entities: {
+        Q4318776: {
+          claims: {
+            P17: [{ mainsnak: { datavalue: { value: { id: "Q212" } } } }],
+            P625: [
+              {
+                rank: "normal",
+                mainsnak: {
+                  datavalue: {
+                    value: {
+                      latitude: 48.771388888889,
+                      longitude: 38.62,
+                      globe: "http://www.wikidata.org/entity/Q2",
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+  };
+  const store = geocodingStore(db, fetcher, 0);
+  try {
+    const result = await store.locate("Нижнее, Луганская область");
+    assert.equal(result.automatic?.name, "Нижнее");
+    assert.equal(result.automatic?.lat, 48.771388888889);
+    const wikiSearch = calls.find(
+      (url) => url.searchParams.get("action") === "wbsearchentities",
+    );
+    assert.equal(wikiSearch?.searchParams.get("search"), "Нижнее");
+    assert.equal(wikiSearch?.searchParams.get("limit"), "20");
   } finally {
     store.close();
     db.close();

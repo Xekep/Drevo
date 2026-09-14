@@ -109,6 +109,46 @@ test("manual map correction stays available when historical lookup is busy", asy
   ).toBeVisible();
 });
 
+test("same-name map candidates show their municipality", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const labels = [
+    "Мурзинка, Горноуральский муниципальный округ, Свердловская область, Россия",
+    "Мурзинка, Новоуральский городской округ, Свердловская область, Россия",
+    "Мурзинка, муниципальный округ Среднеуральск, Свердловская область, Россия",
+  ];
+  await page.route("**/api/places/locate**", async (route) => {
+    const query = new URL(route.request().url()).searchParams.get("q") || "";
+    await route.fulfill({
+      json: {
+        query,
+        candidates: query.startsWith("Мурзинка")
+          ? labels.map((label, index) => ({
+              label,
+              name: "Мурзинка",
+              lat: 57 + index / 10,
+              lon: 60 + index / 10,
+            }))
+          : [],
+      },
+    });
+  });
+
+  await page.goto("/places");
+  await page
+    .getByRole("button", { name: /Москва/ })
+    .first()
+    .click();
+  await page
+    .getByRole("textbox", { name: "Название для поиска" })
+    .fill("Мурзинка, Свердловская область");
+  await page.getByRole("button", { name: "Найти" }).click();
+  for (const label of labels)
+    await expect(page.getByRole("button", { name: label })).toBeVisible();
+  await expect(page.locator(".map-candidates li")).toHaveCount(3);
+});
+
 test("mobile tree starts with readable family cards", async ({
   page,
 }, testInfo) => {
