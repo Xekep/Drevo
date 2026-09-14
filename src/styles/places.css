@@ -198,6 +198,12 @@
   color: #67776a;
   margin: 0 0 18px;
 }
+.place-correction .place-search-notice {
+  color: #625d3f;
+  background: #f4f0dc;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
 .places-list,
 .place-events,
 .map-candidates {

@@ -23,6 +23,7 @@ export function geocodingStore(
   interval = 1200,
 ) {
   const pending = new Map<string, Promise<PlaceResult>>();
+  const providerPauses = new Map<string, number>();
   let tail = Promise.resolve(),
     last = 0,
     closed = false,
@@ -51,11 +52,14 @@ export function geocodingStore(
         new Error("Поиск мест занят. Повторите немного позже."),
       );
     const result = tail.then(async () => {
-      async function request(url: URL) {
+      async function request(url: URL, retryMaxlag = true): Promise<unknown> {
+        const providerKey = url.origin + url.pathname;
         if (Date.now() < pauseUntil)
           throw new Error(
             "Справочник временно ограничил поиск. Повторите позже.",
           );
+        if (Date.now() < (providerPauses.get(providerKey) || 0))
+          throw new Error("Внешний справочник временно перегружен");
         await delay(Math.max(0, interval - (Date.now() - last)));
         if (closed) throw new Error("Поиск остановлен");
         const today = new Date().toISOString().slice(0, 10);
@@ -87,7 +91,30 @@ export function geocodingStore(
               );
           throw new Error("Сервис поиска мест временно недоступен");
         }
-        return response.json();
+        const value = (await response.json()) as {
+          error?: { code?: string; info?: string };
+        };
+        if (value?.error?.code === "maxlag" && retryMaxlag) {
+          const retryHeader = response.headers.get("Retry-After"),
+            retryAfter =
+              retryHeader === null ? Number.NaN : Number(retryHeader);
+          const retryMs =
+            (Number.isFinite(retryAfter)
+              ? Math.max(0, Math.min(10, retryAfter))
+              : 5) * 1000;
+          await delay(retryMs);
+          return request(url, false);
+        }
+        if (value?.error) {
+          if (value.error.code === "maxlag")
+            providerPauses.set(providerKey, Date.now() + 5_000);
+          throw new Error(
+            value.error.code === "maxlag"
+              ? "Сервис исторических названий перегружен"
+              : "Внешний справочник вернул ошибку",
+          );
+        }
+        return value;
       }
       const url = new URL(provider);
       url.searchParams.set("q", query);
@@ -100,57 +127,69 @@ export function geocodingStore(
       } catch {
         photonFailed = true;
       }
+      let cacheable = true;
       if (!data.automatic) {
-        const search = new URL(wiki);
-        search.search = new URLSearchParams({
-          action: "wbsearchentities",
-          search: query,
-          language: "ru",
-          uselang: "ru",
-          type: "item",
-          format: "json",
-          limit: "8",
-          maxlag: "5",
-        }).toString();
-        const matches = historicalMatches(query, await request(search));
-        if (matches.length) {
-          const entities = new URL(wiki);
-          entities.search = new URLSearchParams({
-            action: "wbgetentities",
-            ids: matches.map((p) => p.id).join("|"),
-            props: "claims",
+        try {
+          const search = new URL(wiki);
+          search.search = new URLSearchParams({
+            action: "wbsearchentities",
+            search: query,
+            language: "ru",
+            uselang: "ru",
+            type: "item",
             format: "json",
+            limit: "8",
             maxlag: "5",
           }).toString();
-          const historic = historicalCandidates(
-            matches,
-            await request(entities),
-          );
-          // Неоднозначность обычного геопоиска не снимается первым ответом справочника.
-          const exactCurrent = data.candidates.filter(
-            (p) => placeKey(p.name) === placeKey(query),
-          );
+          const matches = historicalMatches(query, await request(search));
+          if (matches.length) {
+            const entities = new URL(wiki);
+            entities.search = new URLSearchParams({
+              action: "wbgetentities",
+              ids: matches.map((p) => p.id).join("|"),
+              props: "claims",
+              format: "json",
+              maxlag: "5",
+            }).toString();
+            const historic = historicalCandidates(
+              matches,
+              await request(entities),
+            );
+            // Неоднозначность обычного геопоиска не снимается первым ответом справочника.
+            const exactCurrent = data.candidates.filter(
+              (p) => placeKey(p.name) === placeKey(query),
+            );
+            data = {
+              ...data,
+              candidates: [...historic, ...data.candidates],
+              ...(historic.length === 1 &&
+              matches.length === 1 &&
+              exactCurrent.length < 2
+                ? { automatic: historic[0] }
+                : {}),
+            };
+          } else if (photonFailed)
+            throw new Error("Оба сервиса поиска мест временно недоступны");
+        } catch {
+          cacheable = false;
           data = {
             ...data,
-            candidates: [...historic, ...data.candidates],
-            ...(historic.length === 1 &&
-            matches.length === 1 &&
-            exactCurrent.length < 2
-              ? { automatic: historic[0] }
-              : {}),
+            notice:
+              "Поиск исторических названий сейчас недоступен. Можно выбрать найденный вариант, указать точку на карте или повторить позже.",
           };
-        } else if (photonFailed)
-          throw new Error("Поиск мест временно недоступен. Повторите позже.");
+        }
       }
       if (closed) throw new Error("Поиск остановлен");
-      db.prepare("INSERT OR REPLACE INTO geocode_cache VALUES(?,?,?)").run(
-        key,
-        JSON.stringify(data),
-        Date.now(),
-      );
-      db.exec(
-        "DELETE FROM geocode_cache WHERE query NOT IN (SELECT query FROM geocode_cache ORDER BY saved_at DESC LIMIT 5000)",
-      );
+      if (cacheable) {
+        db.prepare("INSERT OR REPLACE INTO geocode_cache VALUES(?,?,?)").run(
+          key,
+          JSON.stringify(data),
+          Date.now(),
+        );
+        db.exec(
+          "DELETE FROM geocode_cache WHERE query NOT IN (SELECT query FROM geocode_cache ORDER BY saved_at DESC LIMIT 5000)",
+        );
+      }
       return data;
     });
     pending.set(key, result);

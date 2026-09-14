@@ -222,6 +222,7 @@ export default function PlacesMap({
   const [search, setSearch] = useState(""),
     [candidates, setCandidates] = useState<PlaceCandidate[]>([]),
     [searching, setSearching] = useState(false),
+    [searchNotice, setSearchNotice] = useState<string | null>(null),
     [error, setError] = useState(""),
     [picking, setPicking] = useState(false),
     [picked, setPicked] = useState<PlaceCandidate | null>(null);
@@ -296,7 +297,9 @@ export default function PlacesMap({
     [places, results],
   );
   const current = places.find((p) => p.key === selected),
-    editable = canEdit && current?.events.some((e) => owns(user, e.person));
+    editable = canEdit && current?.events.some((e) => owns(user, e.person)),
+    activeSearchNotice =
+      searchNotice ?? (current ? results[current.key]?.notice : "");
   function select(id: string) {
     request.current++;
     setSelected(id);
@@ -304,6 +307,7 @@ export default function PlacesMap({
     sidebar.current?.scrollTo({ top: 0 });
     setCandidates([]);
     setSearch(places.find((p) => p.key === id)?.name || "");
+    setSearchNotice(null);
     setError("");
     setSearching(false);
     setPicked(null);
@@ -311,6 +315,8 @@ export default function PlacesMap({
     setPicking(false);
   }
   function setManualCoordinate(field: "lat" | "lon", value: string) {
+    setSearchNotice("");
+    setError("");
     const next = { ...manualCoordinates, [field]: value };
     setManualCoordinates(next);
     const lat = Number(next.lat),
@@ -336,6 +342,7 @@ export default function PlacesMap({
   async function find() {
     const id = ++request.current;
     setSearching(true);
+    setSearchNotice("");
     setError("");
     try {
       const response = await fetch(
@@ -346,7 +353,8 @@ export default function PlacesMap({
       if (!response.ok) throw new Error(data.error);
       if (request.current === id) {
         setCandidates(data.candidates);
-        if (!data.candidates.length)
+        setSearchNotice(data.notice || "");
+        if (!data.candidates.length && !data.notice)
           setError(
             "Место не найдено. Уточните название или укажите точку на карте.",
           );
@@ -431,6 +439,8 @@ export default function PlacesMap({
           onSelect={select}
           picking={picking}
           onPoint={(point) => {
+            setSearchNotice("");
+            setError("");
             setPicked(point);
             setManualCoordinates({
               lat: String(point.lat),
@@ -605,7 +615,11 @@ export default function PlacesMap({
                       <input
                         value={search}
                         maxLength={250}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => {
+                          setSearch(e.target.value);
+                          setSearchNotice("");
+                          setError("");
+                        }}
                       />
                     </label>
                     <button
@@ -615,6 +629,11 @@ export default function PlacesMap({
                       Найти
                     </button>
                   </form>
+                  {activeSearchNotice && (
+                    <p className="place-search-notice" role="status">
+                      {activeSearchNotice}
+                    </p>
+                  )}
                   <ul className="map-candidates">
                     {(candidates.length
                       ? candidates
@@ -631,6 +650,8 @@ export default function PlacesMap({
                     disabled={busy}
                     onClick={() => {
                       setPicking(!picking);
+                      setSearchNotice("");
+                      setError("");
                       setPicked(null);
                       setManualCoordinates({ lat: "", lon: "" });
                     }}
