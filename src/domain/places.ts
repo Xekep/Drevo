@@ -89,6 +89,7 @@ export type PlaceResult = {
   query: string;
   candidates: PlaceCandidate[];
   automatic?: PlaceCandidate;
+  notice?: string;
 };
 export function photonResult(query: string, value: unknown): PlaceResult {
   const features = (value as { features?: unknown[] })?.features;

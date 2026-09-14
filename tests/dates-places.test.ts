@@ -222,3 +222,100 @@ test("historical names use external aliases and Earth coordinates without city-s
     db.close();
   }
 });
+
+test("historical geocoding retries a Wikidata maxlag response", async () => {
+  const db = new DatabaseSync(":memory:"),
+    calls: URL[] = [];
+  let searchCalls = 0;
+  initializeArchiveSchema(db);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    if (url.hostname === "photon.komoot.io")
+      return Response.json({ features: [] });
+    if (url.searchParams.get("action") === "wbsearchentities") {
+      searchCalls++;
+      if (searchCalls === 1)
+        return Response.json(
+          { error: { code: "maxlag", info: "replica is lagged" } },
+          { headers: { "Retry-After": "0" } },
+        );
+      return Response.json(search);
+    }
+    return Response.json(entities);
+  };
+  const store = geocodingStore(db, fetcher, 0);
+  try {
+    const result = await store.locate("Старое имя");
+    assert.equal(result.automatic?.name, "Современное имя");
+    assert.equal(result.notice, undefined);
+    assert.equal(searchCalls, 2);
+    assert.equal(calls.length, 4);
+  } finally {
+    store.close();
+    db.close();
+  }
+});
+
+test("repeated Wikidata maxlag does not hold every queued Photon lookup", async () => {
+  const db = new DatabaseSync(":memory:");
+  let photonCalls = 0,
+    wikiCalls = 0;
+  initializeArchiveSchema(db);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "photon.komoot.io") {
+      photonCalls++;
+      return Response.json({ features: [feature("Современное место")] });
+    }
+    wikiCalls++;
+    return Response.json(
+      { error: { code: "maxlag", info: "replica is lagged" } },
+      { headers: { "Retry-After": "0" } },
+    );
+  };
+  const store = geocodingStore(db, fetcher, 0);
+  try {
+    const first = await store.locate("Старое имя");
+    const second = await store.locate("Другое старое имя");
+    assert.ok(first.notice);
+    assert.ok(second.notice);
+    assert.equal(photonCalls, 2);
+    assert.equal(wikiCalls, 2, "cooldown должен остановить повторный maxlag");
+  } finally {
+    store.close();
+    db.close();
+  }
+});
+
+test("historical directory failure keeps current candidates and manual correction available", async () => {
+  const db = new DatabaseSync(":memory:"),
+    calls: URL[] = [];
+  initializeArchiveSchema(db);
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    return url.hostname === "photon.komoot.io"
+      ? Response.json({ features: [feature("Современное место")] })
+      : Response.json({ error: { code: "readonly" } });
+  };
+  const store = geocodingStore(db, fetcher, 0);
+  try {
+    const result = await store.locate("Старое имя");
+    assert.equal(result.candidates.length, 1);
+    assert.match(result.notice || "", /указать точку на карте/);
+    assert.equal(calls.length, 2);
+    assert.equal(
+      (
+        db.prepare("SELECT COUNT(*) AS count FROM geocode_cache").get() as {
+          count: number;
+        }
+      ).count,
+      0,
+      "частичный ответ не должен кэшироваться на 180 дней",
+    );
+  } finally {
+    store.close();
+    db.close();
+  }
+});

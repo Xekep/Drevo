@@ -75,6 +75,40 @@ test("mobile archive does not overflow the viewport", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("manual map correction stays available when historical lookup is busy", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const notice =
+    "Поиск исторических названий сейчас недоступен. Можно выбрать найденный вариант, указать точку на карте или повторить позже.";
+  await page.route("**/api/places/locate**", async (route) => {
+    const query = new URL(route.request().url()).searchParams.get("q") || "";
+    await route.fulfill({
+      json: { query, candidates: [], notice },
+    });
+  });
+
+  await page.goto("/places");
+  await page
+    .getByRole("button", { name: /Москва/ })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: notice }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Указать на карте" }).click();
+  await page
+    .locator(".leaflet-container")
+    .click({ position: { x: 120, y: 120 } });
+  await expect(
+    page.getByRole("status").filter({ hasText: notice }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Сохранить выбранную точку" }),
+  ).toBeVisible();
+});
+
 test("mobile tree starts with readable family cards", async ({
   page,
 }, testInfo) => {
