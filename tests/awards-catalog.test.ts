@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  activeInYear,
   AWARD_CATALOG,
   getAwardDefinition,
   normalizeAwardName,
@@ -37,6 +38,36 @@ test("система наград зашита в стабильный id и н�
     const prefix = prefixes[award.country];
     if (prefix) assert.ok(award.id.startsWith(prefix), `${award.id}: неверная система ${award.country}`);
   }
+});
+
+test("год ограничивает страну и эпоху наградной системы", () => {
+  const soviet = getAwardDefinition("ussr-medal-veteran-labour");
+  const russian = getAwardDefinition("ru-medal-zhukov");
+  const ddr = getAwardDefinition("ddr-medal-brotherhood-arms");
+  assert.ok(soviet && russian && ddr);
+
+  assert.equal(activeInYear(soviet, "1985"), true);
+  assert.equal(activeInYear(soviet, "2005"), false);
+  assert.equal(activeInYear(russian, "1985"), false);
+  assert.equal(activeInYear(russian, "2005"), true);
+  assert.equal(activeInYear(ddr, "1985"), true);
+  assert.equal(activeInYear(ddr, "2005"), false);
+
+  assert.equal(resolveAwardName("Ветеран труда", "1985")?.award.country, "USSR");
+  assert.equal(resolveAwardName("Ветеран труда", "2005"), undefined);
+  assert.equal(resolveAwardName("Медаль Жукова", "1985"), undefined);
+  assert.equal(resolveAwardName("Медаль Жукова", "2005")?.award.country, "RU");
+});
+
+test("несовместимый год не удерживает ранее выбранную страну", () => {
+  assert.equal(
+    resolveAwardName("Ветеран труда", "2005", "ussr-medal-veteran-labour"),
+    undefined,
+  );
+  assert.equal(
+    resolveAwardName("Ветеран труда", "1985", "ussr-medal-veteran-labour")?.award.id,
+    "ussr-medal-veteran-labour",
+  );
 });
 
 test("поиск наград работает по названию, стране и тегам", () => {
@@ -136,10 +167,10 @@ test("изображения СССР, России и Монголии физи
   }
 });
 
-test("точный awardDefinitionId сохраняет выбранную систему наград при редактировании", () => {
+test("точный awardDefinitionId сохраняет выбранную систему наград при совместимом годе", () => {
   const selected = resolveAwardName(
     "Ветеран атомной промышленности",
-    undefined,
+    "2020",
     "ru-rosatom-veteran-nuclear-energy-industry",
   );
   assert.equal(selected?.award.country, "RU");
