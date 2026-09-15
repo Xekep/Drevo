@@ -12,7 +12,7 @@ import type { AwardDefinition } from "../features/awards/types.ts";
 function AwardVisual({
   definition,
   degreeId,
-  size = 42,
+  size = 54,
 }: {
   definition?: AwardDefinition;
   degreeId?: string;
@@ -31,9 +31,8 @@ function AwardVisual({
         height={size}
         loading="lazy"
         decoding="async"
-        referrerPolicy="no-referrer"
         onError={() => setFailedSrc(image.src)}
-        style={{ width: size, height: size, objectFit: "contain" }}
+        style={{ width: size, height: size, objectFit: "contain", background: "transparent" }}
       />
     );
   }
@@ -60,9 +59,35 @@ export function AwardsEditor({
     );
   }
 
+  function selectDefinition(id: string, definitionId: string) {
+    const current = awards.find((award) => award.id === id);
+    if (!current) return;
+
+    if (!definitionId) {
+      const resolved = resolveAwardName(current.name, current.year);
+      update(id, {
+        awardDefinitionId: resolved?.award.id,
+        degreeId: resolved?.degreeId,
+      });
+      return;
+    }
+
+    const definition = getAwardDefinition(definitionId);
+    if (!definition) return;
+    update(id, {
+      name: definition.name,
+      awardDefinitionId: definition.id,
+      degreeId: undefined,
+    });
+  }
+
   function updateName(id: string, name: string) {
     const current = awards.find((award) => award.id === id);
-    const resolved = resolveAwardName(name, current?.year);
+    const resolved = resolveAwardName(
+      name,
+      current?.year,
+      current?.awardDefinitionId,
+    );
     update(
       id,
       resolved
@@ -78,7 +103,11 @@ export function AwardsEditor({
   function updateYear(id: string, year: string) {
     const current = awards.find((award) => award.id === id);
     if (!current) return;
-    const resolved = resolveAwardName(current.name, year || undefined);
+    const resolved = resolveAwardName(
+      current.name,
+      year || undefined,
+      current.awardDefinitionId,
+    );
     update(id, {
       year: year || undefined,
       awardDefinitionId: resolved?.award.id,
@@ -102,6 +131,20 @@ export function AwardsEditor({
         return (
           <fieldset key={award.id}>
             <legend>Награда {i + 1}</legend>
+            <label>
+              Награда из каталога
+              <select
+                value={award.awardDefinitionId || definition?.id || ""}
+                onChange={(e) => selectDefinition(award.id, e.target.value)}
+              >
+                <option value="">Автоопределение / своя запись</option>
+                {AWARD_CATALOG.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} — {item.countryName}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="award-name-year">
               <label>
                 Название
@@ -113,19 +156,11 @@ export function AwardsEditor({
                   onChange={(e) => updateName(award.id, e.target.value)}
                 />
                 {definition && (
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 6,
-                      fontSize: 11,
-                    }}
-                  >
+                  <span className="award-recognized">
                     <AwardVisual
                       definition={definition}
                       degreeId={award.degreeId || resolved?.degreeId}
-                      size={36}
+                      size={46}
                     />
                     <span>
                       Распознана: {definition.name}
@@ -247,11 +282,11 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
           ].filter(Boolean);
           const label = (
             <>
-              <span className="award-badge" aria-hidden="true">
+              <span className="award-visual" aria-hidden="true">
                 <AwardVisual
                   definition={definition}
                   degreeId={degreeId}
-                  size={42}
+                  size={54}
                 />
               </span>
               <span className="award-label">
