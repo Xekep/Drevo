@@ -2,13 +2,16 @@ import type { AwardDefinition } from "../types.ts";
 import { FOREIGN_AWARDS } from "./foreign.ts";
 import { RUSSIAN_DEPARTMENTAL_AWARDS, RUSSIAN_STATE_AWARDS } from "./russia.ts";
 import { USSR_AWARDS } from "./ussr.ts";
+import { withAwardVisual } from "./visuals.ts";
 
-export const AWARD_CATALOG: AwardDefinition[] = [
+const RAW_AWARD_CATALOG: AwardDefinition[] = [
   ...USSR_AWARDS,
   ...RUSSIAN_STATE_AWARDS,
   ...RUSSIAN_DEPARTMENTAL_AWARDS,
   ...FOREIGN_AWARDS,
 ];
+
+export const AWARD_CATALOG: AwardDefinition[] = RAW_AWARD_CATALOG.map(withAwardVisual);
 
 const BY_ID = new Map(AWARD_CATALOG.map((award) => [award.id, award]));
 
