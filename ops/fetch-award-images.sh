@@ -76,11 +76,11 @@ fetch 'https://commons.wikimedia.org/wiki/Special:Redirect/file/VeteranOfLabourM
 make_png "$TMP/veteran-labour.jpg" "$OUT/ussr/medal-veteran-labour.png" 18%
 
 # Россия / Росатом. Реальный знак с красной колодкой, соответствующей
-# описанию ведомственного знака 2012/2014 гг. Справа на исходной фотографии
-# лежит отдельный фрачный знак, поэтому до удаления фона отрезаем правую
-# четверть кадра и оставляем только основную награду.
+# официальному описанию 2012/2014 гг. На исходной фотографии справа лежит
+# отдельный фрачный знак. Берём только левую часть с основной наградой и
+# чуть сильнее очищаем связанный с краями белый фон/ореол.
 fetch 'https://bosporshop.ru/upload/iblock/22f/uz5xiqrc144vgc197p0lijgxmst790sa.jpg' "$TMP/rosatom-veteran.jpg"
-make_png "$TMP/rosatom-veteran.jpg" "$OUT/ru/rosatom/veteran-nuclear-energy-industry.png" 16% '76%x100%+0+0'
+make_png "$TMP/rosatom-veteran.jpg" "$OUT/ru/rosatom/veteran-nuclear-energy-industry.png" 20% '68%x100%+0+0'
 
 # МНР.
 fetch 'https://commons.wikimedia.org/wiki/Special:Redirect/file/%D0%9C%D0%B5%D0%B4%D0%B0%D0%BB%D1%8C%20%C2%AB30%20%D0%BB%D0%B5%D1%82%20%D0%A5%D0%B0%D0%BB%D1%85%D0%B8%D0%BD-%D0%93%D0%BE%D0%BB%D1%8C%D1%81%D0%BA%D0%BE%D0%B9%20%D0%9F%D0%BE%D0%B1%D0%B5%D0%B4%D1%8B%C2%BB.jpg' "$TMP/khalkhin-gol.jpg"
