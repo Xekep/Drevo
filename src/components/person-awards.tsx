@@ -257,7 +257,8 @@ export function AwardsEditor({
 }
 
 export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
-  const [activeAwardId, setActiveAwardId] = useState<string | null>(null);
+  const [pinnedAwardId, setPinnedAwardId] = useState<string | null>(null);
+  const [hoveredAwardId, setHoveredAwardId] = useState<string | null>(null);
 
   if (!awards?.length) return null;
 
@@ -275,6 +276,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
     };
   });
 
+  const activeAwardId = hoveredAwardId || pinnedAwardId;
   const active = items.find((item) => item.award.id === activeAwardId);
 
   return (
@@ -283,6 +285,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
       <ul className="award-stack" aria-label="Награды">
         {items.map((item, index) => {
           const isActive = item.award.id === activeAwardId;
+          const isPinned = item.award.id === pinnedAwardId;
           const meta = [item.degree?.label, item.award.year, item.definition?.countryName]
             .filter(Boolean)
             .join(" · ");
@@ -296,22 +299,32 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
                 type="button"
                 className="award-medal-button"
                 aria-expanded={isActive}
+                aria-pressed={isPinned}
                 aria-controls="active-award-details"
                 aria-label={[item.award.name, meta].filter(Boolean).join(", ")}
-                title={item.award.name}
-                onMouseEnter={() => setActiveAwardId(item.award.id)}
-                onFocus={() => setActiveAwardId(item.award.id)}
-                onClick={() =>
-                  setActiveAwardId((current) =>
-                    current === item.award.id ? null : item.award.id,
+                onMouseEnter={() => setHoveredAwardId(item.award.id)}
+                onMouseLeave={() =>
+                  setHoveredAwardId((current) =>
+                    current === item.award.id ? null : current,
                   )
                 }
+                onFocus={() => setHoveredAwardId(item.award.id)}
+                onBlur={() =>
+                  setHoveredAwardId((current) =>
+                    current === item.award.id ? null : current,
+                  )
+                }
+                onClick={() => {
+                  const closing = pinnedAwardId === item.award.id;
+                  setPinnedAwardId(closing ? null : item.award.id);
+                  if (closing) setHoveredAwardId(null);
+                }}
               >
                 <span className="award-visual" aria-hidden="true">
                   <AwardVisual
                     definition={item.definition}
                     degreeId={item.degreeId}
-                    size={72}
+                    size={58}
                   />
                 </span>
               </button>
