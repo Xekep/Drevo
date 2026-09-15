@@ -199,6 +199,7 @@ export function PersonPanel({
                 </div>
               </div>
             )}
+            <PersonAwards awards={person.awards} />
             {hasRecordedDeath(person) ? (
               <div className="life-event">
                 <span className="event-icon">†</span>
@@ -214,7 +215,6 @@ export function PersonPanel({
                 История продолжается
               </div>
             ) : null}
-            <PersonAwards awards={person.awards} />
             <LifeSpan person={person} />
             {(person.biography || person.occupation) && (
               <div className="biography">

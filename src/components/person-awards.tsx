@@ -280,7 +280,15 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
   const active = items.find((item) => item.award.id === activeAwardId);
 
   return (
-    <section className="person-awards" aria-label="Награды человека">
+    <section
+      className="person-awards"
+      aria-label="Награды человека"
+      onMouseLeave={() => setHoveredAwardId(null)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setHoveredAwardId(null);
+      }}
+    >
       <h3>Награды</h3>
       <ul className="award-stack" aria-label="Награды">
         {items.map((item, index) => {
@@ -303,17 +311,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
                 aria-controls="active-award-details"
                 aria-label={[item.award.name, meta].filter(Boolean).join(", ")}
                 onMouseEnter={() => setHoveredAwardId(item.award.id)}
-                onMouseLeave={() =>
-                  setHoveredAwardId((current) =>
-                    current === item.award.id ? null : current,
-                  )
-                }
                 onFocus={() => setHoveredAwardId(item.award.id)}
-                onBlur={() =>
-                  setHoveredAwardId((current) =>
-                    current === item.award.id ? null : current,
-                  )
-                }
                 onClick={() => {
                   const closing = pinnedAwardId === item.award.id;
                   setPinnedAwardId(closing ? null : item.award.id);
@@ -324,7 +322,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
                   <AwardVisual
                     definition={item.definition}
                     degreeId={item.degreeId}
-                    size={58}
+                    size={50}
                   />
                 </span>
               </button>

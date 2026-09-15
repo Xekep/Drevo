@@ -35,20 +35,23 @@
   max-width: calc(100% - var(--timeline-rail) - 40px);
 }
 .person-awards {
-  margin: 15px 0 20px;
+  margin: 10px 0 18px;
 }
 .person-awards h3 {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 14px;
   font-weight: 500;
+  text-align: center;
 }
 .award-stack {
   list-style: none;
-  padding: 8px 6px 5px 1px;
+  padding: 7px 8px 6px;
   margin: 0;
   display: flex;
   align-items: center;
-  min-height: 72px;
+  justify-content: safe center;
+  min-height: 62px;
+  box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -58,27 +61,25 @@
 .award-stack-item {
   position: relative;
   flex: 0 0 auto;
-  margin-left: -18px;
-  transition:
-    transform 0.16s ease,
-    filter 0.16s ease;
+  margin-left: -14px;
+  transition: filter 0.16s ease;
 }
 .award-stack-item:first-child {
   margin-left: 0;
 }
 .award-stack-item.is-active {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 5px 5px #4e412f26);
+  filter: drop-shadow(0 4px 4px #4e412f22);
 }
 .award-medal-button {
-  width: 62px;
-  height: 66px;
+  width: 56px;
+  height: 58px;
   padding: 0;
   display: grid;
   place-items: center;
   border-radius: 7px;
   background: transparent;
   position: relative;
+  overflow: visible;
 }
 .award-medal-button:hover {
   filter: brightness(1.025);
@@ -88,9 +89,9 @@
   outline-offset: 1px;
 }
 .award-visual {
-  flex: 0 0 58px;
-  width: 58px;
-  height: 62px;
+  flex: 0 0 52px;
+  width: 52px;
+  height: 54px;
   display: grid;
   place-items: center;
   color: #a57e38;
@@ -105,9 +106,10 @@
   display: block;
   width: auto !important;
   height: auto !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
+  max-width: 48px !important;
+  max-height: 52px !important;
   object-fit: contain;
+  object-position: center;
   background: transparent;
   filter: drop-shadow(0 2px 2px #3f36251b);
 }
@@ -276,7 +278,7 @@
     -webkit-overflow-scrolling: touch;
   }
   .award-stack-item {
-    margin-left: -20px;
+    margin-left: -16px;
   }
 }
 @media (max-width: 899px) {
