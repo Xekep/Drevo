@@ -8,6 +8,10 @@ export type Source = {
 export type PersonAward = {
   id: string;
   name: string;
+  /** Stable reference into the built-in catalogue; absent for legacy/custom awards. */
+  awardDefinitionId?: string;
+  /** Degree within a multi-degree award, for example I/II/III. */
+  degreeId?: string;
   year?: string;
   source?: { title: string; url?: string };
 };
