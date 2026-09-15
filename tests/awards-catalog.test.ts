@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import {
   AWARD_CATALOG,
@@ -19,6 +21,22 @@ test("каталог содержит военные, трудовые, юбил
     getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.country,
     "MN",
   );
+});
+
+test("система наград зашита в стабильный id и не выводится из совпавшего названия", () => {
+  const prefixes: Record<string, string> = {
+    USSR: "ussr-",
+    RU: "ru-",
+    MN: "mn-",
+    PL: "pl-",
+    CS: "cs-",
+    DDR: "ddr-",
+  };
+
+  for (const award of AWARD_CATALOG) {
+    const prefix = prefixes[award.country];
+    if (prefix) assert.ok(award.id.startsWith(prefix), `${award.id}: неверная система ${award.country}`);
+  }
 });
 
 test("поиск наград работает по названию, стране и тегам", () => {
@@ -113,6 +131,9 @@ test("изображения СССР, России и Монголии физи
   ]).filter((src): src is string => !!src && src.startsWith("/awards/"));
 
   assert.equal(new Set(localImages).size, localImages.length, "один локальный ассет привязан к нескольким определениям/степеням");
+  for (const src of localImages) {
+    assert.ok(existsSync(join(process.cwd(), "public", src.slice(1))), `${src}: локальный файл отсутствует`);
+  }
 });
 
 test("точный awardDefinitionId сохраняет выбранную систему наград при редактировании", () => {
