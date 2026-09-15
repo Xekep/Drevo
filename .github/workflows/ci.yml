@@ -25,6 +25,12 @@ jobs:
       - run: npm run lint
       - run: bash -n ops/deploy.sh
       - run: bash -n ops/backup.sh
+      - run: bash -n ops/fetch-award-images.sh
+      - name: Prepare real PNG award images
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends imagemagick
+          bash ops/fetch-award-images.sh
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
