@@ -34,7 +34,7 @@ make_png() {
   fi
 
   local width height right bottom
-  read -r width height < <(identify -format '%w %h' "$prepared")
+  read -r width height <<<"$(identify -format '%w %h' "$prepared")"
   right=$((width - 1))
   bottom=$((height - 1))
 
