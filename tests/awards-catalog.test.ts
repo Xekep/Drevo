@@ -120,7 +120,7 @@ test("проверенные изображения привязаны к опр
   );
 });
 
-test("награды из существующего семейного профиля имеют локальные прозрачные изображения СССР", () => {
+test("награды из существующего семейного профиля используют реальные локальные PNG СССР", () => {
   const cases = [
     ["Медаль «За отвагу»", "1943"],
     ["Орден Славы III степени", "1945"],
@@ -138,23 +138,23 @@ test("награды из существующего семейного проф
     const image = degreeImage || resolved.award.image;
     assert.equal(resolved.award.imageStatus, "verified", name);
     assert.ok(image, `${name}: нет изображения`);
-    assert.match(image.src, /^\/awards\/ussr\/.*\.svg$/, name);
+    assert.match(image.src, /^\/awards\/ussr\/.*\.png$/, name);
+    assert.ok(existsSync(join(process.cwd(), "public", image.src.slice(1))), `${name}: PNG не подготовлен`);
   }
 });
 
-test("изображения СССР, России и Монголии физически разделены по системам наград", () => {
+test("локальные растровые изображения разделены по системам наград", () => {
   assert.match(
     getAwardDefinition("ussr-medal-veteran-labour")?.image?.src || "",
-    /^\/awards\/ussr\//,
-  );
-  assert.match(
-    getAwardDefinition("ru-rosatom-veteran-nuclear-energy-industry")?.image?.src || "",
-    /^\/awards\/ru\/rosatom\//,
+    /^\/awards\/ussr\/.*\.png$/,
   );
   assert.match(
     getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.image?.src || "",
-    /^\/awards\/mn\//,
+    /^\/awards\/mn\/.*\.png$/,
   );
+
+  const rosatom = getAwardDefinition("ru-rosatom-veteran-nuclear-energy-industry");
+  assert.equal(rosatom?.image, undefined, "для Росатома нельзя подставлять непроверенную самодельную картинку");
 
   const localImages = AWARD_CATALOG.flatMap((award) => [
     award.image?.src,
@@ -163,6 +163,7 @@ test("изображения СССР, России и Монголии физи
 
   assert.equal(new Set(localImages).size, localImages.length, "один локальный ассет привязан к нескольким определениям/степеням");
   for (const src of localImages) {
+    assert.ok(!src.endsWith(".svg"), `${src}: самодельные SVG наград запрещены`);
     assert.ok(existsSync(join(process.cwd(), "public", src.slice(1))), `${src}: локальный файл отсутствует`);
   }
 });
