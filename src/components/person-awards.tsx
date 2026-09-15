@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUpRight, Medal, Plus, Trash2 } from "lucide-react";
+import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
 import {
@@ -53,39 +53,50 @@ export function AwardsEditor({
   awards: PersonAward[];
   onChange: (awards: PersonAward[]) => void;
 }) {
-  function update(id: string, patch: Partial<PersonAward>) {
-    onChange(
-      awards.map((award) => (award.id === id ? { ...award, ...patch } : award)),
-    );
+  const [draftAward, setDraftAward] = useState<PersonAward | null>(null);
+  const isExisting = !!draftAward && awards.some((award) => award.id === draftAward.id);
+  const resolvedDraft = draftAward ? resolveStoredAward(draftAward) : undefined;
+  const definition = resolvedDraft?.award;
+
+  function startNew() {
+    setDraftAward({ id: crypto.randomUUID(), name: "" });
   }
 
-  function selectDefinition(id: string, definitionId: string) {
-    const current = awards.find((award) => award.id === id);
-    if (!current) return;
-
-    if (!definitionId) {
-      update(id, { awardDefinitionId: undefined, degreeId: undefined });
+  function startEdit(award: PersonAward) {
+    if (draftAward?.id === award.id) {
+      setDraftAward(null);
       return;
     }
+    setDraftAward(structuredClone(award));
+  }
 
-    const definition = getAwardDefinition(definitionId);
-    if (!definition) return;
-    update(id, {
-      name: definition.name,
-      awardDefinitionId: definition.id,
+  function patchDraft(patch: Partial<PersonAward>) {
+    setDraftAward((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  function selectDefinition(definitionId: string) {
+    if (!draftAward) return;
+    if (!definitionId) {
+      patchDraft({ awardDefinitionId: undefined, degreeId: undefined });
+      return;
+    }
+    const selected = getAwardDefinition(definitionId);
+    if (!selected) return;
+    patchDraft({
+      name: selected.name,
+      awardDefinitionId: selected.id,
       degreeId: undefined,
     });
   }
 
-  function updateName(id: string, name: string) {
-    const current = awards.find((award) => award.id === id);
+  function updateName(name: string) {
+    if (!draftAward) return;
     const resolved = resolveAwardName(
       name,
-      current?.year,
-      current?.awardDefinitionId,
+      draftAward.year,
+      draftAward.awardDefinitionId,
     );
-    update(
-      id,
+    patchDraft(
       resolved
         ? {
             name,
@@ -96,163 +107,232 @@ export function AwardsEditor({
     );
   }
 
-  function updateYear(id: string, year: string) {
-    const current = awards.find((award) => award.id === id);
-    if (!current) return;
+  function updateYear(year: string) {
+    if (!draftAward) return;
     const resolved = resolveAwardName(
-      current.name,
+      draftAward.name,
       year || undefined,
-      current.awardDefinitionId,
+      draftAward.awardDefinitionId,
     );
-    update(id, {
+    patchDraft({
       year: year || undefined,
       awardDefinitionId: resolved?.award.id,
-      degreeId: resolved?.degreeId || current.degreeId,
+      degreeId: resolved?.degreeId || draftAward.degreeId,
     });
   }
 
+  function commitDraft() {
+    if (!draftAward?.name.trim()) return;
+    const normalized: PersonAward = {
+      ...draftAward,
+      name: draftAward.name.trim(),
+      source:
+        draftAward.source?.title?.trim() || draftAward.source?.url?.trim()
+          ? {
+              title: draftAward.source?.title?.trim() || "",
+              url: draftAward.source?.url?.trim() || undefined,
+            }
+          : undefined,
+    };
+    onChange(
+      isExisting
+        ? awards.map((award) => (award.id === normalized.id ? normalized : award))
+        : [...awards, normalized],
+    );
+    setDraftAward(null);
+  }
+
+  function removeDraft() {
+    if (draftAward && isExisting)
+      onChange(awards.filter((award) => award.id !== draftAward.id));
+    setDraftAward(null);
+  }
+
   return (
-    <details className="form-details award-editor">
-      <summary>Награды{awards.length ? ` · ${awards.length}` : ""}</summary>
+    <section className="award-editor-compact" aria-label="Награды">
       <datalist id="award-catalog-suggestions">
-        {AWARD_CATALOG.map((definition) => (
-          <option key={definition.id} value={definition.name}>
-            {definition.countryName}
+        {AWARD_CATALOG.map((item) => (
+          <option key={item.id} value={item.name}>
+            {item.countryName}
           </option>
         ))}
       </datalist>
-      {awards.map((award, i) => {
-        const resolved = resolveStoredAward(award);
-        const definition = resolved?.award;
-        return (
-          <fieldset key={award.id}>
-            <legend>Награда {i + 1}</legend>
+
+      <div className="award-editor-strip">
+        {awards.map((award) => {
+          const resolved = resolveStoredAward(award);
+          const itemDefinition = resolved?.award;
+          const degreeId = award.degreeId || resolved?.degreeId;
+          const active = draftAward?.id === award.id;
+          return (
+            <button
+              key={award.id}
+              type="button"
+              className={active ? "award-editor-chip is-active" : "award-editor-chip"}
+              onClick={() => startEdit(award)}
+              title={award.name}
+              aria-label={`Редактировать: ${award.name}`}
+            >
+              <AwardVisual definition={itemDefinition} degreeId={degreeId} size={38} />
+            </button>
+          );
+        })}
+        {!draftAward && awards.length < 100 && (
+          <button
+            type="button"
+            className="award-editor-add"
+            onClick={startNew}
+            aria-label="Добавить награду"
+            title="Добавить награду"
+          >
+            <Plus size={19} />
+          </button>
+        )}
+      </div>
+
+      {draftAward && (
+        <div className="award-inline-form">
+          <div className="award-inline-head">
+            <strong>{isExisting ? draftAward.name || "Награда" : "Новая награда"}</strong>
+            <button
+              type="button"
+              className="award-inline-close"
+              onClick={() => setDraftAward(null)}
+              aria-label="Закрыть редактирование награды"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <label>
+            Каталог / страна
+            <select
+              value={draftAward.awardDefinitionId || ""}
+              onChange={(event) => selectDefinition(event.target.value)}
+            >
+              <option value="">Автоопределение / своя запись</option>
+              {AWARD_CATALOG.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name} — {item.countryName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="award-name-year">
             <label>
-              Награда из каталога
+              Название
+              <input
+                value={draftAward.name}
+                list="award-catalog-suggestions"
+                maxLength={300}
+                placeholder="Например, медаль «За отвагу»"
+                onChange={(event) => updateName(event.target.value)}
+              />
+            </label>
+            <label>
+              Год
+              <input
+                value={draftAward.year || ""}
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="1945"
+                onChange={(event) => updateYear(event.target.value)}
+              />
+            </label>
+          </div>
+
+          {definition && (
+            <div className="award-recognized">
+              <AwardVisual
+                definition={definition}
+                degreeId={draftAward.degreeId || resolvedDraft?.degreeId}
+                size={42}
+              />
+              <span>
+                {definition.name}
+                <br />
+                <small>{definition.countryName}</small>
+              </span>
+            </div>
+          )}
+
+          {definition?.degrees && (
+            <label>
+              Степень
               <select
-                value={award.awardDefinitionId || ""}
-                onChange={(e) => selectDefinition(award.id, e.target.value)}
+                value={draftAward.degreeId || resolvedDraft?.degreeId || ""}
+                onChange={(event) =>
+                  patchDraft({ degreeId: event.target.value || undefined })
+                }
               >
-                <option value="">Автоопределение / своя запись</option>
-                {AWARD_CATALOG.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} — {item.countryName}
+                <option value="">Не указана</option>
+                {definition.degrees.map((degree) => (
+                  <option key={degree.id} value={degree.id}>
+                    {degree.label}
                   </option>
                 ))}
               </select>
             </label>
-            <div className="award-name-year">
-              <label>
-                Название
-                <input
-                  value={award.name}
-                  list="award-catalog-suggestions"
-                  maxLength={300}
-                  placeholder="Например, медаль «За отвагу»"
-                  onChange={(e) => updateName(award.id, e.target.value)}
-                />
-                {definition && (
-                  <span className="award-recognized">
-                    <AwardVisual
-                      definition={definition}
-                      degreeId={award.degreeId || resolved?.degreeId}
-                      size={46}
-                    />
-                    <span>
-                      Распознана: {definition.name}
-                      <br />
-                      <small>{definition.countryName}</small>
-                    </span>
-                  </span>
-                )}
-              </label>
-              <label>
-                Год
-                <input
-                  value={award.year || ""}
-                  inputMode="numeric"
-                  maxLength={4}
-                  placeholder="1945"
-                  onChange={(e) => updateYear(award.id, e.target.value)}
-                />
-              </label>
-            </div>
-            {definition?.degrees && (
-              <label>
-                Степень
-                <select
-                  value={award.degreeId || resolved?.degreeId || ""}
-                  onChange={(e) =>
-                    update(award.id, { degreeId: e.target.value || undefined })
-                  }
-                >
-                  <option value="">Не указана</option>
-                  {definition.degrees.map((degree) => (
-                    <option key={degree.id} value={degree.id}>
-                      {degree.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+          )}
+
+          <details className="award-source-editor">
+            <summary>Источник</summary>
             <label>
-              Источник
+              Описание
               <input
-                value={award.source?.title || ""}
+                value={draftAward.source?.title || ""}
                 maxLength={2000}
-                placeholder="Наградной лист, архивный шифр, семейное свидетельство…"
-                onChange={(e) =>
-                  update(award.id, {
+                placeholder="Наградной лист, архивный шифр…"
+                onChange={(event) =>
+                  patchDraft({
                     source:
-                      e.target.value || award.source?.url
-                        ? { ...award.source, title: e.target.value }
+                      event.target.value || draftAward.source?.url
+                        ? { ...draftAward.source, title: event.target.value }
                         : undefined,
                   })
                 }
               />
             </label>
             <label>
-              Ссылка на источник, если есть
+              Ссылка
               <input
-                value={award.source?.url || ""}
+                value={draftAward.source?.url || ""}
                 maxLength={2048}
                 placeholder="https://…"
-                onChange={(e) =>
-                  update(award.id, {
+                onChange={(event) =>
+                  patchDraft({
                     source:
-                      e.target.value || award.source?.title
+                      event.target.value || draftAward.source?.title
                         ? {
-                            title: award.source?.title || "",
-                            url: e.target.value.trim() || undefined,
+                            title: draftAward.source?.title || "",
+                            url: event.target.value,
                           }
                         : undefined,
                   })
                 }
               />
             </label>
+          </details>
+
+          <div className="award-inline-actions">
             <button
               type="button"
-              className="award-remove"
-              onClick={() =>
-                onChange(awards.filter((item) => item.id !== award.id))
-              }
+              className="award-inline-primary"
+              disabled={!draftAward.name.trim()}
+              onClick={commitDraft}
             >
-              <Trash2 size={14} /> Убрать награду
+              <Check size={15} /> {isExisting ? "Готово" : "Добавить"}
             </button>
-          </fieldset>
-        );
-      })}
-      <button
-        type="button"
-        className="award-add"
-        disabled={awards.length >= 100}
-        onClick={() =>
-          onChange([...awards, { id: crypto.randomUUID(), name: "" }])
-        }
-      >
-        <Plus size={15} /> Добавить награду
-      </button>
-    </details>
+            {isExisting && (
+              <button type="button" className="award-remove" onClick={removeDraft}>
+                <Trash2 size={14} /> Удалить
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -289,7 +369,6 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
           setHoveredAwardId(null);
       }}
     >
-      <h3>Награды</h3>
       <ul className="award-stack" aria-label="Награды">
         {items.map((item, index) => {
           const isActive = item.award.id === activeAwardId;
