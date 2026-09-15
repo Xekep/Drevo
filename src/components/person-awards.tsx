@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUpRight, ChevronDown, Medal, Plus, Trash2 } from "lucide-react";
+import { ArrowUpRight, Medal, Plus, Trash2 } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
 import {
@@ -257,64 +257,89 @@ export function AwardsEditor({
 }
 
 export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
+  const [activeAwardId, setActiveAwardId] = useState<string | null>(null);
+
   if (!awards?.length) return null;
+
+  const items = awards.map((award) => {
+    const resolved = resolveStoredAward(award);
+    const definition = resolved?.award;
+    const degreeId = award.degreeId || resolved?.degreeId;
+    const degree = definition?.degrees?.find((item) => item.id === degreeId);
+    return {
+      award,
+      definition,
+      degreeId,
+      degree,
+      url: safeUrl(award.source?.url),
+    };
+  });
+
+  const active = items.find((item) => item.award.id === activeAwardId);
+
   return (
     <section className="person-awards" aria-label="Награды человека">
       <h3>Награды</h3>
-      <ul>
-        {awards.map((award) => {
-          const resolved = resolveStoredAward(award);
-          const definition = resolved?.award;
-          const degreeId = award.degreeId || resolved?.degreeId;
-          const degree = definition?.degrees?.find(
-            (item) => item.id === degreeId,
-          );
-          const url = safeUrl(award.source?.url);
-          const hasSource = !!(award.source?.title || url);
-          const meta = [
-            degree?.label,
-            award.year,
-            definition?.countryName,
-          ].filter(Boolean);
-          const label = (
-            <>
-              <span className="award-visual" aria-hidden="true">
-                <AwardVisual
-                  definition={definition}
-                  degreeId={degreeId}
-                  size={54}
-                />
-              </span>
-              <span className="award-label">
-                <strong>{award.name}</strong>
-                {meta.length > 0 && <small>{meta.join(" · ")}</small>}
-              </span>
-            </>
-          );
+      <ul className="award-stack" aria-label="Награды">
+        {items.map((item, index) => {
+          const isActive = item.award.id === activeAwardId;
+          const meta = [item.degree?.label, item.award.year, item.definition?.countryName]
+            .filter(Boolean)
+            .join(" · ");
           return (
-            <li key={award.id}>
-              {hasSource ? (
-                <details className="award-card">
-                  <summary>
-                    {label}
-                    <ChevronDown size={14} className="award-chevron" />
-                  </summary>
-                  <div className="award-source">
-                    {award.source?.title && <p>{award.source.title}</p>}
-                    {url && (
-                      <a href={url} target="_blank" rel="noopener noreferrer">
-                        Открыть источник <ArrowUpRight size={13} />
-                      </a>
-                    )}
-                  </div>
-                </details>
-              ) : (
-                <div className="award-card award-static">{label}</div>
-              )}
+            <li
+              key={item.award.id}
+              className={isActive ? "award-stack-item is-active" : "award-stack-item"}
+              style={{ zIndex: isActive ? items.length + 2 : index + 1 }}
+            >
+              <button
+                type="button"
+                className="award-medal-button"
+                aria-expanded={isActive}
+                aria-controls="active-award-details"
+                aria-label={[item.award.name, meta].filter(Boolean).join(", ")}
+                title={item.award.name}
+                onMouseEnter={() => setActiveAwardId(item.award.id)}
+                onFocus={() => setActiveAwardId(item.award.id)}
+                onClick={() =>
+                  setActiveAwardId((current) =>
+                    current === item.award.id ? null : item.award.id,
+                  )
+                }
+              >
+                <span className="award-visual" aria-hidden="true">
+                  <AwardVisual
+                    definition={item.definition}
+                    degreeId={item.degreeId}
+                    size={72}
+                  />
+                </span>
+              </button>
             </li>
           );
         })}
       </ul>
+
+      {active && (
+        <div id="active-award-details" className="award-focus-card">
+          <strong>{active.award.name}</strong>
+          <div className="award-focus-meta">
+            {active.degree?.label && <span>{active.degree.label}</span>}
+            {active.award.year && <span>{active.award.year}</span>}
+            {active.definition?.countryName && <span>{active.definition.countryName}</span>}
+          </div>
+          {(active.award.source?.title || active.url) && (
+            <div className="award-focus-source">
+              {active.award.source?.title && <p>{active.award.source.title}</p>}
+              {active.url && (
+                <a href={active.url} target="_blank" rel="noopener noreferrer">
+                  Открыть источник <ArrowUpRight size={13} />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
