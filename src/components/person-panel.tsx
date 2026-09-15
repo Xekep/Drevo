@@ -21,6 +21,7 @@ import {
   type Person,
   type FamilyLink,
 } from "../domain";
+import { collectPersonSources } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
 import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
@@ -107,6 +108,7 @@ export function PersonPanel({
   suggestions?: ReactNode;
 }) {
   const [tab, setTab] = useState<"bio" | "sources">("bio");
+  const sources = collectPersonSources(person);
   const relatives = people.filter(
     (p) =>
       links?.some(
@@ -177,7 +179,7 @@ export function PersonPanel({
           className={tab === "sources" ? "active" : ""}
           onClick={() => setTab("sources")}
         >
-          Источники <span className="count-badge">{person.sources.length}</span>
+          Источники <span className="count-badge">{sources.length}</span>
         </button>
       </div>
       <div
@@ -257,16 +259,18 @@ export function PersonPanel({
         ) : (
           <>
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>
-            {person.sources.length ? (
-              person.sources.map((s, i) => (
-                <div className="source-card" key={`${s.title}-${i}`}>
+            {sources.length ? (
+              sources.map((s, i) => (
+                <div className="source-card" key={`${s.title}-${s.url || s.reference}-${i}`}>
                   <div className="source-type">
                     <FileText size={13} />
                     {s.type}
                   </div>
                   <h3>{s.title}</h3>
-                  <p>{s.reference}</p>
-                  {s.note && <small>{s.note}</small>}
+                  {s.reference && <p>{s.reference}</p>}
+                  {(s.origin || s.note) && (
+                    <small>{[s.origin, s.note].filter(Boolean).join(" · ")}</small>
+                  )}
                   {safeUrl(s.url) ? (
                     <a
                       href={safeUrl(s.url)}

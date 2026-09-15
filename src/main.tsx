@@ -9,6 +9,7 @@ import "./styles/timeline.css";
 import "./styles/directory.css";
 import "./styles/places.css";
 import "./styles/family-details.css";
+import "./styles/award-loading.css";
 import "./styles/photo-workspace.css";
 import "./styles/archive-tools.css";
 import "./styles/photo-lightbox.css";

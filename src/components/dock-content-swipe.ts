@@ -29,13 +29,17 @@ export function bindDockContentSwipe(
     if (event.touches.length !== 1 || !matchMedia("(max-width: 899px)").matches)
       return;
     const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
     if (
-      !target ||
       target.closest(
-        "input, textarea, select, [contenteditable=true], dialog, [role=dialog]",
+        "input, textarea, select, [contenteditable=true]",
       )
     )
       return;
+    const nestedDialog = target.closest("dialog, [role=dialog]");
+    // На мобильном сам InspectorDock имеет role=dialog. Игнорировать нужно
+    // только вложенные модальные окна, иначе свайп карточки отключает себя сам.
+    if (nestedDialog && nestedDialog !== panel) return;
     if (window.getSelection()?.toString()) return;
     let atTop = true;
     for (let node: Element | null = target; node; node = node.parentElement) {

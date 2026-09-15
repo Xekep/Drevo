@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
@@ -8,6 +8,9 @@ import {
   resolveAwardName,
 } from "../features/awards/catalog/index.ts";
 import type { AwardDefinition } from "../features/awards/types.ts";
+
+const loadedAwardImages = new Set<string>();
+const failedAwardImages = new Set<string>();
 
 function AwardVisual({
   definition,
@@ -20,20 +23,77 @@ function AwardVisual({
 }) {
   const degree = definition?.degrees?.find((item) => item.id === degreeId);
   const image = degree?.image || definition?.image;
-  const [failedSrc, setFailedSrc] = useState<string>();
+  const src = image?.src;
+  const [readySrc, setReadySrc] = useState<string | undefined>(() =>
+    src && loadedAwardImages.has(src) ? src : undefined,
+  );
+  const [failedSrc, setFailedSrc] = useState<string | undefined>(() =>
+    src && failedAwardImages.has(src) ? src : undefined,
+  );
 
-  if (image && failedSrc !== image.src) {
+  useEffect(() => {
+    if (!src || loadedAwardImages.has(src) || failedAwardImages.has(src)) return;
+    let active = true;
+    const preload = new Image();
+    preload.decoding = "async";
+    const ready = async () => {
+      try {
+        await preload.decode();
+      } catch {
+        // Некоторые браузеры отклоняют decode() после onload, хотя файл уже готов.
+      }
+      if (!active) return;
+      if (preload.naturalWidth > 0) {
+        loadedAwardImages.add(src);
+        setReadySrc(src);
+      } else {
+        failedAwardImages.add(src);
+        setFailedSrc(src);
+      }
+    };
+    preload.onload = () => void ready();
+    preload.onerror = () => {
+      if (!active) return;
+      failedAwardImages.add(src);
+      setFailedSrc(src);
+    };
+    preload.src = src;
+    if (preload.complete && preload.naturalWidth > 0) void ready();
+    return () => {
+      active = false;
+      preload.onload = null;
+      preload.onerror = null;
+    };
+  }, [src]);
+
+  if (src && (readySrc === src || loadedAwardImages.has(src))) {
     return (
       <img
-        src={image.src}
+        src={src}
         alt=""
         width={size}
         height={size}
-        loading="lazy"
         decoding="async"
-        onError={() => setFailedSrc(image.src)}
+        className="award-image-ready"
+        onError={() => {
+          loadedAwardImages.delete(src);
+          failedAwardImages.add(src);
+          setFailedSrc(src);
+        }}
         style={{ width: size, height: size, objectFit: "contain", background: "transparent" }}
       />
+    );
+  }
+
+  if (src && failedSrc !== src && !failedAwardImages.has(src)) {
+    return (
+      <span
+        className="award-loading-placeholder"
+        aria-hidden="true"
+        style={{ width: size, height: size }}
+      >
+        <Medal size={Math.max(22, Math.round(size * 0.56))} strokeWidth={1.15} />
+      </span>
     );
   }
 
