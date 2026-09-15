@@ -74,3 +74,28 @@ test("проверенные изображения привязаны к опр
     "verified",
   );
 });
+
+test("награды из существующего семейного профиля имеют реальные изображения", () => {
+  const cases = [
+    ["Медаль «За отвагу»", "1943"],
+    ["Орден Славы III степени", "1945"],
+    ["Медаль «За победу над Германией в Великой Отечественной войне 1941–1945 гг.»", "1945"],
+    ["Медаль «За взятие Кенигсберга»", "1945"],
+    ["Медаль «За взятие Берлина»", "1945"],
+  ] as const;
+
+  for (const [name, year] of cases) {
+    const resolved = resolveAwardName(name, year);
+    assert.ok(resolved, name);
+    const degreeImage = resolved.award.degrees?.find(
+      (degree) => degree.id === resolved.degreeId,
+    )?.image;
+    assert.equal(resolved.award.imageStatus, "verified", name);
+    assert.ok(degreeImage || resolved.award.image, `${name}: нет изображения`);
+    assert.match(
+      (degreeImage || resolved.award.image)?.src || "",
+      /^https:\/\/upload\.wikimedia\.org\//,
+      name,
+    );
+  }
+});
