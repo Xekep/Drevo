@@ -65,17 +65,13 @@ test("ручной ввод извлекает степень и не ломае
 
 test("проверенные изображения привязаны к определениям, а не к человеку", () => {
   assert.equal(getAwardDefinition("ussr-order-red-star")?.imageStatus, "verified");
-  assert.match(
-    getAwardDefinition("ussr-order-red-star")?.image?.src || "",
-    /commons\.wikimedia\.org/,
-  );
   assert.equal(
     getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.imageStatus,
     "verified",
   );
 });
 
-test("награды из существующего семейного профиля имеют реальные изображения", () => {
+test("награды из существующего семейного профиля имеют локальные прозрачные изображения СССР", () => {
   const cases = [
     ["Медаль «За отвагу»", "1943"],
     ["Орден Славы III степени", "1945"],
@@ -90,12 +86,41 @@ test("награды из существующего семейного проф
     const degreeImage = resolved.award.degrees?.find(
       (degree) => degree.id === resolved.degreeId,
     )?.image;
+    const image = degreeImage || resolved.award.image;
     assert.equal(resolved.award.imageStatus, "verified", name);
-    assert.ok(degreeImage || resolved.award.image, `${name}: нет изображения`);
-    assert.match(
-      (degreeImage || resolved.award.image)?.src || "",
-      /^https:\/\/upload\.wikimedia\.org\//,
-      name,
-    );
+    assert.ok(image, `${name}: нет изображения`);
+    assert.match(image.src, /^\/awards\/ussr\/.*\.svg$/, name);
   }
+});
+
+test("изображения СССР, России и Монголии физически разделены по системам наград", () => {
+  assert.match(
+    getAwardDefinition("ussr-medal-veteran-labour")?.image?.src || "",
+    /^\/awards\/ussr\//,
+  );
+  assert.match(
+    getAwardDefinition("ru-rosatom-veteran-nuclear-energy-industry")?.image?.src || "",
+    /^\/awards\/ru\/rosatom\//,
+  );
+  assert.match(
+    getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.image?.src || "",
+    /^\/awards\/mn\//,
+  );
+
+  const localImages = AWARD_CATALOG.flatMap((award) => [
+    award.image?.src,
+    ...(award.degrees?.map((degree) => degree.image?.src) || []),
+  ]).filter((src): src is string => !!src && src.startsWith("/awards/"));
+
+  assert.equal(new Set(localImages).size, localImages.length, "один локальный ассет привязан к нескольким определениям/степеням");
+});
+
+test("точный awardDefinitionId сохраняет выбранную систему наград при редактировании", () => {
+  const selected = resolveAwardName(
+    "Ветеран атомной промышленности",
+    undefined,
+    "ru-rosatom-veteran-nuclear-energy-industry",
+  );
+  assert.equal(selected?.award.country, "RU");
+  assert.equal(selected?.award.id, "ru-rosatom-veteran-nuclear-energy-industry");
 });
