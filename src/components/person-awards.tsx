@@ -64,11 +64,7 @@ export function AwardsEditor({
     if (!current) return;
 
     if (!definitionId) {
-      const resolved = resolveAwardName(current.name, current.year);
-      update(id, {
-        awardDefinitionId: resolved?.award.id,
-        degreeId: resolved?.degreeId,
-      });
+      update(id, { awardDefinitionId: undefined, degreeId: undefined });
       return;
     }
 
@@ -134,7 +130,7 @@ export function AwardsEditor({
             <label>
               Награда из каталога
               <select
-                value={award.awardDefinitionId || definition?.id || ""}
+                value={award.awardDefinitionId || ""}
                 onChange={(e) => selectDefinition(award.id, e.target.value)}
               >
                 <option value="">Автоопределение / своя запись</option>
