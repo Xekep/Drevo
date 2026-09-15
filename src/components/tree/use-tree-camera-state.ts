@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
+import { initialFamilyFocus } from "../../domain/tree-interactions.ts";
 import type { Person } from "../../domain/types.ts";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
+import {
+  TREE_NODE_HEIGHT,
+  TREE_NODE_WIDTH,
+} from "../../domain/tree-layout-constants.ts";
 
 type CameraFlow = {
   getViewport: () => Viewport;
@@ -34,12 +39,41 @@ type TreeCameraStateInput = {
   collapsed: ReadonlySet<string>;
 };
 
+const MOBILE_MIN_CARD_WIDTH = 130;
+const MOBILE_READABLE_ZOOM = MOBILE_MIN_CARD_WIDTH / TREE_NODE_WIDTH;
+
 function initialTreePadding(width: number, height: number, narrow: boolean) {
   const shortSide = Math.min(width, height);
   if (narrow) return shortSide < 430 ? 0.12 : 0.16;
   if (shortSide < 700) return 0.16;
   if (shortSide < 1000) return 0.2;
   return 0.24;
+}
+
+function estimateWholeTreeZoom(
+  positions: Map<string, { x: number; y: number }>,
+  viewportWidth: number,
+  viewportHeight: number,
+  padding: number,
+) {
+  if (!positions.size) return 1;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of positions.values()) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  const treeWidth = Math.max(TREE_NODE_WIDTH, maxX - minX + TREE_NODE_WIDTH);
+  const treeHeight = Math.max(TREE_NODE_HEIGHT, maxY - minY + TREE_NODE_HEIGHT);
+  const paddingFactor = 1 + padding * 2;
+  return Math.min(
+    viewportWidth / treeWidth / paddingFactor,
+    viewportHeight / treeHeight / paddingFactor,
+  );
 }
 
 /** Сохраняет и восстанавливает viewport дерева, не вмешиваясь в расчёт геометрии. */
@@ -135,17 +169,33 @@ export function useTreeCameraState({
           });
         else if (cameras.current[context] && !reverseChanged)
           void flow.setViewport(cameras.current[context]);
-        else
-          // React Flow вычисляет fit по фактическому bounding box всех видимых
-          // узлов и текущему размеру canvas. Поэтому стартовый zoom зависит и
-          // от размера древа, и от разрешения окна, а не от фиксированной
-          // мобильной величины. maxZoom лишь не даёт маленькому дереву
-          // раздуваться сверх комфортного масштаба.
+        else {
+          const padding = initialTreePadding(canvasWidth, canvasHeight, narrow);
+          const wholeTreeZoom = estimateWholeTreeZoom(
+            positions,
+            canvasWidth,
+            canvasHeight,
+            padding,
+          );
+          const useReadableFamilyFocus = narrow && wholeTreeZoom < MOBILE_READABLE_ZOOM;
+          const initialNodes = useReadableFamilyFocus
+            ? initialFamilyFocus(familyPeople)
+                .filter((id) => positions.has(id))
+                .map((id) => ({ id }))
+            : undefined;
+
+          // Сначала оцениваем весь фактический layout относительно текущего
+          // viewport. Если всё дерево помещается на телефоне без превращения
+          // карточек в микротекст, показываем его целиком. Если нет, fitView
+          // стартует с ближайшей семьи и гарантирует читаемую ширину карточки.
+          // На широком экране по-прежнему помещаем всё видимое древо.
           void flow.fitView({
+            nodes: initialNodes?.length ? initialNodes : undefined,
             maxZoom: narrow ? 0.9 : 1,
-            minZoom: 0.05,
-            padding: initialTreePadding(canvasWidth, canvasHeight, narrow),
+            minZoom: useReadableFamilyFocus ? MOBILE_READABLE_ZOOM : 0.05,
+            padding,
           });
+        }
       } else if (narrow) {
         const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
         if (mobileCamera.current !== key) {
