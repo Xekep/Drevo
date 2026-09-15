@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
-import { initialFamilyFocus } from "../../domain/tree-interactions.ts";
 import type { Person } from "../../domain/types.ts";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
 
@@ -34,6 +33,14 @@ type TreeCameraStateInput = {
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
 };
+
+function initialTreePadding(width: number, height: number, narrow: boolean) {
+  const shortSide = Math.min(width, height);
+  if (narrow) return shortSide < 430 ? 0.12 : 0.16;
+  if (shortSide < 700) return 0.16;
+  if (shortSide < 1000) return 0.2;
+  return 0.24;
+}
 
 /** Сохраняет и восстанавливает viewport дерева, не вмешиваясь в расчёт геометрии. */
 export function useTreeCameraState({
@@ -128,19 +135,17 @@ export function useTreeCameraState({
           });
         else if (cameras.current[context] && !reverseChanged)
           void flow.setViewport(cameras.current[context]);
-        else {
-          const initialNodes = narrow
-            ? initialFamilyFocus(familyPeople)
-                .filter((id) => positions.has(id))
-                .map((id) => ({ id }))
-            : undefined;
+        else
+          // React Flow вычисляет fit по фактическому bounding box всех видимых
+          // узлов и текущему размеру canvas. Поэтому стартовый zoom зависит и
+          // от размера древа, и от разрешения окна, а не от фиксированной
+          // мобильной величины. maxZoom лишь не даёт маленькому дереву
+          // раздуваться сверх комфортного масштаба.
           void flow.fitView({
-            nodes: initialNodes?.length ? initialNodes : undefined,
             maxZoom: narrow ? 0.9 : 1,
-            minZoom: narrow ? 0.65 : 0.05,
-            padding: narrow ? 0.32 : 0.25,
+            minZoom: 0.05,
+            padding: initialTreePadding(canvasWidth, canvasHeight, narrow),
           });
-        }
       } else if (narrow) {
         const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
         if (mobileCamera.current !== key) {
