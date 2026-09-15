@@ -74,27 +74,41 @@ function matchesName(award: AwardDefinition, base: string, compactBase: string) 
   });
 }
 
+function resolvedDegree(award: AwardDefinition, name: string, degreeId?: string) {
+  return award.degrees?.find((item) =>
+    item.id === degreeId || item.aliases?.some((alias) => normalizeAwardName(name).includes(normalizeAwardName(alias))),
+  );
+}
+
 /**
- * Auto-links only an unambiguous catalogue meaning. Year is a tie-breaker, never
- * a reason to invent a match.
+ * Auto-links only an unambiguous catalogue meaning. When a stored exact
+ * awardDefinitionId is supplied, it wins only if the edited name still matches
+ * that same definition. This prevents same-name awards from different countries
+ * from silently swapping visual identity.
  */
-export function resolveAwardName(name: string, year?: string) {
+export function resolveAwardName(name: string, year?: string, preferredAwardId?: string) {
   const degreeId = extractDegree(name);
   const base = removeDegree(name);
   const compactBase = withoutAwardKind(base);
   if (!compactBase) return undefined;
 
   let matches = AWARD_CATALOG.filter((award) => matchesName(award, base, compactBase));
+
+  if (preferredAwardId) {
+    const preferred = matches.find((award) => award.id === preferredAwardId);
+    if (preferred) {
+      return { award: preferred, degreeId: resolvedDegree(preferred, name, degreeId)?.id };
+    }
+  }
+
   if (matches.length > 1 && year) {
     const byYear = matches.filter((award) => activeInYear(award, year));
     if (byYear.length) matches = byYear;
   }
   if (matches.length !== 1) return undefined;
+
   const award = matches[0];
-  const degree = award.degrees?.find((item) =>
-    item.id === degreeId || item.aliases?.some((alias) => normalizeAwardName(name).includes(normalizeAwardName(alias))),
-  );
-  return { award, degreeId: degree?.id };
+  return { award, degreeId: resolvedDegree(award, name, degreeId)?.id };
 }
 
 export function searchAwards(query: string) {
