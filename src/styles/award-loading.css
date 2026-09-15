@@ -1,0 +1,52 @@
+.award-loading-placeholder {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  color: #9c8b64;
+  background: radial-gradient(circle at 50% 42%, #eee8d7 0, #f8f5eb 64%, transparent 65%);
+  animation: award-loading-breathe 1.25s ease-in-out infinite;
+}
+.award-loading-placeholder > svg {
+  position: relative;
+  z-index: 1;
+  opacity: 0.58;
+}
+.award-loading-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  background: linear-gradient(
+    105deg,
+    transparent 34%,
+    #ffffff00 40%,
+    #fff9e7c7 50%,
+    #ffffff00 60%,
+    transparent 66%
+  );
+  transform: translateX(-75%);
+  animation: award-loading-sheen 1.15s ease-in-out infinite;
+}
+.award-image-ready {
+  animation: award-image-reveal 0.18s ease-out both;
+}
+@keyframes award-loading-breathe {
+  0%, 100% { opacity: 0.58; transform: scale(0.96); }
+  50% { opacity: 0.9; transform: scale(1); }
+}
+@keyframes award-loading-sheen {
+  0% { transform: translateX(-78%); }
+  65%, 100% { transform: translateX(78%); }
+}
+@keyframes award-image-reveal {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .award-loading-placeholder,
+  .award-loading-placeholder::after,
+  .award-image-ready {
+    animation: none;
+  }
+}
