@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import {
+  activeInYear,
   AWARD_CATALOG,
   getAwardDefinition,
   normalizeAwardName,
@@ -18,6 +21,52 @@ test("каталог содержит военные, трудовые, юбил
   assert.equal(
     getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.country,
     "MN",
+  );
+});
+
+test("система наград зашита в стабильный id и не выводится из совпавшего названия", () => {
+  const prefixes: Record<string, string> = {
+    USSR: "ussr-",
+    RU: "ru-",
+    MN: "mn-",
+    PL: "pl-",
+    CS: "cs-",
+    DDR: "ddr-",
+  };
+
+  for (const award of AWARD_CATALOG) {
+    const prefix = prefixes[award.country];
+    if (prefix) assert.ok(award.id.startsWith(prefix), `${award.id}: неверная система ${award.country}`);
+  }
+});
+
+test("год ограничивает страну и эпоху наградной системы", () => {
+  const soviet = getAwardDefinition("ussr-medal-veteran-labour");
+  const russian = getAwardDefinition("ru-medal-zhukov");
+  const ddr = getAwardDefinition("ddr-medal-brotherhood-arms");
+  assert.ok(soviet && russian && ddr);
+
+  assert.equal(activeInYear(soviet, "1985"), true);
+  assert.equal(activeInYear(soviet, "2005"), false);
+  assert.equal(activeInYear(russian, "1985"), false);
+  assert.equal(activeInYear(russian, "2005"), true);
+  assert.equal(activeInYear(ddr, "1985"), true);
+  assert.equal(activeInYear(ddr, "2005"), false);
+
+  assert.equal(resolveAwardName("Ветеран труда", "1985")?.award.country, "USSR");
+  assert.equal(resolveAwardName("Ветеран труда", "2005"), undefined);
+  assert.equal(resolveAwardName("Медаль Жукова", "1985"), undefined);
+  assert.equal(resolveAwardName("Медаль Жукова", "2005")?.award.country, "RU");
+});
+
+test("несовместимый год не удерживает ранее выбранную страну", () => {
+  assert.equal(
+    resolveAwardName("Ветеран труда", "2005", "ussr-medal-veteran-labour"),
+    undefined,
+  );
+  assert.equal(
+    resolveAwardName("Ветеран труда", "1985", "ussr-medal-veteran-labour")?.award.id,
+    "ussr-medal-veteran-labour",
   );
 });
 
@@ -65,17 +114,13 @@ test("ручной ввод извлекает степень и не ломае
 
 test("проверенные изображения привязаны к определениям, а не к человеку", () => {
   assert.equal(getAwardDefinition("ussr-order-red-star")?.imageStatus, "verified");
-  assert.match(
-    getAwardDefinition("ussr-order-red-star")?.image?.src || "",
-    /commons\.wikimedia\.org/,
-  );
   assert.equal(
     getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.imageStatus,
     "verified",
   );
 });
 
-test("награды из существующего семейного профиля имеют реальные изображения", () => {
+test("награды из существующего семейного профиля имеют локальные прозрачные изображения СССР", () => {
   const cases = [
     ["Медаль «За отвагу»", "1943"],
     ["Орден Славы III степени", "1945"],
@@ -90,12 +135,44 @@ test("награды из существующего семейного проф
     const degreeImage = resolved.award.degrees?.find(
       (degree) => degree.id === resolved.degreeId,
     )?.image;
+    const image = degreeImage || resolved.award.image;
     assert.equal(resolved.award.imageStatus, "verified", name);
-    assert.ok(degreeImage || resolved.award.image, `${name}: нет изображения`);
-    assert.match(
-      (degreeImage || resolved.award.image)?.src || "",
-      /^https:\/\/upload\.wikimedia\.org\//,
-      name,
-    );
+    assert.ok(image, `${name}: нет изображения`);
+    assert.match(image.src, /^\/awards\/ussr\/.*\.svg$/, name);
   }
+});
+
+test("изображения СССР, России и Монголии физически разделены по системам наград", () => {
+  assert.match(
+    getAwardDefinition("ussr-medal-veteran-labour")?.image?.src || "",
+    /^\/awards\/ussr\//,
+  );
+  assert.match(
+    getAwardDefinition("ru-rosatom-veteran-nuclear-energy-industry")?.image?.src || "",
+    /^\/awards\/ru\/rosatom\//,
+  );
+  assert.match(
+    getAwardDefinition("mn-jubilee-30-khalkhin-gol-victory")?.image?.src || "",
+    /^\/awards\/mn\//,
+  );
+
+  const localImages = AWARD_CATALOG.flatMap((award) => [
+    award.image?.src,
+    ...(award.degrees?.map((degree) => degree.image?.src) || []),
+  ]).filter((src): src is string => !!src && src.startsWith("/awards/"));
+
+  assert.equal(new Set(localImages).size, localImages.length, "один локальный ассет привязан к нескольким определениям/степеням");
+  for (const src of localImages) {
+    assert.ok(existsSync(join(process.cwd(), "public", src.slice(1))), `${src}: локальный файл отсутствует`);
+  }
+});
+
+test("точный awardDefinitionId сохраняет выбранную систему наград при совместимом годе", () => {
+  const selected = resolveAwardName(
+    "Ветеран атомной промышленности",
+    "2020",
+    "ru-rosatom-veteran-nuclear-energy-industry",
+  );
+  assert.equal(selected?.award.country, "RU");
+  assert.equal(selected?.award.id, "ru-rosatom-veteran-nuclear-energy-industry");
 });

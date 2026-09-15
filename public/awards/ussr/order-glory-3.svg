@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 360" role="img">
+<defs><linearGradient id="silver" x1="0" x2="1"><stop stop-color="#767b7d"/><stop offset=".38" stop-color="#f6f7f5"/><stop offset=".72" stop-color="#a5aaab"/><stop offset="1" stop-color="#64696b"/></linearGradient></defs>
+<g>
+  <path d="M54 15h132v58l-66 44-66-44z" fill="#e28b21" stroke="#7a5316" stroke-width="5"/>
+  <path d="M70 17h14l30 84H99zM103 17h14l15 79-14 9zM136 17h14l-5 67-14 10zM169 17h14v52l-16 11z" fill="#171717"/>
+  <path d="M120 119 145 183 214 187 160 230 176 298 120 260 64 298 80 230 26 187 95 183z" fill="url(#silver)" stroke="#777" stroke-width="5"/>
+  <circle cx="120" cy="216" r="48" fill="#dedede" stroke="#777" stroke-width="4"/>
+  <path d="M104 242h32v-42h-32zM99 204h42l-21-24z" fill="#8c8c8c"/>
+  <path d="M94 245h52" stroke="#c32b26" stroke-width="9"/>
+  <text x="120" y="270" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#c32b26">СЛАВА</text>
+</g>
+</svg>

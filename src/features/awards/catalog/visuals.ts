@@ -5,7 +5,7 @@ type AwardVisualOverride = {
   degreeImages?: Record<string, AwardImage>;
 };
 
-const commonsImage = (
+const localImage = (
   src: string,
   sourcePage: string,
   license: string,
@@ -13,52 +13,75 @@ const commonsImage = (
 ): AwardImage => ({ src, sourcePage, license, author });
 
 /**
- * Verified images are kept separately from award metadata so visual coverage can
- * grow without making the historical catalogue harder to review. The image URL
- * points directly at upload.wikimedia.org to avoid an extra Commons redirect in
- * person cards.
+ * Runtime visuals are local transparent assets. Paths are intentionally scoped
+ * by award system/country: identical award names in different countries must
+ * never share an image merely because their Russian display names match.
  */
 const AWARD_VISUAL_OVERRIDES: Record<string, AwardVisualOverride> = {
   "ussr-medal-for-courage": {
-    image: commonsImage(
-      "https://upload.wikimedia.org/wikipedia/commons/b/b9/Medal_of_Valour%2C_Soviet_Union.png",
+    image: localImage(
+      "/awards/ussr/medal-for-courage.svg",
       "https://commons.wikimedia.org/wiki/File:Medal_of_Valour,_Soviet_Union.png",
       "PD-RU-exempt",
-      "Ahnode (retouch; original author unknown)",
+      "Локальная SVG-реконструкция Drevo по официальному дизайну награды СССР",
     ),
   },
   "ussr-order-glory": {
     degreeImages: {
-      "3": commonsImage(
-        "https://upload.wikimedia.org/wikipedia/commons/3/3c/Order_of_Glory_3rd_class.jpg",
+      "3": localImage(
+        "/awards/ussr/order-glory-3.svg",
         "https://commons.wikimedia.org/wiki/File:Order_of_Glory_3rd_class.jpg",
-        "CC BY-SA 3.0",
-        "Fdutil",
+        "CC BY-SA 3.0 / дизайн государственной награды СССР",
+        "Локальная SVG-реконструкция Drevo",
       ),
     },
   },
   "ussr-medal-victory-germany": {
-    image: commonsImage(
-      "https://upload.wikimedia.org/wikipedia/commons/a/aa/%D0%97%D0%B0_%D0%BF%D0%BE%D0%B1%D0%B5%D0%B4%D1%83_%D0%BD%D0%B0%D0%B4_%D0%93%D0%B5%D1%80%D0%BC%D0%B0%D0%BD%D0%B8%D0%B5%D0%B9_%D0%B2_%D0%92%D0%B5%D0%BB%D0%B8%D0%BA%D0%BE%D0%B9_%D0%9E%D1%82%D0%B5%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D0%BE%D0%B9_%D0%B2%D0%BE%D0%B9%D0%BD%D0%B5_1941%E2%80%941945_%D0%B3%D0%B3.jpg",
-      "https://commons.wikimedia.org/wiki/File:%D0%97%D0%B0_%D0%BF%D0%BE%D0%B1%D0%B5%D0%B4%D1%83_%D0%BD%D0%B0%D0%B4_%D0%93%D0%B5%D1%80%D0%BC%D0%B0%D0%BD%D0%B8%D0%B5%D0%B9_%D0%B2_%D0%92%D0%B5%D0%BB%D0%B8%D0%BA%D0%BE%D0%B9_%D0%9E%D1%82%D0%B5%D1%87%D0%B5%D1%81%D1%82%D0%B2%D0%B5%D0%BD%D0%BD%D0%BE%D0%B9_%D0%B2%D0%BE%D0%B9%D0%BD%D0%B5_1941%E2%80%941945_%D0%B3%D0%B3.jpg",
-      "CC BY-SA 1.0",
-      "George Shuklin",
+    image: localImage(
+      "/awards/ussr/medal-victory-germany.svg",
+      "https://commons.wikimedia.org/wiki/File:WW2_Victory.png",
+      "CC BY-SA 3.0 / дизайн государственной награды СССР",
+      "Локальная SVG-реконструкция Drevo",
     ),
   },
   "ussr-medal-capture-konigsberg": {
-    image: commonsImage(
-      "https://upload.wikimedia.org/wikipedia/commons/2/21/Capture_of_Koenigsberg_OBVERSE.jpg",
+    image: localImage(
+      "/awards/ussr/medal-capture-konigsberg.svg",
       "https://commons.wikimedia.org/wiki/File:Capture_of_Koenigsberg_OBVERSE.jpg",
-      "CC BY-SA 3.0",
-      "Fdutil",
+      "CC BY-SA 3.0 / дизайн государственной награды СССР",
+      "Локальная SVG-реконструкция Drevo",
     ),
   },
   "ussr-medal-capture-berlin": {
-    image: commonsImage(
-      "https://upload.wikimedia.org/wikipedia/commons/4/4e/Medal_For_the_Capture_of_Berlin.jpg",
+    image: localImage(
+      "/awards/ussr/medal-capture-berlin.svg",
       "https://commons.wikimedia.org/wiki/File:Medal_For_the_Capture_of_Berlin.jpg",
       "PD-RU-exempt",
-      "Winterheart",
+      "Локальная SVG-реконструкция Drevo",
+    ),
+  },
+  "ussr-medal-veteran-labour": {
+    image: localImage(
+      "/awards/ussr/medal-veteran-labour.svg",
+      "https://commons.wikimedia.org/wiki/File:VeteranOfLabourMedal3.jpg",
+      "Дизайн государственной награды СССР; фото-источник CC BY-SA 3.0",
+      "Локальная SVG-реконструкция Drevo",
+    ),
+  },
+  "ru-rosatom-veteran-nuclear-energy-industry": {
+    image: localImage(
+      "/awards/ru/rosatom/veteran-nuclear-energy-industry.svg",
+      "https://base.garant.ru/70183948/10ed0f917186039eb157d3ba4f962ee5/",
+      "Официальный рисунок ведомственного знака; локальная SVG-реконструкция",
+      "Drevo",
+    ),
+  },
+  "mn-jubilee-30-khalkhin-gol-victory": {
+    image: localImage(
+      "/awards/mn/medal-30-khalkhin-gol-victory.svg",
+      "https://commons.wikimedia.org/wiki/File:%D0%9C%D0%B5%D0%B4%D0%B0%D0%BB%D1%8C_%C2%AB30_%D0%BB%D0%B5%D1%82_%D0%A5%D0%B0%D0%BB%D1%85%D0%B8%D0%BD-%D0%93%D0%BE%D0%BB%D1%8C%D1%81%D0%BA%D0%BE%D0%B9_%D0%9F%D0%BE%D0%B1%D0%B5%D0%B4%D1%8B%C2%BB.jpg",
+      "PD-Mongolia-exempt",
+      "Локальная SVG-реконструкция Drevo",
     ),
   },
 };
