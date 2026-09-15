@@ -39,7 +39,7 @@ type TreeCameraStateInput = {
   collapsed: ReadonlySet<string>;
 };
 
-const MOBILE_MIN_CARD_WIDTH = 130;
+const MOBILE_MIN_CARD_WIDTH = 132;
 const MOBILE_READABLE_ZOOM = MOBILE_MIN_CARD_WIDTH / TREE_NODE_WIDTH;
 
 function initialTreePadding(width: number, height: number, narrow: boolean) {
