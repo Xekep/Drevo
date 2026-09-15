@@ -35,16 +35,16 @@
   max-width: calc(100% - var(--timeline-rail) - 40px);
 }
 .person-awards {
-  margin: 7px 0 18px;
+  margin: 8px 0 0;
 }
 .award-stack {
   list-style: none;
-  padding: 7px 8px 6px;
+  padding: 10px 8px;
   margin: 0;
   display: flex;
   align-items: center;
   justify-content: safe center;
-  min-height: 62px;
+  min-height: 72px;
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: hidden;
@@ -55,18 +55,22 @@
 .award-stack-item {
   position: relative;
   flex: 0 0 auto;
-  margin-left: -14px;
-  transition: filter 0.16s ease;
+  margin-left: -16px;
+  transform-origin: center bottom;
+  transition:
+    transform 0.17s ease,
+    filter 0.17s ease;
 }
 .award-stack-item:first-child {
   margin-left: 0;
 }
 .award-stack-item.is-active {
-  filter: drop-shadow(0 4px 4px #4e412f22);
+  transform: translateY(-2px) scale(1.1);
+  filter: drop-shadow(0 5px 5px #4e412f2b);
 }
 .award-medal-button {
-  width: 56px;
-  height: 58px;
+  width: 54px;
+  height: 56px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -83,9 +87,9 @@
   outline-offset: 1px;
 }
 .award-visual {
-  flex: 0 0 52px;
-  width: 52px;
-  height: 54px;
+  flex: 0 0 50px;
+  width: 50px;
+  height: 52px;
   display: grid;
   place-items: center;
   color: #a57e38;
@@ -100,19 +104,20 @@
   display: block;
   width: auto !important;
   height: auto !important;
-  max-width: 48px !important;
-  max-height: 52px !important;
+  max-width: 44px !important;
+  max-height: 48px !important;
   object-fit: contain;
   object-position: center;
   background: transparent;
   filter: drop-shadow(0 2px 2px #3f36251b);
 }
 .award-focus-card {
-  margin-top: 5px;
+  margin-top: 4px;
   padding: 11px 12px;
   border: 1px solid #e4ddc9;
   background: #fcfaf3;
   border-radius: 9px;
+  text-align: left;
   animation: award-focus-in 0.12s ease-out;
 }
 .award-focus-card > strong {
@@ -323,6 +328,9 @@
 .profile-head .profile-given-name {
   display: block;
 }
+.profile-head .person-awards {
+  width: 100%;
+}
 .memorial-name {
   max-width: 100%;
   box-sizing: border-box;
@@ -380,7 +388,7 @@
     -webkit-overflow-scrolling: touch;
   }
   .award-stack-item {
-    margin-left: -16px;
+    margin-left: -17px;
   }
 }
 @media (max-width: 899px) {

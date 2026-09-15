@@ -151,6 +151,7 @@ export function PersonPanel({
             )}
           </p>
         )}
+        <PersonAwards awards={person.awards} />
       </div>
       {suggestions}
       <div
@@ -199,7 +200,6 @@ export function PersonPanel({
                 </div>
               </div>
             )}
-            <PersonAwards awards={person.awards} />
             {hasRecordedDeath(person) ? (
               <div className="life-event">
                 <span className="event-icon">†</span>
