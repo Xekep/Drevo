@@ -1,6 +1,51 @@
-import { Medal, Plus, Trash2, ChevronDown, ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, ChevronDown, Medal, Plus, Trash2 } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
+import {
+  AWARD_CATALOG,
+  getAwardDefinition,
+  resolveAwardName,
+} from "../features/awards/catalog/index.ts";
+import type { AwardDefinition } from "../features/awards/types.ts";
+
+function AwardVisual({
+  definition,
+  degreeId,
+  size = 42,
+}: {
+  definition?: AwardDefinition;
+  degreeId?: string;
+  size?: number;
+}) {
+  const degree = definition?.degrees?.find((item) => item.id === degreeId);
+  const image = degree?.image || definition?.image;
+  const [failedSrc, setFailedSrc] = useState<string>();
+
+  if (image && failedSrc !== image.src) {
+    return (
+      <img
+        src={image.src}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setFailedSrc(image.src)}
+        style={{ width: size, height: size, objectFit: "contain" }}
+      />
+    );
+  }
+
+  return <Medal size={Math.max(24, Math.round(size * 0.62))} strokeWidth={1.4} />;
+}
+
+function resolveStoredAward(award: PersonAward) {
+  const byId = getAwardDefinition(award.awardDefinitionId);
+  if (byId) return { award: byId, degreeId: award.degreeId };
+  return resolveAwardName(award.name, award.year);
+}
 
 export function AwardsEditor({
   awards,
@@ -10,81 +55,162 @@ export function AwardsEditor({
   onChange: (awards: PersonAward[]) => void;
 }) {
   function update(id: string, patch: Partial<PersonAward>) {
-    onChange(awards.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+    onChange(
+      awards.map((award) => (award.id === id ? { ...award, ...patch } : award)),
+    );
   }
+
+  function updateName(id: string, name: string) {
+    const current = awards.find((award) => award.id === id);
+    const resolved = resolveAwardName(name, current?.year);
+    update(
+      id,
+      resolved
+        ? {
+            name,
+            awardDefinitionId: resolved.award.id,
+            degreeId: resolved.degreeId,
+          }
+        : { name, awardDefinitionId: undefined, degreeId: undefined },
+    );
+  }
+
+  function updateYear(id: string, year: string) {
+    const current = awards.find((award) => award.id === id);
+    if (!current) return;
+    const resolved = resolveAwardName(current.name, year || undefined);
+    update(id, {
+      year: year || undefined,
+      awardDefinitionId: resolved?.award.id,
+      degreeId: resolved?.degreeId || current.degreeId,
+    });
+  }
+
   return (
     <details className="form-details award-editor">
       <summary>Награды{awards.length ? ` · ${awards.length}` : ""}</summary>
-      {awards.map((award, i) => (
-        <fieldset key={award.id}>
-          <legend>Награда {i + 1}</legend>
-          <div className="award-name-year">
+      <datalist id="award-catalog-suggestions">
+        {AWARD_CATALOG.map((definition) => (
+          <option key={definition.id} value={definition.name}>
+            {definition.countryName}
+          </option>
+        ))}
+      </datalist>
+      {awards.map((award, i) => {
+        const resolved = resolveStoredAward(award);
+        const definition = resolved?.award;
+        return (
+          <fieldset key={award.id}>
+            <legend>Награда {i + 1}</legend>
+            <div className="award-name-year">
+              <label>
+                Название
+                <input
+                  value={award.name}
+                  list="award-catalog-suggestions"
+                  maxLength={300}
+                  placeholder="Например, медаль «За отвагу»"
+                  onChange={(e) => updateName(award.id, e.target.value)}
+                />
+                {definition && (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginTop: 6,
+                      fontSize: 11,
+                    }}
+                  >
+                    <AwardVisual
+                      definition={definition}
+                      degreeId={award.degreeId || resolved?.degreeId}
+                      size={36}
+                    />
+                    <span>
+                      Распознана: {definition.name}
+                      <br />
+                      <small>{definition.countryName}</small>
+                    </span>
+                  </span>
+                )}
+              </label>
+              <label>
+                Год
+                <input
+                  value={award.year || ""}
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="1945"
+                  onChange={(e) => updateYear(award.id, e.target.value)}
+                />
+              </label>
+            </div>
+            {definition?.degrees && (
+              <label>
+                Степень
+                <select
+                  value={award.degreeId || resolved?.degreeId || ""}
+                  onChange={(e) =>
+                    update(award.id, { degreeId: e.target.value || undefined })
+                  }
+                >
+                  <option value="">Не указана</option>
+                  {definition.degrees.map((degree) => (
+                    <option key={degree.id} value={degree.id}>
+                      {degree.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
-              Название
+              Источник
               <input
-                value={award.name}
-                maxLength={300}
-                placeholder="Например, медаль «За отвагу»"
-                onChange={(e) => update(award.id, { name: e.target.value })}
-              />
-            </label>
-            <label>
-              Год
-              <input
-                value={award.year || ""}
-                inputMode="numeric"
-                maxLength={4}
-                placeholder="1945"
+                value={award.source?.title || ""}
+                maxLength={2000}
+                placeholder="Наградной лист, архивный шифр, семейное свидетельство…"
                 onChange={(e) =>
-                  update(award.id, { year: e.target.value || undefined })
+                  update(award.id, {
+                    source:
+                      e.target.value || award.source?.url
+                        ? { ...award.source, title: e.target.value }
+                        : undefined,
+                  })
                 }
               />
             </label>
-          </div>
-          <label>
-            Источник
-            <input
-              value={award.source?.title || ""}
-              maxLength={2000}
-              placeholder="Наградной лист, архивный шифр, семейное свидетельство…"
-              onChange={(e) =>
-                update(award.id, {
-                  source:
-                    e.target.value || award.source?.url
-                      ? { ...award.source, title: e.target.value }
-                      : undefined,
-                })
+            <label>
+              Ссылка на источник, если есть
+              <input
+                value={award.source?.url || ""}
+                maxLength={2048}
+                placeholder="https://…"
+                onChange={(e) =>
+                  update(award.id, {
+                    source:
+                      e.target.value || award.source?.title
+                        ? {
+                            title: award.source?.title || "",
+                            url: e.target.value.trim() || undefined,
+                          }
+                        : undefined,
+                  })
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="award-remove"
+              onClick={() =>
+                onChange(awards.filter((item) => item.id !== award.id))
               }
-            />
-          </label>
-          <label>
-            Ссылка на источник, если есть
-            <input
-              value={award.source?.url || ""}
-              maxLength={2048}
-              placeholder="https://…"
-              onChange={(e) =>
-                update(award.id, {
-                  source:
-                    e.target.value || award.source?.title
-                      ? {
-                          title: award.source?.title || "",
-                          url: e.target.value.trim() || undefined,
-                        }
-                      : undefined,
-                })
-              }
-            />
-          </label>
-          <button
-            type="button"
-            className="award-remove"
-            onClick={() => onChange(awards.filter((a) => a.id !== award.id))}
-          >
-            <Trash2 size={14} /> Убрать награду
-          </button>
-        </fieldset>
-      ))}
+            >
+              <Trash2 size={14} /> Убрать награду
+            </button>
+          </fieldset>
+        );
+      })}
       <button
         type="button"
         className="award-add"
@@ -106,16 +232,31 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
       <h3>Награды</h3>
       <ul>
         {awards.map((award) => {
+          const resolved = resolveStoredAward(award);
+          const definition = resolved?.award;
+          const degreeId = award.degreeId || resolved?.degreeId;
+          const degree = definition?.degrees?.find(
+            (item) => item.id === degreeId,
+          );
           const url = safeUrl(award.source?.url);
           const hasSource = !!(award.source?.title || url);
+          const meta = [
+            degree?.label,
+            award.year,
+            definition?.countryName,
+          ].filter(Boolean);
           const label = (
             <>
               <span className="award-badge" aria-hidden="true">
-                <Medal size={26} strokeWidth={1.4} />
+                <AwardVisual
+                  definition={definition}
+                  degreeId={degreeId}
+                  size={42}
+                />
               </span>
               <span className="award-label">
                 <strong>{award.name}</strong>
-                {award.year && <small>{award.year}</small>}
+                {meta.length > 0 && <small>{meta.join(" · ")}</small>}
               </span>
             </>
           );

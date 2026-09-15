@@ -93,6 +93,11 @@ export function validateFamily(value: unknown): Family {
           typeof award.name !== "string" ||
           !award.name.trim() ||
           award.name.length > 300 ||
+          (award.awardDefinitionId !== undefined &&
+            (typeof award.awardDefinitionId !== "string" ||
+              award.awardDefinitionId.length > 120)) ||
+          (award.degreeId !== undefined &&
+            (typeof award.degreeId !== "string" || award.degreeId.length > 40)) ||
           (award.year !== undefined &&
             award.year !== "" &&
             (typeof award.year !== "string" ||
