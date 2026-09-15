@@ -19,6 +19,20 @@ export const getAwardDefinition = (id?: string) => (id ? BY_ID.get(id) : undefin
 
 const ROMAN_DEGREE: Record<string, string> = { i: "1", ii: "2", iii: "3", "1": "1", "2": "2", "3": "3" };
 
+/**
+ * Границы именно наградных систем, а не существования территории/народа.
+ * Нужны как дополнительный предохранитель, когда у награды нет собственного
+ * discontinuedAt/establishedAt или одинаковые названия встречаются в разных странах.
+ */
+const AWARD_SYSTEM_YEAR_BOUNDS: Record<string, { from?: number; to?: number }> = {
+  USSR: { from: 1922, to: 1991 },
+  RU: { from: 1992 },
+  DDR: { from: 1949, to: 1990 },
+  CS: { from: 1918, to: 1992 },
+  MN: { from: 1924 },
+  PL: { from: 1918 },
+};
+
 export function normalizeAwardName(value: string) {
   return value
     .normalize("NFKD")
@@ -59,9 +73,13 @@ function removeDegree(value: string) {
     .trim();
 }
 
-function activeInYear(award: AwardDefinition, year?: string) {
+export function activeInYear(award: AwardDefinition, year?: string) {
   if (!year || !/^\d{4}$/.test(year)) return true;
   const y = Number(year);
+  const systemBounds = AWARD_SYSTEM_YEAR_BOUNDS[award.country];
+
+  if (systemBounds?.from && y < systemBounds.from) return false;
+  if (systemBounds?.to && y > systemBounds.to) return false;
   if (award.establishedAt && Number(award.establishedAt.slice(0, 4)) > y) return false;
   if (award.discontinuedAt && Number(award.discontinuedAt.slice(0, 4)) < y) return false;
   return true;
@@ -81,10 +99,10 @@ function resolvedDegree(award: AwardDefinition, name: string, degreeId?: string)
 }
 
 /**
- * Auto-links only an unambiguous catalogue meaning. When a stored exact
- * awardDefinitionId is supplied, it wins only if the edited name still matches
- * that same definition. This prevents same-name awards from different countries
- * from silently swapping visual identity.
+ * Auto-links only an unambiguous catalogue meaning. Year always participates in
+ * resolution when present: it filters both the lifetime of the concrete award
+ * and the lifetime of its award system/country. A stored exact awardDefinitionId
+ * is preferred only while it remains compatible with the entered year.
  */
 export function resolveAwardName(name: string, year?: string, preferredAwardId?: string) {
   const degreeId = extractDegree(name);
@@ -94,6 +112,10 @@ export function resolveAwardName(name: string, year?: string, preferredAwardId?:
 
   let matches = AWARD_CATALOG.filter((award) => matchesName(award, base, compactBase));
 
+  if (year) {
+    matches = matches.filter((award) => activeInYear(award, year));
+  }
+
   if (preferredAwardId) {
     const preferred = matches.find((award) => award.id === preferredAwardId);
     if (preferred) {
@@ -101,10 +123,6 @@ export function resolveAwardName(name: string, year?: string, preferredAwardId?:
     }
   }
 
-  if (matches.length > 1 && year) {
-    const byYear = matches.filter((award) => activeInYear(award, year));
-    if (byYear.length) matches = byYear;
-  }
   if (matches.length !== 1) return undefined;
 
   const award = matches[0];
