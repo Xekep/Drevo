@@ -3,6 +3,7 @@ import type { AwardDefinition, AwardImage } from "../types.ts";
 type AwardVisualOverride = {
   image?: AwardImage;
   degreeImages?: Record<string, AwardImage>;
+  imageStatus?: AwardDefinition["imageStatus"];
 };
 
 const localImage = (
@@ -68,6 +69,15 @@ const AWARD_VISUAL_OVERRIDES: Record<string, AwardVisualOverride> = {
       "Man22",
     ),
   },
+  "ru-rosatom-veteran-nuclear-energy-industry": {
+    image: localImage(
+      "/awards/ru/rosatom/veteran-nuclear-energy-industry.png",
+      "https://bosporshop.ru/catalog/faleristika/znaki_znachki/energetika/znak_rosatom_veteran_atomnoy_energetiki_i_promyshlennosti_s_frachnym_znakom_2010_2020_gg_v_korobke",
+      "Фотография источника; права у правообладателя",
+      "Галерея «БОСПОР»",
+    ),
+    imageStatus: "pending-license-review",
+  },
   "mn-jubilee-30-khalkhin-gol-victory": {
     image: localImage(
       "/awards/mn/medal-30-khalkhin-gol-victory.png",
@@ -90,6 +100,6 @@ export function withAwardVisual(definition: AwardDefinition): AwardDefinition {
     ...definition,
     image: override.image ?? definition.image,
     degrees,
-    imageStatus: "verified",
+    imageStatus: override.imageStatus ?? "verified",
   };
 }

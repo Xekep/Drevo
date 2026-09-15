@@ -35,20 +35,20 @@
   max-width: calc(100% - var(--timeline-rail) - 40px);
 }
 .person-awards {
-  margin: 25px 0;
+  margin: 15px 0 20px;
 }
 .person-awards h3 {
-  margin: 0 0 12px;
-  font-size: 15px;
+  margin: 0 0 8px;
+  font-size: 14px;
   font-weight: 500;
 }
 .award-stack {
   list-style: none;
-  padding: 12px 8px 10px 2px;
+  padding: 8px 6px 5px 1px;
   margin: 0;
   display: flex;
-  align-items: flex-end;
-  min-height: 96px;
+  align-items: center;
+  min-height: 72px;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -58,39 +58,39 @@
 .award-stack-item {
   position: relative;
   flex: 0 0 auto;
-  margin-left: -22px;
+  margin-left: -18px;
   transition:
-    transform 0.18s ease,
-    filter 0.18s ease;
+    transform 0.16s ease,
+    filter 0.16s ease;
 }
 .award-stack-item:first-child {
   margin-left: 0;
 }
 .award-stack-item.is-active {
-  transform: translateY(-9px) scale(1.06);
-  filter: drop-shadow(0 7px 7px #4e412f2b);
+  transform: translateY(-4px);
+  filter: drop-shadow(0 5px 5px #4e412f26);
 }
 .award-medal-button {
-  width: 74px;
-  height: 82px;
+  width: 62px;
+  height: 66px;
   padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   position: relative;
 }
 .award-medal-button:hover {
-  filter: brightness(1.03);
+  filter: brightness(1.025);
 }
 .award-medal-button:focus-visible {
   outline: 2px solid #819970;
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 .award-visual {
-  flex: 0 0 72px;
-  width: 72px;
-  height: 82px;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 62px;
   display: grid;
   place-items: center;
   color: #a57e38;
@@ -103,19 +103,21 @@
 }
 .award-visual > img {
   display: block;
-  width: 100% !important;
-  height: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   object-fit: contain;
   background: transparent;
-  filter: drop-shadow(0 2px 2px #3f36251e);
+  filter: drop-shadow(0 2px 2px #3f36251b);
 }
 .award-focus-card {
-  margin-top: 7px;
-  padding: 12px 13px;
+  margin-top: 5px;
+  padding: 11px 12px;
   border: 1px solid #e4ddc9;
   background: #fcfaf3;
   border-radius: 9px;
-  animation: award-focus-in 0.14s ease-out;
+  animation: award-focus-in 0.12s ease-out;
 }
 .award-focus-card > strong {
   display: block;
@@ -138,8 +140,8 @@
   color: #b0a789;
 }
 .award-focus-source {
-  margin-top: 10px;
-  padding-top: 9px;
+  margin-top: 9px;
+  padding-top: 8px;
   border-top: 1px solid #ebe5d6;
   font-size: 12px;
   line-height: 1.55;
@@ -163,7 +165,7 @@
 @keyframes award-focus-in {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-2px);
   }
   to {
     opacity: 1;
@@ -274,7 +276,7 @@
     -webkit-overflow-scrolling: touch;
   }
   .award-stack-item {
-    margin-left: -24px;
+    margin-left: -20px;
   }
 }
 @media (max-width: 899px) {

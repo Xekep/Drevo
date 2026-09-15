@@ -214,6 +214,7 @@ export function PersonPanel({
                 История продолжается
               </div>
             ) : null}
+            <PersonAwards awards={person.awards} />
             <LifeSpan person={person} />
             {(person.biography || person.occupation) && (
               <div className="biography">
@@ -221,7 +222,6 @@ export function PersonPanel({
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}
-            <PersonAwards awards={person.awards} />
             <PersonEvents events={person.events} />
             <div className="relatives">
               <h3>

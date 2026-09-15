@@ -154,7 +154,11 @@ test("локальные растровые изображения раздел�
   );
 
   const rosatom = getAwardDefinition("ru-rosatom-veteran-nuclear-energy-industry");
-  assert.equal(rosatom?.image, undefined, "для Росатома нельзя подставлять непроверенную самодельную картинку");
+  assert.match(
+    rosatom?.image?.src || "",
+    /^\/awards\/ru\/rosatom\/.*\.png$/,
+  );
+  assert.equal(rosatom?.imageStatus, "pending-license-review");
 
   const localImages = AWARD_CATALOG.flatMap((award) => [
     award.image?.src,
