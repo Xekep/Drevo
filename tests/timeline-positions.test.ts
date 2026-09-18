@@ -2,11 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   timelinePositions,
-  relaxTimelineCards,
   type TimelineCard,
 } from "../src/domain/timeline-positions.ts";
 import { routingQuality } from "../src/domain/routing-quality.ts";
-import type { UnionBranch } from "../src/domain/union-layout.ts";
 
 test("collision resolution preserves both members of a dated/undated union and its clear connecting corridor", () => {
   const cards: TimelineCard[] = [
@@ -41,43 +39,17 @@ test("collision resolution preserves both members of a dated/undated union and i
   assert.deepEqual(cards, before);
 });
 
-test("horizontal relaxation follows known family branches without changing dates or spacing within a pair", () => {
+test("collision-free placement keeps the horizontal skeleton inherited from the tree", () => {
   const cards: TimelineCard[] = [
     { id: "a", block: "pair", x: 0, y: 0 },
     { id: "b", block: "pair", x: 252, y: 8 },
     { id: "child", block: "child", x: 1500, y: 240 },
     { id: "other", block: "other", x: 3000, y: 200 },
   ];
-  const branch: UnionBranch = {
-    id: "child:one",
-    union: "pair",
-    source: "a",
-    target: "child",
-    relations: [
-      { type: "parent", from: "a", to: "child" },
-      { type: "parent", from: "b", to: "child" },
-    ],
-    route: {
-      sourceHandle: "bottom",
-      targetHandle: "top",
-      points: [
-        { x: 236, y: 56 },
-        { x: 236, y: 150 },
-        { x: 1610, y: 150 },
-        { x: 1610, y: 240 },
-      ],
-    },
-  };
   const before = structuredClone(cards),
-    result = relaxTimelineCards(cards, [branch]),
-    map = new Map(result.map((p) => [p.id, p]));
-  assert.ok(map.get("a")!.x > 0 && map.get("child")!.x < 1500);
-  assert.equal(map.get("b")!.x - map.get("a")!.x, 252);
-  assert.equal(map.get("other")!.x, 3000);
-  assert.deepEqual(
-    result.map((p) => p.y),
-    cards.map((p) => p.y),
-  );
+    positions = new Map(timelinePositions(cards));
+  for (const card of cards)
+    assert.deepEqual(positions.get(card.id), { x: card.x, y: card.y });
   assert.deepEqual(cards, before);
 });
 

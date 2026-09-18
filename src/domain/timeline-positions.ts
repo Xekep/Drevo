@@ -4,59 +4,10 @@ import {
 } from "./tree-layout-constants.ts";
 import type { Point } from "./layout-order.ts";
 import { Spatial, type Box } from "./edge-routing.ts";
-import type { UnionBranch } from "./union-layout.ts";
 
 export type TimelineCard = Point & { id: string; block: string };
 
-/** Небольшой сдвиг семьи к её настоящим родителям и детям; пары остаются жёсткими. */
-export function relaxTimelineCards(
-  cards: TimelineCard[],
-  branches: UnionBranch[],
-) {
-  const byId = new Map(cards.map((p) => [p.id, p]));
-  const members = new Map<string, TimelineCard[]>();
-  for (const p of cards) {
-    const list = members.get(p.block) || [];
-    list.push(p);
-    members.set(p.block, list);
-  }
-  const centers = new Map(
-    [...members].map(([id, ps]) => [
-      id,
-      ps.reduce((sum, p) => sum + p.x + W / 2, 0) / ps.length,
-    ]),
-  );
-  const offsets = new Map<string, number[]>();
-  const add = (id: string, value: number) => {
-    const list = offsets.get(id) || [];
-    list.push(value);
-    offsets.set(id, list);
-  };
-  for (const b of branches) {
-    if (!b.id.startsWith("child:")) continue;
-    const parent = byId.get(b.source),
-      child = byId.get(b.target);
-    if (!parent || !child || parent.block === child.block) continue;
-    const delta = child.x + W / 2 - centers.get(parent.block)!;
-    add(parent.block, delta);
-    add(child.block, -delta);
-  }
-  const shifts = new Map(
-    [...offsets].map(([id, values]) => [
-      id,
-      Math.max(
-        -360,
-        Math.min(360, values.reduce((a, b) => a + b, 0) / values.length),
-      ) * 0.65,
-    ]),
-  );
-  return cards.map((p) => ({
-    ...p,
-    x: Math.round((p.x + (shifts.get(p.block) || 0)) * 10) / 10,
-  }));
-}
-
-/** Двигаем союз целиком по X; годы всех его участников остаются неизменными. */
+/** Сохраняем X из древа; союз сдвигается целиком только ради реальной коллизии. */
 export function timelinePositions(cards: TimelineCard[]): [string, Point][] {
   const groups = new Map<string, TimelineCard[]>();
   for (const card of cards) {

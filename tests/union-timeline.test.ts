@@ -6,7 +6,7 @@ import { unionTimeline } from "../src/domain/union-timeline.ts";
 import { routeKey, segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { yearY } from "../src/domain/layout.ts";
 import { dateYear } from "../src/domain/dates.ts";
-import type { LayoutPerson } from "../src/domain/tree-layout.ts";
+import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
 import type { FamilyLink } from "../src/domain/types.ts";
 
 const person = (
@@ -163,6 +163,84 @@ test("chronology routes dense equal-year families around unrelated cards", async
     ),
   ]);
 });
+test("chronology keeps tree X when dates do not create a collision", () => {
+  const people = [
+    person("a", "1900", [], ["b"]),
+    person("b", "1901"),
+    person("child", "1930", ["a", "b"]),
+  ];
+  const union = 'union:["a","b"]';
+  const base: TreeGeometry = {
+    mode: "generations",
+    reverse: false,
+    start: 1700,
+    offset: 0,
+    positions: [
+      ["a", { x: 0, y: 0 }],
+      ["b", { x: 252, y: 0 }],
+      ["child", { x: 1500, y: 190 }],
+    ],
+    occurrences: [
+      { id: "a", personId: "a", block: union },
+      { id: "b", personId: "b", block: union },
+      { id: "child", personId: "child", block: 'person:"child"' },
+    ],
+    blocks: [
+      {
+        id: union,
+        members: ["a", "b"],
+        x: 0,
+        y: 0,
+        width: 472,
+        height: 96,
+      },
+    ],
+    branches: [
+      {
+        id: `pair:${union}`,
+        source: "a",
+        target: "b",
+        union,
+        relations: [{ from: "a", to: "b", type: "spouse" }],
+        route: {
+          sourceHandle: "right",
+          targetHandle: "left",
+          points: [
+            { x: 220, y: 48 },
+            { x: 252, y: 48 },
+          ],
+        },
+      },
+      {
+        id: 'child:"child"',
+        source: "a",
+        target: "child",
+        union,
+        relations: [
+          { from: "a", to: "child", type: "parent" },
+          { from: "b", to: "child", type: "parent" },
+        ],
+        route: {
+          sourceHandle: "bottom",
+          targetHandle: "top",
+          points: [
+            { x: 236, y: 48 },
+            { x: 236, y: 120 },
+            { x: 1610, y: 120 },
+            { x: 1610, y: 190 },
+          ],
+        },
+      },
+    ],
+    routes: [],
+  };
+  const g = unionTimeline(people, base);
+  const points = new Map(g.positions);
+  assert.equal(points.get("a")!.x, 0);
+  assert.equal(points.get("b")!.x, 252);
+  assert.equal(points.get("child")!.x, 1500);
+});
+
 test("empty chronology works without fabricated dates", async () => {
   await verify([]);
 });
