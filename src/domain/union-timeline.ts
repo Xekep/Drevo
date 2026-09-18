@@ -12,7 +12,7 @@ import { dateYear } from "./dates.ts";
 import { START_YEAR, yearY } from "./layout.ts";
 import type { FamilyLink } from "./types.ts";
 import { timelineBranches } from "./timeline-routing.ts";
-import { timelinePositions, relaxTimelineCards } from "./timeline-positions.ts";
+import { timelinePositions } from "./timeline-positions.ts";
 import { routingQuality, routingCost } from "./routing-quality.ts";
 
 /** Та же проекция союзов; известные даты сохраняют точную координату Y. */
@@ -167,40 +167,5 @@ export function unionTimeline(
       coveredRelations: [...covered],
     };
   };
-  let best = project(timelinePositions(sorted));
-  const quality = (g: TreeGeometry) =>
-    routingQuality([
-      ...(g.branches || []).map((b) => ({ group: b.union, route: b.route })),
-      ...(g.routes || []).map(([group, route]) => ({ group, route })),
-    ]);
-  const width = (g: TreeGeometry) =>
-    g.positions.length
-      ? Math.max(...g.positions.map(([, p]) => p.x + W)) -
-        Math.min(...g.positions.map(([, p]) => p.x))
-      : 0;
-  let before = quality(best);
-  const maxWidth = width(best) * 1.15 + W;
-  if (sorted.length > 1 && sorted.length <= 300) {
-    let cards = sorted;
-    for (let pass = 0; pass < 2; pass++) {
-      const next = timelinePositions(relaxTimelineCards(cards, base.branches!));
-      const map = new Map(next);
-      cards = cards.map((p) => ({ ...p, ...map.get(p.id)! }));
-      const candidate = project(next),
-        after = quality(candidate);
-      if (
-        candidate.branches!.length === best.branches!.length &&
-        candidate.routes!.length === best.routes!.length &&
-        width(candidate) <= maxWidth &&
-        after.length <= before.length * 1.15 + W &&
-        after.contacts <= before.contacts &&
-        after.crossings <= before.crossings &&
-        routingCost(after) < routingCost(before) - 1
-      ) {
-        best = candidate;
-        before = after;
-      }
-    }
-  }
-  return best;
+  return project(timelinePositions(sorted));
 }
