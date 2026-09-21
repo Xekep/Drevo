@@ -801,6 +801,50 @@ export function analyzeKinship(
         (relation) => relation !== recordedStepParent,
       ),
     };
+  if (
+    (base.kind === "family" || base.kind === "unknown") &&
+    completeParents(a) &&
+    completeParents(b) &&
+    !a.parents.some((id) => b.parents.includes(id))
+  ) {
+    const step = links.find(
+      (link) =>
+        link.type === "step_parent" &&
+        ((link.to === a.id && b.parents.includes(link.from)) ||
+          (link.to === b.id && a.parents.includes(link.from))),
+    );
+    if (step) {
+      const role = (person: Person): KinshipRole => ({
+        term:
+          person.sex === "u"
+            ? "сводный брат / сводная сестра"
+            : person.sex === "f"
+              ? "сводная сестра"
+              : "сводный брат",
+        description:
+          "Один ребёнок — кровный ребёнок отчима или мачехи другого; общих кровных родителей в полных списках нет.",
+      });
+      const roles: [KinshipRole, KinshipRole] = [role(a), role(b)];
+      const title =
+        roles[0].term === roles[1].term
+          ? roles[0].term === "сводный брат"
+            ? "Сводные братья"
+            : roles[0].term === "сводная сестра"
+              ? "Сводные сёстры"
+              : "Сводные брат / сестра"
+          : `${roles[0].term} и ${roles[1].term}`;
+      return {
+        title: title[0].toLocaleUpperCase("ru") + title.slice(1),
+        explanation:
+          "Связь следует из явно записанного отчима или мачехи и кровного родительства второго ребёнка. Полные списки кровных родителей не пересекаются.",
+        path: [a.id, step.from, b.id],
+        common: [],
+        kind: "family",
+        roles,
+        ...(extras.length ? { otherRelations: extras } : {}),
+      };
+    }
+  }
   if (base.kind !== "unknown")
     return { ...base, ...(extras.length ? { otherRelations: extras } : {}) };
   if (extras.length) return { ...extras[0], otherRelations: extras.slice(1) };
