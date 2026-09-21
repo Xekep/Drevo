@@ -332,31 +332,37 @@ export function PersonEditor({
             ? "Дополните историю и сохраните изменения."
             : "Достаточно фамилии и имени. Остальные сведения можно добавить позже."}
         </p>
-        {person && (
-          <div className="portrait-picker">
-            <button
-              type="button"
-              className="portrait-preview portrait-edit-button"
-              onClick={() => setGalleryOpen(true)}
-              disabled={busy}
-              aria-label="Выбрать портрет из фотографий человека"
-              aria-haspopup="dialog"
-              title="Изменить портрет"
-            >
-              {portraitPreview || draft.photo ? (
-                <img
-                  src={portraitPreview || mediaPreview(draft.photo)}
-                  alt=""
-                />
-              ) : (
-                <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
-              )}
-              <span className="portrait-edit-overlay" aria-hidden="true">
-                <Pencil size={22} strokeWidth={1.6} />
-              </span>
-            </button>
-          </div>
-        )}
+        <div className="person-editor-portrait-awards">
+          {person && (
+            <div className="portrait-picker">
+              <button
+                type="button"
+                className="portrait-preview portrait-edit-button"
+                onClick={() => setGalleryOpen(true)}
+                disabled={busy}
+                aria-label="Выбрать портрет из фотографий человека"
+                aria-haspopup="dialog"
+                title="Изменить портрет"
+              >
+                {portraitPreview || draft.photo ? (
+                  <img
+                    src={portraitPreview || mediaPreview(draft.photo)}
+                    alt=""
+                  />
+                ) : (
+                  <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
+                )}
+                <span className="portrait-edit-overlay" aria-hidden="true">
+                  <Pencil size={22} strokeWidth={1.6} />
+                </span>
+              </button>
+            </div>
+          )}
+          <AwardsEditor
+            awards={draft.awards || []}
+            onChange={(awards) => field("awards", awards)}
+          />
+        </div>
         {relativeTo && !person && (
           <label>
             Кем новый человек приходится {fullName(relativeTo)}
@@ -622,10 +628,6 @@ export function PersonEditor({
         <EventsEditor
           events={draft.events || []}
           onChange={(events) => field("events", events)}
-        />
-        <AwardsEditor
-          awards={draft.awards || []}
-          onChange={(awards) => field("awards", awards)}
         />
         <details className="form-details">
           <summary>Источники</summary>

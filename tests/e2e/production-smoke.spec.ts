@@ -50,8 +50,94 @@ test("администратор выбирает себя в древе и пр
       treeAccess: "common_ancestors",
     });
   await expect(
-    page.getByText("Собственные новые карточки видны участнику"),
+    page.getByText("Свои новые карточки участник увидит и без общей родни."),
   ).toBeVisible();
+});
+
+test("поля участника не разъезжаются на разных ширинах", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/users", (route) =>
+    route.fulfill({
+      json: {
+        users: [
+          {
+            id: "layout-test",
+            name: "Участник с длинным именем",
+            role: "relative",
+            approved: true,
+            createdAt: "2026-01-01T00:00:00Z",
+            treeAccess: "all",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/settings", (route) =>
+    route.fulfill({
+      json: { publicTree: false, publicAlbums: false, reverseTimeline: false },
+    }),
+  );
+  for (const width of [1000, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/admin");
+    const card = page.locator(".admin-user");
+    await expect(card).toBeVisible();
+    const layout = await card.evaluate((element) => {
+      const fields = [
+        ...element.querySelectorAll<HTMLElement>(".admin-user-fields > *"),
+      ];
+      return {
+        overflows: element.scrollWidth > element.clientWidth + 1,
+        widths: fields.map((field) =>
+          Math.round(field.getBoundingClientRect().width),
+        ),
+        rows: fields.map((field) =>
+          Math.round(field.getBoundingClientRect().top),
+        ),
+      };
+    });
+    expect(layout.overflows).toBe(false);
+    expect(
+      Math.max(...layout.widths) - Math.min(...layout.widths),
+    ).toBeLessThan(3);
+    expect(Math.abs(layout.rows[0] - layout.rows[1])).toBeLessThan(20);
+    if (width === 1000)
+      expect(layout.rows[2]).toBeGreaterThan(layout.rows[0] + 50);
+    else expect(Math.abs(layout.rows[0] - layout.rows[2])).toBeLessThan(20);
+  }
+});
+
+test("награда добавляется под портретом по названию", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await page
+    .getByTestId("rf__node-e2e-memorial-person")
+    .locator(".flow-person-content")
+    .evaluate((card) => (card as HTMLElement).click());
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  const portraitAwards = page.locator(".person-editor-portrait-awards");
+  await expect(
+    portraitAwards.getByRole("button", {
+      name: "Выбрать портрет из фотографий человека",
+    }),
+  ).toBeVisible();
+  await portraitAwards
+    .getByRole("button", { name: "Добавить награду" })
+    .click();
+  await expect(page.getByText("Каталог / страна")).toHaveCount(0);
+  const awardName = portraitAwards.getByRole("combobox", { name: "Название" });
+  await awardName.fill("За отвагу");
+  await expect(portraitAwards.getByRole("listbox")).toBeVisible();
+  await portraitAwards.getByRole("option").first().click();
+  await portraitAwards
+    .locator(".award-inline-actions")
+    .getByRole("button", { name: "Добавить" })
+    .click();
+  await expect(portraitAwards.locator(".award-editor-chip")).toHaveCount(1);
 });
 
 test("привязанный человек видит отметку «Это вы» в карточке", async ({
