@@ -66,7 +66,8 @@ function AdminUserAccess({
           </select>
         </label>
         <PersonSearch
-          label={`Кто это в древе: ${user.name}`}
+          label="Кто это в древе"
+          inputAriaLabel={`Кто это в древе: ${user.name}`}
           value={personId}
           selected={family.people.find((person) => person.id === personId)}
           disabled={busy}
@@ -88,11 +89,9 @@ function AdminUserAccess({
         </label>
       </div>
       <div className="admin-user-access-footer">
-        <small>
-          {scope === "common_ancestors"
-            ? "Свои новые карточки участник увидит и без общей родни."
-            : "Привязка к человеку нужна для отметки «Это вы»."}
-        </small>
+        {scope === "common_ancestors" && (
+          <small>Свои новые карточки участник увидит и без общей родни.</small>
+        )}
         <button
           type="button"
           disabled={busy || !changed}

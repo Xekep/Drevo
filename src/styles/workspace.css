@@ -507,6 +507,18 @@ body,
 .admin-user-fields > * {
   min-width: 0;
 }
+.admin-user-fields > :last-child {
+  grid-column: 1 / -1;
+}
+.admin-user-fields .person-search {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin: 0;
+}
+.admin-user-fields .person-search > label {
+  margin: 0;
+}
 .admin-user-fields select,
 .admin-user-fields input {
   width: 100%;
@@ -516,13 +528,14 @@ body,
 .admin-user-access-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin-top: 14px;
 }
 .admin-user-access-footer small {
   max-width: 46ch;
   line-height: 1.5;
+  margin-right: auto;
 }
 .admin-user-access-footer button {
   flex: 0 0 auto;
@@ -530,6 +543,9 @@ body,
 @container (min-width: 760px) {
   .admin-user-fields {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .admin-user-fields > :last-child {
+    grid-column: auto;
   }
 }
 .profile-self-label {
