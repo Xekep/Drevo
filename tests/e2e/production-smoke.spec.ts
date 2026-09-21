@@ -13,18 +13,25 @@ test("администратор выбирает себя в древе и пр
     personId: undefined as string | undefined,
     treeAccess: "all",
   };
-  let submitted: Record<string, unknown> | undefined;
-  await page.route("**/api/users", (route) =>
-    route.fulfill({ json: { users: [participant] } }),
+  const submitted: Record<string, unknown>[] = [];
+  await page.route("**/api/users?**", (route) =>
+    route.fulfill({ json: { users: [participant], next: null, total: 1 } }),
   );
   await page.route("**/api/users/relative-test", async (route) => {
-    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    const patch = route.request().postDataJSON() as Record<string, unknown>;
+    submitted.push(patch);
     participant = {
       ...participant,
-      personId: String(submitted.personId),
-      treeAccess: String(submitted.treeAccess),
+      personId:
+        patch.personId === undefined
+          ? participant.personId
+          : String(patch.personId),
+      treeAccess:
+        patch.treeAccess === undefined
+          ? participant.treeAccess
+          : String(patch.treeAccess),
     };
-    await route.fulfill({ json: { users: [participant] } });
+    await route.fulfill({ json: { user: participant } });
   });
   await page.route("**/api/settings", (route) =>
     route.fulfill({
@@ -39,26 +46,31 @@ test("администратор выбирает себя в древе и пр
     .getByRole("combobox", { name: "Кто это в древе: Участник" })
     .fill("Иван");
   await page.getByRole("option", { name: /Иван Петрович/ }).click();
+  await expect
+    .poll(() => submitted[0])
+    .toEqual({
+      personId: "e2e-memorial-person",
+      treeAccess: "all",
+    });
   await page
     .getByRole("combobox", { name: "Доступ к древу: Участник" })
     .selectOption("common_ancestors");
-  await page.getByRole("button", { name: "Сохранить доступ" }).click();
   await expect
-    .poll(() => submitted)
+    .poll(() => submitted[1])
     .toEqual({
       personId: "e2e-memorial-person",
       treeAccess: "common_ancestors",
     });
   await expect(
-    page.getByText("Свои новые карточки участник увидит и без общей родни."),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Сохранить доступ" }),
+  ).toHaveCount(0);
 });
 
 test("поля участника не разъезжаются на разных ширинах", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  await page.route("**/api/users", (route) =>
+  await page.route("**/api/users?**", (route) =>
     route.fulfill({
       json: {
         users: [
@@ -71,6 +83,8 @@ test("поля участника не разъезжаются на разны�
             treeAccess: "all",
           },
         ],
+        next: null,
+        total: 1,
       },
     }),
   );
@@ -82,47 +96,80 @@ test("поля участника не разъезжаются на разны�
   for (const width of [1000, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/admin");
-    const card = page.locator(".admin-user");
+    const card = page.locator(".admin-user-row");
     await expect(card).toBeVisible();
     const layout = await card.evaluate((element) => {
-      const fields = [
-        ...element.querySelectorAll<HTMLElement>(".admin-user-fields > *"),
-      ];
+      const fields = [...element.children] as HTMLElement[];
       return {
         overflows: element.scrollWidth > element.clientWidth + 1,
-        widths: fields.map((field) =>
-          Math.round(field.getBoundingClientRect().width),
-        ),
-        labels: fields.map((field) =>
-          Math.round(
-            (field.matches("label")
-              ? field
-              : field.querySelector("label")!
-            ).getBoundingClientRect().top,
-          ),
-        ),
-        controls: fields.map((field) =>
-          Math.round(
-            field
-              .querySelector("select, .person-search-input")!
-              .getBoundingClientRect().top,
-          ),
-        ),
+        centers: fields.map((field) => {
+          const rect = field.getBoundingClientRect();
+          return Math.round(rect.top + rect.height / 2);
+        }),
       };
     });
     expect(layout.overflows).toBe(false);
-    expect(Math.abs(layout.widths[0] - layout.widths[1])).toBeLessThan(3);
-    expect(Math.abs(layout.labels[0] - layout.labels[1])).toBeLessThan(3);
-    expect(Math.abs(layout.controls[0] - layout.controls[1])).toBeLessThan(3);
-    if (width === 1000) {
-      expect(layout.labels[2]).toBeGreaterThan(layout.labels[0] + 50);
-      expect(layout.widths[2]).toBeGreaterThan(layout.widths[0] * 2);
-    } else {
-      expect(Math.abs(layout.widths[0] - layout.widths[2])).toBeLessThan(3);
-      expect(Math.abs(layout.labels[0] - layout.labels[2])).toBeLessThan(3);
-      expect(Math.abs(layout.controls[0] - layout.controls[2])).toBeLessThan(3);
-    }
+    expect(
+      Math.max(...layout.centers) - Math.min(...layout.centers),
+    ).toBeLessThan(12);
   }
+});
+
+test("участники загружаются страницами и удаляются из списка", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const participants = Array.from({ length: 45 }, (_, index) => ({
+    id: `member-${index}`,
+    name: `Участник ${String(index).padStart(2, "0")}`,
+    role: "reader",
+    approved: true,
+    createdAt: "2026-01-01T00:00:00Z",
+    treeAccess: "all",
+  }));
+  const requestedPages: number[] = [];
+  await page.route("**/api/users?**", (route) => {
+    const start = Number(
+      new URL(route.request().url()).searchParams.get("cursor") || 0,
+    );
+    requestedPages.push(start);
+    return route.fulfill({
+      json: {
+        users: participants.slice(start, start + 20),
+        next: start + 20 < participants.length ? String(start + 20) : null,
+        total: participants.length,
+      },
+    });
+  });
+  await page.route("**/api/users/member-0", (route) => {
+    expect(route.request().method()).toBe("DELETE");
+    participants.shift();
+    return route.fulfill({ json: { deleted: true } });
+  });
+  await page.route("**/api/settings", (route) =>
+    route.fulfill({
+      json: { publicTree: false, publicAlbums: false, reverseTimeline: false },
+    }),
+  );
+  await page.goto("/admin");
+  await expect(page.locator(".admin-user-row")).toHaveCount(20);
+  await page.getByRole("button", { name: "Далее" }).click();
+  await expect(page.locator(".admin-user-row")).toHaveCount(20);
+  await page.getByRole("button", { name: "Далее" }).click();
+  await expect(page.locator(".admin-user-row")).toHaveCount(5);
+  await page.getByRole("button", { name: "Назад" }).click();
+  await expect(page.locator(".admin-user-row")).toHaveCount(20);
+  await page.getByRole("button", { name: "Назад" }).click();
+  await expect(page.locator(".admin-user-row")).toHaveCount(20);
+  expect(requestedPages).toEqual([0, 20, 40, 20, 0]);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Удалить участника: Участник 00" })
+    .click();
+  await expect(page.getByText("Всего участников: 44")).toBeVisible();
+  await expect(
+    page.getByRole("article", { name: "Участник: Участник 00" }),
+  ).toHaveCount(0);
 });
 
 test("награда добавляется под портретом по названию", async ({
@@ -135,6 +182,13 @@ test("награда добавляется под портретом по на�
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
   await page.locator(".inspector-person-actions .person-edit-button").click();
+  await expect(
+    page.getByRole("heading", { name: "Редактировать человека" }),
+  ).toBeVisible();
+  await expect(page.locator(".person-editor-portrait-awards")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /ФИО/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Сохранить" })).toBeVisible();
+  await expect(page.getByText("Удаление карточки")).toBeVisible();
   const portraitAwards = page.locator(".person-editor-portrait-awards");
   await expect(
     portraitAwards.getByRole("button", {
@@ -250,7 +304,7 @@ test("mobile archive does not overflow the viewport", async ({ page }) => {
 
 test("common ancestors view keeps blood relatives and excludes the spouse", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.goto("/tree");
   await page
     .getByTestId("rf__node-e2e-child")
@@ -261,6 +315,18 @@ test("common ancestors view keeps blood relatives and excludes the spouse", asyn
     await dock.getByRole("button", { name: "Свернуть панель" }).click();
   await page.getByRole("button", { name: "Общие предки" }).click();
   await expect(page.locator(".tree-family-count")).toHaveText("5 из 6");
+  if (testInfo.project.name === "desktop") {
+    const share = page.getByRole("button", { name: "Поделиться" });
+    await expect(share).toBeVisible();
+    const aligned = await share.evaluate((button) => {
+      const icon = button.querySelector("svg")!.getBoundingClientRect();
+      const label = button.querySelector("span")!.getBoundingClientRect();
+      return Math.abs(
+        icon.top + icon.height / 2 - label.top - label.height / 2,
+      );
+    });
+    expect(aligned).toBeLessThan(2);
+  }
   await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCount(0);
   await expect(page.getByTestId("rf__node-e2e-sibling-child")).toBeAttached();
   await page.getByRole("button", { name: "Всё древо" }).click();

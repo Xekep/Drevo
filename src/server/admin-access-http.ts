@@ -58,8 +58,23 @@ export function adminAccessHttp({
             : "Only administrators can manage access",
       });
 
-    if (path === "/api/users" && req.method === "GET")
-      return json(res, 200, { users: users.list() });
+    if (path === "/api/users" && req.method === "GET") {
+      try {
+        const rawLimit = url.searchParams.get("limit") || "20";
+        const limit = Number(rawLimit);
+        const cursor = url.searchParams.get("cursor") || undefined;
+        if (
+          !Number.isInteger(limit) ||
+          limit < 1 ||
+          limit > 50 ||
+          (cursor && cursor.length > 512)
+        )
+          throw new Error("Некорректный размер страницы участников");
+        return json(res, 200, users.listPage(limit, cursor));
+      } catch (error) {
+        return json(res, 400, { error: (error as Error).message });
+      }
+    }
 
     if (path.startsWith("/api/users/") && req.method === "PATCH") {
       if (!isSameOriginRequest(req, publicOrigin))
@@ -97,10 +112,26 @@ export function adminAccessHttp({
               : (body.treeAccess as TreeAccess),
           );
         }
-        return json(res, 200, { users: users.list() });
+        return json(res, 200, { user: users.get(id) });
       } catch (error) {
         if (error instanceof RangeError)
           return json(res, 413, { error: error.message });
+        return json(res, error instanceof ForbiddenError ? 403 : 400, {
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    if (path.startsWith("/api/users/") && req.method === "DELETE") {
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Invalid origin" });
+      try {
+        users.remove(
+          auth.currentUser(req)!,
+          decodeURIComponent(path.slice("/api/users/".length)),
+        );
+        return json(res, 200, { deleted: true });
+      } catch (error) {
         return json(res, error instanceof ForbiddenError ? 403 : 400, {
           error: (error as Error).message,
         });

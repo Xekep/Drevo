@@ -112,6 +112,59 @@
 .person-editor-form .portrait-picker {
   margin: 0;
 }
+.person-editor-primary {
+  display: contents;
+}
+.person-editor-basics {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.person-editor-primary.is-existing {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.person-editor-primary.is-existing .person-editor-portrait-awards {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.person-editor-primary.is-existing .portrait-picker {
+  padding: 0 0 7px;
+}
+.person-editor-primary.is-existing .award-editor-compact {
+  margin: 0;
+}
+.person-editor-primary.is-existing .award-editor-strip {
+  gap: 4px;
+}
+.person-editor-primary.is-existing .award-editor-chip,
+.person-editor-primary.is-existing .award-editor-add {
+  width: 42px;
+  height: 42px;
+}
+.person-editor-primary.is-existing:has(.award-inline-form) {
+  display: flex;
+  flex-direction: column;
+}
+.person-editor-primary.is-existing:has(.award-inline-form)
+  .person-editor-basics,
+.person-editor-primary.is-existing:has(.award-inline-form)
+  .person-editor-portrait-awards {
+  width: 100%;
+}
+.person-editor-primary.is-existing:has(.award-inline-form)
+  .person-editor-portrait-awards {
+  order: 2;
+}
+.person-editor-form .person-delete-section .danger-action {
+  margin-top: 12px;
+}
 .person-editor-form .portrait-edit-button {
   width: 72px;
   height: 72px;

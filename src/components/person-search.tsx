@@ -7,17 +7,23 @@ export function PersonSearch({
   value,
   selected,
   onChange,
+  onCommit,
+  onCancel,
   disabled = false,
   label = "Кто это?",
   inputAriaLabel,
+  clearLabel = "Выбрать другого человека",
   excludeId,
 }: {
   value: string;
   selected?: Person;
   onChange: (id: string) => void;
+  onCommit?: (id: string) => void;
+  onCancel?: () => void;
   disabled?: boolean;
   label?: string;
   inputAriaLabel?: string;
+  clearLabel?: string;
   excludeId?: string;
 }) {
   const id = useId();
@@ -72,6 +78,7 @@ export function PersonSearch({
   function choose(person: PersonOption) {
     setPicked(person);
     onChange(person.id);
+    onCommit?.(person.id);
     setOpen(false);
     setActive(-1);
   }
@@ -79,8 +86,10 @@ export function PersonSearch({
     <div
       className="person-search"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setOpen(false);
+          if (!value && query.trim()) onCancel?.();
+        }
       }}
     >
       <label htmlFor={`${id}-input`}>{label}</label>
@@ -122,6 +131,7 @@ export function PersonSearch({
               event.preventDefault();
               event.stopPropagation();
               setOpen(false);
+              if (!value && query.trim()) onCancel?.();
             }
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
@@ -149,9 +159,10 @@ export function PersonSearch({
           <button
             type="button"
             disabled={disabled}
-            aria-label="Выбрать другого человека"
+            aria-label={clearLabel}
             onClick={() => {
               onChange("");
+              onCommit?.("");
               setPicked(null);
               setQuery("");
               setOpen(true);

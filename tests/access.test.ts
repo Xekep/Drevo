@@ -42,6 +42,58 @@ test("first Yandex account becomes admin once; roles persist and last admin is p
   }
 });
 
+test("participants paginate by stable cursor and deleting a member revokes sessions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-user-pages-"));
+  const db = new DatabaseSync(join(dir, "users.sqlite"));
+  try {
+    initializeArchiveSchema(db);
+    const store = userStore(db);
+    const admin = store.register("admin", "Администратор");
+    for (let index = 0; index < 45; index++)
+      store.register(`member-${index}`, `Участник ${index}`);
+    const first = store.listPage(20);
+    const second = store.listPage(20, first.next!);
+    const third = store.listPage(20, second.next!);
+    assert.deepEqual(
+      [first.users.length, second.users.length, third.users.length],
+      [20, 20, 6],
+    );
+    assert.equal(third.next, null);
+    assert.equal(
+      new Set(
+        [...first.users, ...second.users, ...third.users].map(
+          (user) => user.id,
+        ),
+      ).size,
+      46,
+    );
+    assert.throws(
+      () => store.listPage(20, "bad cursor"),
+      /Некорректная страница/,
+    );
+    assert.throws(() => store.remove(admin, admin.id), /собственный аккаунт/);
+    db.prepare(
+      "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+    ).run("test-token", "member-1", Date.now() + 10000);
+    store.remove(admin, "member-1");
+    assert.equal(store.get("member-1"), null);
+    assert.equal(
+      db
+        .prepare(
+          "SELECT count(*) AS n FROM auth_sessions WHERE user_id='member-1'",
+        )
+        .get()!.n,
+      0,
+    );
+    assert.equal(store.listPage(20).total, 45);
+    assert.equal(store.register("member-1", "Вернулся").approved, false);
+    assert.equal(store.listPage(20).total, 46);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("OAuth roles, ownership, public sections and complete backup work through HTTP", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-access-"));
   process.env.PUBLIC_ORIGIN = "https://drevo.kiiko.ru";
@@ -119,14 +171,8 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
     assert.equal((await request("/api/export.json", reader)).status, 401);
     assert.equal(
-      (
-        await request(
-          "/api/users/second",
-          admin,
-          "PATCH",
-          { approved: true },
-        )
-      ).status,
+      (await request("/api/users/second", admin, "PATCH", { approved: true }))
+        .status,
       200,
     );
     for (const cookie of [admin, reader]) {
@@ -533,6 +579,40 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal(
       (await request("/api/session", reader).then((r) => r.json())).canEdit,
       false,
+    );
+    const participantsPage = await request("/api/users?limit=1", admin).then(
+      (r) => r.json(),
+    );
+    assert.equal(participantsPage.users.length, 1);
+    assert.equal(participantsPage.total, 2);
+    assert.ok(participantsPage.next);
+    const nextPage = await request(
+      `/api/users?limit=1&cursor=${encodeURIComponent(participantsPage.next)}`,
+      admin,
+    ).then((r) => r.json());
+    assert.equal(nextPage.users.length, 1);
+    assert.equal(nextPage.next, null);
+    assert.equal((await request("/api/users?limit=100", admin)).status, 400);
+    assert.equal(
+      (await request("/api/users/first", admin, "DELETE")).status,
+      400,
+    );
+    assert.equal(
+      (await request("/api/users/second", reader, "DELETE")).status,
+      403,
+    );
+    assert.equal(
+      (await request("/api/users/second", admin, "DELETE")).status,
+      200,
+    );
+    assert.equal(
+      (await request("/api/session", reader).then((r) => r.json())).user,
+      null,
+    );
+    assert.equal(
+      (await request("/api/family", admin).then((r) => r.json())).family.people
+        .length > 0,
+      true,
     );
     await request("/auth/logout", admin, "POST");
     assert.equal((await request("/api/backup", admin)).status, 401);

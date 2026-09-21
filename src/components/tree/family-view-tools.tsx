@@ -66,9 +66,9 @@ export function FamilyViewTools({
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}
         {anchor && onShare && (
-          <button onClick={onShare}>
-            <Share2 size={15} />
-            Поделиться
+          <button className="tree-family-share" onClick={onShare}>
+            <Share2 size={15} aria-hidden="true" />
+            <span>Поделиться</span>
           </button>
         )}
         {changed && (
