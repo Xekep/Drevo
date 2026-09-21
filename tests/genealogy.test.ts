@@ -173,6 +173,29 @@ test("a documented spouse of a known parent is a step-parent regardless of that 
     "мачеха",
   );
 });
+
+test("an explicit step-parent connects their child as a step-sibling only when parentage is complete", () => {
+  const data = extendedFamily();
+  data.find((p) => p.id === "mother")!.spouses = [];
+  data.find((p) => p.id === "newFather")!.spouses = [];
+  const son = data.find((p) => p.id === "son")!;
+  const stepSon = data.find((p) => p.id === "stepSon")!;
+  const link = {
+    id: "step",
+    from: "newFather",
+    to: "son",
+    type: "step_parent" as const,
+  };
+  const relation = () => analyzeKinship(stepSon, son, data, [link]);
+  assert.equal(relation().roles?.[0].term, "сводный брат");
+  assert.equal(relation().roles?.[1].term, "сводный брат");
+  assert.deepEqual(relation().path, ["stepSon", "newFather", "son"]);
+  son.parentageComplete = false;
+  assert.notEqual(relation().roles?.[0].term, "сводный брат");
+  son.parentageComplete = true;
+  stepSon.parents = ["newFather", "mother"];
+  assert.equal(relation().roles?.[0].term, "единоутробный брат");
+});
 test("specific cousin and ancestor labels are shown in both directions", () => {
   assert.equal(relation("mikhail", "boris").roles?.[0].term, "двоюродный брат");
   assert.equal(
