@@ -93,19 +93,35 @@ test("поля участника не разъезжаются на разны�
         widths: fields.map((field) =>
           Math.round(field.getBoundingClientRect().width),
         ),
-        rows: fields.map((field) =>
-          Math.round(field.getBoundingClientRect().top),
+        labels: fields.map((field) =>
+          Math.round(
+            (field.matches("label")
+              ? field
+              : field.querySelector("label")!
+            ).getBoundingClientRect().top,
+          ),
+        ),
+        controls: fields.map((field) =>
+          Math.round(
+            field
+              .querySelector("select, .person-search-input")!
+              .getBoundingClientRect().top,
+          ),
         ),
       };
     });
     expect(layout.overflows).toBe(false);
-    expect(
-      Math.max(...layout.widths) - Math.min(...layout.widths),
-    ).toBeLessThan(3);
-    expect(Math.abs(layout.rows[0] - layout.rows[1])).toBeLessThan(20);
-    if (width === 1000)
-      expect(layout.rows[2]).toBeGreaterThan(layout.rows[0] + 50);
-    else expect(Math.abs(layout.rows[0] - layout.rows[2])).toBeLessThan(20);
+    expect(Math.abs(layout.widths[0] - layout.widths[1])).toBeLessThan(3);
+    expect(Math.abs(layout.labels[0] - layout.labels[1])).toBeLessThan(3);
+    expect(Math.abs(layout.controls[0] - layout.controls[1])).toBeLessThan(3);
+    if (width === 1000) {
+      expect(layout.labels[2]).toBeGreaterThan(layout.labels[0] + 50);
+      expect(layout.widths[2]).toBeGreaterThan(layout.widths[0] * 2);
+    } else {
+      expect(Math.abs(layout.widths[0] - layout.widths[2])).toBeLessThan(3);
+      expect(Math.abs(layout.labels[0] - layout.labels[2])).toBeLessThan(3);
+      expect(Math.abs(layout.controls[0] - layout.controls[2])).toBeLessThan(3);
+    }
   }
 });
 

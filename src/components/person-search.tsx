@@ -9,6 +9,7 @@ export function PersonSearch({
   onChange,
   disabled = false,
   label = "Кто это?",
+  inputAriaLabel,
   excludeId,
 }: {
   value: string;
@@ -16,6 +17,7 @@ export function PersonSearch({
   onChange: (id: string) => void;
   disabled?: boolean;
   label?: string;
+  inputAriaLabel?: string;
   excludeId?: string;
 }) {
   const id = useId();
@@ -87,6 +89,7 @@ export function PersonSearch({
         <input
           id={`${id}-input`}
           role="combobox"
+          aria-label={inputAriaLabel}
           aria-autocomplete="list"
           autoComplete="off"
           aria-expanded={visible}
