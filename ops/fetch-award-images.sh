@@ -16,8 +16,16 @@ fi
 fetch() {
   local url="$1"
   local dst="$2"
-  curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 120 \
-    -A 'Drevo award asset fetcher/1.0' "$url" -o "$dst"
+  local attempt
+  for attempt in 1 2 3; do
+    if curl -fL --connect-timeout 10 --max-time 30 \
+      -A 'Drevo award asset fetcher/1.0' "$url" -o "$dst"; then
+      return 0
+    fi
+    if (( attempt < 3 )); then sleep 2; fi
+  done
+  echo "Could not fetch award source after 3 attempts: $url" >&2
+  return 1
 }
 
 make_png() {
