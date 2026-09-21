@@ -335,6 +335,23 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(
     await godparentPath.evaluate((path) => getComputedStyle(path).markerEnd),
   ).not.toBe("none");
+  const labelDistance = await godparent.evaluate((button) => {
+    const path = document.querySelector<SVGPathElement>(
+      ".relationship-godparent .tree-edge-final-path",
+    );
+    const matrix = path?.getScreenCTM();
+    if (!path || !matrix) return Infinity;
+    const rect = button.getBoundingClientRect();
+    const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    const length = path.getTotalLength();
+    let nearest = Infinity;
+    for (let i = 0; i <= 200; i++) {
+      const point = path.getPointAtLength((length * i) / 200).matrixTransform(matrix);
+      nearest = Math.min(nearest, Math.hypot(point.x - center.x, point.y - center.y));
+    }
+    return nearest;
+  });
+  expect(labelDistance).toBeLessThan(3);
   expect(
     await page.locator(".flow-person-content strong").first().evaluate(
       (element) => getComputedStyle(element).userSelect,
@@ -348,6 +365,10 @@ test("the initial tree grows from roots toward descendants", async ({
   await page.mouse.move(nameBox!.x + nameBox!.width - 2, nameBox!.y + nameBox!.height / 2);
   await page.mouse.up();
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+  await godparent.click();
+  await expect(
+    page.getByRole("complementary", { name: "Выбранный объект" }),
+  ).toBeVisible();
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();

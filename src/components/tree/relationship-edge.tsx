@@ -8,10 +8,12 @@ import {
 } from "@xyflow/react";
 import { CONNECTION_NAMES, type GraphConnection } from "../../domain";
 import { roundedRoute, type EdgeRoute } from "../../domain/edge-routing";
+import { edgeLabelPlacement } from "./edge-label-placement";
 export type RelationshipEdgeType = Edge<
   {
     connection: GraphConnection;
     label?: string;
+    reverseLabel?: string;
     onSelect: (edge: GraphConnection) => void;
     route?: EdgeRoute;
     path?: string;
@@ -51,6 +53,7 @@ function sameRelationshipEdgeProps(
     shallowRecordEqual(a.markerEnd, b.markerEnd) &&
     ad?.connection === bd?.connection &&
     ad?.label === bd?.label &&
+    ad?.reverseLabel === bd?.reverseLabel &&
     ad?.onSelect === bd?.onSelect &&
     ad?.route === bd?.route &&
     ad?.path === bd?.path &&
@@ -73,6 +76,19 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   const renderedPath = props.data?.path || path;
   const edge = props.data!.connection;
   const label = props.data?.label || CONNECTION_NAMES[edge.type];
+  const inlineLabel = !["parent", "spouse"].includes(edge.type);
+  const placement = inlineLabel
+    ? edgeLabelPlacement(props.data?.route?.points, {
+        x,
+        y,
+        source: { x: props.sourceX, y: props.sourceY },
+        target: { x: props.targetX, y: props.targetY },
+      })
+    : { x, y, vertical: false, reversed: false };
+  const visibleLabel =
+    placement.reversed && inlineLabel
+      ? props.data?.reverseLabel || label
+      : label;
   const animatedStyle = { ...props.style } as CSSProperties & {
     "--tree-growth-delay"?: string;
     "--tree-edge-label-delay"?: string;
@@ -83,7 +99,7 @@ export const RelationshipEdge = memo(function RelationshipEdge(
       animatedStyle["--tree-edge-label-delay"] || "0ms",
   } as CSSProperties;
   const labelStyle = {
-    transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
+    transform: `translate(${placement.x}px,${placement.y}px) rotate(${placement.vertical ? 90 : 0}deg)`,
     "--tree-growth-delay": animatedStyle["--tree-edge-label-delay"] || "0ms",
   } as CSSProperties;
   return (
@@ -117,14 +133,15 @@ export const RelationshipEdge = memo(function RelationshipEdge(
       </g>
       {(props.selected || !["parent", "spouse"].includes(edge.type)) && (
         <EdgeLabelRenderer>
-          <button
-            className={`flow-edge-label tree-grow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
-            style={labelStyle}
-            onClick={() => props.data!.onSelect(edge)}
-            aria-label={`Связь: ${label}`}
-          >
-            {props.selected && edge.type === "parent" ? "Родитель" : label}
-          </button>
+          <div className="tree-edge-label-anchor" style={labelStyle}>
+            <button
+              className={`flow-edge-label tree-grow-edge-label nodrag nopan ${inlineLabel ? "is-inline" : ""} ${props.selected ? "selected" : ""}`}
+              onClick={() => props.data!.onSelect(edge)}
+              aria-label={`Связь: ${label}`}
+            >
+              {props.selected && edge.type === "parent" ? "Родитель" : visibleLabel}
+            </button>
+          </div>
         </EdgeLabelRenderer>
       )}
     </>

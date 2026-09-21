@@ -632,6 +632,20 @@
   background: #f7faf3f2;
   white-space: nowrap;
 }
+.tree-edge-label-anchor {
+  position: absolute;
+  pointer-events: none;
+}
+.tree-edge-label-anchor .flow-edge-label {
+  transform: translate(-50%, -50%);
+}
+.flow-edge-label.is-inline {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: #f8f7f2;
+  color: #52674e;
+}
 .flow-edge-label.selected {
   color: #365d3c;
   border-color: #8cac7b;
