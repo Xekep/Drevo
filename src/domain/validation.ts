@@ -97,7 +97,8 @@ export function validateFamily(value: unknown): Family {
             (typeof award.awardDefinitionId !== "string" ||
               award.awardDefinitionId.length > 120)) ||
           (award.degreeId !== undefined &&
-            (typeof award.degreeId !== "string" || award.degreeId.length > 40)) ||
+            (typeof award.degreeId !== "string" ||
+              award.degreeId.length > 40)) ||
           (award.year !== undefined &&
             award.year !== "" &&
             (typeof award.year !== "string" ||
@@ -156,7 +157,8 @@ export function validateFamily(value: unknown): Family {
       throw new Error("Родитель должен родиться раньше ребёнка");
   }
   const assertAcyclic = (graph: Map<string, string[]>, message: string) => {
-    const visited = new Set<string>(), active = new Set<string>();
+    const visited = new Set<string>(),
+      active = new Set<string>();
     for (const start of graph.keys()) {
       if (visited.has(start)) continue;
       const stack: Array<{ id: string; leave: boolean }> = [
@@ -206,25 +208,29 @@ export function validateFamily(value: unknown): Family {
     const key = `${link.type}:${pair}`;
     if (pairs.has(key)) throw new Error("Такая связь уже существует");
     if (
-      ["adoptive_parent", "nurse"].includes(link.type) &&
+      ["adoptive_parent", "step_parent", "nurse"].includes(link.type) &&
       map.get(link.from)!.birth &&
       map.get(link.to)!.birth &&
       dateBound(map.get(link.from)!.birth, false) >=
         dateBound(map.get(link.to)!.birth, true)
     )
       throw new Error("Родитель или кормилица должны родиться раньше ребёнка");
+    if (
+      link.type === "step_parent" &&
+      map.get(link.to)!.parents.includes(link.from)
+    )
+      throw new Error(
+        "Кровный родитель не может быть указан как отчим или мачеха",
+      );
     linkIds.add(link.id);
     pairs.add(key);
   }
-  // Adoption must not introduce a cycle into the combined parent graph.
+  // Дополнительные родительские роли не должны создавать цикл происхождения.
   const parentGraph = new Map(data.people.map((p) => [p.id, [...p.parents]]));
   for (const link of data.links || [])
-    if (link.type === "adoptive_parent")
+    if (link.type === "adoptive_parent" || link.type === "step_parent")
       parentGraph.get(link.to)!.push(link.from);
-  assertAcyclic(
-    parentGraph,
-    "Усыновление создаёт цикл в родительских связях",
-  );
+  assertAcyclic(parentGraph, "Дополнительная родительская связь создаёт цикл");
   if (data.photos !== undefined && !Array.isArray(data.photos))
     throw new Error("Некорректная галерея");
   const photoIds = new Set<string>();

@@ -304,6 +304,14 @@ test("an undated known brother, ancestor or adoptive descendant cannot become a 
     parentHints(
       unrelatedChild,
       [father],
+      [{ type: "step_parent", from: father.id, to: child.id }],
+    ).length,
+    0,
+  );
+  assert.equal(
+    parentHints(
+      unrelatedChild,
+      [father],
       [{ type: "adoptive_parent", from: child.id, to: father.id }],
     ).length,
     0,

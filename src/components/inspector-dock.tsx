@@ -10,7 +10,7 @@ import {
 /* eslint-disable jsx-a11y/no-noninteractive-element-interactions -- the aside
    is a keyboard-modal dialog only in the responsive overlay state. */
 import { createPortal } from "react-dom";
-import { ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useDockSwipe } from "../hooks/useDockSwipe";
 const ActionsHost = createContext<HTMLDivElement | null>(null);
 
@@ -30,8 +30,9 @@ export function InspectorDock({
   initialExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
-  const [mobile, setMobile] = useState(() =>
-    typeof window !== "undefined" &&
+  const [mobile, setMobile] = useState(
+    () =>
+      typeof window !== "undefined" &&
       window.matchMedia("(max-width: 899px)").matches,
   );
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
@@ -53,7 +54,9 @@ export function InspectorDock({
       ? [...node.parentElement.children].filter((item) => item !== node)
       : [];
     for (const sibling of siblings) (sibling as HTMLElement).inert = true;
-    node?.querySelector<HTMLElement>("button,input,select,textarea,[tabindex]")?.focus();
+    node
+      ?.querySelector<HTMLElement>("button,input,select,textarea,[tabindex]")
+      ?.focus();
     return () => {
       for (const sibling of siblings) (sibling as HTMLElement).inert = false;
       previous?.focus?.({ preventScroll: true });
@@ -83,11 +86,14 @@ export function InspectorDock({
         tabIndex={mobile && expanded ? -1 : undefined}
         onKeyDown={(event) => {
           if (!mobile || !expanded || event.key !== "Tab") return;
-          const items = [...(ref.current?.querySelectorAll<HTMLElement>(
-            'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',
-          ) || [])].filter((item) => !item.hidden);
+          const items = [
+            ...(ref.current?.querySelectorAll<HTMLElement>(
+              'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',
+            ) || []),
+          ].filter((item) => !item.hidden);
           if (!items.length) return;
-          const first = items[0], last = items.at(-1)!;
+          const first = items[0],
+            last = items.at(-1)!;
           if (event.shiftKey && document.activeElement === first) {
             event.preventDefault();
             last.focus();
@@ -113,6 +119,14 @@ export function InspectorDock({
                 <ChevronUp size={18} />
               </button>
             </div>
+          )}
+          {mobile && expanded && !editing && (
+            <button
+              aria-label="Свернуть панель"
+              onClick={() => setExpanded(false)}
+            >
+              <ChevronDown size={20} />
+            </button>
           )}
           <button aria-label="Закрыть панель" onClick={onClose}>
             <X size={20} />

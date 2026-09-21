@@ -231,6 +231,34 @@ test("GEDCOM round trip preserves multiple unions, parentage, events, sources, R
   assert.ok(!exported.includes("createdBy"));
 });
 
+test("explicit step-parent survives GEDCOM export and import", () => {
+  const family = seed();
+  family.people.push(person("step", { birth: "1955", sex: "f" }));
+  family.links = [
+    {
+      id: "step",
+      from: "step",
+      to: "child",
+      type: "step_parent",
+      note: "Подтверждено семейным архивом",
+    },
+  ];
+  const exported = exportGedcom(family);
+  assert.match(exported, /2 RELA step_parent/);
+  const imported = importGedcom(exported, "step-parent").family;
+  assert.equal(imported.links?.[0].type, "step_parent");
+  assert.equal(imported.links?.[0].note, "Подтверждено семейным архивом");
+  const byId = new Map(imported.people.map((p) => [p.id, p.name]));
+  assert.equal(byId.get(imported.links![0].from), "step");
+  assert.equal(byId.get(imported.links![0].to), "child");
+  assert.deepEqual(
+    imported.people
+      .find((p) => p.name === "child")
+      ?.parents.map((id) => byId.get(id)),
+    ["father", "mother"],
+  );
+});
+
 const external = `0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @P@ INDI\n1 NAME Пётр /Орлов/\n1 BIRT\n2 DATE 1900\n1 FAMS @F@\n0 @C@ INDI\n1 NAME Анна /Орлова/\n1 BIRT\n2 DATE ABT 1930\n1 DEAT Y\n1 FAMC @F@\n2 PEDI adopted\n1 RESI\n2 DATE FROM 1940 TO 1950\n2 PLAC Москва\n1 OBJE\n2 FILE https://example.org/private.jpg\n0 @F@ FAM\n1 HUSB @P@\n1 CHIL @C@\n0 TRLR\n`;
 test("external GEDCOM preserves uncertain dates, adopted parentage, known death, and warns about media", () => {
   const result = importGedcom(external, "external"),

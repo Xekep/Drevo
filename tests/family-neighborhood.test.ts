@@ -6,6 +6,7 @@ import {
   familyNeighborhood,
   projectTree,
   completeVisibleParents,
+  commonAncestorNetwork,
 } from "../src/domain/family-neighborhood.ts";
 import { unionGeometry } from "../src/domain/union-layout.ts";
 import { unionTimeline } from "../src/domain/union-timeline.ts";
@@ -79,6 +80,37 @@ test("nearby family includes siblings, exact co-parents, partners and recorded g
   assert.equal(view.hidden.get("father"), 2);
   assert.equal(view.hidden.get("sibling"), 1);
   assert.deepEqual(data, before);
+});
+
+test("common ancestors include the full blood branch but exclude spouses, stepfamily and godparents", () => {
+  const data = archive();
+  const index = familyNeighbors(data);
+  const visible = commonAncestorNetwork(index, "main");
+  assert.deepEqual(
+    [...visible].sort(),
+    [
+      "main",
+      "father",
+      "mother",
+      "grandfather",
+      "grandmother",
+      "great",
+      "sibling",
+      "half-sibling",
+      "child",
+      "niece",
+    ].sort(),
+  );
+  for (const id of [
+    "spouse",
+    "stepmother",
+    "sibling-spouse",
+    "godparent",
+    "outsider",
+  ])
+    assert.equal(visible.has(id), false, id);
+  assert.deepEqual([...commonAncestorNetwork(index, "outsider")], ["outsider"]);
+  assert.equal(commonAncestorNetwork(index, "missing").size, 0);
 });
 test("branches expand one step at a time and folding the access point removes detached expansions", () => {
   const index = familyNeighbors(archive());

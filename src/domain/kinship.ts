@@ -222,8 +222,8 @@ function familyRole(path: Person[]): KinshipRole {
     DS: [1, 2],
     SUD: [1, 3],
     UDS: [2, 3],
-    US: [1, 2],
-    SD: [1, 2],
+    US: [2],
+    SD: [2],
     USD: [3],
     DSU: [3],
     SUU: [1, 3],
@@ -340,12 +340,11 @@ function familyRole(path: Person[]): KinshipRole {
     (p.parentageComplete !== false && p.parents.length >= 2);
   if (edges === "US")
     return {
-      term:
-        complete(path[0]) && path[1].sex !== subject.sex
-          ? female
-            ? "мачеха"
-            : "отчим"
-          : `${wife} ${path[1].sex === "m" ? "отца" : "матери"}`,
+      term: complete(path[0])
+        ? female
+          ? "мачеха"
+          : "отчим"
+        : `${wife} ${path[1].sex === "u" ? "родителя" : path[1].sex === "m" ? "отца" : "матери"}`,
       description: complete(path[0])
         ? "Супруг или супруга родителя по указанному браку; не входит в полный список родителей."
         : "Список родителей неполный: пока нельзя уверенно назвать этого человека отчимом или мачехой.",
@@ -356,7 +355,7 @@ function familyRole(path: Person[]): KinshipRole {
         ? female
           ? "падчерица"
           : "пасынок"
-        : `${female ? "дочь" : "сын"} ${path[1].sex === "m" ? "мужа" : "жены"}`,
+        : `${female ? "дочь" : "сын"} ${path[1].sex === "u" ? "супруга" : path[1].sex === "m" ? "мужа" : "жены"}`,
       description: complete(subject)
         ? "Ребёнок супруга или супруги. Полный список родителей известен; собственной родительской связи нет."
         : "Родительские сведения неполные: связь пасынка или падчерицы не подтверждена.",
@@ -632,6 +631,12 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
               : "усыновлённый",
         ],
       };
+    case "step_parent":
+      return {
+        term: forward ? (f ? "мачеха" : "отчим") : f ? "падчерица" : "пасынок",
+        description:
+          "Роль отчима или мачехи явно указана в архиве; кровное и приёмное родительство из неё не следует.",
+      };
     case "godparent":
       return {
         term: forward
@@ -687,6 +692,7 @@ export function analyzeKinship(
   const base = analyzeBloodAndMarriage(a, b, people);
   if (a.id === b.id) return base;
   const extras: Relation[] = [];
+  let recordedStepParent: Relation | undefined;
   const add = (
     title: string,
     path: string[],
@@ -716,6 +722,7 @@ export function analyzeKinship(
         roles,
         link.note || roles[0].description,
       );
+      if (link.type === "step_parent") recordedStepParent = extras.at(-1);
     }
   const godChildren = (id: string) =>
     links
@@ -787,6 +794,13 @@ export function analyzeKinship(
             : "кузина",
       ];
     });
+  if (recordedStepParent && base.kind === "family")
+    return {
+      ...recordedStepParent,
+      otherRelations: extras.filter(
+        (relation) => relation !== recordedStepParent,
+      ),
+    };
   if (base.kind !== "unknown")
     return { ...base, ...(extras.length ? { otherRelations: extras } : {}) };
   if (extras.length) return { ...extras[0], otherRelations: extras.slice(1) };

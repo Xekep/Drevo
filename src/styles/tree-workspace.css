@@ -846,8 +846,9 @@
     transition: transform 160ms ease-out;
   }
   .inspector-dock.expanded {
-    top: 0;
-    height: 100dvh;
+    top: 58px;
+    bottom: 0;
+    height: auto;
     border-radius: 0;
     border: 0;
   }

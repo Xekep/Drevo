@@ -173,7 +173,7 @@ export function parentHints(
   const hints: ParentHint[] = [];
   const parentGraph = new Map([...all].map(([id, p]) => [id, [...p.parents]]));
   for (const link of links)
-    if (link.type === "adoptive_parent")
+    if (link.type === "adoptive_parent" || link.type === "step_parent")
       parentGraph.get(link.to)?.push(link.from);
   const ancestors = (id: string) => {
     const seen = new Set<string>(),

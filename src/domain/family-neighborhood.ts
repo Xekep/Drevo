@@ -57,6 +57,32 @@ export function completeVisibleParents(
   return visible;
 }
 
+/** Кровная ветвь: сам человек, его предки и все потомки этих предков. */
+export function commonAncestorNetwork(
+  index: ReturnType<typeof familyNeighbors>,
+  anchor: string,
+) {
+  const visible = new Set<string>();
+  if (!index.people.has(anchor)) return visible;
+  const ancestors = [anchor];
+  for (let i = 0; i < ancestors.length; i++) {
+    const id = ancestors[i];
+    if (visible.has(id)) continue;
+    visible.add(id);
+    for (const parent of index.people.get(id)!.parents)
+      if (index.people.has(parent) && !visible.has(parent))
+        ancestors.push(parent);
+  }
+  const queue = [...visible];
+  for (let i = 0; i < queue.length; i++)
+    for (const child of index.children.get(queue[i]) || [])
+      if (!visible.has(child)) {
+        visible.add(child);
+        queue.push(child);
+      }
+  return visible;
+}
+
 /** Ближайшая семья, раскрываемые границы и путь к выбранным для сравнения людям. */
 export function familyNeighborhood(
   index: ReturnType<typeof familyNeighbors>,

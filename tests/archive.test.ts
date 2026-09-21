@@ -85,6 +85,26 @@ test("adoption, milk and sworn relationships do not invent blood parents", () =>
   f = connectPeople(f, "child", "other", "sworn_sibling");
   assert.throws(() => connectPeople(f, "other", "child", "sworn_sibling"));
 });
+
+test("explicit step-parent works with incomplete ancestry and never becomes a blood parent", () => {
+  let f = connectPeople(seed(), "father", "child", "step_parent");
+  const role = (a: string, b: string) =>
+    analyzeKinship(
+      f.people.find((p) => p.id === a)!,
+      f.people.find((p) => p.id === b)!,
+      f.people,
+      f.links,
+    ).roles?.[0].term;
+  assert.equal(role("father", "child"), "отчим");
+  assert.equal(role("child", "father"), "пасынок");
+  assert.deepEqual(f.people.find((p) => p.id === "child")!.parents, []);
+  f = connectPeople(f, "mother", "other", "step_parent");
+  assert.equal(role("mother", "other"), "мачеха");
+  assert.equal(role("other", "mother"), "падчерица");
+  assert.throws(() => connectPeople(f, "father", "child", "step_parent"));
+  assert.throws(() => connectPeople(f, "child", "father", "step_parent"));
+  assert.throws(() => connectPeople(f, "child", "father", "parent"));
+});
 test("SQLite persists graph and photo tags, rejects stale writes, makes readable standalone backup", () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-test-")),
     path = join(dir, "archive.sqlite"),
@@ -95,7 +115,12 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     mkdirSync(uploads, { recursive: true });
     writeFileSync(photoFile, "test image placeholder");
     const first = store.read();
-    const family = connectPeople(first.family, "father", "child", "parent");
+    const family = connectPeople(
+      connectPeople(first.family, "father", "child", "parent"),
+      "mother",
+      "child",
+      "step_parent",
+    );
     family.photos = [
       {
         id: "photo",
@@ -117,6 +142,7 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
       },
     ];
     const saved = store.write(family, first.revision);
+    assert.equal(saved.family.links?.[0].type, "step_parent");
     assert.equal(existsSync(photoFile), true);
     assert.throws(
       () => store.write(first.family, first.revision),
@@ -142,14 +168,19 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     store.close();
     store = openArchive(path, seed());
     assert.deepEqual(store.read(), saved);
-    assert.equal(existsSync(photoFile), true, "referenced media survives restart");
+    assert.equal(
+      existsSync(photoFile),
+      true,
+      "referenced media survives restart",
+    );
     const removed = removePerson(saved.family, "child");
     assert.equal(removed.photos![0].tags.length, 0);
-    store.write(
-      { ...seed(), people: [] },
-      saved.revision,
-      { id: "admin", name: "Администратор", role: "admin", createdAt: "" },
-    );
+    store.write({ ...seed(), people: [] }, saved.revision, {
+      id: "admin",
+      name: "Администратор",
+      role: "admin",
+      createdAt: "",
+    });
     assert.equal(
       existsSync(photoFile),
       true,

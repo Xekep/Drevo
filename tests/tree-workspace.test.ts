@@ -64,9 +64,10 @@ test("adapter retains every relationship kind and gives symmetric marriage one s
     "sworn_sibling",
   ] as ConnectionType[])
     data = connectPeople(data, "a", "b", type);
+  data = connectPeople(data, "a", "c", "step_parent");
   const edges = archiveConnections(data);
-  assert.equal(edges.length, 7);
-  assert.equal(new Set(edges.map((e) => e.key)).size, 7);
+  assert.equal(edges.length, 8);
+  assert.equal(new Set(edges.map((e) => e.key)).size, 8);
   assert.equal(
     connectionKey({ from: "a", to: "b", type: "spouse" }),
     connectionKey({ from: "b", to: "a", type: "spouse" }),

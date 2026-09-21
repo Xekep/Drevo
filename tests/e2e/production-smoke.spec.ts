@@ -75,6 +75,25 @@ test("mobile archive does not overflow the viewport", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("common ancestors view keeps blood relatives and excludes the spouse", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .evaluate((card) => (card as HTMLElement).click());
+  const dock = page.getByRole("dialog", { name: "Выбранный объект" });
+  if (await dock.isVisible())
+    await dock.getByRole("button", { name: "Свернуть панель" }).click();
+  await page.getByRole("button", { name: "Общие предки" }).click();
+  await expect(page.locator(".tree-family-count")).toHaveText("5 из 6");
+  await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCount(0);
+  await expect(page.getByTestId("rf__node-e2e-sibling-child")).toBeAttached();
+  await page.getByRole("button", { name: "Всё древо" }).click();
+  await expect(page.locator(".tree-family-count")).toHaveCount(0);
+});
+
 test("manual map correction stays available when historical lookup is busy", async ({
   page,
 }, testInfo) => {

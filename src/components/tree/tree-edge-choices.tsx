@@ -1,6 +1,11 @@
 import type { RefObject } from "react";
 import { X } from "lucide-react";
-import { fullName, type GraphConnection, type Person } from "../../domain/index.ts";
+import {
+  CONNECTION_NAMES,
+  fullName,
+  type GraphConnection,
+  type Person,
+} from "../../domain/index.ts";
 
 export function TreeEdgeChoices({
   choices,
@@ -26,7 +31,11 @@ export function TreeEdgeChoices({
     >
       <div>
         <strong>Связи этой ветки</strong>
-        <button aria-label="Закрыть выбор связи" ref={closeRef} onClick={onClose}>
+        <button
+          aria-label="Закрыть выбор связи"
+          ref={closeRef}
+          onClick={onClose}
+        >
           <X size={18} />
         </button>
       </div>
@@ -47,7 +56,10 @@ export function TreeEdgeChoices({
             }}
           >
             <span>{fullName(peopleMap.get(edge.from)!)}</span>
-            <small>Родитель → {fullName(peopleMap.get(edge.to)!)}</small>
+            <small>
+              {CONNECTION_NAMES[edge.type]} →{" "}
+              {fullName(peopleMap.get(edge.to)!)}
+            </small>
           </button>
         ))}
     </div>
