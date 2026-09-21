@@ -11,6 +11,7 @@ import { roundedRoute, type EdgeRoute } from "../../domain/edge-routing";
 export type RelationshipEdgeType = Edge<
   {
     connection: GraphConnection;
+    label?: string;
     onSelect: (edge: GraphConnection) => void;
     route?: EdgeRoute;
     path?: string;
@@ -49,6 +50,7 @@ function sameRelationshipEdgeProps(
     shallowRecordEqual(a.style, b.style) &&
     shallowRecordEqual(a.markerEnd, b.markerEnd) &&
     ad?.connection === bd?.connection &&
+    ad?.label === bd?.label &&
     ad?.onSelect === bd?.onSelect &&
     ad?.route === bd?.route &&
     ad?.path === bd?.path &&
@@ -70,6 +72,7 @@ export const RelationshipEdge = memo(function RelationshipEdge(
     : { path: fallback[0], x: fallback[1], y: fallback[2] };
   const renderedPath = props.data?.path || path;
   const edge = props.data!.connection;
+  const label = props.data?.label || CONNECTION_NAMES[edge.type];
   const animatedStyle = { ...props.style } as CSSProperties & {
     "--tree-growth-delay"?: string;
     "--tree-edge-label-delay"?: string;
@@ -118,11 +121,9 @@ export const RelationshipEdge = memo(function RelationshipEdge(
             className={`flow-edge-label tree-grow-edge-label nodrag nopan ${props.selected ? "selected" : ""}`}
             style={labelStyle}
             onClick={() => props.data!.onSelect(edge)}
-            aria-label={`Связь: ${CONNECTION_NAMES[edge.type]}`}
+            aria-label={`Связь: ${label}`}
           >
-            {props.selected || edge.type !== "parent"
-              ? CONNECTION_NAMES[edge.type]
-              : "Родитель"}
+            {props.selected && edge.type === "parent" ? "Родитель" : label}
           </button>
         </EdgeLabelRenderer>
       )}

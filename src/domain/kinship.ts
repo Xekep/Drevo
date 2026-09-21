@@ -1,6 +1,7 @@
 import type { Person, Relation, KinshipRole, FamilyLink } from "./types.ts";
 import { fullName, plural } from "./dates.ts";
 import { resolvedSex } from "./name-hints.ts";
+import { connectionRoleName } from "./connection-labels.ts";
 function unspecifiedRole(male: KinshipRole, female: KinshipRole): KinshipRole {
   return {
     term:
@@ -603,6 +604,12 @@ function analyzeBloodAndMarriage(
 }
 
 function specialRole(link: FamilyLink, subject: Person): KinshipRole {
+  if (subject.sex === "u" && link.type === "step_parent")
+    return {
+      term: connectionRoleName(link.type, subject, link.from === subject.id ? "from" : "to"),
+      description:
+        "Роль супруга родителя явно указана в архиве; кровное и приёмное родительство из неё не следует.",
+    };
   if (subject.sex === "u")
     return unspecifiedRole(
       specialRole(link, { ...subject, sex: "m" }),

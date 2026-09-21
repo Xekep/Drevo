@@ -12,7 +12,7 @@ export const CONNECTION_NAMES: Record<ConnectionType, string> = {
   parent: "Кровный родитель",
   spouse: "Супруг / супруга",
   adoptive_parent: "Приёмный родитель",
-  step_parent: "Отчим / мачеха",
+  step_parent: "Супруг родителя",
   godparent: "Крёстный родитель",
   nurse: "Кормилица",
   sworn_sibling: "Названые брат / сестра",
