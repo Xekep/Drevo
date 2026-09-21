@@ -22,7 +22,7 @@ export function connectionRoleName(
         : sex === "m" ? "приёмный отец" : sex === "f" ? "приёмная мать" : "приёмный родитель";
     case "step_parent":
       return side === "to"
-        ? sex === "m" ? "пасынок" : sex === "f" ? "падчерица" : "ребёнок супруга"
+        ? sex === "m" ? "пасынок" : sex === "f" ? "падчерица" : "пасынок или падчерица"
         : sex === "m" ? "отчим" : sex === "f" ? "мачеха" : "супруг родителя";
     case "godparent":
       return side === "to"
@@ -47,10 +47,13 @@ export function connectionPairName(
   type: ConnectionType,
   from?: NamedPerson,
   to?: NamedPerson,
+  reversed = false,
 ): string {
   if (type === "parent" || type === "spouse") return CONNECTION_NAMES[type];
   const left = connectionRoleName(type, from);
   const right = connectionRoleName(type, to, "to");
-  const arrow = type === "sworn_sibling" ? "↔" : "→";
-  return `${left[0].toLocaleUpperCase("ru")}${left.slice(1)} ${arrow} ${right}`;
+  const first = reversed ? right : left;
+  const last = reversed ? left : right;
+  const arrow = type === "sworn_sibling" ? "↔" : reversed ? "←" : "→";
+  return `${first[0].toLocaleUpperCase("ru")}${first.slice(1)} ${arrow} ${last}`;
 }

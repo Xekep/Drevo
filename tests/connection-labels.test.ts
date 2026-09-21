@@ -12,6 +12,7 @@ const unknown = { sex: "u" as const, name: "Саша", patronymic: "" };
 test("step-parent names follow both recorded sexes", () => {
   assert.equal(connectionPairName("step_parent", man, woman), "Отчим → падчерица");
   assert.equal(connectionPairName("step_parent", woman, man), "Мачеха → пасынок");
+  assert.equal(connectionPairName("step_parent", man, woman, true), "Падчерица ← отчим");
   assert.equal(connectionRoleName("step_parent", woman), "мачеха");
 });
 
@@ -22,7 +23,7 @@ test("additional relationships show both roles on an edge", () => {
 });
 
 test("unknown sex remains neutral, but a reliable name hint resolves the role", () => {
-  assert.equal(connectionPairName("step_parent", unknown, unknown), "Супруг родителя → ребёнок супруга");
+  assert.equal(connectionPairName("step_parent", unknown, unknown), "Супруг родителя → пасынок или падчерица");
   assert.equal(
     connectionRoleName("step_parent", { sex: "u", name: "Мария", patronymic: "" }),
     "мачеха",

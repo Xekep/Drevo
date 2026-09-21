@@ -156,6 +156,12 @@ export function buildTreeEdges({
             peopleMap.get(edge.from),
             peopleMap.get(edge.to),
           ),
+          reverseLabel: connectionPairName(
+            edge.type,
+            peopleMap.get(edge.from),
+            peopleMap.get(edge.to),
+            true,
+          ),
         },
         style: {
           stroke: colors[edge.type],
@@ -223,6 +229,12 @@ export function buildTreeEdges({
               edge.type,
               peopleMap.get(edge.from),
               peopleMap.get(edge.to),
+            ),
+            reverseLabel: connectionPairName(
+              edge.type,
+              peopleMap.get(edge.from),
+              peopleMap.get(edge.to),
+              true,
             ),
             junction:
               branch.id.startsWith("child:") && branch.relations.length > 1
