@@ -7,6 +7,7 @@ import {
   type GraphConnection,
 } from "../../domain/connections.ts";
 import { fullName } from "../../domain/dates.ts";
+import { connectionPairName } from "../../domain/connection-labels.ts";
 import { routeKey } from "../../domain/edge-routing.ts";
 import { crossingPaths } from "../../domain/route-crossings.ts";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
@@ -146,7 +147,16 @@ export function buildTreeEdges({
               : "top"),
         selected: selectedEdge === edge.key,
         className: `tree-grow-edge relationship-${edge.type}`,
-        data: { connection: edge, onSelect: onEdge, route },
+        data: {
+          connection: edge,
+          onSelect: onEdge,
+          route,
+          label: connectionPairName(
+            edge.type,
+            peopleMap.get(edge.from),
+            peopleMap.get(edge.to),
+          ),
+        },
         style: {
           stroke: colors[edge.type],
           strokeWidth: active || selectedEdge === edge.key ? 3 : 1.6,
@@ -209,6 +219,11 @@ export function buildTreeEdges({
             connection: edge,
             onSelect: select,
             route: branch.route,
+            label: connectionPairName(
+              edge.type,
+              peopleMap.get(edge.from),
+              peopleMap.get(edge.to),
+            ),
             junction:
               branch.id.startsWith("child:") && branch.relations.length > 1
                 ? branch.route.points[0]

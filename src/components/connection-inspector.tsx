@@ -7,8 +7,8 @@ import {
   replaceConnection,
   removeConnection,
   CONNECTION_NAMES,
+  connectionRoleName,
   fullName,
-  resolvedSex,
   suggestConnectionOrder,
   type Family,
   type ArchiveUser,
@@ -52,27 +52,13 @@ export function ConnectionInspector({
   );
   const from = people.find((p) => p.id === draft.from),
     to = people.find((p) => p.id === draft.to);
-  const sex = from ? resolvedSex(from) : "u";
-  const role =
-    draft.type === "parent"
-      ? sex === "m"
-        ? "отец"
-        : sex === "f"
-          ? "мать"
-          : "родитель"
-      : draft.type === "godparent"
-        ? sex === "m"
-          ? "крёстный отец"
-          : sex === "f"
-            ? "крёстная мать"
-            : "крёстный родитель"
-        : draft.type === "step_parent"
-          ? sex === "m"
-            ? "отчим"
-            : sex === "f"
-              ? "мачеха"
-              : "отчим / мачеха"
-          : CONNECTION_NAMES[draft.type].toLocaleLowerCase("ru");
+  const sourceRole = connectionRoleName(draft.type, from);
+  const role = sourceRole.toLocaleLowerCase("ru");
+  const roleLabel = sourceRole[0].toLocaleUpperCase("ru") + sourceRole.slice(1);
+  const stepRole = connectionRoleName("step_parent", from);
+  const stepRoleLabel = stepRole[0].toLocaleUpperCase("ru") + stepRole.slice(1);
+  const targetRole = connectionRoleName(draft.type, to, "to");
+  const targetRoleLabel = targetRole[0].toLocaleUpperCase("ru") + targetRole.slice(1);
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
@@ -170,7 +156,7 @@ export function ConnectionInspector({
               : draft.type === "godparent"
                 ? "Крёстный родитель"
                 : draft.type === "step_parent"
-                  ? "Отчим / мачеха"
+                  ? roleLabel
                   : "Кто"
           }
           value={draft.from}
@@ -200,7 +186,7 @@ export function ConnectionInspector({
                 "step_parent",
               ].map((type) => (
                 <option key={type} value={type}>
-                  {CONNECTION_NAMES[type as ConnectionType]}
+                  {type === "step_parent" ? stepRoleLabel : CONNECTION_NAMES[type as ConnectionType]}
                 </option>
               ))}
             </optgroup>
@@ -220,7 +206,7 @@ export function ConnectionInspector({
               : draft.type === "godparent"
                 ? "Крестник / крестница"
                 : draft.type === "step_parent"
-                  ? "Пасынок / падчерица"
+                  ? targetRoleLabel
                   : "С кем связан"
           }
           value={draft.to}

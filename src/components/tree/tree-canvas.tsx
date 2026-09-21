@@ -340,6 +340,10 @@ function Canvas(props: Props) {
         className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
+        aria-busy={growing}
+        onContextMenu={(event) => {
+          if (growing) event.preventDefault();
+        }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
         <div className="tree-mode-bar">

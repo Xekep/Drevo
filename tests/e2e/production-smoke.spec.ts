@@ -277,7 +277,7 @@ test("the initial tree grows from roots toward descendants", async ({
     "1.41s",
   ]);
   const godparent = page.getByRole("button", {
-    name: "Связь: Крёстный родитель",
+    name: "Связь: Крёстный отец → крестница",
   });
   await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
@@ -291,6 +291,13 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   const viewport = page.locator(".react-flow__viewport");
   const transform = await viewport.getAttribute("style");
+  const firstCard = await page.locator(".flow-person-content").first().boundingBox();
+  expect(firstCard).not.toBeNull();
+  await page.mouse.click(
+    firstCard!.x + firstCard!.width / 2,
+    firstCard!.y + firstCard!.height / 2,
+  );
+  await expect(page.locator(".flow-person.is-selected")).toHaveCount(0);
   for (const button of ["left", "right"] as const) {
     await page.mouse.move(x, y);
     await page.mouse.down({ button });
@@ -298,6 +305,11 @@ test("the initial tree grows from roots toward descendants", async ({
     await page.mouse.up({ button });
   }
   await expect(viewport).toHaveAttribute("style", transform!);
+  await expect(canvas).toHaveClass(/is-growing/);
+  await expect(firstFinalEdge).toHaveCSS(
+    "animation-name",
+    "tree-edge-final-reveal",
+  );
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
   const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
   await expect(finalPaths).toHaveCount(6);
@@ -323,6 +335,19 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(
     await godparentPath.evaluate((path) => getComputedStyle(path).markerEnd),
   ).not.toBe("none");
+  expect(
+    await page.locator(".flow-person-content strong").first().evaluate(
+      (element) => getComputedStyle(element).userSelect,
+    ),
+  ).toBe("none");
+  expect(await godparent.evaluate((element) => getComputedStyle(element).userSelect)).toBe("none");
+  const nameBox = await page.locator(".flow-person-content strong").first().boundingBox();
+  expect(nameBox).not.toBeNull();
+  await page.mouse.move(nameBox!.x + 2, nameBox!.y + nameBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(nameBox!.x + nameBox!.width - 2, nameBox!.y + nameBox!.height / 2);
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();

@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { X } from "lucide-react";
 import {
-  CONNECTION_NAMES,
+  connectionPairName,
   fullName,
   type GraphConnection,
   type Person,
@@ -57,7 +57,11 @@ export function TreeEdgeChoices({
           >
             <span>{fullName(peopleMap.get(edge.from)!)}</span>
             <small>
-              {CONNECTION_NAMES[edge.type]} →{" "}
+              {connectionPairName(
+                edge.type,
+                peopleMap.get(edge.from),
+                peopleMap.get(edge.to),
+              )} —{" "}
               {fullName(peopleMap.get(edge.to)!)}
             </small>
           </button>
