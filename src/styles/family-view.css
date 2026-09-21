@@ -45,6 +45,15 @@
 .tree-family-tools button:hover {
   background: #e8efdf;
 }
+.tree-family-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tree-family-share svg {
+  flex: none;
+}
 .tree-family-reset {
   display: inline-flex;
   align-items: center;

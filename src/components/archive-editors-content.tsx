@@ -327,124 +327,134 @@ export function PersonEditor({
         onSubmit={submit}
         className="archive-form person-editor-form"
       >
-        <p className="flow-intro">
-          {person
-            ? "Дополните историю и сохраните изменения."
-            : "Достаточно фамилии и имени. Остальные сведения можно добавить позже."}
-        </p>
-        <div className="person-editor-portrait-awards">
-          {person && (
-            <div className="portrait-picker">
-              <button
-                type="button"
-                className="portrait-preview portrait-edit-button"
-                onClick={() => setGalleryOpen(true)}
-                disabled={busy}
-                aria-label="Выбрать портрет из фотографий человека"
-                aria-haspopup="dialog"
-                title="Изменить портрет"
-              >
-                {portraitPreview || draft.photo ? (
-                  <img
-                    src={portraitPreview || mediaPreview(draft.photo)}
-                    alt=""
-                  />
-                ) : (
-                  <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
-                )}
-                <span className="portrait-edit-overlay" aria-hidden="true">
-                  <Pencil size={22} strokeWidth={1.6} />
-                </span>
-              </button>
-            </div>
-          )}
-          <AwardsEditor
-            awards={draft.awards || []}
-            onChange={(awards) => field("awards", awards)}
-          />
-        </div>
-        {relativeTo && !person && (
-          <label>
-            Кем новый человек приходится {fullName(relativeTo)}
-            <select
-              value={relationship}
-              onChange={(e) =>
-                setRelationship(e.target.value as "child" | ConnectionType)
-              }
-            >
-              <option value="child">Ребёнок</option>
-              {owns(user, relativeTo) && (
-                <>
-                  <option value="parent">Родитель</option>
-                  <option value="spouse">Супруг / супруга</option>
-                  <option value="godparent">Крёстный / крёстная</option>
-                  <optgroup label="Другие связи">
-                    {Object.entries(CONNECTION_NAMES)
-                      .filter(
-                        ([type]) =>
-                          !["parent", "spouse", "godparent"].includes(type),
-                      )
-                      .map(([type, label]) => (
-                        <option key={type} value={type}>
-                          {label}
-                        </option>
-                      ))}
-                  </optgroup>
-                </>
-              )}
-            </select>
-          </label>
+        {!person && (
+          <p className="flow-intro">
+            Достаточно фамилии и имени. Остальные сведения можно добавить позже.
+          </p>
         )}
-        <label className="name-entry">
-          ФИО
-          <input
-            required
-            data-field="name"
-            aria-invalid={!!fieldErrors.name}
-            autoComplete="off"
-            value={nameText}
-            placeholder="Иванов Иван Иванович"
-            aria-describedby={`${fieldId}-name-hint ${fieldId}-name-error`}
-            onBlur={() => validateField("name", nameText)}
-            onChange={(e) => {
-              setNameText(e.target.value);
-              setDraft((value) => ({
-                ...value,
-                ...splitFullName(e.target.value),
-              }));
-            }}
-          />
-          <small id={`${fieldId}-name-hint`}>
-            Фамилия, имя, отчество. Отчество необязательно.
-          </small>
-          <small
-            id={`${fieldId}-name-error`}
-            className="field-error"
-            role="alert"
-          >
-            {fieldErrors.name}
-          </small>
-        </label>
-        <label className="name-sex-hint">
-          Пол
-          <select
-            value={autoSex ? "auto" : draft.sex}
-            onChange={(e) => {
-              setAutoSex(e.target.value === "auto");
-              if (e.target.value !== "auto") field("sex", e.target.value);
-            }}
-          >
-            <option value="auto">
-              {guessSex(draft) === "m"
-                ? "Мужской · по ФИО"
-                : guessSex(draft) === "f"
-                  ? "Женский · по ФИО"
-                  : "Определить по ФИО"}
-            </option>
-            <option value="m">Мужской</option>
-            <option value="f">Женский</option>
-          </select>
-        </label>
+        <div
+          className={
+            person
+              ? "person-editor-primary is-existing"
+              : "person-editor-primary"
+          }
+        >
+          <div className="person-editor-portrait-awards">
+            {person && (
+              <div className="portrait-picker">
+                <button
+                  type="button"
+                  className="portrait-preview portrait-edit-button"
+                  onClick={() => setGalleryOpen(true)}
+                  disabled={busy}
+                  aria-label="Выбрать портрет из фотографий человека"
+                  aria-haspopup="dialog"
+                  title="Изменить портрет"
+                >
+                  {portraitPreview || draft.photo ? (
+                    <img
+                      src={portraitPreview || mediaPreview(draft.photo)}
+                      alt=""
+                    />
+                  ) : (
+                    <UserRound size={34} strokeWidth={1.2} aria-hidden="true" />
+                  )}
+                  <span className="portrait-edit-overlay" aria-hidden="true">
+                    <Pencil size={22} strokeWidth={1.6} />
+                  </span>
+                </button>
+              </div>
+            )}
+            <AwardsEditor
+              awards={draft.awards || []}
+              onChange={(awards) => field("awards", awards)}
+            />
+          </div>
+          {relativeTo && !person && (
+            <label>
+              Кем новый человек приходится {fullName(relativeTo)}
+              <select
+                value={relationship}
+                onChange={(e) =>
+                  setRelationship(e.target.value as "child" | ConnectionType)
+                }
+              >
+                <option value="child">Ребёнок</option>
+                {owns(user, relativeTo) && (
+                  <>
+                    <option value="parent">Родитель</option>
+                    <option value="spouse">Супруг / супруга</option>
+                    <option value="godparent">Крёстный / крёстная</option>
+                    <optgroup label="Другие связи">
+                      {Object.entries(CONNECTION_NAMES)
+                        .filter(
+                          ([type]) =>
+                            !["parent", "spouse", "godparent"].includes(type),
+                        )
+                        .map(([type, label]) => (
+                          <option key={type} value={type}>
+                            {label}
+                          </option>
+                        ))}
+                    </optgroup>
+                  </>
+                )}
+              </select>
+            </label>
+          )}
+          <div className="person-editor-basics">
+            <label className="name-entry">
+              ФИО
+              <input
+                required
+                data-field="name"
+                aria-invalid={!!fieldErrors.name}
+                autoComplete="off"
+                value={nameText}
+                placeholder="Иванов Иван Иванович"
+                aria-describedby={`${fieldId}-name-hint ${fieldId}-name-error`}
+                onBlur={() => validateField("name", nameText)}
+                onChange={(e) => {
+                  setNameText(e.target.value);
+                  setDraft((value) => ({
+                    ...value,
+                    ...splitFullName(e.target.value),
+                  }));
+                }}
+              />
+              <small id={`${fieldId}-name-hint`}>
+                Фамилия, имя, отчество. Отчество необязательно.
+              </small>
+              <small
+                id={`${fieldId}-name-error`}
+                className="field-error"
+                role="alert"
+              >
+                {fieldErrors.name}
+              </small>
+            </label>
+            <label className="name-sex-hint">
+              Пол
+              <select
+                value={autoSex ? "auto" : draft.sex}
+                onChange={(e) => {
+                  setAutoSex(e.target.value === "auto");
+                  if (e.target.value !== "auto") field("sex", e.target.value);
+                }}
+              >
+                <option value="auto">
+                  {guessSex(draft) === "m"
+                    ? "Мужской · по ФИО"
+                    : guessSex(draft) === "f"
+                      ? "Женский · по ФИО"
+                      : "Определить по ФИО"}
+                </option>
+                <option value="m">Мужской</option>
+                <option value="f">Женский</option>
+              </select>
+            </label>
+          </div>
+        </div>
         <details className="form-details person-extra" open={!!person}>
           <summary>Рождение и смерть</summary>
           {(["birth", "death"] as const).map((kind) => (
@@ -771,19 +781,13 @@ export function PersonEditor({
             {error}
           </p>
         )}
-        <footer>
-          <button type="submit" className="primary-action" disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
-          </button>
-          <button
-            type="button"
-            className="text-action"
-            disabled={busy}
-            onClick={close}
-          >
-            Закрыть
-          </button>
-          {person && isAdmin && (
+        {person && isAdmin && (
+          <details className="form-details person-delete-section">
+            <summary>Удаление карточки</summary>
+            <p>
+              Карточка, связи и отметки этого человека будут удалены. Сами
+              фотографии останутся.
+            </p>
             <button
               type="button"
               className="danger-action"
@@ -804,14 +808,21 @@ export function PersonEditor({
             >
               {confirm ? "Подтвердить удаление человека" : "Удалить человека"}
             </button>
-          )}
-        </footer>
-        {confirm && (
-          <p>
-            Карточка, связи и отметки этого человека будут удалены. Сами
-            фотографии останутся.
-          </p>
+          </details>
         )}
+        <footer>
+          <button type="submit" className="primary-action" disabled={busy}>
+            {busy ? "Сохраняем…" : "Сохранить"}
+          </button>
+          <button
+            type="button"
+            className="text-action"
+            disabled={busy}
+            onClick={close}
+          >
+            Закрыть
+          </button>
+        </footer>
       </form>
       {galleryOpen && (
         <EditorDialog

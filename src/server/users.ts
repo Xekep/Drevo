@@ -209,12 +209,92 @@ export function userStore(
       throw error;
     }
   }
+  function listPage(limit: number, cursor?: string) {
+    let after: [string, string] | undefined;
+    if (cursor) {
+      try {
+        const parsed: unknown = JSON.parse(
+          Buffer.from(cursor, "base64url").toString("utf8"),
+        );
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length !== 2 ||
+          typeof parsed[0] !== "string" ||
+          typeof parsed[1] !== "string" ||
+          parsed[0].length > 40 ||
+          parsed[1].length > 100
+        )
+          throw new Error();
+        after = [parsed[0], parsed[1]];
+      } catch {
+        throw new Error("Некорректная страница участников");
+      }
+    }
+    const rows = after
+      ? db
+          .prepare(
+            "SELECT * FROM users WHERE (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT ?",
+          )
+          .all(after[0], after[1], limit + 1)
+      : db
+          .prepare(
+            "SELECT * FROM users ORDER BY created_at DESC,id DESC LIMIT ?",
+          )
+          .all(limit + 1);
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      users: page.map(convert),
+      next:
+        rows.length > limit && last
+          ? Buffer.from(JSON.stringify([last.created_at, last.id])).toString(
+              "base64url",
+            )
+          : null,
+      total: Number(db.prepare("SELECT count(*) AS n FROM users").get()!.n),
+    };
+  }
+  function remove(actor: ArchiveUser, id: string) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (actor.id !== "local" && get(actor.id)?.role !== "admin")
+        throw new ForbiddenError(
+          "Управлять доступом может только администратор",
+        );
+      if (actor.id === id)
+        throw new Error("Нельзя удалить собственный аккаунт");
+      const target = get(id);
+      if (!target) throw new Error("Пользователь не найден");
+      if (target.role === "admin" && adminCount() <= 1)
+        throw new Error("Нельзя удалить последнего администратора");
+      audit.record(
+        {
+          action: "Удалён участник",
+          entity: "user",
+          entityId: id,
+          label: target.name,
+          personIds: target.personId ? [target.personId] : [],
+          details: [
+            { field: "Роль", before: ROLE_NAMES[target.role], after: "Удалён" },
+          ],
+        },
+        actor,
+      );
+      db.prepare("DELETE FROM users WHERE id=?").run(id);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   return {
     get,
     register,
     setRole,
     setApproved,
     setIdentity,
+    listPage,
+    remove,
     list: () =>
       db
         .prepare("SELECT * FROM users ORDER BY created_at,id")

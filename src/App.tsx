@@ -356,6 +356,7 @@ export default function App() {
               user?.role === "admin" ? (
                 <AdminPanel
                   family={family}
+                  currentUserId={user.id}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}

@@ -5,6 +5,7 @@ import { loadLazyModule } from "./lazy-section-recovery";
 
 type AdminPanelProps = {
   family: Family;
+  currentUserId: string;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;

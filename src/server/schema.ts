@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK(role IN ('admin','relative','reader')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
+CREATE INDEX IF NOT EXISTS users_created_at_id ON users(created_at DESC,id DESC);
 CREATE TABLE IF NOT EXISTS auth_sessions (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

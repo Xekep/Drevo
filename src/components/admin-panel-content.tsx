@@ -9,6 +9,7 @@ import {
   Users,
   History,
   Link2,
+  Trash2,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -27,95 +28,145 @@ type Settings = {
   publicAlbums: boolean;
   reverseTimeline: boolean;
 };
-function AdminUserAccess({
+type UserPatch = {
+  role?: Role;
+  approved?: boolean;
+  personId?: string | null;
+  treeAccess?: TreeAccess;
+};
+type UsersPage = { users: ArchiveUser[]; next: string | null; total: number };
+const USERS_PAGE_SIZE = 20;
+
+function AdminUserRow({
   user,
   family,
   busy,
-  onSave,
-  onRoleChange,
+  currentUserId,
+  onPatch,
+  onDelete,
 }: {
   user: ArchiveUser;
   family: Family;
   busy: boolean;
-  onSave: (personId: string | null, treeAccess: TreeAccess) => Promise<void>;
-  onRoleChange: (role: Role) => Promise<void>;
+  currentUserId: string;
+  onPatch: (patch: UserPatch) => Promise<boolean>;
+  onDelete: () => Promise<void>;
 }) {
   const [personId, setPersonId] = useState(user.personId || "");
-  const [treeAccess, setTreeAccess] = useState<TreeAccess>(
-    user.treeAccess || "all",
-  );
-  const scope = personId ? treeAccess : "all";
-  const changed =
-    personId !== (user.personId || "") || scope !== (user.treeAccess || "all");
+  async function commitPerson(nextId: string) {
+    const saved = await onPatch({
+      personId: nextId || null,
+      treeAccess: nextId ? user.treeAccess || "all" : "all",
+    });
+    if (!saved) setPersonId(user.personId || "");
+  }
   return (
-    <div className="admin-user-access">
-      <div className="admin-user-fields">
-        <label>
-          Роль
-          <select
-            aria-label={`Роль: ${user.name}`}
-            value={user.role}
-            disabled={busy}
-            onChange={(event) => void onRoleChange(event.target.value as Role)}
-          >
-            {Object.entries(ROLE_NAMES).map(([role, label]) => (
-              <option key={role} value={role}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <PersonSearch
-          label="Кто это в древе"
-          inputAriaLabel={`Кто это в древе: ${user.name}`}
-          value={personId}
-          selected={family.people.find((person) => person.id === personId)}
-          disabled={busy}
-          onChange={setPersonId}
-        />
-        <label>
-          Показывать
-          <select
-            aria-label={`Доступ к древу: ${user.name}`}
-            value={scope}
-            disabled={busy || user.role === "admin" || !personId}
-            onChange={(event) =>
-              setTreeAccess(event.target.value as TreeAccess)
-            }
-          >
-            <option value="all">Всё древо</option>
-            <option value="common_ancestors">Людей с общими предками</option>
-          </select>
-        </label>
+    <article className="admin-user-row" aria-label={`Участник: ${user.name}`}>
+      <div className="admin-user-name" title={user.name}>
+        <b>{user.name}</b>
+        {!user.approved && <small>Ожидает одобрения</small>}
       </div>
-      <div className="admin-user-access-footer">
-        {scope === "common_ancestors" && (
-          <small>Свои новые карточки участник увидит и без общей родни.</small>
+      <label className="admin-user-select">
+        <span>Роль</span>
+        <select
+          aria-label={`Роль: ${user.name}`}
+          value={user.role}
+          disabled={busy}
+          onChange={(event) =>
+            void onPatch({ role: event.target.value as Role })
+          }
+        >
+          {Object.entries(ROLE_NAMES).map(([role, label]) => (
+            <option key={role} value={role}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <PersonSearch
+        label="Кто это в древе"
+        inputAriaLabel={`Кто это в древе: ${user.name}`}
+        clearLabel={`Убрать привязку: ${user.name}`}
+        value={personId}
+        selected={family.people.find((person) => person.id === personId)}
+        disabled={busy}
+        onChange={setPersonId}
+        onCommit={(id) => void commitPerson(id)}
+        onCancel={() => setPersonId(user.personId || "")}
+      />
+      <label className="admin-user-select">
+        <span>Показывать</span>
+        <select
+          aria-label={`Доступ к древу: ${user.name}`}
+          value={user.personId ? user.treeAccess || "all" : "all"}
+          disabled={busy || user.role === "admin" || !user.personId}
+          onChange={(event) =>
+            void onPatch({
+              personId: user.personId || null,
+              treeAccess: event.target.value as TreeAccess,
+            })
+          }
+        >
+          <option value="all">Всё древо</option>
+          <option value="common_ancestors">Общие предки</option>
+        </select>
+      </label>
+      <div className="admin-user-actions">
+        {!user.approved && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onPatch({ approved: true })}
+          >
+            Одобрить
+          </button>
         )}
         <button
           type="button"
-          disabled={busy || !changed}
-          onClick={() => void onSave(personId || null, scope)}
+          className="admin-user-delete"
+          disabled={busy || user.id === currentUserId}
+          aria-label={`Удалить участника: ${user.name}`}
+          title={
+            user.id === currentUserId
+              ? "Свой аккаунт удалить нельзя"
+              : "Удалить участника"
+          }
+          onClick={() => {
+            if (
+              window.confirm(
+                `Удалить участника «${user.name}»? Его данные в древе сохранятся. При новом входе он снова появится и будет ждать одобрения.`,
+              )
+            )
+              void onDelete();
+          }}
         >
-          Сохранить доступ
+          <Trash2 size={16} />
         </button>
       </div>
-    </div>
+    </article>
   );
 }
 export function AdminPanel({
   family,
+  currentUserId,
   onClose,
   onChanged,
   onSettings,
 }: {
   family: Family;
+  currentUserId: string;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;
 }) {
   const [section, setSection] = useState("users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
+    [usersTotal, setUsersTotal] = useState(0),
+    [usersNext, setUsersNext] = useState<string | null>(null),
+    [usersCursor, setUsersCursor] = useState<string | null>(null),
+    [usersHistory, setUsersHistory] = useState<(string | null)[]>([]),
+    [usersReload, setUsersReload] = useState(0),
+    [usersLoading, setUsersLoading] = useState(true),
     [settings, setSettings] = useState<Settings | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -123,29 +174,55 @@ export function AdminPanel({
   const [auditActor, setAuditActor] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      fetch("/api/users", { signal: controller.signal }),
-      fetch("/api/settings", { signal: controller.signal }),
-    ])
-      .then(async ([u, s]) => {
-        if (!u.ok || !s.ok) throw new Error("Нет доступа к управлению архивом");
-        setUsers((await u.json()).users);
-        setSettings(await s.json());
+    void fetch("/api/settings", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Нет доступа к управлению архивом");
+        setSettings(await response.json());
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e.message);
       });
     return () => controller.abort();
   }, []);
-  async function change(url: string, method: string, body: unknown) {
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({ limit: String(USERS_PAGE_SIZE) });
+    if (usersCursor) query.set("cursor", usersCursor);
+    void fetch(`/api/users?${query}`, { signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok)
+          throw new Error(data.error || "Не удалось загрузить участников");
+        const page = data as UsersPage;
+        setUsers(page.users);
+        setUsersNext(page.next);
+        setUsersTotal(page.total);
+      })
+      .catch((reason) => {
+        if (!controller.signal.aborted) {
+          setUsers([]);
+          setUsersNext(null);
+          setError((reason as Error).message);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setUsersLoading(false);
+      });
+    return () => controller.abort();
+  }, [usersCursor, usersReload]);
+  async function change(url: string, method: string, body?: unknown) {
     setBusy(true);
     setError("");
     setNotice("");
     try {
       const response = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        ...(body === undefined
+          ? {}
+          : {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Не удалось сохранить");
@@ -217,7 +294,7 @@ export function AdminPanel({
           </div>
           <div>
             <ShieldCheck size={20} />
-            <b>{users.length}</b>
+            <b>{usersTotal}</b>
             <span>Участников</span>
           </div>
         </div>
@@ -236,70 +313,104 @@ export function AdminPanel({
                 альбомы в разделе «Доступ и древо».
               </p>
             )}
-            {!users.length && (
+            {!usersLoading && usersTotal === 0 && (
               <p>
                 После первого входа через Яндекс здесь появятся участники. На
                 этом компьютере управление доступно без входа.
               </p>
             )}
-            {users.map((user) => (
-              <article className="admin-user" key={user.id}>
-                <div className="admin-user-header">
-                  <span className="member-avatar" aria-hidden="true">
-                    {user.name.slice(0, 1)}
-                  </span>
-                  <div className="admin-user-identity">
-                    <b>{user.name}</b>
-                    <span
-                      className={
-                        user.approved
-                          ? "admin-user-status"
-                          : "admin-user-status is-pending"
-                      }
-                    >
-                      {user.approved ? "Доступ открыт" : "Ожидает одобрения"}
-                    </span>
+            <div className="admin-users-toolbar">
+              <span>Всего участников: {usersTotal}</span>
+              <span role="status">{busy ? "Сохраняем…" : notice}</span>
+            </div>
+            {usersLoading ? (
+              <p role="status">Загружаем участников…</p>
+            ) : (
+              users.length > 0 && (
+                <div
+                  className="admin-users-list"
+                  aria-label="Список участников"
+                >
+                  <div className="admin-users-head" aria-hidden="true">
+                    <span>Участник</span>
+                    <span>Роль</span>
+                    <span>Кто это в древе</span>
+                    <span>Показывать</span>
+                    <span>Действия</span>
                   </div>
-                  <button
-                    type="button"
-                    className="admin-user-approval"
-                    disabled={busy || user.role === "admin"}
-                    onClick={async () => {
-                      const data = await change(
-                        `/api/users/${encodeURIComponent(user.id)}`,
-                        "PATCH",
-                        { approved: !user.approved },
-                      );
-                      if (data) setUsers(data.users);
-                    }}
-                  >
-                    {user.approved ? "Закрыть доступ" : "Одобрить"}
-                  </button>
+                  {users.map((user) => (
+                    <AdminUserRow
+                      key={`${user.id}:${user.personId || ""}`}
+                      user={user}
+                      family={family}
+                      busy={busy}
+                      currentUserId={currentUserId}
+                      onPatch={async (patch) => {
+                        const data = await change(
+                          `/api/users/${encodeURIComponent(user.id)}`,
+                          "PATCH",
+                          patch,
+                        );
+                        if (!data?.user) return false;
+                        setUsers((current) =>
+                          current.map((item) =>
+                            item.id === user.id ? data.user : item,
+                          ),
+                        );
+                        return true;
+                      }}
+                      onDelete={async () => {
+                        const data = await change(
+                          `/api/users/${encodeURIComponent(user.id)}`,
+                          "DELETE",
+                        );
+                        if (!data?.deleted) return;
+                        setUsersLoading(true);
+                        if (users.length === 1 && usersHistory.length) {
+                          setUsersCursor(usersHistory.at(-1) || null);
+                          setUsersHistory((current) => current.slice(0, -1));
+                        } else setUsersReload((current) => current + 1);
+                      }}
+                    />
+                  ))}
                 </div>
-                <AdminUserAccess
-                  key={`${user.id}:${user.personId || ""}:${user.treeAccess || "all"}`}
-                  user={user}
-                  family={family}
-                  busy={busy}
-                  onSave={async (personId, treeAccess) => {
-                    const data = await change(
-                      `/api/users/${encodeURIComponent(user.id)}`,
-                      "PATCH",
-                      { personId, treeAccess },
-                    );
-                    if (data) setUsers(data.users);
+              )
+            )}
+            {(usersHistory.length > 0 || usersNext) && (
+              <nav
+                className="admin-users-pagination"
+                aria-label="Страницы участников"
+              >
+                <button
+                  type="button"
+                  disabled={busy || usersLoading || !usersHistory.length}
+                  onClick={() => {
+                    setUsersLoading(true);
+                    setUsersCursor(usersHistory.at(-1) || null);
+                    setUsersHistory((current) => current.slice(0, -1));
                   }}
-                  onRoleChange={async (role) => {
-                    const data = await change(
-                      `/api/users/${encodeURIComponent(user.id)}`,
-                      "PATCH",
-                      { role },
-                    );
-                    if (data) setUsers(data.users);
+                >
+                  Назад
+                </button>
+                <span>Страница {usersHistory.length + 1}</span>
+                <button
+                  type="button"
+                  disabled={busy || usersLoading || !usersNext}
+                  onClick={() => {
+                    setUsersLoading(true);
+                    setUsersHistory((current) => [...current, usersCursor]);
+                    setUsersCursor(usersNext);
                   }}
-                />
-              </article>
-            ))}
+                >
+                  Далее
+                </button>
+              </nav>
+            )}
+            {error && (
+              <p role="alert" className="form-error">
+                {error}
+              </p>
+            )}
           </section>
         )}
         {settings && section === "access" && (
@@ -444,12 +555,12 @@ export function AdminPanel({
             <button onClick={onSettings}>Открыть настройки данных</button>
           </section>
         )}
-        {error && (
+        {error && section !== "users" && (
           <p role="alert" className="form-error">
             {error}
           </p>
         )}
-        {notice && (
+        {notice && section !== "users" && (
           <p className="admin-notice" role="status">
             {notice}
           </p>
