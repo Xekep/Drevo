@@ -5,6 +5,7 @@ import {
   type ArchiveUser,
 } from "../domain/index.ts";
 import { ForbiddenError } from "./users.ts";
+import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 /** Проверяет весь снимок, включая изменения чужих узлов через связи. Автор назначается сервером. */
 export function authorizeArchive(
   nextValue: unknown,
@@ -42,6 +43,45 @@ export function authorizeArchive(
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
   if (admin) return next;
+  if (isScopedUser(user)) {
+    const visible = visiblePersonIds(current, user);
+    const oldPeople = new Map(
+      current.people.map((person) => [person.id, person]),
+    );
+    const oldLinks = new Map(
+      (current.links || []).map((link) => [link.id, link]),
+    );
+    const oldPhotos = new Map(
+      (current.photos || []).map((photo) => [photo.id, photo]),
+    );
+    const added = new Set(
+      next.people
+        .filter((person) => !oldPeople.has(person.id))
+        .map((person) => person.id),
+    );
+    const allowed = (id: string) => visible.has(id) || added.has(id);
+    for (const person of next.people) {
+      const old = oldPeople.get(person.id);
+      if (
+        (!old || !isDeepStrictEqual(old, person)) &&
+        [...person.parents, ...person.spouses].some((id) => !allowed(id))
+      )
+        deny();
+    }
+    for (const link of next.links || [])
+      if (!allowed(link.from) || !allowed(link.to)) {
+        const old = oldLinks.get(link.id);
+        if (!old || !isDeepStrictEqual(old, link)) deny();
+      }
+    for (const photo of next.photos || []) {
+      const old = oldPhotos.get(photo.id);
+      if (
+        (!old || !isDeepStrictEqual(old, photo)) &&
+        photo.tags.some((tag) => !allowed(tag.personId))
+      )
+        deny();
+    }
+  }
   const currentMeta = {
       ...current,
       people: undefined,

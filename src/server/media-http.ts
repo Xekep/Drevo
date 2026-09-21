@@ -5,20 +5,41 @@ import type { createAuth } from "./auth.ts";
 import type { imagePreviews, ImagePreviewVariant } from "./image-previews.ts";
 import type { mediaStore } from "./media.ts";
 import type { settingsStore } from "./settings.ts";
+import type { openArchive } from "./database.ts";
+import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 
 export function mediaHttp({
   auth,
   media,
   previewImage,
   visibility,
+  archive,
 }: {
   auth: ReturnType<typeof createAuth>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
   visibility: ReturnType<typeof settingsStore>;
+  archive: ReturnType<typeof openArchive>;
 }) {
-  const permitted = (req: IncomingMessage) =>
-    auth.canRead(req) || visibility.read().publicAlbums;
+  let cachedKey = "",
+    cachedUrls = new Set<string>();
+  const permitted = (req: IncomingMessage, url?: string) => {
+    if (!auth.canRead(req) && !visibility.read().publicAlbums) return false;
+    const user = auth.currentUser(req);
+    if (!isScopedUser(user) || !url) return true;
+    const key = `${archive.meta().revision}:${user.id}:${user.personId || ""}`;
+    if (key !== cachedKey) {
+      const scoped = projectFamilyForUser(archive.read().family, user);
+      cachedUrls = new Set([
+        ...scoped.people
+          .map((person) => person.photo)
+          .filter((photo): photo is string => !!photo),
+        ...(scoped.photos || []).map((photo) => photo.url),
+      ]);
+      cachedKey = key;
+    }
+    return cachedUrls.has(url);
+  };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -35,7 +56,7 @@ export function mediaHttp({
   ): Promise<boolean> => {
     if (!url.pathname.startsWith("/media/") || req.method !== "GET")
       return false;
-    if (!permitted(req))
+    if (!permitted(req, url.pathname))
       return json(res, 401, { error: "Sign in to view this archive" });
 
     const file = media.open(url.pathname);
@@ -50,7 +71,7 @@ export function mediaHttp({
           { path: file.path, cacheKey: file.name },
           variant,
         );
-        if (!permitted(req))
+        if (!permitted(req, url.pathname))
           return json(res, 401, { error: "Доступ к фотографиям закрыт" });
         res.writeHead(200, {
           "Content-Type": "image/webp",
@@ -73,7 +94,7 @@ export function mediaHttp({
         await handle.close();
         return json(res, 404, { error: "Фото не найдено" });
       }
-      if (!permitted(req)) {
+      if (!permitted(req, url.pathname)) {
         await handle.close();
         return json(res, 401, { error: "Доступ к фотографиям закрыт" });
       }
@@ -91,8 +112,7 @@ export function mediaHttp({
       return true;
     } catch {
       if (handle) await handle.close().catch(() => {});
-      if (!res.headersSent)
-        return json(res, 404, { error: "Фото не найдено" });
+      if (!res.headersSent) return json(res, 404, { error: "Фото не найдено" });
       if (!res.destroyed) res.destroy();
       return true;
     }

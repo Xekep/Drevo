@@ -39,6 +39,17 @@ export function settingsStore(db: DatabaseSync) {
       const before = read();
       db.exec("BEGIN IMMEDIATE");
       try {
+        if (
+          (v.publicTree || v.publicAlbums) &&
+          db
+            .prepare(
+              "SELECT 1 FROM users WHERE tree_access='common_ancestors' LIMIT 1",
+            )
+            .get()
+        )
+          throw new Error(
+            "Публичный просмотр недоступен, пока у участников есть ограниченный доступ",
+          );
         db.prepare(
           "UPDATE access_settings SET public_tree=?,public_albums=? WHERE id=1",
         ).run(Number(v.publicTree), Number(v.publicAlbums));

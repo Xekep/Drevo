@@ -80,7 +80,13 @@ export function sharingHttp({
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({ archive, auth, media, publicOrigin });
   const faceDescriptors = faceDescriptorsHttp({ archive, auth, publicOrigin });
-  const serveMedia = mediaHttp({ auth, media, previewImage, visibility });
+  const serveMedia = mediaHttp({
+    auth,
+    media,
+    previewImage,
+    visibility,
+    archive,
+  });
 
   return async (
     req: IncomingMessage,

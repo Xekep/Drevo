@@ -1,12 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
-import {
-  MediaTooLargeError,
-  type mediaStore,
-} from "./media.ts";
+import { MediaTooLargeError, type mediaStore } from "./media.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
+import { projectFamilyForUser } from "../domain/tree-access.ts";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
 const MAX_MEDIA_FILES = 20_000;
@@ -72,12 +70,15 @@ export function mediaUploadHttp({
         error: "You do not have editing access",
       });
     const requester = auth.currentUser(req)!;
-    const now = Date.now(), window = uploads.get(requester.id);
+    const now = Date.now(),
+      window = uploads.get(requester.id);
     if (!window || now - window.since >= 60 * 60 * 1000)
       uploads.set(requester.id, { since: now, count: 1 });
     else if (++window.count > 60) {
       res.setHeader("Retry-After", "3600");
-      return json(res, 429, { error: "Слишком много загрузок. Повторите позже" });
+      return json(res, 429, {
+        error: "Слишком много загрузок. Повторите позже",
+      });
     }
     const usage = await media.usage();
     if (usage.files >= MAX_MEDIA_FILES || usage.bytes >= MAX_MEDIA_BYTES)
@@ -142,7 +143,10 @@ export function mediaUploadHttp({
           revision,
           actor,
         );
-        return json(res, 201, result);
+        return json(res, 201, {
+          ...result,
+          family: projectFamilyForUser(result.family, actor),
+        });
       } catch (error) {
         await file.undo();
         file = undefined;

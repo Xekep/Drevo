@@ -1,10 +1,13 @@
 export type Role = "admin" | "relative" | "reader";
+export type TreeAccess = "all" | "common_ancestors";
 export type ArchiveUser = {
   id: string;
   name: string;
   role: Role;
   createdAt: string;
   approved?: boolean;
+  personId?: string;
+  treeAccess?: TreeAccess;
 };
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "Администратор",

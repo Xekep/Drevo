@@ -1,13 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import {
-  validatedChanges,
-  type Change,
-} from "../domain/changes.ts";
+import { validatedChanges, type Change } from "../domain/changes.ts";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
+import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 
 const MAX_CHANGES = 10_000;
 const MAX_BODY = 8 * 1024 * 1024;
@@ -77,7 +75,8 @@ export function familyChangesHttp({
   };
   const conflict = (res: ServerResponse) =>
     json(res, 409, {
-      error: "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
+      error:
+        "Архив изменён в другой вкладке. Обновите данные перед сохранением.",
     });
 
   return async (
@@ -122,23 +121,36 @@ export function familyChangesHttp({
       const actor = auth.currentUser(req);
       if (!actor || actor.role === "reader")
         throw new ForbiddenError("Editing access is no longer available");
+      if (full && isScopedUser(actor))
+        throw new ForbiddenError(
+          "Используйте сохранение отдельных изменений для ограниченного древа",
+        );
 
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (full)
-        return json(res, 200, archive.write(body, revision, actor));
+      if (full) return json(res, 200, archive.write(body, revision, actor));
 
       const current = archive.read();
       if (current.revision !== revision) return conflict(res);
       const changes = parseChanges(body);
-      if (!changes.length) return json(res, 200, current);
+      if (!changes.length)
+        return json(res, 200, {
+          ...current,
+          family: projectFamilyForUser(current.family, actor),
+        });
 
       const merged = validatedChanges(current.family, changes);
       if (merged.conflicts.length) return conflict(res);
-      return json(
-        res,
-        200,
-        archive.write(merged.family, revision, actor, undefined, current.family),
+      const saved = archive.write(
+        merged.family,
+        revision,
+        actor,
+        undefined,
+        current.family,
       );
+      return json(res, 200, {
+        ...saved,
+        family: projectFamilyForUser(saved.family, actor),
+      });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
       return json(
