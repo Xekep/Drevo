@@ -217,6 +217,7 @@ export function PersonInspector({
       )}
       <PersonPanel
         person={person}
+        isCurrentUser={user?.personId === person.id}
         people={family.people}
         links={family.links}
         onSelect={onSelect}

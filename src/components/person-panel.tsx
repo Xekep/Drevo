@@ -99,6 +99,7 @@ export function PersonPanel({
   onSelect,
   onCompare,
   suggestions,
+  isCurrentUser = false,
 }: {
   person: Person;
   people: Person[];
@@ -106,6 +107,7 @@ export function PersonPanel({
   onSelect: (id: string) => void;
   onCompare: () => void;
   suggestions?: ReactNode;
+  isCurrentUser?: boolean;
 }) {
   const [tab, setTab] = useState<"bio" | "sources">("bio");
   const sources = collectPersonSources(person);
@@ -127,6 +129,7 @@ export function PersonPanel({
     <>
       <div className="profile-head">
         <Avatar person={person} large />
+        {isCurrentUser && <span className="profile-self-label">Это вы</span>}
         <h2>
           {hasRecordedDeath(person) ? (
             <MemorialName key={person.id}>{person.surname}</MemorialName>
@@ -261,7 +264,10 @@ export function PersonPanel({
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>
             {sources.length ? (
               sources.map((s, i) => (
-                <div className="source-card" key={`${s.title}-${s.url || s.reference}-${i}`}>
+                <div
+                  className="source-card"
+                  key={`${s.title}-${s.url || s.reference}-${i}`}
+                >
                   <div className="source-type">
                     <FileText size={13} />
                     {s.type}
@@ -269,7 +275,9 @@ export function PersonPanel({
                   <h3>{s.title}</h3>
                   {s.reference && <p>{s.reference}</p>}
                   {(s.origin || s.note) && (
-                    <small>{[s.origin, s.note].filter(Boolean).join(" · ")}</small>
+                    <small>
+                      {[s.origin, s.note].filter(Boolean).join(" · ")}
+                    </small>
                   )}
                   {safeUrl(s.url) ? (
                     <a

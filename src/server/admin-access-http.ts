@@ -3,7 +3,7 @@ import type { createAuth } from "./auth.ts";
 import type { userStore } from "./users.ts";
 import { ForbiddenError } from "./users.ts";
 import type { settingsStore } from "./settings.ts";
-import type { Role } from "../domain/access.ts";
+import type { Role, TreeAccess } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 async function readJson(req: IncomingMessage) {
@@ -69,10 +69,34 @@ export function adminAccessHttp({
       try {
         const body = await readJson(req);
         const id = decodeURIComponent(path.slice("/api/users/".length));
+        const identity =
+          body.personId !== undefined || body.treeAccess !== undefined;
+        if (
+          (body.approved !== undefined && typeof body.approved !== "boolean") ||
+          Number(body.approved !== undefined) +
+            Number(body.role !== undefined) +
+            Number(identity) !==
+            1
+        )
+          throw new Error("Изменяйте допуск, роль или привязку отдельно");
         if (typeof body.approved === "boolean")
           users.setApproved(auth.currentUser(req)!, id, body.approved);
         if (body.role !== undefined)
           users.setRole(auth.currentUser(req)!, id, body.role as Role);
+        if (identity) {
+          const target = users.get(id);
+          if (!target) throw new Error("Пользователь не найден");
+          users.setIdentity(
+            auth.currentUser(req)!,
+            id,
+            body.personId === undefined
+              ? target.personId || null
+              : body.personId,
+            body.treeAccess === undefined
+              ? target.treeAccess || "all"
+              : (body.treeAccess as TreeAccess),
+          );
+        }
         return json(res, 200, { users: users.list() });
       } catch (error) {
         if (error instanceof RangeError)
@@ -95,11 +119,7 @@ export function adminAccessHttp({
         const body = await readJson(req);
         if (!auth.isAdmin(req))
           return json(res, 403, { error: "Access revoked" });
-        return json(
-          res,
-          200,
-          visibility.write(body, auth.currentUser(req)!),
-        );
+        return json(res, 200, visibility.write(body, auth.currentUser(req)!));
       } catch (error) {
         if (error instanceof RangeError)
           return json(res, 413, { error: error.message });

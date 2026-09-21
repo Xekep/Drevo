@@ -249,4 +249,23 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const identityExtension = "2026-09-user-tree-identity-and-scope";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(identityExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE users ADD COLUMN person_id TEXT REFERENCES people(id) ON DELETE SET NULL;
+        ALTER TABLE users ADD COLUMN tree_access TEXT NOT NULL DEFAULT 'all'
+          CHECK(tree_access IN ('all','common_ancestors'));
+        CREATE UNIQUE INDEX users_person_id ON users(person_id) WHERE person_id IS NOT NULL;
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(identityExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

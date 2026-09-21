@@ -4,7 +4,12 @@ import type { createAuth } from "./auth.ts";
 import type { settingsStore } from "./settings.ts";
 import { peopleSearchStore } from "./people-search.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
-import { personDetails, archivePageSize } from "../domain/archive-projection.ts";
+import {
+  archiveOverview,
+  personDetails,
+  archivePageSize,
+} from "../domain/archive-projection.ts";
+import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -16,6 +21,21 @@ export function archiveQueryHttp({
   visibility: ReturnType<typeof settingsStore>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
+  let scopedCache: {
+    key: string;
+    family: ReturnType<typeof archive.read>["family"];
+  } | null = null;
+  const scopedFamily = (
+    user: NonNullable<ReturnType<typeof auth.currentUser>>,
+  ) => {
+    const key = `${archive.meta().revision}:${user.id}:${user.personId || ""}`;
+    if (scopedCache?.key !== key)
+      scopedCache = {
+        key,
+        family: projectFamilyForUser(archive.read().family, user),
+      };
+    return scopedCache.family;
+  };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -29,7 +49,12 @@ export function archiveQueryHttp({
       settings = visibility.read(),
       readTree = auth.canRead(req) || settings.publicTree,
       readPhotos = auth.canRead(req) || settings.publicAlbums;
-    const data = archive.read();
+    const data = isScopedUser(user)
+      ? {
+          family: structuredClone(scopedFamily(user)),
+          revision: archive.meta().revision,
+        }
+      : archive.read();
     if (!readTree) {
       data.family.people = [];
       data.family.links = [];
@@ -82,7 +107,7 @@ export function archiveQueryHttp({
         const meta = archive.meta(),
           readTree = auth.canRead(req) || access.publicTree,
           readPhotos = auth.canRead(req) || access.publicAlbums,
-          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}`;
+          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         if (url.searchParams.get("token") !== pageToken)
           return json(res, 409, {
             error: "Архив или доступ к нему изменились. Обновите данные.",
@@ -95,30 +120,56 @@ export function archiveQueryHttp({
           offset < 0
         )
           return json(res, 400, { error: "Некорректная страница" });
+        const scoped = isScopedUser(visitor) ? scopedFamily(visitor) : null;
         if (collection === "people")
           return json(res, 200, {
             pageToken,
             items: readTree
-              ? archive.peoplePage(offset, archivePageSize).map(personDetails)
+              ? (scoped
+                  ? scoped.people.slice(offset, offset + archivePageSize)
+                  : archive.peoplePage(offset, archivePageSize)
+                ).map(personDetails)
               : [],
-            total: readTree ? meta.people : 0,
+            total: readTree ? (scoped?.people.length ?? meta.people) : 0,
           });
         return json(res, 200, {
           pageToken,
           items: readPhotos
-            ? archive
-                .photoPage(offset, archivePageSize)
-                .map((photo) => (readTree ? photo : { ...photo, tags: [] }))
+            ? (scoped
+                ? (scoped.photos || []).slice(offset, offset + archivePageSize)
+                : archive.photoPage(offset, archivePageSize)
+              ).map((photo) => (readTree ? photo : { ...photo, tags: [] }))
             : [],
-          total: readPhotos ? meta.photos : 0,
+          total: readPhotos ? (scoped?.photos?.length ?? meta.photos) : 0,
         });
       }
       if (projection === "overview") {
         const readTree = auth.canRead(req) || access.publicTree,
           readPhotos = auth.canRead(req) || access.publicAlbums;
         let data: ReturnType<typeof archive.overview>;
-        if (readTree) data = archive.overview(readPhotos);
-        else {
+        if (readTree) {
+          if (isScopedUser(visitor)) {
+            const scoped = scopedFamily(visitor);
+            data = {
+              family: archiveOverview(
+                readPhotos
+                  ? scoped
+                  : {
+                      ...scoped,
+                      people: scoped.people.map((person) => ({
+                        ...person,
+                        photo: undefined,
+                      })),
+                    },
+              ),
+              revision: archive.meta().revision,
+              totals: {
+                people: scoped.people.length,
+                photos: scoped.photos?.length || 0,
+              },
+            };
+          } else data = archive.overview(readPhotos);
+        } else {
           const meta = archive.meta();
           data = {
             family: {
@@ -133,7 +184,7 @@ export function archiveQueryHttp({
             totals: { people: meta.people, photos: meta.photos },
           };
         }
-        const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}`;
+        const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         return json(res, 200, {
           family: data.family,
           revision: data.revision,
@@ -173,7 +224,10 @@ export function archiveQueryHttp({
       const query = (url.searchParams.get("q") || "").trim();
       if (query.length > 100)
         return json(res, 400, { error: "Слишком длинный поисковый запрос" });
-      return json(res, 200, searchPeople(query));
+      const visible = isScopedUser(visitor)
+        ? new Set(scopedFamily(visitor).people.map((person) => person.id))
+        : undefined;
+      return json(res, 200, searchPeople(query, visible));
     }
 
     if (req.method !== "GET") {
@@ -182,7 +236,9 @@ export function archiveQueryHttp({
     }
     if (!auth.canRead(req) && !access.publicTree)
       return json(res, 401, { error: "Войдите для экспорта древа" });
-    const { family, revision } = archive.read();
+    const { family, revision } = isScopedUser(visitor)
+      ? { family: scopedFamily(visitor), revision: archive.meta().revision }
+      : archive.read();
     if (url.searchParams.get("download") === "1")
       res.setHeader(
         "Content-Disposition",

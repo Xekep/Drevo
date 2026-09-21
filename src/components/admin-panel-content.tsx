@@ -14,17 +14,73 @@ import {
   ROLE_NAMES,
   type ArchiveUser,
   type Role,
+  type TreeAccess,
   type Family,
 } from "../domain";
 import { BackupRestore } from "./backup-restore";
 import { ShareCatalog } from "./share-catalog";
 import { AuditLog } from "./audit-log";
+import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
   reverseTimeline: boolean;
 };
+function AdminUserAccess({
+  user,
+  family,
+  busy,
+  onSave,
+}: {
+  user: ArchiveUser;
+  family: Family;
+  busy: boolean;
+  onSave: (personId: string | null, treeAccess: TreeAccess) => Promise<void>;
+}) {
+  const [personId, setPersonId] = useState(user.personId || "");
+  const [treeAccess, setTreeAccess] = useState<TreeAccess>(
+    user.treeAccess || "all",
+  );
+  const scope = personId ? treeAccess : "all";
+  const changed =
+    personId !== (user.personId || "") || scope !== (user.treeAccess || "all");
+  return (
+    <div className="admin-user-access">
+      <PersonSearch
+        label={`Кто это в древе: ${user.name}`}
+        value={personId}
+        selected={family.people.find((person) => person.id === personId)}
+        disabled={busy}
+        onChange={setPersonId}
+      />
+      <label>
+        Показывать
+        <select
+          aria-label={`Доступ к древу: ${user.name}`}
+          value={scope}
+          disabled={busy || user.role === "admin" || !personId}
+          onChange={(event) => setTreeAccess(event.target.value as TreeAccess)}
+        >
+          <option value="all">Всё древо</option>
+          <option value="common_ancestors">Людей с общими предками</option>
+        </select>
+      </label>
+      {scope === "common_ancestors" && (
+        <small>
+          Собственные новые карточки видны участнику и без общей родни.
+        </small>
+      )}
+      <button
+        type="button"
+        disabled={busy || !changed}
+        onClick={() => void onSave(personId || null, scope)}
+      >
+        Сохранить доступ
+      </button>
+    </div>
+  );
+}
 export function AdminPanel({
   family,
   onClose,
@@ -152,6 +208,12 @@ export function AdminPanel({
               архив после допуска, родственник редактирует свои объекты,
               администратор управляет всем архивом.
             </p>
+            {(settings.publicTree || settings.publicAlbums) && (
+              <p role="note" className="form-error">
+                Для доступа по общим предкам сначала закройте публичное древо и
+                альбомы в разделе «Доступ и древо».
+              </p>
+            )}
             {!users.length && (
               <p>
                 После первого входа через Яндекс здесь появятся участники. На
@@ -164,7 +226,9 @@ export function AdminPanel({
                 <div>
                   <b>{user.name}</b>
                   <small>
-                    {user.approved ? ROLE_NAMES[user.role] : "Ожидает одобрения"}
+                    {user.approved
+                      ? ROLE_NAMES[user.role]
+                      : "Ожидает одобрения"}
                   </small>
                 </div>
                 <button
@@ -203,6 +267,20 @@ export function AdminPanel({
                     ))}
                   </select>
                 </label>
+                <AdminUserAccess
+                  key={`${user.id}:${user.personId || ""}:${user.treeAccess || "all"}`}
+                  user={user}
+                  family={family}
+                  busy={busy}
+                  onSave={async (personId, treeAccess) => {
+                    const data = await change(
+                      `/api/users/${encodeURIComponent(user.id)}`,
+                      "PATCH",
+                      { personId, treeAccess },
+                    );
+                    if (data) setUsers(data.users);
+                  }}
+                />
               </div>
             ))}
           </section>

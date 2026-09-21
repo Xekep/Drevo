@@ -110,6 +110,7 @@ export function PersonFullView({
               <PersonPanel
                 key={active.id}
                 person={active}
+                isCurrentUser={user?.personId === active.id}
                 people={family.people}
                 links={family.links}
                 onSelect={setActiveId}

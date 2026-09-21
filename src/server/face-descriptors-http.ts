@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
+import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
@@ -168,10 +169,19 @@ export function faceDescriptorsHttp({
       if (deleting) {
         const id = decodeURIComponent(url.pathname.split("/").at(-1)!);
         const row = archive.db
-          .prepare("SELECT created_by FROM face_descriptors WHERE id=?")
+          .prepare(
+            "SELECT created_by,person_id FROM face_descriptors WHERE id=?",
+          )
           .get(id);
         if (!row) return json(res, 404, { error: "Образец не найден" });
         const actor = auth.currentUser(req)!;
+        if (
+          isScopedUser(actor) &&
+          !visiblePersonIds(archive.read().family, actor).has(
+            String(row.person_id),
+          )
+        )
+          return json(res, 403, { error: "Нет доступа к человеку" });
         if (actor.role !== "admin" && row.created_by !== actor.id)
           return json(res, 403, { error: "Нет доступа к образцу" });
         archive.db.prepare("DELETE FROM face_descriptors WHERE id=?").run(id);
@@ -180,11 +190,16 @@ export function faceDescriptorsHttp({
       const body = await readJson(req);
       if (matching) {
         const { descriptor, model } = parseMatchDescriptor(body);
+        const actor = auth.currentUser(req)!;
+        const visible = isScopedUser(actor)
+          ? visiblePersonIds(archive.read().family, actor)
+          : null;
         const rows = archive.db
           .prepare(
             "SELECT person_id,data FROM face_descriptors WHERE model=? ORDER BY rowid LIMIT 20001",
           )
-          .all(model);
+          .all(model)
+          .filter((row) => !visible || visible.has(String(row.person_id)));
         if (rows.length > 20000)
           return json(res, 503, {
             error: "Слишком много образцов для интерактивного сравнения",
@@ -193,6 +208,11 @@ export function faceDescriptorsHttp({
       }
       const sample = parseDescriptor(body);
       const actor = auth.currentUser(req)!;
+      if (
+        isScopedUser(actor) &&
+        !visiblePersonIds(archive.read().family, actor).has(sample.personId)
+      )
+        return json(res, 403, { error: "Нет доступа к человеку" });
       const person = archive.db
         .prepare("SELECT 1 FROM people WHERE id=?")
         .get(sample.personId);
@@ -210,14 +230,13 @@ export function faceDescriptorsHttp({
           error: "Отпечаток должен относиться к сохранённой отметке на фото",
         });
       const photo = JSON.parse(String(source.photo)) as { createdBy?: string };
-      if (
-        actor.role !== "admin" &&
-        photo.createdBy !== actor.id
-      )
+      if (actor.role !== "admin" && photo.createdBy !== actor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
       const count = Number(
         archive.db
-          .prepare("SELECT count(*) AS n FROM face_descriptors WHERE person_id=?")
+          .prepare(
+            "SELECT count(*) AS n FROM face_descriptors WHERE person_id=?",
+          )
           .get(sample.personId)!.n,
       );
       if (count >= 20)

@@ -1,5 +1,76 @@
 import { expect, test } from "@playwright/test";
 
+test("администратор выбирает себя в древе и простую область доступа", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  let participant = {
+    id: "relative-test",
+    name: "Участник",
+    role: "relative",
+    approved: true,
+    createdAt: "2026-01-01T00:00:00Z",
+    personId: undefined as string | undefined,
+    treeAccess: "all",
+  };
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/users", (route) =>
+    route.fulfill({ json: { users: [participant] } }),
+  );
+  await page.route("**/api/users/relative-test", async (route) => {
+    submitted = route.request().postDataJSON() as Record<string, unknown>;
+    participant = {
+      ...participant,
+      personId: String(submitted.personId),
+      treeAccess: String(submitted.treeAccess),
+    };
+    await route.fulfill({ json: { users: [participant] } });
+  });
+  await page.route("**/api/settings", (route) =>
+    route.fulfill({
+      json: { publicTree: false, publicAlbums: false, reverseTimeline: false },
+    }),
+  );
+  await page.goto("/admin");
+  await expect(
+    page.getByRole("heading", { name: "Участники и роли" }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Кто это в древе: Участник" })
+    .fill("Иван");
+  await page.getByRole("option", { name: /Иван Петрович/ }).click();
+  await page
+    .getByRole("combobox", { name: "Доступ к древу: Участник" })
+    .selectOption("common_ancestors");
+  await page.getByRole("button", { name: "Сохранить доступ" }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({
+      personId: "e2e-memorial-person",
+      treeAccess: "common_ancestors",
+    });
+  await expect(
+    page.getByText("Собственные новые карточки видны участнику"),
+  ).toBeVisible();
+});
+
+test("привязанный человек видит отметку «Это вы» в карточке", async ({
+  page,
+}) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.user.personId = "e2e-memorial-person";
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  await page
+    .getByTestId("rf__node-e2e-memorial-person")
+    .locator(".flow-person-content")
+    .evaluate((card) => (card as HTMLElement).click());
+  await expect(page.getByText("Это вы", { exact: true })).toBeVisible();
+});
+
 test("production build opens the archive and navigates without console errors", async ({
   page,
 }) => {
@@ -291,7 +362,10 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   const viewport = page.locator(".react-flow__viewport");
   const transform = await viewport.getAttribute("style");
-  const firstCard = await page.locator(".flow-person-content").first().boundingBox();
+  const firstCard = await page
+    .locator(".flow-person-content")
+    .first()
+    .boundingBox();
   expect(firstCard).not.toBeNull();
   await page.mouse.click(
     firstCard!.x + firstCard!.width / 2,
@@ -346,23 +420,37 @@ test("the initial tree grows from roots toward descendants", async ({
     const length = path.getTotalLength();
     let nearest = Infinity;
     for (let i = 0; i <= 200; i++) {
-      const point = path.getPointAtLength((length * i) / 200).matrixTransform(matrix);
-      nearest = Math.min(nearest, Math.hypot(point.x - center.x, point.y - center.y));
+      const point = path
+        .getPointAtLength((length * i) / 200)
+        .matrixTransform(matrix);
+      nearest = Math.min(
+        nearest,
+        Math.hypot(point.x - center.x, point.y - center.y),
+      );
     }
     return nearest;
   });
   expect(labelDistance).toBeLessThan(3);
   expect(
-    await page.locator(".flow-person-content strong").first().evaluate(
-      (element) => getComputedStyle(element).userSelect,
-    ),
+    await page
+      .locator(".flow-person-content strong")
+      .first()
+      .evaluate((element) => getComputedStyle(element).userSelect),
   ).toBe("none");
-  expect(await godparent.evaluate((element) => getComputedStyle(element).userSelect)).toBe("none");
-  const nameBox = await page.locator(".flow-person-content strong").first().boundingBox();
+  expect(
+    await godparent.evaluate((element) => getComputedStyle(element).userSelect),
+  ).toBe("none");
+  const nameBox = await page
+    .locator(".flow-person-content strong")
+    .first()
+    .boundingBox();
   expect(nameBox).not.toBeNull();
   await page.mouse.move(nameBox!.x + 2, nameBox!.y + nameBox!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(nameBox!.x + nameBox!.width - 2, nameBox!.y + nameBox!.height / 2);
+  await page.mouse.move(
+    nameBox!.x + nameBox!.width - 2,
+    nameBox!.y + nameBox!.height / 2,
+  );
   await page.mouse.up();
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await godparent.click();

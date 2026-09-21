@@ -6,7 +6,7 @@ import { findPeople } from "../domain/people-search.ts";
 export function peopleSearchStore(db: DatabaseSync) {
   let revision = -1,
     people: Person[] = [];
-  return (query: string) => {
+  return (query: string, visible?: ReadonlySet<string>) => {
     const current = Number(
       db.prepare("SELECT revision FROM archive WHERE id=1").get()!.revision,
     );
@@ -17,6 +17,9 @@ export function peopleSearchStore(db: DatabaseSync) {
         .map((row) => JSON.parse(String(row.data)) as Person);
       revision = current;
     }
-    return findPeople(people, query);
+    return findPeople(
+      visible ? people.filter((person) => visible.has(person.id)) : people,
+      query,
+    );
   };
 }

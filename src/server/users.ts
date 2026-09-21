@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ArchiveUser, Role } from "../domain/access.ts";
+import type { ArchiveUser, Role, TreeAccess } from "../domain/access.ts";
 import { ROLE_NAMES } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 export class ForbiddenError extends Error {}
@@ -39,6 +39,8 @@ export function userStore(
     role: row.role as Role,
     createdAt: String(row.created_at),
     approved: !!row.approved,
+    personId: row.person_id ? String(row.person_id) : undefined,
+    treeAccess: (row.tree_access || "all") as TreeAccess,
   });
   function get(id: string) {
     const row = db.prepare("SELECT * FROM users WHERE id=?").get(id);
@@ -57,12 +59,9 @@ export function userStore(
             ? id === initialAdminId
             : Number(db.prepare("SELECT count(*) AS n FROM users").get()!.n) ===
               0);
-        db.prepare("INSERT INTO users(id,name,role,approved) VALUES(?,?,?,?)").run(
-          id,
-          name,
-          firstAdmin ? "admin" : "reader",
-          Number(firstAdmin),
-        );
+        db.prepare(
+          "INSERT INTO users(id,name,role,approved) VALUES(?,?,?,?)",
+        ).run(id, name, firstAdmin ? "admin" : "reader", Number(firstAdmin));
       }
       const user = get(id)!;
       db.exec("COMMIT");
@@ -85,7 +84,9 @@ export function userStore(
       if (!target) throw new Error("Пользователь не найден");
       if (target.role === "admin" && role !== "admin" && adminCount() <= 1)
         throw new Error("Нельзя убрать последнего администратора");
-      db.prepare("UPDATE users SET role=?,approved=1 WHERE id=?").run(role, id);
+      db.prepare(
+        "UPDATE users SET role=?,approved=1,tree_access=CASE WHEN ?='admin' THEN 'all' ELSE tree_access END WHERE id=?",
+      ).run(role, role, id);
       if (target.role !== role || !target.approved)
         audit.record(
           {
@@ -118,16 +119,102 @@ export function userStore(
     if (!target) throw new Error("Пользователь не найден");
     if (target.role === "admin" && !approved)
       throw new Error("Нельзя заблокировать администратора");
-    db.prepare("UPDATE users SET approved=? WHERE id=?").run(Number(approved), id);
+    db.prepare("UPDATE users SET approved=? WHERE id=?").run(
+      Number(approved),
+      id,
+    );
     if (!approved)
       db.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(id);
     return get(id)!;
+  }
+  function setIdentity(
+    actor: ArchiveUser,
+    id: string,
+    personId: string | null,
+    treeAccess: TreeAccess,
+  ) {
+    if (actor.id !== "local" && get(actor.id)?.role !== "admin")
+      throw new ForbiddenError("Управлять доступом может только администратор");
+    const target = get(id);
+    if (!target) throw new Error("Пользователь не найден");
+    if (typeof personId !== "string" && personId !== null)
+      throw new Error("Некорректный человек");
+    if (
+      personId &&
+      !db.prepare("SELECT 1 FROM people WHERE id=?").get(personId)
+    )
+      throw new Error("Человек не найден в древе");
+    if (
+      personId &&
+      db
+        .prepare("SELECT 1 FROM users WHERE person_id=? AND id<>?")
+        .get(personId, id)
+    )
+      throw new Error("Этот человек уже связан с другим участником");
+    if (!["all", "common_ancestors"].includes(treeAccess))
+      throw new Error("Неизвестный режим доступа");
+    if (treeAccess === "common_ancestors" && !personId)
+      throw new Error("Для доступа по общим предкам сначала выберите человека");
+    if (target.role === "admin" && treeAccess !== "all")
+      throw new Error("Администратору нужен доступ ко всему древу");
+    if (treeAccess === "common_ancestors") {
+      const publicAccess = db
+        .prepare(
+          "SELECT public_tree,public_albums FROM access_settings WHERE id=1",
+        )
+        .get();
+      if (publicAccess?.public_tree || publicAccess?.public_albums)
+        throw new Error(
+          "Для ограниченного доступа сначала закройте публичное древо и альбомы",
+        );
+    }
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare("UPDATE users SET person_id=?,tree_access=? WHERE id=?").run(
+        personId || null,
+        treeAccess,
+        id,
+      );
+      if (
+        target.personId !== (personId || undefined) ||
+        target.treeAccess !== treeAccess
+      )
+        audit.record(
+          {
+            action: "Изменена привязка к древу",
+            entity: "user",
+            entityId: id,
+            label: target.name,
+            personIds: personId ? [personId] : [],
+            details: [
+              {
+                field: "Человек",
+                before: target.personId || "",
+                after: personId || "",
+              },
+              {
+                field: "Доступ",
+                before: target.treeAccess || "all",
+                after: treeAccess,
+              },
+            ],
+          },
+          actor,
+        );
+      const result = get(id)!;
+      db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   }
   return {
     get,
     register,
     setRole,
     setApproved,
+    setIdentity,
     list: () =>
       db
         .prepare("SELECT * FROM users ORDER BY created_at,id")
