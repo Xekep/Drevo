@@ -32,11 +32,13 @@ function AdminUserAccess({
   family,
   busy,
   onSave,
+  onRoleChange,
 }: {
   user: ArchiveUser;
   family: Family;
   busy: boolean;
   onSave: (personId: string | null, treeAccess: TreeAccess) => Promise<void>;
+  onRoleChange: (role: Role) => Promise<void>;
 }) {
   const [personId, setPersonId] = useState(user.personId || "");
   const [treeAccess, setTreeAccess] = useState<TreeAccess>(
@@ -47,37 +49,58 @@ function AdminUserAccess({
     personId !== (user.personId || "") || scope !== (user.treeAccess || "all");
   return (
     <div className="admin-user-access">
-      <PersonSearch
-        label={`Кто это в древе: ${user.name}`}
-        value={personId}
-        selected={family.people.find((person) => person.id === personId)}
-        disabled={busy}
-        onChange={setPersonId}
-      />
-      <label>
-        Показывать
-        <select
-          aria-label={`Доступ к древу: ${user.name}`}
-          value={scope}
-          disabled={busy || user.role === "admin" || !personId}
-          onChange={(event) => setTreeAccess(event.target.value as TreeAccess)}
-        >
-          <option value="all">Всё древо</option>
-          <option value="common_ancestors">Людей с общими предками</option>
-        </select>
-      </label>
-      {scope === "common_ancestors" && (
+      <div className="admin-user-fields">
+        <label>
+          Роль
+          <select
+            aria-label={`Роль: ${user.name}`}
+            value={user.role}
+            disabled={busy}
+            onChange={(event) => void onRoleChange(event.target.value as Role)}
+          >
+            {Object.entries(ROLE_NAMES).map(([role, label]) => (
+              <option key={role} value={role}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <PersonSearch
+          label={`Кто это в древе: ${user.name}`}
+          value={personId}
+          selected={family.people.find((person) => person.id === personId)}
+          disabled={busy}
+          onChange={setPersonId}
+        />
+        <label>
+          Показывать
+          <select
+            aria-label={`Доступ к древу: ${user.name}`}
+            value={scope}
+            disabled={busy || user.role === "admin" || !personId}
+            onChange={(event) =>
+              setTreeAccess(event.target.value as TreeAccess)
+            }
+          >
+            <option value="all">Всё древо</option>
+            <option value="common_ancestors">Людей с общими предками</option>
+          </select>
+        </label>
+      </div>
+      <div className="admin-user-access-footer">
         <small>
-          Собственные новые карточки видны участнику и без общей родни.
+          {scope === "common_ancestors"
+            ? "Свои новые карточки участник увидит и без общей родни."
+            : "Привязка к человеку нужна для отметки «Это вы»."}
         </small>
-      )}
-      <button
-        type="button"
-        disabled={busy || !changed}
-        onClick={() => void onSave(personId || null, scope)}
-      >
-        Сохранить доступ
-      </button>
+        <button
+          type="button"
+          disabled={busy || !changed}
+          onClick={() => void onSave(personId || null, scope)}
+        >
+          Сохранить доступ
+        </button>
+      </div>
     </div>
   );
 }
@@ -221,52 +244,39 @@ export function AdminPanel({
               </p>
             )}
             {users.map((user) => (
-              <div className="admin-user" key={user.id}>
-                <span className="member-avatar">{user.name.slice(0, 1)}</span>
-                <div>
-                  <b>{user.name}</b>
-                  <small>
-                    {user.approved
-                      ? ROLE_NAMES[user.role]
-                      : "Ожидает одобрения"}
-                  </small>
-                </div>
-                <button
-                  type="button"
-                  disabled={busy || user.role === "admin"}
-                  onClick={async () => {
-                    const data = await change(
-                      `/api/users/${encodeURIComponent(user.id)}`,
-                      "PATCH",
-                      { approved: !user.approved },
-                    );
-                    if (data) setUsers(data.users);
-                  }}
-                >
-                  {user.approved ? "Закрыть доступ" : "Одобрить"}
-                </button>
-                <label>
-                  Роль
-                  <select
-                    aria-label={`Роль: ${user.name}`}
-                    value={user.role}
-                    disabled={busy}
-                    onChange={async (e) => {
+              <article className="admin-user" key={user.id}>
+                <div className="admin-user-header">
+                  <span className="member-avatar" aria-hidden="true">
+                    {user.name.slice(0, 1)}
+                  </span>
+                  <div className="admin-user-identity">
+                    <b>{user.name}</b>
+                    <span
+                      className={
+                        user.approved
+                          ? "admin-user-status"
+                          : "admin-user-status is-pending"
+                      }
+                    >
+                      {user.approved ? "Доступ открыт" : "Ожидает одобрения"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="admin-user-approval"
+                    disabled={busy || user.role === "admin"}
+                    onClick={async () => {
                       const data = await change(
                         `/api/users/${encodeURIComponent(user.id)}`,
                         "PATCH",
-                        { role: e.target.value as Role },
+                        { approved: !user.approved },
                       );
                       if (data) setUsers(data.users);
                     }}
                   >
-                    {Object.entries(ROLE_NAMES).map(([role, label]) => (
-                      <option key={role} value={role}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    {user.approved ? "Закрыть доступ" : "Одобрить"}
+                  </button>
+                </div>
                 <AdminUserAccess
                   key={`${user.id}:${user.personId || ""}:${user.treeAccess || "all"}`}
                   user={user}
@@ -280,8 +290,16 @@ export function AdminPanel({
                     );
                     if (data) setUsers(data.users);
                   }}
+                  onRoleChange={async (role) => {
+                    const data = await change(
+                      `/api/users/${encodeURIComponent(user.id)}`,
+                      "PATCH",
+                      { role },
+                    );
+                    if (data) setUsers(data.users);
+                  }}
                 />
-              </div>
+              </article>
             ))}
           </section>
         )}

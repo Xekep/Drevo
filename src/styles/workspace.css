@@ -456,23 +456,81 @@ body,
   color: #819079;
 }
 .admin-user {
+  container-type: inline-size;
+  margin-top: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fcfdf9;
+}
+.admin-user-header {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
 }
-.admin-user-access {
-  flex-basis: 100%;
-  margin-left: 52px;
+.admin-user-identity {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 12px;
+}
+.admin-user-identity b {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 600;
+}
+.admin-user-status {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eaf1e5;
+  color: #426343;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.admin-user-status.is-pending {
+  background: #fff3df;
+  color: #815d2a;
+}
+.admin-user-approval {
+  flex: 0 0 auto;
+}
+.admin-user-fields {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
-  gap: 12px 18px;
-  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding-top: 18px;
 }
-.admin-user-access > small {
-  grid-column: 1 / -1;
+.admin-user-fields > * {
+  min-width: 0;
+}
+.admin-user-fields select,
+.admin-user-fields input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.admin-user-access-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+.admin-user-access-footer small {
+  max-width: 46ch;
+  line-height: 1.5;
+}
+.admin-user-access-footer button {
+  flex: 0 0 auto;
+}
+@container (min-width: 760px) {
+  .admin-user-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 .profile-self-label {
   display: inline-block;
@@ -484,10 +542,13 @@ body,
   font-size: 12px;
   font-weight: 600;
 }
-@media (max-width: 700px) {
-  .admin-user-access {
-    margin-left: 0;
-    grid-template-columns: 1fr;
+@container (max-width: 480px) {
+  .admin-user-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-user-header,
+  .admin-user-access-footer {
+    flex-wrap: wrap;
   }
 }
 .member-avatar {
@@ -499,19 +560,9 @@ body,
   background: var(--soft-green);
   color: var(--green);
 }
-.admin-user b {
-  font-size: 13px;
-  font-weight: 500;
-}
 .admin-user small {
-  display: block;
   font-size: 11px;
   color: var(--muted);
-  margin-top: 5px;
-}
-.admin-user > label {
-  margin-left: auto;
-  min-width: 160px;
 }
 .archive-form .setting-toggle {
   display: flex;
@@ -845,13 +896,6 @@ body,
   }
   .admin-card.archive-form {
     padding: 20px 16px;
-  }
-  .admin-user {
-    flex-wrap: wrap;
-  }
-  .admin-user > label {
-    width: 100%;
-    margin-left: 52px;
   }
   .timeline-options,
   .upload-layout {
