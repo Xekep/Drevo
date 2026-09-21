@@ -152,7 +152,7 @@ function Canvas(props: Props) {
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
   >();
-  const context = `${mode}:${root || "all"}`;
+  const context = `${mode}:${familyView.mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
@@ -177,7 +177,7 @@ function Canvas(props: Props) {
         visible,
         selected,
         collapsed,
-        root,
+        root: familyView.mode === "family" ? root : null,
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
@@ -191,6 +191,7 @@ function Canvas(props: Props) {
       selected,
       collapsed,
       root,
+      familyView.mode,
       familyView.hidden,
       familyView.expanded,
       props.query,
@@ -381,10 +382,19 @@ function Canvas(props: Props) {
               selected={peopleMap.get(selected[0])}
               count={visible.size}
               total={family.people.length}
-              changed={root ? familyView.expanded.size > 0 : collapsed.size > 0}
+              changed={
+                familyView.mode === "family"
+                  ? familyView.expanded.size > 0
+                  : collapsed.size > 0
+              }
+              mode={familyView.mode}
               onFamily={() => {
                 rememberContext();
                 familyView.enter();
+              }}
+              onCommon={() => {
+                rememberContext();
+                familyView.enterCommon();
               }}
               onAll={() => {
                 rememberContext();

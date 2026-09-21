@@ -7,7 +7,9 @@ export function FamilyViewTools({
   count,
   total,
   changed,
+  mode,
   onFamily,
+  onCommon,
   onAll,
   onReset,
   onShare,
@@ -17,7 +19,9 @@ export function FamilyViewTools({
   count: number;
   total: number;
   changed: boolean;
+  mode: "all" | "family" | "common";
   onFamily: () => void;
+  onCommon: () => void;
   onAll: () => void;
   onReset: () => void;
   onShare?: () => void;
@@ -29,7 +33,7 @@ export function FamilyViewTools({
         {anchor && (
           <span
             className="tree-family-name"
-            title={`Семья: ${fullName(anchor)}`}
+            title={`${mode === "common" ? "Общие предки" : "Семья"}: ${fullName(anchor)}`}
           >
             <GitBranch size={15} />
             <span>
@@ -42,12 +46,22 @@ export function FamilyViewTools({
             {count} из {total}
           </span>
         )}
-        {selected && (!anchor || selected.id !== anchor.id) && (
+        {selected && (mode !== "family" || selected.id !== anchor?.id) && (
           <button
             onClick={onFamily}
             title={`Показать семью: ${fullName(selected)}`}
+            aria-pressed={false}
           >
             Семья выбранного
+          </button>
+        )}
+        {selected && (mode !== "common" || selected.id !== anchor?.id) && (
+          <button
+            onClick={onCommon}
+            title={`Показать людей с общими предками: ${fullName(selected)}`}
+            aria-pressed={false}
+          >
+            Общие предки
           </button>
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}
@@ -62,9 +76,13 @@ export function FamilyViewTools({
             className="tree-family-reset"
             onClick={onReset}
             aria-label={
-              anchor ? "Вернуться к ближайшей семье" : "Развернуть все ветви"
+              mode === "family"
+                ? "Вернуться к ближайшей семье"
+                : "Развернуть все ветви"
             }
-            title={anchor ? "Ближайшая семья" : "Развернуть все ветви"}
+            title={
+              mode === "family" ? "Ближайшая семья" : "Развернуть все ветви"
+            }
           >
             <RotateCcw size={16} />
           </button>

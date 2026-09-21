@@ -6,6 +6,7 @@ import {
   familyNeighbors,
   familyNeighborhood,
   completeVisibleParents,
+  commonAncestorNetwork,
 } from "../../domain/family-neighborhood";
 import type { TreeFocus } from "./tree-canvas";
 
@@ -26,7 +27,7 @@ export function useFamilyView(
     [family.people],
   );
   const [view, setView] = useState(() => ({
-    family: false,
+    mode: "all" as "all" | "family" | "common",
     anchor: selected[0] || defaultAnchor,
     expanded: new Set<string>(),
     revealed: focus?.ids || [],
@@ -35,11 +36,12 @@ export function useFamilyView(
   const [collapsed, setCollapsed] = useState(new Set<string>());
   const newFocus = !!focus && focus.token !== view.focusToken;
   const requested = newFocus ? focus.ids[0] : view.anchor;
-  const anchor = view.family
-    ? requested && index.people.has(requested)
-      ? requested
-      : defaultAnchor
-    : null;
+  const anchor =
+    view.mode !== "all"
+      ? requested && index.people.has(requested)
+        ? requested
+        : defaultAnchor
+      : null;
   const expanded = useMemo(
     () => (newFocus ? new Set<string>() : view.expanded),
     [newFocus, view.expanded],
@@ -55,24 +57,59 @@ export function useFamilyView(
     ],
     [selected, highlighted, preview, newFocus, focus, view.revealed],
   );
+  const commonVisible = useMemo(() => {
+    if (!anchor || view.mode !== "common") return new Set<string>();
+    const blood = commonAncestorNetwork(index, anchor);
+    const branch = visibleBranch(family, null, collapsed, [anchor]);
+    return new Set([...blood].filter((id) => branch.has(id)));
+  }, [anchor, view.mode, index, family, collapsed]);
   const neighborhood = useMemo(
     () =>
-      anchor
+      anchor && view.mode === "family"
         ? familyNeighborhood(index, anchor, expanded, pinned)
-        : {
-            visible: completeVisibleParents(
-              index,
-              visibleBranch(family, null, collapsed, pinned),
-            ),
-            hidden: new Map<string, number>(),
-          },
-    [anchor, index, expanded, pinned, family, collapsed],
+        : anchor
+          ? {
+              visible: commonVisible,
+              hidden: new Map<string, number>(),
+            }
+          : {
+              visible: completeVisibleParents(
+                index,
+                visibleBranch(family, null, collapsed, pinned),
+              ),
+              hidden: new Map<string, number>(),
+            },
+    [
+      anchor,
+      view.mode,
+      index,
+      expanded,
+      pinned,
+      family,
+      collapsed,
+      commonVisible,
+    ],
   );
   const enter = useCallback(
     (id = selected[0] || anchor || defaultAnchor) => {
       if (id && index.people.has(id)) {
         setView({
-          family: true,
+          mode: "family",
+          anchor: id,
+          expanded: new Set(),
+          revealed: [],
+          focusToken: focus?.token,
+        });
+      }
+    },
+    [selected, anchor, defaultAnchor, index, focus?.token],
+  );
+  const enterCommon = useCallback(
+    (id = selected[0] || anchor || defaultAnchor) => {
+      if (id && index.people.has(id)) {
+        setCollapsed(new Set());
+        setView({
+          mode: "common",
           anchor: id,
           expanded: new Set(),
           revealed: [],
@@ -84,7 +121,7 @@ export function useFamilyView(
   );
   const showAll = useCallback(() => {
     setView({
-      family: false,
+      mode: "all",
       anchor,
       expanded: new Set(),
       revealed: [],
@@ -94,7 +131,7 @@ export function useFamilyView(
   }, [anchor, focus?.token]);
   const toggle = useCallback(
     (id: string) => {
-      if (anchor) {
+      if (anchor && view.mode === "family") {
         const next = new Set(expanded);
         if (next.has(id)) next.delete(id);
         else next.add(id);
@@ -105,7 +142,7 @@ export function useFamilyView(
           pinned,
         ).visible;
         setView({
-          family: true,
+          mode: "family",
           anchor,
           expanded: new Set([...next].filter((id) => available.has(id))),
           revealed: newFocus ? focus.ids : view.revealed,
@@ -119,18 +156,32 @@ export function useFamilyView(
           return next;
         });
     },
-    [anchor, expanded, index, pinned, focus, newFocus, view.revealed],
+    [
+      anchor,
+      view.mode,
+      expanded,
+      index,
+      pinned,
+      focus,
+      newFocus,
+      view.revealed,
+    ],
   );
   const reset = useCallback(
-    () => (anchor ? enter(anchor) : setCollapsed(new Set())),
-    [anchor, enter],
+    () =>
+      view.mode === "family" && anchor
+        ? enter(anchor)
+        : setCollapsed(new Set()),
+    [view.mode, anchor, enter],
   );
   return {
+    mode: view.mode,
     anchor,
     ...neighborhood,
     expanded,
     collapsed,
     enter,
+    enterCommon,
     showAll,
     toggle,
     reset,

@@ -122,6 +122,57 @@ test("explicitly incomplete parent lists do not assert half-sibling status", () 
   assert.equal(result.roles?.[0].term, "брат по отцу");
   assert.doesNotMatch(result.title, /Неполнородные/);
 });
+
+test("one documented parent uses neutral paternal or maternal wording until second parents are known", () => {
+  const data = extendedFamily();
+  const son = data.find((p) => p.id === "son")!;
+  const paternal = data.find((p) => p.id === "halfFather")!;
+  const maternal = data.find((p) => p.id === "halfMother")!;
+  son.parentageComplete = false;
+  paternal.parentageComplete = false;
+  maternal.parentageComplete = false;
+  assert.equal(
+    analyzeKinship(paternal, son, data).roles?.[0].term,
+    "брат по отцу",
+  );
+  assert.equal(
+    analyzeKinship(maternal, son, data).roles?.[0].term,
+    "сестра по матери",
+  );
+  for (const p of [son, paternal, maternal]) p.parentageComplete = true;
+  assert.equal(
+    analyzeKinship(paternal, son, data).roles?.[0].term,
+    "единокровный брат",
+  );
+  assert.equal(
+    analyzeKinship(maternal, son, data).roles?.[0].term,
+    "единоутробная сестра",
+  );
+});
+
+test("a documented spouse of a known parent is a step-parent regardless of that parent's sex", () => {
+  const data = extendedFamily();
+  const mother = data.find((p) => p.id === "mother")!;
+  const stepmother = data.find((p) => p.id === "newFather")!;
+  stepmother.sex = "f";
+  assert.equal(
+    analyzeKinship(
+      stepmother,
+      data.find((p) => p.id === "son")!,
+      data,
+    ).roles?.[0].term,
+    "мачеха",
+  );
+  mother.sex = "u";
+  assert.equal(
+    analyzeKinship(
+      stepmother,
+      data.find((p) => p.id === "son")!,
+      data,
+    ).roles?.[0].term,
+    "мачеха",
+  );
+});
 test("specific cousin and ancestor labels are shown in both directions", () => {
   assert.equal(relation("mikhail", "boris").roles?.[0].term, "двоюродный брат");
   assert.equal(

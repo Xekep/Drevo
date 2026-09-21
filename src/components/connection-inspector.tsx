@@ -66,7 +66,13 @@ export function ConnectionInspector({
           : sex === "f"
             ? "крёстная мать"
             : "крёстный родитель"
-        : CONNECTION_NAMES[draft.type].toLocaleLowerCase("ru");
+        : draft.type === "step_parent"
+          ? sex === "m"
+            ? "отчим"
+            : sex === "f"
+              ? "мачеха"
+              : "отчим / мачеха"
+          : CONNECTION_NAMES[draft.type].toLocaleLowerCase("ru");
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
@@ -163,7 +169,9 @@ export function ConnectionInspector({
               ? "Родитель"
               : draft.type === "godparent"
                 ? "Крёстный родитель"
-                : "Кто"
+                : draft.type === "step_parent"
+                  ? "Отчим / мачеха"
+                  : "Кто"
           }
           value={draft.from}
           selected={from}
@@ -184,13 +192,17 @@ export function ConnectionInspector({
             onChange={(e) => update({ type: e.target.value as ConnectionType })}
           >
             <optgroup label="Семья">
-              {["parent", "spouse", "godparent", "adoptive_parent"].map(
-                (type) => (
-                  <option key={type} value={type}>
-                    {CONNECTION_NAMES[type as ConnectionType]}
-                  </option>
-                ),
-              )}
+              {[
+                "parent",
+                "spouse",
+                "godparent",
+                "adoptive_parent",
+                "step_parent",
+              ].map((type) => (
+                <option key={type} value={type}>
+                  {CONNECTION_NAMES[type as ConnectionType]}
+                </option>
+              ))}
             </optgroup>
             <optgroup label="Другие связи">
               {["guardian", "nurse", "sworn_sibling"].map((type) => (
@@ -207,7 +219,9 @@ export function ConnectionInspector({
               ? "Ребёнок"
               : draft.type === "godparent"
                 ? "Крестник / крестница"
-                : "С кем связан"
+                : draft.type === "step_parent"
+                  ? "Пасынок / падчерица"
+                  : "С кем связан"
           }
           value={draft.to}
           selected={to}

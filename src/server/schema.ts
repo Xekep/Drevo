@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 3;
+export const ARCHIVE_SCHEMA_VERSION = 4;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -141,6 +141,27 @@ function migrate(db: DatabaseSync, target: number) {
     `);
     return;
   }
+  if (target === 4) {
+    db.exec(coreSchema);
+    db.exec(`
+      CREATE TABLE relations_v4 (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK(type IN ('parent','spouse','adoptive_parent','step_parent','godparent','nurse','sworn_sibling','guardian')),
+        note TEXT NOT NULL DEFAULT '',
+        created_by TEXT,
+        CHECK(source<>target),
+        UNIQUE(source,target,type)
+      ) STRICT;
+      INSERT INTO relations_v4(id,source,target,type,note,created_by)
+        SELECT id,source,target,type,note,created_by FROM relations;
+      DROP TABLE relations;
+      ALTER TABLE relations_v4 RENAME TO relations;
+      CREATE INDEX relations_target ON relations(target);
+    `);
+    return;
+  }
   throw new Error(`Нет миграции SQLite до версии ${target}`);
 }
 
@@ -193,11 +214,19 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   if (
-    db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='photo_tags'").get()
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='photo_tags'",
+      )
+      .get()
   )
-    db.exec("CREATE INDEX IF NOT EXISTS photo_tags_photo ON photo_tags(photo_id)");
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS photo_tags_photo ON photo_tags(photo_id)",
+    );
   const workflowExtension = "2026-09-persistent-workflow-stages";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(workflowExtension)) {
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(workflowExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(`

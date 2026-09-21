@@ -22,6 +22,7 @@ export function analysisExport(
         "Дополнительные направленные связи: from выполняет указанную роль по отношению к to.",
       linkTypes: {
         adoptive_parent: "приёмный родитель",
+        step_parent: "отчим / мачеха",
         godparent: "крёстный родитель",
         nurse: "кормилица",
         sworn_sibling: "побратим / посестра",

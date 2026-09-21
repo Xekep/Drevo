@@ -109,6 +109,7 @@ export type PhotoMetadata = Pick<
 > & { title?: string };
 export const EXTRA_LINK_TYPES = [
   "adoptive_parent",
+  "step_parent",
   "godparent",
   "nurse",
   "sworn_sibling",

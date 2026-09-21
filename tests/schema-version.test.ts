@@ -94,6 +94,63 @@ test("legacy version 0 relations table migrates through all schema versions", ()
   }
 });
 
+test("schema v3 preserves relationships and authors while enabling step-parents", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    db.exec(`
+      DROP TABLE relations;
+      CREATE TABLE relations (
+        id TEXT PRIMARY KEY,
+        source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK(type IN ('parent','spouse','adoptive_parent','godparent','nurse','sworn_sibling','guardian')),
+        note TEXT NOT NULL DEFAULT '',
+        created_by TEXT,
+        CHECK(source<>target),
+        UNIQUE(source,target,type)
+      ) STRICT;
+      CREATE INDEX relations_target ON relations(target);
+      INSERT INTO people(id,data) VALUES ('adult','{}'),('child','{}');
+      INSERT INTO relations(id,source,target,type,note,created_by)
+        VALUES ('old','adult','child','godparent','запись','author');
+      PRAGMA user_version=3;
+    `);
+    initializeArchiveSchema(db);
+    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.deepEqual(
+      {
+        ...db
+          .prepare(
+            "SELECT id,source,target,type,note,created_by FROM relations",
+          )
+          .get(),
+      },
+      {
+        id: "old",
+        source: "adult",
+        target: "child",
+        type: "godparent",
+        note: "запись",
+        created_by: "author",
+      },
+    );
+    db.prepare(
+      "INSERT INTO relations(id,source,target,type) VALUES ('step','adult','child','step_parent')",
+    ).run();
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+    assert.ok(
+      db
+        .prepare(
+          "SELECT 1 FROM sqlite_schema WHERE type='index' AND name='relations_target'",
+        )
+        .get(),
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("schema v1 upgrades service tables to v2 without losing existing users", () => {
   const db = new DatabaseSync(":memory:");
   try {
