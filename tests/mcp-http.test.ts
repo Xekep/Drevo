@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import type { Family } from "../src/domain/types.ts";
 
 test("admin-issued MCP token exposes only granted read-only tools", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-"));
@@ -148,6 +149,155 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
       }),
     });
     assert.equal(afterRevoke.status, 401);
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("MCP token bound to a common-ancestors user sees only that projection", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-scope-"));
+  const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+  const base =
+    "http://127.0.0.1:" +
+    (app.server.address() as { port: number }).port;
+
+  try {
+    const current = app.archive.read(),
+      family: Family = {
+        ...current.family,
+        people: [
+          ...current.family.people,
+          {
+            id: "mcp-parent",
+            surname: "ВидимыйПредок",
+            name: "Пётр",
+            patronymic: "",
+            sex: "m",
+            birth: "1900",
+            birthPlace: "",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [],
+          },
+          {
+            id: "mcp-anchor",
+            surname: "Якорь",
+            name: "Иван",
+            patronymic: "",
+            sex: "m",
+            birth: "1930",
+            birthPlace: "",
+            parents: ["mcp-parent"],
+            spouses: [],
+            generation: 2,
+            column: 0,
+            sources: [],
+          },
+          {
+            id: "mcp-hidden",
+            surname: "СкрытыйЧеловек",
+            name: "Сергей",
+            patronymic: "",
+            sex: "m",
+            birth: "1920",
+            birthPlace: "",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [],
+          },
+        ],
+      };
+    app.archive.write(family, current.revision);
+
+    app.archive.db
+      .prepare(
+        `INSERT INTO users(
+          id,name,role,approved,person_id,tree_access
+        ) VALUES('mcp-scoped-user','Ограниченный участник','reader',1,
+                 'mcp-anchor','common_ancestors')`,
+      )
+      .run();
+
+    const created = await fetch(base + "/api/mcp/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Ограниченный MCP",
+        scopes: ["tree:read"],
+        rateLimitPerMinute: 20,
+        boundUserId: "mcp-scoped-user",
+      }),
+    });
+    assert.equal(created.status, 201);
+    const issued = await created.json();
+    assert.equal(issued.item.boundUser.id, "mcp-scoped-user");
+    assert.equal(issued.item.boundUser.treeAccess, "common_ancestors");
+
+    const headers = {
+      Authorization: "Bearer " + issued.token,
+      "Content-Type": "application/json",
+    };
+    const callSearch = async (query: string, id: number) =>
+      fetch(base + "/mcp", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          method: "tools/call",
+          params: {
+            name: "search_people",
+            arguments: { query },
+          },
+        }),
+      }).then((response) => response.json());
+
+    const visible = await callSearch("ВидимыйПредок", 101);
+    assert.deepEqual(
+      visible.result.structuredContent.people.map(
+        (person: { id: string }) => person.id,
+      ),
+      ["mcp-parent"],
+    );
+
+    const hidden = await callSearch("СкрытыйЧеловек", 102);
+    assert.deepEqual(hidden.result.structuredContent.people, []);
+
+    const admin = await fetch(base + "/api/mcp/tokens").then((response) =>
+      response.json(),
+    );
+    const listed = admin.tokens.find(
+      (token: { id: string }) => token.id === issued.item.id,
+    );
+    assert.equal(listed.boundUser.id, "mcp-scoped-user");
+    assert.ok(
+      admin.bindings.some(
+        (binding: { id: string; treeAccess: string }) =>
+          binding.id === "mcp-scoped-user" &&
+          binding.treeAccess === "common_ancestors",
+      ),
+    );
+
+    app.archive.db
+      .prepare("UPDATE users SET approved=0 WHERE id='mcp-scoped-user'")
+      .run();
+
+    const blocked = await fetch(base + "/mcp", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 103,
+        method: "tools/list",
+      }),
+    });
+    assert.equal(blocked.status, 401);
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });

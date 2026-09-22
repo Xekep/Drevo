@@ -55,6 +55,7 @@ export function adminMcpHttp({
       }));
       return json(res, 200, {
         tokens: items,
+        bindings: tokens.bindingOptions(),
         recentUsage: usage.recent(),
       });
     }

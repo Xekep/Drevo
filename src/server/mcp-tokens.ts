@@ -16,6 +16,7 @@ export type McpTokenGrant = {
   createdAt: string;
   expiresAt?: number;
   rateLimitPerMinute: number;
+  boundUser?: ArchiveUser;
 };
 
 const hash = (value: string) =>
@@ -37,17 +38,42 @@ function parseScopes(value: unknown): ResearchScope[] {
 }
 
 export function mcpTokenStore(db: DatabaseSync) {
+  const tokenColumns = `
+    t.id,t.name,t.token_hint,t.scopes,t.created_at,t.expires_at,t.created_by,
+    t.revoked_at,t.last_used_at,t.rate_limit_per_minute,t.bound_user_id,
+    u.name AS bound_user_name,u.role AS bound_user_role,
+    u.created_at AS bound_user_created_at,u.approved AS bound_user_approved,
+    u.person_id AS bound_person_id,u.tree_access AS bound_tree_access
+  `;
   const listQuery = db.prepare(
-    `SELECT id,name,token_hint,scopes,created_at,expires_at,created_by,revoked_at,
-            last_used_at,rate_limit_per_minute
-       FROM mcp_tokens ORDER BY created_at DESC,id DESC`,
+    `SELECT ${tokenColumns}
+       FROM mcp_tokens t
+       LEFT JOIN users u ON u.id=t.bound_user_id
+       ORDER BY t.created_at DESC,t.id DESC`,
   );
   const lookup = db.prepare(
-    `SELECT id,name,scopes,created_at,expires_at,rate_limit_per_minute
-       FROM mcp_tokens
-       WHERE token_hash=? AND revoked_at IS NULL
-         AND (expires_at IS NULL OR expires_at>?)`,
+    `SELECT ${tokenColumns}
+       FROM mcp_tokens t
+       LEFT JOIN users u ON u.id=t.bound_user_id
+       WHERE t.token_hash=? AND t.revoked_at IS NULL
+         AND (t.expires_at IS NULL OR t.expires_at>?)
+         AND (t.bound_user_id IS NULL OR u.approved=1)`,
   );
+
+  const boundUser = (row: Record<string, unknown>): ArchiveUser | undefined =>
+    row.bound_user_id
+      ? {
+          id: String(row.bound_user_id),
+          name: String(row.bound_user_name || ""),
+          role: row.bound_user_role as ArchiveUser["role"],
+          createdAt: String(row.bound_user_created_at || ""),
+          approved: !!row.bound_user_approved,
+          ...(row.bound_person_id
+            ? { personId: String(row.bound_person_id) }
+            : {}),
+          treeAccess: (row.bound_tree_access || "all") as ArchiveUser["treeAccess"],
+        }
+      : undefined;
   const touch = db.prepare(
     "UPDATE mcp_tokens SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)",
   );
@@ -64,6 +90,7 @@ export function mcpTokenStore(db: DatabaseSync) {
         ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
         ...(row.last_used_at ? { lastUsedAt: Number(row.last_used_at) } : {}),
         rateLimitPerMinute: Number(row.rate_limit_per_minute),
+        ...(boundUser(row) ? { boundUser: boundUser(row) } : {}),
       }));
 
   return {
@@ -75,6 +102,7 @@ export function mcpTokenStore(db: DatabaseSync) {
         scopes?: unknown;
         expiresDays?: unknown;
         rateLimitPerMinute?: unknown;
+        boundUserId?: unknown;
       },
     ) {
       const name =
@@ -99,14 +127,26 @@ export function mcpTokenStore(db: DatabaseSync) {
       )
         throw new Error("Лимит MCP должен быть от 0 до 600 запросов в минуту");
 
+      const boundUserId =
+        typeof value.boundUserId === "string" && value.boundUserId.trim()
+          ? value.boundUserId.trim()
+          : null;
+      if (boundUserId) {
+        const user = db
+          .prepare("SELECT approved FROM users WHERE id=?")
+          .get(boundUserId);
+        if (!user || !user.approved)
+          throw new Error("Участник для MCP-привязки не найден или заблокирован");
+      }
+
       const id = randomUUID(),
         token = `drevo_mcp_${randomBytes(32).toString("base64url")}`,
         tokenHint = `drevo_mcp_…${token.slice(-6)}`;
       db.prepare(
         `INSERT INTO mcp_tokens
           (id,token_hash,token_hint,name,scopes,created_at,expires_at,created_by,
-           rate_limit_per_minute)
-         VALUES(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?)`,
+           rate_limit_per_minute,bound_user_id)
+         VALUES(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?,?)`,
       ).run(
         id,
         hash(token),
@@ -116,6 +156,7 @@ export function mcpTokenStore(db: DatabaseSync) {
         expiresAt,
         actor.id,
         rateLimitPerMinute,
+        boundUserId,
       );
       return {
         token,
@@ -144,7 +185,25 @@ export function mcpTokenStore(db: DatabaseSync) {
         createdAt: String(row.created_at),
         ...(row.expires_at ? { expiresAt: Number(row.expires_at) } : {}),
         rateLimitPerMinute: Number(row.rate_limit_per_minute),
+        ...(boundUser(row as Record<string, unknown>)
+          ? { boundUser: boundUser(row as Record<string, unknown>) }
+          : {}),
       };
+    },
+    bindingOptions() {
+      return db
+        .prepare(
+          `SELECT id,name,role,created_at,approved,person_id,tree_access
+           FROM users WHERE approved=1 ORDER BY name,id`,
+        )
+        .all()
+        .map((row) => ({
+          id: String(row.id),
+          name: String(row.name),
+          role: String(row.role),
+          ...(row.person_id ? { personId: String(row.person_id) } : {}),
+          treeAccess: String(row.tree_access || "all"),
+        }));
     },
   };
 }

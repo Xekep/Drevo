@@ -18,6 +18,20 @@ type McpTokenItem = {
     errorsToday: number;
     averageLatencyMs: number;
   };
+  boundUser?: {
+    id: string;
+    name: string;
+    role: string;
+    personId?: string;
+    treeAccess?: "all" | "common_ancestors";
+  };
+};
+type McpBindingOption = {
+  id: string;
+  name: string;
+  role: string;
+  personId?: string;
+  treeAccess: "all" | "common_ancestors";
 };
 type McpUsageItem = {
   id: number;
@@ -37,10 +51,12 @@ const scopeLabels: Record<McpScope, string> = {
 
 export function McpTokenAdmin() {
   const [tokens, setTokens] = useState<McpTokenItem[]>([]),
+    [bindings, setBindings] = useState<McpBindingOption[]>([]),
     [recentUsage, setRecentUsage] = useState<McpUsageItem[]>([]),
     [name, setName] = useState("Yandex AI Studio"),
     [expiresDays, setExpiresDays] = useState("365"),
     [rateLimitPerMinute, setRateLimitPerMinute] = useState("60"),
+    [boundUserId, setBoundUserId] = useState(""),
     [scopes, setScopes] = useState<McpScope[]>([
       "tree:read",
       "sources:read",
@@ -57,6 +73,7 @@ export function McpTokenAdmin() {
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить MCP-токены");
     setTokens(data.tokens || []);
+    setBindings(data.bindings || []);
     setRecentUsage(data.recentUsage || []);
   }, []);
 
@@ -87,6 +104,7 @@ export function McpTokenAdmin() {
             scopes,
             ...(expiresDays ? { expiresDays: Number(expiresDays) } : {}),
             rateLimitPerMinute: Number(rateLimitPerMinute),
+            ...(boundUserId ? { boundUserId } : {}),
           }),
         }),
         data = await response.json();
@@ -162,6 +180,26 @@ export function McpTokenAdmin() {
           />
           <small>0 = без ограничения</small>
         </label>
+        <label>
+          Доступ к древу
+          <select
+            value={boundUserId}
+            onChange={(event) => setBoundUserId(event.target.value)}
+          >
+            <option value="">Весь архив</option>
+            {bindings.map((binding) => (
+              <option key={binding.id} value={binding.id}>
+                {binding.name} ·{" "}
+                {binding.treeAccess === "common_ancestors"
+                  ? "общие предки"
+                  : "весь архив"}
+              </option>
+            ))}
+          </select>
+          <small>
+            Привязанный токен наследует область доступа выбранного участника.
+          </small>
+        </label>
         <fieldset>
           <legend>Разрешения</legend>
           {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
@@ -230,6 +268,16 @@ export function McpTokenAdmin() {
                   {token.lastUsedAt
                     ? ` · использован ${new Date(token.lastUsedAt).toLocaleString("ru-RU")}`
                     : ""}
+                </small>
+                <small>
+                  Доступ:{" "}
+                  {token.boundUser
+                    ? `${token.boundUser.name} · ${
+                        token.boundUser.treeAccess === "common_ancestors"
+                          ? "общие предки"
+                          : "весь архив"
+                      }`
+                    : "весь архив"}
                 </small>
                 <small>
                   Лимит: {token.rateLimitPerMinute || "∞"}/мин · сегодня:{" "}

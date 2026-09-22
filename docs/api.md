@@ -110,3 +110,8 @@ MCP доступен по `/mcp` с `Authorization: Bearer drevo_mcp_...`. Пе�
 `POST /api/ai/chat` принимает JSON `{message, history?, context?}`. Сервер сам вызывает разрешённые read-only Research Tools и отправляет модели только нужные структурированные сведения. API-ключ Yandex AI Studio остаётся на сервере.
 
 Внешние клиенты подключаются к `POST /mcp` с `Authorization: Bearer drevo_mcp_...`. MCP-токены независимы от браузерных сессий и имеют scopes `tree:read`, `sources:read`, `analysis:read`. Полный токен не сохраняется: SQLite содержит SHA-256, краткую подсказку, срок, scopes и время последнего использования. Подробности: [ИИ-исследователь и MCP](ai-research.md).
+
+
+### MCP user binding
+
+При выдаче токена `POST /api/mcp/tokens` можно передать `boundUserId`. `GET /api/mcp/tokens` возвращает `bindings` — одобренных участников, которых можно использовать для привязки. Привязанный токен наследует `personId` и `treeAccess` участника; для `common_ancestors` все Research Tools работают с той же ограниченной проекцией, что и веб-интерфейс.

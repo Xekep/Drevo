@@ -37,6 +37,7 @@ test("MCP tokens are shown once, hashed at rest and revocable", () => {
     assert.deepEqual(grant?.scopes, ["tree:read", "analysis:read"]);
     assert.equal(grant?.rateLimitPerMinute, 25);
     assert.equal(store.list()[0].rateLimitPerMinute, 25);
+    assert.equal(store.list()[0].boundUser, undefined);
 
     store.revoke(issued.item.id);
     assert.equal(store.authenticate("Bearer " + issued.token), null);

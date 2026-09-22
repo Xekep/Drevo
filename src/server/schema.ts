@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 10;
+export const ARCHIVE_SCHEMA_VERSION = 11;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -317,6 +317,16 @@ function migrate(db: DatabaseSync, target: number) {
       CREATE INDEX IF NOT EXISTS mcp_usage_started
         ON mcp_usage(started_ms DESC);
     `);
+    return;
+  }
+  if (target === 11) {
+    if (!tableHasColumn(db, "mcp_tokens", "bound_user_id"))
+      db.exec(`
+        ALTER TABLE mcp_tokens
+          ADD COLUMN bound_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
+        CREATE INDEX IF NOT EXISTS mcp_tokens_bound_user
+          ON mcp_tokens(bound_user_id);
+      `);
     return;
   }
   throw new Error(`Нет миграции SQLite до версии ${target}`);
