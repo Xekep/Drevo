@@ -55,7 +55,7 @@ const family: Family = {
 };
 
 test("research tools expose a stable read-only catalogue", () => {
-  assert.ok(RESEARCH_TOOL_DEFINITIONS.length >= 8);
+  assert.ok(RESEARCH_TOOL_DEFINITIONS.length >= 11);
   assert.ok(
     RESEARCH_TOOL_DEFINITIONS.every(
       (tool) => tool.name && tool.description && tool.scope,
@@ -137,4 +137,46 @@ test("branch insights summarize only the selected ancestry depth", () => {
   assert.equal(result.totals.knownBirthDates, 4);
   assert.equal(result.totals.withSources, 1);
   assert.ok(result.missing.some((item) => item.id === "grandchild"));
+});
+
+
+test("research backlog ranks high-yield documents inside the selected branch", () => {
+  const result = executeResearchTool(family, "get_research_backlog", {
+    personId: "grandchild",
+    direction: "ancestors",
+    depth: 2,
+    limit: 8,
+  }) as {
+    anchor: { id: string };
+    items: Array<{
+      priority: number;
+      documentType: string;
+      person: { id: string };
+      branchDepth: number;
+      reasons: string[];
+      expectedFields: string[];
+      clues: string[];
+    }>;
+  };
+
+  assert.equal(result.anchor.id, "grandchild");
+  assert.ok(result.items.length > 0);
+  assert.equal(result.items[0].person.id, "grandchild");
+  assert.equal(result.items[0].documentType, "birth_or_baptism");
+  assert.ok(result.items[0].priority >= result.items[1].priority);
+  assert.ok(result.items[0].reasons.includes("сведения о родителях отмечены как неполные"));
+  assert.ok(result.items[0].expectedFields.includes("родители"));
+  assert.ok(
+    result.items.every((item) =>
+      ["grandchild", "child", "father", "mother"].includes(item.person.id),
+    ),
+  );
+  assert.ok(
+    result.items.some(
+      (item) =>
+        item.person.id === "father" &&
+        item.documentType === "household_or_census" &&
+        item.clues.some((clue) => clue.includes("Ворошиловградская область")),
+    ),
+  );
 });
