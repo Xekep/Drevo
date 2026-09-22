@@ -52,6 +52,7 @@
 - [x] Ограничение частоты запросов на уровне отдельного MCP-токена.
 - [x] CI-smoke через официальный @modelcontextprotocol/client v2: modern 2026-07-28 и legacy 2025-era.
 - [x] Документированная конфигурация Yandex AI Studio MCP Hub: Streamable HTTP + Bearer token.
+- [x] Nginx-конфигурация и публичный deployment-smoke для /mcp.
 - [ ] Живой deployment-smoke через Yandex AI Studio MCP Hub на публичном HTTPS endpoint.
 
 ### Этап 4 — предложения вместо автономной записи
