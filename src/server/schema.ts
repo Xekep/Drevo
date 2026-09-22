@@ -242,9 +242,10 @@ function migrate(db: DatabaseSync, target: number) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS ai_settings (
         id INTEGER PRIMARY KEY CHECK(id=1),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
         model TEXT NOT NULL DEFAULT ''
       ) STRICT;
-      INSERT OR IGNORE INTO ai_settings(id,model) VALUES(1,'');
+      INSERT OR IGNORE INTO ai_settings(id,enabled,model) VALUES(1,1,'');
     `);
     return;
   }
