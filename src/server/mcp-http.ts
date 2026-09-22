@@ -14,6 +14,16 @@ type JsonRpcRequest = {
   params?: unknown;
 };
 
+const MCP_PROTOCOL_VERSIONS = [
+  "2026-07-28",
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+] as const;
+const MCP_SERVER_INFO = { name: "drevo", version: "0.1.0" };
+const MCP_INSTRUCTIONS =
+  "Read-only genealogy research tools. Do not treat missing records as proof that an event or relationship did not exist.";
+
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   let size = 0;
@@ -85,11 +95,40 @@ export function mcpHttp({
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string")
       return json(res, 400, error(id, -32600, "Invalid Request"));
 
+    const headerVersion = req.headers["mcp-protocol-version"];
+    if (
+      typeof headerVersion === "string" &&
+      !MCP_PROTOCOL_VERSIONS.includes(
+        headerVersion as (typeof MCP_PROTOCOL_VERSIONS)[number],
+      )
+    )
+      return json(
+        res,
+        400,
+        error(id, -32602, "Unsupported MCP protocol version", {
+          supportedVersions: MCP_PROTOCOL_VERSIONS,
+        }),
+      );
+
     if (request.method.startsWith("notifications/")) {
       res.writeHead(202, { "Cache-Control": "no-store" });
       res.end();
       return true;
     }
+
+    if (request.method === "server/discover")
+      return json(
+        res,
+        200,
+        result(id, {
+          supportedVersions: MCP_PROTOCOL_VERSIONS,
+          capabilities: { tools: { listChanged: false } },
+          instructions: MCP_INSTRUCTIONS,
+          _meta: {
+            "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+          },
+        }),
+      );
 
     if (request.method === "initialize") {
       const params =
@@ -99,16 +138,26 @@ export function mcpHttp({
         requested =
           typeof params.protocolVersion === "string"
             ? params.protocolVersion
-            : "2026-07-28";
+            : "2025-11-25",
+        protocolVersion = MCP_PROTOCOL_VERSIONS.includes(
+          requested as (typeof MCP_PROTOCOL_VERSIONS)[number],
+        )
+          ? requested
+          : "2025-11-25";
+      if (protocolVersion === "2026-07-28")
+        return json(
+          res,
+          400,
+          error(id, -32602, "Use server/discover for MCP 2026-07-28"),
+        );
       return json(
         res,
         200,
         result(id, {
-          protocolVersion: requested,
+          protocolVersion,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "drevo", version: "0.1.0" },
-          instructions:
-            "Read-only genealogy research tools. Do not treat missing records as proof that an event or relationship did not exist.",
+          serverInfo: MCP_SERVER_INFO,
+          instructions: MCP_INSTRUCTIONS,
         }),
       );
     }
