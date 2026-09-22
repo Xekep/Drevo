@@ -12,6 +12,21 @@ type McpTokenItem = {
   expiresAt?: number;
   revokedAt?: string;
   lastUsedAt?: number;
+  rateLimitPerMinute: number;
+  usage: {
+    callsToday: number;
+    errorsToday: number;
+    averageLatencyMs: number;
+  };
+};
+type McpUsageItem = {
+  id: number;
+  at: string;
+  tokenId: string;
+  method: string;
+  toolName?: string;
+  status: "ok" | "error";
+  latencyMs: number;
 };
 
 const scopeLabels: Record<McpScope, string> = {
@@ -22,8 +37,10 @@ const scopeLabels: Record<McpScope, string> = {
 
 export function McpTokenAdmin() {
   const [tokens, setTokens] = useState<McpTokenItem[]>([]),
+    [recentUsage, setRecentUsage] = useState<McpUsageItem[]>([]),
     [name, setName] = useState("Yandex AI Studio"),
     [expiresDays, setExpiresDays] = useState("365"),
+    [rateLimitPerMinute, setRateLimitPerMinute] = useState("60"),
     [scopes, setScopes] = useState<McpScope[]>([
       "tree:read",
       "sources:read",
@@ -40,6 +57,7 @@ export function McpTokenAdmin() {
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить MCP-токены");
     setTokens(data.tokens || []);
+    setRecentUsage(data.recentUsage || []);
   }, []);
 
   useEffect(() => {
@@ -68,6 +86,7 @@ export function McpTokenAdmin() {
             name,
             scopes,
             ...(expiresDays ? { expiresDays: Number(expiresDays) } : {}),
+            rateLimitPerMinute: Number(rateLimitPerMinute),
           }),
         }),
         data = await response.json();
@@ -131,6 +150,17 @@ export function McpTokenAdmin() {
             placeholder="Без срока"
             onChange={(event) => setExpiresDays(event.target.value)}
           />
+        </label>
+        <label>
+          Лимит, запросов/мин
+          <input
+            type="number"
+            min={0}
+            max={600}
+            value={rateLimitPerMinute}
+            onChange={(event) => setRateLimitPerMinute(event.target.value)}
+          />
+          <small>0 = без ограничения</small>
         </label>
         <fieldset>
           <legend>Разрешения</legend>
@@ -201,6 +231,11 @@ export function McpTokenAdmin() {
                     ? ` · использован ${new Date(token.lastUsedAt).toLocaleString("ru-RU")}`
                     : ""}
                 </small>
+                <small>
+                  Лимит: {token.rateLimitPerMinute || "∞"}/мин · сегодня:{" "}
+                  {token.usage.callsToday} выз. · ошибок {token.usage.errorsToday}
+                  {" · "}ср. {token.usage.averageLatencyMs} мс
+                </small>
                 {token.revokedAt && <small>Отозван</small>}
               </div>
               {!token.revokedAt && (
@@ -219,6 +254,37 @@ export function McpTokenAdmin() {
           <p>Выданных MCP-токенов пока нет.</p>
         )}
       </div>
+
+      {recentUsage.length > 0 && (
+        <div className="mcp-usage-list">
+          <h3>Последние MCP-вызовы</h3>
+          {recentUsage.slice(0, 20).map((item) => {
+            const token = tokens.find((entry) => entry.id === item.tokenId);
+            return (
+              <article key={item.id}>
+                <span className={item.status === "ok" ? "ok" : "error"}>
+                  {item.status === "ok" ? "OK" : "Ошибка"}
+                </span>
+                <div>
+                  <b>
+                    {item.toolName
+                      ? `${item.method} · ${item.toolName}`
+                      : item.method}
+                  </b>
+                  <small>
+                    {token?.name || "Удалённый токен"} ·{" "}
+                    {new Date(item.at).toLocaleString("ru-RU")} ·{" "}
+                    {item.latencyMs} мс
+                  </small>
+                </div>
+              </article>
+            );
+          })}
+          <p>
+            Аргументы вызовов в журнал не записываются.
+          </p>
+        </div>
+      )}
       {error && (
         <p role="alert" className="form-error">
           {error}

@@ -2,6 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { mcpTokenStore } from "./mcp-tokens.ts";
 import {
+  McpRateLimitError,
+  type mcpUsageStore,
+} from "./mcp-usage.ts";
+import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
@@ -50,9 +54,11 @@ function error(id: JsonRpcId, code: number, message: string, data?: unknown) {
 export function mcpHttp({
   archive,
   tokens,
+  usage,
 }: {
   archive: ReturnType<typeof openArchive>;
   tokens: ReturnType<typeof mcpTokenStore>;
+  usage: ReturnType<typeof mcpUsageStore>;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -115,6 +121,40 @@ export function mcpHttp({
       res.end();
       return true;
     }
+
+    const auditParams =
+        request.params && typeof request.params === "object"
+          ? (request.params as Record<string, unknown>)
+          : {},
+      toolName =
+        request.method === "tools/call" && typeof auditParams.name === "string"
+          ? auditParams.name.slice(0, 200)
+          : undefined;
+    try {
+      usage.check(grant.id, grant.rateLimitPerMinute);
+    } catch (reason) {
+      if (reason instanceof McpRateLimitError) {
+        if (reason.retryAfterSeconds)
+          res.setHeader("Retry-After", String(reason.retryAfterSeconds));
+        return json(
+          res,
+          429,
+          error(id, -32000, reason.message, {
+            retryAfterSeconds: reason.retryAfterSeconds,
+          }),
+        );
+      }
+      throw reason;
+    }
+    const auditRun = usage.begin(grant.id, request.method, toolName);
+    let auditError = false;
+    res.once("finish", () => {
+      usage.finish(
+        auditRun.id,
+        auditRun.started,
+        auditError || res.statusCode >= 400 ? "error" : "ok",
+      );
+    });
 
     if (request.method === "server/discover")
       return json(
@@ -190,7 +230,8 @@ export function mcpHttp({
         definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === name,
         );
-      if (!definition || !grant.scopes.includes(definition.scope))
+      if (!definition || !grant.scopes.includes(definition.scope)) {
+        auditError = true;
         return json(
           res,
           200,
@@ -204,6 +245,7 @@ export function mcpHttp({
             isError: true,
           }),
         );
+      }
       try {
         const value = executeResearchTool(
           archive.read().family,
@@ -219,6 +261,7 @@ export function mcpHttp({
           }),
         );
       } catch (reason) {
+        auditError = true;
         return json(
           res,
           200,
@@ -238,6 +281,7 @@ export function mcpHttp({
       }
     }
 
+    auditError = true;
     return json(res, 200, error(id, -32601, "Method not found"));
   };
 }

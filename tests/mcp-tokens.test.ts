@@ -22,6 +22,7 @@ test("MCP tokens are shown once, hashed at rest and revocable", () => {
         name: "AI Studio",
         scopes: ["tree:read", "analysis:read"],
         expiresDays: 30,
+        rateLimitPerMinute: 25,
       });
 
     assert.match(issued.token, /^drevo_mcp_/);
@@ -34,6 +35,8 @@ test("MCP tokens are shown once, hashed at rest and revocable", () => {
 
     const grant = store.authenticate("Bearer " + issued.token);
     assert.deepEqual(grant?.scopes, ["tree:read", "analysis:read"]);
+    assert.equal(grant?.rateLimitPerMinute, 25);
+    assert.equal(store.list()[0].rateLimitPerMinute, 25);
 
     store.revoke(issued.item.id);
     assert.equal(store.authenticate("Bearer " + issued.token), null);

@@ -25,6 +25,7 @@ import { faceDescriptorsHttp } from "./face-descriptors-http.ts";
 import { mcpTokenStore } from "./mcp-tokens.ts";
 import { adminMcpHttp } from "./admin-mcp-http.ts";
 import { mcpHttp } from "./mcp-http.ts";
+import { mcpUsageStore } from "./mcp-usage.ts";
 import { aiResearchHttp } from "./ai-research-http.ts";
 import { researchSuggestionStore } from "./research-suggestions.ts";
 import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
@@ -52,12 +53,18 @@ export function sharingHttp({
   aiFetch?: typeof fetch;
 }) {
   const tokens = mcpTokenStore(archive.db);
+  const mcpUsage = mcpUsageStore(archive.db);
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = aiSettingsStore(archive.db);
   const aiUsage = aiUsageStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
-  const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
-  const researchMcp = mcpHttp({ archive, tokens });
+  const adminMcp = adminMcpHttp({
+    auth,
+    tokens,
+    usage: mcpUsage,
+    publicOrigin,
+  });
+  const researchMcp = mcpHttp({ archive, tokens, usage: mcpUsage });
   const researchAi = aiResearchHttp({
     archive,
     auth,

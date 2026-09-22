@@ -19,6 +19,7 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
         name: "Тест",
         scopes: ["tree:read"],
         expiresDays: 30,
+        rateLimitPerMinute: 4,
       }),
     });
     assert.equal(created.status, 201);
@@ -93,6 +94,32 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
       }),
     }).then((response) => response.json());
     assert.equal(denied.result.isError, true);
+
+    const audit = await fetch(base + "/api/mcp/tokens").then((response) =>
+      response.json(),
+    );
+    assert.equal(audit.tokens[0].rateLimitPerMinute, 4);
+    assert.equal(audit.tokens[0].usage.callsToday, 4);
+    assert.equal(audit.tokens[0].usage.errorsToday, 1);
+    assert.ok(
+      audit.recentUsage.some(
+        (item: { toolName?: string; status: string }) =>
+          item.toolName === "find_inconsistencies" && item.status === "error",
+      ),
+    );
+    assert.equal(JSON.stringify(audit.recentUsage).includes("arguments"), false);
+
+    const limited = await fetch(base + "/mcp", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 31,
+        method: "ping",
+      }),
+    });
+    assert.equal(limited.status, 429);
+    assert.match((await limited.json()).error.message, /Слишком много MCP/);
 
     const missingAuth = await fetch(base + "/mcp", {
       method: "POST",
