@@ -180,3 +180,70 @@ test("research backlog ranks high-yield documents inside the selected branch", (
     ),
   );
 });
+
+
+test("probable duplicate search handles surname variants and incomplete dates", () => {
+  const duplicateFamily: Family = {
+    title: "Дубли",
+    description: "",
+    demo: false,
+    people: [
+      person("anna-a", "Анна", "1919", {
+        surname: "Лебедь",
+        patronymic: "Семёновна",
+        sex: "f",
+        birthPlace: "Нижнее",
+      }),
+      person("anna-b", "Anna", "", {
+        surname: "Lebet",
+        patronymic: "Semenovna",
+        sex: "f",
+        birthPlace: "с. Нижнее",
+      }),
+      person("anna-other", "Анна", "1950", {
+        surname: "Лебедь",
+        patronymic: "Семёновна",
+        sex: "f",
+        birthPlace: "Москва",
+      }),
+    ],
+  };
+
+  const result = executeResearchTool(
+    duplicateFamily,
+    "find_possible_duplicates",
+    { limit: 10 },
+  ) as {
+    matches: Array<{
+      score: number;
+      confidence: string;
+      people: Array<{ id: string }>;
+      reasons: string[];
+      conflicts: string[];
+    }>;
+    total: number;
+  };
+
+  assert.equal(result.total, 1);
+  assert.deepEqual(
+    result.matches[0].people.map((item) => item.id),
+    ["anna-a", "anna-b"],
+  );
+  assert.equal(result.matches[0].confidence, "high");
+  assert.ok(result.matches[0].reasons.includes("фамилии отличаются одной буквой"));
+  assert.ok(
+    result.matches[0].reasons.includes(
+      "в одной из карточек год рождения неизвестен",
+    ),
+  );
+
+  const focused = executeResearchTool(
+    duplicateFamily,
+    "find_possible_duplicates",
+    { personId: "anna-a", limit: 10 },
+  ) as { matches: Array<{ people: Array<{ id: string }> }> };
+  assert.deepEqual(
+    focused.matches.map((match) => match.people.map((item) => item.id)),
+    [["anna-a", "anna-b"]],
+  );
+});
