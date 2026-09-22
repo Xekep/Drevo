@@ -165,7 +165,7 @@ function migrate(db: DatabaseSync, target: number) {
   }
   if (target === 5) {
     db.exec(`
-      CREATE TABLE mcp_tokens (
+      CREATE TABLE IF NOT EXISTS mcp_tokens (
         id TEXT PRIMARY KEY,
         token_hash TEXT UNIQUE NOT NULL,
         token_hint TEXT NOT NULL,
@@ -177,7 +177,7 @@ function migrate(db: DatabaseSync, target: number) {
         revoked_at TEXT,
         last_used_at INTEGER
       ) STRICT;
-      CREATE INDEX mcp_tokens_active ON mcp_tokens(revoked_at,expires_at);
+      CREATE INDEX IF NOT EXISTS mcp_tokens_active ON mcp_tokens(revoked_at,expires_at);
     `);
     return;
   }
