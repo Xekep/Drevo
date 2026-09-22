@@ -26,6 +26,7 @@ import { usePhotoSwipe } from "./use-photo-swipe";
 import { mediaPreview } from "../domain/media-preview";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
+import { PhotoPersonSidebar } from "./photo-person-sidebar";
 import {
   confirmDiscardChanges,
   useUnsavedChanges,
@@ -42,6 +43,7 @@ function PhotoViewerContent({
   save,
   onClose,
   onPerson,
+  currentUserPersonId,
   initialEditing = false,
   onDirtyChange,
 }: {
@@ -55,10 +57,12 @@ function PhotoViewerContent({
   save: (f: Family) => Promise<Family>;
   onClose: () => void;
   onPerson: (id: string) => void;
+  currentUserPersonId?: string;
   initialEditing?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+  const [viewedPersonId, setViewedPersonId] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -77,6 +81,13 @@ function PhotoViewerContent({
     const person = family.people.find((p) => p.id === id);
     return person ? [person] : [];
   });
+  const viewedPerson = family.people.find((person) => person.id === viewedPersonId);
+  function previewPerson(id: string) {
+    setViewedPersonId(id);
+    setInfoOpen(true);
+    setShowTags(true);
+    setHighlightedPerson(id);
+  }
   const canEdit = allowedEdit && editing;
   const navigationLocked = canEdit || busy;
   useEffect(() => {
@@ -203,7 +214,7 @@ function PhotoViewerContent({
         <X size={22} />
       </button>
       <div
-        className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""}`}
+        className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""} ${viewedPerson ? "person-open" : ""}`}
       >
         <div className="photo-stage">
           <div
@@ -334,8 +345,8 @@ function PhotoViewerContent({
                             width: `${tag.width * 100}%`,
                             height: `${tag.height * 100}%`,
                           }}
-                          onClick={() => onPerson(person.id)}
-                          aria-label={`Открыть карточку: ${fullName(person)}`}
+                          onClick={() => previewPerson(person.id)}
+                          aria-label={`Показать сведения: ${fullName(person)}`}
                         >
                           <span>
                             {person.name} {person.surname}
@@ -402,9 +413,13 @@ function PhotoViewerContent({
             </a>
             <button
               className="photo-info-toggle"
-              aria-expanded={infoOpen}
+              aria-expanded={infoOpen && !viewedPerson}
               aria-controls="photo-information"
-              onClick={() => setInfoOpen(!infoOpen)}
+              onClick={() => {
+                setViewedPersonId(null);
+                setHighlightedPerson(null);
+                setInfoOpen(viewedPerson ? true : !infoOpen);
+              }}
             >
               <Info size={18} />О снимке
             </button>
@@ -414,6 +429,7 @@ function PhotoViewerContent({
           className="photo-tools"
           id="photo-information"
           aria-label="Сведения о снимке"
+          hidden={!!viewedPerson}
         >
           <button
             className="photo-info-close"
@@ -475,7 +491,7 @@ function PhotoViewerContent({
                     onMouseLeave={() => setHighlightedPerson(null)}
                     onFocus={() => setHighlightedPerson(person.id)}
                     onBlur={() => setHighlightedPerson(null)}
-                    onClick={() => onPerson(person.id)}
+                    onClick={() => previewPerson(person.id)}
                   >
                     {fullName(person)}
                   </button>
@@ -784,6 +800,24 @@ function PhotoViewerContent({
             </p>
           )}
         </aside>
+        {viewedPerson && (
+          <PhotoPersonSidebar
+            person={viewedPerson}
+            family={family}
+            isCurrentUser={currentUserPersonId === viewedPerson.id}
+            onSelect={previewPerson}
+            onTree={onPerson}
+            onBack={() => {
+              setViewedPersonId(null);
+              setHighlightedPerson(null);
+            }}
+            onClose={() => {
+              setViewedPersonId(null);
+              setInfoOpen(false);
+              setHighlightedPerson(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -843,6 +877,10 @@ export function PhotoViewer(props: PhotoViewerProps) {
         key={props.photo.id}
         {...props}
         onClose={close}
+        onPerson={(id) => {
+          if (!props.busy && confirmDiscardChanges(dirty.current))
+            props.onPerson(id);
+        }}
         onDirtyChange={setDirty}
       />
     </dialog>

@@ -74,6 +74,7 @@ export function PhotoWorkspaceOverlays({
             save={save}
             onClose={workspace.closePhoto}
             onPerson={onPerson}
+            currentUserPersonId={user?.personId}
             onDirtyChange={onDirtyChange}
           />
         </Suspense>

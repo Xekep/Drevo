@@ -73,17 +73,27 @@ test("выбор человека записывается в адрес и во
 
 test("ссылка на снимок открывает просмотр и закрывается без потери маршрута", async ({
   page,
-}) => {
+}, testInfo) => {
   const photo = {
     id: "e2e-photo",
     url: "/media/e2e-photo.png",
     title: "Проверочный снимок",
-    tags: [],
+    tags: [
+      {
+        id: "e2e-face-tag",
+        personId: "e2e-memorial-person",
+        x: 0.3,
+        y: 0.2,
+        width: 0.25,
+        height: 0.4,
+      },
+    ],
   };
   const nextPhoto = {
     ...photo,
     id: "e2e-photo-next",
     url: "/media/e2e-photo-next.png",
+    tags: [],
   };
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
@@ -102,16 +112,43 @@ test("ссылка на снимок открывает просмотр и за
   );
   await page.route("**/media/e2e-photo*.png**", (route) =>
     route.fulfill({
-      contentType: "image/png",
-      body: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-        "base64",
-      ),
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#82947e"/></svg>',
     }),
   );
   await page.goto("/photos?photo=e2e-photo");
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page.goto("/photos/e2e-photo");
+  if (testInfo.project.name === "desktop") {
+    await page
+      .getByRole("button", { name: /Показать сведения:.*Иван/ })
+      .click();
+  } else {
+    await page.locator(".tag-image img").tap({ position: { x: 20, y: 20 } });
+    await expect(page.locator(".photo-viewer")).toHaveClass(/show-tags/);
+    await page
+      .getByRole("button", { name: /Показать сведения:.*Иван/ })
+      .click();
+  }
+  await expect(
+    page.locator(".photo-person-sidebar .profile-head"),
+  ).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
+  await page
+    .locator(".photo-person-sidebar")
+    .getByRole("button", { name: "О снимке" })
+    .click();
+  await expect(page.locator("#photo-information")).toBeVisible();
+  await page.locator(".photo-people-names .photo-person-name").click();
+  await page.getByRole("button", { name: "Показать в древе" }).click();
+  await expect(page).toHaveURL(
+    "http://127.0.0.1:4173/people/e2e-memorial-person",
+  );
+  await page.goBack();
+  await expect(
+    page.getByRole("dialog", { name: /Просмотр фото/ }),
+  ).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page.locator(".photo-previous").click();
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo-next");
   await expect(
