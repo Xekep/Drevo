@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
+import type { aiSettingsStore } from "./ai-settings.ts";
 import { fullName } from "../domain/dates.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
@@ -126,28 +127,34 @@ export function aiResearchHttp({
   archive,
   auth,
   suggestions,
+  aiSettings,
   publicOrigin,
   fetcher = fetch,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
+  aiSettings: ReturnType<typeof aiSettingsStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
   const apiKey = process.env.YANDEX_AI_API_KEY?.trim(),
     folderId = process.env.YANDEX_AI_FOLDER_ID?.trim(),
-    configuredModel = process.env.YANDEX_AI_MODEL?.trim() || "yandexgpt/rc",
-    model = configuredModel.startsWith("gpt://")
-      ? configuredModel
-      : folderId
-        ? `gpt://${folderId}/${configuredModel}`
-        : configuredModel,
+    envModel = process.env.YANDEX_AI_MODEL?.trim() || "yandexgpt/rc",
     baseUrl = (
       process.env.YANDEX_AI_BASE_URL || "https://ai.api.cloud.yandex.net/v1"
     ).replace(/\/$/, "");
-  const enabled =
-    !!apiKey && (!!folderId || configuredModel.startsWith("gpt://"));
+  const configuredModel = () => aiSettings.read().model || envModel;
+  const resolvedModel = () => {
+    const current = configuredModel();
+    return current.startsWith("gpt://")
+      ? current
+      : folderId
+        ? `gpt://${folderId}/${current}`
+        : current;
+  };
+  const enabled = () =>
+    !!apiKey && (!!folderId || configuredModel().startsWith("gpt://"));
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -173,7 +180,7 @@ export function aiResearchHttp({
         ...(folderId ? { "OpenAI-Project": folderId } : {}),
       },
       body: JSON.stringify({
-        model,
+        model: resolvedModel(),
         messages,
         temperature: 0.2,
         tool_choice: "auto",
@@ -213,14 +220,17 @@ export function aiResearchHttp({
     if (path === "/api/ai/status") {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
-      return json(res, 200, { enabled, canPropose: auth.canEdit(req) });
+      return json(res, 200, {
+        enabled: enabled(),
+        canPropose: auth.canEdit(req),
+      });
     }
 
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
-    if (!enabled)
+    if (!enabled())
       return json(res, 503, {
         error:
           "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_FOLDER_ID",
