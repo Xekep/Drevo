@@ -119,6 +119,11 @@ function surnameSimilarity(a: Person, b: Person) {
   return best;
 }
 
+function shortestSurnameLength(person: Person) {
+  const lengths = surnameKeys(person).map((value) => value.length);
+  return lengths.length ? Math.min(...lengths) : 0;
+}
+
 function overlapping(a: string[], b: string[]) {
   const right = new Set(b);
   return a.filter((value) => right.has(value)).length;
@@ -156,8 +161,8 @@ function scorePair(a: Person, b: Person): PossibleDuplicate | null {
     reasons.push("фамилии отличаются одной буквой");
   } else if (
     surnameDistance === 2 &&
-    Math.min(...surnameKeys(a).map((value) => value.length), 0 || Infinity) >= 6 &&
-    Math.min(...surnameKeys(b).map((value) => value.length), 0 || Infinity) >= 6
+    shortestSurnameLength(a) >= 6 &&
+    shortestSurnameLength(b) >= 6
   ) {
     score += 18;
     reasons.push("фамилии близки по написанию");
