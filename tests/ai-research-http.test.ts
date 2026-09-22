@@ -203,7 +203,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-photo-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
-  process.env.YANDEX_AI_MODEL = "vision-model/latest";
+  process.env.YANDEX_AI_MODEL = "aliceai-llm-flash/latest";
   mkdirSync(join(dir, "uploads"), { recursive: true });
   writeFileSync(
     join(dir, "uploads", "photo-ai.png"),
@@ -214,7 +214,16 @@ test("web researcher can inspect an authorized archive photo through a bounded p
   );
 
   const requests: Array<Record<string, unknown>> = [];
-  const aiFetch: typeof fetch = async (_url, init) => {
+  const aiFetch: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/models"))
+      return Response.json({
+        data: [
+          {
+            id: "gpt://folder-1/qwen3.6-35b-a3b/latest",
+            owned_by: "Alibaba",
+          },
+        ],
+      });
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requests.push(body);
     if (requests.length === 1)
@@ -237,6 +246,17 @@ test("web researcher can inspect an authorized archive photo through a bounded p
                   },
                 },
               ],
+            },
+          },
+        ],
+      });
+    if (requests.length === 2)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "На изображении виден светлый пиксель.",
             },
           },
         ],
@@ -280,11 +300,17 @@ test("web researcher can inspect an authorized archive photo through a bounded p
     const response = await fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Проанализируй семейный снимок" }),
+      body: JSON.stringify({
+        message: "Покажи и проанализируй семейный снимок",
+      }),
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.answer, "На фотографии виден светлый пиксель.");
+    assert.deepEqual(payload.uiActions, [
+      { type: "open_photo", photoId: "photo-ai" },
+    ]);
+    assert.equal(requests.length, 3);
     assert.deepEqual(
       payload.references.find(
         (item: { kind: string }) => item.kind === "photo",
@@ -295,9 +321,14 @@ test("web researcher can inspect an authorized archive photo through a bounded p
         label: "Семейный снимок",
       },
     );
+    assert.equal(requests[1].model, "gpt://folder-1/qwen3.6-35b-a3b/latest");
+    assert.equal(requests[1].tools, undefined);
     const secondMessages = requests[1].messages as Array<{
       role: string;
-      content?: Array<{ type: string; image_url?: { url: string } }>;
+      content?: Array<{
+        type: string;
+        image_url?: { url: string; detail?: string };
+      }>;
     }>;
     const imageMessage = secondMessages.find(
       (message) => message.role === "user" && Array.isArray(message.content),
@@ -306,6 +337,15 @@ test("web researcher can inspect an authorized archive photo through a bounded p
       (item) => item.type === "image_url",
     );
     assert.match(image?.image_url?.url || "", /^data:image\/jpeg;base64,/);
+    assert.equal(image?.image_url?.detail, undefined);
+    const finalMessages = requests[2].messages as Array<{
+      role: string;
+      content?: string;
+    }>;
+    assert.match(
+      finalMessages.find((message) => message.role === "tool")?.content || "",
+      /На изображении виден светлый пиксель/,
+    );
   } finally {
     await app.close();
     for (const key of [
