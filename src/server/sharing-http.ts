@@ -70,7 +70,12 @@ export function sharingHttp({
     suggestions,
     publicOrigin,
   });
-  const adminAi = adminAiHttp({ auth, settings: aiSettings, publicOrigin });
+  const adminAi = adminAiHttp({
+    auth,
+    settings: aiSettings,
+    publicOrigin,
+    fetcher: aiFetch,
+  });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
     auth,
