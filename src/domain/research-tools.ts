@@ -137,29 +137,29 @@ function normalized(value: string) {
 }
 
 function cleanPerson(person: Person) {
-  const {
-    createdBy: _createdBy,
-    photo: _photo,
-    generation: _generation,
-    column: _column,
-    sources: _sources,
-    events,
-    awards,
-    ...result
-  } = person;
-  return {
-    ...result,
-    ...(events
-      ? {
-          events: events.map(({ sources: _eventSources, ...event }) => event),
-        }
-      : {}),
-    ...(awards
-      ? {
-          awards: awards.map(({ source: _awardSource, ...award }) => award),
-        }
-      : {}),
-  };
+  const hidden = new Set([
+    "createdBy",
+    "photo",
+    "generation",
+    "column",
+    "sources",
+  ]);
+  const result = Object.fromEntries(
+    Object.entries(person).filter(([key]) => !hidden.has(key)),
+  ) as Record<string, unknown>;
+  if (person.events)
+    result.events = person.events.map((event) =>
+      Object.fromEntries(
+        Object.entries(event).filter(([key]) => key !== "sources"),
+      ),
+    );
+  if (person.awards)
+    result.awards = person.awards.map((award) =>
+      Object.fromEntries(
+        Object.entries(award).filter(([key]) => key !== "source"),
+      ),
+    );
+  return result;
 }
 
 function personOrThrow(family: Family, id: string) {
