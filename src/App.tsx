@@ -41,6 +41,7 @@ import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
+import { ResearchAssistant } from "./components/research-assistant";
 
 type PersonDraft = {
   person?: Person;
@@ -803,6 +804,9 @@ export default function App() {
             showPerson(id);
           }}
         />
+      )}
+      {family && readTree && user && view !== "admin" && (
+        <ResearchAssistant view={view} personIds={selected.slice(0, 2)} />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
         <ArchiveSettings
