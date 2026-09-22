@@ -23,6 +23,11 @@ JSON-ответы имеют `Cache-Control: no-store`. Авторизация �
 | `GET /api/backup`             | Согласованная копия `.sqlite`                         | Администратор                                               |
 | `GET /api/backup/full`        | `.tar.gz`: SQLite и фотографии                        | Администратор                                               |
 
+| `GET /api/ai/status`          | Доступность встроенного ИИ-исследователя             | Вошедший читатель                                           |
+| `POST /api/ai/chat`           | Диалог с ИИ через read-only Research Tools            | Вошедший читатель                                           |
+| `GET /api/mcp/tokens`         | Список выданных MCP-токенов                           | Администратор                                               |
+| `POST /api/mcp/tokens`        | Выдать MCP-токен; секрет возвращается один раз        | Администратор                                               |
+| `DELETE /api/mcp/tokens/<id>` | Отозвать MCP-токен                                    | Администратор                                               |
 ## Снимок и права
 
 Для интерфейса также предусмотрены запросы:
@@ -78,3 +83,10 @@ JSON-ответы имеют `Cache-Control: no-store`. Авторизация �
 MCP доступен по `/mcp` с `Authorization: Bearer drevo_mcp_...`. Первый набор инструментов только читает данные. Scopes разделяют сведения древа (`tree:read`), источники (`sources:read`) и вычисляемую аналитику (`analysis:read`). Фотографии, отпечатки лиц, аккаунты и административные настройки через Research Tools не выдаются.
 
 Подробнее: [ИИ-исследователь и MCP](ai-research.md), [дорожная карта](roadmap.md).
+
+
+## ИИ-исследователь и MCP
+
+`POST /api/ai/chat` принимает JSON `{message, history?, context?}`. Сервер сам вызывает разрешённые read-only Research Tools и отправляет модели только нужные структурированные сведения. API-ключ Yandex AI Studio остаётся на сервере.
+
+Внешние клиенты подключаются к `POST /mcp` с `Authorization: Bearer drevo_mcp_...`. MCP-токены независимы от браузерных сессий и имеют scopes `tree:read`, `sources:read`, `analysis:read`. Полный токен не сохраняется: SQLite содержит SHA-256, краткую подсказку, срок, scopes и время последнего использования. Подробности: [ИИ-исследователь и MCP](ai-research.md).
