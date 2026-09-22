@@ -79,7 +79,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
           birthPlace: "Нижнее",
           parents: [],
           spouses: [],
-          generation: 0,
+          generation: 1,
           column: 0,
           sources: [],
         },
