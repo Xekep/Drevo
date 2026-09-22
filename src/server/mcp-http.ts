@@ -167,7 +167,17 @@ export function mcpHttp({
     if (request.method === "tools/list") {
       const available = RESEARCH_TOOL_DEFINITIONS.filter((definition) =>
         grant.scopes.includes(definition.scope),
-      ).map(({ scope: _scope, ...definition }) => definition);
+      ).map((definition) => ({
+        name: definition.name,
+        description: definition.description,
+        inputSchema: definition.inputSchema,
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      }));
       return json(res, 200, result(id, { tools: available }));
     }
 
