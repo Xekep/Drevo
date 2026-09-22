@@ -20,7 +20,7 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
         name: "Тест",
         scopes: ["tree:read"],
         expiresDays: 30,
-        rateLimitPerMinute: 4,
+        rateLimitPerMinute: 5,
       }),
     });
     assert.equal(created.status, 201);
@@ -128,8 +128,8 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
     const audit = await fetch(base + "/api/mcp/tokens").then((response) =>
       response.json(),
     );
-    assert.equal(audit.tokens[0].rateLimitPerMinute, 4);
-    assert.equal(audit.tokens[0].usage.callsToday, 4);
+    assert.equal(audit.tokens[0].rateLimitPerMinute, 5);
+    assert.equal(audit.tokens[0].usage.callsToday, 5);
     assert.equal(audit.tokens[0].usage.errorsToday, 1);
     assert.ok(
       audit.recentUsage.some(
