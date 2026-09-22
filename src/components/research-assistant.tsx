@@ -31,6 +31,7 @@ type UiAction =
   | { type: "open_photo"; photoId: string };
 
 type PanelPosition = { left: number; top: number };
+type LauncherPosition = { left: number; top: number };
 
 let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | undefined;
 
@@ -474,6 +475,7 @@ export function ResearchAssistant({
   view,
   personIds,
   currentPersonName,
+  nudgeToken = 0,
   canEdit,
   onChanged,
   onPerson,
@@ -483,6 +485,7 @@ export function ResearchAssistant({
   view: string;
   personIds: string[];
   currentPersonName?: string;
+  nudgeToken?: number;
   canEdit: boolean;
   onChanged: () => void;
   onPerson: (id: string) => void;
@@ -501,14 +504,70 @@ export function ResearchAssistant({
     >({}),
     [streamStatus, setStreamStatus] = useState(""),
     [error, setError] = useState(""),
-    [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
+    [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null),
+    [launcherPosition, setLauncherPosition] = useState<LauncherPosition | null>(
+      null,
+    ),
+    [nudgeVisible, setNudgeVisible] = useState(false);
   const end = useRef<HTMLDivElement>(null),
     panel = useRef<HTMLElement>(null),
+    lastNudge = useRef(0),
     drag = useRef<{
       pointerId: number;
       offsetX: number;
       offsetY: number;
     } | null>(null);
+
+  useEffect(() => {
+    if (view !== "tree") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => update()),
+      update = () => {
+        const controls = document.querySelector<HTMLElement>(
+          ".tree-canvas .flow-camera-tools, .tree-canvas .flow-fullscreen-tools",
+        );
+        if (!controls) return;
+        const rect = controls.getBoundingClientRect(),
+          next = {
+            left: Math.max(8, rect.left - 50),
+            top: Math.max(8, rect.bottom - 42),
+          };
+        setLauncherPosition((current) =>
+          current?.left === next.left && current.top === next.top
+            ? current
+            : next,
+        );
+      },
+      attach = () => {
+        const controls = document.querySelector<HTMLElement>(
+            ".tree-canvas .flow-camera-tools, .tree-canvas .flow-fullscreen-tools",
+          ),
+          canvas = controls?.closest<HTMLElement>(".tree-canvas");
+        if (controls) observer.observe(controls);
+        if (canvas) observer.observe(canvas);
+        update();
+      };
+    frame = requestAnimationFrame(attach);
+    const retry = window.setTimeout(attach, 160);
+    window.addEventListener("resize", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(retry);
+      window.removeEventListener("resize", update);
+      observer.disconnect();
+    };
+  }, [view]);
+
+  useEffect(() => {
+    if (open || !nudgeToken || nudgeToken === lastNudge.current) return;
+    lastNudge.current = nudgeToken;
+    const reveal = window.setTimeout(() => setNudgeVisible(true), 0),
+      hide = window.setTimeout(() => setNudgeVisible(false), 3_600);
+    return () => {
+      window.clearTimeout(reveal);
+      window.clearTimeout(hide);
+    };
+  }, [nudgeToken, open]);
 
   const clampPanelPosition = useCallback((left: number, top: number) => {
     const rect = panel.current?.getBoundingClientRect(),
@@ -621,6 +680,7 @@ export function ResearchAssistant({
   if (!enabled) return null;
 
   async function openAssistant() {
+    setNudgeVisible(false);
     setOpen(true);
     setError("");
     if (!canEdit) return;
@@ -786,16 +846,44 @@ export function ResearchAssistant({
   return (
     <>
       {!open && (
-        <button
-          type="button"
-          className={`research-assistant-trigger${view === "tree" ? " is-tree-view" : ""}`}
-          aria-expanded={false}
-          aria-label="Открыть ИИ-исследователя"
-          title="ИИ-исследователь"
-          onClick={() => void openAssistant()}
-        >
-          <Sparkles size={19} />
-        </button>
+        <>
+          {nudgeVisible && (
+            <span
+              className={`research-assistant-nudge${view === "tree" ? " is-tree-view" : ""}${view === "tree" && launcherPosition ? " has-position" : ""}`}
+              style={
+                view === "tree" && launcherPosition
+                  ? {
+                      left: launcherPosition.left + 21,
+                      top: Math.max(8, launcherPosition.top - 45),
+                    }
+                  : undefined
+              }
+              role="status"
+            >
+              Нужна помощь?
+            </span>
+          )}
+          <button
+            type="button"
+            className={`research-assistant-trigger${view === "tree" ? " is-tree-view" : ""}${nudgeVisible ? " is-nudging" : ""}`}
+            style={
+              view === "tree" && launcherPosition
+                ? {
+                    left: launcherPosition.left,
+                    top: launcherPosition.top,
+                    right: "auto",
+                    bottom: "auto",
+                  }
+                : undefined
+            }
+            aria-expanded={false}
+            aria-label="Открыть ИИ-исследователя"
+            title="ИИ-исследователь"
+            onClick={() => void openAssistant()}
+          >
+            <Sparkles size={19} />
+          </button>
+        </>
       )}
       {open && (
         <aside

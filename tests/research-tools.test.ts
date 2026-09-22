@@ -203,6 +203,58 @@ test("photo tools expose metadata and tagged people without file paths", () => {
   }) as { photo: Record<string, unknown> };
   assert.equal(result.photo.title, "Семья у дома");
   assert.equal("url" in result.photo, false);
+
+  const relatedPhotoFamily: Family = {
+      ...family,
+      people: [
+        father,
+        { ...mother, sex: "f" },
+        { ...child, sex: "m" },
+        grandchild,
+      ],
+      photos: [
+        {
+          ...family.photos![0],
+          tags: [
+            ...family.photos![0].tags,
+            {
+              id: "tag-mother",
+              personId: "mother",
+              x: 0.4,
+              y: 0.1,
+              width: 0.2,
+              height: 0.2,
+            },
+          ],
+        },
+      ],
+    },
+    related = executeResearchTool(relatedPhotoFamily, "get_photo", {
+      photoId: "family-photo",
+    }) as {
+      photo: {
+        documentedRelationships: Array<{
+          type: string;
+          from: { id: string; role: string };
+          to: { id: string; role: string };
+        }>;
+      };
+    };
+  assert.deepEqual(related.photo.documentedRelationships, [
+    {
+      type: "parent",
+      from: {
+        id: "mother",
+        name: "Лебедь Анна",
+        role: "мать",
+      },
+      to: {
+        id: "child",
+        name: "Скулко Василий Митрофанович",
+        role: "сын",
+      },
+    },
+  ]);
 });
 
 test("tree tools do not leak source scope and source tool stays explicit", () => {
