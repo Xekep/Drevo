@@ -120,6 +120,24 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     inputSchema: objectSchema({}),
   },
   {
+    name: "get_branch_insights",
+    description:
+      "Проанализировать выбранную родословную ветку: размер, полноту, пробелы и вычисляемые предупреждения на заданной глубине.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        personId: { type: "string", minLength: 1, maxLength: 200 },
+        direction: {
+          type: "string",
+          enum: ["ancestors", "descendants", "both"],
+          default: "ancestors",
+        },
+        depth: { type: "integer", minimum: 1, maximum: 8, default: 4 },
+      },
+      ["personId"],
+    ),
+  },
+  {
     name: "get_archive_insights",
     description:
       "Получить рассчитанную статистику полноты, поколений, источников и общие факты по архиву.",
@@ -192,6 +210,19 @@ function stringArg(
   if (typeof value !== "string" || !value.trim())
     throw new Error(`Некорректный параметр ${key}`);
   return value.trim();
+}
+
+function enumArg<T extends string>(
+  args: Record<string, unknown>,
+  key: string,
+  values: readonly T[],
+  fallback: T,
+) {
+  const value = args[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !values.includes(value as T))
+    throw new Error(`Некорректный параметр ${key}`);
+  return value as T;
 }
 
 function lineage(
@@ -413,6 +444,77 @@ export function executeResearchTool(
         ),
       })),
       total: warnings.length,
+    };
+  }
+
+  if (name === "get_branch_insights") {
+    const personId = stringArg(args, "personId"),
+      direction = enumArg(
+        args,
+        "direction",
+        ["ancestors", "descendants", "both"] as const,
+        "ancestors",
+      ),
+      depth = numberArg(args, "depth", 4, 1, 8),
+      anchor = personOrThrow(family, personId),
+      ancestorIds =
+        direction === "descendants"
+          ? []
+          : lineage(family, personId, depth, "ancestors").map((item) =>
+              String(item.person.id),
+            ),
+      descendantIds =
+        direction === "ancestors"
+          ? []
+          : lineage(family, personId, depth, "descendants").map((item) =>
+              String(item.person.id),
+            ),
+      branchIds = new Set([personId, ...ancestorIds, ...descendantIds]),
+      branchPeople = family.people.filter((person) => branchIds.has(person.id)),
+      missing = branchPeople
+        .map((person) => ({ person, missing: missingFor(person) }))
+        .filter((item) => item.missing.length)
+        .sort(
+          (a, b) =>
+            b.missing.length - a.missing.length ||
+            fullName(a.person).localeCompare(fullName(b.person), "ru"),
+        ),
+      warnings = analyzeFamilyInsights(family).warnings.filter((warning) =>
+        warning.personIds.some((id) => branchIds.has(id)),
+      ),
+      people = new Map(family.people.map((person) => [person.id, person])),
+      withSources = branchPeople.filter(
+        (person) =>
+          person.sources.length > 0 ||
+          (person.events || []).some((event) => event.sources?.length) ||
+          (person.awards || []).some((award) => award.source),
+      ).length;
+    return {
+      anchor: { id: anchor.id, name: fullName(anchor) },
+      direction,
+      depth,
+      totals: {
+        people: branchPeople.length,
+        knownBirthDates: branchPeople.filter((person) => person.birth).length,
+        knownBirthPlaces: branchPeople.filter((person) =>
+          person.birthPlace.trim(),
+        ).length,
+        withSources,
+        completeParentage: branchPeople.filter(
+          (person) => person.parentageComplete === true,
+        ).length,
+      },
+      missing: missing.slice(0, 25).map(({ person, missing: fields }) => ({
+        id: person.id,
+        name: fullName(person),
+        missing: fields,
+      })),
+      warnings: warnings.map((warning) => ({
+        ...warning,
+        people: warning.personIds.flatMap((id) =>
+          people.has(id) ? [{ id, name: fullName(people.get(id)!) }] : [],
+        ),
+      })),
     };
   }
 

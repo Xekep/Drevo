@@ -109,3 +109,32 @@ test("tree tools do not leak source scope and source tool stays explicit", () =>
   assert.ok(missing.people[0].missing.includes("источники"));
   assert.ok(missing.people[0].missing.includes("место рождения"));
 });
+
+
+test("branch insights summarize only the selected ancestry depth", () => {
+  const result = executeResearchTool(family, "get_branch_insights", {
+    personId: "grandchild",
+    direction: "ancestors",
+    depth: 2,
+  }) as {
+    anchor: { id: string };
+    direction: string;
+    depth: number;
+    totals: {
+      people: number;
+      knownBirthDates: number;
+      knownBirthPlaces: number;
+      withSources: number;
+      completeParentage: number;
+    };
+    missing: Array<{ id: string; missing: string[] }>;
+  };
+
+  assert.equal(result.anchor.id, "grandchild");
+  assert.equal(result.direction, "ancestors");
+  assert.equal(result.depth, 2);
+  assert.equal(result.totals.people, 4);
+  assert.equal(result.totals.knownBirthDates, 4);
+  assert.equal(result.totals.withSources, 1);
+  assert.ok(result.missing.some((item) => item.id === "grandchild"));
+});

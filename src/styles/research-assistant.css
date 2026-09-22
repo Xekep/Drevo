@@ -258,3 +258,42 @@
     grid-column: 1;
   }
 }
+
+.research-branch-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #d5e0cf;
+  border-radius: 10px;
+  background: #f3f7ef;
+}
+.research-branch-action label {
+  display: grid;
+  gap: 5px;
+  color: #66755f;
+  font-size: 10px;
+}
+.research-branch-action select {
+  min-height: 36px;
+  border: 1px solid #d5ddd0;
+  border-radius: 8px;
+  background: white;
+  padding: 0 9px;
+  color: #394735;
+  font: inherit;
+  font-size: 12px;
+}
+.research-branch-action > button {
+  min-height: 36px;
+  border-color: #b9cbae;
+  background: #e8f0e2;
+  color: #466340;
+  font-weight: 600;
+}
+@media (max-width: 440px) {
+  .research-branch-action {
+    grid-template-columns: 1fr;
+  }
+}

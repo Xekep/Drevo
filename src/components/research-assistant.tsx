@@ -13,6 +13,7 @@ export function ResearchAssistant({
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(""),
+    [branchDepth, setBranchDepth] = useState(4),
     [messages, setMessages] = useState<Message[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -106,6 +107,34 @@ export function ResearchAssistant({
                   Спросите о пробелах, противоречиях, источниках или родственной
                   ветке.
                 </p>
+                {personIds[0] && (
+                  <div className="research-branch-action">
+                    <label>
+                      Ветка предков
+                      <select
+                        value={branchDepth}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setBranchDepth(Number(event.target.value))
+                        }
+                      >
+                        <option value={2}>2 поколения</option>
+                        <option value={4}>4 поколения</option>
+                        <option value={6}>6 поколений</option>
+                        <option value={8}>8 поколений</option>
+                      </select>
+                    </label>
+                    <button
+                      onClick={() =>
+                        void send(
+                          `Проанализируй ветку предков выбранного человека на глубину ${branchDepth} поколений. Сначала вызови get_branch_insights с direction=ancestors и depth=${branchDepth}. Отдельно покажи подтверждённые пробелы, вычисляемые предупреждения и что искать дальше.`,
+                        )
+                      }
+                    >
+                      Анализировать ветку
+                    </button>
+                  </div>
+                )}
                 <button onClick={() => void send("Что в этой ветке стоит проверить в первую очередь?")}>
                   Что проверить?
                 </button>
