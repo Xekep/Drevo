@@ -50,9 +50,8 @@ export function mcpTokenStore(db: DatabaseSync) {
     "UPDATE mcp_tokens SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<?)",
   );
 
-  return {
-    list() {
-      return listQuery.all().map((row) => ({
+  const list = () =>
+    listQuery.all().map((row) => ({
         id: String(row.id),
         name: String(row.name),
         tokenHint: String(row.token_hint),
@@ -63,7 +62,9 @@ export function mcpTokenStore(db: DatabaseSync) {
         ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
         ...(row.last_used_at ? { lastUsedAt: Number(row.last_used_at) } : {}),
       }));
-    },
+
+  return {
+    list,
     issue(
       actor: ArchiveUser,
       value: { name?: unknown; scopes?: unknown; expiresDays?: unknown },
@@ -97,7 +98,7 @@ export function mcpTokenStore(db: DatabaseSync) {
       );
       return {
         token,
-        item: this.list().find((item) => item.id === id)!,
+        item: list().find((item) => item.id === id)!,
       };
     },
     revoke(id: string) {
