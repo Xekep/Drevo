@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 7;
+export const ARCHIVE_SCHEMA_VERSION = 8;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -235,6 +235,17 @@ function migrate(db: DatabaseSync, target: number) {
         ON research_suggestions(status,created_at DESC);
       CREATE INDEX research_suggestions_creator
         ON research_suggestions(created_by,status);
+    `);
+    return;
+  }
+  if (target === 8) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ai_settings (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+        model TEXT NOT NULL DEFAULT ''
+      ) STRICT;
+      INSERT OR IGNORE INTO ai_settings(id,enabled,model) VALUES(1,1,'');
     `);
     return;
   }

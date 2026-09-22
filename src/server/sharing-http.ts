@@ -28,6 +28,8 @@ import { mcpHttp } from "./mcp-http.ts";
 import { aiResearchHttp } from "./ai-research-http.ts";
 import { researchSuggestionStore } from "./research-suggestions.ts";
 import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
+import { aiSettingsStore } from "./ai-settings.ts";
+import { adminAiHttp } from "./admin-ai-http.ts";
 
 export function sharingHttp({
   archive,
@@ -50,6 +52,7 @@ export function sharingHttp({
 }) {
   const tokens = mcpTokenStore(archive.db);
   const suggestions = researchSuggestionStore(archive.db);
+  const aiSettings = aiSettingsStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
   const researchMcp = mcpHttp({ archive, tokens });
@@ -57,6 +60,7 @@ export function sharingHttp({
     archive,
     auth,
     suggestions,
+    aiSettings,
     publicOrigin,
     fetcher: aiFetch,
   });
@@ -65,6 +69,12 @@ export function sharingHttp({
     auth,
     suggestions,
     publicOrigin,
+  });
+  const adminAi = adminAiHttp({
+    auth,
+    settings: aiSettings,
+    publicOrigin,
+    fetcher: aiFetch,
   });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
@@ -122,6 +132,7 @@ export function sharingHttp({
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
     if (await adminMcp(req, res, url)) return true;
+    if (await adminAi(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await places(req, res, url)) return true;
     if (await adminSharing(req, res, url)) return true;

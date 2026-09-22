@@ -25,6 +25,7 @@ import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { McpTokenAdmin } from "./mcp-token-admin";
+import { AiSettingsAdmin } from "./ai-settings-admin";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -503,7 +504,12 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {section === "mcp" && <McpTokenAdmin />}
+        {section === "mcp" && (
+          <>
+            <AiSettingsAdmin />
+            <McpTokenAdmin />
+          </>
+        )}
         {section === "shares" && <ShareCatalog />}
         {section === "audit" && (
           <section className="admin-card archive-form">

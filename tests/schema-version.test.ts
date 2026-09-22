@@ -35,6 +35,7 @@ test("fresh SQLite archive gets current schema version", () => {
     initializeArchiveSchema(db);
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.ok(columns(db, "relations").includes("created_by"));
+    assert.ok(columns(db, "ai_settings").includes("enabled"));
     const tables = tableNames(db);
     for (const table of [
       "archive",
@@ -55,6 +56,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "migrations",
       "mcp_tokens",
       "research_suggestions",
+      "ai_settings",
     ])
       assert.ok(tables.has(table), `missing table ${table}`);
     initializeArchiveSchema(db);
