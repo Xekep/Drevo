@@ -377,3 +377,36 @@
   border-radius: 7px;
   font-size: 11px;
 }
+
+
+.research-answer-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #edf0ea;
+}
+.research-answer-references button,
+.research-answer-references a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 29px;
+  max-width: 100%;
+  padding: 0 8px;
+  border: 1px solid #d8e2d3;
+  border-radius: 999px;
+  background: #f8fbf5;
+  color: #4b6545;
+  text-decoration: none;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.research-answer-references button:hover,
+.research-answer-references a:hover {
+  background: #edf4e8;
+}
+.research-answer-references svg {
+  flex: 0 0 auto;
+}

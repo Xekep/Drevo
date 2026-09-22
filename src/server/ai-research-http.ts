@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
+import { fullName } from "../domain/dates.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import {
@@ -52,6 +53,73 @@ function validHistory(value: unknown) {
       ? [{ role, content }]
       : [];
   });
+}
+
+
+type AnswerReference =
+  | { kind: "person"; id: string; label: string }
+  | {
+      kind: "source";
+      personId: string;
+      label: string;
+      reference?: string;
+      url?: string;
+    };
+
+function collectPersonReferences(
+  value: unknown,
+  people: Map<string, string>,
+  ids: Set<string>,
+) {
+  if (typeof value === "string") {
+    if (people.has(value)) ids.add(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectPersonReferences(item, people, ids);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const item of Object.values(value as Record<string, unknown>))
+    collectPersonReferences(item, people, ids);
+}
+
+function collectSourceReferences(
+  value: unknown,
+  personId: string,
+  sources: Map<string, Extract<AnswerReference, { kind: "source" }>>,
+) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectSourceReferences(item, personId, sources);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>,
+    label =
+      typeof record.title === "string" && record.title.trim()
+        ? record.title.trim()
+        : "",
+    reference =
+      typeof record.reference === "string" && record.reference.trim()
+        ? record.reference.trim()
+        : undefined,
+    rawUrl =
+      typeof record.url === "string" && record.url.trim()
+        ? record.url.trim()
+        : undefined,
+    url = rawUrl && /^https?:\/\/[^\s]+$/i.test(rawUrl) ? rawUrl : undefined;
+  if (label && (reference || url)) {
+    const key = `${personId}\0${label}\0${reference || ""}\0${url || ""}`;
+    sources.set(key, {
+      kind: "source",
+      personId,
+      label,
+      ...(reference ? { reference } : {}),
+      ...(url ? { url } : {}),
+    });
+  }
+  for (const item of Object.values(record))
+    collectSourceReferences(item, personId, sources);
 }
 
 export function aiResearchHttp({
@@ -203,30 +271,51 @@ export function aiResearchHttp({
         .filter(Boolean)
         .join("\n");
       const messages: ModelMessage[] = [
-        { role: "system", content: system },
-        ...validHistory(body.history),
-        { role: "user", content: message },
-      ];
+          { role: "system", content: system },
+          ...validHistory(body.history),
+          { role: "user", content: message },
+        ],
+        peopleById = new Map(
+          family.people.map((person) => [person.id, fullName(person)]),
+        ),
+        referencedPeople = new Set<string>(),
+        referencedSources = new Map<
+          string,
+          Extract<AnswerReference, { kind: "source" }>
+        >();
 
       for (let round = 0; round < 8; round++) {
         const answer = await complete(messages, canPropose);
         messages.push(answer);
         const calls = answer.tool_calls || [];
-        if (!calls.length)
+        if (!calls.length) {
+          const references: AnswerReference[] = [
+            ...[...referencedPeople]
+              .slice(0, 12)
+              .map((id) => ({
+                kind: "person" as const,
+                id,
+                label: peopleById.get(id)!,
+              })),
+            ...[...referencedSources.values()].slice(0, 8),
+          ];
           return json(res, 200, {
             answer:
               typeof answer.content === "string" && answer.content.trim()
                 ? answer.content
                 : "Модель не сформировала текстовый ответ.",
+            references,
           });
+        }
 
         for (const call of calls) {
           const definition = RESEARCH_TOOL_DEFINITIONS.find(
             (item) => item.name === call.function.name,
           );
-          let result: unknown;
+          let result: unknown,
+            toolArgs: unknown = {};
           try {
-            const toolArgs = JSON.parse(call.function.arguments || "{}");
+            toolArgs = JSON.parse(call.function.arguments || "{}");
             if (definition)
               result = executeResearchTool(
                 family,
@@ -257,6 +346,18 @@ export function aiResearchHttp({
                   : "Ошибка исследовательского инструмента",
             };
           }
+          collectPersonReferences(result, peopleById, referencedPeople);
+          if (
+            definition?.name === "get_sources" &&
+            toolArgs &&
+            typeof toolArgs === "object" &&
+            typeof (toolArgs as Record<string, unknown>).personId === "string"
+          )
+            collectSourceReferences(
+              result,
+              String((toolArgs as Record<string, unknown>).personId),
+              referencedSources,
+            );
           messages.push({
             role: "tool",
             tool_call_id: call.id,

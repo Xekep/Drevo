@@ -36,6 +36,14 @@ test("web researcher uses Yandex AI Studio function calling through server only"
                     arguments: JSON.stringify({ query: "Анна" }),
                   },
                 },
+                {
+                  id: "call-2",
+                  type: "function",
+                  function: {
+                    name: "get_sources",
+                    arguments: JSON.stringify({ personId: "anna-ai-test" }),
+                  },
+                },
               ],
             },
           },
@@ -82,7 +90,14 @@ test("web researcher uses Yandex AI Studio function calling through server only"
           spouses: [],
           generation: 1,
           column: 0,
-          sources: [],
+          sources: [
+            {
+              title: "Метрическая запись",
+              type: "archive",
+              reference: "Ф. 1, оп. 2, д. 3",
+              url: "https://archive.example/item/3",
+            },
+          ],
         },
       ],
     };
@@ -102,9 +117,29 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       }),
     });
     assert.equal(response.status, 200);
-    assert.equal(
-      (await response.json()).answer,
-      "В архиве найдена Анна Лебедь.",
+    const payload = await response.json();
+    assert.equal(payload.answer, "В архиве найдена Анна Лебедь.");
+    assert.deepEqual(
+      payload.references.find(
+        (reference: { kind: string }) => reference.kind === "person",
+      ),
+      {
+        kind: "person",
+        id: "anna-ai-test",
+        label: "Лебедь Анна Семёновна",
+      },
+    );
+    assert.deepEqual(
+      payload.references.find(
+        (reference: { kind: string }) => reference.kind === "source",
+      ),
+      {
+        kind: "source",
+        personId: "anna-ai-test",
+        label: "Метрическая запись",
+        reference: "Ф. 1, оп. 2, д. 3",
+        url: "https://archive.example/item/3",
+      },
     );
     assert.equal(requests.length, 2);
     assert.equal(requests[0].headers.get("authorization"), "Api-Key test-key");
