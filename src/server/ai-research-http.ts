@@ -62,11 +62,18 @@ export function aiResearchHttp({
   fetcher?: typeof fetch;
 }) {
   const apiKey = process.env.YANDEX_AI_API_KEY?.trim(),
-    model = process.env.YANDEX_AI_MODEL?.trim(),
+    folderId = process.env.YANDEX_AI_FOLDER_ID?.trim(),
+    configuredModel = process.env.YANDEX_AI_MODEL?.trim() || "yandexgpt/rc",
+    model = configuredModel.startsWith("gpt://")
+      ? configuredModel
+      : folderId
+        ? `gpt://${folderId}/${configuredModel}`
+        : configuredModel,
     baseUrl = (
       process.env.YANDEX_AI_BASE_URL || "https://ai.api.cloud.yandex.net/v1"
     ).replace(/\/$/, "");
-  const enabled = !!apiKey && !!model;
+  const enabled =
+    !!apiKey && (!!folderId || configuredModel.startsWith("gpt://"));
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
