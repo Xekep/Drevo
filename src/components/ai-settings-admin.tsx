@@ -170,9 +170,10 @@ export function AiSettingsAdmin() {
               />
             </label>
 
-            <label>
+            <label htmlFor="ai-model">
               Модель
               <input
+                id="ai-model"
                 value={model}
                 maxLength={300}
                 placeholder={status.model}
