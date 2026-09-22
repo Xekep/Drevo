@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { mcpTokenStore } from "./mcp-tokens.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import type { mcpUsageStore } from "./mcp-usage.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -17,10 +18,12 @@ async function readJson(req: IncomingMessage) {
 export function adminMcpHttp({
   auth,
   tokens,
+  usage,
   publicOrigin,
 }: {
   auth: ReturnType<typeof createAuth>;
   tokens: ReturnType<typeof mcpTokenStore>;
+  usage: ReturnType<typeof mcpUsageStore>;
   publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -45,8 +48,16 @@ export function adminMcpHttp({
         error: "Только администратор может управлять MCP-токенами",
       });
 
-    if (path === "/api/mcp/tokens" && req.method === "GET")
-      return json(res, 200, { tokens: tokens.list() });
+    if (path === "/api/mcp/tokens" && req.method === "GET") {
+      const items = tokens.list().map((token) => ({
+        ...token,
+        usage: usage.tokenSummary(token.id),
+      }));
+      return json(res, 200, {
+        tokens: items,
+        recentUsage: usage.recent(),
+      });
+    }
 
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
