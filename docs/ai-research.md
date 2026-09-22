@@ -37,7 +37,7 @@ Scopes:
 - sources:read — источники;
 - analysis:read — родство, пробелы, противоречия и сводная аналитика.
 
-MCP работает stateless поверх JSON-RPC и публикует `initialize`, `notifications/*`, `ping`, `tools/list` и `tools/call`. Дополнительная runtime-зависимость от MCP SDK для первого read-only слоя не требуется.
+MCP работает stateless поверх JSON-RPC. Для MCP 2026-07-28 поддержан `server/discover` и прямые `tools/list` / `tools/call`; для клиентов 2025-era сохранён `initialize` и `notifications/*`. Дополнительная runtime-зависимость от MCP SDK для первого read-only слоя не требуется.
 
 Все опубликованные MCP tools на первом этапе read-only.
 
