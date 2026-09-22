@@ -62,9 +62,38 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
         },
       }),
     }).then((response) => response.json());
-    assert.ok(discover.result.supportedVersions.includes("2026-07-28"));
+    assert.deepEqual(discover.result.supportedVersions, ["2026-07-28"]);
+    assert.equal(discover.result.resultType, "complete");
+    assert.equal(discover.result.ttlMs, 0);
+    assert.equal(discover.result.cacheScope, "private");
     assert.equal(
       discover.result._meta["io.modelcontextprotocol/serverInfo"].name,
+      "drevo",
+    );
+
+    const modernListed = await fetch(base + "/mcp", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "MCP-Protocol-Version": "2026-07-28",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "tools/list",
+        params: {
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+      }),
+    }).then((response) => response.json());
+    assert.equal(modernListed.result.resultType, "complete");
+    assert.equal(modernListed.result.ttlMs, 0);
+    assert.equal(modernListed.result.cacheScope, "private");
+    assert.equal(
+      modernListed.result._meta["io.modelcontextprotocol/serverInfo"].name,
       "drevo",
     );
 
