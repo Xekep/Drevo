@@ -154,6 +154,27 @@ test("face matching stays server-side and saving still requires confirmation", a
     });
     assert.equal(response.status, 201);
 
+    archive.db
+      .prepare(
+        "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
+      )
+      .run(
+        "human-second",
+        "second",
+        JSON.stringify(Array(1024).fill(0.62)),
+        "human-faceres-3.3.6",
+      );
+    response = await post("/api/faces/match", {
+      descriptor: Array(1024).fill(0.32),
+      model: "human-faceres-3.3.6",
+    });
+    assert.deepEqual(await response.json(), { match: null });
+    response = await post("/api/faces/match", {
+      descriptor: Array(1024).fill(0.27),
+      model: "human-faceres-3.3.6",
+    });
+    assert.equal((await response.json()).match.personId, "first");
+
     canEdit = false;
     response = await post("/api/faces/match", {
       descriptor: Array(128).fill(0),

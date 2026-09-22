@@ -12,6 +12,7 @@ const MODELS = {
 type FaceModel = keyof typeof MODELS;
 const MAX_BODY = 64 * 1024;
 const MATCH_DISTANCE = 0.52;
+const HUMAN_MIN_MARGIN = 0.08;
 
 type FaceDescriptor = {
   id: string;
@@ -92,6 +93,8 @@ function closestMatch(
   model: FaceModel,
 ) {
   let match: { personId: string; squaredDistance: number } | undefined;
+  const byPerson =
+    model === "human-faceres-3.3.6" ? new Map<string, number>() : null;
   for (const row of rows) {
     let known: unknown;
     try {
@@ -108,14 +111,29 @@ function closestMatch(
     let squaredDistance = 0;
     for (let index = 0; index < descriptor.length; index++)
       squaredDistance += (descriptor[index] - known[index]) ** 2;
+    const personId = String(row.person_id);
     if (!match || squaredDistance < match.squaredDistance)
-      match = { personId: String(row.person_id), squaredDistance };
+      match = { personId, squaredDistance };
+    if (byPerson && squaredDistance < (byPerson.get(personId) ?? Infinity))
+      byPerson.set(personId, squaredDistance);
   }
   if (!match) return null;
   if (model === "human-faceres-3.3.6") {
-    const root = Math.sqrt(25 * match.squaredDistance) / 100,
-      similarity = Math.max(0, Math.min(1, (1 - root - 0.2) / 0.6));
+    const similarityFor = (squaredDistance: number) => {
+      const root = Math.sqrt(25 * squaredDistance) / 100;
+      return Math.max(0, Math.min(1, (1 - root - 0.2) / 0.6));
+    };
+    const similarity = similarityFor(match.squaredDistance);
     if (similarity < 0.5) return null;
+    let rivalDistance = Infinity;
+    for (const [personId, squaredDistance] of byPerson!)
+      if (personId !== match.personId && squaredDistance < rivalDistance)
+        rivalDistance = squaredDistance;
+    if (
+      rivalDistance < Infinity &&
+      similarity - similarityFor(rivalDistance) < HUMAN_MIN_MARGIN
+    )
+      return null;
     return { personId: match.personId, distance: 1 - similarity };
   }
   if (match.squaredDistance > MATCH_DISTANCE ** 2) return null;
