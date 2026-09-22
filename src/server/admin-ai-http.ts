@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
-import type { aiSettingsStore } from "./ai-settings.ts";
+import {
+  aiRuntimeConfig,
+  publicAiStatus,
+  type aiSettingsStore,
+} from "./ai-settings.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 async function readJson(req: IncomingMessage) {
@@ -14,32 +18,21 @@ async function readJson(req: IncomingMessage) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function environmentStatus(settings: ReturnType<typeof aiSettingsStore>) {
-  const apiKeyConfigured = !!process.env.YANDEX_AI_API_KEY?.trim(),
-    folderConfigured = !!process.env.YANDEX_AI_FOLDER_ID?.trim(),
-    envModel = process.env.YANDEX_AI_MODEL?.trim() || "yandexgpt/rc",
-    stored = settings.read().model,
-    model = stored || envModel,
-    enabled =
-      apiKeyConfigured && (folderConfigured || model.startsWith("gpt://"));
-  return {
-    enabled,
-    apiKeyConfigured,
-    folderConfigured,
-    model,
-    modelOverride: stored,
-    modelSource: stored ? "database" : process.env.YANDEX_AI_MODEL?.trim() ? "environment" : "default",
-  };
-}
+type AiTestResponse = {
+  choices?: Array<{ message?: { content?: string | null } }>;
+  error?: { message?: string };
+};
 
 export function adminAiHttp({
   auth,
   settings,
   publicOrigin,
+  fetcher = fetch,
 }: {
   auth: ReturnType<typeof createAuth>;
   settings: ReturnType<typeof aiSettingsStore>;
   publicOrigin?: string;
+  fetcher?: typeof fetch;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -55,30 +48,87 @@ export function adminAiHttp({
     res: ServerResponse,
     url: URL,
   ): Promise<boolean> => {
-    if (url.pathname !== "/api/admin/ai") return false;
+    const path = url.pathname;
+    if (path !== "/api/admin/ai" && path !== "/api/admin/ai/test")
+      return false;
     if (!auth.isAdmin(req))
       return json(res, auth.currentUser(req) ? 403 : 401, {
-        error: "Only administrators can manage AI Studio",
+        error: "Только администратор может управлять AI Studio",
       });
 
-    if (req.method === "GET")
-      return json(res, 200, environmentStatus(settings));
+    if (path === "/api/admin/ai" && req.method === "GET")
+      return json(res, 200, publicAiStatus(settings));
 
-    if (req.method !== "PUT")
-      return json(res, 405, { error: "Ожидается GET или PUT" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
-    if (!req.headers["content-type"]?.startsWith("application/json"))
-      return json(res, 415, { error: "JSON required" });
 
-    try {
-      const body = await readJson(req);
-      settings.write(body, auth.currentUser(req)!);
-      return json(res, 200, environmentStatus(settings));
-    } catch (error) {
-      return json(res, error instanceof RangeError ? 413 : 400, {
-        error: (error as Error).message,
-      });
+    if (path === "/api/admin/ai" && req.method === "PUT") {
+      if (!req.headers["content-type"]?.startsWith("application/json"))
+        return json(res, 415, { error: "JSON required" });
+      try {
+        settings.write(await readJson(req), auth.currentUser(req)!);
+        return json(res, 200, publicAiStatus(settings));
+      } catch (error) {
+        return json(res, error instanceof RangeError ? 413 : 400, {
+          error: (error as Error).message,
+        });
+      }
     }
+
+    if (path === "/api/admin/ai/test" && req.method === "POST") {
+      const runtime = aiRuntimeConfig(settings);
+      if (!runtime.configured)
+        return json(res, 400, {
+          error:
+            "AI Studio не настроена: проверьте YANDEX_AI_API_KEY, YANDEX_AI_FOLDER_ID или полный gpt:// URI модели",
+        });
+      try {
+        const response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              Authorization: `Api-Key ${runtime.apiKey}`,
+              "Content-Type": "application/json",
+              ...(runtime.folderId
+                ? { "OpenAI-Project": runtime.folderId }
+                : {}),
+            },
+            body: JSON.stringify({
+              model: runtime.modelUri,
+              messages: [
+                {
+                  role: "user",
+                  content:
+                    "Это проверка подключения Drevo. Ответь одним словом: OK",
+                },
+              ],
+              temperature: 0,
+            }),
+          }),
+          data = (await response.json()) as AiTestResponse;
+        if (!response.ok)
+          return json(res, 502, {
+            error:
+              data.error?.message ||
+              `AI Studio вернула HTTP ${response.status}`,
+          });
+        return json(res, 200, {
+          ok: true,
+          model: runtime.model,
+          answer:
+            data.choices?.[0]?.message?.content?.trim() ||
+            "Подключение установлено",
+        });
+      } catch (error) {
+        return json(res, 502, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось проверить подключение AI Studio",
+        });
+      }
+    }
+
+    res.setHeader("Allow", "GET, PUT, POST");
+    return json(res, 405, { error: "Method not allowed" });
   };
 }
