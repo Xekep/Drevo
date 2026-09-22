@@ -5,6 +5,9 @@ import { auditStore } from "./audit.ts";
 export type AiSettings = {
   enabled: boolean;
   model: string;
+  requestsPerMinute: number;
+  dailyRequests: number;
+  dailyTokens: number;
 };
 
 function modelValue(value: unknown) {
@@ -16,19 +19,43 @@ function modelValue(value: unknown) {
   return model;
 }
 
+function integerValue(
+  value: unknown,
+  label: string,
+  min: number,
+  max: number,
+) {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > max
+  )
+    throw new Error(`Некорректное значение «${label}»`);
+  return value;
+}
+
 export function aiSettingsStore(db: DatabaseSync) {
   const audit = auditStore(db);
   db.prepare(
-    "INSERT OR IGNORE INTO ai_settings(id,enabled,model) VALUES(1,1,'')",
+    `INSERT OR IGNORE INTO ai_settings(
+      id,enabled,model,requests_per_minute,daily_requests,daily_tokens
+    ) VALUES(1,1,'',6,100,250000)`,
   ).run();
 
   function read(): AiSettings {
     const row = db
-      .prepare("SELECT enabled,model FROM ai_settings WHERE id=1")
+      .prepare(
+        `SELECT enabled,model,requests_per_minute,daily_requests,daily_tokens
+         FROM ai_settings WHERE id=1`,
+      )
       .get()!;
     return {
       enabled: !!row.enabled,
       model: String(row.model || ""),
+      requestsPerMinute: Number(row.requests_per_minute),
+      dailyRequests: Number(row.daily_requests),
+      dailyTokens: Number(row.daily_tokens),
     };
   }
 
@@ -44,10 +71,35 @@ export function aiSettingsStore(db: DatabaseSync) {
         afterInput: AiSettings = {
           enabled: raw.enabled,
           model: modelValue(raw.model),
+          requestsPerMinute: integerValue(
+            raw.requestsPerMinute,
+            "Запросов в минуту",
+            0,
+            120,
+          ),
+          dailyRequests: integerValue(
+            raw.dailyRequests,
+            "Запросов в день",
+            0,
+            100000,
+          ),
+          dailyTokens: integerValue(
+            raw.dailyTokens,
+            "Токенов в день",
+            0,
+            1000000000,
+          ),
         };
-      db.prepare("UPDATE ai_settings SET enabled=?,model=? WHERE id=1").run(
+      db.prepare(
+        `UPDATE ai_settings SET
+          enabled=?,model=?,requests_per_minute=?,daily_requests=?,daily_tokens=?
+         WHERE id=1`,
+      ).run(
         Number(afterInput.enabled),
         afterInput.model,
+        afterInput.requestsPerMinute,
+        afterInput.dailyRequests,
+        afterInput.dailyTokens,
       );
       const after = read(),
         details = [
@@ -69,6 +121,21 @@ export function aiSettingsStore(db: DatabaseSync) {
                 },
               ]
             : []),
+          ...([
+            ["requestsPerMinute", "Запросов в минуту"],
+            ["dailyRequests", "Запросов в день"],
+            ["dailyTokens", "Токенов в день"],
+          ] as const).flatMap(([key, label]) =>
+            before[key] !== after[key]
+              ? [
+                  {
+                    field: label,
+                    before: String(before[key]),
+                    after: String(after[key]),
+                  },
+                ]
+              : [],
+          ),
         ];
       if (details.length)
         audit.record(
@@ -118,6 +185,11 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
       : process.env.YANDEX_AI_MODEL?.trim()
         ? "environment"
         : "default",
+    limits: {
+      requestsPerMinute: stored.requestsPerMinute,
+      dailyRequests: stored.dailyRequests,
+      dailyTokens: stored.dailyTokens,
+    },
     baseUrl,
   };
 }
@@ -133,6 +205,7 @@ export function publicAiStatus(settings: ReturnType<typeof aiSettingsStore>) {
     model: runtime.model,
     modelOverride: runtime.modelOverride,
     modelSource: runtime.modelSource,
+    limits: runtime.limits,
     baseUrl: runtime.baseUrl,
   };
 }
