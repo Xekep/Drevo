@@ -332,9 +332,9 @@ export function aiResearchHttp({
         >();
 
       for (let round = 0; round < 8; round++) {
+        providerCalls++;
         const completion = await complete(messages, canPropose, runtime),
           answer = completion.message;
-        providerCalls++;
         inputTokens += completion.inputTokens;
         outputTokens += completion.outputTokens;
         messages.push(answer);
