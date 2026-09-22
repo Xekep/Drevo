@@ -15,6 +15,7 @@ export type McpTokenGrant = {
   scopes: ResearchScope[];
   createdAt: string;
   expiresAt?: number;
+  rateLimitPerMinute: number;
 };
 
 const hash = (value: string) =>
@@ -37,11 +38,12 @@ function parseScopes(value: unknown): ResearchScope[] {
 
 export function mcpTokenStore(db: DatabaseSync) {
   const listQuery = db.prepare(
-    `SELECT id,name,token_hint,scopes,created_at,expires_at,created_by,revoked_at,last_used_at
+    `SELECT id,name,token_hint,scopes,created_at,expires_at,created_by,revoked_at,
+            last_used_at,rate_limit_per_minute
        FROM mcp_tokens ORDER BY created_at DESC,id DESC`,
   );
   const lookup = db.prepare(
-    `SELECT id,name,scopes,created_at,expires_at
+    `SELECT id,name,scopes,created_at,expires_at,rate_limit_per_minute
        FROM mcp_tokens
        WHERE token_hash=? AND revoked_at IS NULL
          AND (expires_at IS NULL OR expires_at>?)`,
@@ -61,13 +63,19 @@ export function mcpTokenStore(db: DatabaseSync) {
         createdBy: String(row.created_by),
         ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
         ...(row.last_used_at ? { lastUsedAt: Number(row.last_used_at) } : {}),
+        rateLimitPerMinute: Number(row.rate_limit_per_minute),
       }));
 
   return {
     list,
     issue(
       actor: ArchiveUser,
-      value: { name?: unknown; scopes?: unknown; expiresDays?: unknown },
+      value: {
+        name?: unknown;
+        scopes?: unknown;
+        expiresDays?: unknown;
+        rateLimitPerMinute?: unknown;
+      },
     ) {
       const name =
         typeof value.name === "string" ? value.name.trim().slice(0, 80) : "";
@@ -80,13 +88,25 @@ export function mcpTokenStore(db: DatabaseSync) {
           throw new Error("Срок токена должен быть от 1 до 3650 дней");
         expiresAt = Date.now() + days * 24 * 60 * 60 * 1000;
       }
+      const rateLimitPerMinute =
+        value.rateLimitPerMinute === undefined
+          ? 60
+          : Number(value.rateLimitPerMinute);
+      if (
+        !Number.isInteger(rateLimitPerMinute) ||
+        rateLimitPerMinute < 0 ||
+        rateLimitPerMinute > 600
+      )
+        throw new Error("Лимит MCP должен быть от 0 до 600 запросов в минуту");
+
       const id = randomUUID(),
         token = `drevo_mcp_${randomBytes(32).toString("base64url")}`,
         tokenHint = `drevo_mcp_…${token.slice(-6)}`;
       db.prepare(
         `INSERT INTO mcp_tokens
-          (id,token_hash,token_hint,name,scopes,created_at,expires_at,created_by)
-         VALUES(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?)`,
+          (id,token_hash,token_hint,name,scopes,created_at,expires_at,created_by,
+           rate_limit_per_minute)
+         VALUES(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?)`,
       ).run(
         id,
         hash(token),
@@ -95,6 +115,7 @@ export function mcpTokenStore(db: DatabaseSync) {
         JSON.stringify(scopes),
         expiresAt,
         actor.id,
+        rateLimitPerMinute,
       );
       return {
         token,
@@ -122,6 +143,7 @@ export function mcpTokenStore(db: DatabaseSync) {
         scopes: JSON.parse(String(row.scopes)) as ResearchScope[],
         createdAt: String(row.created_at),
         ...(row.expires_at ? { expiresAt: Number(row.expires_at) } : {}),
+        rateLimitPerMinute: Number(row.rate_limit_per_minute),
       };
     },
   };
