@@ -89,7 +89,7 @@ export function adminAiHttp({
       if (!runtime.configured)
         return json(res, 400, {
           error:
-            "AI Studio не настроена: проверьте YANDEX_AI_API_KEY, YANDEX_AI_FOLDER_ID или полный gpt:// URI модели",
+            "AI Studio не настроена: задайте API-ключ и Folder ID в админке или в окружении сервера",
         });
       try {
         const response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
