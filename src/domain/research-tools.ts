@@ -142,9 +142,24 @@ function cleanPerson(person: Person) {
     photo: _photo,
     generation: _generation,
     column: _column,
+    sources: _sources,
+    events,
+    awards,
     ...result
   } = person;
-  return result;
+  return {
+    ...result,
+    ...(events
+      ? {
+          events: events.map(({ sources: _eventSources, ...event }) => event),
+        }
+      : {}),
+    ...(awards
+      ? {
+          awards: awards.map(({ source: _awardSource, ...award }) => award),
+        }
+      : {}),
+  };
 }
 
 function personOrThrow(family: Family, id: string) {
