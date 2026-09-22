@@ -806,7 +806,12 @@ export default function App() {
         />
       )}
       {family && readTree && user && view !== "admin" && (
-        <ResearchAssistant view={view} personIds={selected.slice(0, 2)} />
+        <ResearchAssistant
+          view={view}
+          personIds={selected.slice(0, 2)}
+          canEdit={canEdit}
+          onChanged={archive.reload}
+        />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
         <ArchiveSettings

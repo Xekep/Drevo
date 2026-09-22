@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 5;
+export const ARCHIVE_SCHEMA_VERSION = 6;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -178,6 +178,29 @@ function migrate(db: DatabaseSync, target: number) {
         last_used_at INTEGER
       ) STRICT;
       CREATE INDEX IF NOT EXISTS mcp_tokens_active ON mcp_tokens(revoked_at,expires_at);
+    `);
+    return;
+  }
+  if (target === 6) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS research_suggestions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('person_update')),
+        status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected')),
+        person_id TEXT NOT NULL,
+        payload TEXT NOT NULL CHECK(json_valid(payload)),
+        reason TEXT NOT NULL,
+        evidence TEXT NOT NULL CHECK(json_valid(evidence)),
+        base_revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        reviewed_at TEXT,
+        reviewed_by TEXT
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS research_suggestions_status
+        ON research_suggestions(status,created_at DESC);
+      CREATE INDEX IF NOT EXISTS research_suggestions_creator
+        ON research_suggestions(created_by,status);
     `);
     return;
   }

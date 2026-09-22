@@ -26,6 +26,8 @@ import { mcpTokenStore } from "./mcp-tokens.ts";
 import { adminMcpHttp } from "./admin-mcp-http.ts";
 import { mcpHttp } from "./mcp-http.ts";
 import { aiResearchHttp } from "./ai-research-http.ts";
+import { researchSuggestionStore } from "./research-suggestions.ts";
+import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
 
 export function sharingHttp({
   archive,
@@ -47,14 +49,22 @@ export function sharingHttp({
   aiFetch?: typeof fetch;
 }) {
   const tokens = mcpTokenStore(archive.db);
+  const suggestions = researchSuggestionStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
   const researchMcp = mcpHttp({ archive, tokens });
   const researchAi = aiResearchHttp({
     archive,
     auth,
+    suggestions,
     publicOrigin,
     fetcher: aiFetch,
+  });
+  const researchSuggestions = researchSuggestionsHttp({
+    archive,
+    auth,
+    suggestions,
+    publicOrigin,
   });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
@@ -120,6 +130,7 @@ export function sharingHttp({
     if (await uploadMedia(req, res, url)) return true;
     if (await faceDescriptors(req, res, url)) return true;
     if (await researchAi(req, res, url)) return true;
+    if (await researchSuggestions(req, res, url)) return true;
     if (await researchMcp(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
     if (await publicSharing(req, res, url)) return true;
