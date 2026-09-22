@@ -47,6 +47,12 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     "yandexgpt-5.1",
     "deepseek-v4-flash",
   ]);
+  await expect(
+    page.getByRole("img", {
+      name: "Столбчатая диаграмма расхода токенов за последние 14 дней",
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".ai-token-day")).toHaveCount(14);
 
   await page.getByRole("button", { name: "MCP-токены" }).click();
   const permissions = page.getByLabel("Разрешения");
@@ -148,12 +154,33 @@ test("ИИ-исследователь не перекрывает навигац
     panel.getByRole("button", { name: "Отправить запрос" }),
   ).toHaveCount(0);
   await expect(header).not.toContainText("Анализирует архив");
+  await expect(panel.locator(".research-assistant-empty button")).toHaveCount(
+    0,
+  );
+  await expect(panel.locator(".research-assistant-empty")).toContainText(
+    "Здравствуйте",
+  );
   await header.hover();
   await page.mouse.down();
   await page.mouse.move(before!.x - 90, before!.y - 50, { steps: 6 });
   await page.mouse.up();
   const after = await panel.boundingBox();
   expect(Math.abs(after!.x - before!.x)).toBeGreaterThan(30);
+
+  await page.mouse.move(
+    after!.x + after!.width - 2,
+    after!.y + after!.height - 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    after!.x + after!.width + 55,
+    after!.y + after!.height + 35,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  const resized = await panel.boundingBox();
+  expect(resized!.width).toBeGreaterThan(after!.width + 25);
+  expect(resized!.height).toBeGreaterThan(after!.height + 15);
 
   await panel.getByRole("textbox").fill("Покажи схему");
   await expect(
@@ -174,6 +201,17 @@ test("ИИ-исследователь не перекрывает навигац
   ).toBeVisible();
   await expect(panel.getByRole("button", { name: "Ещё снимок" })).toBeVisible();
   await expect(panel.locator("img")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await page.goto("/photos");
+  const galleryTrigger = page.getByRole("button", {
+    name: "Открыть ИИ-исследователя",
+  });
+  const galleryBox = await galleryTrigger.boundingBox();
+  expect(galleryBox).not.toBeNull();
+  expect(
+    page.viewportSize()!.width - galleryBox!.x - galleryBox!.width,
+  ).toBeLessThanOrEqual(20);
 });
 
 test("администратор выбирает себя в древе и простую область доступа", async ({
@@ -457,9 +495,14 @@ test("новый человек начинается с имени, а нагр�
   await expect(page.getByRole("button", { name: "Сохранить" })).toBeVisible();
 });
 
-test("привязанный человек видит отметку «Это вы» в карточке", async ({
+test("привязанный человек видит отметку и персональное приветствие", async ({
   page,
 }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({
+      json: { enabled: true, canPropose: true, streaming: true },
+    }),
+  );
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -472,6 +515,10 @@ test("привязанный человек видит отметку «Это �
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
   await expect(page.getByText("Это вы", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  await expect(
+    page.getByText("Здравствуйте, Иван!", { exact: true }),
+  ).toBeVisible();
 });
 
 test("production build opens the archive and navigates without console errors", async ({

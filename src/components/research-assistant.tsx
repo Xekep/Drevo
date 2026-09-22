@@ -473,6 +473,7 @@ function SuggestionCard({
 export function ResearchAssistant({
   view,
   personIds,
+  currentPersonName,
   canEdit,
   onChanged,
   onPerson,
@@ -481,6 +482,7 @@ export function ResearchAssistant({
 }: {
   view: string;
   personIds: string[];
+  currentPersonName?: string;
   canEdit: boolean;
   onChanged: () => void;
   onPerson: (id: string) => void;
@@ -490,7 +492,6 @@ export function ResearchAssistant({
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(""),
-    [branchDepth, setBranchDepth] = useState(4),
     [messages, setMessages] = useState<Message[]>([]),
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
@@ -534,6 +535,22 @@ export function ResearchAssistant({
     window.addEventListener("resize", keepVisible);
     return () => window.removeEventListener("resize", keepVisible);
   }, [clampPanelPosition]);
+
+  useEffect(() => {
+    if (!open || !panel.current || typeof ResizeObserver === "undefined")
+      return;
+    const observer = new ResizeObserver(() => {
+      setPanelPosition((current) => {
+        if (!current) return current;
+        const next = clampPanelPosition(current.left, current.top);
+        return next.left === current.left && next.top === current.top
+          ? current
+          : next;
+      });
+    });
+    observer.observe(panel.current);
+    return () => observer.disconnect();
+  }, [open, clampPanelPosition]);
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (
@@ -771,7 +788,7 @@ export function ResearchAssistant({
       {!open && (
         <button
           type="button"
-          className="research-assistant-trigger"
+          className={`research-assistant-trigger${view === "tree" ? " is-tree-view" : ""}`}
           aria-expanded={false}
           aria-label="Открыть ИИ-исследователя"
           title="ИИ-исследователь"
@@ -842,74 +859,15 @@ export function ResearchAssistant({
             )}
             {!messages.length && (
               <div className="research-assistant-empty">
+                <strong>
+                  {currentPersonName
+                    ? `Здравствуйте, ${currentPersonName}!`
+                    : "Здравствуйте!"}
+                </strong>
                 <p>
-                  Спросите о пробелах, противоречиях, источниках или родственной
-                  ветке.
+                  Я помогу разобраться в семейном архиве. Спросите меня о людях,
+                  фотографиях, родстве или истории семьи.
                 </p>
-                {personIds[0] && (
-                  <div className="research-branch-action">
-                    <label>
-                      Ветка предков
-                      <select
-                        value={branchDepth}
-                        disabled={busy}
-                        onChange={(event) =>
-                          setBranchDepth(Number(event.target.value))
-                        }
-                      >
-                        <option value={2}>2 поколения</option>
-                        <option value={4}>4 поколения</option>
-                        <option value={6}>6 поколений</option>
-                        <option value={8}>8 поколений</option>
-                      </select>
-                    </label>
-                    <button
-                      onClick={() =>
-                        void send(
-                          `Проанализируй ветку предков выбранного человека на глубину ${branchDepth} поколений. Сначала вызови get_branch_insights с direction=ancestors и depth=${branchDepth}. Отдельно покажи подтверждённые пробелы, вычисляемые предупреждения и что искать дальше.`,
-                        )
-                      }
-                    >
-                      Анализировать ветку
-                    </button>
-                  </div>
-                )}
-                {personIds[0] && (
-                  <button
-                    onClick={() =>
-                      void send(
-                        `Составь план дальнейшего генеалогического поиска по выбранному человеку. Сначала вызови get_research_backlog с personId=${personIds[0]}, direction=ancestors, depth=${branchDepth}, limit=10. Покажи первые шаги по приоритету: какой документ искать, какие пробелы он может закрыть и какие уже известные ориентиры использовать. Не выдавай отсутствие записи за отсутствие события.`,
-                      )
-                    }
-                  >
-                    План поиска
-                  </button>
-                )}
-                <button
-                  onClick={() =>
-                    void send(
-                      "Что в этой ветке стоит проверить в первую очередь?",
-                    )
-                  }
-                >
-                  Что проверить?
-                </button>
-                <button
-                  onClick={() =>
-                    void send(
-                      "Проверь качество данных. Сначала вызови find_inconsistencies, затем find_possible_duplicates. Покажи противоречия отдельно от вероятных дублей: дубль — только гипотеза для ручной проверки.",
-                    )
-                  }
-                >
-                  Проверить данные
-                </button>
-                <button
-                  onClick={() =>
-                    void send("Какие сведения в архиве заполнены хуже всего?")
-                  }
-                >
-                  Найти пробелы
-                </button>
               </div>
             )}
             {messages.map((message, index) => (

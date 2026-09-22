@@ -16,6 +16,12 @@ export type AiUsageSummary = {
     errors: number;
     averageLatencyMs: number;
   };
+  history: Array<{
+    day: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  }>;
   recent: Array<{
     id: number;
     at: string;
@@ -42,11 +48,7 @@ export class AiLimitError extends Error {
 export function aiUsageStore(db: DatabaseSync) {
   const todayStart = () => {
     const now = new Date(),
-      utc = Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-      );
+      utc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     return utc;
   };
 
@@ -89,10 +91,7 @@ export function aiUsageStore(db: DatabaseSync) {
         throw new AiLimitError(
           "Дневной лимит запросов к ИИ исчерпан. Лимит обновится завтра.",
         );
-      if (
-        limits.dailyTokens > 0 &&
-        Number(daily.tokens) >= limits.dailyTokens
-      )
+      if (limits.dailyTokens > 0 && Number(daily.tokens) >= limits.dailyTokens)
         throw new AiLimitError(
           "Дневной лимит токенов ИИ исчерпан. Лимит обновится завтра.",
         );
@@ -144,7 +143,8 @@ export function aiUsageStore(db: DatabaseSync) {
     },
 
     summary(limit = 20): AiUsageSummary {
-      const day = db
+      const historyStart = todayStart() - 13 * 86_400_000,
+        day = db
           .prepare(
             `SELECT
               count(*) AS requests,
@@ -157,6 +157,19 @@ export function aiUsageStore(db: DatabaseSync) {
              FROM ai_usage WHERE started_ms>=?`,
           )
           .get(todayStart())!,
+        historyRows = db
+          .prepare(
+            `SELECT
+               strftime('%Y-%m-%d', started_ms / 1000, 'unixepoch') AS day,
+               coalesce(sum(input_tokens),0) AS input_tokens,
+               coalesce(sum(output_tokens),0) AS output_tokens,
+               coalesce(sum(total_tokens),0) AS total_tokens
+             FROM ai_usage
+             WHERE started_ms>=?
+             GROUP BY day
+             ORDER BY day`,
+          )
+          .all(historyStart),
         rows = db
           .prepare(
             `SELECT id,at,user_id,model,status,provider_calls,input_tokens,
@@ -174,6 +187,17 @@ export function aiUsageStore(db: DatabaseSync) {
           errors: Number(day.errors),
           averageLatencyMs: Math.round(Number(day.average_latency_ms)),
         },
+        history: Array.from({ length: 14 }, (_, index) => {
+          const date = new Date(historyStart + index * 86_400_000),
+            key = date.toISOString().slice(0, 10),
+            row = historyRows.find((item) => String(item.day) === key);
+          return {
+            day: key,
+            inputTokens: Number(row?.input_tokens || 0),
+            outputTokens: Number(row?.output_tokens || 0),
+            totalTokens: Number(row?.total_tokens || 0),
+          };
+        }),
         recent: rows.map((row) => ({
           id: Number(row.id),
           at: String(row.at),
