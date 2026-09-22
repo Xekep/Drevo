@@ -5,7 +5,6 @@ import {
   Bot,
   DatabaseBackup,
   Download,
-  Image,
   ShieldCheck,
   Users,
   History,
@@ -287,23 +286,6 @@ export function AdminPanel({
         <p className="admin-subtitle">
           Доступ для семьи, вид древа и сохранность вашей истории.
         </p>
-        <div className="admin-stats">
-          <div>
-            <Users size={20} />
-            <b>{family.people.length}</b>
-            <span>Людей в древе</span>
-          </div>
-          <div>
-            <Image size={20} />
-            <b>{family.photos?.length || 0}</b>
-            <span>Фотографий</span>
-          </div>
-          <div>
-            <ShieldCheck size={20} />
-            <b>{usersTotal}</b>
-            <span>Участников</span>
-          </div>
-        </div>
         {!settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && section === "users" && (
           <section className="admin-card archive-form">

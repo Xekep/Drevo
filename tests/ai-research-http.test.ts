@@ -16,7 +16,8 @@ test("web researcher uses Yandex AI Studio function calling through server only"
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
 
-  const requests: Array<{ headers: Headers; body: Record<string, unknown> }> = [];
+  const requests: Array<{ headers: Headers; body: Record<string, unknown> }> =
+    [];
   let call = 0;
   const aiFetch: typeof fetch = async (_url, init) => {
     requests.push({
@@ -73,8 +74,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     aiFetch,
   );
   const base =
-    "http://127.0.0.1:" +
-    (app.server.address() as { port: number }).port;
+    "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
     const current = app.archive.read();
@@ -285,11 +285,16 @@ test("web researcher can inspect an authorized archive photo through a bounded p
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.answer, "На фотографии виден светлый пиксель.");
-    assert.deepEqual(payload.references.find((item: { kind: string }) => item.kind === "photo"), {
-      kind: "photo",
-      id: "photo-ai",
-      label: "Семейный снимок",
-    });
+    assert.deepEqual(
+      payload.references.find(
+        (item: { kind: string }) => item.kind === "photo",
+      ),
+      {
+        kind: "photo",
+        id: "photo-ai",
+        label: "Семейный снимок",
+      },
+    );
     const secondMessages = requests[1].messages as Array<{
       role: string;
       content?: Array<{ type: string; image_url?: { url: string } }>;
@@ -300,7 +305,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
     const image = imageMessage?.content?.find(
       (item) => item.type === "image_url",
     );
-    assert.match(image?.image_url?.url || "", /^data:image\/webp;base64,/);
+    assert.match(image?.image_url?.url || "", /^data:image\/jpeg;base64,/);
   } finally {
     await app.close();
     for (const key of [

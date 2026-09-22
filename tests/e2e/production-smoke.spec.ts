@@ -29,6 +29,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     });
   });
   await page.goto("/admin");
+  await expect(page.locator(".admin-stats")).toHaveCount(0);
   await page.getByRole("button", { name: "Yandex AI" }).click();
 
   await expect(
@@ -70,29 +71,52 @@ test("ИИ-исследователь не перекрывает навигац
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.route("**/api/ai/status", (route) =>
-    route.fulfill({ json: { enabled: true, canPropose: true, streaming: true } }),
+    route.fulfill({
+      json: { enabled: true, canPropose: true, streaming: true },
+    }),
   );
   const answer = [
-    "## Родственная схема",
+    "## Тестов Иван Петрович ([[person:e2e-memorial-person|Тестов Иван Петрович]])",
     "",
     "| Человек | Год |",
     "| --- | --- |",
     "| Иван | 1900 |",
     "",
+    "[[photo:photo-one|Семейный снимок]]",
+    "",
+    "![Ещё снимок](photo-two)",
+    "",
     "```mermaid",
     "graph TD",
-    "  A[Иван] --> B[Пётр]",
+    '  A["Тестов Иван Петрович"] --> B["Пётр"]',
     "```",
   ].join("\n");
   await page.route("**/api/ai/chat/stream", (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/event-stream; charset=utf-8",
-      body: `event: delta\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: ${JSON.stringify({ answer, references: [], suggestionIds: [], uiActions: [] })}\n\n`,
+      body: `event: delta\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: ${JSON.stringify(
+        {
+          answer,
+          references: [
+            {
+              kind: "person",
+              id: "e2e-memorial-person",
+              label: "Тестов Иван Петрович",
+            },
+            { kind: "photo", id: "photo-one", label: "Семейный снимок" },
+            { kind: "photo", id: "photo-two", label: "Ещё снимок" },
+          ],
+          suggestionIds: [],
+          uiActions: [{ type: "open_person", personId: "e2e-memorial-person" }],
+        },
+      )}\n\n`,
     }),
   );
   await page.goto("/tree");
-  const trigger = page.getByRole("button", { name: "Открыть ИИ-исследователя" }),
+  const trigger = page.getByRole("button", {
+      name: "Открыть ИИ-исследователя",
+    }),
     controls = page.locator(".flow-camera-tools");
   await expect(trigger).toBeVisible();
   await expect(trigger).not.toContainText("ИИ-исследователь");
@@ -108,11 +132,21 @@ test("ИИ-исследователь не перекрывает навигац
       ? triggerBox!.x + triggerBox!.width <= controlsBox!.x
       : controlsBox!.x + controlsBox!.width <= triggerBox!.x,
   ).toBe(true);
+  expect(
+    Math.abs(
+      triggerBox!.y +
+        triggerBox!.height -
+        (controlsBox!.y + controlsBox!.height),
+    ),
+  ).toBeLessThanOrEqual(2);
 
   await trigger.click();
   const panel = page.locator(".research-assistant"),
     header = panel.locator(":scope > header"),
     before = await panel.boundingBox();
+  await expect(
+    panel.getByRole("button", { name: "Отправить запрос" }),
+  ).toHaveCount(0);
   await expect(header).not.toContainText("Анализирует архив");
   await header.hover();
   await page.mouse.down();
@@ -122,10 +156,24 @@ test("ИИ-исследователь не перекрывает навигац
   expect(Math.abs(after!.x - before!.x)).toBeGreaterThan(30);
 
   await panel.getByRole("textbox").fill("Покажи схему");
+  await expect(
+    panel.getByRole("button", { name: "Отправить запрос" }),
+  ).toBeVisible();
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(panel.getByRole("heading", { name: "Родственная схема" })).toBeVisible();
+  await expect(
+    panel.getByRole("heading", { name: "Тестов Иван Петрович" }),
+  ).toBeVisible();
   await expect(panel.locator("table")).toBeVisible();
   await expect(panel.locator(".research-mermaid svg")).toBeVisible();
+  await expect(panel).toBeVisible();
+  await expect(
+    panel.getByRole("button", { name: "Тестов Иван Петрович" }),
+  ).toHaveCount(1);
+  await expect(
+    panel.getByRole("button", { name: "Семейный снимок" }),
+  ).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Ещё снимок" })).toBeVisible();
+  await expect(panel.locator("img")).toHaveCount(0);
 });
 
 test("администратор выбирает себя в древе и простую область доступа", async ({

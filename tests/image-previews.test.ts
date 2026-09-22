@@ -20,6 +20,10 @@ test("photo previews use lossy webp settings and a new cache generation", () => 
     maxSize: 1600,
     quality: 82,
   });
+  assert.deepEqual(IMAGE_PREVIEW_SETTINGS.ai, {
+    maxSize: 1600,
+    quality: 86,
+  });
   assert.ok(IMAGE_PREVIEW_SETTINGS.display.quality < 100);
 });
 
@@ -50,10 +54,17 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(thumbMeta.width, 400);
     assert.equal(thumbMeta.height, 300);
 
+    const ai = await preview(original, "ai");
+    const aiMeta = await sharp(ai).metadata();
+    assert.equal(aiMeta.format, "jpeg");
+    assert.equal(aiMeta.width, 1600);
+    assert.equal(aiMeta.height, 1200);
+
     const files = await readdir(directory);
-    assert.equal(files.length, 2);
+    assert.equal(files.length, 3);
     assert.ok(files.some((file) => file.endsWith("-display-v2.webp")));
     assert.ok(files.some((file) => file.endsWith("-thumb-v2.webp")));
+    assert.ok(files.some((file) => file.endsWith("-ai-v2.jpg")));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
