@@ -266,7 +266,8 @@ test("web researcher can inspect an authorized archive photo through a bounded p
         {
           message: {
             role: "assistant",
-            content: "На фотографии виден светлый пиксель.",
+            content:
+              "[[photo:photo-a|Семейный снимок]]: На фотографии виден светлый пиксель.",
           },
         },
       ],
@@ -306,7 +307,10 @@ test("web researcher can inspect an authorized archive photo through a bounded p
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
-    assert.equal(payload.answer, "На фотографии виден светлый пиксель.");
+    assert.equal(
+      payload.answer,
+      "[[photo:photo-ai|Семейный снимок]]: На фотографии виден светлый пиксель.",
+    );
     assert.deepEqual(payload.uiActions, [
       { type: "open_photo", photoId: "photo-ai" },
     ]);
