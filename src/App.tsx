@@ -811,6 +811,7 @@ export default function App() {
           personIds={selected.slice(0, 2)}
           canEdit={canEdit}
           onChanged={archive.reload}
+          onPerson={showPerson}
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
