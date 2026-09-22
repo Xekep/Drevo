@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
 type McpScope = "tree:read" | "sources:read" | "analysis:read";
@@ -46,7 +46,7 @@ export function McpTokenAdmin() {
     void load().catch((reason) => setError((reason as Error).message));
   }, [load]);
 
-  async function createToken(event: React.FormEvent) {
+  async function createToken(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError("");
