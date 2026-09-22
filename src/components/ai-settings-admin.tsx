@@ -266,7 +266,11 @@ export function AiSettingsAdmin() {
               </label>
 
               {status.apiKeyStored && (
-                <label className="setting-toggle" htmlFor="ai-clear-api-key">
+                <label
+                  className="setting-toggle"
+                  htmlFor="ai-clear-api-key"
+                  aria-label="Удалить сохранённый API-ключ"
+                >
                   <span>
                     <b>Удалить сохранённый ключ</b>
                     <small>
