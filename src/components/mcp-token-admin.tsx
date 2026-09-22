@@ -43,7 +43,16 @@ export function McpTokenAdmin() {
   }, []);
 
   useEffect(() => {
-    void load().catch((reason) => setError((reason as Error).message));
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      void load().catch((reason) => {
+        if (active) setError((reason as Error).message);
+      });
+    });
+    return () => {
+      active = false;
+    };
   }, [load]);
 
   async function createToken(event: FormEvent) {
