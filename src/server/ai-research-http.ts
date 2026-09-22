@@ -3,6 +3,8 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { fullName } from "../domain/dates.ts";
+import type { Person } from "../domain/types.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -27,6 +29,77 @@ type ModelResponse = {
   choices?: Array<{ message?: ModelMessage }>;
   error?: { message?: string };
 };
+
+type AiReference =
+  | {
+      kind: "person";
+      personId: string;
+      label: string;
+    }
+  | {
+      kind: "source";
+      personId: string;
+      label: string;
+      reference?: string;
+      url?: string;
+    };
+
+function collectPersonReferences(
+  value: unknown,
+  people: Map<string, Person>,
+  refs: Map<string, AiReference>,
+  depth = 0,
+) {
+  if (depth > 8 || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (const item of value)
+      collectPersonReferences(item, people, refs, depth + 1);
+    return;
+  }
+  if (typeof value !== "object") return;
+  const row = value as Record<string, unknown>,
+    id = typeof row.id === "string" ? row.id : "";
+  if (id && people.has(id))
+    refs.set(`person:${id}`, {
+      kind: "person",
+      personId: id,
+      label: fullName(people.get(id)!),
+    });
+  for (const nested of Object.values(row))
+    collectPersonReferences(nested, people, refs, depth + 1);
+}
+
+function collectSourceReferences(
+  value: unknown,
+  personId: string,
+  refs: Map<string, AiReference>,
+  depth = 0,
+) {
+  if (depth > 8 || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (const item of value)
+      collectSourceReferences(item, personId, refs, depth + 1);
+    return;
+  }
+  if (typeof value !== "object") return;
+  const row = value as Record<string, unknown>,
+    label = typeof row.title === "string" ? row.title.trim() : "",
+    reference =
+      typeof row.reference === "string" ? row.reference.trim() : "",
+    url = typeof row.url === "string" ? row.url.trim() : "";
+  if (label && (reference || url)) {
+    const key = `source:${personId}:${label}:${reference || url}`;
+    refs.set(key, {
+      kind: "source",
+      personId,
+      label,
+      ...(reference ? { reference } : {}),
+      ...(url ? { url } : {}),
+    });
+  }
+  for (const nested of Object.values(row))
+    collectSourceReferences(nested, personId, refs, depth + 1);
+}
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -191,6 +264,7 @@ export function aiResearchHttp({
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
+        "Не придумывай внутренние ссылки Drevo и не вставляй вымышленные URL карточек: интерфейс добавит проверенные ссылки из результатов инструментов сам.",
         canPropose
           ? "Если пользователь просит сохранить конкретную гипотезу, используй подходящий propose_person_update, propose_source или propose_relation. Это только предложения: человек отдельно принимает или отклоняет их. Не создавай предложение без конкретных значений и основания. Для parent fromPersonId означает родителя, toPersonId — ребёнка."
           : "",
@@ -207,6 +281,8 @@ export function aiResearchHttp({
         ...validHistory(body.history),
         { role: "user", content: message },
       ];
+      const people = new Map(family.people.map((person) => [person.id, person])),
+        references = new Map<string, AiReference>();
 
       for (let round = 0; round < 8; round++) {
         const answer = await complete(messages, canPropose);
@@ -218,6 +294,7 @@ export function aiResearchHttp({
               typeof answer.content === "string" && answer.content.trim()
                 ? answer.content
                 : "Модель не сформировала текстовый ответ.",
+            references: [...references.values()].slice(0, 40),
           });
 
         for (const call of calls) {
@@ -227,13 +304,23 @@ export function aiResearchHttp({
           let result: unknown;
           try {
             const toolArgs = JSON.parse(call.function.arguments || "{}");
-            if (definition)
+            if (definition) {
               result = executeResearchTool(
                 family,
                 definition.name,
                 toolArgs,
               );
-            else if (
+              collectPersonReferences(result, people, references);
+              if (
+                definition.name === "get_sources" &&
+                typeof toolArgs.personId === "string"
+              )
+                collectSourceReferences(
+                  result,
+                  toolArgs.personId,
+                  references,
+                );
+            } else if (
               canPropose &&
               RESEARCH_PROPOSAL_TOOLS.some(
                 (tool) => tool.name === call.function.name,
