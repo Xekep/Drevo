@@ -45,9 +45,7 @@ function result(id: JsonRpcId, value: unknown) {
   return { jsonrpc: "2.0", id, result: value };
 }
 
-function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
-  const header = req.headers["mcp-protocol-version"];
-  if (typeof header === "string") return header;
+function requestMetaProtocolVersion(request: JsonRpcRequest) {
   if (!request.params || typeof request.params !== "object") return "";
   const meta = (request.params as Record<string, unknown>)._meta;
   if (!meta || typeof meta !== "object") return "";
@@ -55,6 +53,13 @@ function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
     "io.modelcontextprotocol/protocolVersion"
   ];
   return typeof version === "string" ? version : "";
+}
+
+function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
+  const header = req.headers["mcp-protocol-version"];
+  return typeof header === "string"
+    ? header
+    : requestMetaProtocolVersion(request);
 }
 
 function modernResult(
@@ -142,19 +147,33 @@ export function mcpHttp({
       return json(res, 400, error(id, -32600, "Invalid Request"));
 
     const protocolVersion = requestProtocolVersion(request, req),
+      metaVersion = requestMetaProtocolVersion(request),
       modern = protocolVersion === "2026-07-28",
       headerVersion = req.headers["mcp-protocol-version"];
+
     if (
       typeof headerVersion === "string" &&
+      metaVersion &&
+      headerVersion !== metaVersion
+    )
+      return json(
+        res,
+        400,
+        error(id, -32020, "MCP protocol version header does not match _meta"),
+      );
+
+    if (
+      protocolVersion &&
       !MCP_PROTOCOL_VERSIONS.includes(
-        headerVersion as (typeof MCP_PROTOCOL_VERSIONS)[number],
+        protocolVersion as (typeof MCP_PROTOCOL_VERSIONS)[number],
       )
     )
       return json(
         res,
         400,
-        error(id, -32602, "Unsupported MCP protocol version", {
-          supportedVersions: MCP_PROTOCOL_VERSIONS,
+        error(id, -32022, "Unsupported MCP protocol version", {
+          supported: MCP_PROTOCOL_VERSIONS,
+          requested: protocolVersion,
         }),
       );
 
@@ -250,7 +269,7 @@ export function mcpHttp({
     if (request.method === "ping") {
       if (modern) {
         auditError = true;
-        return json(res, 200, error(id, -32601, "Method not found"));
+        return json(res, 404, error(id, -32601, "Method not found"));
       }
       return json(res, 200, result(id, {}));
     }
@@ -383,6 +402,10 @@ export function mcpHttp({
     }
 
     auditError = true;
-    return json(res, 200, error(id, -32601, "Method not found"));
+    return json(
+      res,
+      modern ? 404 : 200,
+      error(id, -32601, "Method not found"),
+    );
   };
 }
