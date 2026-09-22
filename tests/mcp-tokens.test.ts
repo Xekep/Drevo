@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
+import { mcpTokenStore } from "../src/server/mcp-tokens.ts";
+import type { ArchiveUser } from "../src/domain/access.ts";
+
+const admin: ArchiveUser = {
+  id: "admin",
+  name: "Администратор",
+  role: "admin",
+  createdAt: "",
+  approved: true,
+};
+
+test("MCP tokens are shown once, hashed at rest and revocable", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    const store = mcpTokenStore(db),
+      issued = store.issue(admin, {
+        name: "AI Studio",
+        scopes: ["tree:read", "analysis:read"],
+        expiresDays: 30,
+      });
+
+    assert.match(issued.token, /^drevo_mcp_/);
+    assert.equal(store.list()[0].name, "AI Studio");
+    assert.equal(JSON.stringify(store.list()).includes(issued.token), false);
+    assert.notEqual(
+      String(db.prepare("SELECT token_hash FROM mcp_tokens").get()!.token_hash),
+      issued.token,
+    );
+
+    const grant = store.authenticate("Bearer " + issued.token);
+    assert.deepEqual(grant?.scopes, ["tree:read", "analysis:read"]);
+
+    store.revoke(issued.item.id);
+    assert.equal(store.authenticate("Bearer " + issued.token), null);
+    assert.ok(store.list()[0].revokedAt);
+  } finally {
+    db.close();
+  }
+});
