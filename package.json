@@ -23,7 +23,6 @@
     "prebuild": "npm run prepare:models"
   },
   "dependencies": {
-    "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@vladmandic/human": "3.3.6",
     "@xyflow/react": "^12.11.6",
