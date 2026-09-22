@@ -1,7 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Send, Sparkles, X } from "lucide-react";
+import {
+  BookOpen,
+  Check,
+  ExternalLink,
+  Send,
+  Sparkles,
+  UserRound,
+  X,
+} from "lucide-react";
 
-type Message = { role: "user" | "assistant"; content: string };
+type AiReference =
+  | { kind: "person"; personId: string; label: string }
+  | {
+      kind: "source";
+      personId: string;
+      label: string;
+      reference?: string;
+      url?: string;
+    };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  references?: AiReference[];
+};
 type SuggestionValue = string | boolean | undefined;
 type SuggestionBase = {
   id: string;
@@ -145,11 +166,13 @@ export function ResearchAssistant({
   personIds,
   canEdit,
   onChanged,
+  onPerson,
 }: {
   view: string;
   personIds: string[];
   canEdit: boolean;
   onChanged: () => void;
+  onPerson: (id: string) => void;
 }) {
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
@@ -226,7 +249,11 @@ export function ResearchAssistant({
         throw new Error(data.error || "ИИ-исследователь не ответил");
       setMessages((current) => [
         ...current,
-        { role: "assistant", content: data.answer },
+        {
+          role: "assistant",
+          content: data.answer,
+          references: Array.isArray(data.references) ? data.references : [],
+        },
       ]);
       if (canEdit) await loadSuggestions();
     } catch (reason) {
@@ -415,6 +442,52 @@ export function ResearchAssistant({
               <article key={index} className={`is-${message.role}`}>
                 <small>{message.role === "user" ? "Вы" : "Drevo AI"}</small>
                 <p>{message.content}</p>
+                {message.role === "assistant" &&
+                  message.references &&
+                  message.references.length > 0 && (
+                    <div
+                      className="research-answer-references"
+                      aria-label="Связанные записи архива"
+                    >
+                      {message.references.map((reference, referenceIndex) => (
+                        <div
+                          key={`${reference.kind}:${reference.personId}:${referenceIndex}`}
+                          className="research-answer-reference"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpen(false);
+                              onPerson(reference.personId);
+                            }}
+                          >
+                            {reference.kind === "person" ? (
+                              <UserRound size={14} />
+                            ) : (
+                              <BookOpen size={14} />
+                            )}
+                            <span>
+                              <b>{reference.label}</b>
+                              {reference.kind === "source" &&
+                                reference.reference && (
+                                  <small>{reference.reference}</small>
+                                )}
+                            </span>
+                          </button>
+                          {reference.kind === "source" && reference.url && (
+                            <a
+                              href={reference.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Открыть источник «${reference.label}»`}
+                            >
+                              <ExternalLink size={14} />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
               </article>
             ))}
             {busy && <p role="status">Исследую данные…</p>}
