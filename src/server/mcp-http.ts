@@ -14,25 +14,14 @@ export function mcpHttp({
   archive: ReturnType<typeof openArchive>;
   tokens: ReturnType<typeof mcpTokenStore>;
 }) {
-  return async (
-    req: IncomingMessage,
-    res: ServerResponse,
-    url: URL,
-  ): Promise<boolean> => {
-    if (url.pathname !== "/mcp") return false;
+  const handlers = new Map<
+    string,
+    ReturnType<typeof createMcpHandler>
+  >();
 
-    const grant = tokens.authenticate(req.headers.authorization);
-    if (!grant) {
-      res.writeHead(401, {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-        "WWW-Authenticate": 'Bearer realm="Drevo MCP"',
-      });
-      res.end(JSON.stringify({ error: "Недействительный MCP-токен" }));
-      return true;
-    }
-
-    const family = archive.read().family;
+  const handlerFor = (grant: NonNullable<ReturnType<typeof tokens.authenticate>>) => {
+    const cached = handlers.get(grant.id);
+    if (cached) return cached;
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: "drevo",
@@ -57,7 +46,7 @@ export function mcpHttp({
           async (args) => {
             try {
               const result = executeResearchTool(
-                family,
+                archive.read().family,
                 definition.name,
                 args,
               ) as Record<string, unknown>;
@@ -84,6 +73,29 @@ export function mcpHttp({
       }
       return server;
     });
+    handlers.set(grant.id, handler);
+    return handler;
+  };
+
+  return async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+  ): Promise<boolean> => {
+    if (url.pathname !== "/mcp") return false;
+
+    const grant = tokens.authenticate(req.headers.authorization);
+    if (!grant) {
+      res.writeHead(401, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+        "WWW-Authenticate": 'Bearer realm="Drevo MCP"',
+      });
+      res.end(JSON.stringify({ error: "Недействительный MCP-токен" }));
+      return true;
+    }
+
+    const handler = handlerFor(grant);
 
     const headers = new Headers();
     for (const [name, value] of Object.entries(req.headers)) {
