@@ -22,6 +22,10 @@ import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import { currentRestoreStore } from "./restore.ts";
 import { faceDescriptorsHttp } from "./face-descriptors-http.ts";
+import { mcpTokenStore } from "./mcp-tokens.ts";
+import { adminMcpHttp } from "./admin-mcp-http.ts";
+import { mcpHttp } from "./mcp-http.ts";
+import { aiResearchHttp } from "./ai-research-http.ts";
 
 export function sharingHttp({
   archive,
@@ -31,6 +35,7 @@ export function sharingHttp({
   visibility,
   publicOrigin,
   serveStatic,
+  aiFetch,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
@@ -39,8 +44,18 @@ export function sharingHttp({
   visibility: ReturnType<typeof settingsStore>;
   publicOrigin?: string;
   serveStatic: ReturnType<typeof productionStaticHttp>;
+  aiFetch?: typeof fetch;
 }) {
+  const tokens = mcpTokenStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
+  const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
+  const researchMcp = mcpHttp({ archive, tokens });
+  const researchAi = aiResearchHttp({
+    archive,
+    auth,
+    publicOrigin,
+    fetcher: aiFetch,
+  });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
     auth,
@@ -96,6 +111,7 @@ export function sharingHttp({
     if (await core(req, res, url)) return true;
     if (await serveBackup(req, res, url)) return true;
     if (await adminAccess(req, res, url)) return true;
+    if (await adminMcp(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await places(req, res, url)) return true;
     if (await adminSharing(req, res, url)) return true;
@@ -103,6 +119,8 @@ export function sharingHttp({
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
     if (await faceDescriptors(req, res, url)) return true;
+    if (await researchAi(req, res, url)) return true;
+    if (await researchMcp(req, res, url)) return true;
     if (await serveMedia(req, res, url)) return true;
     if (await publicSharing(req, res, url)) return true;
     return await serveStatic(req, res, url);

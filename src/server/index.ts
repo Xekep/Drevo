@@ -30,6 +30,7 @@ export async function startServer(
   databasePath?: string,
   production = process.argv.includes("--production"),
   oauthFetch?: typeof fetch,
+  aiFetch?: typeof fetch,
 ) {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -65,6 +66,7 @@ export async function startServer(
     previewImage,
     visibility,
     publicOrigin,
+    aiFetch,
     serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);

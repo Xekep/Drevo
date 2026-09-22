@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 4;
+export const ARCHIVE_SCHEMA_VERSION = 5;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -160,6 +160,24 @@ function migrate(db: DatabaseSync, target: number) {
       DROP TABLE relations;
       ALTER TABLE relations_v4 RENAME TO relations;
       CREATE INDEX relations_target ON relations(target);
+    `);
+    return;
+  }
+  if (target === 5) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_tokens (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT UNIQUE NOT NULL,
+        token_hint TEXT NOT NULL,
+        name TEXT NOT NULL,
+        scopes TEXT NOT NULL CHECK(json_valid(scopes)),
+        created_at TEXT NOT NULL,
+        expires_at INTEGER,
+        created_by TEXT NOT NULL,
+        revoked_at TEXT,
+        last_used_at INTEGER
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS mcp_tokens_active ON mcp_tokens(revoked_at,expires_at);
     `);
     return;
   }
