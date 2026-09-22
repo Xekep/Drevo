@@ -1,29 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   archivePaths,
   archiveViewAt,
   type ArchiveView,
 } from "../domain/archive-routes";
+import { archiveTargetPath, type ArchiveTarget } from "../domain/archive-links";
 
 export function useArchiveView(canLeave: () => boolean = () => true) {
+  const currentUrl = useRef(window.location.pathname + window.location.search);
   const [view, update] = useState<ArchiveView>(
     () => archiveViewAt(window.location.pathname) || "tree",
   );
-  const navigate = useCallback((next: ArchiveView) => {
-    const path = archivePaths[next];
-    if (window.location.pathname !== path)
-      window.history.pushState(null, "", path);
-    update(next);
-  }, []);
+  const navigate = useCallback(
+    (next: ArchiveView, target?: ArchiveTarget, replace = false) => {
+      const path = target ? archiveTargetPath(target) : archivePaths[next];
+      const fullscreen = Boolean(window.history.state?.drevoTreeFullscreen);
+      if (window.location.pathname + window.location.search !== path)
+        window.history[replace || fullscreen ? "replaceState" : "pushState"](
+          fullscreen ? window.history.state : null,
+          "",
+          path,
+        );
+      currentUrl.current = path;
+      update(next);
+    },
+    [],
+  );
   useEffect(() => {
-    let currentPath = window.location.pathname;
     const sync = () => {
       if (!canLeave()) {
-        window.history.pushState(null, "", currentPath);
+        window.history.pushState(null, "", currentUrl.current);
         return;
       }
-      currentPath = window.location.pathname;
-      update(archiveViewAt(currentPath) || "tree");
+      currentUrl.current = window.location.pathname + window.location.search;
+      update(archiveViewAt(window.location.pathname) || "tree");
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);

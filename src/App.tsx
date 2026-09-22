@@ -12,6 +12,7 @@ import { useArchive } from "./hooks/useArchive";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
+import { archiveTargetAt, type ArchiveTarget } from "./domain/archive-links";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -43,6 +44,9 @@ type PersonDraft = {
   type?: "child" | ConnectionType;
   key: string;
 };
+const targetKey = (target: ArchiveTarget | null) =>
+  target ? `${target.kind}:${target.id}` : "";
+
 export default function App() {
   const archive = useArchive(),
     {
@@ -139,9 +143,103 @@ export default function App() {
     return true;
   }, []);
   const photoWorkspace = usePhotoWorkspace(family),
-    { clearFilter, resetNavigation } = photoWorkspace;
+    { clearFilter } = photoWorkspace;
+  const [urlVersion, setUrlVersion] = useState(0);
+  const lastUrlTarget = useRef("");
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const { openPhoto, navigatePhoto, closePhoto, uploaded } = photoWorkspace;
+  useEffect(() => {
+    if (!family || archive.loadingDetails) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const target = archiveTargetAt(
+        window.location.pathname,
+        window.location.search,
+      );
+      if (
+        target &&
+        !(target.kind === "person"
+          ? readTree && map.has(target.id)
+          : readPhotos &&
+            family.photos?.some((photo) => photo.id === target.id))
+      ) {
+        setView(target.kind === "person" ? "tree" : "gallery", undefined, true);
+        lastUrlTarget.current = "";
+        setNotice(
+          target.kind === "person"
+            ? "Человек не найден или недоступен"
+            : "Фотография не найдена или недоступна",
+        );
+        return;
+      }
+      const key = targetKey(target);
+      if (key === lastUrlTarget.current) return;
+      const previous = lastUrlTarget.current;
+      lastUrlTarget.current = key;
+      if (previous.startsWith("person:") && target?.kind !== "person")
+        dispatch({ type: "clear" });
+      if (previous.startsWith("photo:") && target?.kind !== "photo")
+        closePhoto();
+      if (target?.kind === "person") reveal([target.id]);
+      if (target?.kind === "photo") openPhoto(target.id);
+    });
+    return () => {
+      active = false;
+    };
+  }, [
+    family,
+    archive.loadingDetails,
+    readTree,
+    readPhotos,
+    map,
+    setView,
+    reveal,
+    dispatch,
+    openPhoto,
+    closePhoto,
+    urlVersion,
+  ]);
+  const openPhotoUrl = useCallback(
+    (id: string, ids?: string[]) => {
+      const target: ArchiveTarget = { kind: "photo", id };
+      lastUrlTarget.current = targetKey(target);
+      setView("gallery", target);
+      openPhoto(id, ids);
+    },
+    [openPhoto, setView],
+  );
+  const navigatePhotoUrl = useCallback(
+    (id: string) => {
+      const target: ArchiveTarget = { kind: "photo", id };
+      lastUrlTarget.current = targetKey(target);
+      setView("gallery", target, true);
+      navigatePhoto(id);
+    },
+    [navigatePhoto, setView],
+  );
+  const closePhotoUrl = useCallback(() => {
+    lastUrlTarget.current = "";
+    setView("gallery", undefined, true);
+    closePhoto();
+  }, [closePhoto, setView]);
+  const uploadedPhoto = useCallback(
+    (id: string) => {
+      const target: ArchiveTarget = { kind: "photo", id };
+      lastUrlTarget.current = targetKey(target);
+      setView("gallery", target);
+      uploaded(id);
+    },
+    [setView, uploaded],
+  );
+  const linkedPhotoWorkspace = {
+    ...photoWorkspace,
+    openPhoto: openPhotoUrl,
+    navigatePhoto: navigatePhotoUrl,
+    closePhoto: closePhotoUrl,
+    uploaded: uploadedPhoto,
+  };
   const chosen = useMemo(
     () => selected.flatMap((id) => (map.has(id) ? [map.get(id)!] : [])),
     [selected, map],
@@ -158,9 +256,15 @@ export default function App() {
     (next: ArchiveView) => {
       if (next !== view && personDraft && !setPersonDraft(null)) return;
       if (next !== view && connectionDraft && !closeConnection()) return;
-      setView(next);
+      const target: ArchiveTarget | undefined =
+        next === "tree" && selected.length === 1 && !compare
+          ? { kind: "person", id: selected[0] }
+          : undefined;
+      lastUrlTarget.current = targetKey(target || null);
+      setView(next, target);
       setAddMenu(false);
       clearFilter();
+      closePhoto();
     },
     [
       setView,
@@ -170,16 +274,20 @@ export default function App() {
       setPersonDraft,
       connectionDraft,
       closeConnection,
+      selected,
+      compare,
+      closePhoto,
     ],
   );
   useEffect(() => {
     const sync = () => {
       setAddMenu(false);
-      resetNavigation();
+      clearFilter();
+      setUrlVersion((version) => version + 1);
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
-  }, [resetNavigation]);
+  }, [clearFilter]);
   const openConnection = useCallback(
     (draft: ConnectionDraft) => {
       if (!canEdit) return;
@@ -189,10 +297,20 @@ export default function App() {
       if (!closeConnection()) return;
       setConnectionDraft(draft);
       setPreview(draft);
+      lastUrlTarget.current = "";
+      setView("tree", undefined, true);
       dispatch({ type: "finishLink" });
       setAddMenu(false);
     },
-    [dispatch, canEdit, people, family?.links, setPersonDraft, closeConnection],
+    [
+      dispatch,
+      canEdit,
+      people,
+      family?.links,
+      setPersonDraft,
+      closeConnection,
+      setView,
+    ],
   );
   const selectEdge = useCallback(
     (edge: GraphConnection) => {
@@ -200,9 +318,11 @@ export default function App() {
       if (!closeConnection()) return;
       setConnectionDraft({ ...edge, original: edge });
       setPreview(null);
+      lastUrlTarget.current = "";
+      setView("tree", undefined, true);
       dispatch({ type: "finishLink" });
     },
-    [dispatch, setPersonDraft, closeConnection],
+    [dispatch, setPersonDraft, closeConnection, setView],
   );
   const choosePerson = useCallback(
     (id: string, additive = false) => {
@@ -212,25 +332,52 @@ export default function App() {
       }
       if (!closeConnection()) return;
       choose(id, additive);
+      if (additive || compare) {
+        lastUrlTarget.current = "";
+        setView("tree", undefined, true);
+      } else {
+        const target: ArchiveTarget = { kind: "person", id };
+        lastUrlTarget.current = targetKey(target);
+        setView("tree", target);
+      }
     },
-    [canEdit, linkFrom, openConnection, closeConnection, choose],
+    [
+      canEdit,
+      linkFrom,
+      openConnection,
+      closeConnection,
+      choose,
+      compare,
+      setView,
+    ],
   );
   const showPerson = useCallback(
     (id: string) => {
       if (!closeConnection()) return;
-      setView("tree");
+      const target: ArchiveTarget = { kind: "person", id };
+      lastUrlTarget.current = targetKey(target);
+      setView("tree", target);
       reveal([id]);
     },
     [reveal, closeConnection, setView],
   );
   const clear = useCallback(() => {
-    if (!personDraft && !connectionDraft) dispatch({ type: "clear" });
-  }, [dispatch, personDraft, connectionDraft]);
+    if (!personDraft && !connectionDraft) {
+      dispatch({ type: "clear" });
+      lastUrlTarget.current = "";
+      setView("tree", undefined, true);
+    }
+  }, [dispatch, personDraft, connectionDraft, setView]);
+  const clearPersonUrl = useCallback(() => {
+    lastUrlTarget.current = "";
+    setView("tree", undefined, true);
+  }, [setView]);
   const newPerson = useCallback(() => {
     if (!canEdit) return;
     if (!closeConnection()) return;
     if (!setPersonDraft({ key: crypto.randomUUID() })) return;
     setAddMenu(false);
+    lastUrlTarget.current = "";
     setView("tree");
   }, [canEdit, closeConnection, setView, setPersonDraft]);
   const startLink = useCallback(() => {
@@ -239,6 +386,7 @@ export default function App() {
     if (!setPersonDraft(null)) return;
     dispatch({ type: "link" });
     setAddMenu(false);
+    lastUrlTarget.current = "";
     setView("tree");
   }, [canEdit, closeConnection, dispatch, setView, setPersonDraft]);
   const updateConnection = useCallback((draft: ConnectionDraft) => {
@@ -393,6 +541,7 @@ export default function App() {
                             onClick={() => {
                               if (!setPersonDraft(null)) return;
                               if (!closeConnection()) return;
+                              clearPersonUrl();
                               dispatch({ type: "compare" });
                             }}
                           >
@@ -504,7 +653,7 @@ export default function App() {
                             : chosen[0]?.id
                         }
                         initialExpanded={!compare || chosen.length === 2}
-                        onClose={() => dispatch({ type: "clear" })}
+                        onClose={clear}
                       >
                         {compare ? (
                           <ComparisonPanel
@@ -529,7 +678,18 @@ export default function App() {
                               busy={busy}
                               onConnection={openConnection}
                               onSelect={showPerson}
-                              onCompare={() => dispatch({ type: "compare" })}
+                              onUrlPerson={(id) => {
+                                const target: ArchiveTarget = {
+                                  kind: "person",
+                                  id,
+                                };
+                                lastUrlTarget.current = targetKey(target);
+                                setView("tree", target);
+                              }}
+                              onCompare={() => {
+                                clearPersonUrl();
+                                dispatch({ type: "compare" });
+                              }}
                               onEdit={() =>
                                 setPersonDraft({
                                   person: chosen[0],
@@ -542,6 +702,7 @@ export default function App() {
                               }
                               onAlbum={(id) => {
                                 photoWorkspace.filterPerson(id);
+                                lastUrlTarget.current = "";
                                 setView("gallery");
                               }}
                             />
@@ -563,10 +724,15 @@ export default function App() {
                   save={save}
                   onPerson={showPerson}
                   onReveal={(ids) => {
-                    setView("tree");
+                    const target: ArchiveTarget | undefined =
+                      ids.length === 1
+                        ? { kind: "person", id: ids[0] }
+                        : undefined;
+                    lastUrlTarget.current = targetKey(target || null);
+                    setView("tree", target);
                     reveal(ids);
                   }}
-                  onPhoto={photoWorkspace.openPhoto}
+                  onPhoto={openPhotoUrl}
                   onAddPhoto={() => photoWorkspace.openUpload()}
                   onDropPhoto={(file) => photoWorkspace.openUpload(file)}
                   personFilter={photoWorkspace.personFilter}
@@ -614,7 +780,7 @@ export default function App() {
         <PhotoWorkspaceOverlays
           family={family}
           user={user}
-          workspace={photoWorkspace}
+          workspace={linkedPhotoWorkspace}
           onDirtyChange={(dirty) => {
             navigationDirty.current = dirty;
           }}
@@ -622,8 +788,10 @@ export default function App() {
           busy={busy}
           save={save}
           upload={upload}
-          onUploaded={() => setView("gallery")}
-          onPerson={showPerson}
+          onPerson={(id) => {
+            closePhoto();
+            showPerson(id);
+          }}
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (

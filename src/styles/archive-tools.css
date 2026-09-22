@@ -286,16 +286,36 @@
   font-size: 11px;
   color: #75816b;
 }
+.full-person-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.full-person-copy {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
 .full-person-edit {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   font-size: 12px;
 }
 .inspector-person-actions .person-expand-button {
   opacity: 0.75;
   order: 4;
+}
+.archive-copy-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .inspector-person-actions {
   gap: 6px;

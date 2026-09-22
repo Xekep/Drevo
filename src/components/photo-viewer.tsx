@@ -25,6 +25,7 @@ import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
 import { mediaPreview } from "../domain/media-preview";
 import { PlaceField } from "./place-field";
+import { CopyArchiveLink } from "./copy-archive-link";
 import {
   confirmDiscardChanges,
   useUnsavedChanges,
@@ -189,6 +190,10 @@ function PhotoViewerContent({
   }
   return (
     <div className="photo-lightbox-content">
+      <CopyArchiveLink
+        className="photo-copy-link"
+        target={{ kind: "photo", id: photo.id }}
+      />
       <button
         className="photo-close"
         onClick={onClose}

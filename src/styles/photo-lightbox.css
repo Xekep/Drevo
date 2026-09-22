@@ -109,6 +109,7 @@
   font-weight: 500;
 }
 .photo-close,
+.photo-copy-link,
 .photo-info-close,
 .photo-navigation button {
   display: grid;
@@ -123,6 +124,12 @@
 .photo-close {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
+  top: max(14px, env(safe-area-inset-top));
+  z-index: 6;
+}
+.photo-copy-link {
+  position: absolute;
+  right: calc(max(16px, env(safe-area-inset-right)) + 54px);
   top: max(14px, env(safe-area-inset-top));
   z-index: 6;
 }
@@ -360,7 +367,7 @@
   cursor: crosshair;
 }
 @media (min-width: 900px) {
-  .photo-lightbox-content .photo-close {
+  .photo-lightbox-content :is(.photo-close, .photo-copy-link) {
     color: #405738;
     background: #e8eedf;
   }

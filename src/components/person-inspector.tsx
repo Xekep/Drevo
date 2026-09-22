@@ -6,6 +6,7 @@ import { InspectorActions } from "./inspector-dock";
 import { PersonPanel } from "./person-panel";
 import { PersonHints } from "./person-hints";
 import { PersonPhotoAlbum } from "./person-photo-album";
+import { CopyArchiveLink } from "./copy-archive-link";
 import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
 import type { Connection } from "../domain";
@@ -43,6 +44,7 @@ export function PersonInspector({
   canEdit,
   readPhotos,
   onSelect,
+  onUrlPerson,
   onCompare,
   onEdit,
   onNewRelative,
@@ -59,6 +61,7 @@ export function PersonInspector({
   canEdit: boolean;
   readPhotos: boolean;
   onSelect: (id: string) => void;
+  onUrlPerson?: (id: string) => void;
   onCompare: () => void;
   onEdit: () => void;
   onNewRelative: (type: "child" | ConnectionType) => void;
@@ -81,6 +84,9 @@ export function PersonInspector({
     <>
       <InspectorActions>
         <div className="inspector-person-actions">
+          {onUrlPerson && (
+            <CopyArchiveLink target={{ kind: "person", id: person.id }} />
+          )}
           {canEdit && owns(user, person) && (
             <button onClick={onEdit} className="person-edit-button">
               <Pencil size={16} />
@@ -152,7 +158,11 @@ export function PersonInspector({
               person={person}
               family={family}
               readPhotos={readPhotos}
-              onClose={() => setExpanded(false)}
+              onClose={(id) => {
+                setExpanded(false);
+                if (id !== person.id) onSelect(id);
+              }}
+              onUrlPerson={onUrlPerson}
               onCompare={(id) => {
                 onSelect(id);
                 onCompare();
