@@ -54,7 +54,7 @@
   top: 7px;
   left: 13px;
   color: #88947e;
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 .timeline-century-line {
@@ -114,7 +114,7 @@
 }
 .timeline-century > span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 2.2px;
   margin-top: 7px;
   color: #8c9980;
@@ -132,7 +132,7 @@
   gap: 20px;
   padding: 0 4px;
   color: #82906f;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1.6px;
   white-space: nowrap;
   overflow: hidden;
@@ -140,7 +140,7 @@
 }
 .timeline-era small {
   color: #939c85;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1px;
 }
 .timeline-era.soviet {
@@ -150,12 +150,12 @@
   color: #709078;
 }
 .timeline-era.compact {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.8px;
 }
 .timeline-era.transition {
   left: 64px;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.2px;
 }
 .timeline-era:hover {
@@ -169,7 +169,7 @@
   color: #8b967f;
 }
 .timeline-undated > span {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 2px;
 }
 .timeline-undated strong {
@@ -178,7 +178,7 @@
 }
 .timeline-undated small {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
   margin-top: 12px;
 }
@@ -199,7 +199,7 @@
   gap: 5px;
   padding: 7px 3px;
   color: #77866b;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.1px;
   text-transform: uppercase;
   cursor: pointer;
@@ -225,7 +225,7 @@
 .timeline-period-menu nav > span {
   display: block;
   color: #98a18d;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.8px;
   margin: 8px 8px 10px;
 }
@@ -243,7 +243,7 @@
   background: #eef3e6;
 }
 .timeline-period-menu nav small {
-  font-size: 10px;
+  font-size: 12px;
   color: #95a087;
 }
 .timeline-century-links {
@@ -282,7 +282,7 @@
   pointer-events: auto;
 }
 .timeline-quick-centuries > span {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 1.5px;
   color: #95a087;
   text-align: center;
@@ -315,11 +315,11 @@
   }
   .timeline-era {
     left: 48px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .timeline-era.transition {
     left: 49px;
-    font-size: 8px;
+    font-size: 12px;
   }
   .timeline-era small {
     display: none;
@@ -329,17 +329,17 @@
   }
   .timeline-period-menu summary {
     letter-spacing: 0.5px;
-    font-size: 9px;
+    font-size: 12px;
   }
   .timeline-undated {
     left: 10px;
   }
   .timeline-undated small {
-    font-size: 9px;
+    font-size: 12px;
   }
   .timeline-year span {
     left: 7px;
-    font-size: 9px;
+    font-size: 12px;
   }
   .tree-view:has(.mode-timeline) .workspace-actions {
     top: 64px;

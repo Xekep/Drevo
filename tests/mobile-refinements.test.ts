@@ -8,7 +8,7 @@ import type { Family, Person } from "../src/domain/index.ts";
 
 const root = new URL("..", import.meta.url);
 
-test("mobile album keeps a compact title variant and hides the long hint", async () => {
+test("album keeps one semantic title and explains desktop-only upload on mobile", async () => {
   const server = await createServer({
     configFile: false,
     optimizeDeps: { noDiscovery: true },
@@ -16,7 +16,9 @@ test("mobile album keeps a compact title variant and hides the long hint", async
     appType: "custom",
   });
   try {
-    const { Gallery } = await server.ssrLoadModule("/src/components/gallery.tsx");
+    const { Gallery } = await server.ssrLoadModule(
+      "/src/components/gallery.tsx",
+    );
     const family: Family = {
       title: "Архив",
       description: "",
@@ -28,25 +30,29 @@ test("mobile album keeps a compact title variant and hides the long hint", async
       createElement(Gallery, {
         family,
         canEdit: false,
+        mayEdit: true,
         onAdd: () => {},
         onOpen: () => {},
         onDropPhoto: () => {},
         onClearFilter: () => {},
       }),
     );
-    assert.match(html, /gallery-title-mobile">Семейный альбом/);
-    assert.match(html, /gallery-title-desktop">Лица нашей истории/);
+    assert.match(html, /<h1>Семейный альбом<\/h1>/);
+    assert.match(html, /Добавить фотографии можно с компьютера/);
+    assert.doesNotMatch(html, /gallery-title-(?:mobile|desktop)/);
   } finally {
     await server.close();
   }
 
-  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
+  const css = readFileSync(
+    new URL("src/styles/mobile-refinements.css", root),
+    "utf8",
+  );
   assert.match(css, /\.gallery-photo-heading \.gallery-heading-copy > p/);
-  assert.match(css, /\.gallery-title-desktop/);
-  assert.match(css, /\.gallery-title-mobile/);
+  assert.match(css, /\.gallery-photo-heading h1/);
 });
 
-test("mobile kinship picker leaves only the two person slots", async () => {
+test("mobile kinship picker keeps its title and the two person slots", async () => {
   const server = await createServer({
     configFile: false,
     optimizeDeps: { noDiscovery: true },
@@ -86,8 +92,12 @@ test("mobile kinship picker leaves only the two person slots", async () => {
     await server.close();
   }
 
-  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
-  assert.match(css, /comparison-content\.is-picking > :not\(\.comparison-people\)/);
+  const css = readFileSync(
+    new URL("src/styles/mobile-refinements.css", root),
+    "utf8",
+  );
+  assert.match(css, /:not\(\.comparison-people\):not\(h2\)/);
+  assert.match(css, /comparison-content\.is-picking > h2/);
   assert.match(css, /inspector-dock:has\(\.comparison-content\.is-picking\)/);
 });
 
@@ -104,7 +114,10 @@ test("long press is touch-only, mobile-only and enters kinship selection", () =>
     new URL("src/hooks/useWorkspaceSelection.ts", root),
     "utf8",
   );
-  assert.match(node, /useLongPressCompare\(\(\) => choose\(data\.person\.id, true\)\)/);
+  assert.match(
+    node,
+    /useLongPressCompare\(\(\) => choose\(data\.person\.id, true\)\)/,
+  );
   assert.match(gesture, /event\.pointerType !== "touch"/);
   assert.match(gesture, /max-width: 899px/);
   assert.match(gesture, /}, 520\);/);
@@ -121,22 +134,28 @@ test("photo lightbox owns pinch zoom and keeps page zoom out of the gesture", ()
     new URL("src/components/use-photo-swipe.ts", root),
     "utf8",
   );
-  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
+  const css = readFileSync(
+    new URL("src/styles/mobile-refinements.css", root),
+    "utf8",
+  );
   assert.match(gesture, /const MAX_ZOOM = 4/);
   assert.match(gesture, /touchPoints\(\)\.length >= 2/);
   assert.match(gesture, /Math\.hypot\(p2\.x - p1\.x, p2\.y - p1\.y\)/);
   assert.match(gesture, /panGesture\.current/);
   assert.match(gesture, /scale\.current > 1\.01/);
   assert.match(css, /\.photo-image-space\s*\{[\s\S]*touch-action: none/);
-  assert.match(css, /\.photo-slide-current \.tag-image[\s\S]*will-change: transform/);
+  assert.match(
+    css,
+    /\.photo-slide-current \.tag-image[\s\S]*will-change: transform/,
+  );
 });
 
 test("opened person portrait is larger on desktop and mobile", () => {
-  const css = readFileSync(new URL("src/styles/mobile-refinements.css", root), "utf8");
-  assert.match(
-    css,
-    /\.profile-avatar\s*\{\s*width: 144px;\s*height: 144px;/,
+  const css = readFileSync(
+    new URL("src/styles/mobile-refinements.css", root),
+    "utf8",
   );
+  assert.match(css, /\.profile-avatar\s*\{\s*width: 144px;\s*height: 144px;/);
   assert.match(
     css,
     /@media \(max-width: 899px\)[\s\S]*\.profile-avatar\s*\{\s*width: 128px;\s*height: 128px;/,

@@ -249,7 +249,7 @@
 .album-stack-caption small {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .album-heading h3 {
@@ -462,7 +462,7 @@
 }
 .person-search-results small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .person-search-results p,
@@ -497,7 +497,7 @@
   color: white;
   background: #4b7156;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .place-photos h3 {

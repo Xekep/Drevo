@@ -88,7 +88,7 @@
 }
 .photo-lightbox .photo-tools .section-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.13em;
 }
 .photo-lightbox .connection-row {
@@ -374,10 +374,10 @@
   .photo-footer {
     gap: 4px 10px;
     padding-inline: 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .photo-lightbox .photo-original {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 

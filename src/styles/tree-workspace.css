@@ -291,7 +291,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 1px;
   color: var(--muted);
 }
@@ -386,7 +386,7 @@
 .inspector-dock .section-label,
 .inspector-dock .lifespan-legend,
 .inspector-dock .lifespan-dates {
-  font-size: 11px;
+  font-size: 12px;
 }
 .inspector-dock .archive-form {
   padding: 22px;
@@ -414,7 +414,7 @@
   z-index: 1;
 }
 .inspector-dock .portrait-picker small {
-  font-size: 11px;
+  font-size: 12px;
 }
 .inspector-dock .comparison-content {
   padding: 24px;
@@ -606,7 +606,7 @@
   background: #f3f8ed;
   padding: 2px 7px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .flow-person .react-flow__handle {
   width: 12px;
@@ -624,7 +624,7 @@
   position: absolute;
   pointer-events: all;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.2;
   color: #52674e;
   border: 1px solid #dde7d7;
@@ -895,7 +895,7 @@
     -webkit-user-select: none;
   }
   .inspector-heading > span {
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0.6px;
   }
   .inspector-heading > button {
@@ -1029,7 +1029,7 @@
 .tree-canvas .react-flow__attribution {
   bottom: 0;
   right: 10px;
-  font-size: 10px;
+  font-size: 12px;
   background: transparent;
 }
 .tree-canvas .flow-camera-tools {
@@ -1063,6 +1063,9 @@
   color: #526b46;
   gap: 8px;
   margin-right: 28px;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
 }
 .nav-brand svg {
   width: 28px;
@@ -1136,6 +1139,10 @@
   color: #728069;
   border-radius: 50%;
   border: 1px solid #e1e6da;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
 }
 .archive-more > summary::-webkit-details-marker {
   display: none;
@@ -1158,6 +1165,7 @@
 .nav-bottom button,
 .nav-bottom a {
   width: 100%;
+  min-height: 44px;
   padding: 11px;
   border-radius: 7px;
   font-size: 13px;
@@ -1340,9 +1348,11 @@
   .archive-search {
     flex: 1;
     width: auto;
+    min-height: 44px;
   }
   .archive-search input {
     font-size: 16px;
+    min-height: 44px;
   }
   .archive-header-actions {
     gap: 0;
@@ -1645,7 +1655,8 @@
   }
   .tree-mode-bar .segmented button {
     padding-inline: 7px;
-    font-size: 11px;
+    font-size: 12px;
+    min-height: 44px;
   }
   .tree-mode-bar .workspace-actions {
     position: static;
@@ -1655,10 +1666,10 @@
   }
   .tree-mode-bar .workspace-actions button,
   .tree-mode-bar .tree-extra-toggle {
-    min-height: 36px;
+    min-height: 44px;
     padding: 6px;
     gap: 4px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .tree-mode-bar .workspace-actions svg {
     display: none;
@@ -1681,6 +1692,11 @@
     border: 1px solid #e1e7db;
     border-radius: 8px;
     background: #fffffff0;
+  }
+  .flow-edge-label::before {
+    content: "";
+    position: absolute;
+    inset: -16px -12px;
   }
 }
 /* CSS viewport mode also works when native fullscreen is unavailable. */

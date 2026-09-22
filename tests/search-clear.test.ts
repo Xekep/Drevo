@@ -18,9 +18,12 @@ test("archive search exposes a dedicated clear button on desktop and mobile", ()
   assert.match(navigation, /aria-label="Очистить поиск"/);
   assert.match(navigation, /onClick=\{clearQuery\}/);
   assert.match(navigation, /onQuery\(""\)[\s\S]*ref\.current\?\.focus\(\)/);
-  assert.match(css, /\.archive-search-clear\s*\{[\s\S]*width: 30px;[\s\S]*height: 30px;/);
   assert.match(
     css,
-    /@media \(max-width: 899px\)[\s\S]*\.archive-search-clear\s*\{[\s\S]*width: 38px;[\s\S]*height: 38px;/,
+    /\.archive-search-clear\s*\{[\s\S]*width: 30px;[\s\S]*height: 30px;/,
+  );
+  assert.match(
+    css,
+    /@media \(max-width: 899px\)[\s\S]*\.archive-search-clear\s*\{[\s\S]*width: 44px;[\s\S]*height: 44px;/,
   );
 });

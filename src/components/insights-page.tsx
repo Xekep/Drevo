@@ -46,6 +46,42 @@ export default function InsightsPage({
       BookOpenCheck,
       MapPin,
     ][index % 8];
+  const renderFact = (
+    fact: (typeof insights.facts)[number],
+    index: number,
+    compact = false,
+  ) => {
+    const Icon = iconFor(index),
+      personId = fact.personIds?.length === 1 ? fact.personIds[0] : undefined;
+    const content = (
+      <>
+        <span className="insight-fact-icon">
+          <Icon size={18} />
+        </span>
+        <span className="insight-fact-copy">
+          <small>{fact.title}</small>
+          <strong>{fact.value}</strong>
+          <p>{fact.detail}</p>
+          {personId && <span className="insight-open">Открыть человека</span>}
+        </span>
+      </>
+    );
+    const className = `insight-fact${compact ? " is-compact" : ""}${personId ? " is-clickable" : ""}`;
+    return personId ? (
+      <button
+        type="button"
+        className={className}
+        key={`${fact.title}:${fact.value}`}
+        onClick={() => onPerson(personId)}
+      >
+        {content}
+      </button>
+    ) : (
+      <article className={className} key={`${fact.title}:${fact.value}`}>
+        {content}
+      </article>
+    );
+  };
 
   return (
     <section className="insights-page">
@@ -75,42 +111,21 @@ export default function InsightsPage({
       )}
 
       <div className="insight-facts">
-        {insights.facts.map((fact, index) => {
-          const Icon = iconFor(index),
-            personId =
-              fact.personIds?.length === 1 ? fact.personIds[0] : undefined;
-          const content = (
-            <>
-              <span className="insight-fact-icon">
-                <Icon size={18} />
-              </span>
-              <small>{fact.title}</small>
-              <strong>{fact.value}</strong>
-              <p>{fact.detail}</p>
-              {personId && (
-                <span className="insight-open">Открыть человека</span>
-              )}
-            </>
-          );
-          return personId ? (
-            <button
-              type="button"
-              className="insight-fact is-clickable"
-              key={`${fact.title}:${fact.value}`}
-              onClick={() => onPerson(personId)}
-            >
-              {content}
-            </button>
-          ) : (
-            <article
-              className="insight-fact"
-              key={`${fact.title}:${fact.value}`}
-            >
-              {content}
-            </article>
-          );
-        })}
+        {insights.facts
+          .slice(0, 4)
+          .map((fact, index) => renderFact(fact, index))}
       </div>
+
+      {insights.facts.length > 4 && (
+        <details className="insights-more">
+          <summary>Ещё факты · {insights.facts.length - 4}</summary>
+          <div className="insight-facts secondary-facts">
+            {insights.facts
+              .slice(4)
+              .map((fact, index) => renderFact(fact, index + 4, true))}
+          </div>
+        </details>
+      )}
 
       <div className="insights-columns secondary">
         <article className="insights-card">

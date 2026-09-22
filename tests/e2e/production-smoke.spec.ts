@@ -140,6 +140,62 @@ test("поля участника не разъезжаются на разны�
   }
 });
 
+test("мобильная админка доступна и не разъезжается", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.route("**/api/users?**", (route) =>
+    route.fulfill({
+      json: {
+        users: [
+          {
+            id: "mobile-layout-test",
+            name: "Участник",
+            role: "relative",
+            approved: true,
+            createdAt: "2026-01-01T00:00:00Z",
+            treeAccess: "all",
+          },
+        ],
+        next: null,
+        total: 1,
+      },
+    }),
+  );
+  await page.goto("/admin");
+  await expect(
+    page.getByRole("heading", { name: "Управление архивом" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Участники" })).toBeVisible();
+  const row = page.locator(".admin-user-row").first();
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Роль", { exact: true })).toBeVisible();
+  await expect(row.getByText("Кто это в древе", { exact: true })).toBeVisible();
+  const layout = await page.locator(".admin-page").evaluate((element) => ({
+    pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+    rowOverflow:
+      element.querySelector(".admin-user-row")!.scrollWidth >
+      element.querySelector(".admin-user-row")!.clientWidth + 1,
+  }));
+  expect(layout).toEqual({ pageOverflow: false, rowOverflow: false });
+});
+
+test("интересные данные не превращаются в длинную ленту карточек", async ({
+  page,
+}) => {
+  await page.goto("/insights");
+  await expect(
+    page.getByRole("heading", { name: "Интересные данные" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".insight-facts:not(.secondary-facts) .insight-fact"),
+  ).toHaveCount(4);
+  await expect(page.locator(".insights-more")).toBeVisible();
+  await expect(page.locator(".secondary-facts")).not.toBeVisible();
+  await page.locator(".insights-more > summary").click();
+  await expect(page.locator(".secondary-facts")).toBeVisible();
+});
+
 test("участники загружаются страницами и удаляются из списка", async ({
   page,
 }, testInfo) => {
@@ -233,6 +289,21 @@ test("награда добавляется под портретом по на�
     .getByRole("button", { name: "Добавить" })
     .click();
   await expect(portraitAwards.locator(".award-editor-chip")).toHaveCount(1);
+});
+
+test("новый человек начинается с имени, а награды появляются после сохранения", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  await page.getByRole("button", { name: "Человека", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Новый человек" }),
+  ).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /ФИО/ })).toBeVisible();
+  await expect(page.locator(".person-editor-portrait-awards")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Сохранить" })).toBeVisible();
 });
 
 test("привязанный человек видит отметку «Это вы» в карточке", async ({

@@ -26,7 +26,7 @@ export function FamiliesCatalog({
       <div className="gallery-heading">
         <div>
           <span className="section-label">РОДИТЕЛИ И ДЕТИ</span>
-          <h2>Семьи</h2>
+          <h1>Семьи</h1>
           <p>
             Каждая группа собирается из известных родителей и их детей. Один
             человек может входить в несколько семей.

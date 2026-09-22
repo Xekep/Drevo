@@ -59,7 +59,7 @@
 }
 .research-assistant > header small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .research-assistant > header button {
   display: grid;
@@ -91,7 +91,7 @@
   display: block;
   margin-bottom: 6px;
   color: #71806d;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 600;
 }
 .research-assistant-messages article p {
@@ -167,7 +167,7 @@
 .mcp-token-create legend {
   padding: 0 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .mcp-scope {
   display: flex !important;
@@ -196,7 +196,7 @@
   border-radius: 7px;
   background: white;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: 12px;
 }
 .mcp-secret button {
   width: 40px;
@@ -231,7 +231,7 @@
 .mcp-token-list code,
 .mcp-token-list small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .mcp-token-list article > button {
@@ -273,7 +273,7 @@
   display: grid;
   gap: 5px;
   color: #66755f;
-  font-size: 10px;
+  font-size: 12px;
 }
 .research-branch-action select {
   min-height: 36px;
@@ -323,7 +323,7 @@
 .research-suggestion > p {
   margin: 6px 0 10px;
   color: #657260;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
 }
 .research-suggestion > ul,
@@ -340,7 +340,7 @@
   padding: 7px 9px;
   border-radius: 7px;
   background: white;
-  font-size: 10px;
+  font-size: 12px;
 }
 .research-suggestion > ul li b {
   color: #66775f;
@@ -353,7 +353,7 @@
 .research-suggestion details {
   margin-top: 9px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .research-suggestion details summary {
   cursor: pointer;
@@ -375,9 +375,8 @@
   min-height: 34px;
   padding: 0 11px;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: 12px;
 }
-
 
 .research-answer-references {
   display: flex;
@@ -400,7 +399,7 @@
   background: #f8fbf5;
   color: #4b6545;
   text-decoration: none;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.2;
 }
 .research-answer-references button:hover,
@@ -438,7 +437,7 @@
   min-height: 30px;
   padding: 0 9px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 .ai-runtime-state.is-active {
@@ -465,12 +464,12 @@
 }
 .ai-config-status b {
   color: #657260;
-  font-size: 10px;
+  font-size: 12px;
 }
 .ai-config-status span {
   overflow-wrap: anywhere;
   color: #354232;
-  font-size: 11px;
+  font-size: 12px;
 }
 .ai-settings-admin form {
   display: grid;
@@ -478,7 +477,7 @@
 }
 .ai-settings-admin label > small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .ai-settings-actions {
@@ -511,14 +510,14 @@
 .ai-limit-settings legend {
   padding: 0 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .ai-limit-settings label {
   min-width: 0;
   display: grid;
   gap: 6px;
   color: #5f6e5a;
-  font-size: 10px;
+  font-size: 12px;
 }
 .ai-limit-settings input {
   min-width: 0;
@@ -526,7 +525,7 @@
 .ai-limit-settings > small {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .ai-usage-summary {
   display: grid;
@@ -542,7 +541,7 @@
 }
 .ai-usage-summary h4 {
   color: #66755f;
-  font-size: 11px;
+  font-size: 12px;
 }
 .ai-usage-stats {
   display: grid;
@@ -565,7 +564,7 @@
 }
 .ai-usage-stats span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.35;
 }
 .ai-usage-recent {
@@ -584,7 +583,7 @@
   padding: 3px 5px;
   border-radius: 999px;
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
 }
 .ai-usage-recent article > span.ok {
@@ -603,13 +602,13 @@
 .ai-usage-recent b {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .ai-usage-recent small,
 .ai-usage-privacy {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 .ai-usage-privacy {
@@ -643,7 +642,7 @@
   padding: 3px 5px;
   border-radius: 999px;
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
 }
 .mcp-usage-list article > span.ok {
@@ -662,13 +661,13 @@
 .mcp-usage-list article b {
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .mcp-usage-list article small,
 .mcp-usage-list > p {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 .mcp-usage-list > p {
@@ -686,7 +685,7 @@
 .ai-credential-settings legend {
   padding: 0 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .ai-credential-settings > label {
   min-width: 0;

@@ -80,7 +80,6 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     const noop = () => {};
     const navigation = renderToStaticMarkup(
       createElement(ArchiveNavigation, {
-        desktop: false,
         view: "tree",
         onView: noop,
         user,
@@ -94,7 +93,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     assert.doesNotMatch(navigation, /export\.json|Экспорт JSON без фото/);
     assert.match(navigation, /Семьи/);
     assert.match(navigation, /Фото/);
-    assert.doesNotMatch(navigation, /Админка|Админская панель/);
+    assert.match(navigation, /Админка/);
     const inspector = renderToStaticMarkup(
       createElement(PersonInspector, {
         person: p,
