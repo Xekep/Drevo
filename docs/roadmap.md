@@ -40,7 +40,7 @@
 
 ### Этап 3 — MCP
 
-- [x] Stateless HTTP endpoint /mcp с JSON-RPC методами initialize, ping, tools/list и tools/call.
+- [x] Stateless HTTP endpoint /mcp: modern MCP 2026-07-28 через server/discover и прямые вызовы; legacy-клиенты через initialize. Опубликованы tools/list и tools/call.
 - [x] Реализация без дополнительной runtime-зависимости от MCP SDK; протокольный слой остаётся тонким адаптером.
 - [x] Read-only инструменты используют тот же Research Tools слой.
 - [x] Администратор выдаёт отдельные MCP-токены.
