@@ -82,13 +82,13 @@ export function aiResearchHttp({
       headers: {
         Authorization: `Api-Key ${apiKey}`,
         "Content-Type": "application/json",
+        ...(folderId ? { "OpenAI-Project": folderId } : {}),
       },
       body: JSON.stringify({
         model,
         messages,
         temperature: 0.2,
         tool_choice: "auto",
-        parallel_tool_calls: false,
         tools: RESEARCH_TOOL_DEFINITIONS.map((definition) => ({
           type: "function",
           function: {
@@ -135,7 +135,7 @@ export function aiResearchHttp({
     if (!enabled)
       return json(res, 503, {
         error:
-          "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_MODEL",
+          "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_FOLDER_ID",
       });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
