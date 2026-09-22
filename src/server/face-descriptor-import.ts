@@ -1,0 +1,135 @@
+import { createHash } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+
+type FaceModel = "face-api-1.7.15" | "human-faceres-3.3.6";
+type Descriptor = {
+  id: string;
+  personId: string;
+  descriptor: number[];
+  sourcePhotoId?: string;
+  model: FaceModel;
+};
+
+function parseDescriptors(values: unknown): Descriptor[] {
+  if (!Array.isArray(values))
+    throw new Error("Expected an array of face descriptors");
+  return values.map((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Invalid face descriptor input");
+    const sample = value as Record<string, unknown>;
+    const model = sample.model ?? "face-api-1.7.15";
+    const dimensions = model === "human-faceres-3.3.6" ? 1024 : 128;
+    const maxValue = model === "human-faceres-3.3.6" ? 100 : 2;
+    if (
+      (model !== "human-faceres-3.3.6" && model !== "face-api-1.7.15") ||
+      typeof sample.id !== "string" ||
+      !sample.id ||
+      sample.id.length > 250 ||
+      typeof sample.personId !== "string" ||
+      !sample.personId ||
+      sample.personId.length > 200 ||
+      !Array.isArray(sample.descriptor) ||
+      sample.descriptor.length !== dimensions ||
+      !sample.descriptor.every(
+        (item) =>
+          typeof item === "number" &&
+          Number.isFinite(item) &&
+          Math.abs(item) <= maxValue,
+      ) ||
+      (model === "human-faceres-3.3.6" &&
+        (typeof sample.sourcePhotoId !== "string" ||
+          !sample.sourcePhotoId ||
+          sample.sourcePhotoId.length > 200))
+    )
+      throw new Error("Invalid face descriptor input");
+    return {
+      id: sample.id,
+      personId: sample.personId,
+      descriptor: sample.descriptor,
+      sourcePhotoId:
+        typeof sample.sourcePhotoId === "string"
+          ? sample.sourcePhotoId
+          : undefined,
+      model,
+    };
+  });
+}
+
+export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
+  const descriptors = parseDescriptors(values);
+  const person = db.prepare("SELECT 1 FROM people WHERE id=?");
+  const tagged = db.prepare(
+    "SELECT 1 FROM photo_tags WHERE photo_id=? AND person_id=? LIMIT 1",
+  );
+  const existing = db.prepare(
+    "SELECT person_id,data,source_photo_id,model FROM face_descriptors WHERE id=?",
+  );
+  const insert = db.prepare(
+    `INSERT INTO face_descriptors
+       (id,person_id,data,source_photo_id,model)
+     VALUES(?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET
+       person_id=excluded.person_id,
+       data=excluded.data,
+       source_photo_id=excluded.source_photo_id,
+       model=excluded.model`,
+  );
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const sample of descriptors) {
+      if (!person.get(sample.personId))
+        throw new Error(`Unknown person: ${sample.personId}`);
+      if (
+        sample.model === "human-faceres-3.3.6" &&
+        !tagged.get(sample.sourcePhotoId || "", sample.personId)
+      )
+        throw new Error(
+          `Missing confirmed photo tag: ${sample.sourcePhotoId} / ${sample.personId}`,
+        );
+      // A legacy sample may have used the same tag ID. Model-scoped IDs keep
+      // both generations without silently discarding the new 1024-D sample.
+      const id =
+        sample.model === "human-faceres-3.3.6"
+          ? `face-${createHash("sha256")
+              .update(`${sample.model}\0${sample.id}`)
+              .digest("hex")
+              .slice(0, 32)}`
+          : sample.id;
+      const data = JSON.stringify(sample.descriptor);
+      const previous = existing.get(id);
+      if (previous && sample.model === "face-api-1.7.15") {
+        skipped++;
+        continue;
+      }
+      if (
+        previous &&
+        previous.person_id === sample.personId &&
+        previous.data === data &&
+        previous.source_photo_id === (sample.sourcePhotoId || null) &&
+        previous.model === sample.model
+      ) {
+        skipped++;
+        continue;
+      }
+      if (previous && previous.model !== sample.model)
+        throw new Error(`Descriptor ID collision: ${id}`);
+      insert.run(
+        id,
+        sample.personId,
+        data,
+        sample.sourcePhotoId || null,
+        sample.model,
+      );
+      if (previous) updated++;
+      else inserted++;
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { received: descriptors.length, inserted, updated, skipped };
+}
