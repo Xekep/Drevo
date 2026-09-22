@@ -45,6 +45,37 @@ function result(id: JsonRpcId, value: unknown) {
   return { jsonrpc: "2.0", id, result: value };
 }
 
+function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
+  const header = req.headers["mcp-protocol-version"];
+  if (typeof header === "string") return header;
+  if (!request.params || typeof request.params !== "object") return "";
+  const meta = (request.params as Record<string, unknown>)._meta;
+  if (!meta || typeof meta !== "object") return "";
+  const version = (meta as Record<string, unknown>)[
+    "io.modelcontextprotocol/protocolVersion"
+  ];
+  return typeof version === "string" ? version : "";
+}
+
+function modernResult(
+  value: Record<string, unknown>,
+  cacheable = false,
+) {
+  const meta =
+    value._meta && typeof value._meta === "object"
+      ? (value._meta as Record<string, unknown>)
+      : {};
+  return {
+    resultType: "complete",
+    ...value,
+    ...(cacheable ? { ttlMs: 0, cacheScope: "private" } : {}),
+    _meta: {
+      ...meta,
+      "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+    },
+  };
+}
+
 function error(id: JsonRpcId, code: number, message: string, data?: unknown) {
   return {
     jsonrpc: "2.0",
@@ -110,7 +141,9 @@ export function mcpHttp({
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string")
       return json(res, 400, error(id, -32600, "Invalid Request"));
 
-    const headerVersion = req.headers["mcp-protocol-version"];
+    const protocolVersion = requestProtocolVersion(request, req),
+      modern = protocolVersion === "2026-07-28",
+      headerVersion = req.headers["mcp-protocol-version"];
     if (
       typeof headerVersion === "string" &&
       !MCP_PROTOCOL_VERSIONS.includes(
@@ -169,14 +202,17 @@ export function mcpHttp({
       return json(
         res,
         200,
-        result(id, {
-          supportedVersions: MCP_PROTOCOL_VERSIONS,
-          capabilities: { tools: { listChanged: false } },
-          instructions: MCP_INSTRUCTIONS,
-          _meta: {
-            "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
-          },
-        }),
+        result(
+          id,
+          modernResult(
+            {
+              supportedVersions: ["2026-07-28"],
+              capabilities: { tools: { listChanged: false } },
+              instructions: MCP_INSTRUCTIONS,
+            },
+            true,
+          ),
+        ),
       );
 
     if (request.method === "initialize") {
@@ -211,7 +247,13 @@ export function mcpHttp({
       );
     }
 
-    if (request.method === "ping") return json(res, 200, result(id, {}));
+    if (request.method === "ping") {
+      if (modern) {
+        auditError = true;
+        return json(res, 200, error(id, -32601, "Method not found"));
+      }
+      return json(res, 200, result(id, {}));
+    }
 
     if (request.method === "tools/list") {
       const available = RESEARCH_TOOL_DEFINITIONS.filter((definition) =>
@@ -227,7 +269,16 @@ export function mcpHttp({
           openWorldHint: false,
         },
       }));
-      return json(res, 200, result(id, { tools: available }));
+      return json(
+        res,
+        200,
+        result(
+          id,
+          modern
+            ? modernResult({ tools: available }, true)
+            : { tools: available },
+        ),
+      );
     }
 
     if (request.method === "tools/call") {
@@ -244,15 +295,28 @@ export function mcpHttp({
         return json(
           res,
           200,
-          result(id, {
-            content: [
-              {
-                type: "text",
-                text: "Инструмент не найден или не разрешён этим токеном",
-              },
-            ],
-            isError: true,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [
+                    {
+                      type: "text",
+                      text: "Инструмент не найден или не разрешён этим токеном",
+                    },
+                  ],
+                  isError: true,
+                })
+              : {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Инструмент не найден или не разрешён этим токеном",
+                    },
+                  ],
+                  isError: true,
+                },
+          ),
         );
       }
       try {
@@ -268,28 +332,52 @@ export function mcpHttp({
         return json(
           res,
           200,
-          result(id, {
-            content: [{ type: "text", text: JSON.stringify(value) }],
-            structuredContent: value,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [{ type: "text", text: JSON.stringify(value) }],
+                  structuredContent: value,
+                })
+              : {
+                  content: [{ type: "text", text: JSON.stringify(value) }],
+                  structuredContent: value,
+                },
+          ),
         );
       } catch (reason) {
         auditError = true;
         return json(
           res,
           200,
-          result(id, {
-            content: [
-              {
-                type: "text",
-                text:
-                  reason instanceof Error
-                    ? reason.message
-                    : "Ошибка исследовательского инструмента",
-              },
-            ],
-            isError: true,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        reason instanceof Error
+                          ? reason.message
+                          : "Ошибка исследовательского инструмента",
+                    },
+                  ],
+                  isError: true,
+                })
+              : {
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        reason instanceof Error
+                          ? reason.message
+                          : "Ошибка исследовательского инструмента",
+                    },
+                  ],
+                  isError: true,
+                },
+          ),
         );
       }
     }
