@@ -6,6 +6,7 @@ import {
   type aiSettingsStore,
 } from "./ai-settings.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import type { aiUsageStore } from "./ai-usage.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -26,11 +27,13 @@ type AiTestResponse = {
 export function adminAiHttp({
   auth,
   settings,
+  usage,
   publicOrigin,
   fetcher = fetch,
 }: {
   auth: ReturnType<typeof createAuth>;
   settings: ReturnType<typeof aiSettingsStore>;
+  usage: ReturnType<typeof aiUsageStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -57,7 +60,10 @@ export function adminAiHttp({
       });
 
     if (path === "/api/admin/ai" && req.method === "GET")
-      return json(res, 200, publicAiStatus(settings));
+      return json(res, 200, {
+        ...publicAiStatus(settings),
+        usage: usage.summary(),
+      });
 
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
@@ -67,7 +73,10 @@ export function adminAiHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         settings.write(await readJson(req), auth.currentUser(req)!);
-        return json(res, 200, publicAiStatus(settings));
+        return json(res, 200, {
+          ...publicAiStatus(settings),
+          usage: usage.summary(),
+        });
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,

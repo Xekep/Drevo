@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 8;
+export const ARCHIVE_SCHEMA_VERSION = 9;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -111,11 +111,19 @@ function version(db: DatabaseSync) {
   return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
 }
 
-function relationHasCreatedBy(db: DatabaseSync) {
+function tableHasColumn(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+) {
   return db
-    .prepare("PRAGMA table_info(relations)")
+    .prepare(`PRAGMA table_info(${table})`)
     .all()
-    .some((row) => row.name === "created_by");
+    .some((row) => row.name === column);
+}
+
+function relationHasCreatedBy(db: DatabaseSync) {
+  return tableHasColumn(db, "relations", "created_by");
 }
 
 function migrate(db: DatabaseSync, target: number) {
@@ -246,6 +254,43 @@ function migrate(db: DatabaseSync, target: number) {
         model TEXT NOT NULL DEFAULT ''
       ) STRICT;
       INSERT OR IGNORE INTO ai_settings(id,enabled,model) VALUES(1,1,'');
+    `);
+    return;
+  }
+  if (target === 9) {
+    if (!tableHasColumn(db, "ai_settings", "requests_per_minute"))
+      db.exec(`
+        ALTER TABLE ai_settings ADD COLUMN requests_per_minute INTEGER NOT NULL DEFAULT 6
+          CHECK(requests_per_minute BETWEEN 0 AND 120);
+      `);
+    if (!tableHasColumn(db, "ai_settings", "daily_requests"))
+      db.exec(`
+        ALTER TABLE ai_settings ADD COLUMN daily_requests INTEGER NOT NULL DEFAULT 100
+          CHECK(daily_requests BETWEEN 0 AND 100000);
+      `);
+    if (!tableHasColumn(db, "ai_settings", "daily_tokens"))
+      db.exec(`
+        ALTER TABLE ai_settings ADD COLUMN daily_tokens INTEGER NOT NULL DEFAULT 250000
+          CHECK(daily_tokens BETWEEN 0 AND 1000000000);
+      `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ai_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        started_ms INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('ok','error')),
+        provider_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        latency_ms INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS ai_usage_user_started
+        ON ai_usage(user_id,started_ms DESC);
+      CREATE INDEX IF NOT EXISTS ai_usage_started
+        ON ai_usage(started_ms DESC);
     `);
     return;
   }

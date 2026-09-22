@@ -16,6 +16,10 @@ import {
   RESEARCH_PROPOSAL_TOOLS,
   type researchSuggestionStore,
 } from "./research-suggestions.ts";
+import {
+  AiLimitError,
+  type aiUsageStore,
+} from "./ai-usage.ts";
 
 type ToolCall = {
   id: string;
@@ -31,7 +35,20 @@ type ModelMessage = {
 type ModelResponse = {
   choices?: Array<{ message?: ModelMessage }>;
   error?: { message?: string };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    input_tokens?: number;
+    output_tokens?: number;
+  };
 };
+
+function estimateTokens(value: unknown) {
+  const serialized =
+    typeof value === "string" ? value : JSON.stringify(value ?? "");
+  return Math.max(1, Math.ceil(serialized.length / 4));
+}
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -131,6 +148,7 @@ export function aiResearchHttp({
   auth,
   suggestions,
   aiSettings,
+  usage,
   publicOrigin,
   fetcher = fetch,
 }: {
@@ -138,6 +156,7 @@ export function aiResearchHttp({
   auth: ReturnType<typeof createAuth>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
   aiSettings: ReturnType<typeof aiSettingsStore>;
+  usage: ReturnType<typeof aiUsageStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -154,11 +173,29 @@ export function aiResearchHttp({
     messages: ModelMessage[],
     canPropose: boolean,
     runtime: ReturnType<typeof aiRuntimeConfig>,
-  ): Promise<ModelMessage> {
+  ): Promise<{
+    message: ModelMessage;
+    inputTokens: number;
+    outputTokens: number;
+  }> {
     const definitions = [
       ...RESEARCH_TOOL_DEFINITIONS,
       ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
     ];
+    const requestBody = {
+      model: runtime.modelUri,
+      messages,
+      temperature: 0.2,
+      tool_choice: "auto",
+      tools: definitions.map((definition) => ({
+        type: "function",
+        function: {
+          name: definition.name,
+          description: definition.description,
+          parameters: definition.inputSchema,
+        },
+      })),
+    };
     const response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -168,20 +205,7 @@ export function aiResearchHttp({
           ? { "OpenAI-Project": runtime.folderId }
           : {}),
       },
-      body: JSON.stringify({
-        model: runtime.modelUri,
-        messages,
-        temperature: 0.2,
-        tool_choice: "auto",
-        tools: definitions.map((definition) => ({
-          type: "function",
-          function: {
-            name: definition.name,
-            description: definition.description,
-            parameters: definition.inputSchema,
-          },
-        })),
-      }),
+      body: JSON.stringify(requestBody),
     });
     const data = (await response.json()) as ModelResponse;
     if (!response.ok)
@@ -191,7 +215,21 @@ export function aiResearchHttp({
       );
     const message = data.choices?.[0]?.message;
     if (!message) throw new Error("Yandex AI Studio не вернула ответ");
-    return message;
+    const reportedInput =
+        data.usage?.prompt_tokens ?? data.usage?.input_tokens,
+      reportedOutput =
+        data.usage?.completion_tokens ?? data.usage?.output_tokens;
+    return {
+      message,
+      inputTokens:
+        typeof reportedInput === "number" && Number.isFinite(reportedInput)
+          ? Math.max(0, reportedInput)
+          : estimateTokens(requestBody),
+      outputTokens:
+        typeof reportedOutput === "number" && Number.isFinite(reportedOutput)
+          ? Math.max(0, reportedOutput)
+          : estimateTokens(message),
+    };
   }
 
   return async (
@@ -229,6 +267,12 @@ export function aiResearchHttp({
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
 
+    let usageRun:
+        | { id: number; started: number }
+        | undefined,
+      providerCalls = 0,
+      inputTokens = 0,
+      outputTokens = 0;
     try {
       const body = (await readJson(req)) as Record<string, unknown>,
         message =
@@ -237,8 +281,10 @@ export function aiResearchHttp({
         return json(res, 400, { error: "Некорректный текст запроса" });
 
       const user = auth.currentUser(req)!,
-        canPropose = auth.canEdit(req),
-        snapshot = archive.read(),
+        canPropose = auth.canEdit(req);
+      usage.check(user.id, runtime.limits);
+      usageRun = usage.begin(user.id, runtime.model);
+      const snapshot = archive.read(),
         fullFamily = snapshot.family,
         family = isScopedUser(user)
           ? projectFamilyForUser(fullFamily, user)
@@ -286,7 +332,11 @@ export function aiResearchHttp({
         >();
 
       for (let round = 0; round < 8; round++) {
-        const answer = await complete(messages, canPropose, runtime);
+        providerCalls++;
+        const completion = await complete(messages, canPropose, runtime),
+          answer = completion.message;
+        inputTokens += completion.inputTokens;
+        outputTokens += completion.outputTokens;
         messages.push(answer);
         const calls = answer.tool_calls || [];
         if (!calls.length) {
@@ -300,6 +350,13 @@ export function aiResearchHttp({
               })),
             ...[...referencedSources.values()].slice(0, 8),
           ];
+          if (usageRun)
+            usage.finish(usageRun.id, usageRun.started, {
+              status: "ok",
+              providerCalls,
+              inputTokens,
+              outputTokens,
+            });
           return json(res, 200, {
             answer:
               typeof answer.content === "string" && answer.content.trim()
@@ -366,10 +423,20 @@ export function aiResearchHttp({
           });
         }
       }
-      return json(res, 502, {
-        error: "ИИ превысил допустимое число вызовов инструментов",
-      });
+      throw new Error("ИИ превысил допустимое число вызовов инструментов");
     } catch (error) {
+      if (usageRun)
+        usage.finish(usageRun.id, usageRun.started, {
+          status: "error",
+          providerCalls,
+          inputTokens,
+          outputTokens,
+        });
+      if (error instanceof AiLimitError) {
+        if (error.retryAfterSeconds)
+          res.setHeader("Retry-After", String(error.retryAfterSeconds));
+        return json(res, 429, { error: error.message });
+      }
       return json(res, error instanceof RangeError ? 413 : 502, {
         error:
           error instanceof Error

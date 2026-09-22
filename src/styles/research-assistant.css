@@ -499,3 +499,125 @@
     grid-template-columns: 1fr;
   }
 }
+
+.ai-limit-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ai-limit-settings legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-limit-settings label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: #5f6e5a;
+  font-size: 10px;
+}
+.ai-limit-settings input {
+  min-width: 0;
+}
+.ai-limit-settings > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+.ai-usage-summary {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+.ai-usage-summary h3,
+.ai-usage-summary h4 {
+  margin: 0;
+}
+.ai-usage-summary h3 {
+  font-size: 13px;
+}
+.ai-usage-summary h4 {
+  color: #66755f;
+  font-size: 11px;
+}
+.ai-usage-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+.ai-usage-stats > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fafbf9;
+}
+.ai-usage-stats b {
+  overflow-wrap: anywhere;
+  color: #3d5038;
+  font-size: 13px;
+}
+.ai-usage-stats span {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+.ai-usage-recent {
+  display: grid;
+  gap: 5px;
+}
+.ai-usage-recent article {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.ai-usage-recent article > span {
+  padding: 3px 5px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+.ai-usage-recent article > span.ok {
+  background: #edf5e9;
+  color: #46653f;
+}
+.ai-usage-recent article > span.error {
+  background: #f8e9e7;
+  color: #8c5149;
+}
+.ai-usage-recent article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.ai-usage-recent b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.ai-usage-recent small,
+.ai-usage-privacy {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.ai-usage-privacy {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .ai-limit-settings,
+  .ai-usage-stats {
+    grid-template-columns: 1fr;
+  }
+}
