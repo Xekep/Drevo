@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
+import { fullName } from "../domain/dates.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import {
   applyPersonUpdateSuggestion,
@@ -48,8 +49,19 @@ export function researchSuggestionsHttp({
     if (
       url.pathname === "/api/research/suggestions" &&
       req.method === "GET"
-    )
-      return json(res, 200, { suggestions: suggestions.list(actor) });
+    ) {
+      const people = new Map(
+        archive.read().family.people.map((person) => [person.id, person]),
+      );
+      return json(res, 200, {
+        suggestions: suggestions.list(actor).map((suggestion) => ({
+          ...suggestion,
+          personName: people.has(suggestion.personId)
+            ? fullName(people.get(suggestion.personId)!)
+            : "Удалённая карточка",
+        })),
+      });
+    }
 
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
