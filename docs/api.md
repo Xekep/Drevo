@@ -22,12 +22,12 @@ JSON-ответы имеют `Cache-Control: no-store`. Авторизация �
 | `PUT /api/settings`           | JSON `{publicTree, publicAlbums, reverseTimeline}`    | Администратор                                               |
 | `GET /api/backup`             | Согласованная копия `.sqlite`                         | Администратор                                               |
 | `GET /api/backup/full`        | `.tar.gz`: SQLite и фотографии                        | Администратор                                               |
-
 | `GET /api/ai/status`          | Доступность встроенного ИИ-исследователя             | Вошедший читатель                                           |
 | `POST /api/ai/chat`           | Диалог с ИИ через read-only Research Tools            | Вошедший читатель                                           |
 | `GET /api/mcp/tokens`         | Список выданных MCP-токенов                           | Администратор                                               |
 | `POST /api/mcp/tokens`        | Выдать MCP-токен; секрет возвращается один раз        | Администратор                                               |
 | `DELETE /api/mcp/tokens/<id>` | Отозвать MCP-токен                                    | Администратор                                               |
+
 ## Снимок и права
 
 Для интерфейса также предусмотрены запросы:
