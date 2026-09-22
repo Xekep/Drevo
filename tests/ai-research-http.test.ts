@@ -102,10 +102,15 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       }),
     });
     assert.equal(response.status, 200);
-    assert.equal(
-      (await response.json()).answer,
-      "В архиве найдена Анна Лебедь.",
-    );
+    const answerData = await response.json();
+    assert.equal(answerData.answer, "В архиве найдена Анна Лебедь.");
+    assert.deepEqual(answerData.references, [
+      {
+        kind: "person",
+        personId: "anna-ai-test",
+        label: "Лебедь Анна Семёновна",
+      },
+    ]);
     assert.equal(requests.length, 2);
     assert.equal(requests[0].headers.get("authorization"), "Api-Key test-key");
     assert.equal(requests[0].headers.get("openai-project"), "folder-1");
@@ -119,6 +124,127 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       (message) => message.role === "tool",
     );
     assert.match(toolMessage?.content || "", /Анна/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("web researcher returns source references owned by a real person", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-source-ref-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+
+  let call = 0;
+  const aiFetch: typeof fetch = async () => {
+    call++;
+    if (call === 1)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "source-call-1",
+                  type: "function",
+                  function: {
+                    name: "get_sources",
+                    arguments: JSON.stringify({ personId: "anna-source-ref" }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    return Response.json({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "У Анны есть архивный источник.",
+          },
+        },
+      ],
+    });
+  };
+
+  const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      aiFetch,
+    ),
+    base =
+      "http://127.0.0.1:" +
+      (app.server.address() as { port: number }).port;
+
+  try {
+    const current = app.archive.read(),
+      family: Family = {
+        ...current.family,
+        people: [
+          ...current.family.people,
+          {
+            id: "anna-source-ref",
+            surname: "Лебедь",
+            name: "Анна",
+            patronymic: "Семёновна",
+            sex: "f",
+            birth: "1919",
+            birthPlace: "Нижнее",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [
+              {
+                title: "Метрическая запись",
+                type: "archive",
+                reference: "Ф. 1, оп. 2, д. 3",
+                url: "https://archive.example/record",
+              },
+            ],
+          },
+        ],
+      };
+    app.archive.write(family, current.revision);
+
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Покажи источники Анны",
+        context: { view: "tree", personIds: ["anna-source-ref"] },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.deepEqual(data.references, [
+      {
+        kind: "person",
+        personId: "anna-source-ref",
+        label: "Лебедь Анна Семёновна",
+      },
+      {
+        kind: "source",
+        personId: "anna-source-ref",
+        label: "Метрическая запись",
+        reference: "Ф. 1, оп. 2, д. 3",
+        url: "https://archive.example/record",
+      },
+    ]);
   } finally {
     await app.close();
     for (const key of [
