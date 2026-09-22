@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 9;
+export const ARCHIVE_SCHEMA_VERSION = 10;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -291,6 +291,31 @@ function migrate(db: DatabaseSync, target: number) {
         ON ai_usage(user_id,started_ms DESC);
       CREATE INDEX IF NOT EXISTS ai_usage_started
         ON ai_usage(started_ms DESC);
+    `);
+    return;
+  }
+  if (target === 10) {
+    if (!tableHasColumn(db, "mcp_tokens", "rate_limit_per_minute"))
+      db.exec(`
+        ALTER TABLE mcp_tokens
+          ADD COLUMN rate_limit_per_minute INTEGER NOT NULL DEFAULT 60
+          CHECK(rate_limit_per_minute BETWEEN 0 AND 600);
+      `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS mcp_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        started_ms INTEGER NOT NULL,
+        token_id TEXT NOT NULL REFERENCES mcp_tokens(id) ON DELETE CASCADE,
+        method TEXT NOT NULL,
+        tool_name TEXT,
+        status TEXT NOT NULL CHECK(status IN ('ok','error')),
+        latency_ms INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS mcp_usage_token_started
+        ON mcp_usage(token_id,started_ms DESC);
+      CREATE INDEX IF NOT EXISTS mcp_usage_started
+        ON mcp_usage(started_ms DESC);
     `);
     return;
   }
