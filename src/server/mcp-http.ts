@@ -10,6 +10,7 @@ import {
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -44,6 +45,42 @@ function result(id: JsonRpcId, value: unknown) {
   return { jsonrpc: "2.0", id, result: value };
 }
 
+function requestMetaProtocolVersion(request: JsonRpcRequest) {
+  if (!request.params || typeof request.params !== "object") return "";
+  const meta = (request.params as Record<string, unknown>)._meta;
+  if (!meta || typeof meta !== "object") return "";
+  const version = (meta as Record<string, unknown>)[
+    "io.modelcontextprotocol/protocolVersion"
+  ];
+  return typeof version === "string" ? version : "";
+}
+
+function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
+  const header = req.headers["mcp-protocol-version"];
+  return typeof header === "string"
+    ? header
+    : requestMetaProtocolVersion(request);
+}
+
+function modernResult(
+  value: Record<string, unknown>,
+  cacheable = false,
+) {
+  const meta =
+    value._meta && typeof value._meta === "object"
+      ? (value._meta as Record<string, unknown>)
+      : {};
+  return {
+    resultType: "complete",
+    ...value,
+    ...(cacheable ? { ttlMs: 0, cacheScope: "private" } : {}),
+    _meta: {
+      ...meta,
+      "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
+    },
+  };
+}
+
 function error(id: JsonRpcId, code: number, message: string, data?: unknown) {
   return {
     jsonrpc: "2.0",
@@ -56,10 +93,12 @@ export function mcpHttp({
   archive,
   tokens,
   usage,
+  publicOrigin,
 }: {
   archive: ReturnType<typeof openArchive>;
   tokens: ReturnType<typeof mcpTokenStore>;
   usage: ReturnType<typeof mcpUsageStore>;
+  publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -76,6 +115,11 @@ export function mcpHttp({
     url: URL,
   ): Promise<boolean> => {
     if (url.pathname !== "/mcp") return false;
+
+    if (!isSameOriginRequest(req, publicOrigin))
+      return json(res, 403, {
+        error: "Invalid origin",
+      });
 
     const grant = tokens.authenticate(req.headers.authorization);
     if (!grant) {
@@ -102,18 +146,34 @@ export function mcpHttp({
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string")
       return json(res, 400, error(id, -32600, "Invalid Request"));
 
-    const headerVersion = req.headers["mcp-protocol-version"];
+    const protocolVersion = requestProtocolVersion(request, req),
+      metaVersion = requestMetaProtocolVersion(request),
+      modern = protocolVersion === "2026-07-28",
+      headerVersion = req.headers["mcp-protocol-version"];
+
     if (
       typeof headerVersion === "string" &&
+      metaVersion &&
+      headerVersion !== metaVersion
+    )
+      return json(
+        res,
+        400,
+        error(id, -32020, "MCP protocol version header does not match _meta"),
+      );
+
+    if (
+      protocolVersion &&
       !MCP_PROTOCOL_VERSIONS.includes(
-        headerVersion as (typeof MCP_PROTOCOL_VERSIONS)[number],
+        protocolVersion as (typeof MCP_PROTOCOL_VERSIONS)[number],
       )
     )
       return json(
         res,
         400,
-        error(id, -32602, "Unsupported MCP protocol version", {
-          supportedVersions: MCP_PROTOCOL_VERSIONS,
+        error(id, -32022, "Unsupported MCP protocol version", {
+          supported: MCP_PROTOCOL_VERSIONS,
+          requested: protocolVersion,
         }),
       );
 
@@ -161,14 +221,17 @@ export function mcpHttp({
       return json(
         res,
         200,
-        result(id, {
-          supportedVersions: MCP_PROTOCOL_VERSIONS,
-          capabilities: { tools: { listChanged: false } },
-          instructions: MCP_INSTRUCTIONS,
-          _meta: {
-            "io.modelcontextprotocol/serverInfo": MCP_SERVER_INFO,
-          },
-        }),
+        result(
+          id,
+          modernResult(
+            {
+              supportedVersions: ["2026-07-28"],
+              capabilities: { tools: { listChanged: false } },
+              instructions: MCP_INSTRUCTIONS,
+            },
+            true,
+          ),
+        ),
       );
 
     if (request.method === "initialize") {
@@ -203,7 +266,13 @@ export function mcpHttp({
       );
     }
 
-    if (request.method === "ping") return json(res, 200, result(id, {}));
+    if (request.method === "ping") {
+      if (modern) {
+        auditError = true;
+        return json(res, 404, error(id, -32601, "Method not found"));
+      }
+      return json(res, 200, result(id, {}));
+    }
 
     if (request.method === "tools/list") {
       const available = RESEARCH_TOOL_DEFINITIONS.filter((definition) =>
@@ -219,7 +288,16 @@ export function mcpHttp({
           openWorldHint: false,
         },
       }));
-      return json(res, 200, result(id, { tools: available }));
+      return json(
+        res,
+        200,
+        result(
+          id,
+          modern
+            ? modernResult({ tools: available }, true)
+            : { tools: available },
+        ),
+      );
     }
 
     if (request.method === "tools/call") {
@@ -236,15 +314,28 @@ export function mcpHttp({
         return json(
           res,
           200,
-          result(id, {
-            content: [
-              {
-                type: "text",
-                text: "Инструмент не найден или не разрешён этим токеном",
-              },
-            ],
-            isError: true,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [
+                    {
+                      type: "text",
+                      text: "Инструмент не найден или не разрешён этим токеном",
+                    },
+                  ],
+                  isError: true,
+                })
+              : {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Инструмент не найден или не разрешён этим токеном",
+                    },
+                  ],
+                  isError: true,
+                },
+          ),
         );
       }
       try {
@@ -260,33 +351,61 @@ export function mcpHttp({
         return json(
           res,
           200,
-          result(id, {
-            content: [{ type: "text", text: JSON.stringify(value) }],
-            structuredContent: value,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [{ type: "text", text: JSON.stringify(value) }],
+                  structuredContent: value,
+                })
+              : {
+                  content: [{ type: "text", text: JSON.stringify(value) }],
+                  structuredContent: value,
+                },
+          ),
         );
       } catch (reason) {
         auditError = true;
         return json(
           res,
           200,
-          result(id, {
-            content: [
-              {
-                type: "text",
-                text:
-                  reason instanceof Error
-                    ? reason.message
-                    : "Ошибка исследовательского инструмента",
-              },
-            ],
-            isError: true,
-          }),
+          result(
+            id,
+            modern
+              ? modernResult({
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        reason instanceof Error
+                          ? reason.message
+                          : "Ошибка исследовательского инструмента",
+                    },
+                  ],
+                  isError: true,
+                })
+              : {
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        reason instanceof Error
+                          ? reason.message
+                          : "Ошибка исследовательского инструмента",
+                    },
+                  ],
+                  isError: true,
+                },
+          ),
         );
       }
     }
 
     auditError = true;
-    return json(res, 200, error(id, -32601, "Method not found"));
+    return json(
+      res,
+      modern ? 404 : 200,
+      error(id, -32601, "Method not found"),
+    );
   };
 }

@@ -136,3 +136,28 @@ Rate limits, дневные лимиты, usage-метрики, права до�
 Для `common_ancestors` MCP использует тот же `projectFamilyForUser`, что и веб-интерфейс: Research Tools получают только разрешённую проекцию Family. Отдельная параллельная реализация правил доступа не вводится.
 
 Если привязанный участник заблокирован, аутентификация токена прекращается. Если участник удалён, связанный токен удаляется каскадом. Это не позволяет удалению или блокировке случайно превратить ограниченный токен в токен всего архива.
+
+
+## Совместимость внешних MCP-клиентов
+
+Drevo проверяется в CI официальным TypeScript-клиентом `@modelcontextprotocol/client@2.0.0` в двух режимах:
+
+- `versionNegotiation: { mode: "auto" }` — должен выбрать modern era `2026-07-28` через `server/discover`;
+- `versionNegotiation: { mode: "legacy" }` — должен пройти initialize lifecycle 2025-era.
+
+Оба smoke-теста выполняют `tools/list` и реальный `tools/call` через Streamable HTTP с Bearer-токеном. Modern responses содержат обязательный `resultType`, server identity в `_meta`, а cacheable `server/discover` / `tools/list` — консервативные `ttlMs: 0` и `cacheScope: "private"`.
+
+Явный cross-origin HTTP-запрос к `/mcp` блокируется с 403; серверные MCP-клиенты без Origin продолжают работать. Это соответствует требованию Streamable HTTP проверять Origin при его наличии.
+
+### Yandex AI Studio MCP Hub
+
+Для развернутого Drevo:
+
+- Transport: **Streamable HTTP**
+- URL: `https://<drevo-host>/mcp`
+- Authorization type: **Access token**
+- Authorization header value: `Bearer <drevo_mcp_token>`
+
+Для AI Studio лучше выдавать отдельный токен с минимальными scopes и, если агент не должен видеть весь архив, привязать его к участнику с нужным `treeAccess`. Секрет MCP-токена показывается Drevo только при создании.
+
+CI подтверждает wire-совместимость с официальным MCP-клиентом. Отдельная живая проверка именно из Yandex AI Studio MCP Hub остаётся deployment-задачей, потому что для неё нужны публичный HTTPS endpoint и реальный секретный токен.
