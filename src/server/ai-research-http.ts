@@ -226,6 +226,55 @@ function collectPersonReferences(
     collectPersonReferences(item, people, ids);
 }
 
+function commonPrefixLength(left: string, right: string) {
+  let index = 0;
+  while (
+    index < left.length &&
+    index < right.length &&
+    left[index] === right[index]
+  )
+    index++;
+  return index;
+}
+
+function repairArchiveMarkers(
+  value: string,
+  people: Map<string, string>,
+  photos: Map<string, string>,
+  referencedPeople: Set<string>,
+  referencedPhotos: Set<string>,
+) {
+  return value.replace(
+    /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
+    (marker, kind: string, id: string, label: string) => {
+      const records = kind === "photo" ? photos : people,
+        referenced = kind === "photo" ? referencedPhotos : referencedPeople;
+      if (records.has(id)) return marker;
+      const normalizedLabel = label.trim().toLocaleLowerCase("ru"),
+        candidates = [...referenced],
+        exact = candidates.filter(
+          (candidate) =>
+            records.get(candidate)?.trim().toLocaleLowerCase("ru") ===
+            normalizedLabel,
+        ),
+        pool = exact.length ? exact : candidates,
+        closest = pool
+          .map((candidate) => ({
+            id: candidate,
+            score: commonPrefixLength(id, candidate),
+          }))
+          .sort((left, right) => right.score - left.score)[0];
+      const repaired =
+        exact.length === 1
+          ? exact[0]
+          : closest && closest.score >= 8
+            ? closest.id
+            : "";
+      return repaired ? `[[${kind}:${repaired}|${label}]]` : label;
+    },
+  );
+}
+
 function collectSourceReferences(
   value: unknown,
   personId: string,
@@ -721,16 +770,23 @@ export function aiResearchHttp({
             label: photosById.get(id)!,
           })),
         ];
+        const rawAnswer = createdSuggestionIds.size
+          ? createdSuggestionIds.size === 1
+            ? "Подготовлено предложение. Проверьте данные ниже и нажмите ✓, чтобы применить изменение, или ×, чтобы отклонить."
+            : "Подготовлены предложения. Проверьте данные ниже и примите или отклоните каждое кнопками ✓ и ×."
+          : proposalErrors.length
+            ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
+            : typeof answer.content === "string" && answer.content.trim()
+              ? answer.content
+              : "Модель не сформировала текстовый ответ.";
         return {
-          answer: createdSuggestionIds.size
-            ? createdSuggestionIds.size === 1
-              ? "Подготовлено предложение. Проверьте данные ниже и нажмите ✓, чтобы применить изменение, или ×, чтобы отклонить."
-              : "Подготовлены предложения. Проверьте данные ниже и примите или отклоните каждое кнопками ✓ и ×."
-            : proposalErrors.length
-              ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
-              : typeof answer.content === "string" && answer.content.trim()
-                ? answer.content
-                : "Модель не сформировала текстовый ответ.",
+          answer: repairArchiveMarkers(
+            rawAnswer,
+            peopleById,
+            photosById,
+            referencedPeople,
+            referencedPhotos,
+          ),
           references,
           suggestionIds: [...createdSuggestionIds],
           uiActions,
