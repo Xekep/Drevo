@@ -14,3 +14,5 @@ export * from "./changes.ts";
 export * from "./tree-layout.ts";
 export * from "./name-hints.ts";
 export * from "./family-insights.ts";
+
+export * from "./research-tools.ts";
