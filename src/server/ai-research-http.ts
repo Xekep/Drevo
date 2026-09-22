@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
-import type { aiSettingsStore } from "./ai-settings.ts";
+import {
+  aiRuntimeConfig,
+  type aiSettingsStore,
+} from "./ai-settings.ts";
 import { fullName } from "../domain/dates.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
@@ -138,23 +141,6 @@ export function aiResearchHttp({
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
-  const apiKey = process.env.YANDEX_AI_API_KEY?.trim(),
-    folderId = process.env.YANDEX_AI_FOLDER_ID?.trim(),
-    envModel = process.env.YANDEX_AI_MODEL?.trim() || "yandexgpt/rc",
-    baseUrl = (
-      process.env.YANDEX_AI_BASE_URL || "https://ai.api.cloud.yandex.net/v1"
-    ).replace(/\/$/, "");
-  const configuredModel = () => aiSettings.read().model || envModel;
-  const resolvedModel = () => {
-    const current = configuredModel();
-    return current.startsWith("gpt://")
-      ? current
-      : folderId
-        ? `gpt://${folderId}/${current}`
-        : current;
-  };
-  const enabled = () =>
-    !!apiKey && (!!folderId || configuredModel().startsWith("gpt://"));
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -167,20 +153,23 @@ export function aiResearchHttp({
   async function complete(
     messages: ModelMessage[],
     canPropose: boolean,
+    runtime: ReturnType<typeof aiRuntimeConfig>,
   ): Promise<ModelMessage> {
     const definitions = [
       ...RESEARCH_TOOL_DEFINITIONS,
       ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
     ];
-    const response = await fetcher(`${baseUrl}/chat/completions`, {
+    const response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
-        Authorization: `Api-Key ${apiKey}`,
+        Authorization: `Api-Key ${runtime.apiKey}`,
         "Content-Type": "application/json",
-        ...(folderId ? { "OpenAI-Project": folderId } : {}),
+        ...(runtime.folderId
+          ? { "OpenAI-Project": runtime.folderId }
+          : {}),
       },
       body: JSON.stringify({
-        model: resolvedModel(),
+        model: runtime.modelUri,
         messages,
         temperature: 0.2,
         tool_choice: "auto",
@@ -221,7 +210,7 @@ export function aiResearchHttp({
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
       return json(res, 200, {
-        enabled: enabled(),
+        enabled: aiRuntimeConfig(aiSettings).active,
         canPropose: auth.canEdit(req),
       });
     }
@@ -230,10 +219,12 @@ export function aiResearchHttp({
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
-    if (!enabled())
+    const runtime = aiRuntimeConfig(aiSettings);
+    if (!runtime.active)
       return json(res, 503, {
-        error:
-          "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_FOLDER_ID",
+        error: runtime.configured
+          ? "ИИ-исследователь отключён администратором"
+          : "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_FOLDER_ID",
       });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
@@ -295,7 +286,7 @@ export function aiResearchHttp({
         >();
 
       for (let round = 0; round < 8; round++) {
-        const answer = await complete(messages, canPropose);
+        const answer = await complete(messages, canPropose, runtime);
         messages.push(answer);
         const calls = answer.tool_calls || [];
         if (!calls.length) {
