@@ -312,9 +312,10 @@ export function aiResearchHttp({
           const definition = RESEARCH_TOOL_DEFINITIONS.find(
             (item) => item.name === call.function.name,
           );
-          let result: unknown;
+          let result: unknown,
+            toolArgs: unknown = {};
           try {
-            const toolArgs = JSON.parse(call.function.arguments || "{}");
+            toolArgs = JSON.parse(call.function.arguments || "{}");
             if (definition)
               result = executeResearchTool(
                 family,
