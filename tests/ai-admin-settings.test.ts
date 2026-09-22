@@ -24,6 +24,11 @@ test("admin AI settings update model live, test connection, and can disable rese
           },
         },
       ],
+      usage: {
+        prompt_tokens: 12,
+        completion_tokens: 3,
+        total_tokens: 15,
+      },
     });
   };
 
@@ -49,6 +54,12 @@ test("admin AI settings update model live, test connection, and can disable rese
     assert.equal(initial.folderConfigured, true);
     assert.equal(initial.model, "yandexgpt/rc");
     assert.equal(initial.modelOverride, "");
+    assert.deepEqual(initial.limits, {
+      requestsPerMinute: 6,
+      dailyRequests: 100,
+      dailyTokens: 250000,
+    });
+    assert.equal(initial.usage.today.requests, 0);
 
     const savedResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
@@ -56,6 +67,9 @@ test("admin AI settings update model live, test connection, and can disable rese
       body: JSON.stringify({
         enabled: true,
         model: "yandexgpt/latest",
+        requestsPerMinute: 1,
+        dailyRequests: 10,
+        dailyTokens: 1000,
       }),
     });
     assert.equal(savedResponse.status, 200);
@@ -64,6 +78,11 @@ test("admin AI settings update model live, test connection, and can disable rese
     assert.equal(saved.model, "yandexgpt/latest");
     assert.equal(saved.modelOverride, "yandexgpt/latest");
     assert.equal(saved.modelSource, "database");
+    assert.deepEqual(saved.limits, {
+      requestsPerMinute: 1,
+      dailyRequests: 10,
+      dailyTokens: 1000,
+    });
 
     const tested = await fetch(base + "/api/admin/ai/test", {
       method: "POST",
@@ -89,12 +108,37 @@ test("admin AI settings update model live, test connection, and can disable rese
       "gpt://folder-1/yandexgpt/latest",
     );
 
+    const usageStatus = await fetch(base + "/api/admin/ai").then((response) =>
+      response.json(),
+    );
+    assert.equal(usageStatus.usage.today.requests, 1);
+    assert.equal(usageStatus.usage.today.providerCalls, 1);
+    assert.equal(usageStatus.usage.today.inputTokens, 12);
+    assert.equal(usageStatus.usage.today.outputTokens, 3);
+    assert.equal(usageStatus.usage.today.totalTokens, 15);
+    assert.equal(usageStatus.usage.today.errors, 0);
+    assert.equal(usageStatus.usage.recent[0].status, "ok");
+    assert.equal(usageStatus.usage.recent[0].model, "yandexgpt/latest");
+
+    const beforeLimitedChat = requests.length;
+    const limitedChat = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Второй запрос слишком быстро" }),
+    });
+    assert.equal(limitedChat.status, 429);
+    assert.equal(requests.length, beforeLimitedChat);
+    assert.match((await limitedChat.json()).error, /Слишком много запросов/);
+
     const disabledResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         enabled: false,
         model: "yandexgpt/latest",
+        requestsPerMinute: 1,
+        dailyRequests: 10,
+        dailyTokens: 1000,
       }),
     });
     assert.equal(disabledResponse.status, 200);
