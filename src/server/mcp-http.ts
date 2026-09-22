@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createMcpHandler, fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
-import { toNodeHandler } from "@modelcontextprotocol/node";
+import { Readable } from "node:stream";
 import type { openArchive } from "./database.ts";
 import type { mcpTokenStore } from "./mcp-tokens.ts";
 import {
@@ -86,7 +86,35 @@ export function mcpHttp({
       return server;
     });
 
-    await toNodeHandler(handler)(req, res);
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value))
+        for (const item of value) headers.append(name, item);
+      else headers.set(name, value);
+    }
+    const chunks: Buffer[] = [];
+    if (req.method !== "GET" && req.method !== "HEAD")
+      for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const request = new Request(
+      new URL(req.url || "/mcp", `http://${req.headers.host || "localhost"}`),
+      {
+        method: req.method,
+        headers,
+        ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
+      },
+    );
+    const response = await handler.fetch(request);
+    res.statusCode = response.status;
+    response.headers.forEach((value, name) => res.setHeader(name, value));
+    if (!response.body) res.end();
+    else
+      await new Promise<void>((done, reject) => {
+        Readable.fromWeb(response.body as import("node:stream/web").ReadableStream)
+          .once("error", reject)
+          .once("end", done)
+          .pipe(res);
+      });
     return true;
   };
 }
