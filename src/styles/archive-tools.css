@@ -131,7 +131,7 @@
   font-weight: 500;
 }
 .life-event-editor > summary small {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -283,7 +283,7 @@
   right: 20px;
   text-align: center;
   pointer-events: none;
-  font-size: 11px;
+  font-size: 12px;
   color: #75816b;
 }
 .full-person-actions {

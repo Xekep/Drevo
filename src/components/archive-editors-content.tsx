@@ -339,8 +339,8 @@ export function PersonEditor({
               : "person-editor-primary"
           }
         >
-          <div className="person-editor-portrait-awards">
-            {person && (
+          {person && (
+            <div className="person-editor-portrait-awards">
               <div className="portrait-picker">
                 <button
                   type="button"
@@ -364,12 +364,12 @@ export function PersonEditor({
                   </span>
                 </button>
               </div>
-            )}
-            <AwardsEditor
-              awards={draft.awards || []}
-              onChange={(awards) => field("awards", awards)}
-            />
-          </div>
+              <AwardsEditor
+                awards={draft.awards || []}
+                onChange={(awards) => field("awards", awards)}
+              />
+            </div>
+          )}
           {relativeTo && !person && (
             <label>
               Кем новый человек приходится {fullName(relativeTo)}

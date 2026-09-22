@@ -55,7 +55,7 @@
   filter: saturate(0.55);
 }
 .family-map-tiles .leaflet-control-attribution {
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 7px;
   background: #fffc;
   color: #435b4d;
@@ -134,7 +134,7 @@
   border-radius: 12px;
   background: #4b7156;
   color: white;
-  font-size: 10px;
+  font-size: 12px;
 }
 .family-map-pin.selected .map-portrait {
   border-color: #4d7959;
@@ -249,7 +249,7 @@
 }
 .places-list small,
 .place-events small {
-  font-size: 11px;
+  font-size: 12px;
   color: #748172;
 }
 .place-events .person-avatar {
@@ -317,7 +317,7 @@
   font-size: 12px;
 }
 .place-input-notice {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   font-weight: 400;
   color: #687865;
@@ -327,7 +327,14 @@
 }
 @media (max-width: 899px) {
   .places-heading {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .places-content {
     grid-template-columns: 1fr;
@@ -398,7 +405,7 @@
     right: 10px;
     top: 10px;
     z-index: 2;
-    min-height: 40px;
+    min-height: 44px;
     padding: 9px 13px;
     background: #fffef5f5;
     border: 1px solid #cdd6c7;
@@ -415,11 +422,17 @@
     min-height: 48px;
   }
   .family-map-tiles .leaflet-control-attribution {
-    font-size: 10px;
+    font-size: 12px;
+  }
+  .family-map-tiles .leaflet-control-zoom a {
+    width: 44px !important;
+    height: 44px !important;
+    line-height: 44px !important;
   }
   .map-fit {
     left: 10px;
     top: 10px;
+    min-height: 44px;
     padding: 9px 11px;
   }
   .family-map-tiles .leaflet-bottom {

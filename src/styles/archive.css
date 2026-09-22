@@ -10,7 +10,7 @@
 }
 .role-badge {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   margin-right: 8px;
 }
 .suggested-tag {
@@ -52,13 +52,13 @@
   padding: 12px 0;
 }
 .family-person b {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .family-person small {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 5px;
 }
 .family-children {
@@ -69,11 +69,13 @@
 .family-children button {
   display: block;
   text-align: left;
-  font-size: 12px;
-  padding: 8px 0;
+  min-height: 44px;
+  font-size: 13px;
+  padding: 10px 0;
 }
 .family-children small {
   color: var(--muted);
+  font-size: 12px;
 }
 .family-children p {
   font-size: 12px;
@@ -85,6 +87,7 @@
   font-size: 12px;
 }
 .family-search input {
+  min-height: 44px;
   background: white;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -124,7 +127,7 @@
 .save-status {
   margin-left: auto;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .link-prompt {
   width: 100%;
@@ -167,7 +170,7 @@
   border-bottom: 1px solid var(--line);
 }
 .editor-dialog h2,
-.gallery-heading h2 {
+.gallery-heading :is(h1, h2) {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 27px;
@@ -302,7 +305,7 @@ button:disabled,
   display: flex;
   gap: 8px;
   padding: 12px 22px 0;
-  font-size: 11px;
+  font-size: 12px;
 }
 .person-photos {
   padding: 22px;
@@ -310,7 +313,7 @@ button:disabled,
 }
 .person-photos p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
 }
 .person-photo-grid {
@@ -326,7 +329,7 @@ button:disabled,
 }
 .person-photo-grid span {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   margin-top: 5px;
 }
 .gallery-view {
@@ -343,7 +346,7 @@ button:disabled,
   gap: 20px;
   margin-bottom: 28px;
 }
-.gallery-heading h2 {
+.gallery-heading :is(h1, h2) {
   margin: 9px 0;
 }
 .gallery-heading p {
@@ -475,7 +478,7 @@ button:disabled,
   position: absolute;
   top: 100%;
   left: -2px;
-  font-size: 10px;
+  font-size: 12px;
   background: #3f604c;
   padding: 4px 7px;
   white-space: nowrap;
@@ -560,7 +563,7 @@ button:disabled,
     gap: 6px;
   }
   .save-status {
-    font-size: 10px;
+    font-size: 12px;
   }
   .link-prompt {
     flex-wrap: wrap;

@@ -25,7 +25,7 @@
   top: 100%;
   left: 8px;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
 }
 .tree-mode-bar {
   max-width: calc(100% - 48px);
@@ -178,7 +178,7 @@
   align-items: center;
   gap: 9px;
   margin: 2px 0 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: #62695e;
 }
 .award-recognized > img {
@@ -334,7 +334,7 @@
 }
 .award-suggestions small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .archive-form .award-inline-form label {
   display: grid;

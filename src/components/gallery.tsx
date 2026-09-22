@@ -10,6 +10,7 @@ import { warmFaceAssistant } from "../vision/face-assistant";
 export function Gallery({
   family,
   canEdit,
+  mayEdit,
   onAdd,
   onOpen,
   onDropPhoto,
@@ -18,6 +19,7 @@ export function Gallery({
 }: {
   family: Family;
   canEdit: boolean;
+  mayEdit: boolean;
   onAdd: () => void;
   onOpen: (id: string, photoIds: string[]) => void;
   onDropPhoto: (file: File) => void;
@@ -100,25 +102,15 @@ export function Gallery({
       <div className="gallery-heading gallery-photo-heading">
         <div className="gallery-heading-copy">
           <span className="section-label">СЕМЕЙНЫЙ АЛЬБОМ</span>
-          <h2>
+          <h1>
             {filterPerson ? (
               <>
-                <span className="gallery-title-desktop">
-                  Фотоальбом: {filterPerson.name} {filterPerson.surname}
-                </span>
-                <span className="gallery-title-mobile">
-                  {filterPerson.name} {filterPerson.surname}
-                </span>
+                Фотоальбом: {filterPerson.name} {filterPerson.surname}
               </>
             ) : (
-              <>
-                <span className="gallery-title-desktop">
-                  Лица нашей истории
-                </span>
-                <span className="gallery-title-mobile">Семейный альбом</span>
-              </>
+              <>Семейный альбом</>
             )}
-          </h2>
+          </h1>
           {personFilter && (
             <button onClick={onClearFilter}>Показать все фотографии</button>
           )}
@@ -183,7 +175,13 @@ export function Gallery({
         <div className="gallery-empty">
           <ImagePlus size={42} strokeWidth={1} />
           <h3>Первые страницы альбома</h3>
-          <p>Добавьте семейную фотографию и отметьте на ней людей.</p>
+          <p>
+            {mayEdit && !canEdit
+              ? "Добавить фотографии можно с компьютера."
+              : canEdit
+                ? "Добавьте семейную фотографию и отметьте на ней людей."
+                : "В архиве пока нет фотографий."}
+          </p>
         </div>
       ) : browsingAlbums ? (
         <div className="photo-albums">

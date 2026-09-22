@@ -96,7 +96,7 @@ export default function App() {
     }, []),
   );
   const view =
-    requestedView === "admin" && desktop
+    requestedView === "admin"
       ? "admin"
       : requestedView === "places" && (readTree || readPhotos)
         ? "places"
@@ -104,9 +104,7 @@ export default function App() {
           ? "gallery"
           : requestedView === "gallery" && !readPhotos
             ? "tree"
-            : requestedView === "admin"
-              ? "tree"
-              : requestedView;
+            : requestedView;
   const [query, setQuery] = useState(""),
     [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
@@ -455,7 +453,6 @@ export default function App() {
         <ArchiveHeader
           navigation={
             <ArchiveNavigation
-              desktop={desktop}
               view={view}
               onView={navigate}
               user={user}
@@ -730,6 +727,7 @@ export default function App() {
                   query={query}
                   user={user}
                   canEdit={canEdit}
+                  mayEdit={allowedEdit}
                   busy={busy}
                   loadingDetails={archive.loadingDetails}
                   save={save}

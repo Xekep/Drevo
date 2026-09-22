@@ -31,7 +31,6 @@ export function ArchiveNavigation({
   readTree,
   readPhotos,
   onHelp,
-  desktop,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -40,7 +39,6 @@ export function ArchiveNavigation({
   readTree: boolean;
   readPhotos: boolean;
   onHelp: () => void;
-  desktop: boolean;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -157,7 +155,7 @@ export function ArchiveNavigation({
             <CircleHelp size={18} />
             <span>О проекте</span>
           </button>
-          {user?.role === "admin" && desktop && (
+          {user?.role === "admin" && (
             <button
               aria-current={view === "admin" ? "page" : undefined}
               onClick={() => onView("admin")}

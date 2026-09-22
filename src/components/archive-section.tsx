@@ -36,6 +36,7 @@ type Props = {
   query: string;
   user: ArchiveUser | null;
   canEdit: boolean;
+  mayEdit: boolean;
   busy: boolean;
   loadingDetails: boolean;
   save: (family: Family) => Promise<Family>;
@@ -119,6 +120,7 @@ export function ArchiveSection(props: Props) {
       <Gallery
         family={props.family}
         canEdit={props.canEdit}
+        mayEdit={props.mayEdit}
         onAdd={props.onAddPhoto}
         onDropPhoto={props.onDropPhoto}
         onOpen={props.onPhoto}
