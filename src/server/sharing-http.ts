@@ -71,6 +71,8 @@ export function sharingHttp({
     suggestions,
     aiSettings,
     usage: aiUsage,
+    media,
+    previewImage,
     publicOrigin,
     fetcher: aiFetch,
   });

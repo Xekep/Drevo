@@ -26,13 +26,6 @@ type McpTokenItem = {
     treeAccess?: "all" | "common_ancestors";
   };
 };
-type McpBindingOption = {
-  id: string;
-  name: string;
-  role: string;
-  personId?: string;
-  treeAccess: "all" | "common_ancestors";
-};
 type McpUsageItem = {
   id: number;
   at: string;
@@ -48,20 +41,44 @@ const scopeLabels: Record<McpScope, string> = {
   "sources:read": "Источники",
   "analysis:read": "Анализ",
 };
+const scopePresets = [
+  {
+    value: "all",
+    label: "Все инструменты",
+    scopes: ["tree:read", "sources:read", "analysis:read"],
+  },
+  {
+    value: "tree-sources",
+    label: "Древо и источники",
+    scopes: ["tree:read", "sources:read"],
+  },
+  {
+    value: "tree-analysis",
+    label: "Древо и анализ",
+    scopes: ["tree:read", "analysis:read"],
+  },
+  {
+    value: "sources-analysis",
+    label: "Источники и анализ",
+    scopes: ["sources:read", "analysis:read"],
+  },
+  { value: "tree", label: "Только древо", scopes: ["tree:read"] },
+  { value: "sources", label: "Только источники", scopes: ["sources:read"] },
+  { value: "analysis", label: "Только анализ", scopes: ["analysis:read"] },
+] as const satisfies ReadonlyArray<{
+  value: string;
+  label: string;
+  scopes: readonly McpScope[];
+}>;
+type McpScopePreset = (typeof scopePresets)[number]["value"];
 
 export function McpTokenAdmin() {
   const [tokens, setTokens] = useState<McpTokenItem[]>([]),
-    [bindings, setBindings] = useState<McpBindingOption[]>([]),
     [recentUsage, setRecentUsage] = useState<McpUsageItem[]>([]),
     [name, setName] = useState("Yandex AI Studio"),
     [expiresDays, setExpiresDays] = useState("365"),
     [rateLimitPerMinute, setRateLimitPerMinute] = useState("60"),
-    [boundUserId, setBoundUserId] = useState(""),
-    [scopes, setScopes] = useState<McpScope[]>([
-      "tree:read",
-      "sources:read",
-      "analysis:read",
-    ]),
+    [scopePreset, setScopePreset] = useState<McpScopePreset>("all"),
     [secret, setSecret] = useState(""),
     [copied, setCopied] = useState(false),
     [busy, setBusy] = useState(false),
@@ -73,7 +90,6 @@ export function McpTokenAdmin() {
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить MCP-токены");
     setTokens(data.tokens || []);
-    setBindings(data.bindings || []);
     setRecentUsage(data.recentUsage || []);
   }, []);
 
@@ -92,6 +108,9 @@ export function McpTokenAdmin() {
 
   async function createToken(event: FormEvent) {
     event.preventDefault();
+    const scopes = scopePresets.find(
+      (preset) => preset.value === scopePreset,
+    )!.scopes;
     setBusy(true);
     setError("");
     setSecret("");
@@ -104,7 +123,6 @@ export function McpTokenAdmin() {
             scopes,
             ...(expiresDays ? { expiresDays: Number(expiresDays) } : {}),
             rateLimitPerMinute: Number(rateLimitPerMinute),
-            ...(boundUserId ? { boundUserId } : {}),
           }),
         }),
         data = await response.json();
@@ -146,7 +164,8 @@ export function McpTokenAdmin() {
       <h2>MCP-токены</h2>
       <p>
         Токены дают внешним ИИ-клиентам доступ к исследовательским инструментам
-        Drevo через <code>/mcp</code>. Секрет показывается только один раз.
+        Drevo через <code>/mcp</code>. Каждый токен видит весь архив, а секрет
+        показывается только один раз.
       </p>
       <form className="mcp-token-create" onSubmit={createToken}>
         <label>
@@ -159,70 +178,51 @@ export function McpTokenAdmin() {
           />
         </label>
         <label>
-          Срок, дней
-          <input
-            type="number"
-            min={1}
-            max={3650}
-            value={expiresDays}
-            placeholder="Без срока"
-            onChange={(event) => setExpiresDays(event.target.value)}
-          />
-        </label>
-        <label>
-          Лимит, запросов/мин
-          <input
-            type="number"
-            min={0}
-            max={600}
-            value={rateLimitPerMinute}
-            onChange={(event) => setRateLimitPerMinute(event.target.value)}
-          />
-          <small>0 = без ограничения</small>
-        </label>
-        <label>
-          Доступ к древу
+          Разрешения
           <select
-            value={boundUserId}
-            onChange={(event) => setBoundUserId(event.target.value)}
+            value={scopePreset}
+            onChange={(event) =>
+              setScopePreset(event.target.value as McpScopePreset)
+            }
           >
-            <option value="">Весь архив</option>
-            {bindings.map((binding) => (
-              <option key={binding.id} value={binding.id}>
-                {binding.name} ·{" "}
-                {binding.treeAccess === "common_ancestors"
-                  ? "общие предки"
-                  : "весь архив"}
+            {scopePresets.map((preset) => (
+              <option key={preset.value} value={preset.value}>
+                {preset.label}
               </option>
             ))}
           </select>
-          <small>
-            Привязанный токен наследует область доступа выбранного участника.
-          </small>
         </label>
-        <fieldset>
-          <legend>Разрешения</legend>
-          {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
-            <label key={scope} className="mcp-scope">
+        <details className="mcp-token-options">
+          <summary>Срок и лимит запросов</summary>
+          <div>
+            <label>
+              Срок, дней
               <input
-                type="checkbox"
-                checked={scopes.includes(scope)}
-                onChange={(event) =>
-                  setScopes((current) =>
-                    event.target.checked
-                      ? [...current, scope]
-                      : current.filter((item) => item !== scope),
-                  )
-                }
+                type="number"
+                min={1}
+                max={3650}
+                value={expiresDays}
+                placeholder="Без срока"
+                onChange={(event) => setExpiresDays(event.target.value)}
               />
-              {scopeLabels[scope]}
             </label>
-          ))}
-        </fieldset>
+            <label>
+              Запросов в минуту
+              <input
+                type="number"
+                min={0}
+                max={600}
+                value={rateLimitPerMinute}
+                onChange={(event) => setRateLimitPerMinute(event.target.value)}
+              />
+              <small>0 — без ограничения</small>
+            </label>
+          </div>
+        </details>
         <button
           type="submit"
           className="primary-action"
-          disabled={busy || !scopes.length}
+          disabled={busy}
         >
           <Plus size={16} />
           {busy ? "Создаём…" : "Создать токен"}

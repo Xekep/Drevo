@@ -52,6 +52,19 @@ const family: Family = {
   description: "",
   demo: false,
   people: [father, mother, child, grandchild],
+  photos: [
+    {
+      id: "family-photo",
+      url: "/media/family-photo.jpg",
+      title: "Семья у дома",
+      year: "1975",
+      place: "Нижнее",
+      description: "Летняя встреча семьи",
+      tags: [
+        { id: "tag-child", personId: "child", x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+      ],
+    },
+  ],
 };
 
 test("research tools expose a stable read-only catalogue", () => {
@@ -61,13 +74,32 @@ test("research tools expose a stable read-only catalogue", () => {
       (tool) => tool.name && tool.description && tool.scope,
     ),
   );
+  assert.equal(
+    RESEARCH_TOOL_DEFINITIONS.find((tool) => tool.name === "get_relationship")
+      ?.scope,
+    "analysis:read",
+  );
 });
 
 test("research tools search people and traverse genealogy", () => {
+  const listed = executeResearchTool(family, "list_people", {
+    limit: 100,
+  }) as { people: Array<{ id: string }>; total: number; hasMore: boolean };
+  assert.equal(listed.total, 4);
+  assert.equal(listed.hasMore, false);
+  assert.deepEqual(
+    new Set(listed.people.map((person) => person.id)),
+    new Set(["father", "mother", "child", "grandchild"]),
+  );
+
   const search = executeResearchTool(family, "search_people", {
     query: "Василий",
   }) as { people: Array<{ id: string }> };
   assert.deepEqual(search.people.map((person) => person.id), ["child"]);
+  const reversedName = executeResearchTool(family, "search_people", {
+    query: "Василий Скулко",
+  }) as { people: Array<{ id: string }> };
+  assert.deepEqual(reversedName.people.map((person) => person.id), ["child"]);
 
   const ancestors = executeResearchTool(family, "get_ancestors", {
     personId: "grandchild",
@@ -90,6 +122,46 @@ test("research tools search people and traverse genealogy", () => {
     descendants.people.map((item) => item.person.id),
     ["child", "grandchild"],
   );
+});
+
+test("archive insight generation count matches the tree summary", () => {
+  const result = executeResearchTool(family, "get_archive_insights", {}) as {
+    totals: { generations: number };
+  };
+  assert.equal(result.totals.generations, 3);
+});
+
+test("relationship analysis matches the archive kinship calculation", () => {
+  const result = executeResearchTool(family, "get_relationship", {
+    firstPersonId: "father",
+    secondPersonId: "grandchild",
+  }) as {
+    relation: { kind: string; title: string; roles?: Array<{ term: string }> };
+    path: Array<{ id: string }>;
+  };
+  assert.equal(result.relation.kind, "direct");
+  assert.match(result.relation.roles?.[0]?.term || "", /дед/);
+  assert.deepEqual(result.path.map((person) => person.id), [
+    "father",
+    "child",
+    "grandchild",
+  ]);
+});
+
+test("photo tools expose metadata and tagged people without file paths", () => {
+  const search = executeResearchTool(family, "search_photos", {
+    query: "Василий Нижнее",
+  }) as { photos: Array<{ id: string; people: Array<{ id: string }> }> };
+  assert.equal(search.photos[0]?.id, "family-photo");
+  assert.deepEqual(search.photos[0]?.people.map((person) => person.id), [
+    "child",
+  ]);
+
+  const result = executeResearchTool(family, "get_photo", {
+    photoId: "family-photo",
+  }) as { photo: Record<string, unknown> };
+  assert.equal(result.photo.title, "Семья у дома");
+  assert.equal("url" in result.photo, false);
 });
 
 test("tree tools do not leak source scope and source tool stays explicit", () => {

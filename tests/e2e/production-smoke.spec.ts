@@ -4,8 +4,32 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/admin/ai", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch(),
+      status = (await response.json()) as Record<string, unknown>;
+    await route.fulfill({
+      response,
+      json: {
+        ...status,
+        models: [
+          {
+            id: "gpt://folder-1/yandexgpt-5.1/latest",
+            label: "yandexgpt-5.1",
+            owner: "Yandex",
+          },
+          {
+            id: "gpt://folder-1/deepseek-v4-flash/latest",
+            label: "deepseek-v4-flash",
+            owner: "Yandex",
+          },
+        ],
+        modelsError: "",
+      },
+    });
+  });
   await page.goto("/admin");
-  await page.getByRole("button", { name: "MCP и ИИ" }).click();
+  await page.getByRole("button", { name: "Yandex AI" }).click();
 
   await expect(
     page.getByRole("heading", { name: "Yandex AI Studio" }),
@@ -19,10 +43,89 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(folderId).toBeVisible();
   await expect(model).toHaveJSProperty("tagName", "SELECT");
   await expect(model.locator("option")).toContainText([
-    "Alice AI LLM",
-    "YandexGPT Pro 5.1",
-    "DeepSeek V4 Flash",
+    "yandexgpt-5.1",
+    "deepseek-v4-flash",
   ]);
+
+  await page.getByRole("button", { name: "MCP-токены" }).click();
+  const permissions = page.getByLabel("Разрешения");
+  await expect(permissions).toHaveValue("all");
+  await expect(permissions.locator("option")).toContainText([
+    "Все инструменты",
+    "Древо и источники",
+    "Древо и анализ",
+    "Источники и анализ",
+    "Только древо",
+    "Только источники",
+    "Только анализ",
+  ]);
+  await expect(page.getByLabel("Доступ к древу")).toHaveCount(0);
+  await expect(page.getByText("Срок, дней")).not.toBeVisible();
+  await page.getByText("Срок и лимит запросов").click();
+  await expect(page.getByText("Срок, дней")).toBeVisible();
+});
+
+test("ИИ-исследователь не перекрывает навигацию, перетаскивается и рисует Markdown", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, canPropose: true, streaming: true } }),
+  );
+  const answer = [
+    "## Родственная схема",
+    "",
+    "| Человек | Год |",
+    "| --- | --- |",
+    "| Иван | 1900 |",
+    "",
+    "```mermaid",
+    "graph TD",
+    "  A[Иван] --> B[Пётр]",
+    "```",
+  ].join("\n");
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: delta\ndata: ${JSON.stringify({ text: answer })}\n\nevent: done\ndata: ${JSON.stringify({ answer, references: [], suggestionIds: [], uiActions: [] })}\n\n`,
+    }),
+  );
+  await page.goto("/tree");
+  const trigger = page.getByRole("button", { name: "Открыть ИИ-исследователя" }),
+    controls = page.locator(".flow-camera-tools");
+  await expect(trigger).toBeVisible();
+  await expect(trigger).not.toContainText("ИИ-исследователь");
+  await expect(controls).toBeVisible();
+  const [triggerBox, controlsBox] = await Promise.all([
+    trigger.boundingBox(),
+    controls.boundingBox(),
+  ]);
+  expect(triggerBox).not.toBeNull();
+  expect(controlsBox).not.toBeNull();
+  expect(
+    triggerBox!.x < controlsBox!.x
+      ? triggerBox!.x + triggerBox!.width <= controlsBox!.x
+      : controlsBox!.x + controlsBox!.width <= triggerBox!.x,
+  ).toBe(true);
+
+  await trigger.click();
+  const panel = page.locator(".research-assistant"),
+    header = panel.locator(":scope > header"),
+    before = await panel.boundingBox();
+  await expect(header).not.toContainText("Анализирует архив");
+  await header.hover();
+  await page.mouse.down();
+  await page.mouse.move(before!.x - 90, before!.y - 50, { steps: 6 });
+  await page.mouse.up();
+  const after = await panel.boundingBox();
+  expect(Math.abs(after!.x - before!.x)).toBeGreaterThan(30);
+
+  await panel.getByRole("textbox").fill("Покажи схему");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(panel.getByRole("heading", { name: "Родственная схема" })).toBeVisible();
+  await expect(panel.locator("table")).toBeVisible();
+  await expect(panel.locator(".research-mermaid svg")).toBeVisible();
 });
 
 test("администратор выбирает себя в древе и простую область доступа", async ({

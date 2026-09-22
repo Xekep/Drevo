@@ -5,6 +5,7 @@ import {
   plural,
   validDate,
 } from "./dates.ts";
+import { archiveSummary } from "./archive-summary.ts";
 import type { Family, Person } from "./types.ts";
 
 type InsightFact = {
@@ -411,7 +412,9 @@ export function analyzeFamilyInsights(
     topNames,
     totals: {
       people: people.length,
-      generations: new Set(people.map((person) => person.generation)).size,
+      // Та же метрика, что в шапке древа: самая длинная подтверждённая
+      // цепочка родителей и детей.
+      generations: archiveSummary(people).generations || 0,
       photos: photos.length,
       events: eventCount,
       sources: sourceCount,

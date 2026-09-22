@@ -70,7 +70,7 @@ SSH проверяет закреплённый публичный ключ се
 
 `ops/nginx.conf` содержит отдельный exact-location `/mcp`: Bearer Authorization явно передаётся приложению, proxy buffering и request buffering отключены, а тайм-аут увеличен до 300 секунд. После обновления этого файла на сервере выполните `nginx -t` и reload Nginx.
 
-После выкладки создайте отдельный MCP-токен в «Управление → MCP и ИИ» и проверьте публичный endpoint:
+После выкладки создайте отдельный MCP-токен в «Управление → MCP-токены» и проверьте публичный endpoint:
 
 ```sh
 MCP_TOKEN='drevo_mcp_...' bash ops/check-mcp.sh

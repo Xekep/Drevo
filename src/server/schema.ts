@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 12;
+export const ARCHIVE_SCHEMA_VERSION = 13;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -340,6 +340,40 @@ function migrate(db: DatabaseSync, target: number) {
         ALTER TABLE ai_settings
           ADD COLUMN folder_id TEXT NOT NULL DEFAULT '';
       `);
+    return;
+  }
+  if (target === 13) {
+    db.exec(`
+      DROP TABLE IF EXISTS research_suggestions_v13;
+      CREATE TABLE research_suggestions_v13 (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('person_create','person_update','source','relation')),
+        status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected')),
+        person_id TEXT NOT NULL,
+        payload TEXT NOT NULL CHECK(json_valid(payload)),
+        reason TEXT NOT NULL,
+        evidence TEXT NOT NULL CHECK(json_valid(evidence)),
+        base_revision INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        reviewed_at TEXT,
+        reviewed_by TEXT
+      ) STRICT;
+      INSERT INTO research_suggestions_v13(
+        id,kind,status,person_id,payload,reason,evidence,base_revision,
+        created_at,created_by,reviewed_at,reviewed_by
+      )
+        SELECT
+          id,kind,status,person_id,payload,reason,evidence,base_revision,
+          created_at,created_by,reviewed_at,reviewed_by
+        FROM research_suggestions;
+      DROP TABLE research_suggestions;
+      ALTER TABLE research_suggestions_v13 RENAME TO research_suggestions;
+      CREATE INDEX research_suggestions_status
+        ON research_suggestions(status,created_at DESC);
+      CREATE INDEX research_suggestions_creator
+        ON research_suggestions(created_by,status);
+    `);
     return;
   }
   throw new Error(`Нет миграции SQLite до версии ${target}`);

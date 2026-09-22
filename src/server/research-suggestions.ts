@@ -36,6 +36,10 @@ export type PersonUpdateSuggestionPayload = {
   changes: PersonChanges;
 };
 
+export type PersonCreateSuggestionPayload = {
+  person: Person;
+};
+
 export type SourceSuggestionPayload = {
   personId: string;
   beforeSources: Source[];
@@ -75,6 +79,10 @@ type SuggestionBase = {
 };
 
 export type ResearchSuggestion =
+  | (SuggestionBase & {
+      kind: "person_create";
+      payload: PersonCreateSuggestionPayload;
+    })
   | (SuggestionBase & {
       kind: "person_update";
       payload: PersonUpdateSuggestionPayload;
@@ -123,6 +131,40 @@ export const PERSON_UPDATE_PROPOSAL_TOOL = {
       },
     },
     required: ["personId", "changes", "reason"],
+    additionalProperties: false,
+  },
+} as const;
+
+export const PERSON_CREATE_PROPOSAL_TOOL = {
+  name: "propose_person_create",
+  description:
+    "Создать предложение новой карточки человека для ручного подтверждения. Карточка появится в архиве только после нажатия человеком «Принять».",
+  inputSchema: {
+    type: "object",
+    properties: {
+      person: {
+        type: "object",
+        properties: {
+          surname: { type: "string", minLength: 1, maxLength: 300 },
+          name: { type: "string", minLength: 1, maxLength: 300 },
+          patronymic: { type: "string", maxLength: 300 },
+          sex: { type: "string", enum: ["m", "f", "u"] },
+          birth: { type: "string", maxLength: 40 },
+          birthPlace: { type: "string", maxLength: 1000 },
+          occupation: { type: "string", maxLength: 1000 },
+          biography: { type: "string", maxLength: 5000 },
+        },
+        required: ["surname", "name"],
+        additionalProperties: false,
+      },
+      reason: { type: "string", minLength: 1, maxLength: 2000 },
+      evidence: {
+        type: "array",
+        items: { type: "string", minLength: 1, maxLength: 1000 },
+        maxItems: 10,
+      },
+    },
+    required: ["person", "reason"],
     additionalProperties: false,
   },
 } as const;
@@ -195,6 +237,7 @@ export const RELATION_PROPOSAL_TOOL = {
 } as const;
 
 export const RESEARCH_PROPOSAL_TOOLS = [
+  PERSON_CREATE_PROPOSAL_TOOL,
   PERSON_UPDATE_PROPOSAL_TOOL,
   SOURCE_PROPOSAL_TOOL,
   RELATION_PROPOSAL_TOOL,
@@ -223,6 +266,37 @@ function personChanges(value: unknown): PersonChanges {
     result[key] = fieldValue;
   }
   return result as PersonChanges;
+}
+
+function proposedPerson(value: unknown, actor: ArchiveUser): Person {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Укажите данные нового человека");
+  const raw = value as Record<string, unknown>,
+    sex = raw.sex === undefined ? "u" : raw.sex;
+  if (sex !== "m" && sex !== "f" && sex !== "u")
+    throw new Error("Некорректно указан пол");
+  return {
+    id: randomUUID(),
+    createdBy: actor.id,
+    surname: text(raw.surname, "person.surname", 300),
+    name: text(raw.name, "person.name", 300),
+    patronymic: optionalText(raw.patronymic, "person.patronymic", 300) || "",
+    sex,
+    birth: optionalText(raw.birth, "person.birth", 40) || "",
+    birthPlace:
+      optionalText(raw.birthPlace, "person.birthPlace", 1000) || "",
+    ...(optionalText(raw.occupation, "person.occupation", 1000)
+      ? { occupation: optionalText(raw.occupation, "person.occupation", 1000) }
+      : {}),
+    ...(optionalText(raw.biography, "person.biography", 5000)
+      ? { biography: optionalText(raw.biography, "person.biography", 5000) }
+      : {}),
+    parents: [],
+    spouses: [],
+    generation: 1,
+    column: 0,
+    sources: [],
+  };
 }
 
 function text(value: unknown, label: string, max: number) {
@@ -291,6 +365,12 @@ function rowSuggestion(row: Record<string, unknown>): ResearchSuggestion {
       ...(row.reviewed_by ? { reviewedBy: String(row.reviewed_by) } : {}),
     };
   const payload = JSON.parse(String(row.payload)) as unknown;
+  if (kind === "person_create")
+    return {
+      ...base,
+      kind,
+      payload: payload as PersonCreateSuggestionPayload,
+    };
   if (kind === "person_update")
     return {
       ...base,
@@ -423,6 +503,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
     kind: ResearchSuggestion["kind"],
     personId: string,
     payload:
+      | PersonCreateSuggestionPayload
       | PersonUpdateSuggestionPayload
       | SourceSuggestionPayload
       | RelationSuggestionPayload,
@@ -465,6 +546,31 @@ export function researchSuggestionStore(db: DatabaseSync) {
               )
               .all(actor.id);
       return rows.map((row) => rowSuggestion(row));
+    },
+
+    createPerson(
+      actor: ArchiveUser,
+      family: Family,
+      revision: number,
+      raw: unknown,
+    ) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        throw new Error("Некорректное предложение");
+      const input = raw as Record<string, unknown>,
+        person = proposedPerson(input.person, actor),
+        reason = text(input.reason, "reason", 2000),
+        grounds = evidence(input.evidence),
+        candidate: Family = { ...family, people: [...family.people, person] };
+      authorizeArchive(candidate, family, actor);
+      return insert(
+        actor,
+        "person_create",
+        person.id,
+        { person },
+        reason,
+        grounds,
+        revision,
+      );
     },
 
     createPersonUpdate(
@@ -599,6 +705,8 @@ export function researchSuggestionStore(db: DatabaseSync) {
       revision: number,
       raw: unknown,
     ) {
+      if (name === PERSON_CREATE_PROPOSAL_TOOL.name)
+        return this.createPerson(actor, family, revision, raw);
       if (name === PERSON_UPDATE_PROPOSAL_TOOL.name)
         return this.createPersonUpdate(actor, family, revision, raw);
       if (name === SOURCE_PROPOSAL_TOOL.name)
@@ -638,6 +746,15 @@ export function applyResearchSuggestion(
   family: Family,
   suggestion: ResearchSuggestion,
 ) {
+  if (suggestion.kind === "person_create") {
+    if (family.people.some((person) => person.id === suggestion.payload.person.id))
+      throw new Error("Карточка этого человека уже существует");
+    return {
+      ...family,
+      people: [...family.people, suggestion.payload.person],
+    } as Family;
+  }
+
   if (suggestion.kind === "person_update") {
     const person = family.people.find(
       (item) => item.id === suggestion.payload.personId,

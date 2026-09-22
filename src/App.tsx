@@ -810,6 +810,14 @@ export default function App() {
           canEdit={canEdit}
           onChanged={archive.reload}
           onPerson={showPerson}
+          onPhoto={openPhotoUrl}
+          onReveal={(ids) => {
+            const target: ArchiveTarget | undefined =
+              ids.length === 1 ? { kind: "person", id: ids[0] } : undefined;
+            lastUrlTarget.current = targetKey(target || null);
+            setView("tree", target);
+            reveal(ids);
+          }}
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
