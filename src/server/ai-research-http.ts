@@ -407,6 +407,7 @@ export function aiResearchHttp({
   async function runResearch({
     body,
     user,
+    canPropose,
     runtime,
     stream,
     metrics,
@@ -416,6 +417,7 @@ export function aiResearchHttp({
   }: {
     body: Record<string, unknown>;
     user: NonNullable<ReturnType<ReturnType<typeof createAuth>["currentUser"]>>;
+    canPropose: boolean;
     runtime: ReturnType<typeof aiRuntimeConfig>;
     stream: boolean;
     metrics: ResearchMetrics;
@@ -428,8 +430,7 @@ export function aiResearchHttp({
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
 
-    const canPropose = user.role === "admin" || user.role === "relative",
-      snapshot = archive.read(),
+    const snapshot = archive.read(),
       fullFamily = snapshot.family,
       family = isScopedUser(user)
         ? projectFamilyForUser(fullFamily, user)
@@ -629,7 +630,8 @@ export function aiResearchHttp({
     if (!message || message.length > 8000)
       return json(res, 400, { error: "Некорректный текст запроса" });
 
-    const user = auth.currentUser(req)!;
+    const user = auth.currentUser(req)!,
+      canPropose = auth.canEdit(req);
     try {
       usage.check(user.id, runtime.limits);
     } catch (error) {
@@ -668,6 +670,7 @@ export function aiResearchHttp({
       const result = await runResearch({
         body,
         user,
+        canPropose,
         runtime,
         stream,
         metrics,
