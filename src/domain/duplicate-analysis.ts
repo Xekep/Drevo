@@ -269,31 +269,43 @@ function scorePair(a: Person, b: Person): PossibleDuplicate | null {
 
 function candidatePairs(people: Person[]) {
   const byName = new Map<string, Person[]>(),
+    bySignature = new Map<string, Person[]>(),
     pairs = new Map<string, [Person, Person]>();
+  const signature = (key: string, length = key.length) =>
+    `${key.slice(0, 1)}:${length}`;
+
   for (const person of people) {
     const key = latinKey(person.name);
     if (!key) continue;
-    const nearKeys = new Set([key]);
-    for (const existing of byName.keys())
+
+    const candidates = new Map<string, Person>();
+    for (const other of byName.get(key) || []) candidates.set(other.id, other);
+    if (key.length >= 4)
+      for (const length of [key.length - 1, key.length, key.length + 1])
+        for (const other of bySignature.get(signature(key, length)) || [])
+          candidates.set(other.id, other);
+
+    for (const other of candidates.values()) {
+      const otherKey = latinKey(other.name);
       if (
-        existing !== key &&
-        Math.min(existing.length, key.length) >= 4 &&
-        distanceAtMostTwo(existing, key) === 1
+        otherKey !== key &&
+        distanceAtMostTwo(otherKey, key) !== 1
       )
-        nearKeys.add(existing);
+        continue;
+      const ids = [person.id, other.id].sort();
+      pairs.set(
+        `${ids[0]}:\0${ids[1]}`,
+        ids[0] === person.id ? [person, other] : [other, person],
+      );
+    }
 
-    for (const near of nearKeys)
-      for (const other of byName.get(near) || []) {
-        const ids = [person.id, other.id].sort();
-        pairs.set(
-          `${ids[0]}:\0${ids[1]}`,
-          ids[0] === person.id ? [person, other] : [other, person],
-        );
-      }
-
-    const bucket = byName.get(key) || [];
-    bucket.push(person);
-    byName.set(key, bucket);
+    const exactBucket = byName.get(key) || [];
+    exactBucket.push(person);
+    byName.set(key, exactBucket);
+    const signatureKey = signature(key),
+      signatureBucket = bySignature.get(signatureKey) || [];
+    signatureBucket.push(person);
+    bySignature.set(signatureKey, signatureBucket);
   }
   return [...pairs.values()];
 }
