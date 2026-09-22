@@ -197,7 +197,7 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
         onPerson: noop,
       }),
     );
-    assert.match(viewer, /Открыть карточку: Иванов Иван/);
+    assert.match(viewer, /Показать сведения: Иванов Иван/);
     assert.match(viewer, /class="photo-people-names"/);
     assert.equal(
       (viewer.match(/class="photo-person-name"/g) || []).length,

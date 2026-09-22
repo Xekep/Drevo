@@ -100,14 +100,16 @@ export function PersonPanel({
   onCompare,
   suggestions,
   isCurrentUser = false,
+  idPrefix = "person",
 }: {
   person: Person;
   people: Person[];
   links?: FamilyLink[];
   onSelect: (id: string) => void;
-  onCompare: () => void;
+  onCompare?: () => void;
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
+  idPrefix?: string;
 }) {
   const [tab, setTab] = useState<"bio" | "sources">("bio");
   const sources = collectPersonSources(person);
@@ -166,8 +168,8 @@ export function PersonPanel({
       >
         <button
           role="tab"
-          id="bio-tab"
-          aria-controls="person-tab-content"
+          id={`${idPrefix}-bio-tab`}
+          aria-controls={`${idPrefix}-tab-content`}
           aria-selected={tab === "bio"}
           className={tab === "bio" ? "active" : ""}
           onClick={() => setTab("bio")}
@@ -176,8 +178,8 @@ export function PersonPanel({
         </button>
         <button
           role="tab"
-          id="sources-tab"
-          aria-controls="person-tab-content"
+          id={`${idPrefix}-sources-tab`}
+          aria-controls={`${idPrefix}-tab-content`}
           aria-selected={tab === "sources"}
           className={tab === "sources" ? "active" : ""}
           onClick={() => setTab("sources")}
@@ -187,9 +189,9 @@ export function PersonPanel({
       </div>
       <div
         className="profile-content"
-        id="person-tab-content"
+        id={`${idPrefix}-tab-content`}
         role="tabpanel"
-        aria-labelledby={tab === "bio" ? "bio-tab" : "sources-tab"}
+        aria-labelledby={`${idPrefix}-${tab}-tab`}
       >
         {tab === "bio" ? (
           <>
@@ -254,10 +256,12 @@ export function PersonPanel({
                 </p>
               )}
             </div>
-            <button className="full-button" onClick={onCompare}>
-              <ArrowDownUp size={14} />
-              Узнать родство с другим человеком
-            </button>
+            {onCompare && (
+              <button className="full-button" onClick={onCompare}>
+                <ArrowDownUp size={14} />
+                Узнать родство с другим человеком
+              </button>
+            )}
           </>
         ) : (
           <>

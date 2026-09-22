@@ -27,6 +27,9 @@
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) clamp(280px, 25vw, 350px);
 }
+.photo-lightbox .photo-viewer.person-open {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 420px);
+}
 .photo-lightbox .photo-stage {
   position: relative;
   display: grid;
@@ -72,6 +75,9 @@
   scrollbar-width: thin;
   color: var(--ink);
   color-scheme: light;
+}
+.photo-lightbox .photo-tools[hidden] {
+  display: none !important;
 }
 .photo-lightbox .photo-tools .photo-info-close {
   color: var(--ink);
@@ -241,6 +247,57 @@
   line-height: 1.9;
   color: var(--ink);
 }
+.photo-lightbox .photo-person-sidebar {
+  gap: 0;
+}
+.photo-person-sidebar-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.photo-lightbox .photo-person-sidebar-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--photo-accent);
+  background: var(--photo-button-bg);
+  font-size: 12px;
+}
+.photo-lightbox .photo-person-sidebar-actions .photo-person-sidebar-close {
+  width: 40px;
+  padding: 0;
+}
+.photo-lightbox .photo-person-tree-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border-radius: 10px;
+  margin-bottom: 18px;
+  padding: 10px 14px;
+  color: #f7faf2;
+  background: #415d40;
+  font-size: 13px;
+  font-weight: 600;
+}
+.photo-lightbox .photo-tools .photo-person-tree-link:hover:not(:disabled) {
+  background: #324c34;
+}
+.photo-lightbox .photo-person-sidebar .profile-head {
+  padding-inline: 0;
+}
+.photo-lightbox .photo-person-sidebar .panel-tabs,
+.photo-lightbox .photo-person-sidebar .profile-content {
+  padding-inline: 0;
+}
 .photo-people-names .photo-person-name {
   display: inline;
   padding: 0;
@@ -268,7 +325,8 @@
   background: #eaffbf18;
 }
 @media (max-width: 899px) {
-  .photo-lightbox .photo-viewer {
+  .photo-lightbox .photo-viewer,
+  .photo-lightbox .photo-viewer.person-open {
     grid-template-columns: minmax(0, 1fr);
   }
   .photo-image-space {
@@ -285,6 +343,14 @@
     border-radius: 18px 18px 0 0;
     background: var(--paper);
     z-index: 4;
+  }
+  .photo-lightbox .photo-person-sidebar {
+    max-height: 68dvh;
+    padding-top: 18px;
+  }
+  .photo-lightbox .person-open .photo-image-space {
+    height: clamp(96px, calc(32dvh - 72px), 220px);
+    align-self: start;
   }
   .photo-lightbox .info-open .photo-tools,
   .photo-lightbox .is-editing .photo-tools {
