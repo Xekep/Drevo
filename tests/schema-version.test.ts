@@ -55,6 +55,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "migrations",
       "mcp_tokens",
       "research_suggestions",
+      "ai_settings",
     ])
       assert.ok(tables.has(table), `missing table ${table}`);
     initializeArchiveSchema(db);
