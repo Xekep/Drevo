@@ -1,9 +1,5 @@
 import { lazy, Suspense } from "react";
-import type {
-  ArchiveUser,
-  Family,
-  PhotoMetadata,
-} from "../domain";
+import type { ArchiveUser, Family, PhotoMetadata } from "../domain";
 import { owns } from "../domain";
 import { viewerPhotos } from "../domain/photo-albums";
 import type { PhotoWorkspace } from "../hooks/usePhotoWorkspace";
@@ -23,7 +19,6 @@ type Props = {
   busy: boolean;
   save: (family: Family) => Promise<Family>;
   upload: (file: File, metadata?: PhotoMetadata) => Promise<Family>;
-  onUploaded: (id: string) => void;
   onPerson: (id: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
 };
@@ -36,7 +31,6 @@ export function PhotoWorkspaceOverlays({
   busy,
   save,
   upload,
-  onUploaded,
   onPerson,
   onDirtyChange,
 }: Props) {
@@ -52,7 +46,6 @@ export function PhotoWorkspaceOverlays({
             onClose={workspace.closeUpload}
             onUploaded={(id) => {
               workspace.uploaded(id);
-              onUploaded(id);
             }}
           />
         </Suspense>
@@ -80,10 +73,7 @@ export function PhotoWorkspaceOverlays({
             busy={busy}
             save={save}
             onClose={workspace.closePhoto}
-            onPerson={(id) => {
-              workspace.closePhoto();
-              onPerson(id);
-            }}
+            onPerson={onPerson}
             onDirtyChange={onDirtyChange}
           />
         </Suspense>

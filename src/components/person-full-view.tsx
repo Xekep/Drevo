@@ -11,6 +11,7 @@ import { EditorDialog } from "./editor-dialog";
 import { PersonPanel } from "./person-panel";
 import { TreeCanvas } from "./tree/tree-canvas";
 import { PersonPhotoAlbum } from "./person-photo-album";
+import { CopyArchiveLink } from "./copy-archive-link";
 import { PersonEditor } from "./archive-editors";
 import { owns, type ArchiveUser } from "../domain/access";
 const noop = () => {};
@@ -19,6 +20,7 @@ export function PersonFullView({
   family,
   readPhotos,
   onClose,
+  onUrlPerson,
   onCompare,
   user,
   canEdit,
@@ -30,7 +32,8 @@ export function PersonFullView({
   person: Person;
   family: Family;
   readPhotos: boolean;
-  onClose: () => void;
+  onClose: (id: string) => void;
+  onUrlPerson?: (id: string) => void;
   onCompare: (id: string) => void;
   user: ArchiveUser | null;
   canEdit: boolean;
@@ -40,6 +43,10 @@ export function PersonFullView({
   onAlbum: (id: string) => void;
 }) {
   const [activeId, setActiveId] = useState(person.id);
+  const selectActive = (id: string) => {
+    setActiveId(id);
+    onUrlPerson?.(id);
+  };
   const [editing, setEditing] = useState(false);
   const dirty = useRef(false);
   const active = family.people.find((p) => p.id === activeId) || person;
@@ -68,7 +75,7 @@ export function PersonFullView({
     <EditorDialog
       title={fullName(active)}
       onClose={() => {
-        if (!busy && confirmDiscardChanges(dirty.current)) onClose();
+        if (!busy && confirmDiscardChanges(dirty.current)) onClose(activeId);
       }}
       className="person-full-dialog"
     >
@@ -92,30 +99,38 @@ export function PersonFullView({
               }}
               onClose={() => setEditing(false)}
               onSaved={(id) => {
-                setActiveId(id);
+                selectActive(id);
                 setEditing(false);
               }}
             />
           ) : (
             <>
-              {editable && (
-                <button
-                  className="full-person-edit"
-                  onClick={() => setEditing(true)}
-                >
-                  <Pencil size={15} />
-                  Изменить
-                </button>
-              )}
+              <div className="full-person-actions">
+                {onUrlPerson && (
+                  <CopyArchiveLink
+                    className="full-person-copy"
+                    target={{ kind: "person", id: active.id }}
+                  />
+                )}
+                {editable && (
+                  <button
+                    className="full-person-edit"
+                    onClick={() => setEditing(true)}
+                  >
+                    <Pencil size={15} />
+                    Изменить
+                  </button>
+                )}
+              </div>
               <PersonPanel
                 key={active.id}
                 person={active}
                 isCurrentUser={user?.personId === active.id}
                 people={family.people}
                 links={family.links}
-                onSelect={setActiveId}
+                onSelect={selectActive}
                 onCompare={() => {
-                  onClose();
+                  onClose(activeId);
                   onCompare(active.id);
                 }}
               />
@@ -124,7 +139,7 @@ export function PersonFullView({
                   <PersonPhotoAlbum
                     photos={photos}
                     onOpen={() => {
-                      onClose();
+                      onClose(activeId);
                       onAlbum(active.id);
                     }}
                   />
@@ -146,7 +161,7 @@ export function PersonFullView({
             busy={false}
             reverse={false}
             selected={[active.id]}
-            onChoose={editing && editable ? noop : setActiveId}
+            onChoose={editing && editable ? noop : selectActive}
             onEdge={noop}
             onConnect={noop}
             onClear={noop}
