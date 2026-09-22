@@ -375,6 +375,17 @@ export function ResearchAssistant({
                     </button>
                   </div>
                 )}
+                {personIds[0] && (
+                  <button
+                    onClick={() =>
+                      void send(
+                        `Составь план дальнейшего генеалогического поиска по выбранному человеку. Сначала вызови get_research_backlog с personId=${personIds[0]}, direction=ancestors, depth=${branchDepth}, limit=10. Покажи первые шаги по приоритету: какой документ искать, какие пробелы он может закрыть и какие уже известные ориентиры использовать. Не выдавай отсутствие записи за отсутствие события.`,
+                      )
+                    }
+                  >
+                    План поиска
+                  </button>
+                )}
                 <button
                   onClick={() =>
                     void send("Что в этой ветке стоит проверить в первую очередь?")

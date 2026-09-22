@@ -138,6 +138,22 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     ),
   },
   {
+    name: "get_research_backlog",
+    description:
+      "Составить детерминированный список следующих документов для поиска, ранжированный по ожидаемой ценности закрытия пробелов. Можно ограничить выбранной веткой.",
+    scope: "analysis:read",
+    inputSchema: objectSchema({
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      direction: {
+        type: "string",
+        enum: ["ancestors", "descendants", "both"],
+        default: "ancestors",
+      },
+      depth: { type: "integer", minimum: 1, maximum: 8, default: 4 },
+      limit: { type: "integer", minimum: 1, maximum: 50, default: 12 },
+    }),
+  },
+  {
     name: "get_archive_insights",
     description:
       "Получить рассчитанную статистику полноты, поколений, источников и общие факты по архиву.",
@@ -279,6 +295,229 @@ function missingFor(person: Person) {
   else if (!person.parentageComplete) missing.push("полнота сведений о родителях");
   if (person.deceased && !person.death) missing.push("дата смерти");
   return missing;
+}
+
+
+type ResearchBacklogItem = {
+  priority: number;
+  documentType:
+    | "birth_or_baptism"
+    | "marriage"
+    | "death_or_burial"
+    | "household_or_census";
+  documentLabel: string;
+  person: { id: string; name: string };
+  branchDepth: number;
+  reasons: string[];
+  expectedFields: string[];
+  clues: string[];
+};
+
+function hasSources(person: Person) {
+  return (
+    person.sources.length > 0 ||
+    (person.events || []).some((event) => event.sources?.length) ||
+    (person.awards || []).some((award) => award.source)
+  );
+}
+
+function knownYear(value?: string) {
+  const match = value?.match(/(?:^|\D)(\d{4})(?:\D|$)/);
+  return match?.[1] || "";
+}
+
+function branchPeopleWithDepth(
+  family: Family,
+  personId: string,
+  direction: "ancestors" | "descendants" | "both",
+  depth: number,
+) {
+  const anchor = personOrThrow(family, personId),
+    result = new Map<string, { person: Person; depth: number }>([
+      [anchor.id, { person: anchor, depth: 0 }],
+    ]);
+  for (const selectedDirection of ["ancestors", "descendants"] as const) {
+    if (
+      (direction === "ancestors" && selectedDirection === "descendants") ||
+      (direction === "descendants" && selectedDirection === "ancestors")
+    )
+      continue;
+    for (const item of lineage(family, personId, depth, selectedDirection)) {
+      const id = String(item.person.id),
+        person = family.people.find((candidate) => candidate.id === id);
+      if (!person) continue;
+      const existing = result.get(id);
+      if (!existing || item.depth < existing.depth)
+        result.set(id, { person, depth: item.depth });
+    }
+  }
+  return [...result.values()];
+}
+
+function backlogForPerson(
+  person: Person,
+  branchDepth: number,
+): ResearchBacklogItem[] {
+  const result: ResearchBacklogItem[] = [],
+    proximity = Math.max(0, 12 - branchDepth * 2),
+    unsourced = !hasSources(person),
+    parentsMissing = !person.parents.length || !person.parentageComplete,
+    birthYear = knownYear(person.birth),
+    deathYear = knownYear(person.death),
+    birthPlace = person.birthPlace.trim(),
+    deathPlace = person.deathPlace?.trim() || "";
+
+  const add = (
+    documentType: ResearchBacklogItem["documentType"],
+    documentLabel: string,
+    base: number,
+    reasons: string[],
+    expectedFields: string[],
+    clues: string[],
+  ) => {
+    if (!reasons.length) return;
+    result.push({
+      priority: Math.min(100, base + proximity),
+      documentType,
+      documentLabel,
+      person: { id: person.id, name: fullName(person) },
+      branchDepth,
+      reasons,
+      expectedFields: [...new Set(expectedFields)],
+      clues: [...new Set(clues.filter(Boolean))],
+    });
+  };
+
+  const birthReasons: string[] = [],
+    birthFields: string[] = [];
+  let birthScore = 24;
+  if (!person.birth) {
+    birthReasons.push("неизвестна дата рождения");
+    birthFields.push("дата рождения");
+    birthScore += 18;
+  }
+  if (!birthPlace) {
+    birthReasons.push("неизвестно место рождения");
+    birthFields.push("место рождения");
+    birthScore += 12;
+  }
+  if (parentsMissing) {
+    birthReasons.push(
+      person.parents.length
+        ? "сведения о родителях отмечены как неполные"
+        : "родители не установлены",
+    );
+    birthFields.push("родители");
+    birthScore += 30;
+  }
+  if (!person.patronymic.trim()) {
+    birthReasons.push("неизвестно отчество");
+    birthFields.push("отчество");
+    birthScore += 7;
+  }
+  if (unsourced) {
+    birthReasons.push("в карточке нет источников");
+    birthScore += 8;
+  }
+  if (birthYear) birthScore += 5;
+  if (birthPlace) birthScore += 7;
+  add(
+    "birth_or_baptism",
+    "Запись о рождении / крещении",
+    birthScore,
+    birthReasons,
+    birthFields.length
+      ? birthFields
+      : ["дата рождения", "место рождения", "родители"],
+    [birthYear && `год: ${birthYear}`, birthPlace && `место: ${birthPlace}`],
+  );
+
+  if (person.spouses.length) {
+    const marriageReasons: string[] = [],
+      marriageFields = ["супруг", "возраст на момент брака", "место жительства"];
+    let marriageScore = 28;
+    if (person.sex === "f" && !person.maidenName?.trim()) {
+      marriageReasons.push("неизвестна фамилия при рождении");
+      marriageFields.push("фамилия при рождении");
+      marriageScore += 22;
+    }
+    if (parentsMissing) {
+      marriageReasons.push("родители неизвестны или известны не полностью");
+      marriageFields.push("родители");
+      marriageScore += 18;
+    }
+    if (unsourced) {
+      marriageReasons.push("семейные сведения не подтверждены источником");
+      marriageScore += 8;
+    }
+    if (birthYear) marriageScore += 3;
+    if (birthPlace) marriageScore += 4;
+    add(
+      "marriage",
+      "Запись о браке",
+      marriageScore,
+      marriageReasons,
+      marriageFields,
+      [birthYear && `год рождения: ${birthYear}`, birthPlace && `место происхождения: ${birthPlace}`],
+    );
+  }
+
+  if (person.deceased) {
+    const deathReasons: string[] = [],
+      deathFields: string[] = [];
+    let deathScore = 22;
+    if (!person.death) {
+      deathReasons.push("неизвестна дата смерти");
+      deathFields.push("дата смерти");
+      deathScore += 28;
+    }
+    if (!deathPlace) {
+      deathReasons.push("неизвестно место смерти");
+      deathFields.push("место смерти");
+      deathScore += 14;
+    }
+    if (unsourced) {
+      deathReasons.push("сведения не подтверждены источником");
+      deathScore += 8;
+    }
+    if (birthYear) deathScore += 3;
+    if (deathYear) deathScore += 5;
+    add(
+      "death_or_burial",
+      "Запись о смерти / погребении",
+      deathScore,
+      deathReasons,
+      deathFields.length ? deathFields : ["дата смерти", "место смерти", "возраст"],
+      [
+        birthYear && `год рождения: ${birthYear}`,
+        deathYear && `год смерти: ${deathYear}`,
+        deathPlace && `место смерти: ${deathPlace}`,
+        birthPlace && `место рождения: ${birthPlace}`,
+      ],
+    );
+  }
+
+  if (parentsMissing && (birthYear || birthPlace)) {
+    const householdReasons = [
+      person.parents.length
+        ? "семья происхождения известна не полностью"
+        : "не установлены родители",
+    ];
+    let householdScore = 34;
+    if (birthPlace) householdScore += 10;
+    if (birthYear) householdScore += 7;
+    if (unsourced) householdScore += 5;
+    add(
+      "household_or_census",
+      "Перепись / посемейный список / домовая книга",
+      householdScore,
+      householdReasons,
+      ["состав семьи", "родство членов хозяйства", "возраст", "место жительства"],
+      [birthYear && `ориентир по году рождения: ${birthYear}`, birthPlace && `место: ${birthPlace}`],
+    );
+  }
+
+  return result;
 }
 
 export function executeResearchTool(
@@ -515,6 +754,49 @@ export function executeResearchTool(
           people.has(id) ? [{ id, name: fullName(people.get(id)!) }] : [],
         ),
       })),
+    };
+  }
+
+  if (name === "get_research_backlog") {
+    const requested = stringArg(args, "personId", false),
+      direction = enumArg(
+        args,
+        "direction",
+        ["ancestors", "descendants", "both"] as const,
+        "ancestors",
+      ),
+      depth = numberArg(args, "depth", 4, 1, 8),
+      limit = numberArg(args, "limit", 12, 1, 50),
+      candidates = requested
+        ? branchPeopleWithDepth(family, requested, direction, depth)
+        : family.people.map((person) => ({ person, depth: 0 })),
+      items = candidates
+        .flatMap(({ person, depth: branchDepth }) =>
+          backlogForPerson(person, branchDepth),
+        )
+        .sort(
+          (a, b) =>
+            b.priority - a.priority ||
+            a.branchDepth - b.branchDepth ||
+            a.person.name.localeCompare(b.person.name, "ru") ||
+            a.documentLabel.localeCompare(b.documentLabel, "ru"),
+        )
+        .slice(0, limit);
+    return {
+      ...(requested
+        ? {
+            anchor: {
+              id: requested,
+              name: fullName(personOrThrow(family, requested)),
+            },
+            direction,
+            depth,
+          }
+        : {}),
+      items,
+      total: items.length,
+      scoring:
+        "Приоритет вычисляется из числа и ценности закрываемых пробелов, наличия поисковых ориентиров и близости к выбранному человеку.",
     };
   }
 
