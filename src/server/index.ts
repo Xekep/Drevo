@@ -30,6 +30,7 @@ export async function startServer(
   databasePath?: string,
   production = process.argv.includes("--production"),
   oauthFetch?: typeof fetch,
+  aiFetch?: typeof fetch,
 ) {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
@@ -66,6 +67,7 @@ export async function startServer(
     visibility,
     publicOrigin,
     serveStatic,
+    aiFetch,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
   const yandex = createYandexOAuth({
