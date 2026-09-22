@@ -37,11 +37,34 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
-        params: { protocolVersion: "2026-07-28" },
+        params: { protocolVersion: "2025-11-25" },
       }),
     });
     assert.equal(initialize.status, 200);
     assert.equal((await initialize.json()).result.serverInfo.name, "drevo");
+
+    const discover = await fetch(base + "/mcp", {
+      method: "POST",
+      headers: {
+        ...headers,
+        "MCP-Protocol-Version": "2026-07-28",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 11,
+        method: "server/discover",
+        params: {
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          },
+        },
+      }),
+    }).then((response) => response.json());
+    assert.ok(discover.result.supportedVersions.includes("2026-07-28"));
+    assert.equal(
+      discover.result._meta["io.modelcontextprotocol/serverInfo"].name,
+      "drevo",
+    );
 
     const listed = await fetch(base + "/mcp", {
       method: "POST",
