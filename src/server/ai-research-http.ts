@@ -86,7 +86,8 @@ function collectSourceReferences(
     label = typeof row.title === "string" ? row.title.trim() : "",
     reference =
       typeof row.reference === "string" ? row.reference.trim() : "",
-    url = typeof row.url === "string" ? row.url.trim() : "";
+    rawUrl = typeof row.url === "string" ? row.url.trim() : "",
+    url = /^https?:\/\/[^\s]+$/i.test(rawUrl) ? rawUrl : "";
   if (label && (reference || url)) {
     const key = `source:${personId}:${label}:${reference || url}`;
     refs.set(key, {
