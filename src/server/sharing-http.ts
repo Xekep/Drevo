@@ -30,6 +30,7 @@ import { researchSuggestionStore } from "./research-suggestions.ts";
 import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
 import { aiSettingsStore } from "./ai-settings.ts";
 import { adminAiHttp } from "./admin-ai-http.ts";
+import { aiUsageStore } from "./ai-usage.ts";
 
 export function sharingHttp({
   archive,
@@ -53,6 +54,7 @@ export function sharingHttp({
   const tokens = mcpTokenStore(archive.db);
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = aiSettingsStore(archive.db);
+  const aiUsage = aiUsageStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
   const researchMcp = mcpHttp({ archive, tokens });
@@ -61,6 +63,7 @@ export function sharingHttp({
     auth,
     suggestions,
     aiSettings,
+    usage: aiUsage,
     publicOrigin,
     fetcher: aiFetch,
   });
@@ -73,6 +76,7 @@ export function sharingHttp({
   const adminAi = adminAiHttp({
     auth,
     settings: aiSettings,
+    usage: aiUsage,
     publicOrigin,
     fetcher: aiFetch,
   });
