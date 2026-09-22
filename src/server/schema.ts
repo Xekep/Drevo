@@ -183,7 +183,7 @@ function migrate(db: DatabaseSync, target: number) {
   }
   if (target === 6) {
     db.exec(`
-      CREATE TABLE research_suggestions (
+      CREATE TABLE IF NOT EXISTS research_suggestions (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL CHECK(kind IN ('person_update')),
         status TEXT NOT NULL CHECK(status IN ('pending','accepted','rejected')),
@@ -197,9 +197,9 @@ function migrate(db: DatabaseSync, target: number) {
         reviewed_at TEXT,
         reviewed_by TEXT
       ) STRICT;
-      CREATE INDEX research_suggestions_status
+      CREATE INDEX IF NOT EXISTS research_suggestions_status
         ON research_suggestions(status,created_at DESC);
-      CREATE INDEX research_suggestions_creator
+      CREATE INDEX IF NOT EXISTS research_suggestions_creator
         ON research_suggestions(created_by,status);
     `);
     return;
