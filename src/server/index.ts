@@ -66,8 +66,8 @@ export async function startServer(
     previewImage,
     visibility,
     publicOrigin,
-    serveStatic,
     aiFetch,
+    serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
   const yandex = createYandexOAuth({
