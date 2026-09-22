@@ -58,8 +58,8 @@
 
 - [x] Сущность ResearchSuggestion.
 - [x] propose_person_update.
-- [ ] propose_relation.
-- [ ] propose_source.
+- [x] propose_relation.
+- [x] propose_source.
 - [x] В интерфейсе: основания, «было → станет», принять / отклонить.
 - [x] Только после ручного подтверждения предложение превращается в обычное изменение архива.
 - [ ] Позже отдельно рассмотреть атомарные write-tools; полный PUT /api/family через MCP не публиковать.
