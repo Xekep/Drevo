@@ -34,13 +34,14 @@
 Конфигурация первого варианта:
 
 - YANDEX_AI_API_KEY — API-ключ сервисного аккаунта AI Studio.
-- YANDEX_AI_MODEL — URI модели.
+- YANDEX_AI_FOLDER_ID — идентификатор каталога AI Studio.
+- YANDEX_AI_MODEL — имя модели (по умолчанию yandexgpt/rc) или полный gpt:// URI.
 - YANDEX_AI_BASE_URL — необязательно, по умолчанию https://ai.api.cloud.yandex.net/v1.
 
 ### Этап 3 — MCP
 
-- [x] Streamable HTTP endpoint /mcp.
-- [x] Официальный MCP TypeScript SDK v2.
+- [x] Stateless HTTP endpoint /mcp с JSON-RPC методами initialize, ping, tools/list и tools/call.
+- [x] Реализация без дополнительной runtime-зависимости от MCP SDK; протокольный слой остаётся тонким адаптером.
 - [x] Read-only инструменты используют тот же Research Tools слой.
 - [x] Администратор выдаёт отдельные MCP-токены.
 - [x] В базе хранится только SHA-256 токена; секрет показывается один раз.
