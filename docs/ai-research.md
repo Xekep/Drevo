@@ -9,10 +9,11 @@ Drevo использует единый read-only слой исследоват�
 Переменные окружения:
 
     YANDEX_AI_API_KEY=...
-    YANDEX_AI_MODEL=gpt://<folder-id>/<model-id>/latest
+    YANDEX_AI_FOLDER_ID=<folder-id>
+    YANDEX_AI_MODEL=yandexgpt/rc
     YANDEX_AI_BASE_URL=https://ai.api.cloud.yandex.net/v1
 
-Последняя переменная необязательна.
+`YANDEX_AI_MODEL` можно задать полным `gpt://` URI; иначе сервер формирует URI из `YANDEX_AI_FOLDER_ID`. `YANDEX_AI_MODEL` по умолчанию — `yandexgpt/rc`, `YANDEX_AI_BASE_URL` необязателен.
 
 ИИ доступен только вошедшему участнику с правом чтения закрытого архива. Для участника с ограничением common_ancestors Research Tools получают ту же серверную проекцию, что и остальные способы чтения древа.
 
@@ -35,6 +36,8 @@ Scopes:
 - tree:read — поиск людей, карточки, семья, предки и потомки;
 - sources:read — источники;
 - analysis:read — родство, пробелы, противоречия и сводная аналитика.
+
+MCP работает stateless поверх JSON-RPC и публикует `initialize`, `notifications/*`, `ping`, `tools/list` и `tools/call`. Дополнительная runtime-зависимость от MCP SDK для первого read-only слоя не требуется.
 
 Все опубликованные MCP tools на первом этапе read-only.
 
