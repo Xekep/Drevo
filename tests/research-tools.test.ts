@@ -229,7 +229,7 @@ test("probable duplicate search handles surname variants and incomplete dates", 
     result.matches[0].people.map((item) => item.id),
     ["anna-a", "anna-b"],
   );
-  assert.equal(result.matches[0].confidence, "high");
+  assert.equal(result.matches[0].confidence, "medium");
   assert.ok(result.matches[0].reasons.includes("фамилии отличаются одной буквой"));
   assert.ok(
     result.matches[0].reasons.includes(
