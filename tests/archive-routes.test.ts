@@ -18,7 +18,8 @@ test("all archive sections have stable exact URLs shared by browser and server",
     "/admin-secret",
     "/api/family",
     "/media/a.png",
-    "/people/unknown",
+    "/people/unknown/extra",
+    "/photos/%ZZ",
     "/tree//",
     "/../tree",
     "//places",
@@ -31,6 +32,7 @@ test("profile and photo links retain their entity without changing section route
   const photo = { kind: "photo" as const, id: "photo-42" };
   for (const target of [person, photo]) {
     const url = new URL(archiveTargetPath(target), "https://example.test");
+    assert.equal(url.search, "");
     assert.deepEqual(archiveTargetAt(url.pathname, url.search), target);
     assert.equal(
       archiveViewAt(url.pathname),
@@ -40,6 +42,18 @@ test("profile and photo links retain their entity without changing section route
   assert.deepEqual(archiveTargetAt("/tree", "?person=unknown"), {
     kind: "person",
     id: "unknown",
+  });
+  assert.equal(
+    archiveTargetPath({ kind: "person", id: "unknown" }),
+    "/people/unknown",
+  );
+  assert.equal(
+    archiveTargetPath({ kind: "photo", id: "photo-42" }),
+    "/photos/photo-42",
+  );
+  assert.deepEqual(archiveTargetAt("/photos", "?photo=photo-42"), {
+    kind: "photo",
+    id: "photo-42",
   });
   assert.equal(archiveTargetAt("/people", "?person=unknown"), null);
   assert.equal(archiveTargetAt("/photos", "?photo="), null);

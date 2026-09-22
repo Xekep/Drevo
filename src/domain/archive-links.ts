@@ -1,12 +1,18 @@
-import { archivePaths, type ArchiveView } from "./archive-routes.ts";
+import {
+  archiveEntityAt,
+  archivePaths,
+  type ArchiveEntity,
+} from "./archive-routes.ts";
 
-export type ArchiveTarget =
-  { kind: "person"; id: string } | { kind: "photo"; id: string };
+export type ArchiveTarget = ArchiveEntity;
 
 export function archiveTargetAt(
   pathname: string,
   search: string,
 ): ArchiveTarget | null {
+  const entity = archiveEntityAt(pathname);
+  if (entity) return entity;
+  // Старые ссылки с параметрами остаются рабочими и затем заменяются на канонический адрес.
   const route = pathname.replace(/\/$/, "");
   const params = new URLSearchParams(search);
   const kind =
@@ -21,6 +27,5 @@ export function archiveTargetAt(
 }
 
 export function archiveTargetPath(target: ArchiveTarget): string {
-  const view: ArchiveView = target.kind === "person" ? "tree" : "gallery";
-  return `${archivePaths[view]}?${new URLSearchParams({ [target.kind]: target.id })}`;
+  return `${target.kind === "person" ? archivePaths.list : archivePaths.gallery}/${encodeURIComponent(target.id)}`;
 }
