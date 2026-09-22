@@ -84,6 +84,16 @@ function valueLabel(value: SuggestionValue) {
   return value;
 }
 
+function parseSseFrame(frame: string) {
+  let event = "message";
+  const data: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+  }
+  return { event, data: data.join("\n") };
+}
+
 function SuggestionDetails({
   suggestion,
 }: {
@@ -174,6 +184,7 @@ export function ResearchAssistant({
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
     [reviewBusy, setReviewBusy] = useState(""),
+    [streamStatus, setStreamStatus] = useState(""),
     [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null);
 
@@ -222,35 +233,117 @@ export function ResearchAssistant({
     const message = text.trim();
     if (!message || busy) return;
     const history = messages.slice(-10);
-    setMessages((current) => [...current, { role: "user", content: message }]);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: message },
+      { role: "assistant", content: "", references: [] },
+    ]);
     setDraft("");
     setBusy(true);
+    setStreamStatus("Соединяюсь…");
     setError("");
     try {
-      const response = await fetch("/api/ai/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            history,
-            context: { view, personIds },
-          }),
+      const response = await fetch("/api/ai/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history,
+          context: { view, personIds },
         }),
-        data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "ИИ-исследователь не ответил");
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: data.answer,
-          references: Array.isArray(data.references) ? data.references : [],
-        },
-      ]);
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(
+          (data as { error?: string }).error ||
+            "ИИ-исследователь не ответил",
+        );
+      }
+      if (!response.body)
+        throw new Error("Сервер не вернул поток ответа");
+
+      const reader = response.body.getReader(),
+        decoder = new TextDecoder();
+      let buffer = "",
+        finished = false;
+
+      const updateAssistant = (
+        updater: (message: Message) => Message,
+      ) =>
+        setMessages((current) => {
+          const next = [...current],
+            index = next.length - 1;
+          if (index < 0 || next[index].role !== "assistant") return current;
+          next[index] = updater(next[index]);
+          return next;
+        });
+
+      const consume = (frame: string) => {
+        const parsed = parseSseFrame(frame);
+        if (!parsed.data) return;
+        const data = JSON.parse(parsed.data) as {
+          text?: string;
+          message?: string;
+          answer?: string;
+          error?: string;
+          references?: AnswerReference[];
+        };
+        if (parsed.event === "status") {
+          if (data.message) setStreamStatus(data.message);
+          return;
+        }
+        if (parsed.event === "delta") {
+          if (data.text)
+            updateAssistant((item) => ({
+              ...item,
+              content: item.content + data.text,
+            }));
+          return;
+        }
+        if (parsed.event === "done") {
+          finished = true;
+          setStreamStatus("");
+          updateAssistant((item) => ({
+            ...item,
+            content: data.answer || item.content,
+            references: Array.isArray(data.references)
+              ? data.references
+              : item.references,
+          }));
+          return;
+        }
+        if (parsed.event === "error")
+          throw new Error(data.error || "Ошибка потокового ответа ИИ");
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        while (true) {
+          const match = /\r?\n\r?\n/.exec(buffer);
+          if (!match || match.index === undefined) break;
+          const frame = buffer.slice(0, match.index);
+          buffer = buffer.slice(match.index + match[0].length);
+          consume(frame);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) consume(buffer);
+      if (!finished)
+        throw new Error("Поток ответа завершился раньше события done");
+
       if (canEdit) await loadSuggestions();
     } catch (reason) {
+      setMessages((current) => {
+        const last = current.at(-1);
+        return last?.role === "assistant" && !last.content
+          ? current.slice(0, -1)
+          : current;
+      });
       setError((reason as Error).message);
     } finally {
+      setStreamStatus("");
       setBusy(false);
     }
   }
@@ -485,7 +578,11 @@ export function ResearchAssistant({
                   )}
               </article>
             ))}
-            {busy && <p role="status">Исследую данные…</p>}
+            {busy && (
+              <p role="status">
+                {streamStatus || "ИИ формирует ответ…"}
+              </p>
+            )}
             {error && (
               <p className="form-error" role="alert">
                 {error}
