@@ -377,3 +377,56 @@
   border-radius: 7px;
   font-size: 11px;
 }
+
+.research-answer-references {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.research-answer-reference {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: stretch;
+}
+.research-answer-reference > button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid #d7e1d2;
+  border-radius: 8px;
+  background: #f7faf4;
+  color: #40523b;
+  text-align: left;
+}
+.research-answer-reference > button > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.research-answer-reference > button b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.research-answer-reference > button small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.research-answer-reference > a {
+  width: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d7e1d2;
+  border-radius: 8px;
+  background: #f7faf4;
+  color: #526d4b;
+  text-decoration: none;
+}
