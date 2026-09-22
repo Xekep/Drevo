@@ -82,17 +82,21 @@ export function ResearchAssistant({
   }, [canEdit]);
 
   useEffect(() => {
-    if (!open || !canEdit) return;
-    void loadSuggestions().catch((reason) =>
-      setError((reason as Error).message),
-    );
-  }, [open, canEdit, loadSuggestions]);
-
-  useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "end" });
   }, [open, messages, busy, suggestions]);
 
   if (!enabled) return null;
+
+  async function openAssistant() {
+    setOpen(true);
+    setError("");
+    if (!canEdit) return;
+    try {
+      await loadSuggestions();
+    } catch (reason) {
+      setError((reason as Error).message);
+    }
+  }
 
   async function send(text = draft) {
     const message = text.trim();
@@ -157,7 +161,7 @@ export function ResearchAssistant({
         className="research-assistant-trigger"
         aria-expanded={open}
         aria-label="Открыть ИИ-исследователя"
-        onClick={() => setOpen(true)}
+        onClick={() => void openAssistant()}
       >
         <Sparkles size={18} />
         ИИ-исследователь
