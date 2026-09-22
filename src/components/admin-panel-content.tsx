@@ -9,6 +9,7 @@ import {
   Users,
   History,
   Link2,
+  KeyRound,
   Trash2,
 } from "lucide-react";
 import {
@@ -23,6 +24,7 @@ import { ShareCatalog } from "./share-catalog";
 import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
+import { McpTokenAdmin } from "./mcp-token-admin";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -251,6 +253,7 @@ export function AdminPanel({
             ["users", "Участники", Users],
             ["access", "Доступ и древо", ArrowDownUp],
             ["data", "Данные и копии", DatabaseBackup],
+            ["mcp", "MCP и ИИ", KeyRound],
             ["shares", "Временные ссылки", Link2],
             ["audit", "Журнал правок", History],
           ].map(([id, label, Icon]) => {
@@ -500,6 +503,7 @@ export function AdminPanel({
             </footer>
           </form>
         )}
+        {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
         {section === "audit" && (
           <section className="admin-card archive-form">
