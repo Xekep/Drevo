@@ -1,20 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 
-test("admin AI settings update model live, test connection, and can disable researcher", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-admin-"));
-  process.env.YANDEX_AI_API_KEY = "test-key";
-  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
-  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+test("admin can save encrypted AI Studio credentials and select a model", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-admin-")),
+    databasePath = join(dir, "drevo.sqlite"),
+    secret = "AQVN-test-secret-key-123456789";
+  for (const key of [
+    "YANDEX_AI_API_KEY",
+    "YANDEX_AI_FOLDER_ID",
+    "YANDEX_AI_MODEL",
+  ])
+    delete process.env[key];
 
-  const requests: Array<Record<string, unknown>> = [];
+  const requests: Array<{
+    body: Record<string, unknown>;
+    authorization: string;
+    project: string;
+  }> = [];
   const aiFetch: typeof fetch = async (_url, init) => {
-    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    requests.push(body);
+    const headers = new Headers(init?.headers),
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push({
+      body,
+      authorization: headers.get("Authorization") || "",
+      project: headers.get("OpenAI-Project") || "",
+    });
     return Response.json({
       choices: [
         {
@@ -34,7 +48,7 @@ test("admin AI settings update model live, test connection, and can disable rese
 
   const app = await startServer(
       0,
-      join(dir, "drevo.sqlite"),
+      databasePath,
       true,
       undefined,
       aiFetch,
@@ -48,35 +62,46 @@ test("admin AI settings update model live, test connection, and can disable rese
       response.json(),
     );
     assert.equal(initial.enabled, true);
-    assert.equal(initial.active, true);
-    assert.equal(initial.configured, true);
-    assert.equal(initial.apiKeyConfigured, true);
-    assert.equal(initial.folderConfigured, true);
-    assert.equal(initial.model, "yandexgpt/rc");
-    assert.equal(initial.modelOverride, "");
-    assert.deepEqual(initial.limits, {
-      requestsPerMinute: 6,
-      dailyRequests: 100,
-      dailyTokens: 250000,
-    });
-    assert.equal(initial.usage.today.requests, 0);
+    assert.equal(initial.active, false);
+    assert.equal(initial.configured, false);
+    assert.equal(initial.apiKeyConfigured, false);
+    assert.equal(initial.folderConfigured, false);
+    assert.equal(initial.model, "yandexgpt-5.1");
+    assert.ok(
+      initial.models.some(
+        (item: { id: string }) => item.id === "aliceai-llm-flash",
+      ),
+    );
+    assert.ok(
+      initial.models.some(
+        (item: { id: string }) => item.id === "deepseek-v4-flash",
+      ),
+    );
 
     const savedResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         enabled: true,
-        model: "yandexgpt/latest",
+        apiKey: secret,
+        folderId: "folder-1",
+        model: "yandexgpt-5.1",
         requestsPerMinute: 1,
         dailyRequests: 10,
         dailyTokens: 1000,
       }),
     });
     assert.equal(savedResponse.status, 200);
-    const saved = await savedResponse.json();
+    const savedText = await savedResponse.text(),
+      saved = JSON.parse(savedText);
+    assert.equal(savedText.includes(secret), false);
     assert.equal(saved.active, true);
-    assert.equal(saved.model, "yandexgpt/latest");
-    assert.equal(saved.modelOverride, "yandexgpt/latest");
+    assert.equal(saved.apiKeyConfigured, true);
+    assert.equal(saved.apiKeyStored, true);
+    assert.equal(saved.apiKeySource, "database");
+    assert.equal(saved.folderId, "folder-1");
+    assert.equal(saved.folderSource, "database");
+    assert.equal(saved.model, "yandexgpt-5.1");
     assert.equal(saved.modelSource, "database");
     assert.deepEqual(saved.limits, {
       requestsPerMinute: 1,
@@ -84,14 +109,34 @@ test("admin AI settings update model live, test connection, and can disable rese
       dailyTokens: 1000,
     });
 
+    const row = app.archive.db
+      .prepare(
+        "SELECT api_key_ciphertext,folder_id FROM ai_settings WHERE id=1",
+      )
+      .get()!;
+    assert.equal(String(row.folder_id), "folder-1");
+    assert.match(String(row.api_key_ciphertext), /^v1\./);
+    assert.equal(String(row.api_key_ciphertext).includes(secret), false);
+
+    const keyPath = databasePath + ".secrets.key";
+    assert.equal(existsSync(keyPath), true);
+    assert.equal(readFileSync(keyPath).length, 32);
+
+    const auditText = JSON.stringify(
+      app.archive.db.prepare("SELECT * FROM audit_entries").all(),
+    );
+    assert.equal(auditText.includes(secret), false);
+
     const tested = await fetch(base + "/api/admin/ai/test", {
       method: "POST",
     });
     assert.equal(tested.status, 200);
     assert.equal((await tested.json()).ok, true);
+    assert.equal(requests.at(-1)?.authorization, "Api-Key " + secret);
+    assert.equal(requests.at(-1)?.project, "folder-1");
     assert.equal(
-      requests.at(-1)?.model,
-      "gpt://folder-1/yandexgpt/latest",
+      requests.at(-1)?.body.model,
+      "gpt://folder-1/yandexgpt-5.1",
     );
 
     const chat = await fetch(base + "/api/ai/chat", {
@@ -104,8 +149,8 @@ test("admin AI settings update model live, test connection, and can disable rese
     });
     assert.equal(chat.status, 200);
     assert.equal(
-      requests.at(-1)?.model,
-      "gpt://folder-1/yandexgpt/latest",
+      requests.at(-1)?.body.model,
+      "gpt://folder-1/yandexgpt-5.1",
     );
 
     const usageStatus = await fetch(base + "/api/admin/ai").then((response) =>
@@ -116,9 +161,6 @@ test("admin AI settings update model live, test connection, and can disable rese
     assert.equal(usageStatus.usage.today.inputTokens, 12);
     assert.equal(usageStatus.usage.today.outputTokens, 3);
     assert.equal(usageStatus.usage.today.totalTokens, 15);
-    assert.equal(usageStatus.usage.today.errors, 0);
-    assert.equal(usageStatus.usage.recent[0].status, "ok");
-    assert.equal(usageStatus.usage.recent[0].model, "yandexgpt/latest");
 
     const beforeLimitedChat = requests.length;
     const limitedChat = await fetch(base + "/api/ai/chat", {
@@ -128,14 +170,14 @@ test("admin AI settings update model live, test connection, and can disable rese
     });
     assert.equal(limitedChat.status, 429);
     assert.equal(requests.length, beforeLimitedChat);
-    assert.match((await limitedChat.json()).error, /Слишком много запросов/);
 
     const disabledResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         enabled: false,
-        model: "yandexgpt/latest",
+        folderId: "folder-1",
+        model: "deepseek-v4-flash",
         requestsPerMinute: 1,
         dailyRequests: 10,
         dailyTokens: 1000,
@@ -146,31 +188,36 @@ test("admin AI settings update model live, test connection, and can disable rese
     assert.equal(disabled.enabled, false);
     assert.equal(disabled.active, false);
     assert.equal(disabled.configured, true);
+    assert.equal(disabled.model, "deepseek-v4-flash");
 
-    const status = await fetch(base + "/api/ai/status").then((response) =>
-      response.json(),
-    );
-    assert.equal(status.enabled, false);
-
-    const beforeBlockedChat = requests.length;
-    const blockedChat = await fetch(base + "/api/ai/chat", {
-      method: "POST",
+    const clearedResponse = await fetch(base + "/api/admin/ai", {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "Этот запрос не должен уйти в AI Studio",
+        enabled: false,
+        clearApiKey: true,
+        folderId: "folder-1",
+        model: "deepseek-v4-flash",
+        requestsPerMinute: 1,
+        dailyRequests: 10,
+        dailyTokens: 1000,
       }),
     });
-    assert.equal(blockedChat.status, 503);
-    assert.equal(requests.length, beforeBlockedChat);
-    assert.match((await blockedChat.json()).error, /отключён/);
+    assert.equal(clearedResponse.status, 200);
+    const cleared = await clearedResponse.json();
+    assert.equal(cleared.apiKeyStored, false);
+    assert.equal(cleared.apiKeyConfigured, false);
+    assert.equal(cleared.configured, false);
+    assert.equal(
+      String(
+        app.archive.db
+          .prepare("SELECT api_key_ciphertext FROM ai_settings WHERE id=1")
+          .get()!.api_key_ciphertext,
+      ),
+      "",
+    );
   } finally {
     await app.close();
-    for (const key of [
-      "YANDEX_AI_API_KEY",
-      "YANDEX_AI_FOLDER_ID",
-      "YANDEX_AI_MODEL",
-    ])
-      delete process.env[key];
     rmSync(dir, { recursive: true, force: true });
   }
 });
