@@ -8,7 +8,7 @@ import {
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
 import {
-  PERSON_UPDATE_PROPOSAL_TOOL,
+  RESEARCH_PROPOSAL_TOOLS,
   type researchSuggestionStore,
 } from "./research-suggestions.ts";
 
@@ -95,7 +95,7 @@ export function aiResearchHttp({
   ): Promise<ModelMessage> {
     const definitions = [
       ...RESEARCH_TOOL_DEFINITIONS,
-      ...(canPropose ? [PERSON_UPDATE_PROPOSAL_TOOL] : []),
+      ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
     ];
     const response = await fetcher(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -192,7 +192,7 @@ export function aiResearchHttp({
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
         canPropose
-          ? "Если пользователь просит сохранить конкретную гипотезу или исправление карточки, используй propose_person_update. Это только предложение: человек отдельно принимает или отклоняет его. Не создавай предложения без конкретного нового значения и основания."
+          ? "Если пользователь просит сохранить конкретную гипотезу, используй подходящий propose_person_update, propose_source или propose_relation. Это только предложения: человек отдельно принимает или отклоняет их. Не создавай предложение без конкретных значений и основания. Для parent fromPersonId означает родителя, toPersonId — ребёнка."
           : "",
         "Отвечай по-русски, кратко и предметно.",
         personIds.length
@@ -235,10 +235,13 @@ export function aiResearchHttp({
               );
             else if (
               canPropose &&
-              call.function.name === PERSON_UPDATE_PROPOSAL_TOOL.name
+              RESEARCH_PROPOSAL_TOOLS.some(
+                (tool) => tool.name === call.function.name,
+              )
             )
               result = {
-                suggestion: suggestions.createPersonUpdate(
+                suggestion: suggestions.createFromTool(
+                  call.function.name,
                   user,
                   family,
                   snapshot.revision,

@@ -3,16 +3,41 @@ import { Check, Send, Sparkles, X } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
 type SuggestionValue = string | boolean | undefined;
-type ResearchSuggestion = {
+type SuggestionBase = {
   id: string;
   personName: string;
   reason: string;
   evidence: string[];
-  payload: {
-    before: Record<string, SuggestionValue>;
-    changes: Record<string, Exclude<SuggestionValue, undefined>>;
-  };
 };
+type ResearchSuggestion =
+  | (SuggestionBase & {
+      kind: "person_update";
+      payload: {
+        before: Record<string, SuggestionValue>;
+        changes: Record<string, Exclude<SuggestionValue, undefined>>;
+      };
+    })
+  | (SuggestionBase & {
+      kind: "source";
+      payload: {
+        source: {
+          title: string;
+          type: string;
+          reference: string;
+          url?: string;
+          note?: string;
+        };
+      };
+    })
+  | (SuggestionBase & {
+      kind: "relation";
+      fromName: string;
+      toName: string;
+      payload: {
+        relationType: string;
+        note?: string;
+      };
+    });
 
 const fieldLabels: Record<string, string> = {
   surname: "Фамилия",
@@ -29,10 +54,90 @@ const fieldLabels: Record<string, string> = {
   parentageComplete: "Все родители известны",
 };
 
+const relationLabels: Record<string, string> = {
+  parent: "Родитель → ребёнок",
+  spouse: "Супруги",
+  adoptive_parent: "Приёмный родитель → ребёнок",
+  step_parent: "Отчим / мачеха → ребёнок",
+  godparent: "Крёстный родитель → крестник",
+  nurse: "Кормилица → ребёнок",
+  sworn_sibling: "Названые брат / сестра",
+  guardian: "Опекун → подопечный",
+};
+
 function valueLabel(value: SuggestionValue) {
   if (value === undefined || value === "") return "не указано";
   if (typeof value === "boolean") return value ? "да" : "нет";
   return value;
+}
+
+function SuggestionDetails({
+  suggestion,
+}: {
+  suggestion: ResearchSuggestion;
+}) {
+  if (suggestion.kind === "person_update")
+    return (
+      <ul>
+        {Object.entries(suggestion.payload.changes).map(([field, value]) => (
+          <li key={field}>
+            <b>{fieldLabels[field] || field}</b>
+            <span>
+              {valueLabel(suggestion.payload.before[field])}
+              {" → "}
+              {valueLabel(value)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+
+  if (suggestion.kind === "source") {
+    const source = suggestion.payload.source;
+    return (
+      <ul>
+        <li>
+          <b>Источник для {suggestion.personName}</b>
+          <span>{source.title}</span>
+        </li>
+        <li>
+          <b>Тип / ссылка на запись</b>
+          <span>
+            {source.type} · {source.reference}
+          </span>
+        </li>
+        {source.url && (
+          <li>
+            <b>URL</b>
+            <span>{source.url}</span>
+          </li>
+        )}
+        {source.note && (
+          <li>
+            <b>Примечание</b>
+            <span>{source.note}</span>
+          </li>
+        )}
+      </ul>
+    );
+  }
+
+  return (
+    <ul>
+      <li>
+        <b>{relationLabels[suggestion.payload.relationType] || "Связь"}</b>
+        <span>
+          {suggestion.fromName} → {suggestion.toName}
+        </span>
+      </li>
+      {suggestion.payload.note && (
+        <li>
+          <b>Примечание</b>
+          <span>{suggestion.payload.note}</span>
+        </li>
+      )}
+    </ul>
+  );
 }
 
 export function ResearchAssistant({
@@ -196,22 +301,13 @@ export function ResearchAssistant({
                 <h3>Предложения для проверки</h3>
                 {suggestions.map((suggestion) => (
                   <div className="research-suggestion" key={suggestion.id}>
-                    <strong>{suggestion.personName}</strong>
+                    <strong>
+                      {suggestion.kind === "relation"
+                        ? `${suggestion.fromName} ↔ ${suggestion.toName}`
+                        : suggestion.personName}
+                    </strong>
                     <p>{suggestion.reason}</p>
-                    <ul>
-                      {Object.entries(suggestion.payload.changes).map(
-                        ([field, value]) => (
-                          <li key={field}>
-                            <b>{fieldLabels[field] || field}</b>
-                            <span>
-                              {valueLabel(suggestion.payload.before[field])}
-                              {" → "}
-                              {valueLabel(value)}
-                            </span>
-                          </li>
-                        ),
-                      )}
-                    </ul>
+                    <SuggestionDetails suggestion={suggestion} />
                     {suggestion.evidence.length > 0 && (
                       <details>
                         <summary>Основания</summary>
