@@ -19,10 +19,10 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
   const yandexModel = "gpt://folder-1/yandexgpt-5.1/latest",
     deepseekModel = "gpt://folder-1/deepseek-v4-flash/latest",
     requests: Array<{
-    body: Record<string, unknown>;
-    authorization: string;
-    project: string;
-  }> = [],
+      body: Record<string, unknown>;
+      authorization: string;
+      project: string;
+    }> = [],
     modelRequests: Array<{ authorization: string; project: string }> = [];
   const aiFetch: typeof fetch = async (url, init) => {
     const headers = new Headers(init?.headers);
@@ -63,16 +63,9 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     });
   };
 
-  const app = await startServer(
-      0,
-      databasePath,
-      true,
-      undefined,
-      aiFetch,
-    ),
+  const app = await startServer(0, databasePath, true, undefined, aiFetch),
     base =
-      "http://127.0.0.1:" +
-      (app.server.address() as { port: number }).port;
+      "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
     const initial = await fetch(base + "/api/admin/ai").then((response) =>
@@ -162,10 +155,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal((await tested.json()).ok, true);
     assert.equal(requests.at(-1)?.authorization, "Api-Key " + secret);
     assert.equal(requests.at(-1)?.project, "folder-1");
-    assert.equal(
-      requests.at(-1)?.body.model,
-      yandexModel,
-    );
+    assert.equal(requests.at(-1)?.body.model, yandexModel);
 
     const chat = await fetch(base + "/api/ai/chat", {
       method: "POST",
@@ -176,10 +166,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
       }),
     });
     assert.equal(chat.status, 200);
-    assert.equal(
-      requests.at(-1)?.body.model,
-      yandexModel,
-    );
+    assert.equal(requests.at(-1)?.body.model, yandexModel);
 
     const usageStatus = await fetch(base + "/api/admin/ai").then((response) =>
       response.json(),
@@ -189,6 +176,13 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(usageStatus.usage.today.inputTokens, 12);
     assert.equal(usageStatus.usage.today.outputTokens, 3);
     assert.equal(usageStatus.usage.today.totalTokens, 15);
+    assert.equal(usageStatus.usage.history.length, 14);
+    assert.deepEqual(usageStatus.usage.history.at(-1), {
+      day: new Date().toISOString().slice(0, 10),
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+    });
 
     const beforeLimitedChat = requests.length;
     const limitedChat = await fetch(base + "/api/ai/chat", {

@@ -1,8 +1,8 @@
 .research-assistant-trigger {
   position: fixed;
-  right: 258px;
+  right: 18px;
   bottom: 35px;
-  z-index: 30;
+  z-index: 50;
   display: flex;
   align-items: center;
   width: 42px;
@@ -17,6 +17,9 @@
   font-size: 12px;
   font-weight: 600;
 }
+.research-assistant-trigger.is-tree-view {
+  right: 258px;
+}
 .research-assistant-trigger:hover {
   background: #eef4e9;
 }
@@ -30,6 +33,11 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
+  min-width: 340px;
+  min-height: 420px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  resize: both;
   border: 1px solid #d7dfd1;
   border-radius: 16px;
   background: #fbfcf9;
@@ -234,18 +242,16 @@
   gap: 8px;
   padding: 18px 4px;
 }
+.research-assistant-empty strong {
+  color: #3d5038;
+  font-family: var(--serif);
+  font-size: 18px;
+}
 .research-assistant-empty p {
+  margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.7;
-}
-.research-assistant-empty button {
-  padding: 10px 12px;
-  border: 1px solid #dbe4d5;
-  border-radius: 9px;
-  background: white;
-  text-align: left;
-  font-size: 12px;
 }
 .research-assistant > form {
   position: relative;
@@ -373,13 +379,21 @@
 }
 @media (max-width: 600px) {
   .research-assistant-trigger {
-    right: 244px;
+    right: 18px;
     bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .research-assistant-trigger.is-tree-view {
+    right: 244px;
   }
   .research-assistant {
     inset: 8px;
     width: auto;
     height: auto;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    resize: none;
   }
   .research-assistant > header {
     cursor: default;
@@ -428,45 +442,6 @@
   }
   .ai-model-picker > small {
     grid-column: 1;
-  }
-}
-
-.research-branch-action {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid #d5e0cf;
-  border-radius: 10px;
-  background: #f3f7ef;
-}
-.research-branch-action label {
-  display: grid;
-  gap: 5px;
-  color: #66755f;
-  font-size: 12px;
-}
-.research-branch-action select {
-  min-height: 36px;
-  border: 1px solid #d5ddd0;
-  border-radius: 8px;
-  background: white;
-  padding: 0 9px;
-  color: #394735;
-  font: inherit;
-  font-size: 12px;
-}
-.research-branch-action > button {
-  min-height: 36px;
-  border-color: #b9cbae;
-  background: #e8f0e2;
-  color: #466340;
-  font-weight: 600;
-}
-@media (max-width: 440px) {
-  .research-branch-action {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -709,6 +684,80 @@
   font-size: 12px;
   line-height: 1.35;
 }
+.ai-token-chart {
+  display: grid;
+  gap: 9px;
+  padding: 12px 12px 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fafbf9;
+}
+.ai-token-chart-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-token-chart-heading > span {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-token-chart-heading i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.ai-token-chart-heading i.input,
+.ai-token-stack > .input {
+  background: #6f9367;
+}
+.ai-token-chart-heading i.output,
+.ai-token-stack > .output {
+  background: #b3caa9;
+}
+.ai-token-bars {
+  height: 164px;
+  display: grid;
+  grid-template-columns: repeat(14, minmax(7px, 1fr));
+  gap: 5px;
+  align-items: stretch;
+  padding-top: 4px;
+  border-bottom: 1px solid #dce4d8;
+}
+.ai-token-day {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr 18px;
+  gap: 4px;
+  text-align: center;
+}
+.ai-token-column {
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ai-token-stack {
+  width: min(22px, 100%);
+  min-height: 3px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 4px 4px 1px 1px;
+  transition: height 180ms ease;
+}
+.ai-token-stack.is-empty {
+  background: #dfe6dc;
+}
+.ai-token-day small {
+  min-width: 30px;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
 .ai-usage-recent {
   display: grid;
   gap: 5px;
@@ -760,6 +809,9 @@
   .ai-limit-settings,
   .ai-usage-stats {
     grid-template-columns: 1fr;
+  }
+  .ai-token-bars {
+    gap: 3px;
   }
 }
 

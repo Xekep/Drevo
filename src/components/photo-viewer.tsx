@@ -81,7 +81,9 @@ function PhotoViewerContent({
     const person = family.people.find((p) => p.id === id);
     return person ? [person] : [];
   });
-  const viewedPerson = family.people.find((person) => person.id === viewedPersonId);
+  const viewedPerson = family.people.find(
+    (person) => person.id === viewedPersonId,
+  );
   function previewPerson(id: string) {
     setViewedPersonId(id);
     setInfoOpen(true);
@@ -346,7 +348,9 @@ function PhotoViewerContent({
                             height: `${tag.height * 100}%`,
                           }}
                           onClick={() => previewPerson(person.id)}
+                          onDoubleClick={() => onPerson(person.id)}
                           aria-label={`Показать сведения: ${fullName(person)}`}
+                          title="Двойной клик — показать в древе"
                         >
                           <span>
                             {person.name} {person.surname}
@@ -492,6 +496,8 @@ function PhotoViewerContent({
                     onFocus={() => setHighlightedPerson(person.id)}
                     onBlur={() => setHighlightedPerson(null)}
                     onClick={() => previewPerson(person.id)}
+                    onDoubleClick={() => onPerson(person.id)}
+                    title="Двойной клик — показать в древе"
                   >
                     {fullName(person)}
                   </button>

@@ -149,6 +149,18 @@ test("ссылка на снимок открывает просмотр и за
     page.getByRole("dialog", { name: /Просмотр фото/ }),
   ).toBeVisible();
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
+  if (testInfo.project.name === "desktop") {
+    await page
+      .getByRole("button", { name: /Показать сведения:.*Иван/ })
+      .dblclick();
+    await expect(page).toHaveURL(
+      "http://127.0.0.1:4173/people/e2e-memorial-person",
+    );
+    await page.goBack();
+    await expect(
+      page.getByRole("dialog", { name: /Просмотр фото/ }),
+    ).toBeVisible();
+  }
   await page.locator(".photo-previous").click();
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo-next");
   await expect(

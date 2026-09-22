@@ -44,6 +44,12 @@ type AiAdminStatus = {
       errors: number;
       averageLatencyMs: number;
     };
+    history: Array<{
+      day: string;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+    }>;
     recent: Array<{
       id: number;
       at: string;
@@ -75,6 +81,11 @@ export function AiSettingsAdmin() {
     [loadingModels, setLoadingModels] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+
+  const historyMax = Math.max(
+    1,
+    ...(status?.usage.history.map((item) => item.totalTokens) || []),
+  );
 
   const applyStatus = useCallback((next: AiAdminStatus) => {
     setStatus(next);
@@ -132,7 +143,9 @@ export function AiSettingsAdmin() {
         }),
         data = await response.json();
       if (!response.ok)
-        throw new Error(data.error || "Не удалось сохранить настройки AI Studio");
+        throw new Error(
+          data.error || "Не удалось сохранить настройки AI Studio",
+        );
       applyStatus(data as AiAdminStatus);
       setNotice("Настройки AI Studio сохранены");
     } catch (reason) {
@@ -149,8 +162,7 @@ export function AiSettingsAdmin() {
     try {
       const response = await fetch("/api/admin/ai/test", { method: "POST" }),
         data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "AI Studio не ответила");
+      if (!response.ok) throw new Error(data.error || "AI Studio не ответила");
       setNotice(
         `Подключение работает · ${data.model}${data.answer ? ` · ${data.answer}` : ""}`,
       );
@@ -223,7 +235,11 @@ export function AiSettingsAdmin() {
           <span
             className={`ai-runtime-state ${status.active ? "is-active" : "is-inactive"}`}
           >
-            {status.active ? <CheckCircle2 size={15} /> : <TriangleAlert size={15} />}
+            {status.active ? (
+              <CheckCircle2 size={15} />
+            ) : (
+              <TriangleAlert size={15} />
+            )}
             {status.active
               ? "Работает"
               : status.configured
@@ -251,9 +267,7 @@ export function AiSettingsAdmin() {
               <span>
                 {status.folderConfigured
                   ? `${status.folderId} · ${
-                      status.folderSource === "database"
-                        ? "Drevo"
-                        : "окружение"
+                      status.folderSource === "database" ? "Drevo" : "окружение"
                     }`
                   : "Не задан"}
               </span>
@@ -277,8 +291,8 @@ export function AiSettingsAdmin() {
               <span>
                 <b>ИИ-исследователь</b>
                 <small>
-                  Отключение скрывает панель ИИ и блокирует новые запросы, но
-                  не удаляет настройки и предложения.
+                  Отключение скрывает панель ИИ и блокирует новые запросы, но не
+                  удаляет настройки и предложения.
                 </small>
               </span>
               <input
@@ -360,9 +374,12 @@ export function AiSettingsAdmin() {
                     disabled={!status.models.length && !model}
                     onChange={(event) => setModel(event.target.value)}
                   >
-                    {!status.models.some((item) => item.id === model) && model && (
-                      <option value={model}>{model} · текущее значение</option>
-                    )}
+                    {!status.models.some((item) => item.id === model) &&
+                      model && (
+                        <option value={model}>
+                          {model} · текущее значение
+                        </option>
+                      )}
                     {!model && !status.models.length && (
                       <option value="">Загрузите модели каталога</option>
                     )}
@@ -379,7 +396,10 @@ export function AiSettingsAdmin() {
                   disabled={loadingModels || !folderId.trim()}
                   onClick={() => void refreshModels()}
                 >
-                  <RefreshCw size={15} className={loadingModels ? "spinning" : ""} />
+                  <RefreshCw
+                    size={15}
+                    className={loadingModels ? "spinning" : ""}
+                  />
                   {loadingModels ? "Загружаем…" : "Обновить список"}
                 </button>
                 {status.modelsError && (
@@ -492,6 +512,72 @@ export function AiSettingsAdmin() {
                 <span>ошибок</span>
               </div>
             </div>
+            <div className="ai-token-chart">
+              <div className="ai-token-chart-heading">
+                <h4>Расход токенов за 14 дней</h4>
+                <span>
+                  <i className="input" /> запрос
+                  <i className="output" /> ответ
+                </span>
+              </div>
+              <div
+                className="ai-token-bars"
+                role="img"
+                aria-label="Столбчатая диаграмма расхода токенов за последние 14 дней"
+              >
+                {status.usage.history.map((item, index) => {
+                  const height = item.totalTokens
+                    ? Math.max(5, (item.totalTokens / historyMax) * 100)
+                    : 2;
+                  return (
+                    <div
+                      className="ai-token-day"
+                      key={item.day}
+                      aria-label={`${new Date(`${item.day}T00:00:00Z`).toLocaleDateString("ru-RU")}: ${item.totalTokens.toLocaleString("ru-RU")} токенов`}
+                    >
+                      <div className="ai-token-column">
+                        <div
+                          className={
+                            item.totalTokens
+                              ? "ai-token-stack"
+                              : "ai-token-stack is-empty"
+                          }
+                          style={{ height: `${height}%` }}
+                          title={`${new Date(`${item.day}T00:00:00Z`).toLocaleDateString("ru-RU")}: ${item.totalTokens.toLocaleString("ru-RU")} токенов`}
+                        >
+                          {item.totalTokens > 0 && (
+                            <>
+                              <span
+                                className="input"
+                                style={{
+                                  flex: item.inputTokens || 0.001,
+                                }}
+                              />
+                              <span
+                                className="output"
+                                style={{
+                                  flex: item.outputTokens || 0.001,
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {(index === 0 ||
+                        index === status.usage.history.length - 1 ||
+                        index === 6) && (
+                        <small>
+                          {new Date(`${item.day}T00:00:00Z`).toLocaleDateString(
+                            "ru-RU",
+                            { day: "2-digit", month: "2-digit" },
+                          )}
+                        </small>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             {status.usage.recent.length > 0 && (
               <div className="ai-usage-recent">
                 <h4>Последние запросы</h4>
@@ -513,9 +599,8 @@ export function AiSettingsAdmin() {
               </div>
             )}
             <p className="ai-usage-privacy">
-              Сохраняются только технические счётчики. Тексты запросов,
-              ответов и аргументы Research Tools в журнал использования не
-              записываются.
+              Сохраняются только технические счётчики. Тексты запросов, ответов
+              и аргументы Research Tools в журнал использования не записываются.
             </p>
           </section>
         </>

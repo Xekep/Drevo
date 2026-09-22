@@ -807,6 +807,9 @@ export default function App() {
         <ResearchAssistant
           view={view}
           personIds={selected.slice(0, 2)}
+          currentPersonName={
+            user.personId ? map.get(user.personId)?.name : undefined
+          }
           canEdit={canEdit}
           onChanged={archive.reload}
           onPerson={showPerson}
