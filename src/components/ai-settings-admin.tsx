@@ -154,6 +154,7 @@ export function AiSettingsAdmin() {
             <label
               className="setting-toggle"
               htmlFor="ai-research-enabled"
+              aria-label="ИИ-исследователь"
             >
               <span>
                 <b>ИИ-исследователь</b>
