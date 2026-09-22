@@ -72,7 +72,7 @@ test("research tools search people and traverse genealogy", () => {
   const ancestors = executeResearchTool(family, "get_ancestors", {
     personId: "grandchild",
     depth: 2,
-  }) as { people: Array<{ depth: number; person: { id: string } }> };
+  }) as unknown as { people: Array<{ depth: number; person: { id: string } }> };
   assert.deepEqual(
     ancestors.people.map((item) => [item.depth, item.person.id]),
     [
@@ -85,7 +85,7 @@ test("research tools search people and traverse genealogy", () => {
   const descendants = executeResearchTool(family, "get_descendants", {
     personId: "father",
     depth: 2,
-  }) as { people: Array<{ person: { id: string } }> };
+  }) as unknown as { people: Array<{ person: { id: string } }> };
   assert.deepEqual(
     descendants.people.map((item) => item.person.id),
     ["child", "grandchild"],
