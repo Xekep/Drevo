@@ -303,3 +303,60 @@ test("MCP token bound to a common-ancestors user sees only that projection", asy
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test("MCP rejects an explicit cross-origin browser request", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-origin-"));
+  const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+  const base =
+    "http://127.0.0.1:" +
+    (app.server.address() as { port: number }).port;
+  try {
+    const created = await fetch(base + "/api/mcp/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Origin test",
+        scopes: ["tree:read"],
+        rateLimitPerMinute: 10,
+      }),
+    });
+    assert.equal(created.status, 201);
+    const issued = await created.json();
+
+    const blocked = await fetch(base + "/mcp", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + issued.token,
+        "Content-Type": "application/json",
+        Origin: "https://evil.example",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 201,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    assert.equal(blocked.status, 403);
+    assert.equal((await blocked.json()).error, "Invalid origin");
+
+    const serverToServer = await fetch(base + "/mcp", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + issued.token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 202,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    assert.equal(serverToServer.status, 200);
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
