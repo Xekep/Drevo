@@ -26,6 +26,7 @@ jobs:
       - run: bash -n ops/deploy.sh
       - run: bash -n ops/backup.sh
       - run: bash -n ops/fetch-award-images.sh
+      - run: bash -n ops/check-mcp.sh
       - name: Restore prepared award images
         id: award-cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
