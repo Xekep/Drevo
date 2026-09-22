@@ -18,6 +18,7 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
+import { fetchAiStudioModels } from "./ai-models.ts";
 
 type ToolCall = {
   id: string;
@@ -33,7 +34,7 @@ type ModelMessage = {
         | { type: "text"; text: string }
         | {
             type: "image_url";
-            image_url: { url: string; detail: "high" };
+            image_url: { url: string };
           }
       >;
   tool_calls?: ToolCall[];
@@ -297,6 +298,8 @@ export function aiResearchHttp({
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
+  let visionModelCache:
+    { key: string; modelUri: string; expiresAt: number } | undefined;
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -340,6 +343,81 @@ export function aiResearchHttp({
       Authorization: `Api-Key ${runtime.apiKey}`,
       "Content-Type": "application/json",
       ...(runtime.folderId ? { "OpenAI-Project": runtime.folderId } : {}),
+    };
+  }
+
+  async function visionModelUri(runtime: ReturnType<typeof aiRuntimeConfig>) {
+    const folderId =
+        runtime.folderId ||
+        /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
+        "",
+      key = `${runtime.baseUrl}\0${folderId}`;
+    if (
+      visionModelCache?.key === key &&
+      visionModelCache.expiresAt > Date.now()
+    )
+      return visionModelCache.modelUri;
+    const current = runtime.modelUri.replace(/^gpt:\/\/[^/]+\//, "");
+    if (/^qwen3\.6-35b-a3b(?:\/latest)?$/.test(current))
+      return runtime.modelUri;
+    const models = await fetchAiStudioModels({
+        baseUrl: runtime.baseUrl,
+        apiKey: runtime.apiKey,
+        folderId,
+        fetcher,
+      }),
+      selected = models.find((model) => model.label === "qwen3.6-35b-a3b");
+    if (!selected)
+      throw new Error(
+        "В этом Folder ID нет модели Qwen3.6-35B для анализа фотографий",
+      );
+    visionModelCache = {
+      key,
+      modelUri: selected.id,
+      expiresAt: Date.now() + 5 * 60_000,
+    };
+    return selected.id;
+  }
+
+  async function analyzeImage(
+    question: string,
+    dataUrl: string,
+    runtime: ReturnType<typeof aiRuntimeConfig>,
+  ) {
+    const body = {
+        model: await visionModelUri(runtime),
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: question },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+        temperature: 0.2,
+      },
+      response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: providerHeaders(runtime),
+        body: JSON.stringify(body),
+      }),
+      data = (await response.json()) as ModelResponse;
+    if (!response.ok)
+      throw new Error(
+        data.error?.message ||
+          `Модель анализа фотографий вернула HTTP ${response.status}`,
+      );
+    const message = data.choices?.[0]?.message,
+      content =
+        typeof message?.content === "string" ? message.content.trim() : "";
+    if (!content)
+      throw new Error("Модель анализа фотографий не вернула описание");
+    const reported = usageTokens(data.usage);
+    return {
+      content,
+      inputTokens: reported.input ?? estimateTokens(body),
+      outputTokens: reported.output ?? estimateTokens(message),
     };
   }
 
@@ -581,9 +659,14 @@ export function aiResearchHttp({
       >(),
       createdSuggestionIds = new Set<string>(),
       proposalErrors: string[] = [];
+    let analyzedPhotos = 0;
     const uiActions: UiAction[] = [],
       viewControlRequested =
         /(?:покаж(?:и|ь)?|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемести).{0,40}(?:древ|карточ|фото|люд|человек|цепоч|связ)|(?:на древе|на карте).{0,40}(?:покаж(?:и|ь)?|найди|выдел|подсвет)/iu.test(
+          message,
+        ),
+      photoViewRequested =
+        /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
           message,
         );
 
@@ -618,6 +701,13 @@ export function aiResearchHttp({
 
       const calls = answer.tool_calls || [];
       if (!calls.length) {
+        if (
+          photoViewRequested &&
+          !uiActions.some((action) => action.type === "open_photo")
+        ) {
+          const photoId = referencedPhotos.values().next().value;
+          if (photoId) uiActions.push({ type: "open_photo", photoId });
+        }
         const references: AnswerReference[] = [
           ...[...referencedPeople].slice(0, 12).map((id) => ({
             kind: "person" as const,
@@ -648,11 +738,6 @@ export function aiResearchHttp({
       }
 
       onStatus("Проверяю данные архива…");
-      const attachedImages: Array<{
-        photoId: string;
-        question: string;
-        dataUrl: string;
-      }> = [];
       for (const call of calls) {
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === call.function.name,
@@ -664,7 +749,7 @@ export function aiResearchHttp({
           if (definition)
             result = executeResearchTool(family, definition.name, toolArgs);
           else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
-            if (attachedImages.length >= 3)
+            if (analyzedPhotos >= 3)
               throw new Error(
                 "За один ответ можно проанализировать не более трёх фотографий",
               );
@@ -686,14 +771,18 @@ export function aiResearchHttp({
               { path: source.path, cacheKey: source.name },
               "ai",
             );
-            attachedImages.push({
-              photoId,
+            metrics.providerCalls++;
+            const visual = await analyzeImage(
               question,
-              dataUrl: `data:image/jpeg;base64,${bytes.toString("base64")}`,
-            });
+              `data:image/jpeg;base64,${bytes.toString("base64")}`,
+              runtime,
+            );
+            analyzedPhotos++;
+            metrics.inputTokens += visual.inputTokens;
+            metrics.outputTokens += visual.outputTokens;
             result = {
               ...executeResearchTool(family, "get_photo", { photoId }),
-              imageAttached: true,
+              visualAnalysis: visual.content,
             };
           } else if (call.function.name === CONTROL_VIEW_TOOL.name) {
             if (!viewControlRequested)
@@ -791,20 +880,6 @@ export function aiResearchHttp({
           content: JSON.stringify(result),
         });
       }
-      if (attachedImages.length)
-        messages.push({
-          role: "user",
-          content: attachedImages.flatMap((image) => [
-            {
-              type: "text" as const,
-              text: `Фотография ${image.photoId}. Задача: ${image.question}`,
-            },
-            {
-              type: "image_url" as const,
-              image_url: { url: image.dataUrl, detail: "high" as const },
-            },
-          ]),
-        });
       onStatus("Формирую ответ…");
     }
     throw new Error("ИИ превысил допустимое число вызовов инструментов");
