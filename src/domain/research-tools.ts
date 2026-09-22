@@ -1,6 +1,7 @@
 import { fullName } from "./dates.ts";
 import { analyzeFamilyInsights } from "./family-insights.ts";
 import { analyzeKinship } from "./kinship-analysis.ts";
+import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import type { Family, Person } from "./types.ts";
 
 export type ResearchScope = "tree:read" | "sources:read" | "analysis:read";
@@ -118,6 +119,16 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       "Найти вычисляемые противоречия и подозрительные данные без домысливания фактов.",
     scope: "analysis:read",
     inputSchema: objectSchema({}),
+  },
+  {
+    name: "find_possible_duplicates",
+    description:
+      "Найти вероятные дубли карточек по вариантам написания имени и фамилии, неполным датам, местам и совпадающим родственникам. Результат является гипотезой для ручной проверки.",
+    scope: "analysis:read",
+    inputSchema: objectSchema({
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 30 },
+    }),
   },
   {
     name: "get_branch_insights",
@@ -684,6 +695,12 @@ export function executeResearchTool(
       })),
       total: warnings.length,
     };
+  }
+
+  if (name === "find_possible_duplicates") {
+    const requested = stringArg(args, "personId", false),
+      limit = numberArg(args, "limit", 30, 1, 100);
+    return findPossibleDuplicates(family.people, requested || undefined, limit);
   }
 
   if (name === "get_branch_insights") {

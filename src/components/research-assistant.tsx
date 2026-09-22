@@ -395,7 +395,9 @@ export function ResearchAssistant({
                 </button>
                 <button
                   onClick={() =>
-                    void send("Найди противоречия и возможные дубли в архиве.")
+                    void send(
+                      "Проверь качество данных. Сначала вызови find_inconsistencies, затем find_possible_duplicates. Покажи противоречия отдельно от вероятных дублей: дубль — только гипотеза для ручной проверки.",
+                    )
                   }
                 >
                   Проверить данные
