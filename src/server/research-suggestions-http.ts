@@ -3,7 +3,7 @@ import type { createAuth } from "./auth.ts";
 import { fullName } from "../domain/dates.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import {
-  applyPersonUpdateSuggestion,
+  applyResearchSuggestion,
   type researchSuggestionStore,
 } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -59,6 +59,16 @@ export function researchSuggestionsHttp({
           personName: people.has(suggestion.personId)
             ? fullName(people.get(suggestion.personId)!)
             : "Удалённая карточка",
+          ...(suggestion.kind === "relation"
+            ? {
+                fromName: people.has(suggestion.payload.fromPersonId)
+                  ? fullName(people.get(suggestion.payload.fromPersonId)!)
+                  : "Удалённая карточка",
+                toName: people.has(suggestion.payload.toPersonId)
+                  ? fullName(people.get(suggestion.payload.toPersonId)!)
+                  : "Удалённая карточка",
+              }
+            : {}),
         })),
       });
     }
@@ -86,7 +96,7 @@ export function researchSuggestionsHttp({
       if (suggestion.status !== "pending")
         throw new Error("Предложение уже обработано");
       const current = archive.read(),
-        next = applyPersonUpdateSuggestion(current.family, suggestion),
+        next = applyResearchSuggestion(current.family, suggestion),
         saved = archive.write(
           next,
           current.revision,
