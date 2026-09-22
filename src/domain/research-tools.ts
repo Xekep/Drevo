@@ -4,6 +4,38 @@ import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import type { Family, Person } from "./types.ts";
 
+const graphRelationLabels: Record<string, string> = {
+  adoptive_parent: "приёмный родитель",
+  step_parent: "отчим / мачеха",
+  godparent: "крёстный родитель",
+  nurse: "кормилица",
+  sworn_sibling: "названное родство",
+  guardian: "опекун",
+};
+
+function graphMermaid(
+  nodes: Array<{ id: string; name: string }>,
+  edges: Array<{ from: string; to: string; type: string }>,
+) {
+  const aliases = new Map(nodes.map((node, index) => [node.id, `n${index}`]));
+  return [
+    "graph TD",
+    ...nodes.map(
+      (node, index) =>
+        `  n${index}["${node.name.replaceAll('"', "'").replaceAll("\n", " ")}"]`,
+    ),
+    ...edges.flatMap((edge) => {
+      const from = aliases.get(edge.from),
+        to = aliases.get(edge.to);
+      if (!from || !to) return [];
+      if (edge.type === "parent") return [`  ${from} --> ${to}`];
+      if (edge.type === "spouse") return [`  ${from} --- ${to}`];
+      const label = graphRelationLabels[edge.type] || edge.type;
+      return [`  ${from} -. "${label}" .-> ${to}`];
+    }),
+  ].join("\n");
+}
+
 export type ResearchScope = "tree:read" | "sources:read" | "analysis:read";
 
 export type ResearchToolDefinition = {
@@ -403,8 +435,10 @@ function lineage(
   const queue: Array<{ id: string; level: number }> = [
     { id: startId, level: 0 },
   ];
-  const result: Array<{ depth: number; person: ReturnType<typeof cleanPerson> }> =
-    [];
+  const result: Array<{
+    depth: number;
+    person: ReturnType<typeof cleanPerson>;
+  }> = [];
   while (queue.length) {
     const current = queue.shift()!;
     if (current.level >= depth) continue;
@@ -431,22 +465,22 @@ function missingFor(person: Person) {
   if (!person.birth) missing.push("дата рождения");
   if (!person.birthPlace.trim()) missing.push("место рождения");
   if (!person.patronymic.trim()) missing.push("отчество");
-  if (!person.sources.length && !(person.events || []).some((e) => e.sources?.length))
+  if (
+    !person.sources.length &&
+    !(person.events || []).some((e) => e.sources?.length)
+  )
     missing.push("источники");
   if (!person.parents.length) missing.push("родители");
-  else if (!person.parentageComplete) missing.push("полнота сведений о родителях");
+  else if (!person.parentageComplete)
+    missing.push("полнота сведений о родителях");
   if (person.deceased && !person.death) missing.push("дата смерти");
   return missing;
 }
 
-
 type ResearchBacklogItem = {
   priority: number;
   documentType:
-    | "birth_or_baptism"
-    | "marriage"
-    | "death_or_burial"
-    | "household_or_census";
+    "birth_or_baptism" | "marriage" | "death_or_burial" | "household_or_census";
   documentLabel: string;
   person: { id: string; name: string };
   branchDepth: number;
@@ -576,7 +610,11 @@ function backlogForPerson(
 
   if (person.spouses.length) {
     const marriageReasons: string[] = [],
-      marriageFields = ["супруг", "возраст на момент брака", "место жительства"];
+      marriageFields = [
+        "супруг",
+        "возраст на момент брака",
+        "место жительства",
+      ];
     let marriageScore = 28;
     if (person.sex === "f" && !person.maidenName?.trim()) {
       marriageReasons.push("неизвестна фамилия при рождении");
@@ -600,7 +638,10 @@ function backlogForPerson(
       marriageScore,
       marriageReasons,
       marriageFields,
-      [birthYear && `год рождения: ${birthYear}`, birthPlace && `место происхождения: ${birthPlace}`],
+      [
+        birthYear && `год рождения: ${birthYear}`,
+        birthPlace && `место происхождения: ${birthPlace}`,
+      ],
     );
   }
 
@@ -629,7 +670,9 @@ function backlogForPerson(
       "Запись о смерти / погребении",
       deathScore,
       deathReasons,
-      deathFields.length ? deathFields : ["дата смерти", "место смерти", "возраст"],
+      deathFields.length
+        ? deathFields
+        : ["дата смерти", "место смерти", "возраст"],
       [
         birthYear && `год рождения: ${birthYear}`,
         deathYear && `год смерти: ${deathYear}`,
@@ -654,8 +697,16 @@ function backlogForPerson(
       "Перепись / посемейный список / домовая книга",
       householdScore,
       householdReasons,
-      ["состав семьи", "родство членов хозяйства", "возраст", "место жительства"],
-      [birthYear && `ориентир по году рождения: ${birthYear}`, birthPlace && `место: ${birthPlace}`],
+      [
+        "состав семьи",
+        "родство членов хозяйства",
+        "возраст",
+        "место жительства",
+      ],
+      [
+        birthYear && `ориентир по году рождения: ${birthYear}`,
+        birthPlace && `место: ${birthPlace}`,
+      ],
     );
   }
 
@@ -749,7 +800,9 @@ export function executeResearchTool(
   if (name === "get_family") {
     const person = personOrThrow(family, stringArg(args, "personId")),
       people = new Map(family.people.map((item) => [item.id, item])),
-      children = family.people.filter((item) => item.parents.includes(person.id));
+      children = family.people.filter((item) =>
+        item.parents.includes(person.id),
+      );
     return {
       person: cleanPerson(person),
       parents: person.parents.flatMap((id) =>
@@ -825,7 +878,8 @@ export function executeResearchTool(
     if (personId) personOrThrow(family, personId);
     const photos = (family.photos || [])
       .filter(
-        (photo) => !personId || photo.tags.some((tag) => tag.personId === personId),
+        (photo) =>
+          !personId || photo.tags.some((tag) => tag.personId === personId),
       )
       .filter((photo) => {
         if (!query) return true;
@@ -914,12 +968,7 @@ export function executeResearchTool(
           });
       for (const source of person.sources)
         if (
-          contains([
-            source.title,
-            source.type,
-            source.reference,
-            source.note,
-          ])
+          contains([source.title, source.type, source.reference, source.note])
         )
           matches.push({
             kind: "source",
@@ -949,9 +998,7 @@ export function executeResearchTool(
   if (name === "get_timeline") {
     const personId = stringArg(args, "personId", false),
       limit = numberArg(args, "limit", 100, 1, 100),
-      candidates = personId
-        ? [personOrThrow(family, personId)]
-        : family.people,
+      candidates = personId ? [personOrThrow(family, personId)] : family.people,
       candidateIds = new Set(candidates.map((person) => person.id)),
       items: Array<Record<string, unknown> & { date: string }> = [];
     for (const person of candidates) {
@@ -1034,7 +1081,12 @@ export function executeResearchTool(
           death: person.death,
           sex: person.sex,
         })),
-      edges: Array<Record<string, unknown>> = [],
+      edges: Array<{
+        from: string;
+        to: string;
+        type: string;
+        note?: string;
+      }> = [],
       spouseKeys = new Set<string>();
     for (const person of family.people.filter((item) => ids.has(item.id))) {
       for (const parentId of person.parents)
@@ -1060,20 +1112,36 @@ export function executeResearchTool(
             type: link.type,
             note: link.note,
           });
-    return { anchorId: personId, direction, depth, nodes, edges };
+    return {
+      anchorId: personId,
+      direction,
+      depth,
+      nodes,
+      edges,
+      mermaid: graphMermaid(nodes, edges),
+    };
   }
 
   if (name === "get_place_summary") {
     const query = normalized(stringArg(args, "query")),
       limit = numberArg(args, "limit", 50, 1, 100),
       matches: Array<Record<string, unknown>> = [],
-      has = (value?: string) => Boolean(value && normalized(value).includes(query));
+      has = (value?: string) =>
+        Boolean(value && normalized(value).includes(query));
     for (const person of family.people) {
       const personRef = { id: person.id, name: fullName(person) };
       if (has(person.birthPlace))
-        matches.push({ kind: "birth", person: personRef, place: person.birthPlace });
+        matches.push({
+          kind: "birth",
+          person: personRef,
+          place: person.birthPlace,
+        });
       if (has(person.deathPlace))
-        matches.push({ kind: "death", person: personRef, place: person.deathPlace });
+        matches.push({
+          kind: "death",
+          person: personRef,
+          place: person.deathPlace,
+        });
       for (const event of person.events || [])
         if (has(event.place))
           matches.push({
@@ -1257,7 +1325,7 @@ export function executeResearchTool(
     return {
       totals: insights.totals,
       completeness: insights.completeness,
-      generations: insights.generations,
+      generationDistribution: insights.generations,
       facts: insights.facts,
       topSurnames: insights.topSurnames,
       topNames: insights.topNames,

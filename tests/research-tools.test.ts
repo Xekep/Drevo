@@ -61,7 +61,14 @@ const family: Family = {
       place: "Нижнее",
       description: "Летняя встреча семьи",
       tags: [
-        { id: "tag-child", personId: "child", x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        {
+          id: "tag-child",
+          personId: "child",
+          x: 0.1,
+          y: 0.1,
+          width: 0.2,
+          height: 0.2,
+        },
       ],
     },
   ],
@@ -95,11 +102,17 @@ test("research tools search people and traverse genealogy", () => {
   const search = executeResearchTool(family, "search_people", {
     query: "Василий",
   }) as { people: Array<{ id: string }> };
-  assert.deepEqual(search.people.map((person) => person.id), ["child"]);
+  assert.deepEqual(
+    search.people.map((person) => person.id),
+    ["child"],
+  );
   const reversedName = executeResearchTool(family, "search_people", {
     query: "Василий Скулко",
   }) as { people: Array<{ id: string }> };
-  assert.deepEqual(reversedName.people.map((person) => person.id), ["child"]);
+  assert.deepEqual(
+    reversedName.people.map((person) => person.id),
+    ["child"],
+  );
 
   const ancestors = executeResearchTool(family, "get_ancestors", {
     personId: "grandchild",
@@ -131,6 +144,34 @@ test("archive insight generation count matches the tree summary", () => {
   assert.equal(result.totals.generations, 3);
 });
 
+test("genealogy graph includes deterministic Mermaid with exact edge semantics", () => {
+  const spouse = person("spouse", "Людмила", "1946", {
+      spouses: ["child"],
+    }),
+    graphFamily: Family = {
+      ...family,
+      people: [
+        father,
+        mother,
+        { ...child, spouses: ["spouse"] },
+        spouse,
+        grandchild,
+      ],
+    },
+    result = executeResearchTool(graphFamily, "get_genealogy_graph", {
+      personId: "child",
+      direction: "both",
+      depth: 2,
+    }) as {
+      mermaid: string;
+    };
+  assert.match(result.mermaid, /^graph TD/m);
+  assert.match(result.mermaid, /n0 --> n2/);
+  assert.match(result.mermaid, /n1 --> n2/);
+  assert.match(result.mermaid, /n2 --- n3/);
+  assert.match(result.mermaid, /n2 --> n4/);
+});
+
 test("relationship analysis matches the archive kinship calculation", () => {
   const result = executeResearchTool(family, "get_relationship", {
     firstPersonId: "father",
@@ -141,11 +182,10 @@ test("relationship analysis matches the archive kinship calculation", () => {
   };
   assert.equal(result.relation.kind, "direct");
   assert.match(result.relation.roles?.[0]?.term || "", /дед/);
-  assert.deepEqual(result.path.map((person) => person.id), [
-    "father",
-    "child",
-    "grandchild",
-  ]);
+  assert.deepEqual(
+    result.path.map((person) => person.id),
+    ["father", "child", "grandchild"],
+  );
 });
 
 test("photo tools expose metadata and tagged people without file paths", () => {
@@ -153,9 +193,10 @@ test("photo tools expose metadata and tagged people without file paths", () => {
     query: "Василий Нижнее",
   }) as { photos: Array<{ id: string; people: Array<{ id: string }> }> };
   assert.equal(search.photos[0]?.id, "family-photo");
-  assert.deepEqual(search.photos[0]?.people.map((person) => person.id), [
-    "child",
-  ]);
+  assert.deepEqual(
+    search.photos[0]?.people.map((person) => person.id),
+    ["child"],
+  );
 
   const result = executeResearchTool(family, "get_photo", {
     photoId: "family-photo",
@@ -181,7 +222,6 @@ test("tree tools do not leak source scope and source tool stays explicit", () =>
   assert.ok(missing.people[0].missing.includes("источники"));
   assert.ok(missing.people[0].missing.includes("место рождения"));
 });
-
 
 test("branch insights summarize only the selected ancestry depth", () => {
   const result = executeResearchTool(family, "get_branch_insights", {
@@ -211,7 +251,6 @@ test("branch insights summarize only the selected ancestry depth", () => {
   assert.ok(result.missing.some((item) => item.id === "grandchild"));
 });
 
-
 test("research backlog ranks high-yield documents inside the selected branch", () => {
   const result = executeResearchTool(family, "get_research_backlog", {
     personId: "grandchild",
@@ -236,7 +275,11 @@ test("research backlog ranks high-yield documents inside the selected branch", (
   assert.equal(result.items[0].person.id, "grandchild");
   assert.equal(result.items[0].documentType, "birth_or_baptism");
   assert.ok(result.items[0].priority >= result.items[1].priority);
-  assert.ok(result.items[0].reasons.includes("сведения о родителях отмечены как неполные"));
+  assert.ok(
+    result.items[0].reasons.includes(
+      "сведения о родителях отмечены как неполные",
+    ),
+  );
   assert.ok(result.items[0].expectedFields.includes("родители"));
   assert.ok(
     result.items.every((item) =>
@@ -252,7 +295,6 @@ test("research backlog ranks high-yield documents inside the selected branch", (
     ),
   );
 });
-
 
 test("probable duplicate search handles surname variants and incomplete dates", () => {
   const duplicateFamily: Family = {
@@ -302,7 +344,9 @@ test("probable duplicate search handles surname variants and incomplete dates", 
     ["anna-a", "anna-b"],
   );
   assert.equal(result.matches[0].confidence, "medium");
-  assert.ok(result.matches[0].reasons.includes("фамилии отличаются одной буквой"));
+  assert.ok(
+    result.matches[0].reasons.includes("фамилии отличаются одной буквой"),
+  );
   assert.ok(
     result.matches[0].reasons.includes(
       "в одной из карточек год рождения неизвестен",

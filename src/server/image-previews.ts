@@ -3,14 +3,13 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type ImagePreviewVariant = "thumb" | "display";
-export type ImagePreviewSource =
-  | Buffer
-  | { path: string; cacheKey: string };
+export type ImagePreviewVariant = "thumb" | "display" | "ai";
+export type ImagePreviewSource = Buffer | { path: string; cacheKey: string };
 
 export const IMAGE_PREVIEW_SETTINGS = {
   thumb: { maxSize: 400, quality: 76 },
   display: { maxSize: 1600, quality: 82 },
+  ai: { maxSize: 1600, quality: 86 },
 } as const satisfies Record<
   ImagePreviewVariant,
   { maxSize: number; quality: number }
@@ -27,10 +26,13 @@ export function imagePreviews(directory: string) {
     const sourceKey = Buffer.isBuffer(original)
       ? createHash("sha256").update(original).digest("hex")
       : `file-${original.cacheKey}`;
-    const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.webp`;
+    const extension = variant === "ai" ? "jpg" : "webp";
+    const key = `${sourceKey}-${variant}-v${IMAGE_PREVIEW_CACHE_VERSION}.${extension}`;
     if (pending.has(key)) return pending.get(key)!;
     if (pending.size >= MAX_PENDING_PREVIEWS)
-      return Promise.reject(new Error("Очередь подготовки фотографий заполнена"));
+      return Promise.reject(
+        new Error("Очередь подготовки фотографий заполнена"),
+      );
     const run = (async () => {
       try {
         return await readFile(join(directory, key));
@@ -50,7 +52,7 @@ export function imagePreviews(directory: string) {
         // фотографии остаются lossy и используют quality варианта.
         const tiny =
           (metadata.width || 0) <= 32 && (metadata.height || 0) <= 32;
-        const bytes = await input
+        const resized = input
           .rotate()
           .resize({
             width: settings.maxSize,
@@ -58,14 +60,17 @@ export function imagePreviews(directory: string) {
             fit: "inside",
             withoutEnlargement: true,
           })
-          .keepIccProfile()
-          .webp({
-            quality: settings.quality,
-            lossless: tiny,
-            effort: 4,
-            smartSubsample: true,
-          })
-          .toBuffer();
+          .keepIccProfile();
+        const bytes = await (
+          variant === "ai"
+            ? resized.jpeg({ quality: settings.quality, mozjpeg: true })
+            : resized.webp({
+                quality: settings.quality,
+                lossless: tiny,
+                effort: 4,
+                smartSubsample: true,
+              })
+        ).toBuffer();
         await mkdir(directory, { recursive: true });
         await writeFile(join(directory, key), bytes);
         return bytes;

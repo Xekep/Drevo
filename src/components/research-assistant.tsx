@@ -83,25 +83,76 @@ function escapePattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function outsideCodeFences(
+  value: string,
+  transform: (segment: string) => string,
+) {
+  return value
+    .split(/(```[\s\S]*?```)/g)
+    .map((segment, index) => (index % 2 ? segment : transform(segment)))
+    .join("");
+}
+
 function markdownAnswer(message: Message) {
-  const placeholders: string[] = [];
-  let value = message.content.replace(
-    /\[\[(person|choose-person):([^|\]\s]+)\|([^\]]+)\]\]/g,
-    (_whole, kind: string, id: string, label: string) => {
-      const token = `DREVOREF${placeholders.length}TOKEN`;
-      placeholders.push(
-        `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-${kind}-${encodeURIComponent(id)})`,
-      );
-      return token;
-    },
-  );
   const represented = new Set(
-    [...value.matchAll(/#drevo-(?:person|choose-person)-([^\s)]+)/g)].map(
-      (match) => decodeURIComponent(match[1]),
-    ),
+    [
+      ...message.content.matchAll(
+        /\[\[(person|choose-person|photo):([^|\]\s]+)/g,
+      ),
+    ].map((match) => `${match[1]}:${match[2]}`),
   );
+  const placeholders: string[] = [];
+  let value = outsideCodeFences(message.content, (segment) => {
+    let normalized = segment;
+    for (const match of segment.matchAll(
+      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
+    )) {
+      const marker = match[0],
+        label = match[3];
+      normalized = normalized.replace(
+        new RegExp(
+          `${escapePattern(label)}[ \\t\\u00a0]*\\(${escapePattern(marker)}\\)`,
+          "gu",
+        ),
+        marker,
+      );
+    }
+    return normalized.replace(
+      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\](?:[ \t\u00a0]+\3)?/g,
+      (_whole, kind: string, id: string, label: string) => {
+        const token = `DREVOREF${placeholders.length}TOKEN`;
+        placeholders.push(
+          `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-${kind}-${encodeURIComponent(id)})`,
+        );
+        return token;
+      },
+    );
+  });
   for (const reference of message.references || []) {
-    if (reference.kind === "person" && represented.has(reference.id)) continue;
+    if (reference.kind === "photo")
+      value = outsideCodeFences(value, (segment) =>
+        segment.replace(
+          new RegExp(
+            `!\\[([^\\]]*)\\]\\(${escapePattern(reference.id)}\\)`,
+            "gu",
+          ),
+          (_whole, alt: string) => {
+            const token = `DREVOREF${placeholders.length}TOKEN`,
+              label = alt.trim() || reference.label;
+            placeholders.push(
+              `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-photo-${encodeURIComponent(reference.id)})`,
+            );
+            return token;
+          },
+        ),
+      );
+    if (
+      (reference.kind === "person" &&
+        (represented.has(`person:${reference.id}`) ||
+          represented.has(`choose-person:${reference.id}`))) ||
+      (reference.kind === "photo" && represented.has(`photo:${reference.id}`))
+    )
+      continue;
     const href =
       reference.kind === "person"
         ? `#drevo-person-${encodeURIComponent(reference.id)}`
@@ -109,10 +160,18 @@ function markdownAnswer(message: Message) {
           ? `#drevo-photo-${encodeURIComponent(reference.id)}`
           : reference.url ||
             `#drevo-person-${encodeURIComponent(reference.personId)}`;
-    const pattern = new RegExp(escapePattern(reference.label), "giu");
-    value = value.replace(
-      pattern,
-      (label) => `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`,
+    const labelPattern = escapePattern(reference.label);
+    value = outsideCodeFences(value, (segment) =>
+      segment
+        .replace(
+          new RegExp(`(${labelPattern})(?:[ \\t\\u00a0]+\\1)+`, "giu"),
+          "$1",
+        )
+        .replace(
+          new RegExp(labelPattern, "giu"),
+          (label) =>
+            `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`,
+        ),
     );
   }
   placeholders.forEach((markdown, index) => {
@@ -141,8 +200,9 @@ function MarkdownAnswer({
         }
         components={{
           a: ({ href = "", children }) => {
-            const match =
-              /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
+            const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(
+              href,
+            );
             if (!match)
               return (
                 <a href={href} target="_blank" rel="noreferrer">
@@ -267,11 +327,7 @@ function parseSseFrame(frame: string) {
   return { event, data: data.join("\n") };
 }
 
-function SuggestionDetails({
-  suggestion,
-}: {
-  suggestion: ResearchSuggestion;
-}) {
+function SuggestionDetails({ suggestion }: { suggestion: ResearchSuggestion }) {
   if (suggestion.kind === "person_create")
     return (
       <ul>
@@ -459,8 +515,14 @@ export function ResearchAssistant({
       height = rect?.height || 680,
       margin = 8;
     return {
-      left: Math.min(Math.max(margin, left), Math.max(margin, innerWidth - width - margin)),
-      top: Math.min(Math.max(margin, top), Math.max(margin, innerHeight - height - margin)),
+      left: Math.min(
+        Math.max(margin, left),
+        Math.max(margin, innerWidth - width - margin),
+      ),
+      top: Math.min(
+        Math.max(margin, top),
+        Math.max(margin, innerHeight - height - margin),
+      ),
     };
   }, []);
 
@@ -477,7 +539,9 @@ export function ResearchAssistant({
     if (
       event.button !== 0 ||
       innerWidth <= 600 ||
-      (event.target as HTMLElement).closest("button, a, input, select, textarea")
+      (event.target as HTMLElement).closest(
+        "button, a, input, select, textarea",
+      )
     )
       return;
     const rect = panel.current?.getBoundingClientRect();
@@ -576,21 +640,17 @@ export function ResearchAssistant({
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(
-          (data as { error?: string }).error ||
-            "ИИ-исследователь не ответил",
+          (data as { error?: string }).error || "ИИ-исследователь не ответил",
         );
       }
-      if (!response.body)
-        throw new Error("Сервер не вернул поток ответа");
+      if (!response.body) throw new Error("Сервер не вернул поток ответа");
 
       const reader = response.body.getReader(),
         decoder = new TextDecoder();
       let buffer = "",
         finished = false;
 
-      const updateAssistant = (
-        updater: (message: Message) => Message,
-      ) =>
+      const updateAssistant = (updater: (message: Message) => Message) =>
         setMessages((current) => {
           const next = [...current],
             index = next.length - 1;
@@ -637,7 +697,6 @@ export function ResearchAssistant({
               : item.suggestionIds,
           }));
           for (const action of data.uiActions || []) {
-            setOpen(false);
             if (action.type === "focus_people") onReveal(action.personIds);
             else if (action.type === "open_person") onPerson(action.personId);
             else if (action.type === "open_photo") onPhoto(action.photoId);
@@ -828,7 +887,9 @@ export function ResearchAssistant({
                 )}
                 <button
                   onClick={() =>
-                    void send("Что в этой ветке стоит проверить в первую очередь?")
+                    void send(
+                      "Что в этой ветке стоит проверить в первую очередь?",
+                    )
                   }
                 >
                   Что проверить?
@@ -857,19 +918,13 @@ export function ResearchAssistant({
                 {message.role === "assistant" ? (
                   <MarkdownAnswer
                     message={message}
-                    onPerson={(id) => {
-                      setOpen(false);
-                      onPerson(id);
-                    }}
+                    onPerson={onPerson}
                     onChoosePerson={(id, label) =>
                       void send(
                         `Выбран человек: ${label} (personId: ${id}). Продолжи мой предыдущий запрос для этого человека.`,
                       )
                     }
-                    onPhoto={(id) => {
-                      setOpen(false);
-                      onPhoto(id);
-                    }}
+                    onPhoto={onPhoto}
                   />
                 ) : (
                   <p>{message.content}</p>
@@ -899,9 +954,7 @@ export function ResearchAssistant({
               </article>
             ))}
             {busy && (
-              <p role="status">
-                {streamStatus || "ИИ формирует ответ…"}
-              </p>
+              <p role="status">{streamStatus || "ИИ формирует ответ…"}</p>
             )}
             {error && (
               <p className="form-error" role="alert">
@@ -929,14 +982,16 @@ export function ResearchAssistant({
                 }
               }}
             />
-            <button
-              type="submit"
-              className="primary-action"
-              disabled={busy || !draft.trim()}
-              aria-label="Отправить запрос"
-            >
-              <Send size={17} />
-            </button>
+            {draft.trim() && (
+              <button
+                type="submit"
+                className="primary-action"
+                disabled={busy}
+                aria-label="Отправить запрос"
+              >
+                <Send size={17} />
+              </button>
+            )}
           </form>
         </aside>
       )}
