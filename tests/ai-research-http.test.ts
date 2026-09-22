@@ -69,8 +69,9 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     const family: Family = {
       ...current.family,
       people: [
+        ...current.family.people,
         {
-          id: "anna",
+          id: "anna-ai-test",
           surname: "Лебедь",
           name: "Анна",
           patronymic: "Семёновна",
@@ -97,7 +98,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "Найди Анну",
-        context: { view: "tree", personIds: ["anna"] },
+        context: { view: "tree", personIds: ["anna-ai-test"] },
       }),
     });
     assert.equal(response.status, 200);
