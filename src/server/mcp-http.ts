@@ -9,6 +9,7 @@ import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
+import { projectFamilyForUser } from "../domain/tree-access.ts";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -247,11 +248,15 @@ export function mcpHttp({
         );
       }
       try {
-        const value = executeResearchTool(
-          archive.read().family,
-          definition.name,
-          params.arguments,
-        );
+        const sourceFamily = archive.read().family,
+          family = grant.boundUser
+            ? projectFamilyForUser(sourceFamily, grant.boundUser)
+            : sourceFamily,
+          value = executeResearchTool(
+            family,
+            definition.name,
+            params.arguments,
+          );
         return json(
           res,
           200,
