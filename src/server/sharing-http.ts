@@ -64,7 +64,7 @@ export function sharingHttp({
     usage: mcpUsage,
     publicOrigin,
   });
-  const researchMcp = mcpHttp({ archive, tokens, usage: mcpUsage });
+  const researchMcp = mcpHttp({ archive, tokens, usage: mcpUsage, publicOrigin });
   const researchAi = aiResearchHttp({
     archive,
     auth,
