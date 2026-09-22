@@ -71,10 +71,7 @@ export function ResearchAssistant({
   }, []);
 
   const loadSuggestions = useCallback(async () => {
-    if (!canEdit) {
-      setSuggestions([]);
-      return;
-    }
+    if (!canEdit) return;
     const response = await fetch("/api/research/suggestions", {
         cache: "no-store",
       }),
@@ -187,7 +184,7 @@ export function ResearchAssistant({
             </button>
           </header>
           <div className="research-assistant-messages">
-            {suggestions.length > 0 && (
+            {canEdit && suggestions.length > 0 && (
               <section
                 className="research-suggestions"
                 aria-label="Предложения ИИ"
