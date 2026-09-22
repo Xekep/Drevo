@@ -30,6 +30,16 @@ export const AI_STUDIO_MODELS = [
   },
   { id: "gpt-oss-120b", label: "gpt-oss-120b", context: "128K" },
   { id: "gpt-oss-20b", label: "gpt-oss-20b", context: "128K" },
+  {
+    id: "yandexgpt/rc",
+    label: "YandexGPT Pro 5.1 · legacy rc",
+    context: "32K",
+  },
+  {
+    id: "yandexgpt/latest",
+    label: "YandexGPT Pro 5 · legacy latest",
+    context: "32K",
+  },
 ] as const;
 
 export type AiSettings = {
