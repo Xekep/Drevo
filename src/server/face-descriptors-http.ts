@@ -235,9 +235,9 @@ export function faceDescriptorsHttp({
       const count = Number(
         archive.db
           .prepare(
-            "SELECT count(*) AS n FROM face_descriptors WHERE person_id=?",
+            "SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?",
           )
-          .get(sample.personId)!.n,
+          .get(sample.personId, sample.model)!.n,
       );
       if (count >= 20)
         return json(res, 409, {

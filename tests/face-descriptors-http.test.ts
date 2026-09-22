@@ -32,7 +32,9 @@ const family: Family = {
       url: "/media/source-photo.jpg",
       title: "",
       createdBy: "editor",
-      tags: [{ id: "tag-first", personId: "first", x: 0, y: 0, width: 1, height: 1 }],
+      tags: [
+        { id: "tag-first", personId: "first", x: 0, y: 0, width: 1, height: 1 },
+      ],
     },
   ],
 };
@@ -132,6 +134,25 @@ test("face matching stays server-side and saving still requires confirmation", a
       .prepare("SELECT COUNT(*) AS count FROM face_descriptors")
       .get() as { count: number };
     assert.equal(Number(count.count), 4);
+
+    // Legacy 128-D templates do not consume the Human model's sample quota.
+    const addLegacy = archive.db.prepare(
+      "INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?)",
+    );
+    for (let index = 0; index < 18; index++)
+      addLegacy.run(
+        `legacy-${index}`,
+        "first",
+        JSON.stringify(Array(128).fill(0.01)),
+      );
+    response = await post("/api/faces/descriptors", {
+      id: "human-confirmed",
+      personId: "first",
+      descriptor: Array(1024).fill(0.04),
+      sourcePhotoId: "source-photo",
+      model: "human-faceres-3.3.6",
+    });
+    assert.equal(response.status, 201);
 
     canEdit = false;
     response = await post("/api/faces/match", {
