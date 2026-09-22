@@ -1,10 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
+import {
+  requesterAccessContext,
+  requesterPromptContext,
+} from "../src/server/ai-research-http.ts";
 
 test("web researcher uses Yandex AI Studio function calling through server only", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-"));
@@ -102,6 +106,35 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       ],
     };
     app.archive.write(family, current.revision);
+    assert.match(
+      requesterPromptContext(
+        {
+          id: "linked-user",
+          name: "Анна",
+          role: "relative",
+          createdAt: "",
+          approved: true,
+          personId: "anna-ai-test",
+          treeAccess: "all",
+        },
+        family,
+      ),
+      /обращается Лебедь Анна Семёновна.*personId: anna-ai-test.*Слова «я»/,
+    );
+    assert.match(
+      requesterAccessContext(
+        {
+          id: "reader",
+          name: "Читатель",
+          role: "reader",
+          approved: true,
+          createdAt: "",
+          treeAccess: "common_ancestors",
+        },
+        false,
+      ),
+      /только людей из области общих предков.*Доступ только для чтения/,
+    );
 
     const status = await fetch(base + "/api/ai/status").then((response) =>
       response.json(),
@@ -154,6 +187,120 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       (message) => message.role === "tool",
     );
     assert.match(toolMessage?.content || "", /Анна/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("web researcher can inspect an authorized archive photo through a bounded preview", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-photo-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "vision-model/latest";
+  mkdirSync(join(dir, "uploads"), { recursive: true });
+  writeFileSync(
+    join(dir, "uploads", "photo-ai.png"),
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  );
+
+  const requests: Array<Record<string, unknown>> = [];
+  const aiFetch: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+    if (requests.length === 1)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "photo-call",
+                  type: "function",
+                  function: {
+                    name: "analyze_photo",
+                    arguments: JSON.stringify({
+                      photoId: "photo-ai",
+                      question: "Что видно?",
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    return Response.json({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "На фотографии виден светлый пиксель.",
+          },
+        },
+      ],
+    });
+  };
+
+  const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      aiFetch,
+    ),
+    base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read();
+    app.archive.write(
+      {
+        ...current.family,
+        photos: [
+          {
+            id: "photo-ai",
+            url: "/media/photo-ai.png",
+            title: "Семейный снимок",
+            tags: [],
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Проанализируй семейный снимок" }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.answer, "На фотографии виден светлый пиксель.");
+    assert.deepEqual(payload.references.find((item: { kind: string }) => item.kind === "photo"), {
+      kind: "photo",
+      id: "photo-ai",
+      label: "Семейный снимок",
+    });
+    const secondMessages = requests[1].messages as Array<{
+      role: string;
+      content?: Array<{ type: string; image_url?: { url: string } }>;
+    }>;
+    const imageMessage = secondMessages.find(
+      (message) => message.role === "user" && Array.isArray(message.content),
+    );
+    const image = imageMessage?.content?.find(
+      (item) => item.type === "image_url",
+    );
+    assert.match(image?.image_url?.url || "", /^data:image\/webp;base64,/);
   } finally {
     await app.close();
     for (const key of [

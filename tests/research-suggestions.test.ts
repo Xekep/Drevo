@@ -103,6 +103,9 @@ test("AI person update stays pending until a human accepts it", async () => {
       }),
     });
     assert.equal(chat.status, 200);
+    const chatResult = await chat.json();
+    assert.equal(chatResult.suggestionIds.length, 1);
+    assert.match(chatResult.answer, /нажмите ✓/);
 
     const before = app.archive
       .read()
@@ -118,6 +121,15 @@ test("AI person update stays pending until a human accepts it", async () => {
       queue.suggestions[0].payload.changes.birthPlace,
       "Нижнее, Луганская область",
     );
+
+    const textConfirmation = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "подтверждаю" }),
+    }).then((response) => response.json());
+    assert.match(textConfirmation.answer, /кнопки ✓ или ×/);
+    assert.deepEqual(textConfirmation.suggestionIds, [queue.suggestions[0].id]);
+    assert.equal(call, 2);
 
     const accepted = await fetch(
       base +
@@ -164,6 +176,7 @@ test("AI source and relation proposals require separate human acceptance", async
     const toolNames = body.tools.map((tool) => tool.function.name);
     assert.ok(toolNames.includes("propose_source"));
     assert.ok(toolNames.includes("propose_relation"));
+    assert.ok(toolNames.includes("propose_person_create"));
 
     if (body.messages.some((message) => message.role === "tool"))
       return Response.json({
@@ -181,6 +194,36 @@ test("AI source and relation proposals require separate human acceptance", async
       [...body.messages]
         .reverse()
         .find((message) => message.role === "user")?.content || "";
+    if (request.includes("новую карточку"))
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "person-create-1",
+                  type: "function",
+                  function: {
+                    name: "propose_person_create",
+                    arguments: JSON.stringify({
+                      person: {
+                        surname: "Пупкин",
+                        name: "Василий",
+                        sex: "m",
+                        birth: "1991",
+                      },
+                      reason: "Пользователь просит добавить человека.",
+                      evidence: ["Сведения переданы пользователем."],
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
     if (request.includes("источник"))
       return Response.json({
         choices: [
@@ -374,6 +417,40 @@ test("AI source and relation proposals require separate human acceptance", async
         .read()
         .family.people.find((person) => person.id === "child-relation-test")
         ?.parents.includes("anna-source-test"),
+      true,
+    );
+
+    const createChat = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Создай новую карточку Василия Пупкина, 1991 год.",
+        context: { view: "tree", personIds: [] },
+      }),
+    });
+    assert.equal(createChat.status, 200);
+    const createResult = await createChat.json();
+    assert.equal(createResult.suggestionIds.length, 1, JSON.stringify(createResult));
+    assert.equal(
+      app.archive.read().family.people.some((person) => person.surname === "Пупкин"),
+      false,
+    );
+    queue = await fetch(base + "/api/research/suggestions").then((response) =>
+      response.json(),
+    );
+    const createSuggestion = queue.suggestions.find(
+      (item: { kind: string }) => item.kind === "person_create",
+    );
+    assert.equal(createSuggestion.personName, "Пупкин Василий");
+    const createAccepted = await fetch(
+      `${base}/api/research/suggestions/${encodeURIComponent(createSuggestion.id)}/accept`,
+      { method: "POST" },
+    );
+    assert.equal(createAccepted.status, 200);
+    assert.equal(
+      app.archive.read().family.people.some(
+        (person) => person.surname === "Пупкин" && person.birth === "1991",
+      ),
       true,
     );
   } finally {

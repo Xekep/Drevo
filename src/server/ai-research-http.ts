@@ -20,6 +20,10 @@ import {
   AiLimitError,
   type aiUsageStore,
 } from "./ai-usage.ts";
+import type { ArchiveUser } from "../domain/access.ts";
+import type { Family } from "../domain/types.ts";
+import type { mediaStore } from "./media.ts";
+import type { imagePreviews } from "./image-previews.ts";
 
 type ToolCall = {
   id: string;
@@ -28,7 +32,16 @@ type ToolCall = {
 };
 type ModelMessage = {
   role: string;
-  content?: string | null;
+  content?:
+    | string
+    | null
+    | Array<
+        | { type: "text"; text: string }
+        | {
+            type: "image_url";
+            image_url: { url: string; detail: "high" };
+          }
+      >;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 };
@@ -44,6 +57,28 @@ type ModelResponse = {
   error?: { message?: string };
   usage?: ModelUsage;
 };
+
+export function requesterPromptContext(user: ArchiveUser, family: Family) {
+  if (!user.personId) return "";
+  const person = family.people.find((candidate) => candidate.id === user.personId);
+  if (!person) return "";
+  return `Сейчас к тебе обращается ${fullName(person)} (personId: ${person.id}) — этот человек привязан к текущему аккаунту. Слова «я», «мои родственники», «мои предки» и подобные формулировки относятся к нему.`;
+}
+
+export function requesterAccessContext(
+  user: ArchiveUser,
+  canPropose: boolean,
+) {
+  const readScope =
+    user.role !== "admin" && user.treeAccess === "common_ancestors"
+      ? "Пользователь видит только людей из области общих предков и связанные с ними фотографии. Скрытых данных в инструментах нет; не предполагай их существование и не пытайся их раскрыть."
+      : "Пользователю доступен весь семейный архив.";
+  if (!canPropose)
+    return `${readScope} Доступ только для чтения: не предлагай сохранить, создать или изменить данные.`;
+  if (user.role === "admin")
+    return `${readScope} Пользователь может подтверждать изменения любых объектов архива.`;
+  return `${readScope} Пользователь может создавать новые карточки, но редактировать и связывать только созданные им объекты. Сервер отдельно проверяет право на каждое предложение.`;
+}
 type StreamToolCallDelta = {
   index?: number;
   id?: string;
@@ -65,6 +100,7 @@ type ModelStreamChunk = {
 
 type AnswerReference =
   | { kind: "person"; id: string; label: string }
+  | { kind: "photo"; id: string; label: string }
   | {
       kind: "source";
       personId: string;
@@ -82,7 +118,54 @@ type ResearchMetrics = {
 type ResearchResult = {
   answer: string;
   references: AnswerReference[];
+  suggestionIds: string[];
+  uiActions: UiAction[];
 };
+
+type UiAction =
+  | { type: "focus_people"; personIds: string[] }
+  | { type: "open_person"; personId: string }
+  | { type: "open_photo"; photoId: string };
+
+const ANALYZE_PHOTO_TOOL = {
+  name: "analyze_photo",
+  description:
+    "Передать доступную фотографию модели для визуального анализа. Сначала найди photoId через search_photos или get_photo. Описывай только видимое, не устанавливай личности неизвестных людей по лицу и отделяй наблюдения от гипотез.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      photoId: { type: "string", minLength: 1, maxLength: 200 },
+      question: { type: "string", maxLength: 2000 },
+    },
+    required: ["photoId"],
+    additionalProperties: false,
+  },
+} as const;
+
+const CONTROL_VIEW_TOOL = {
+  name: "control_archive_view",
+  description:
+    "Управлять текущим интерфейсом только по явной просьбе пользователя: плавно показать людей или цепочку на древе, открыть карточку человека либо фотографию. Не вызывай этот инструмент просто потому, что упомянул запись в ответе.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: {
+        type: "string",
+        enum: ["focus_people", "open_person", "open_photo"],
+      },
+      personIds: {
+        type: "array",
+        items: { type: "string", minLength: 1, maxLength: 200 },
+        minItems: 1,
+        maxItems: 20,
+      },
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      photoId: { type: "string", minLength: 1, maxLength: 200 },
+    },
+    required: ["action"],
+    additionalProperties: false,
+  },
+} as const;
 
 function estimateTokens(value: unknown) {
   const serialized =
@@ -206,6 +289,8 @@ export function aiResearchHttp({
   suggestions,
   aiSettings,
   usage,
+  media,
+  previewImage,
   publicOrigin,
   fetcher = fetch,
 }: {
@@ -214,6 +299,8 @@ export function aiResearchHttp({
   suggestions: ReturnType<typeof researchSuggestionStore>;
   aiSettings: ReturnType<typeof aiSettingsStore>;
   usage: ReturnType<typeof aiUsageStore>;
+  media: ReturnType<typeof mediaStore>;
+  previewImage: ReturnType<typeof imagePreviews>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -234,6 +321,8 @@ export function aiResearchHttp({
   ) {
     const definitions = [
       ...RESEARCH_TOOL_DEFINITIONS,
+      ANALYZE_PHOTO_TOOL,
+      CONTROL_VIEW_TOOL,
       ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
     ];
     return {
@@ -451,11 +540,19 @@ export function aiResearchHttp({
         "Опирайся только на данные инструментов и слова пользователя.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
+        "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
+        "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
+        "Учитывай предыдущие реплики: короткие продолжения вроде «перечисли», «покажи их» или «а подробнее?» относятся к последнему предмету разговора. Для перечисления всех доступных людей вызывай list_people, а не search_people.",
+        "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
+        "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не печатай отдельный список ссылок в конце ответа.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
         canPropose
-          ? "Если пользователь просит сохранить конкретную гипотезу, используй подходящий propose_person_update, propose_source или propose_relation. Это только предложения: человек отдельно принимает или отклоняет их. Не создавай предложение без конкретных значений и основания. Для parent fromPersonId означает родителя, toPersonId — ребёнка."
+          ? "Если пользователь просит создать человека или сохранить конкретное изменение, используй propose_person_create, propose_person_update, propose_source или propose_relation. Это только предложения: архив не меняется, пока человек не нажмёт кнопку принятия в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Никогда не утверждай, что изменение применено, принято или ожидает ещё одного подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка."
           : "",
-        "Отвечай по-русски, кратко и предметно.",
+        requesterPromptContext(user, family),
+        requesterAccessContext(user, canPropose),
+        "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
+        "Если пользователь просит схему, граф или визуализацию связей, верни корректный fenced-блок ```mermaid с flowchart, graph или timeline. Подписи узлов делай короткими, идентификаторы Mermaid — безопасными латинскими словами, а подтверждённые и гипотетические связи визуально различай.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
           : "",
@@ -471,11 +568,42 @@ export function aiResearchHttp({
       peopleById = new Map(
         family.people.map((person) => [person.id, fullName(person)]),
       ),
+      photosById = new Map(
+        (family.photos || []).map((photo) => [
+          photo.id,
+          photo.title.trim() || `Фотография ${photo.id}`,
+        ]),
+      ),
       referencedPeople = new Set<string>(),
+      referencedPhotos = new Set<string>(),
       referencedSources = new Map<
         string,
         Extract<AnswerReference, { kind: "source" }>
-      >();
+      >(),
+      createdSuggestionIds = new Set<string>(),
+      proposalErrors: string[] = [];
+    const uiActions: UiAction[] = [],
+      viewControlRequested =
+        /(?:покажи|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемести).{0,40}(?:древ|карточ|фото|люд|человек|цепоч|связ)|(?:на древе|на карте).{0,40}(?:покажи|найди|выдел|подсвет)/iu.test(
+          message,
+        );
+
+    if (
+      canPropose &&
+      /^(?:да[,!. ]*|подтверждаю|согласен|согласна|принять|прими)$/iu.test(
+        message,
+      )
+    ) {
+      const pending = suggestions.list(user).slice(0, 8);
+      if (pending.length)
+        return {
+          answer:
+            "Для применения используйте кнопки ✓ или × у предложения ниже. Текстовое подтверждение не изменяет архив.",
+          references: [],
+          suggestionIds: pending.map((suggestion) => suggestion.id),
+          uiActions: [],
+        };
+    }
 
     onStatus("Обрабатываю запрос…");
 
@@ -506,17 +634,36 @@ export function aiResearchHttp({
               label: peopleById.get(id)!,
             })),
           ...[...referencedSources.values()].slice(0, 8),
+          ...[...referencedPhotos]
+            .slice(0, 8)
+            .map((id) => ({
+              kind: "photo" as const,
+              id,
+              label: photosById.get(id)!,
+            })),
         ];
         return {
-          answer:
-            typeof answer.content === "string" && answer.content.trim()
-              ? answer.content
-              : "Модель не сформировала текстовый ответ.",
+          answer: createdSuggestionIds.size
+            ? createdSuggestionIds.size === 1
+              ? "Подготовлено предложение. Проверьте данные ниже и нажмите ✓, чтобы применить изменение, или ×, чтобы отклонить."
+              : "Подготовлены предложения. Проверьте данные ниже и примите или отклоните каждое кнопками ✓ и ×."
+            : proposalErrors.length
+              ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
+              : typeof answer.content === "string" && answer.content.trim()
+                ? answer.content
+                : "Модель не сформировала текстовый ответ.",
           references,
+          suggestionIds: [...createdSuggestionIds],
+          uiActions,
         };
       }
 
       onStatus("Проверяю данные архива…");
+      const attachedImages: Array<{
+        photoId: string;
+        question: string;
+        dataUrl: string;
+      }> = [];
       for (const call of calls) {
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === call.function.name,
@@ -527,23 +674,104 @@ export function aiResearchHttp({
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (definition)
             result = executeResearchTool(family, definition.name, toolArgs);
+          else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
+            if (attachedImages.length >= 3)
+              throw new Error("За один ответ можно проанализировать не более трёх фотографий");
+            const raw = toolArgs as Record<string, unknown>,
+              photoId =
+                typeof raw.photoId === "string" ? raw.photoId.trim() : "",
+              question =
+                typeof raw.question === "string" && raw.question.trim()
+                  ? raw.question.trim().slice(0, 2000)
+                  : "Опиши фотографию и отметь детали, полезные для семейного архива.";
+            if (!photoId || !photosById.has(photoId))
+              throw new Error("Фотография не найдена или недоступна");
+            const photo = (family.photos || []).find((item) => item.id === photoId)!,
+              source = media.open(photo.url);
+            if (!source) throw new Error("Файл фотографии недоступен");
+            const bytes = await previewImage(
+              { path: source.path, cacheKey: source.name },
+              "display",
+            );
+            attachedImages.push({
+              photoId,
+              question,
+              dataUrl: `data:image/webp;base64,${bytes.toString("base64")}`,
+            });
+            result = {
+              ...executeResearchTool(family, "get_photo", { photoId }),
+              imageAttached: true,
+            };
+          }
+          else if (call.function.name === CONTROL_VIEW_TOOL.name) {
+            if (!viewControlRequested)
+              throw new Error("Пользователь явно не просил менять текущий экран");
+            const raw = toolArgs as Record<string, unknown>;
+            if (raw.action === "focus_people") {
+              const personIds = Array.isArray(raw.personIds)
+                ? raw.personIds.filter(
+                    (id): id is string =>
+                      typeof id === "string" && peopleById.has(id),
+                  )
+                : [];
+              if (!personIds.length)
+                throw new Error("Не указаны доступные люди для показа");
+              const action: UiAction = {
+                type: "focus_people",
+                personIds: [...new Set(personIds)].slice(0, 20),
+              };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else if (
+              raw.action === "open_person" &&
+              typeof raw.personId === "string" &&
+              peopleById.has(raw.personId)
+            ) {
+              const action: UiAction = {
+                type: "open_person",
+                personId: raw.personId,
+              };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else if (
+              raw.action === "open_photo" &&
+              typeof raw.photoId === "string" &&
+              photosById.has(raw.photoId)
+            ) {
+              const action: UiAction = {
+                type: "open_photo",
+                photoId: raw.photoId,
+              };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else throw new Error("Запрошенный объект не найден или недоступен");
+          }
           else if (
             canPropose &&
             RESEARCH_PROPOSAL_TOOLS.some(
               (tool) => tool.name === call.function.name,
             )
-          )
-            result = {
-              suggestion: suggestions.createFromTool(
+          ) {
+            const suggestion = suggestions.createFromTool(
                 call.function.name,
                 user,
                 family,
                 snapshot.revision,
                 toolArgs,
-              ),
-            };
+              );
+            createdSuggestionIds.add(suggestion.id);
+            result = { suggestion };
+          }
           else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
+          if (
+            RESEARCH_PROPOSAL_TOOLS.some(
+              (tool) => tool.name === call.function.name,
+            )
+          )
+            proposalErrors.push(
+              error instanceof Error ? error.message : "Ошибка предложения",
+            );
           result = {
             error:
               error instanceof Error
@@ -552,6 +780,7 @@ export function aiResearchHttp({
           };
         }
         collectPersonReferences(result, peopleById, referencedPeople);
+        collectPersonReferences(result, photosById, referencedPhotos);
         if (
           definition?.name === "get_sources" &&
           toolArgs &&
@@ -569,6 +798,20 @@ export function aiResearchHttp({
           content: JSON.stringify(result),
         });
       }
+      if (attachedImages.length)
+        messages.push({
+          role: "user",
+          content: attachedImages.flatMap((image) => [
+            {
+              type: "text" as const,
+              text: `Фотография ${image.photoId}. Задача: ${image.question}`,
+            },
+            {
+              type: "image_url" as const,
+              image_url: { url: image.dataUrl, detail: "high" as const },
+            },
+          ]),
+        });
       onStatus("Формирую ответ…");
     }
     throw new Error("ИИ превысил допустимое число вызовов инструментов");
@@ -611,7 +854,7 @@ export function aiResearchHttp({
       return json(res, 503, {
         error: runtime.configured
           ? "ИИ-исследователь отключён администратором"
-          : "ИИ-исследователь не настроен: задайте YANDEX_AI_API_KEY и YANDEX_AI_FOLDER_ID",
+          : "ИИ-исследователь не настроен: задайте API-ключ, Folder ID и модель",
       });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
@@ -693,6 +936,8 @@ export function aiResearchHttp({
         sse(res, "done", {
           answer: result.answer,
           references: result.references,
+          suggestionIds: result.suggestionIds,
+          uiActions: result.uiActions,
         });
         res.end();
         return true;

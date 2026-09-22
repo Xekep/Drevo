@@ -56,9 +56,12 @@ export function researchSuggestionsHttp({
       return json(res, 200, {
         suggestions: suggestions.list(actor).map((suggestion) => ({
           ...suggestion,
-          personName: people.has(suggestion.personId)
-            ? fullName(people.get(suggestion.personId)!)
-            : "Удалённая карточка",
+          personName:
+            suggestion.kind === "person_create"
+              ? fullName(suggestion.payload.person)
+              : people.has(suggestion.personId)
+                ? fullName(people.get(suggestion.personId)!)
+                : "Удалённая карточка",
           ...(suggestion.kind === "relation"
             ? {
                 fromName: people.has(suggestion.payload.fromPersonId)

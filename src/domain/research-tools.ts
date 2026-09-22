@@ -25,6 +25,16 @@ const objectSchema = (
 
 export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
+    name: "list_people",
+    description:
+      "Получить список людей, доступных пользователю в архиве. Используй для просьб перечислить всех людей или продолжений вроде «перечисли их»; для поиска конкретного человека используй search_people.",
+    scope: "tree:read",
+    inputSchema: objectSchema({
+      offset: { type: "integer", minimum: 0, default: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 100 },
+    }),
+  },
+  {
     name: "search_people",
     description:
       "Найти людей в семейном архиве по имени, фамилии, отчеству, году или месту.",
@@ -101,6 +111,83 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     inputSchema: objectSchema(
       { personId: { type: "string", minLength: 1, maxLength: 200 } },
       ["personId"],
+    ),
+  },
+  {
+    name: "search_photos",
+    description:
+      "Найти доступные пользователю фотографии архива по названию, месту, году, событию, описанию или отмеченному человеку.",
+    scope: "sources:read",
+    inputSchema: objectSchema({
+      query: { type: "string", maxLength: 200 },
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
+    }),
+  },
+  {
+    name: "get_photo",
+    description:
+      "Получить метаданные доступной фотографии и список отмеченных на ней людей. Для анализа самого изображения после этого используй analyze_photo.",
+    scope: "sources:read",
+    inputSchema: objectSchema(
+      { photoId: { type: "string", minLength: 1, maxLength: 200 } },
+      ["photoId"],
+    ),
+  },
+  {
+    name: "search_archive",
+    description:
+      "Искать текст сразу по карточкам людей, биографиям, занятиям, событиям, наградам, источникам и фотографиям. Возвращает тип записи и краткие структурированные совпадения.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        query: { type: "string", minLength: 1, maxLength: 200 },
+        limit: { type: "integer", minimum: 1, maximum: 50, default: 25 },
+      },
+      ["query"],
+    ),
+  },
+  {
+    name: "get_timeline",
+    description:
+      "Построить хронологию рождений, смертей, жизненных событий и фотографий для одного человека или всего доступного архива.",
+    scope: "analysis:read",
+    inputSchema: objectSchema({
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 100 },
+    }),
+  },
+  {
+    name: "get_genealogy_graph",
+    description:
+      "Получить компактный подграф вокруг человека с узлами и рёбрами родителей, супругов и дополнительных связей. Используй как проверенные данные для схем Mermaid.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        personId: { type: "string", minLength: 1, maxLength: 200 },
+        direction: {
+          type: "string",
+          enum: ["ancestors", "descendants", "both"],
+          default: "both",
+        },
+        depth: { type: "integer", minimum: 1, maximum: 6, default: 3 },
+        includeSpouses: { type: "boolean", default: true },
+        includeExtraRelations: { type: "boolean", default: true },
+      },
+      ["personId"],
+    ),
+  },
+  {
+    name: "get_place_summary",
+    description:
+      "Собрать все доступные упоминания места в рождениях, смертях, жизненных событиях и фотографиях.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        query: { type: "string", minLength: 1, maxLength: 200 },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+      },
+      ["query"],
     ),
   },
   {
@@ -213,6 +300,38 @@ function personOrThrow(family: Family, id: string) {
   return person;
 }
 
+function cleanPhoto(family: Family, photoId: string) {
+  const photo = (family.photos || []).find((item) => item.id === photoId);
+  if (!photo) throw new Error("Фотография не найдена или недоступна");
+  const people = new Map(family.people.map((person) => [person.id, person]));
+  return {
+    id: photo.id,
+    title: photo.title,
+    takenAt: photo.takenAt,
+    year: photo.year,
+    place: photo.place,
+    event: photo.event,
+    description: photo.description,
+    people: photo.tags.flatMap((tag) => {
+      const person = people.get(tag.personId);
+      return person
+        ? [
+            {
+              id: person.id,
+              name: fullName(person),
+              area: {
+                x: tag.x,
+                y: tag.y,
+                width: tag.width,
+                height: tag.height,
+              },
+            },
+          ]
+        : [];
+    }),
+  };
+}
+
 function numberArg(
   args: Record<string, unknown>,
   key: string,
@@ -225,6 +344,18 @@ function numberArg(
   if (typeof value !== "number" || !Number.isInteger(value))
     throw new Error(`Некорректный параметр ${key}`);
   return Math.min(max, Math.max(min, value));
+}
+
+function booleanArg(
+  args: Record<string, unknown>,
+  key: string,
+  fallback: boolean,
+) {
+  const value = args[key];
+  if (value === undefined) return fallback;
+  if (typeof value !== "boolean")
+    throw new Error(`Некорректный параметр ${key}`);
+  return value;
 }
 
 function stringArg(
@@ -541,8 +672,30 @@ export function executeResearchTool(
       ? (rawArgs as Record<string, unknown>)
       : {};
 
+  if (name === "list_people") {
+    const offset = numberArg(args, "offset", 0, 0, 1_000_000),
+      limit = numberArg(args, "limit", 100, 1, 100),
+      ordered = [...family.people].sort((a, b) =>
+        fullName(a).localeCompare(fullName(b), "ru"),
+      );
+    return {
+      people: ordered.slice(offset, offset + limit).map((person) => ({
+        id: person.id,
+        name: fullName(person),
+        birth: person.birth,
+        death: person.death,
+        birthPlace: person.birthPlace,
+      })),
+      offset,
+      limit,
+      total: ordered.length,
+      hasMore: offset + limit < ordered.length,
+    };
+  }
+
   if (name === "search_people") {
     const query = normalized(stringArg(args, "query")),
+      queryTokens = query.split(" ").filter(Boolean),
       limit = numberArg(args, "limit", 20, 1, 50);
     const matches = family.people
       .map((person) => {
@@ -554,7 +707,7 @@ export function executeResearchTool(
           person.birthPlace,
           person.deathPlace || "",
         ].map(normalized);
-        const score = fields.reduce(
+        let score = fields.reduce(
           (value, field, index) =>
             field === query
               ? Math.max(value, 100 - index)
@@ -565,6 +718,10 @@ export function executeResearchTool(
                   : value,
           0,
         );
+        const joined = fields.join(" "),
+          tokenMatches = queryTokens.filter((token) => joined.includes(token));
+        if (queryTokens.length && tokenMatches.length === queryTokens.length)
+          score = Math.max(score, 60 + Math.min(20, queryTokens.length * 5));
         return { person, score };
       })
       .filter((item) => item.score > 0)
@@ -657,6 +814,284 @@ export function executeResearchTool(
           year: award.year,
           source: award.source,
         })),
+    };
+  }
+
+  if (name === "search_photos") {
+    const query = normalized(stringArg(args, "query", false)),
+      personId = stringArg(args, "personId", false),
+      limit = numberArg(args, "limit", 20, 1, 50),
+      people = new Map(family.people.map((person) => [person.id, person]));
+    if (personId) personOrThrow(family, personId);
+    const photos = (family.photos || [])
+      .filter(
+        (photo) => !personId || photo.tags.some((tag) => tag.personId === personId),
+      )
+      .filter((photo) => {
+        if (!query) return true;
+        const fields = [
+          photo.title,
+          photo.takenAt || "",
+          photo.year || "",
+          photo.place || "",
+          photo.event || "",
+          photo.description || "",
+          ...photo.tags.flatMap((tag) => {
+            const person = people.get(tag.personId);
+            return person ? [fullName(person)] : [];
+          }),
+        ];
+        const joined = fields.map(normalized).join(" ");
+        return query.split(" ").every((token) => joined.includes(token));
+      })
+      .slice(0, limit)
+      .map((photo) => cleanPhoto(family, photo.id));
+    return { photos, total: photos.length };
+  }
+
+  if (name === "get_photo")
+    return { photo: cleanPhoto(family, stringArg(args, "photoId")) };
+
+  if (name === "search_archive") {
+    const query = normalized(stringArg(args, "query")),
+      tokens = query.split(" "),
+      limit = numberArg(args, "limit", 25, 1, 50),
+      contains = (values: Array<string | undefined>) => {
+        const joined = normalized(values.filter(Boolean).join(" "));
+        return tokens.every((token) => joined.includes(token));
+      },
+      matches: Array<Record<string, unknown>> = [];
+    for (const person of family.people) {
+      if (
+        contains([
+          fullName(person),
+          person.maidenName,
+          person.birth,
+          person.death,
+          person.birthPlace,
+          person.deathPlace,
+          person.occupation,
+          person.biography,
+        ])
+      )
+        matches.push({
+          kind: "person",
+          person: {
+            id: person.id,
+            name: fullName(person),
+            birth: person.birth,
+            death: person.death,
+          },
+          occupation: person.occupation,
+          biography: person.biography,
+        });
+      for (const event of person.events || [])
+        if (
+          contains([
+            event.type,
+            event.title,
+            event.date,
+            event.dateText,
+            event.place,
+            event.description,
+          ])
+        )
+          matches.push({
+            kind: "event",
+            person: { id: person.id, name: fullName(person) },
+            event: Object.fromEntries(
+              Object.entries(event).filter(([key]) => key !== "sources"),
+            ),
+          });
+      for (const award of person.awards || [])
+        if (contains([award.name, award.year, award.degreeId]))
+          matches.push({
+            kind: "award",
+            person: { id: person.id, name: fullName(person) },
+            award: Object.fromEntries(
+              Object.entries(award).filter(([key]) => key !== "source"),
+            ),
+          });
+      for (const source of person.sources)
+        if (
+          contains([
+            source.title,
+            source.type,
+            source.reference,
+            source.note,
+          ])
+        )
+          matches.push({
+            kind: "source",
+            person: { id: person.id, name: fullName(person) },
+            source,
+          });
+    }
+    for (const photo of family.photos || [])
+      if (
+        contains([
+          photo.title,
+          photo.takenAt,
+          photo.year,
+          photo.place,
+          photo.event,
+          photo.description,
+        ])
+      )
+        matches.push({ kind: "photo", photo: cleanPhoto(family, photo.id) });
+    return {
+      matches: matches.slice(0, limit),
+      total: matches.length,
+      truncated: matches.length > limit,
+    };
+  }
+
+  if (name === "get_timeline") {
+    const personId = stringArg(args, "personId", false),
+      limit = numberArg(args, "limit", 100, 1, 100),
+      candidates = personId
+        ? [personOrThrow(family, personId)]
+        : family.people,
+      candidateIds = new Set(candidates.map((person) => person.id)),
+      items: Array<Record<string, unknown> & { date: string }> = [];
+    for (const person of candidates) {
+      if (person.birth)
+        items.push({
+          kind: "birth",
+          date: person.birth,
+          person: { id: person.id, name: fullName(person) },
+          place: person.birthPlace,
+        });
+      if (person.death)
+        items.push({
+          kind: "death",
+          date: person.death,
+          person: { id: person.id, name: fullName(person) },
+          place: person.deathPlace,
+        });
+      for (const event of person.events || []) {
+        const date = event.date || event.dateText || "";
+        if (date)
+          items.push({
+            kind: "event",
+            date,
+            person: { id: person.id, name: fullName(person) },
+            event: Object.fromEntries(
+              Object.entries(event).filter(([key]) => key !== "sources"),
+            ),
+          });
+      }
+    }
+    for (const photo of family.photos || []) {
+      const date = photo.takenAt || photo.year || "";
+      if (
+        date &&
+        (!personId || photo.tags.some((tag) => candidateIds.has(tag.personId)))
+      )
+        items.push({
+          kind: "photo",
+          date,
+          photo: cleanPhoto(family, photo.id),
+        });
+    }
+    items.sort((a, b) => a.date.localeCompare(b.date, "ru"));
+    return {
+      items: items.slice(0, limit),
+      total: items.length,
+      truncated: items.length > limit,
+    };
+  }
+
+  if (name === "get_genealogy_graph") {
+    const personId = stringArg(args, "personId"),
+      direction = enumArg(
+        args,
+        "direction",
+        ["ancestors", "descendants", "both"] as const,
+        "both",
+      ),
+      depth = numberArg(args, "depth", 3, 1, 6),
+      includeSpouses = booleanArg(args, "includeSpouses", true),
+      includeExtra = booleanArg(args, "includeExtraRelations", true),
+      ids = new Set([personId]);
+    personOrThrow(family, personId);
+    if (direction !== "descendants")
+      for (const item of lineage(family, personId, depth, "ancestors"))
+        ids.add(String(item.person.id));
+    if (direction !== "ancestors")
+      for (const item of lineage(family, personId, depth, "descendants"))
+        ids.add(String(item.person.id));
+    if (includeSpouses)
+      for (const person of family.people)
+        if (ids.has(person.id))
+          for (const spouseId of person.spouses) ids.add(spouseId);
+    const nodes = family.people
+        .filter((person) => ids.has(person.id))
+        .map((person) => ({
+          id: person.id,
+          name: fullName(person),
+          birth: person.birth,
+          death: person.death,
+          sex: person.sex,
+        })),
+      edges: Array<Record<string, unknown>> = [],
+      spouseKeys = new Set<string>();
+    for (const person of family.people.filter((item) => ids.has(item.id))) {
+      for (const parentId of person.parents)
+        if (ids.has(parentId))
+          edges.push({ from: parentId, to: person.id, type: "parent" });
+      if (includeSpouses)
+        for (const spouseId of person.spouses)
+          if (ids.has(spouseId)) {
+            const pair = [person.id, spouseId].sort(),
+              key = pair.join("\0");
+            if (!spouseKeys.has(key)) {
+              spouseKeys.add(key);
+              edges.push({ from: pair[0], to: pair[1], type: "spouse" });
+            }
+          }
+    }
+    if (includeExtra)
+      for (const link of family.links || [])
+        if (ids.has(link.from) && ids.has(link.to))
+          edges.push({
+            from: link.from,
+            to: link.to,
+            type: link.type,
+            note: link.note,
+          });
+    return { anchorId: personId, direction, depth, nodes, edges };
+  }
+
+  if (name === "get_place_summary") {
+    const query = normalized(stringArg(args, "query")),
+      limit = numberArg(args, "limit", 50, 1, 100),
+      matches: Array<Record<string, unknown>> = [],
+      has = (value?: string) => Boolean(value && normalized(value).includes(query));
+    for (const person of family.people) {
+      const personRef = { id: person.id, name: fullName(person) };
+      if (has(person.birthPlace))
+        matches.push({ kind: "birth", person: personRef, place: person.birthPlace });
+      if (has(person.deathPlace))
+        matches.push({ kind: "death", person: personRef, place: person.deathPlace });
+      for (const event of person.events || [])
+        if (has(event.place))
+          matches.push({
+            kind: "event",
+            person: personRef,
+            place: event.place,
+            date: event.date || event.dateText,
+            title: event.title || event.type,
+          });
+    }
+    for (const photo of family.photos || [])
+      if (has(photo.place))
+        matches.push({ kind: "photo", photo: cleanPhoto(family, photo.id) });
+    return {
+      query,
+      matches: matches.slice(0, limit),
+      total: matches.length,
+      truncated: matches.length > limit,
     };
   }
 

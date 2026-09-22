@@ -7,6 +7,10 @@ import {
 } from "./ai-settings.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { aiUsageStore } from "./ai-usage.ts";
+import {
+  fetchAiStudioModels,
+  type AiStudioModel,
+} from "./ai-models.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -45,6 +49,31 @@ export function adminAiHttp({
     res.end(JSON.stringify(value));
     return true;
   };
+  const statusValue = async () => {
+    const runtime = aiRuntimeConfig(settings);
+    let models: AiStudioModel[] = [];
+    let modelsError = "";
+    if (runtime.apiKey && runtime.folderId)
+      try {
+        models = await fetchAiStudioModels({
+          baseUrl: runtime.baseUrl,
+          apiKey: runtime.apiKey,
+          folderId: runtime.folderId,
+          fetcher,
+        });
+      } catch (error) {
+        modelsError =
+          error instanceof Error
+            ? error.message
+            : "Не удалось получить список моделей AI Studio";
+      }
+    return {
+      ...publicAiStatus(settings),
+      models,
+      modelsError,
+      usage: usage.summary(),
+    };
+  };
 
   return async (
     req: IncomingMessage,
@@ -52,7 +81,11 @@ export function adminAiHttp({
     url: URL,
   ): Promise<boolean> => {
     const path = url.pathname;
-    if (path !== "/api/admin/ai" && path !== "/api/admin/ai/test")
+    if (
+      path !== "/api/admin/ai" &&
+      path !== "/api/admin/ai/test" &&
+      path !== "/api/admin/ai/models"
+    )
       return false;
     if (!auth.isAdmin(req))
       return json(res, auth.currentUser(req) ? 403 : 401, {
@@ -60,10 +93,7 @@ export function adminAiHttp({
       });
 
     if (path === "/api/admin/ai" && req.method === "GET")
-      return json(res, 200, {
-        ...publicAiStatus(settings),
-        usage: usage.summary(),
-      });
+      return json(res, 200, await statusValue());
 
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
@@ -73,13 +103,42 @@ export function adminAiHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         settings.write(await readJson(req), auth.currentUser(req)!);
-        return json(res, 200, {
-          ...publicAiStatus(settings),
-          usage: usage.summary(),
-        });
+        return json(res, 200, await statusValue());
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
+        });
+      }
+    }
+
+    if (path === "/api/admin/ai/models" && req.method === "POST") {
+      if (!req.headers["content-type"]?.startsWith("application/json"))
+        return json(res, 415, { error: "JSON required" });
+      try {
+        const body = (await readJson(req)) as Record<string, unknown>,
+          runtime = aiRuntimeConfig(settings),
+          folderId =
+            typeof body.folderId === "string" ? body.folderId.trim() : "",
+          submittedApiKey =
+            typeof body.apiKey === "string" ? body.apiKey.trim() : "",
+          apiKey = submittedApiKey || runtime.apiKey;
+        if (!folderId || !/^[a-zA-Z0-9_-]{1,128}$/.test(folderId))
+          return json(res, 400, { error: "Укажите корректный Folder ID" });
+        if (!apiKey)
+          return json(res, 400, { error: "Сначала укажите API-ключ" });
+        const models = await fetchAiStudioModels({
+          baseUrl: runtime.baseUrl,
+          apiKey,
+          folderId,
+          fetcher,
+        });
+        return json(res, 200, { models });
+      } catch (error) {
+        return json(res, error instanceof RangeError ? 413 : 502, {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Не удалось получить список моделей AI Studio",
         });
       }
     }

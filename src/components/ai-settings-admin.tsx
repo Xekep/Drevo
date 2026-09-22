@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Bot, CheckCircle2, PlugZap, Save, TriangleAlert } from "lucide-react";
+import {
+  Bot,
+  CheckCircle2,
+  PlugZap,
+  RefreshCw,
+  Save,
+  TriangleAlert,
+} from "lucide-react";
 
 type AiAdminStatus = {
   enabled: boolean;
@@ -19,8 +26,9 @@ type AiAdminStatus = {
   models: Array<{
     id: string;
     label: string;
-    context: string;
+    owner: string;
   }>;
+  modelsError: string;
   limits: {
     requestsPerMinute: number;
     dailyRequests: number;
@@ -58,12 +66,13 @@ export function AiSettingsAdmin() {
     [apiKey, setApiKey] = useState(""),
     [clearApiKey, setClearApiKey] = useState(false),
     [folderId, setFolderId] = useState(""),
-    [model, setModel] = useState("yandexgpt-5.1"),
+    [model, setModel] = useState(""),
     [requestsPerMinute, setRequestsPerMinute] = useState(6),
     [dailyRequests, setDailyRequests] = useState(100),
     [dailyTokens, setDailyTokens] = useState(250000),
     [busy, setBusy] = useState(false),
     [testing, setTesting] = useState(false),
+    [loadingModels, setLoadingModels] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
 
@@ -71,7 +80,8 @@ export function AiSettingsAdmin() {
     setStatus(next);
     setEnabled(next.enabled);
     setFolderId(next.folderIdOverride || next.folderId || "");
-    setModel(next.modelOverride || next.model || "yandexgpt-5.1");
+    const selectedModel = next.modelOverride || next.model || "";
+    setModel(selectedModel || next.models[0]?.id || "");
     setApiKey("");
     setClearApiKey(false);
     setRequestsPerMinute(next.limits.requestsPerMinute);
@@ -148,6 +158,46 @@ export function AiSettingsAdmin() {
       setError((reason as Error).message);
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function refreshModels() {
+    setLoadingModels(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/admin/ai/models", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            folderId,
+            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+          }),
+        }),
+        data = (await response.json()) as {
+          models?: AiAdminStatus["models"];
+          error?: string;
+        };
+      if (!response.ok)
+        throw new Error(data.error || "Не удалось получить список моделей");
+      const models = data.models || [];
+      setStatus((current) =>
+        current ? { ...current, models, modelsError: "" } : current,
+      );
+      setModel((current) =>
+        models.some((item) => item.id === current)
+          ? current
+          : models[0]?.id || "",
+      );
+      setNotice(
+        models.length
+          ? `Получено моделей: ${models.length}`
+          : "В каталоге нет доступных текстовых моделей",
+      );
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setLoadingModels(false);
     }
   }
 
@@ -301,23 +351,41 @@ export function AiSettingsAdmin() {
                 />
               </label>
 
-              <label htmlFor="ai-model">
-                Модель
-                <select
-                  id="ai-model"
-                  value={model}
-                  onChange={(event) => setModel(event.target.value)}
+              <div className="ai-model-picker">
+                <label htmlFor="ai-model">
+                  Модель
+                  <select
+                    id="ai-model"
+                    value={model}
+                    disabled={!status.models.length && !model}
+                    onChange={(event) => setModel(event.target.value)}
+                  >
+                    {!status.models.some((item) => item.id === model) && model && (
+                      <option value={model}>{model} · текущее значение</option>
+                    )}
+                    {!model && !status.models.length && (
+                      <option value="">Загрузите модели каталога</option>
+                    )}
+                    {status.models.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="ai-model-refresh"
+                  disabled={loadingModels || !folderId.trim()}
+                  onClick={() => void refreshModels()}
                 >
-                  {!status.models.some((item) => item.id === model) && model && (
-                    <option value={model}>{model} · текущее значение</option>
-                  )}
-                  {status.models.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label} · контекст {item.context}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <RefreshCw size={15} className={loadingModels ? "spinning" : ""} />
+                  {loadingModels ? "Загружаем…" : "Обновить список"}
+                </button>
+                {status.modelsError && (
+                  <small className="form-error">{status.modelsError}</small>
+                )}
+              </div>
             </fieldset>
 
             {status.credentialError && (

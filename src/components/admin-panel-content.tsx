@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowDownUp,
+  Bot,
   DatabaseBackup,
   Download,
   Image,
@@ -254,7 +255,8 @@ export function AdminPanel({
             ["users", "Участники", Users],
             ["access", "Доступ и древо", ArrowDownUp],
             ["data", "Данные и копии", DatabaseBackup],
-            ["mcp", "MCP и ИИ", KeyRound],
+            ["ai", "Yandex AI", Bot],
+            ["mcp", "MCP-токены", KeyRound],
             ["shares", "Временные ссылки", Link2],
             ["audit", "Журнал правок", History],
           ].map(([id, label, Icon]) => {
@@ -504,12 +506,8 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {section === "mcp" && (
-          <>
-            <AiSettingsAdmin />
-            <McpTokenAdmin />
-          </>
-        )}
+        {section === "ai" && <AiSettingsAdmin />}
+        {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
         {section === "audit" && (
           <section className="admin-card archive-form">

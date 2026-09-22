@@ -16,14 +16,31 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
   ])
     delete process.env[key];
 
-  const requests: Array<{
+  const yandexModel = "gpt://folder-1/yandexgpt-5.1/latest",
+    deepseekModel = "gpt://folder-1/deepseek-v4-flash/latest",
+    requests: Array<{
     body: Record<string, unknown>;
     authorization: string;
     project: string;
-  }> = [];
-  const aiFetch: typeof fetch = async (_url, init) => {
-    const headers = new Headers(init?.headers),
-      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+  }> = [],
+    modelRequests: Array<{ authorization: string; project: string }> = [];
+  const aiFetch: typeof fetch = async (url, init) => {
+    const headers = new Headers(init?.headers);
+    if (String(url).endsWith("/models")) {
+      modelRequests.push({
+        authorization: headers.get("Authorization") || "",
+        project: headers.get("x-project") || "",
+      });
+      return Response.json({
+        object: "list",
+        data: [
+          { id: "emb://folder-1/text-embeddings/latest", owned_by: "Yandex" },
+          { id: yandexModel, owned_by: "Yandex" },
+          { id: deepseekModel, owned_by: "Yandex" },
+        ],
+      });
+    }
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requests.push({
       body,
       authorization: headers.get("Authorization") || "",
@@ -66,17 +83,24 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(initial.configured, false);
     assert.equal(initial.apiKeyConfigured, false);
     assert.equal(initial.folderConfigured, false);
-    assert.equal(initial.model, "yandexgpt-5.1");
-    assert.ok(
-      initial.models.some(
-        (item: { id: string }) => item.id === "aliceai-llm-flash",
-      ),
+    assert.equal(initial.model, "");
+    assert.deepEqual(initial.models, []);
+
+    const discoveredResponse = await fetch(base + "/api/admin/ai/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folderId: "folder-1", apiKey: secret }),
+    });
+    assert.equal(discoveredResponse.status, 200);
+    const discoveredText = await discoveredResponse.text(),
+      discovered = JSON.parse(discoveredText);
+    assert.equal(discoveredText.includes(secret), false);
+    assert.deepEqual(
+      discovered.models.map((item: { id: string }) => item.id),
+      [deepseekModel, yandexModel],
     );
-    assert.ok(
-      initial.models.some(
-        (item: { id: string }) => item.id === "deepseek-v4-flash",
-      ),
-    );
+    assert.equal(modelRequests.at(-1)?.authorization, "Api-Key " + secret);
+    assert.equal(modelRequests.at(-1)?.project, "folder-1");
 
     const savedResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
@@ -85,7 +109,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
         enabled: true,
         apiKey: secret,
         folderId: "folder-1",
-        model: "yandexgpt-5.1",
+        model: yandexModel,
         requestsPerMinute: 1,
         dailyRequests: 10,
         dailyTokens: 1000,
@@ -101,8 +125,12 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(saved.apiKeySource, "database");
     assert.equal(saved.folderId, "folder-1");
     assert.equal(saved.folderSource, "database");
-    assert.equal(saved.model, "yandexgpt-5.1");
+    assert.equal(saved.model, yandexModel);
     assert.equal(saved.modelSource, "database");
+    assert.deepEqual(
+      saved.models.map((item: { id: string }) => item.id),
+      [deepseekModel, yandexModel],
+    );
     assert.deepEqual(saved.limits, {
       requestsPerMinute: 1,
       dailyRequests: 10,
@@ -136,7 +164,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(requests.at(-1)?.project, "folder-1");
     assert.equal(
       requests.at(-1)?.body.model,
-      "gpt://folder-1/yandexgpt-5.1",
+      yandexModel,
     );
 
     const chat = await fetch(base + "/api/ai/chat", {
@@ -150,7 +178,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(chat.status, 200);
     assert.equal(
       requests.at(-1)?.body.model,
-      "gpt://folder-1/yandexgpt-5.1",
+      yandexModel,
     );
 
     const usageStatus = await fetch(base + "/api/admin/ai").then((response) =>
@@ -177,7 +205,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
       body: JSON.stringify({
         enabled: false,
         folderId: "folder-1",
-        model: "deepseek-v4-flash",
+        model: deepseekModel,
         requestsPerMinute: 1,
         dailyRequests: 10,
         dailyTokens: 1000,
@@ -188,7 +216,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(disabled.enabled, false);
     assert.equal(disabled.active, false);
     assert.equal(disabled.configured, true);
-    assert.equal(disabled.model, "deepseek-v4-flash");
+    assert.equal(disabled.model, deepseekModel);
 
     const clearedResponse = await fetch(base + "/api/admin/ai", {
       method: "PUT",
@@ -197,7 +225,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
         enabled: false,
         clearApiKey: true,
         folderId: "folder-1",
-        model: "deepseek-v4-flash",
+        model: deepseekModel,
         requestsPerMinute: 1,
         dailyRequests: 10,
         dailyTokens: 1000,

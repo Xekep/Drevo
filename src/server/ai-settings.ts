@@ -3,45 +3,6 @@ import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 import { decryptAiSecret, encryptAiSecret } from "./ai-secret.ts";
 
-export const AI_STUDIO_MODELS = [
-  { id: "aliceai-llm", label: "Alice AI LLM", context: "128K" },
-  {
-    id: "aliceai-llm-flash",
-    label: "Alice AI LLM Flash",
-    context: "64K",
-  },
-  { id: "yandexgpt-5.1", label: "YandexGPT Pro 5.1", context: "32K" },
-  { id: "yandexgpt-5-pro", label: "YandexGPT Pro 5", context: "32K" },
-  { id: "yandexgpt-5-lite", label: "YandexGPT Lite 5", context: "32K" },
-  {
-    id: "deepseek-v4-flash",
-    label: "DeepSeek V4 Flash",
-    context: "1M",
-  },
-  {
-    id: "qwen3-235b-a22b-fp8",
-    label: "Qwen3 235B",
-    context: "256K",
-  },
-  {
-    id: "qwen3.6-35b-a3b",
-    label: "Qwen3.6 35B",
-    context: "256K",
-  },
-  { id: "gpt-oss-120b", label: "gpt-oss-120b", context: "128K" },
-  { id: "gpt-oss-20b", label: "gpt-oss-20b", context: "128K" },
-  {
-    id: "yandexgpt/rc",
-    label: "YandexGPT Pro 5.1 · legacy rc",
-    context: "32K",
-  },
-  {
-    id: "yandexgpt/latest",
-    label: "YandexGPT Pro 5 · legacy latest",
-    context: "32K",
-  },
-] as const;
-
 export type AiSettings = {
   enabled: boolean;
   model: string;
@@ -66,10 +27,10 @@ function modelValue(value: unknown) {
   if (typeof value !== "string") throw new Error("Укажите модель AI Studio");
   const model = value.trim();
   if (
-    model &&
-    !AI_STUDIO_MODELS.some((candidate) => candidate.id === model)
+    model.length > 512 ||
+    (model && !/^(?:gpt:\/\/[a-zA-Z0-9_-]+\/)?[a-zA-Z0-9._/@-]+$/.test(model))
   )
-    throw new Error("Выберите модель из списка AI Studio");
+    throw new Error("Некорректный идентификатор модели AI Studio");
   return model;
 }
 
@@ -300,7 +261,7 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
     envModel = process.env.YANDEX_AI_MODEL?.trim() || "",
     apiKey = savedSecret.value || envApiKey,
     folderId = stored.folderId || envFolderId,
-    model = stored.model || envModel || "yandexgpt-5.1",
+    model = stored.model || envModel,
     modelUri = model.startsWith("gpt://")
       ? model
       : folderId
@@ -309,7 +270,8 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
     baseUrl = (
       process.env.YANDEX_AI_BASE_URL || "https://ai.api.cloud.yandex.net/v1"
     ).replace(/\/$/, ""),
-    configured = !!apiKey && (!!folderId || model.startsWith("gpt://"));
+    configured =
+      !!apiKey && !!model && (!!folderId || model.startsWith("gpt://"));
   return {
     enabled: stored.enabled,
     active: stored.enabled && configured,
@@ -365,7 +327,6 @@ export function publicAiStatus(settings: ReturnType<typeof aiSettingsStore>) {
     model: runtime.model,
     modelOverride: runtime.modelOverride,
     modelSource: runtime.modelSource,
-    models: AI_STUDIO_MODELS,
     limits: runtime.limits,
     baseUrl: runtime.baseUrl,
   };

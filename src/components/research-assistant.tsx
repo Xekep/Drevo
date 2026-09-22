@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Check, ExternalLink, Send, Sparkles, UserRound, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import { Check, Send, Sparkles, X } from "lucide-react";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type AnswerReference =
   | { kind: "person"; id: string; label: string }
+  | { kind: "photo"; id: string; label: string }
   | {
       kind: "source";
       personId: string;
@@ -14,7 +23,165 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   references?: AnswerReference[];
+  suggestionIds?: string[];
 };
+type UiAction =
+  | { type: "focus_people"; personIds: string[] }
+  | { type: "open_person"; personId: string }
+  | { type: "open_photo"; photoId: string };
+
+type PanelPosition = { left: number; top: number };
+
+let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | undefined;
+
+function MermaidDiagram({ source }: { source: string }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    mermaidModule ||= import("mermaid").then((module) => {
+      module.default.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: "neutral",
+        fontFamily: "inherit",
+      });
+      return module.default;
+    });
+    void mermaidModule
+      .then((mermaid) =>
+        mermaid.render(
+          `drevo-ai-${crypto.randomUUID().replaceAll("-", "")}`,
+          source,
+        ),
+      )
+      .then(({ svg }) => {
+        if (active && host.current) host.current.innerHTML = svg;
+      })
+      .catch(() => {
+        if (active) setError("Не удалось построить схему");
+      });
+    return () => {
+      active = false;
+    };
+  }, [source]);
+
+  return error ? (
+    <pre className="research-mermaid-error">{error}</pre>
+  ) : (
+    <div
+      ref={host}
+      className="research-mermaid"
+      role="img"
+      aria-label="Схема, построенная ИИ-исследователем"
+    />
+  );
+}
+
+function escapePattern(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function markdownAnswer(message: Message) {
+  const placeholders: string[] = [];
+  let value = message.content.replace(
+    /\[\[(person|choose-person):([^|\]\s]+)\|([^\]]+)\]\]/g,
+    (_whole, kind: string, id: string, label: string) => {
+      const token = `DREVOREF${placeholders.length}TOKEN`;
+      placeholders.push(
+        `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-${kind}-${encodeURIComponent(id)})`,
+      );
+      return token;
+    },
+  );
+  const represented = new Set(
+    [...value.matchAll(/#drevo-(?:person|choose-person)-([^\s)]+)/g)].map(
+      (match) => decodeURIComponent(match[1]),
+    ),
+  );
+  for (const reference of message.references || []) {
+    if (reference.kind === "person" && represented.has(reference.id)) continue;
+    const href =
+      reference.kind === "person"
+        ? `#drevo-person-${encodeURIComponent(reference.id)}`
+        : reference.kind === "photo"
+          ? `#drevo-photo-${encodeURIComponent(reference.id)}`
+          : reference.url ||
+            `#drevo-person-${encodeURIComponent(reference.personId)}`;
+    const pattern = new RegExp(escapePattern(reference.label), "giu");
+    value = value.replace(
+      pattern,
+      (label) => `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`,
+    );
+  }
+  placeholders.forEach((markdown, index) => {
+    value = value.replace(`DREVOREF${index}TOKEN`, markdown);
+  });
+  return value;
+}
+
+function MarkdownAnswer({
+  message,
+  onPerson,
+  onChoosePerson,
+  onPhoto,
+}: {
+  message: Message;
+  onPerson: (id: string) => void;
+  onChoosePerson: (id: string, label: string) => void;
+  onPhoto: (id: string) => void;
+}) {
+  return (
+    <div className="research-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        urlTransform={(url) =>
+          url.startsWith("#drevo-") ? url : defaultUrlTransform(url)
+        }
+        components={{
+          a: ({ href = "", children }) => {
+            const match =
+              /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
+            if (!match)
+              return (
+                <a href={href} target="_blank" rel="noreferrer">
+                  {children}
+                </a>
+              );
+            const id = decodeURIComponent(match[2]),
+              label = String(children);
+            return (
+              <button
+                type="button"
+                className="research-inline-reference"
+                onClick={() =>
+                  match[1] === "photo"
+                    ? onPhoto(id)
+                    : match[1] === "choose-person"
+                      ? onChoosePerson(id, label)
+                      : onPerson(id)
+                }
+              >
+                {children}
+              </button>
+            );
+          },
+          code: ({ className, children, ...props }) =>
+            className === "language-mermaid" ? (
+              <MermaidDiagram source={String(children).trim()} />
+            ) : (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            ),
+        }}
+      >
+        {markdownAnswer(message)}
+      </ReactMarkdown>
+    </div>
+  );
+}
 type SuggestionValue = string | boolean | undefined;
 type SuggestionBase = {
   id: string;
@@ -23,6 +190,12 @@ type SuggestionBase = {
   evidence: string[];
 };
 type ResearchSuggestion =
+  | (SuggestionBase & {
+      kind: "person_create";
+      payload: {
+        person: Record<string, SuggestionValue>;
+      };
+    })
   | (SuggestionBase & {
       kind: "person_update";
       payload: {
@@ -99,6 +272,31 @@ function SuggestionDetails({
 }: {
   suggestion: ResearchSuggestion;
 }) {
+  if (suggestion.kind === "person_create")
+    return (
+      <ul>
+        {Object.entries(suggestion.payload.person)
+          .filter(
+            ([field, value]) =>
+              [
+                "surname",
+                "name",
+                "patronymic",
+                "birth",
+                "birthPlace",
+                "occupation",
+                "biography",
+              ].includes(field) && value,
+          )
+          .map(([field, value]) => (
+            <li key={field}>
+              <b>{fieldLabels[field] || field}</b>
+              <span>{valueLabel(value)}</span>
+            </li>
+          ))}
+      </ul>
+    );
+
   if (suggestion.kind === "person_update")
     return (
       <ul>
@@ -163,18 +361,75 @@ function SuggestionDetails({
   );
 }
 
+function SuggestionCard({
+  suggestion,
+  disabled,
+  onReview,
+}: {
+  suggestion: ResearchSuggestion;
+  disabled: boolean;
+  onReview: (id: string, action: "accept" | "reject") => void;
+}) {
+  return (
+    <div className="research-suggestion">
+      <strong>
+        {suggestion.kind === "relation"
+          ? `${suggestion.fromName} ↔ ${suggestion.toName}`
+          : suggestion.personName}
+      </strong>
+      <p>{suggestion.reason}</p>
+      <SuggestionDetails suggestion={suggestion} />
+      {suggestion.evidence.length > 0 && (
+        <details>
+          <summary>Основания</summary>
+          <ul>
+            {suggestion.evidence.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <footer aria-label="Подтвердить изменение">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={disabled}
+          aria-label="Принять предложение"
+          title="Принять"
+          onClick={() => onReview(suggestion.id, "accept")}
+        >
+          <Check size={17} />
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label="Отклонить предложение"
+          title="Отклонить"
+          onClick={() => onReview(suggestion.id, "reject")}
+        >
+          <X size={17} />
+        </button>
+      </footer>
+    </div>
+  );
+}
+
 export function ResearchAssistant({
   view,
   personIds,
   canEdit,
   onChanged,
   onPerson,
+  onPhoto,
+  onReveal,
 }: {
   view: string;
   personIds: string[];
   canEdit: boolean;
   onChanged: () => void;
   onPerson: (id: string) => void;
+  onPhoto: (id: string) => void;
+  onReveal: (ids: string[]) => void;
 }) {
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
@@ -184,9 +439,75 @@ export function ResearchAssistant({
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
     [reviewBusy, setReviewBusy] = useState(""),
+    [reviewedSuggestions, setReviewedSuggestions] = useState<
+      Record<string, "accepted" | "rejected">
+    >({}),
     [streamStatus, setStreamStatus] = useState(""),
-    [error, setError] = useState("");
-  const end = useRef<HTMLDivElement>(null);
+    [error, setError] = useState(""),
+    [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
+  const end = useRef<HTMLDivElement>(null),
+    panel = useRef<HTMLElement>(null),
+    drag = useRef<{
+      pointerId: number;
+      offsetX: number;
+      offsetY: number;
+    } | null>(null);
+
+  const clampPanelPosition = useCallback((left: number, top: number) => {
+    const rect = panel.current?.getBoundingClientRect(),
+      width = rect?.width || 430,
+      height = rect?.height || 680,
+      margin = 8;
+    return {
+      left: Math.min(Math.max(margin, left), Math.max(margin, innerWidth - width - margin)),
+      top: Math.min(Math.max(margin, top), Math.max(margin, innerHeight - height - margin)),
+    };
+  }, []);
+
+  useEffect(() => {
+    const keepVisible = () =>
+      setPanelPosition((current) =>
+        current ? clampPanelPosition(current.left, current.top) : current,
+      );
+    window.addEventListener("resize", keepVisible);
+    return () => window.removeEventListener("resize", keepVisible);
+  }, [clampPanelPosition]);
+
+  const startDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (
+      event.button !== 0 ||
+      innerWidth <= 600 ||
+      (event.target as HTMLElement).closest("button, a, input, select, textarea")
+    )
+      return;
+    const rect = panel.current?.getBoundingClientRect();
+    if (!rect) return;
+    drag.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    setPanelPosition({ left: rect.left, top: rect.top });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const state = drag.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    setPanelPosition(
+      clampPanelPosition(
+        event.clientX - state.offsetX,
+        event.clientY - state.offsetY,
+      ),
+    );
+  };
+
+  const stopDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (drag.current?.pointerId !== event.pointerId) return;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -287,6 +608,8 @@ export function ResearchAssistant({
           answer?: string;
           error?: string;
           references?: AnswerReference[];
+          suggestionIds?: string[];
+          uiActions?: UiAction[];
         };
         if (parsed.event === "status") {
           if (data.message) setStreamStatus(data.message);
@@ -309,7 +632,16 @@ export function ResearchAssistant({
             references: Array.isArray(data.references)
               ? data.references
               : item.references,
+            suggestionIds: Array.isArray(data.suggestionIds)
+              ? data.suggestionIds
+              : item.suggestionIds,
           }));
+          for (const action of data.uiActions || []) {
+            setOpen(false);
+            if (action.type === "focus_people") onReveal(action.personIds);
+            else if (action.type === "open_person") onPerson(action.personId);
+            else if (action.type === "open_photo") onPhoto(action.photoId);
+          }
           return;
         }
         if (parsed.event === "error")
@@ -363,6 +695,10 @@ export function ResearchAssistant({
       setSuggestions((current) =>
         current.filter((suggestion) => suggestion.id !== id),
       );
+      setReviewedSuggestions((current) => ({
+        ...current,
+        [id]: action === "accept" ? "accepted" : "rejected",
+      }));
       if (action === "accept") onChanged();
     } catch (reason) {
       setError((reason as Error).message);
@@ -373,27 +709,45 @@ export function ResearchAssistant({
 
   return (
     <>
-      <button
-        type="button"
-        className="research-assistant-trigger"
-        aria-expanded={open}
-        aria-label="Открыть ИИ-исследователя"
-        onClick={() => void openAssistant()}
-      >
-        <Sparkles size={18} />
-        ИИ-исследователь
-      </button>
+      {!open && (
+        <button
+          type="button"
+          className="research-assistant-trigger"
+          aria-expanded={false}
+          aria-label="Открыть ИИ-исследователя"
+          title="ИИ-исследователь"
+          onClick={() => void openAssistant()}
+        >
+          <Sparkles size={19} />
+        </button>
+      )}
       {open && (
-        <aside className="research-assistant" aria-label="ИИ-исследователь">
-          <header>
+        <aside
+          ref={panel}
+          className="research-assistant"
+          aria-label="ИИ-исследователь"
+          style={
+            panelPosition
+              ? {
+                  left: panelPosition.left,
+                  top: panelPosition.top,
+                  right: "auto",
+                  bottom: "auto",
+                }
+              : undefined
+          }
+        >
+          <header
+            onPointerDown={startDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={stopDrag}
+            onPointerCancel={stopDrag}
+            title="Перетащите окно"
+          >
             <div>
               <Sparkles size={19} />
               <span>
                 <b>ИИ-исследователь</b>
-                <small>
-                  Анализирует архив; изменения применяются только после
-                  подтверждения
-                </small>
               </span>
             </div>
             <button
@@ -410,47 +764,21 @@ export function ResearchAssistant({
                 className="research-suggestions"
                 aria-label="Предложения ИИ"
               >
-                <h3>Предложения для проверки</h3>
-                {suggestions.map((suggestion) => (
-                  <div className="research-suggestion" key={suggestion.id}>
-                    <strong>
-                      {suggestion.kind === "relation"
-                        ? `${suggestion.fromName} ↔ ${suggestion.toName}`
-                        : suggestion.personName}
-                    </strong>
-                    <p>{suggestion.reason}</p>
-                    <SuggestionDetails suggestion={suggestion} />
-                    {suggestion.evidence.length > 0 && (
-                      <details>
-                        <summary>Основания</summary>
-                        <ul>
-                          {suggestion.evidence.map((item, index) => (
-                            <li key={index}>{item}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                    <footer>
-                      <button
-                        type="button"
-                        className="primary-action"
-                        disabled={!!reviewBusy}
-                        onClick={() => void review(suggestion.id, "accept")}
-                      >
-                        <Check size={15} />
-                        Принять
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!!reviewBusy}
-                        onClick={() => void review(suggestion.id, "reject")}
-                      >
-                        <X size={15} />
-                        Отклонить
-                      </button>
-                    </footer>
-                  </div>
-                ))}
+                {suggestions
+                  .filter(
+                    (suggestion) =>
+                      !messages.some((message) =>
+                        message.suggestionIds?.includes(suggestion.id),
+                      ),
+                  )
+                  .map((suggestion) => (
+                    <SuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      disabled={!!reviewBusy}
+                      onReview={(id, action) => void review(id, action)}
+                    />
+                  ))}
               </section>
             )}
             {!messages.length && (
@@ -526,56 +854,48 @@ export function ResearchAssistant({
             {messages.map((message, index) => (
               <article key={index} className={`is-${message.role}`}>
                 <small>{message.role === "user" ? "Вы" : "Drevo AI"}</small>
-                <p>{message.content}</p>
+                {message.role === "assistant" ? (
+                  <MarkdownAnswer
+                    message={message}
+                    onPerson={(id) => {
+                      setOpen(false);
+                      onPerson(id);
+                    }}
+                    onChoosePerson={(id, label) =>
+                      void send(
+                        `Выбран человек: ${label} (personId: ${id}). Продолжи мой предыдущий запрос для этого человека.`,
+                      )
+                    }
+                    onPhoto={(id) => {
+                      setOpen(false);
+                      onPhoto(id);
+                    }}
+                  />
+                ) : (
+                  <p>{message.content}</p>
+                )}
                 {message.role === "assistant" &&
-                  message.references &&
-                  message.references.length > 0 && (
-                    <div
-                      className="research-answer-references"
-                      aria-label="Связанные записи архива"
-                    >
-                      {message.references.map((reference, referenceIndex) =>
-                        reference.kind === "person" ? (
-                          <button
-                            type="button"
-                            key={`person:${reference.id}`}
-                            onClick={() => {
-                              setOpen(false);
-                              onPerson(reference.id);
-                            }}
-                          >
-                            <UserRound size={13} />
-                            {reference.label}
-                          </button>
-                        ) : reference.url ? (
-                          <a
-                            key={`source:${reference.personId}:${referenceIndex}`}
-                            href={reference.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={reference.reference || reference.label}
-                          >
-                            <BookOpen size={13} />
-                            {reference.label}
-                            <ExternalLink size={11} />
-                          </a>
-                        ) : (
-                          <button
-                            type="button"
-                            key={`source:${reference.personId}:${referenceIndex}`}
-                            title={reference.reference || reference.label}
-                            onClick={() => {
-                              setOpen(false);
-                              onPerson(reference.personId);
-                            }}
-                          >
-                            <BookOpen size={13} />
-                            {reference.label}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  )}
+                  message.suggestionIds?.map((id) => {
+                    const suggestion = suggestions.find(
+                      (item) => item.id === id,
+                    );
+                    return suggestion ? (
+                      <SuggestionCard
+                        key={id}
+                        suggestion={suggestion}
+                        disabled={!!reviewBusy}
+                        onReview={(suggestionId, action) =>
+                          void review(suggestionId, action)
+                        }
+                      />
+                    ) : reviewedSuggestions[id] ? (
+                      <p className="research-suggestion-result" key={id}>
+                        {reviewedSuggestions[id] === "accepted"
+                          ? "✓ Изменение применено"
+                          : "× Предложение отклонено"}
+                      </p>
+                    ) : null;
+                  })}
               </article>
             ))}
             {busy && (
