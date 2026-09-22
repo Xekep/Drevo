@@ -249,7 +249,7 @@ function scorePair(a: Person, b: Person): PossibleDuplicate | null {
     reasons.push("совпадает супруг");
   }
 
-  if (score < 65) return null;
+  if (score < 70) return null;
   return {
     score: Math.min(100, score),
     confidence: score >= 82 ? "high" : "medium",
@@ -348,7 +348,7 @@ export function findPossibleDuplicates(
   return {
     matches,
     total: matches.length,
-    threshold: 65,
+    threshold: 70,
     note:
       "Это вероятные совпадения для ручной проверки, а не утверждение, что записи относятся к одному человеку.",
   };
