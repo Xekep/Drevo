@@ -1,21 +1,59 @@
-import { useEffect, useRef, useState } from "react";
-import { Send, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Send, Sparkles, X } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
+type SuggestionValue = string | boolean | undefined;
+type ResearchSuggestion = {
+  id: string;
+  personName: string;
+  reason: string;
+  evidence: string[];
+  payload: {
+    before: Record<string, SuggestionValue>;
+    changes: Record<string, Exclude<SuggestionValue, undefined>>;
+  };
+};
+
+const fieldLabels: Record<string, string> = {
+  surname: "Фамилия",
+  name: "Имя",
+  patronymic: "Отчество",
+  birth: "Дата рождения",
+  death: "Дата смерти",
+  deceased: "Умер",
+  birthPlace: "Место рождения",
+  deathPlace: "Место смерти",
+  maidenName: "Фамилия при рождении",
+  occupation: "Занятие",
+  biography: "Биография",
+  parentageComplete: "Все родители известны",
+};
+
+function valueLabel(value: SuggestionValue) {
+  if (value === undefined || value === "") return "не указано";
+  if (typeof value === "boolean") return value ? "да" : "нет";
+  return value;
+}
 
 export function ResearchAssistant({
   view,
   personIds,
+  canEdit,
+  onChanged,
 }: {
   view: string;
   personIds: string[];
+  canEdit: boolean;
+  onChanged: () => void;
 }) {
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(""),
     [branchDepth, setBranchDepth] = useState(4),
     [messages, setMessages] = useState<Message[]>([]),
+    [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
+    [reviewBusy, setReviewBusy] = useState(""),
     [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null);
 
@@ -32,9 +70,30 @@ export function ResearchAssistant({
     return () => controller.abort();
   }, []);
 
+  const loadSuggestions = useCallback(async () => {
+    if (!canEdit) {
+      setSuggestions([]);
+      return;
+    }
+    const response = await fetch("/api/research/suggestions", {
+        cache: "no-store",
+      }),
+      data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error || "Не удалось загрузить предложения");
+    setSuggestions(data.suggestions || []);
+  }, [canEdit]);
+
+  useEffect(() => {
+    if (!open || !canEdit) return;
+    void loadSuggestions().catch((reason) =>
+      setError((reason as Error).message),
+    );
+  }, [open, canEdit, loadSuggestions]);
+
   useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "end" });
-  }, [open, messages, busy]);
+  }, [open, messages, busy, suggestions]);
 
   if (!enabled) return null;
 
@@ -63,10 +122,34 @@ export function ResearchAssistant({
         ...current,
         { role: "assistant", content: data.answer },
       ]);
+      if (canEdit) await loadSuggestions();
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function review(id: string, action: "accept" | "reject") {
+    if (reviewBusy) return;
+    setReviewBusy(id);
+    setError("");
+    try {
+      const response = await fetch(
+          `/api/research/suggestions/${encodeURIComponent(id)}/${action}`,
+          { method: "POST" },
+        ),
+        data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error || "Не удалось обработать предложение");
+      setSuggestions((current) =>
+        current.filter((suggestion) => suggestion.id !== id),
+      );
+      if (action === "accept") onChanged();
+    } catch (reason) {
+      setError((reason as Error).message);
+    } finally {
+      setReviewBusy("");
     }
   }
 
@@ -89,7 +172,10 @@ export function ResearchAssistant({
               <Sparkles size={19} />
               <span>
                 <b>ИИ-исследователь</b>
-                <small>Анализирует данные древа, не изменяя архив</small>
+                <small>
+                  Анализирует архив; изменения применяются только после
+                  подтверждения
+                </small>
               </span>
             </div>
             <button
@@ -101,6 +187,63 @@ export function ResearchAssistant({
             </button>
           </header>
           <div className="research-assistant-messages">
+            {suggestions.length > 0 && (
+              <section
+                className="research-suggestions"
+                aria-label="Предложения ИИ"
+              >
+                <h3>Предложения для проверки</h3>
+                {suggestions.map((suggestion) => (
+                  <div className="research-suggestion" key={suggestion.id}>
+                    <strong>{suggestion.personName}</strong>
+                    <p>{suggestion.reason}</p>
+                    <ul>
+                      {Object.entries(suggestion.payload.changes).map(
+                        ([field, value]) => (
+                          <li key={field}>
+                            <b>{fieldLabels[field] || field}</b>
+                            <span>
+                              {valueLabel(suggestion.payload.before[field])}
+                              {" → "}
+                              {valueLabel(value)}
+                            </span>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                    {suggestion.evidence.length > 0 && (
+                      <details>
+                        <summary>Основания</summary>
+                        <ul>
+                          {suggestion.evidence.map((item, index) => (
+                            <li key={index}>{item}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    <footer>
+                      <button
+                        type="button"
+                        className="primary-action"
+                        disabled={!!reviewBusy}
+                        onClick={() => void review(suggestion.id, "accept")}
+                      >
+                        <Check size={15} />
+                        Принять
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!reviewBusy}
+                        onClick={() => void review(suggestion.id, "reject")}
+                      >
+                        <X size={15} />
+                        Отклонить
+                      </button>
+                    </footer>
+                  </div>
+                ))}
+              </section>
+            )}
             {!messages.length && (
               <div className="research-assistant-empty">
                 <p>
@@ -135,13 +278,25 @@ export function ResearchAssistant({
                     </button>
                   </div>
                 )}
-                <button onClick={() => void send("Что в этой ветке стоит проверить в первую очередь?")}>
+                <button
+                  onClick={() =>
+                    void send("Что в этой ветке стоит проверить в первую очередь?")
+                  }
+                >
                   Что проверить?
                 </button>
-                <button onClick={() => void send("Найди противоречия и возможные дубли в архиве.")}>
+                <button
+                  onClick={() =>
+                    void send("Найди противоречия и возможные дубли в архиве.")
+                  }
+                >
                   Проверить данные
                 </button>
-                <button onClick={() => void send("Какие сведения в архиве заполнены хуже всего?")}>
+                <button
+                  onClick={() =>
+                    void send("Какие сведения в архиве заполнены хуже всего?")
+                  }
+                >
                   Найти пробелы
                 </button>
               </div>
