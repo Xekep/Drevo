@@ -1,5 +1,30 @@
 import { expect, test } from "@playwright/test";
 
+test("настройка AI Studio содержит ключ, Folder ID и список моделей", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "MCP и ИИ" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Yandex AI Studio" }),
+  ).toBeVisible();
+
+  const apiKey = page.getByLabel("API-ключ"),
+    folderId = page.getByLabel("Folder ID"),
+    model = page.getByLabel("Модель");
+
+  await expect(apiKey).toHaveAttribute("type", "password");
+  await expect(folderId).toBeVisible();
+  await expect(model).toHaveJSProperty("tagName", "SELECT");
+  await expect(model.locator("option")).toContainText([
+    "Alice AI LLM",
+    "YandexGPT Pro 5.1",
+    "DeepSeek V4 Flash",
+  ]);
+});
+
 test("администратор выбирает себя в древе и простую область доступа", async ({
   page,
 }, testInfo) => {

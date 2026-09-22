@@ -674,3 +674,36 @@
 .mcp-usage-list > p {
   margin: 5px 0 0;
 }
+
+.ai-credential-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ai-credential-settings legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ai-credential-settings > label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.ai-credential-settings > label:first-of-type,
+.ai-credential-settings > .setting-toggle,
+.ai-credential-settings > .form-error {
+  grid-column: 1 / -1;
+}
+.ai-credential-settings input,
+.ai-credential-settings select {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .ai-credential-settings {
+    grid-template-columns: 1fr;
+  }
+}

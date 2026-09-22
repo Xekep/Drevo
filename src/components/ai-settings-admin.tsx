@@ -6,10 +6,21 @@ type AiAdminStatus = {
   active: boolean;
   configured: boolean;
   apiKeyConfigured: boolean;
+  apiKeyStored: boolean;
+  apiKeySource: "database" | "environment" | "none";
+  credentialError: string;
+  folderId: string;
+  folderIdOverride: string;
   folderConfigured: boolean;
+  folderSource: "database" | "environment" | "none";
   model: string;
   modelOverride: string;
   modelSource: "database" | "environment" | "default";
+  models: Array<{
+    id: string;
+    label: string;
+    context: string;
+  }>;
   limits: {
     requestsPerMinute: number;
     dailyRequests: number;
@@ -44,7 +55,10 @@ type AiAdminStatus = {
 export function AiSettingsAdmin() {
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
-    [model, setModel] = useState(""),
+    [apiKey, setApiKey] = useState(""),
+    [clearApiKey, setClearApiKey] = useState(false),
+    [folderId, setFolderId] = useState(""),
+    [model, setModel] = useState("yandexgpt-5.1"),
     [requestsPerMinute, setRequestsPerMinute] = useState(6),
     [dailyRequests, setDailyRequests] = useState(100),
     [dailyTokens, setDailyTokens] = useState(250000),
@@ -56,7 +70,10 @@ export function AiSettingsAdmin() {
   const applyStatus = useCallback((next: AiAdminStatus) => {
     setStatus(next);
     setEnabled(next.enabled);
-    setModel(next.modelOverride || "");
+    setFolderId(next.folderIdOverride || next.folderId || "");
+    setModel(next.modelOverride || next.model || "yandexgpt-5.1");
+    setApiKey("");
+    setClearApiKey(false);
     setRequestsPerMinute(next.limits.requestsPerMinute);
     setDailyRequests(next.limits.dailyRequests);
     setDailyTokens(next.limits.dailyTokens);
@@ -95,6 +112,9 @@ export function AiSettingsAdmin() {
           body: JSON.stringify({
             enabled,
             model,
+            folderId,
+            ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+            clearApiKey,
             requestsPerMinute,
             dailyRequests,
             dailyTokens,
@@ -168,16 +188,24 @@ export function AiSettingsAdmin() {
           <div className="ai-config-status">
             <div>
               <b>API-ключ</b>
-              <span>{status.apiKeyConfigured ? "Задан на сервере" : "Не задан"}</span>
+              <span>
+                {status.apiKeyConfigured
+                  ? status.apiKeySource === "database"
+                    ? "Сохранён в Drevo"
+                    : "Из окружения сервера"
+                  : "Не задан"}
+              </span>
             </div>
             <div>
               <b>Folder ID</b>
               <span>
                 {status.folderConfigured
-                  ? "Задан на сервере"
-                  : status.model.startsWith("gpt://")
-                    ? "Не требуется для полного URI"
-                    : "Не задан"}
+                  ? `${status.folderId} · ${
+                      status.folderSource === "database"
+                        ? "Drevo"
+                        : "окружение"
+                    }`
+                  : "Не задан"}
               </span>
             </div>
             <div>
@@ -211,20 +239,92 @@ export function AiSettingsAdmin() {
               />
             </label>
 
-            <label htmlFor="ai-model">
-              Модель
-              <input
-                id="ai-model"
-                value={model}
-                maxLength={300}
-                placeholder={status.model}
-                onChange={(event) => setModel(event.target.value)}
-              />
-              <small>
-                Оставьте пустым, чтобы использовать YANDEX_AI_MODEL или
-                yandexgpt/rc. Можно указать полный gpt:// URI.
-              </small>
-            </label>
+            <fieldset className="ai-credential-settings">
+              <legend>Подключение к Yandex AI Studio</legend>
+
+              <label htmlFor="ai-api-key">
+                API-ключ
+                <input
+                  id="ai-api-key"
+                  type="password"
+                  autoComplete="new-password"
+                  value={apiKey}
+                  placeholder={
+                    status.apiKeyConfigured
+                      ? "Оставьте пустым, чтобы не менять"
+                      : "AQVN…"
+                  }
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    if (event.target.value) setClearApiKey(false);
+                  }}
+                />
+                <small>
+                  Ключ отправляется только на сервер и хранится там
+                  зашифрованным. Обратно в браузер он не возвращается.
+                </small>
+              </label>
+
+              {status.apiKeyStored && (
+                <label
+                  className="setting-toggle"
+                  htmlFor="ai-clear-api-key"
+                  aria-label="Удалить сохранённый API-ключ"
+                >
+                  <span>
+                    <b>Удалить сохранённый ключ</b>
+                    <small>
+                      После сохранения Drevo снова использует ключ из окружения,
+                      если он там задан.
+                    </small>
+                  </span>
+                  <input
+                    id="ai-clear-api-key"
+                    type="checkbox"
+                    checked={clearApiKey}
+                    onChange={(event) => {
+                      setClearApiKey(event.target.checked);
+                      if (event.target.checked) setApiKey("");
+                    }}
+                  />
+                </label>
+              )}
+
+              <label htmlFor="ai-folder-id">
+                Folder ID
+                <input
+                  id="ai-folder-id"
+                  value={folderId}
+                  maxLength={128}
+                  placeholder="b1g…"
+                  onChange={(event) => setFolderId(event.target.value)}
+                />
+              </label>
+
+              <label htmlFor="ai-model">
+                Модель
+                <select
+                  id="ai-model"
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                >
+                  {!status.models.some((item) => item.id === model) && model && (
+                    <option value={model}>{model} · текущее значение</option>
+                  )}
+                  {status.models.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label} · контекст {item.context}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </fieldset>
+
+            {status.credentialError && (
+              <p className="form-error" role="alert">
+                {status.credentialError}
+              </p>
+            )}
 
             <fieldset className="ai-limit-settings">
               <legend>Лимиты</legend>

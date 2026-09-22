@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 11;
+export const ARCHIVE_SCHEMA_VERSION = 12;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -326,6 +326,19 @@ function migrate(db: DatabaseSync, target: number) {
           ADD COLUMN bound_user_id TEXT REFERENCES users(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS mcp_tokens_bound_user
           ON mcp_tokens(bound_user_id);
+      `);
+    return;
+  }
+  if (target === 12) {
+    if (!tableHasColumn(db, "ai_settings", "api_key_ciphertext"))
+      db.exec(`
+        ALTER TABLE ai_settings
+          ADD COLUMN api_key_ciphertext TEXT NOT NULL DEFAULT '';
+      `);
+    if (!tableHasColumn(db, "ai_settings", "folder_id"))
+      db.exec(`
+        ALTER TABLE ai_settings
+          ADD COLUMN folder_id TEXT NOT NULL DEFAULT '';
       `);
     return;
   }
