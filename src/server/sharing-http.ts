@@ -35,6 +35,7 @@ export function sharingHttp({
   visibility,
   publicOrigin,
   serveStatic,
+  aiFetch,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
@@ -43,12 +44,18 @@ export function sharingHttp({
   visibility: ReturnType<typeof settingsStore>;
   publicOrigin?: string;
   serveStatic: ReturnType<typeof productionStaticHttp>;
+  aiFetch?: typeof fetch;
 }) {
   const tokens = mcpTokenStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({ auth, tokens, publicOrigin });
   const researchMcp = mcpHttp({ archive, tokens });
-  const researchAi = aiResearchHttp({ archive, auth, publicOrigin });
+  const researchAi = aiResearchHttp({
+    archive,
+    auth,
+    publicOrigin,
+    fetcher: aiFetch,
+  });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
     auth,
