@@ -10,6 +10,7 @@ import {
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -56,10 +57,12 @@ export function mcpHttp({
   archive,
   tokens,
   usage,
+  publicOrigin,
 }: {
   archive: ReturnType<typeof openArchive>;
   tokens: ReturnType<typeof mcpTokenStore>;
   usage: ReturnType<typeof mcpUsageStore>;
+  publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -76,6 +79,11 @@ export function mcpHttp({
     url: URL,
   ): Promise<boolean> => {
     if (url.pathname !== "/mcp") return false;
+
+    if (!isSameOriginRequest(req, publicOrigin))
+      return json(res, 403, {
+        error: "Invalid origin",
+      });
 
     const grant = tokens.authenticate(req.headers.authorization);
     if (!grant) {
