@@ -161,3 +161,10 @@ Drevo проверяется в CI официальным TypeScript-клиен�
 Для AI Studio лучше выдавать отдельный токен с минимальными scopes и, если агент не должен видеть весь архив, привязать его к участнику с нужным `treeAccess`. Секрет MCP-токена показывается Drevo только при создании.
 
 CI подтверждает wire-совместимость с официальным MCP-клиентом. Отдельная живая проверка именно из Yandex AI Studio MCP Hub остаётся deployment-задачей, потому что для неё нужны публичный HTTPS endpoint и реальный секретный токен.
+
+
+### Проверка после выкладки
+
+Репозиторий содержит `ops/check-mcp.sh`. С реальным MCP-токеном он проверяет публичный HTTPS endpoint через modern `server/discover`, затем `tools/list` и `tools/call search_people`. Это отделяет ошибки приложения от проблем reverse proxy/TLS до подключения Yandex AI Studio MCP Hub.
+
+Production Nginx имеет отдельный `location = /mcp`: Authorization передаётся явно, buffering отключён, тайм-аут увеличен для Streamable HTTP.
