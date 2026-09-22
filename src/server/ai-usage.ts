@@ -31,11 +31,11 @@ export type AiUsageSummary = {
 };
 
 export class AiLimitError extends Error {
-  constructor(
-    message: string,
-    public retryAfterSeconds?: number,
-  ) {
+  retryAfterSeconds?: number;
+
+  constructor(message: string, retryAfterSeconds?: number) {
     super(message);
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
