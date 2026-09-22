@@ -178,6 +178,14 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     assert.equal(requests[0].headers.get("authorization"), "Api-Key test-key");
     assert.equal(requests[0].headers.get("openai-project"), "folder-1");
     assert.equal(requests[0].body.model, "gpt://folder-1/yandexgpt/rc");
+    const firstMessages = requests[0].body.messages as Array<{
+      role: string;
+      content?: string;
+    }>;
+    assert.match(
+      firstMessages[0].content || "",
+      /только если эта связь явно присутствует в photo\.documentedRelationships[\s\S]*Никогда не угадывай родство/,
+    );
 
     const secondMessages = requests[1].body.messages as Array<{
       role: string;

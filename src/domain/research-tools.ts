@@ -2,6 +2,7 @@ import { fullName } from "./dates.ts";
 import { analyzeFamilyInsights } from "./family-insights.ts";
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
+import { archiveConnections } from "./connections.ts";
 import type { Family, Person } from "./types.ts";
 
 const graphRelationLabels: Record<string, string> = {
@@ -148,7 +149,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "search_photos",
     description:
-      "Найти доступные пользователю фотографии архива по названию, месту, году, событию, описанию или отмеченному человеку.",
+      "Найти доступные пользователю фотографии архива по названию, месту, году, событию, описанию или отмеченному человеку. Поле documentedRelationships содержит только подтверждённые в древе связи между отмеченными людьми; не выводи другие связи по догадке.",
     scope: "sources:read",
     inputSchema: objectSchema({
       query: { type: "string", maxLength: 200 },
@@ -159,7 +160,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "get_photo",
     description:
-      "Получить метаданные доступной фотографии и список отмеченных на ней людей. Для анализа самого изображения после этого используй analyze_photo.",
+      "Получить метаданные доступной фотографии, список отмеченных людей и подтверждённые связи между ними в documentedRelationships. Пустой список означает, что тип связи неизвестен. Для анализа самого изображения после этого используй analyze_photo.",
     scope: "sources:read",
     inputSchema: objectSchema(
       { photoId: { type: "string", minLength: 1, maxLength: 200 } },
@@ -332,10 +333,100 @@ function personOrThrow(family: Family, id: string) {
   return person;
 }
 
+function relativeRole(type: string, direction: "from" | "to", person: Person) {
+  const female = person.sex === "f",
+    male = person.sex === "m",
+    child = female ? "дочь" : male ? "сын" : "ребёнок";
+  if (type === "parent")
+    return direction === "from"
+      ? female
+        ? "мать"
+        : male
+          ? "отец"
+          : "родитель"
+      : child;
+  if (type === "spouse") return female ? "супруга" : male ? "супруг" : "супруг";
+  if (type === "adoptive_parent")
+    return direction === "from"
+      ? female
+        ? "приёмная мать"
+        : male
+          ? "приёмный отец"
+          : "приёмный родитель"
+      : child;
+  if (type === "step_parent")
+    return direction === "from"
+      ? female
+        ? "мачеха"
+        : male
+          ? "отчим"
+          : "неродной родитель"
+      : female
+        ? "падчерица"
+        : male
+          ? "пасынок"
+          : "ребёнок супруга";
+  if (type === "godparent")
+    return direction === "from"
+      ? female
+        ? "крёстная мать"
+        : male
+          ? "крёстный отец"
+          : "крёстный родитель"
+      : female
+        ? "крестница"
+        : male
+          ? "крестник"
+          : "крестник";
+  if (type === "sworn_sibling")
+    return female
+      ? "названная сестра"
+      : male
+        ? "названный брат"
+        : "названный родственник";
+  if (type === "guardian")
+    return direction === "from"
+      ? "опекун"
+      : female
+        ? "подопечная"
+        : male
+          ? "подопечный"
+          : "подопечный";
+  if (type === "nurse") return direction === "from" ? "кормилица" : child;
+  return type;
+}
+
 function cleanPhoto(family: Family, photoId: string) {
   const photo = (family.photos || []).find((item) => item.id === photoId);
   if (!photo) throw new Error("Фотография не найдена или недоступна");
   const people = new Map(family.people.map((person) => [person.id, person]));
+  const taggedIds = new Set(photo.tags.map((tag) => tag.personId)),
+    documentedRelationships = archiveConnections(family)
+      .filter(
+        (connection) =>
+          taggedIds.has(connection.from) && taggedIds.has(connection.to),
+      )
+      .flatMap((connection) => {
+        const from = people.get(connection.from),
+          to = people.get(connection.to);
+        return from && to
+          ? [
+              {
+                type: connection.type,
+                from: {
+                  id: from.id,
+                  name: fullName(from),
+                  role: relativeRole(connection.type, "from", from),
+                },
+                to: {
+                  id: to.id,
+                  name: fullName(to),
+                  role: relativeRole(connection.type, "to", to),
+                },
+              },
+            ]
+          : [];
+      });
   return {
     id: photo.id,
     title: photo.title,
@@ -361,6 +452,7 @@ function cleanPhoto(family: Family, photoId: string) {
           ]
         : [];
     }),
+    documentedRelationships,
   };
 }
 

@@ -84,6 +84,7 @@ type Props = {
   preview: ConnectionDraft | null;
   query: string;
   highlighted: string[];
+  onIntroComplete?: () => void;
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
@@ -121,6 +122,11 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [growing, setGrowing] = useState(true);
+  const introHandled = useRef(false);
+  const introComplete = useRef(props.onIntroComplete);
+  useEffect(() => {
+    introComplete.current = props.onIntroComplete;
+  }, [props.onIntroComplete]);
   const [layoutSettling, setLayoutSettling] = useState(false);
   const settledLayout = useRef("");
   const [extraVisible, setExtraVisible] = useState(true);
@@ -215,6 +221,56 @@ function Canvas(props: Props) {
     );
     return () => window.clearTimeout(timer);
   }, [growing, ready, nodes.length, maxGrowthDelay, growthDelays]);
+  useEffect(() => {
+    if (growing || !ready || !nodes.length || introHandled.current) return;
+    introHandled.current = true;
+    let active = true;
+    const done = () => {
+      if (active) introComplete.current?.();
+    };
+    const personId = user?.personId,
+      occurrence = personId ? personOccurrences.get(personId)?.[0] : undefined,
+      shouldKeepRequestedFocus = !!focus || selected.length > 0;
+    if (
+      !occurrence ||
+      !positions.has(occurrence) ||
+      shouldKeepRequestedFocus ||
+      familyView.mode !== "all"
+    ) {
+      done();
+      return () => {
+        active = false;
+      };
+    }
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    void flow
+      .fitView({
+        nodes: [{ id: occurrence }],
+        minZoom: narrow ? 0.72 : 0.55,
+        maxZoom: narrow ? 0.96 : 1.08,
+        padding: narrow ? 0.75 : 0.9,
+        duration: reducedMotion ? 0 : 620,
+        ease: (progress) => 1 - (1 - progress) ** 3,
+      })
+      .then(done, done);
+    return () => {
+      active = false;
+    };
+  }, [
+    growing,
+    ready,
+    nodes.length,
+    user?.personId,
+    personOccurrences,
+    positions,
+    focus,
+    selected.length,
+    familyView.mode,
+    flow,
+    narrow,
+  ]);
   useLayoutEffect(() => {
     if (!ready || !geometry) return;
     const previous = settledLayout.current;

@@ -747,6 +747,17 @@ test("the initial tree grows from roots toward descendants", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({
+      json: { enabled: true, canPropose: true, streaming: true },
+    }),
+  );
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch(),
+      data = await response.json();
+    data.user.personId = "e2e-memorial-person";
+    await route.fulfill({ response, json: data });
+  });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
@@ -847,6 +858,53 @@ test("the initial tree grows from roots toward descendants", async ({
     "tree-edge-final-reveal",
   );
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(page.getByText("Нужна помощь?", { exact: true })).toBeVisible();
+  const linkedCard = page.getByTestId("rf__node-e2e-memorial-person"),
+    canvasAfterGrowth = await canvas.boundingBox(),
+    linkedAfterGrowth = await linkedCard.boundingBox();
+  expect(canvasAfterGrowth).not.toBeNull();
+  expect(linkedAfterGrowth).not.toBeNull();
+  expect(
+    Math.abs(
+      linkedAfterGrowth!.x +
+        linkedAfterGrowth!.width / 2 -
+        (canvasAfterGrowth!.x + canvasAfterGrowth!.width / 2),
+    ),
+  ).toBeLessThan(12);
+  expect(
+    Math.abs(
+      linkedAfterGrowth!.y +
+        linkedAfterGrowth!.height / 2 -
+        (canvasAfterGrowth!.y + canvasAfterGrowth!.height / 2),
+    ),
+  ).toBeLessThan(12);
+
+  const assistantTrigger = page.getByRole("button", {
+      name: "Открыть ИИ-исследователя",
+    }),
+    cameraTools = page.locator(".flow-camera-tools"),
+    triggerBeforeCard = await assistantTrigger.boundingBox(),
+    toolsBeforeCard = await cameraTools.boundingBox();
+  expect(triggerBeforeCard).not.toBeNull();
+  expect(toolsBeforeCard).not.toBeNull();
+  await linkedCard.locator(".flow-person-content").click();
+  await expect(
+    page.getByRole("complementary", { name: "Выбранный объект" }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => {
+      const trigger = await assistantTrigger.boundingBox(),
+        tools = await cameraTools.boundingBox();
+      if (!trigger || !tools || !triggerBeforeCard || !toolsBeforeCard)
+        return 0;
+      return Math.abs(
+        trigger.x - triggerBeforeCard.x - (tools.x - toolsBeforeCard.x),
+      );
+    })
+    .toBeLessThan(3);
+  const toolsAfterCard = await cameraTools.boundingBox();
+  expect(toolsAfterCard).not.toBeNull();
+  expect(Math.abs(toolsAfterCard!.x - toolsBeforeCard!.x)).toBeGreaterThan(10);
   const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
   await expect(finalPaths).toHaveCount(6);
   expect(

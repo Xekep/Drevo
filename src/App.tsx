@@ -110,7 +110,8 @@ export default function App() {
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
     [addMenu, setAddMenu] = useState(false),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
   const [shareDraft, setShareDraft] = useState<{
     anchor: Person;
     people: Person[];
@@ -594,6 +595,9 @@ export default function App() {
                       preview={preview}
                       query={query}
                       highlighted={highlighted}
+                      onIntroComplete={() =>
+                        setAssistantNudgeToken((value) => value + 1)
+                      }
                     />
                     {canEdit && linkFrom !== null && (
                       <div className="link-instruction" role="status">
@@ -810,6 +814,7 @@ export default function App() {
           currentPersonName={
             user.personId ? map.get(user.personId)?.name : undefined
           }
+          nudgeToken={assistantNudgeToken}
           canEdit={canEdit}
           onChanged={archive.reload}
           onPerson={showPerson}
