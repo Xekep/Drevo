@@ -12,7 +12,11 @@ import { useArchive } from "./hooks/useArchive";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
-import { archiveTargetAt, type ArchiveTarget } from "./domain/archive-links";
+import {
+  archiveTargetAt,
+  archiveTargetPath,
+  type ArchiveTarget,
+} from "./domain/archive-links";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -158,6 +162,12 @@ export default function App() {
         window.location.pathname,
         window.location.search,
       );
+      if (
+        target &&
+        window.location.pathname + window.location.search !==
+          archiveTargetPath(target)
+      )
+        setView(target.kind === "person" ? "tree" : "gallery", target, true);
       if (
         target &&
         !(target.kind === "person"

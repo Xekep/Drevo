@@ -9,8 +9,37 @@ export const archivePaths = {
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
 
-/** Только точные адреса разделов; неизвестный путь не становится файловым маршрутом. */
+export type ArchiveEntity =
+  { kind: "person"; id: string } | { kind: "photo"; id: string };
+
+/** Один закодированный сегмент после /people или /photos. */
+export function archiveEntityAt(pathname: string): ArchiveEntity | null {
+  const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(pathname);
+  if (!match) return null;
+  let id: string;
+  try {
+    id = decodeURIComponent(match[2]);
+  } catch {
+    return null;
+  }
+  if (
+    !id ||
+    id.length > 200 ||
+    [...id].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    }) ||
+    id === "." ||
+    id === ".."
+  )
+    return null;
+  return { kind: match[1] === "people" ? "person" : "photo", id };
+}
+
+/** Адреса разделов и карточек; неизвестный путь не становится файловым маршрутом. */
 export function archiveViewAt(pathname: string): ArchiveView | null {
+  const entity = archiveEntityAt(pathname);
+  if (entity) return entity.kind === "person" ? "tree" : "gallery";
   const path = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
   if (path === "/") return "tree";
   return (

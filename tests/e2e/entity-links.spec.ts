@@ -4,6 +4,11 @@ test("ссылка на человека открывает карточку и 
   page,
 }, testInfo) => {
   await page.goto("/tree?person=e2e-memorial-person");
+  await expect(page).toHaveURL(
+    "http://127.0.0.1:4173/people/e2e-memorial-person",
+  );
+  await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
+  await page.goto("/people/e2e-memorial-person");
   await expect(page.locator(".inspector-dock .profile-head")).toBeVisible();
   await expect(
     page
@@ -20,7 +25,7 @@ test("ссылка на человека открывает карточку и 
       .getByRole("button", { name: "Скопировать ссылку" })
       .click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-      "http://127.0.0.1:4173/tree?person=e2e-memorial-person",
+      "http://127.0.0.1:4173/people/e2e-memorial-person",
     );
   }
 
@@ -42,7 +47,7 @@ test("выбор человека записывается в адрес и во
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
     .click();
-  await expect(page).toHaveURL(/\/tree\?person=e2e-memorial-person$/);
+  await expect(page).toHaveURL(/\/people\/e2e-memorial-person$/);
   await page.goBack();
   await expect(page).toHaveURL("http://127.0.0.1:4173/tree");
   await expect(page.locator(".inspector-dock")).toHaveCount(0);
@@ -56,13 +61,13 @@ test("выбор человека записывается в адрес и во
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await expect(page).toHaveURL(/\/tree\?person=e2e-child$/);
+  await expect(page).toHaveURL(/\/people\/e2e-child$/);
   await page
     .locator(".person-full-dialog")
     .getByRole("button", { name: "Скопировать ссылку" })
     .click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    "http://127.0.0.1:4173/tree?person=e2e-child",
+    "http://127.0.0.1:4173/people/e2e-child",
   );
 });
 
@@ -105,10 +110,10 @@ test("ссылка на снимок открывает просмотр и за
     }),
   );
   await page.goto("/photos?photo=e2e-photo");
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
+  await page.goto("/photos/e2e-photo");
   await page.locator(".photo-previous").click();
-  await expect(page).toHaveURL(
-    "http://127.0.0.1:4173/photos?photo=e2e-photo-next",
-  );
+  await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo-next");
   await expect(
     page.getByRole("dialog", { name: /Просмотр фото/ }),
   ).toBeVisible();

@@ -61,7 +61,13 @@ test("production static streams SPA routes, files and shared page", async () => 
   const token = "a".repeat(43);
 
   try {
-    for (const path of ["/", "/tree", "/people"]) {
+    for (const path of [
+      "/",
+      "/tree",
+      "/people",
+      "/people/sample-id",
+      "/photos/sample-id",
+    ]) {
       const response = await fetch(app.base + path);
       assert.equal(response.status, 200);
       assert.equal(
