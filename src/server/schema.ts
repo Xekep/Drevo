@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 8;
+export const ARCHIVE_SCHEMA_VERSION = 9;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -246,6 +246,32 @@ function migrate(db: DatabaseSync, target: number) {
         model TEXT NOT NULL DEFAULT ''
       ) STRICT;
       INSERT OR IGNORE INTO ai_settings(id,enabled,model) VALUES(1,1,'');
+    `);
+    return;
+  }
+  if (target === 9) {
+    db.exec(`
+      ALTER TABLE ai_settings ADD COLUMN requests_per_minute INTEGER NOT NULL DEFAULT 6
+        CHECK(requests_per_minute BETWEEN 0 AND 120);
+      ALTER TABLE ai_settings ADD COLUMN daily_requests INTEGER NOT NULL DEFAULT 100
+        CHECK(daily_requests BETWEEN 0 AND 100000);
+      ALTER TABLE ai_settings ADD COLUMN daily_tokens INTEGER NOT NULL DEFAULT 250000
+        CHECK(daily_tokens BETWEEN 0 AND 1000000000);
+      CREATE TABLE ai_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        started_ms INTEGER NOT NULL,
+        user_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('ok','error')),
+        provider_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        latency_ms INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX ai_usage_user_started ON ai_usage(user_id,started_ms DESC);
+      CREATE INDEX ai_usage_started ON ai_usage(started_ms DESC);
     `);
     return;
   }
