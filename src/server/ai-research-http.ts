@@ -7,6 +7,10 @@ import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
 } from "../domain/research-tools.ts";
+import {
+  PERSON_UPDATE_PROPOSAL_TOOL,
+  type researchSuggestionStore,
+} from "./research-suggestions.ts";
 
 type ToolCall = {
   id: string;
@@ -53,11 +57,13 @@ function validHistory(value: unknown) {
 export function aiResearchHttp({
   archive,
   auth,
+  suggestions,
   publicOrigin,
   fetcher = fetch,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
+  suggestions: ReturnType<typeof researchSuggestionStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -83,7 +89,14 @@ export function aiResearchHttp({
     return true;
   };
 
-  async function complete(messages: ModelMessage[]): Promise<ModelMessage> {
+  async function complete(
+    messages: ModelMessage[],
+    canPropose: boolean,
+  ): Promise<ModelMessage> {
+    const definitions = [
+      ...RESEARCH_TOOL_DEFINITIONS,
+      ...(canPropose ? [PERSON_UPDATE_PROPOSAL_TOOL] : []),
+    ];
     const response = await fetcher(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -96,7 +109,7 @@ export function aiResearchHttp({
         messages,
         temperature: 0.2,
         tool_choice: "auto",
-        tools: RESEARCH_TOOL_DEFINITIONS.map((definition) => ({
+        tools: definitions.map((definition) => ({
           type: "function",
           function: {
             name: definition.name,
@@ -132,7 +145,7 @@ export function aiResearchHttp({
     if (path === "/api/ai/status") {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
-      return json(res, 200, { enabled });
+      return json(res, 200, { enabled, canPropose: auth.canEdit(req) });
     }
 
     if (req.method !== "POST")
@@ -155,7 +168,9 @@ export function aiResearchHttp({
         return json(res, 400, { error: "Некорректный текст запроса" });
 
       const user = auth.currentUser(req)!,
-        fullFamily = archive.read().family,
+        canPropose = auth.canEdit(req),
+        snapshot = archive.read(),
+        fullFamily = snapshot.family,
         family = isScopedUser(user)
           ? projectFamilyForUser(fullFamily, user)
           : fullFamily,
@@ -176,6 +191,9 @@ export function aiResearchHttp({
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
+        canPropose
+          ? "Если пользователь просит сохранить конкретную гипотезу или исправление карточки, используй propose_person_update. Это только предложение: человек отдельно принимает или отклоняет его. Не создавай предложения без конкретного нового значения и основания."
+          : "",
         "Отвечай по-русски, кратко и предметно.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
@@ -191,7 +209,7 @@ export function aiResearchHttp({
       ];
 
       for (let round = 0; round < 8; round++) {
-        const answer = await complete(messages);
+        const answer = await complete(messages, canPropose);
         messages.push(answer);
         const calls = answer.tool_calls || [];
         if (!calls.length)
@@ -208,13 +226,26 @@ export function aiResearchHttp({
           );
           let result: unknown;
           try {
-            if (!definition)
-              throw new Error("Модель запросила неизвестный инструмент");
-            result = executeResearchTool(
-              family,
-              definition.name,
-              JSON.parse(call.function.arguments || "{}"),
-            );
+            const toolArgs = JSON.parse(call.function.arguments || "{}");
+            if (definition)
+              result = executeResearchTool(
+                family,
+                definition.name,
+                toolArgs,
+              );
+            else if (
+              canPropose &&
+              call.function.name === PERSON_UPDATE_PROPOSAL_TOOL.name
+            )
+              result = {
+                suggestion: suggestions.createPersonUpdate(
+                  user,
+                  family,
+                  snapshot.revision,
+                  toolArgs,
+                ),
+              };
+            else throw new Error("Модель запросила неизвестный инструмент");
           } catch (error) {
             result = {
               error:
