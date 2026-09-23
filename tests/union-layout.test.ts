@@ -9,6 +9,7 @@ import type { FamilyLink } from "../src/domain/types.ts";
 import { crossingPaths } from "../src/domain/route-crossings.ts";
 import { segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { segmentsCross } from "../src/domain/layout-order.ts";
+import type { ElkNode } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
 const unionGeometry = (
   people: LayoutPerson[],
@@ -26,6 +27,63 @@ const person = (
   parents: string[] = [],
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
+
+test("the final family routes decide between compact layouts", async () => {
+  const people = [
+    person("a"),
+    person("b"),
+    person("ca", ["a"]),
+    person("cb", ["b"]),
+  ];
+  const seeds: string[] = [];
+  const geometry = await calculateUnions(people, async (graph: ElkNode) => {
+    const seed = graph.layoutOptions?.["elk.randomSeed"] || "";
+    seeds.push(seed);
+    const crossed = seed === "1";
+    return {
+      ...graph,
+      children: graph.children?.map((node) => ({
+        ...node,
+        x: node.id.includes('"a"')
+          ? 0
+          : node.id.includes('"b"')
+            ? 400
+            : node.id.includes('"ca"')
+              ? crossed
+                ? 400
+                : 0
+              : crossed
+                ? 0
+                : 400,
+        y: node.id.startsWith("person:") ? 300 : 0,
+      })),
+      edges: graph.edges?.map((edge) => {
+        const childA = edge.targets?.[0]?.includes('"ca"');
+        const sourceX = childA ? 110 : 510,
+          targetX = crossed ? (childA ? 510 : 110) : sourceX;
+        return {
+          ...edge,
+          sections: [
+            {
+              id: `${edge.id}:section`,
+              startPoint: { x: sourceX, y: 120 },
+              bendPoints: crossed
+                ? [
+                    { x: sourceX, y: childA ? 210 : 230 },
+                    { x: targetX, y: childA ? 210 : 230 },
+                  ]
+                : [],
+              endPoint: { x: targetX, y: 300 },
+            },
+          ],
+        };
+      }),
+    };
+  });
+  assert.deepEqual(seeds, ["1", "15"]);
+  assert.equal(new Map(geometry.positions).get("ca")?.x, 0);
+  verify(people, geometry);
+});
 
 test("many terminal siblings stay below their own parents in compact local rows", async () => {
   const children = Array.from({ length: 12 }, (_, i) => ({
