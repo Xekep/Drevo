@@ -41,7 +41,7 @@ type Props = {
   loadingDetails: boolean;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
-  onReveal: (ids: string[]) => void;
+  onReveal: (ids: string[], groupId: string) => void;
   onPhoto: (id: string, photoIds?: string[]) => void;
   onAddPhoto: () => void;
   onDropPhoto: (file: File) => void;

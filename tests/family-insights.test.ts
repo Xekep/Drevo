@@ -58,10 +58,26 @@ test("family insights derive peaks, longevity, children and completeness", () =>
   assert.equal(result.totals.events, 1);
   assert.equal(result.topSurnames[0].label, "Иванов");
   assert.equal(result.topSurnames[0].count, 4);
-  assert.ok(result.facts.some((fact) => fact.title === "Долгожитель дерева" && fact.value === "85 лет"));
-  assert.ok(result.facts.some((fact) => fact.title === "Больше всего детей" && fact.detail.includes("Алексей")));
-  assert.ok(result.facts.some((fact) => fact.title === "Поколений одновременно" && fact.value === "3"));
-  assert.equal(result.completeness.find((item) => item.label === "Дата рождения")?.value, 4);
+  assert.ok(
+    result.facts.some(
+      (fact) => fact.title === "Самая долгая жизнь" && fact.value === "85 лет",
+    ),
+  );
+  assert.ok(
+    result.facts.some(
+      (fact) =>
+        fact.title === "Больше всего детей" && fact.detail.includes("Алексей"),
+    ),
+  );
+  assert.ok(
+    result.facts.some(
+      (fact) => fact.title === "Поколений одновременно" && fact.value === "3",
+    ),
+  );
+  assert.equal(
+    result.completeness.find((item) => item.label === "Дата рождения")?.value,
+    4,
+  );
 });
 
 test("family insights flag only clearly suspicious date relationships", () => {
@@ -82,8 +98,11 @@ test("family insights flag only clearly suspicious date relationships", () => {
   );
   assert.ok(
     result.warnings.some(
-      (warning) => warning.title === "Ребёнок родился заметно позже смерти родителя",
+      (warning) =>
+        warning.title === "Ребёнок родился заметно позже смерти родителя",
     ),
   );
-  assert.ok(result.warnings.some((warning) => warning.title === "Возможный дубль"));
+  assert.ok(
+    result.warnings.some((warning) => warning.title === "Возможный дубль"),
+  );
 });

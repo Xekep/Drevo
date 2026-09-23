@@ -557,9 +557,13 @@
     0 5px 20px #31502d18;
 }
 .tree-canvas .flow-person.is-spotlit {
-  border-color: #719077;
-  box-shadow: 0 0 0 3px #6f967634;
+  border-color: #507a59;
+  background: #f4faf0;
+  box-shadow: 0 0 0 3px #6f96764d;
   animation: family-spotlight 1.5s ease-in-out 2;
+}
+.tree-canvas .flow-person.is-outside-spotlight {
+  opacity: 0.55;
 }
 @keyframes family-spotlight {
   0%,
@@ -1220,37 +1224,34 @@
   top: 50px !important;
 }
 .about-story {
-  padding: 8px 30px 28px;
+  padding: 8px 30px 26px;
 }
 .about-story > svg {
   color: #789364;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 .about-story h2 {
   font-family: var(--serif);
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1.12;
   font-weight: 400;
-  letter-spacing: -0.8px;
-}
-.about-story h2 span {
-  color: #8fa777;
+  letter-spacing: -0.5px;
 }
 .about-story p {
-  font-size: 14px;
-  line-height: 1.8;
+  font-size: 13px;
+  line-height: 1.6;
   color: #67745e;
 }
 .about-story > p {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 .about-story .about-instructions {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  margin-top: 28px;
+  gap: 14px;
+  margin-top: 22px;
   border-top: 1px solid #e4eadc;
-  padding-top: 24px;
+  padding-top: 20px;
 }
 .about-instructions > div {
   display: flex;
@@ -1262,11 +1263,11 @@
   color: #8ca476;
 }
 .about-story .about-instructions b {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
 }
 .about-instructions p {
-  margin-top: 5px;
+  margin-top: 3px;
 }
 .name-sex-hint {
   display: flex !important;

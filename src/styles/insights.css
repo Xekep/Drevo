@@ -1,64 +1,64 @@
 .insights-page {
   min-height: 100%;
-  padding: clamp(22px, 3vw, 42px);
-  background:
-    radial-gradient(circle at 88% 4%, #e9f0e4 0, transparent 24rem), #f7f9f5;
+  padding: clamp(20px, 3vw, 40px);
+  background: #f8f7f2;
   overflow: auto;
 }
 
 .insights-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px;
+  display: grid;
+  gap: 18px;
   max-width: 1380px;
-  margin: 0 auto 28px;
+  margin: 0 auto 20px;
 }
 
 .insights-heading h1 {
-  margin: 7px 0 10px;
+  margin: 0 0 6px;
   font-family: var(--serif);
-  font-size: clamp(32px, 4vw, 48px);
+  font-size: clamp(31px, 3.2vw, 40px);
   font-weight: 400;
-  letter-spacing: -1.2px;
+  letter-spacing: -0.9px;
 }
 
 .insights-heading > div:first-child > p {
   max-width: 680px;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.5;
 }
 
 .insights-summary {
-  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
   min-width: 0;
-  padding: 20px;
-  border: 1px solid #dfe4d4;
-  border-radius: 12px;
-  background: #f5f6ed;
+  padding: 12px 16px;
+  border: 1px solid #dfe5dc;
+  border-radius: 9px;
+  background: #fffefa;
 }
 .insights-summary h2 {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #68755a;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #607260;
 }
 .insights-summary .archive-summary-detailed {
   background: none;
   padding: 0;
-  font-size: 16px;
+  font-size: 13px;
   width: auto;
 }
-.insights-summary .archive-summary > div {
-  gap: 0 10px;
-}
-.insights-summary .archive-summary > div + div {
-  margin-top: 7px;
+.insights-summary .archive-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
 }
 .insights-summary p {
-  margin: 12px 0 0;
-  font-size: 12px;
+  margin-left: auto;
+  color: #839082;
+  font-size: 11px;
 }
 
 .insights-loading {
@@ -75,22 +75,23 @@
 .insight-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
   max-width: 1380px;
-  margin: 0 auto 18px;
+  margin: 0 auto 16px;
 }
 
 .insight-fact {
-  position: relative;
+  display: grid;
+  align-content: start;
   min-width: 0;
-  min-height: 178px;
-  padding: 20px;
+  min-height: 0;
+  padding: 17px;
   border: 1px solid #dfe6dc;
-  border-radius: 15px;
-  background: #fffefaeb;
+  border-radius: 9px;
+  background: #fffefa;
   color: var(--ink);
   text-align: left;
-  box-shadow: 0 5px 22px #293f2b09;
+  box-shadow: none;
 }
 
 .insight-fact-copy {
@@ -104,58 +105,50 @@ button.insight-fact {
 
 .insight-fact.is-clickable:hover {
   border-color: #a2b99a;
-  box-shadow: 0 9px 28px #29412c14;
+  background: #f9fbf5;
 }
 
 .insight-fact-icon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  margin-bottom: 25px;
-  border-radius: 10px;
-  background: #edf3e9;
-  color: #567352;
+  color: #718b71;
+  margin-bottom: 12px;
 }
 
 .insight-fact-copy > small {
   display: block;
-  min-height: 32px;
+  min-height: 30px;
   color: #667266;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
 }
 
 .insight-fact-copy > strong {
   display: block;
-  margin: 5px 0 7px;
+  margin: 5px 0 6px;
   overflow-wrap: anywhere;
   font-family: var(--serif);
-  font-size: clamp(23px, 2.2vw, 31px);
+  font-size: clamp(22px, 2vw, 29px);
   font-weight: 400;
   line-height: 1.05;
 }
 
 .insight-fact-copy > p {
   color: #647164;
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .insight-open {
   display: block;
-  margin-top: 12px;
+  margin-top: 9px;
   color: var(--green);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .insights-more {
   max-width: 1380px;
-  margin: 0 auto 18px;
+  margin: 0 auto 16px;
   border: 1px solid #dfe6dc;
-  border-radius: 12px;
+  border-radius: 9px;
   background: #fffefa;
 }
 
@@ -175,15 +168,15 @@ button.insight-fact {
 .insight-facts.secondary-facts {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
-  padding: 14px;
+  padding: 10px;
 }
 
 .insight-fact.is-compact {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
   min-height: 0;
-  padding: 14px;
+  padding: 12px;
   box-shadow: none;
 }
 
@@ -201,23 +194,23 @@ button.insight-fact {
 
 .insights-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.7fr);
+  gap: 12px;
   max-width: 1380px;
-  margin: 0 auto 18px;
+  margin: 0 auto 16px;
 }
 
 .insights-columns.secondary {
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.7fr);
 }
 
 .insights-card {
   min-width: 0;
-  padding: 24px;
+  padding: 20px;
   border: 1px solid #dfe6dc;
-  border-radius: 15px;
+  border-radius: 9px;
   background: #fffefa;
-  box-shadow: 0 5px 22px #293f2b08;
+  box-shadow: none;
 }
 
 .insights-card > header {
@@ -225,22 +218,21 @@ button.insight-fact {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: 15px;
   color: #799075;
 }
 
 .insights-card > header h2 {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 23px;
-  font-weight: 400;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .name-ranking {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 28px;
+  gap: 20px;
 }
 
 .name-ranking h3 {
@@ -257,7 +249,7 @@ button.insight-fact {
   gap: 9px;
   align-items: center;
   min-width: 0;
-  padding: 9px 0;
+  padding: 7px 0;
   border-top: 1px solid #edf0e9;
   font-size: 13px;
 }
@@ -275,29 +267,33 @@ button.insight-fact {
 
 .archive-materials {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 0;
 }
 
 .archive-materials > span {
   display: grid;
-  justify-items: center;
-  gap: 7px;
-  padding: 18px 8px;
-  border-radius: 11px;
-  background: #f3f6f0;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid #e9eee7;
   color: #71836d;
-  text-align: center;
+}
+.archive-materials > span:last-child {
+  border-bottom: 0;
 }
 
 .archive-materials b {
+  grid-column: 3;
+  grid-row: 1;
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 25px;
-  font-weight: 400;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .archive-materials small {
+  grid-column: 2;
+  grid-row: 1;
   font-size: 12px;
 }
 
@@ -309,7 +305,7 @@ button.insight-fact {
 .insight-warnings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .insight-warnings button {
@@ -318,9 +314,9 @@ button.insight-fact {
   gap: 10px;
   align-items: start;
   width: 100%;
-  padding: 13px;
+  padding: 12px;
   border: 1px solid #eadfd4;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fcf8f3;
   color: #886d58;
   text-align: left;
@@ -400,9 +396,8 @@ button.insight-fact {
     padding: 18px 12px 30px;
   }
   .insights-heading {
-    display: grid;
-    gap: 18px;
-    margin-bottom: 20px;
+    gap: 14px;
+    margin-bottom: 16px;
   }
   .insights-heading h1 {
     font-size: 31px;
@@ -412,11 +407,8 @@ button.insight-fact {
     gap: 9px;
   }
   .insight-fact {
-    min-height: 148px;
-    padding: 15px;
-  }
-  .insight-fact-icon {
-    margin-bottom: 18px;
+    min-height: 0;
+    padding: 13px;
   }
   .insight-fact-copy > strong {
     font-size: 22px;
@@ -430,18 +422,19 @@ button.insight-fact {
 }
 
 @media (max-width: 520px) {
-  .insight-fact {
-    min-height: 0;
+  .insights-summary p {
+    width: 100%;
+    margin-left: 0;
   }
   .insight-fact-icon {
-    margin-bottom: 14px;
+    margin-bottom: 8px;
   }
   .name-ranking {
     grid-template-columns: 1fr;
     gap: 20px;
   }
   .archive-materials {
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr;
   }
   .insight-fact-copy > p {
     font-size: 12px;

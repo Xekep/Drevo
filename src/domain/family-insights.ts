@@ -89,7 +89,10 @@ function uniqueSpousePairs(people: Person[]) {
       const ids = [person.id, spouse.id].sort();
       const key = `${ids[0]}:${ids[1]}`;
       if (!pairs.has(key))
-        pairs.set(key, ids[0] === person.id ? [person, spouse] : [spouse, person]);
+        pairs.set(
+          key,
+          ids[0] === person.id ? [person, spouse] : [spouse, person],
+        );
     }
   return [...pairs.values()];
 }
@@ -163,7 +166,8 @@ function generationStats(people: Person[]): InsightGeneration[] {
       return {
         generation,
         people: group.length,
-        knownBirths: group.filter((person) => yearOf(person.birth) !== null).length,
+        knownBirths: group.filter((person) => yearOf(person.birth) !== null)
+          .length,
         ...(lifespans.length
           ? {
               averageLifespan: Math.round(
@@ -295,7 +299,7 @@ export function analyzeFamilyInsights(
   const longest = lifespans.sort((a, b) => b.age - a.age)[0];
   if (longest)
     facts.push({
-      title: "Долгожитель дерева",
+      title: "Самая долгая жизнь",
       value: `${longest.age} ${plural(longest.age, "год", "года", "лет")}`,
       detail: fullName(longest.person),
       personIds: [longest.person.id],
@@ -388,7 +392,8 @@ export function analyzeFamilyInsights(
       },
       {
         label: "Дата смерти у умерших",
-        value: deceased.filter((person) => yearOf(person.death) !== null).length,
+        value: deceased.filter((person) => yearOf(person.death) !== null)
+          .length,
         total: deceased.length,
       },
       {

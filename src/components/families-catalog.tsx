@@ -9,7 +9,7 @@ export function FamiliesCatalog({
 }: {
   people: Person[];
   onPerson: (id: string) => void;
-  onReveal: (ids: string[]) => void;
+  onReveal: (ids: string[], groupId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const { limit, more } = useListLimit(query);
@@ -83,7 +83,10 @@ export function FamiliesCatalog({
             <button
               className="full-button"
               onClick={() =>
-                onReveal([...g.parents, ...g.children].map((p) => p.id))
+                onReveal(
+                  [...g.parents, ...g.children].map((p) => p.id),
+                  g.id,
+                )
               }
             >
               Показать семью на древе

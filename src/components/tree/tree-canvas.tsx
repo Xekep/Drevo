@@ -52,6 +52,7 @@ import {
 } from "./tree-growth";
 import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
+import { familySpotlight } from "./family-spotlight";
 
 export type ConnectionDraft = {
   from: string;
@@ -61,7 +62,12 @@ export type ConnectionDraft = {
   note?: string;
   hint?: string;
 };
-export type TreeFocus = { ids: string[]; token: number; purpose?: "family" };
+export type TreeFocus = {
+  ids: string[];
+  token: number;
+  purpose?: "family";
+  groupId?: string;
+};
 type Props = {
   comparisonAction?: ReactNode;
   restricted?: boolean;
@@ -186,6 +192,20 @@ function Canvas(props: Props) {
     mode,
     reverse,
   );
+  const spotlightNodes = useMemo(
+    () =>
+      geometry && focus?.purpose === "family" && focus.groupId
+        ? familySpotlight(geometry, focus.groupId, focus.ids)
+        : null,
+    [geometry, focus],
+  );
+  const cameraFocus = useMemo(
+    () =>
+      focus?.purpose === "family" && spotlightNodes?.length
+        ? { ...focus, ids: spotlightNodes }
+        : focus,
+    [focus, spotlightNodes],
+  );
   const growthDelays = useMemo(
     () => treeGrowthDelays(family.people),
     [family.people],
@@ -208,6 +228,9 @@ function Canvas(props: Props) {
         expanded: familyView.expanded,
         query: props.query,
         spotlight: new Set(props.spotlight || []),
+        spotlightOccurrences: spotlightNodes
+          ? new Set(spotlightNodes)
+          : undefined,
         growthDelays,
       }),
     [
@@ -223,6 +246,7 @@ function Canvas(props: Props) {
       familyView.expanded,
       props.query,
       props.spotlight,
+      spotlightNodes,
       growthDelays,
     ],
   );
@@ -321,7 +345,7 @@ function Canvas(props: Props) {
       mode,
       reverse,
       ready,
-      focus,
+      focus: cameraFocus,
       positions,
       selected,
       narrow,
