@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${MCP_TOKEN:?Set MCP_TOKEN to a Drevo MCP token}"
-MCP_URL="${MCP_URL:-https://drevo.kiiko.ru/mcp}"
+MCP_URL="${MCP_URL:-https://mydrevo.org/mcp}"
 
 tmp_config="$(mktemp)"
 trap 'rm -f "$tmp_config"' EXIT

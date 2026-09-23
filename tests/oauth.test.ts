@@ -23,7 +23,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
       );
       assert.equal(
         body.get("redirect_uri"),
-        "https://drevo.kiiko.ru/auth/yandex/callback",
+        "https://mydrevo.org/auth/yandex/callback",
       );
       assert.equal(body.get("client_secret"), "secret");
       return Response.json({ access_token: "private-token" });
@@ -38,7 +38,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
   const db = new DatabaseSync(":memory:");
   initializeArchiveSchema(db);
   const oauth = createYandexOAuth({
-    origin: "https://drevo.kiiko.ru",
+    origin: "https://mydrevo.org",
     clientId: "client",
     clientSecret: "secret",
     fetcher,
