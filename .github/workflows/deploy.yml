@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: production
-      url: https://drevo.kiiko.ru
+      url: https://mydrevo.org
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -86,4 +86,7 @@ jobs:
         run: |
           ssh -p 4321 -o BatchMode=yes -o StrictHostKeyChecking=yes deploy@94.232.248.210 \
             "bash /var/www/drevo.kiiko.ru/releases/$RELEASE_ID/ops/deploy.sh $RELEASE_ID"
-          curl --fail --retry 3 --silent --show-error https://drevo.kiiko.ru/api/health
+          curl --fail --retry 3 --silent --show-error https://mydrevo.org/api/health
+          redirect=$(curl --fail --silent --show-error --output /dev/null \
+            --write-out '%{http_code} %{redirect_url}' https://drevo.kiiko.ru/api/health)
+          test "$redirect" = '301 https://mydrevo.org/api/health'

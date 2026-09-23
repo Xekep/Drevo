@@ -84,4 +84,4 @@ backups = sorted(
 for path in backups[30:]:
     path.unlink()
 PY
-echo "Deployed $release_id to https://drevo.kiiko.ru"
+echo "Deployed $release_id to https://mydrevo.org"

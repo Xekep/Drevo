@@ -10,7 +10,7 @@ WorkingDirectory=/var/www/drevo.kiiko.ru/current
 Environment=NODE_ENV=production
 Environment=PORT=3107
 Environment=DATABASE_PATH=/var/www/drevo.kiiko.ru/shared/drevo.sqlite
-Environment=PUBLIC_ORIGIN=https://drevo.kiiko.ru
+Environment=PUBLIC_ORIGIN=https://mydrevo.org
 EnvironmentFile=/etc/drevo.env
 ExecStart=/opt/drevo-node/bin/node --experimental-strip-types src/server/index.ts --production
 Restart=on-failure

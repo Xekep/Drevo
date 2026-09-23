@@ -8,7 +8,7 @@ GET  /auth/yandex/callback
 POST /auth/logout
 ```
 
-В приложении Яндекса указывается точный Redirect URI: `https://drevo.kiiko.ru/auth/yandex/callback`. В `/etc/drevo.env` с правами `600` сохраняются `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` и для нового production-сервера `INITIAL_ADMIN_YANDEX_ID`. Секрет не попадает в Git, сборку браузера и бэкапы семейной базы. `PUBLIC_ORIGIN` задан в systemd. После изменения окружения требуется перезапуск сервиса.
+В приложении Яндекса указывается точный Redirect URI: `https://mydrevo.org/auth/yandex/callback`. В `/etc/drevo.env` с правами `600` сохраняются `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` и для нового production-сервера `INITIAL_ADMIN_YANDEX_ID`. Секрет не попадает в Git, сборку браузера и бэкапы семейной базы. `PUBLIC_ORIGIN` задан в systemd. После изменения окружения требуется перезапуск сервиса.
 
 Авторизация использует одноразовые `state` и PKCE, проверку cookie браузера и серверный обмен кода на токен. По токену запрашивается постоянный `id` пользователя. Токен Яндекса не сохраняется. Имя профиля используется только для отображения; учётная запись идентифицируется по `id`.
 

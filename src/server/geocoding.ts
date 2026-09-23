@@ -75,7 +75,7 @@ export function geocodingStore(
         last = Date.now();
         const response = await fetcher(url, {
           headers: {
-            "User-Agent": "Drevo/1.0 (+https://drevo.kiiko.ru)",
+            "User-Agent": "Drevo/1.0 (+https://mydrevo.org)",
             Accept: "application/json",
           },
           signal: AbortSignal.timeout(10000),
