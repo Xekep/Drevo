@@ -8,16 +8,15 @@ import type { Family } from "../src/domain/types.ts";
 
 function providerStream(frames: unknown[]) {
   const body =
-    frames
-      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
-      .join("") + "data: [DONE]\n\n";
+    frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") +
+    "data: [DONE]\n\n";
   return new Response(body, {
     status: 200,
     headers: { "Content-Type": "text/event-stream" },
   });
 }
 
-test("AI research stream preserves tool calling and emits text deltas", async () => {
+test("AI research stream preserves tool calling and emits the checked answer", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-stream-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -99,8 +98,7 @@ test("AI research stream preserves tool calling and emits text deltas", async ()
       aiFetch,
     ),
     base =
-      "http://127.0.0.1:" +
-      (app.server.address() as { port: number }).port;
+      "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
     const current = app.archive.read(),
@@ -135,13 +133,16 @@ test("AI research stream preserves tool calling and emits text deltas", async ()
       }),
     });
     assert.equal(response.status, 200);
-    assert.match(response.headers.get("content-type") || "", /text\/event-stream/);
+    assert.match(
+      response.headers.get("content-type") || "",
+      /text\/event-stream/,
+    );
 
     const stream = await response.text();
     assert.match(stream, /event: status/);
     assert.match(stream, /Проверяю данные архива/);
-    assert.match(stream, /event: delta\ndata: \{"text":"Найдена "\}/);
-    assert.match(stream, /event: delta\ndata: \{"text":"Анна\."\}/);
+    assert.match(stream, /event: delta\ndata: \{"text":"Найдена Анна\."\}/);
+    assert.equal((stream.match(/event: delta/g) || []).length, 1);
     assert.match(stream, /event: done/);
     assert.match(stream, /"answer":"Найдена Анна\."/);
     assert.match(stream, /"id":"anna-stream-test"/);

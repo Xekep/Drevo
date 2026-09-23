@@ -786,46 +786,62 @@ test("same-name map candidates show their municipality", async ({
   await expect(page.locator(".map-candidates li")).toHaveCount(3);
 });
 
-test("mobile tree starts with readable family cards", async ({
+test("mobile tree appears fully without branch drawing", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/tree");
-  await page.locator(".flow-person").first().waitFor({ state: "visible" });
-  await expect
-    .poll(async () => {
-      const card = await page.locator(".flow-person").first().boundingBox();
-      return card?.width || 0;
-    })
-    .toBeGreaterThanOrEqual(130);
-  await expect(page.locator(".flow-person").first()).toHaveClass(/is-compact/);
+  const canvas = page.locator(".tree-canvas");
+  await expect(page.locator(".flow-person")).toHaveCount(6);
+  await expect(canvas).not.toHaveClass(/is-growing/);
+  await expect(canvas).toHaveAttribute("aria-busy", "false");
+  await expect(
+    page.locator(".tree-grow-edge .tree-edge-growth-path").first(),
+  ).toHaveCSS("display", "none");
   await expect
     .poll(async () =>
-      page
-        .locator(".flow-person")
-        .first()
-        .evaluate((card) => {
-          const strong = card.querySelector("strong");
-          if (!strong) return 0;
-          const scale = card.getBoundingClientRect().width / card.clientWidth;
-          return Number.parseFloat(getComputedStyle(strong).fontSize) * scale;
+      page.locator(".flow-person").evaluateAll((cards) =>
+        cards.every((card) => {
+          const rect = card.getBoundingClientRect();
+          return (
+            rect.left >= -1 &&
+            rect.right <= innerWidth + 1 &&
+            rect.top >= -1 &&
+            rect.bottom <= innerHeight + 1
+          );
         }),
+      ),
     )
-    .toBeGreaterThanOrEqual(12);
-  expect(
-    await page.locator(".flow-person").evaluateAll((cards) =>
-      cards.some((card) => {
-        const rect = card.getBoundingClientRect();
-        return (
-          rect.right > 0 &&
-          rect.left < innerWidth &&
-          rect.bottom > 0 &&
-          rect.top < innerHeight
-        );
-      }),
-    ),
-  ).toBe(true);
+    .toBe(true);
+});
+
+test("mobile camera moves from the full tree to the linked person", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch(),
+      data = await response.json();
+    data.user.personId = "e2e-memorial-person";
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas"),
+    person = page.getByTestId("rf__node-e2e-memorial-person");
+  await expect(canvas).not.toHaveClass(/is-growing/);
+  await expect
+    .poll(async () => {
+      const [a, b] = await Promise.all([
+        canvas.boundingBox(),
+        person.boundingBox(),
+      ]);
+      return a && b ? Math.abs(b.x + b.width / 2 - (a.x + a.width / 2)) : 1000;
+    })
+    .toBeLessThan(12);
+  await expect
+    .poll(async () => (await person.boundingBox())?.width || 0)
+    .toBeGreaterThanOrEqual(130);
 });
 
 test("the initial tree grows from roots toward descendants", async ({
