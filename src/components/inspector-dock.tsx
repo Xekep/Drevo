@@ -23,11 +23,13 @@ export function InspectorDock({
   onClose,
   editing = false,
   initialExpanded = true,
+  suspended = false,
 }: {
   children: ReactNode;
   onClose: () => void;
   editing?: boolean;
   initialExpanded?: boolean;
+  suspended?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [mobile, setMobile] = useState(
@@ -36,6 +38,7 @@ export function InspectorDock({
       window.matchMedia("(max-width: 899px)").matches,
   );
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null);
+  const mobileSuspended = mobile && suspended;
   const ref = useRef<HTMLElement>(null);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
@@ -47,7 +50,7 @@ export function InspectorDock({
     return () => query.removeEventListener("change", update);
   }, []);
   useEffect(() => {
-    if (!mobile || !expanded) return;
+    if (!mobile || !expanded || mobileSuspended) return;
     const previous = document.activeElement as HTMLElement | null;
     const node = ref.current;
     const siblings = node?.parentElement
@@ -61,7 +64,7 @@ export function InspectorDock({
       for (const sibling of siblings) (sibling as HTMLElement).inert = false;
       previous?.focus?.({ preventScroll: true });
     };
-  }, [mobile, expanded]);
+  }, [mobile, expanded, mobileSuspended]);
   useEffect(() => {
     if (document.activeElement?.matches(":focus-visible")) {
       const target =
@@ -79,13 +82,15 @@ export function InspectorDock({
       <aside
         ref={ref}
         className={`inspector-dock ${expanded ? "expanded" : ""}`}
+        hidden={mobileSuspended}
         aria-label="Выбранный объект"
         data-editing={editing || undefined}
-        role={mobile && expanded ? "dialog" : undefined}
-        aria-modal={mobile && expanded ? true : undefined}
-        tabIndex={mobile && expanded ? -1 : undefined}
+        role={mobile && expanded && !mobileSuspended ? "dialog" : undefined}
+        aria-modal={mobile && expanded && !mobileSuspended ? true : undefined}
+        tabIndex={mobile && expanded && !mobileSuspended ? -1 : undefined}
         onKeyDown={(event) => {
-          if (!mobile || !expanded || event.key !== "Tab") return;
+          if (!mobile || !expanded || mobileSuspended || event.key !== "Tab")
+            return;
           const items = [
             ...(ref.current?.querySelectorAll<HTMLElement>(
               'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])',

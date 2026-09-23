@@ -93,6 +93,16 @@
   background: #fbfcf9;
   box-shadow: 0 24px 70px #2638262b;
 }
+
+@media (max-width: 899px) {
+  .research-assistant {
+    z-index: 1200;
+  }
+
+  .inspector-dock[hidden] {
+    display: none;
+  }
+}
 .research-assistant.is-dragging,
 .research-assistant.is-resizing {
   user-select: none;

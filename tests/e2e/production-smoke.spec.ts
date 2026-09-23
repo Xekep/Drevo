@@ -1,5 +1,23 @@
 import { expect, test } from "@playwright/test";
 
+test("на телефоне карточка уступает место открытому ИИ-исследователю", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.goto("/tree");
+  await page.getByTestId("rf__node-e2e-memorial-person").click();
+  const card = page.locator(".inspector-dock");
+  await expect(card).toBeVisible();
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  await expect(page.locator(".research-assistant")).toBeVisible();
+  await expect(card).toBeHidden();
+  await page.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  await expect(card).toBeVisible();
+});
+
 test("настройка AI Studio содержит ключ, Folder ID и список моделей", async ({
   page,
 }, testInfo) => {
@@ -1124,6 +1142,9 @@ test("mobile person card stays below the project menu and starts the memorial fl
   await expect(card).toBeVisible();
   const dove = card.locator(".memorial-dove");
   await expect(dove).toHaveCSS("animation-name", "dove-leave");
+  await expect
+    .poll(() => dove.evaluate((node) => getComputedStyle(node).transform))
+    .not.toBe("none");
 
   await page.locator('summary[aria-label="Меню проекта"]').click();
   const menu = page.locator(".nav-bottom");

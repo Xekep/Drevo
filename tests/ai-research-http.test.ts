@@ -7,10 +7,23 @@ import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import {
   explicitViewControlRequest,
+  humanizeResearchAnswer,
   recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
 } from "../src/server/ai-research-http.ts";
+
+test("research answer keeps clickable markers but replaces raw archive ids", () => {
+  const people = new Map([["person-42", "Иван Петрович"]]);
+  assert.equal(
+    humanizeResearchAnswer(
+      "[[person:person-42|Иван Петрович]] найден. person-42 (personId: person-42) упомянут в записи.",
+      people,
+      new Map(),
+    ),
+    "[[person:person-42|Иван Петрович]] найден. Иван Петрович упомянут в записи.",
+  );
+});
 
 test("явные команды перемещают пользователя по древу, обычный вопрос экран не меняет", () => {
   assert.equal(
@@ -52,6 +65,92 @@ test("textual model tool call is recovered instead of being shown as Arduino cod
     ),
     [],
   );
+});
+
+test("stream only exposes the checked answer after textual tool calls", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-safe-stream-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let calls = 0;
+  const aiFetch: typeof fetch = async () => {
+    calls++;
+    const content =
+      calls === 1
+        ? '```arduino\nsearch_people({"query":"Иван Петрович"})\n```'
+        : "[[person:person-42|Иван Петрович]] найден. person-42 (personId: person-42).";
+    return new Response(
+      `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  };
+  const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      aiFetch,
+    ),
+    base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read();
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          {
+            id: "person-42",
+            surname: "Петрович",
+            name: "Иван",
+            patronymic: "",
+            sex: "m",
+            birth: "1900",
+            birthPlace: "",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [],
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Расскажи об Иване Петровиче" }),
+    });
+    assert.equal(response.status, 200);
+    const events = (await response.text())
+      .split("\n\n")
+      .filter((frame) => frame.startsWith("event: "))
+      .map((frame) => {
+        const [name, data] = frame.split("\ndata: ");
+        return { name: name.slice(7), data: JSON.parse(data) };
+      });
+    const deltas = events.filter((event) => event.name === "delta");
+    assert.equal(deltas.length, 1);
+    assert.doesNotMatch(
+      deltas[0].data.text.replace(/\[\[[^\]]+\]\]/g, ""),
+      /search_people|person-42|personId/,
+    );
+    assert.match(deltas[0].data.text, /Иван Петрович/);
+    assert.match(
+      events.find((event) => event.name === "done")!.data.answer,
+      /\[\[person:person-42\|Иван Петрович\]\]/,
+    );
+    assert.equal(calls, 2);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("researcher retries an unverified archive answer and executes a textual tool call", async () => {

@@ -116,6 +116,7 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
+    [assistantOpen, setAssistantOpen] = useState(false),
     [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   const finishEntry = useCallback(() => {
@@ -639,6 +640,7 @@ export default function App() {
                         key={personDraft.key}
                         onClose={closeEditor}
                         editing
+                        suspended={assistantOpen}
                       >
                         {!canEdit && (
                           <p className="desktop-edit-notice">
@@ -653,6 +655,7 @@ export default function App() {
                         key={connectionDraft.original?.key || "new-connection"}
                         onClose={closeConnection}
                         editing={canEdit}
+                        suspended={assistantOpen}
                       >
                         <ConnectionInspector
                           family={family}
@@ -676,6 +679,7 @@ export default function App() {
                         }
                         initialExpanded={!compare || chosen.length === 2}
                         onClose={clear}
+                        suspended={assistantOpen}
                       >
                         {compare ? (
                           <ComparisonPanel
@@ -823,6 +827,7 @@ export default function App() {
       {family && readTree && user && view !== "admin" && (
         <ResearchAssistant
           view={view}
+          onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}
           currentPersonName={
             user.personId ? map.get(user.personId)?.name : undefined

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import doveAtlas from "../assets/memorial-dove-drawn.png";
 
 const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
@@ -17,12 +17,15 @@ const poses = [
 
 /** Один пролёт при открытии профиля; вся анимация остаётся внутри этого компонента. */
 export function MemorialName({ children }: { children: ReactNode }) {
+  const element = useRef<HTMLSpanElement>(null);
   const [flight, setFlight] = useState({ phase: "waiting", frame: 0 });
   useEffect(() => {
     const media = window.matchMedia(reducedMotionQuery);
     const image = new Image();
     let disposed = false,
       begun = false,
+      ready = false,
+      visible = false,
       timer = 0,
       started = 0,
       lastFrame = -1;
@@ -46,7 +49,7 @@ export function MemorialName({ children }: { children: ReactNode }) {
       timer = window.requestAnimationFrame(tick);
     };
     const begin = () => {
-      if (disposed || begun) return;
+      if (disposed || begun || !ready || !visible) return;
       begun = true;
       if (media.matches) return still();
       started = performance.now();
@@ -59,18 +62,32 @@ export function MemorialName({ children }: { children: ReactNode }) {
       if (media.matches) still();
     };
     media.addEventListener("change", change);
-    image.onload = begin;
+    if (media.matches) still();
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        visible = entry.isIntersecting && entry.intersectionRatio >= 0.5;
+        begin();
+      },
+      { threshold: 0.5 },
+    );
+    if (element.current) observer.observe(element.current);
+    const loaded = () => {
+      ready = true;
+      begin();
+    };
+    image.onload = loaded;
     // A failed preload must not leave the memorial permanently hidden. The
     // nested SVG image can still be served from cache or finish separately.
-    image.onerror = begin;
+    image.onerror = loaded;
     image.src = doveAtlas;
-    if (image.complete) begin();
+    if (image.complete) loaded();
     // decode() is reliable on mobile browsers that can skip a cached load
     // event; onload remains the fallback for older engines.
-    void image.decode?.().then(begin, begin);
+    void image.decode?.().then(loaded, loaded);
     return () => {
       disposed = true;
       stop();
+      observer.disconnect();
       image.onload = null;
       image.onerror = null;
       media.removeEventListener("change", change);
@@ -79,6 +96,7 @@ export function MemorialName({ children }: { children: ReactNode }) {
   const pose = poses[flight.frame];
   return (
     <span
+      ref={element}
       className={`memorial-name${flight.phase === "flying" ? " dove-departed" : ""}`}
     >
       {children}
