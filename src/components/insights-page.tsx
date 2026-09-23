@@ -27,11 +27,8 @@ export default function InsightsPage({
     return (
       <section className="insights-page insights-empty">
         <Sparkles size={28} />
-        <h1>Интересные данные</h1>
-        <p>
-          Сначала в древе должны появиться люди. Статистика из пустоты пока не
-          извлекается.
-        </p>
+        <h1>Сводка архива</h1>
+        <p>Сначала добавьте людей в древо. Пока здесь нечего подсчитать.</p>
       </section>
     );
 
@@ -87,8 +84,8 @@ export default function InsightsPage({
     <section className="insights-page">
       <header className="insights-heading">
         <div>
-          <span className="section-label">АНАЛИТИКА СЕМЕЙНОГО АРХИВА</span>
-          <h1>Интересные данные</h1>
+          <span className="section-label">ФАКТЫ И СВЯЗИ</span>
+          <h1>Сводка архива</h1>
           <p>
             Факты рассчитываются из связей, дат, событий и фотографий в архиве.
           </p>

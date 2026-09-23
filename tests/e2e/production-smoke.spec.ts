@@ -441,7 +441,7 @@ test("интересные данные не превращаются в дли�
 }) => {
   await page.goto("/insights");
   await expect(
-    page.getByRole("heading", { name: "Интересные данные" }),
+    page.getByRole("heading", { name: "Сводка архива" }),
   ).toBeVisible();
   await expect(
     page.locator(".insight-facts:not(.secondary-facts) .insight-fact"),

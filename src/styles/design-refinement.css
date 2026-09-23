@@ -1,0 +1,125 @@
+/* Dense archive pages, with the tree canvas left free for relationships. */
+@media (min-width: 900px) {
+  .people-directory {
+    max-width: 1480px;
+    padding: 28px clamp(28px, 3vw, 48px) 56px;
+  }
+
+  .people-directory header {
+    margin-bottom: 19px;
+  }
+
+  .people-directory h1 {
+    font-size: 34px;
+  }
+
+  .directory-columns,
+  .directory-person {
+    grid-template-columns:
+      minmax(260px, 2fr) minmax(110px, 0.7fr) minmax(160px, 1.15fr)
+      minmax(140px, 0.9fr) 17px;
+    gap: 16px;
+  }
+
+  .directory-columns {
+    padding: 0 14px 11px;
+  }
+
+  .directory-person {
+    padding: 12px 14px;
+  }
+
+  .family-directory {
+    padding: 28px clamp(28px, 3vw, 48px) 56px;
+  }
+
+  .family-directory .gallery-heading {
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .family-directory .gallery-heading h1 {
+    margin: 6px 0 8px;
+  }
+
+  .family-directory .family-catalog {
+    grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
+    gap: 14px;
+  }
+
+  .family-directory .family-group {
+    padding: 18px 20px;
+    border-radius: 9px;
+    background: #fffefa;
+  }
+
+  .family-directory .family-person {
+    padding: 9px 0;
+  }
+
+  .family-directory .family-children {
+    margin: 10px 0 14px 20px;
+  }
+
+  .family-directory .family-children button {
+    padding: 7px 0;
+  }
+
+  .insights-page {
+    padding: 28px clamp(28px, 3vw, 48px) 56px;
+  }
+
+  .insights-heading,
+  .insight-facts,
+  .insights-columns,
+  .insights-loading {
+    max-width: 1480px;
+  }
+
+  .insights-heading {
+    margin-bottom: 20px;
+  }
+
+  .insights-heading h1 {
+    font-size: 38px;
+  }
+
+  .insight-fact {
+    min-height: 154px;
+    padding: 18px;
+  }
+
+  .insights-card {
+    padding: 20px;
+  }
+}
+
+/* A little less decorative treatment lets photographs and family data lead. */
+.insights-page {
+  background: #f8f7f2;
+}
+
+.insight-fact,
+.insights-card {
+  box-shadow: none;
+  border-color: #dfe5dc;
+}
+
+.family-directory .family-group:hover {
+  border-color: #b9cbb9;
+}
+
+@media (max-width: 899px) {
+  .family-directory {
+    padding: 18px 12px 30px;
+  }
+
+  .family-directory .family-catalog {
+    gap: 12px;
+  }
+
+  .family-directory .family-group {
+    padding: 18px;
+  }
+}

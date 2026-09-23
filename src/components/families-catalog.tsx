@@ -22,7 +22,7 @@ export function FamiliesCatalog({
     ),
   );
   return (
-    <section className="gallery-view">
+    <section className="gallery-view family-directory">
       <div className="gallery-heading">
         <div>
           <span className="section-label">РОДИТЕЛИ И ДЕТИ</span>
