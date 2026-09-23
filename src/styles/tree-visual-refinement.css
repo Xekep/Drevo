@@ -1,0 +1,178 @@
+/* Tree records and the person inspector share a quiet archival palette. */
+.tree-canvas {
+  background: #f8f8f4;
+}
+
+.tree-canvas .flow-person {
+  border-color: #d9ded6;
+  background: #fffefa;
+  box-shadow: 0 1px 3px #2738290d;
+}
+
+.tree-canvas .flow-person:hover {
+  border-color: #a4b5a2;
+  box-shadow: 0 3px 12px #27382914;
+}
+
+.tree-canvas .flow-person.is-selected {
+  border: 1px solid #63816b;
+  box-shadow: 0 0 0 2px #63816b2e;
+}
+
+.tree-canvas .flow-person-content:focus-visible {
+  outline: 2px solid #416e51;
+  outline-offset: 2px;
+}
+
+.tree-canvas .flow-person .person-avatar {
+  border: 1px solid #e5e8e0;
+}
+
+.tree-canvas .flow-person-content strong {
+  color: #26362b;
+  letter-spacing: -0.015em;
+}
+
+.tree-canvas .flow-person:not(.is-overview) .flow-person-content > span > span {
+  color: #55635a;
+}
+
+.tree-canvas .flow-person-content small {
+  color: #65736a;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-dock {
+  border-color: #dce2da;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px #27382912;
+}
+
+.inspector-dock .inspector-heading {
+  border-bottom-color: #e9ede7;
+}
+
+.inspector-dock .inspector-heading > span {
+  color: #68766c;
+  letter-spacing: 0.075em;
+}
+
+.inspector-dock .profile-head {
+  padding: 22px 20px 20px;
+}
+
+.inspector-dock .profile-head .profile-avatar {
+  margin-bottom: 14px;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #dfe5dc;
+}
+
+.inspector-dock .profile-head h2 {
+  color: #26362b;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+}
+
+.inspector-dock .profile-head h2 > .profile-given-name {
+  color: #4d5b52;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.inspector-dock .profile-head > p {
+  margin-top: 10px;
+  color: #68766c;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-dock .panel-tabs {
+  gap: 22px;
+  padding: 0 20px;
+  border-top-color: #e9ede7;
+  border-bottom-color: #e0e6de;
+}
+
+.inspector-dock .panel-tabs > button {
+  color: #65736a;
+  font-size: 13px;
+}
+
+.inspector-dock .panel-tabs > button.active {
+  color: #26362b;
+  font-weight: 600;
+}
+
+.inspector-dock .panel-tabs .active::after {
+  background: #547560;
+}
+
+.inspector-dock .profile-content {
+  padding: 22px 20px 28px;
+}
+
+.inspector-dock .life-event {
+  gap: 11px;
+  margin-bottom: 20px;
+}
+
+.inspector-dock .event-icon {
+  border-color: #e3e8e0;
+  background: #f8f9f5;
+  color: #617767;
+}
+
+.inspector-dock .profile-content p,
+.inspector-dock .life-event b,
+.inspector-dock .source-card h3,
+.inspector-dock .relatives b {
+  color: #34443a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.inspector-dock .profile-content small,
+.inspector-dock .source-card p,
+.inspector-dock .relatives small {
+  color: #69776c;
+  line-height: 1.5;
+}
+
+.inspector-dock .section-label,
+.inspector-dock .event-label {
+  color: #6b786e;
+  letter-spacing: 0.075em;
+}
+
+.inspector-dock .relatives {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top-color: #e8ede6;
+}
+
+.inspector-dock .relatives h3 {
+  color: #34443a;
+  font-weight: 600;
+}
+
+.inspector-dock .relatives > button {
+  padding: 9px 4px;
+}
+
+.inspector-dock .source-card {
+  border-bottom-color: #e8ede6;
+}
+
+.inspector-dock .source-type,
+.inspector-dock .source-unavailable {
+  color: #68766c;
+}
+
+@media (max-width: 899px) {
+  .inspector-dock {
+    border-radius: 18px 18px 0 0;
+  }
+
+  .inspector-dock.expanded {
+    border-radius: 0;
+  }
+}

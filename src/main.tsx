@@ -18,6 +18,7 @@ import "./styles/mobile-refinements.css";
 import "./styles/controls.css";
 import "./styles/research-assistant.css";
 import "./styles/design-refinement.css";
+import "./styles/tree-visual-refinement.css";
 import "./styles/entry-sequence.css";
 import { ArchiveLoading } from "./components/archive-loading";
 
