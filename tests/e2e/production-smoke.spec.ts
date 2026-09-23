@@ -114,7 +114,7 @@ test("ИИ-исследователь не перекрывает навигац
             { kind: "photo", id: "photo-two", label: "Ещё снимок" },
           ],
           suggestionIds: [],
-          uiActions: [{ type: "open_person", personId: "e2e-memorial-person" }],
+          uiActions: [{ type: "focus_people", personIds: ["e2e-grandchild"] }],
         },
       )}\n\n`,
     }),
@@ -167,20 +167,34 @@ test("ИИ-исследователь не перекрывает навигац
   const after = await panel.boundingBox();
   expect(Math.abs(after!.x - before!.x)).toBeGreaterThan(30);
 
+  const eastHandle = panel.getByTestId("research-resize-e"),
+    eastBox = await eastHandle.boundingBox();
+  expect(eastBox).not.toBeNull();
   await page.mouse.move(
-    after!.x + after!.width - 2,
-    after!.y + after!.height - 2,
+    eastBox!.x + eastBox!.width / 2,
+    eastBox!.y + eastBox!.height / 2,
   );
   await page.mouse.down();
+  await page.mouse.move(eastBox!.x + 55, eastBox!.y + eastBox!.height / 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+  const wider = await panel.boundingBox(),
+    southHandle = panel.getByTestId("research-resize-s"),
+    southBox = await southHandle.boundingBox();
+  expect(wider!.width).toBeGreaterThan(after!.width + 25);
+  expect(southBox).not.toBeNull();
   await page.mouse.move(
-    after!.x + after!.width + 55,
-    after!.y + after!.height + 35,
-    { steps: 6 },
+    southBox!.x + southBox!.width / 2,
+    southBox!.y + southBox!.height / 2,
   );
+  await page.mouse.down();
+  await page.mouse.move(southBox!.x + southBox!.width / 2, southBox!.y + 35, {
+    steps: 6,
+  });
   await page.mouse.up();
   const resized = await panel.boundingBox();
-  expect(resized!.width).toBeGreaterThan(after!.width + 25);
-  expect(resized!.height).toBeGreaterThan(after!.height + 15);
+  expect(resized!.height).toBeGreaterThan(wider!.height + 15);
 
   await panel.getByRole("textbox").fill("Покажи схему");
   await expect(
@@ -191,7 +205,53 @@ test("ИИ-исследователь не перекрывает навигац
     panel.getByRole("heading", { name: "Тестов Иван Петрович" }),
   ).toBeVisible();
   await expect(panel.locator("table")).toBeVisible();
-  await expect(panel.locator(".research-mermaid svg")).toBeVisible();
+  const graph = panel.locator(".research-mermaid svg");
+  await expect(graph).toBeVisible();
+  await graph.evaluate((node) => {
+    (window as typeof window & { drevoGraphNode?: Element }).drevoGraphNode =
+      node;
+  });
+  await panel.getByRole("textbox").fill("Новый вопрос");
+  expect(
+    await graph.evaluate(
+      (node) =>
+        (window as typeof window & { drevoGraphNode?: Element })
+          .drevoGraphNode === node,
+    ),
+  ).toBe(true);
+  const headerAfterGraph = await header.boundingBox();
+  await page.mouse.move(
+    headerAfterGraph!.x + headerAfterGraph!.width / 2,
+    headerAfterGraph!.y + headerAfterGraph!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    headerAfterGraph!.x + headerAfterGraph!.width / 2 - 35,
+    headerAfterGraph!.y + headerAfterGraph!.height / 2 - 20,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  expect(
+    await graph.evaluate(
+      (node) =>
+        (window as typeof window & { drevoGraphNode?: Element })
+          .drevoGraphNode === node,
+    ),
+  ).toBe(true);
+  const focusedCard = page.getByTestId("rf__node-e2e-grandchild");
+  await expect(focusedCard).toHaveClass(/selected/);
+  await expect
+    .poll(async () => {
+      const [cardBox, canvasBox] = await Promise.all([
+        focusedCard.boundingBox(),
+        page.locator(".tree-canvas").boundingBox(),
+      ]);
+      if (!cardBox || !canvasBox) return 1000;
+      return Math.abs(
+        cardBox.x + cardBox.width / 2 - (canvasBox.x + canvasBox.width / 2),
+      );
+    })
+    .toBeLessThan(20);
   await expect(panel).toBeVisible();
   await expect(
     panel.getByRole("button", { name: "Тестов Иван Петрович" }),

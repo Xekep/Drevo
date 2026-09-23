@@ -17,6 +17,8 @@ type CameraFlow = {
     minZoom?: number;
     maxZoom?: number;
     padding?: number;
+    duration?: number;
+    ease?: (progress: number) => number;
   }) => unknown;
 };
 
@@ -147,6 +149,11 @@ export function useTreeCameraState({
           maxZoom: 1,
           minZoom: narrow ? 0.55 : 0.15,
           padding: 0.5,
+          duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? 0
+            : 650,
+          ease: (progress) => 1 - (1 - progress) ** 3,
         });
       } else if (changedContext || reverseChanged) {
         if ((switchedMode || reverseChanged) && selected.length)
@@ -177,7 +184,8 @@ export function useTreeCameraState({
             canvasHeight,
             padding,
           );
-          const useReadableFamilyFocus = narrow && wholeTreeZoom < MOBILE_READABLE_ZOOM;
+          const useReadableFamilyFocus =
+            narrow && wholeTreeZoom < MOBILE_READABLE_ZOOM;
           const initialNodes = useReadableFamilyFocus
             ? initialFamilyFocus(familyPeople)
                 .filter((id) => positions.has(id))

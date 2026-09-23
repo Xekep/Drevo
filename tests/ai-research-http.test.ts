@@ -6,9 +6,26 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import {
+  explicitViewControlRequest,
   requesterAccessContext,
   requesterPromptContext,
 } from "../src/server/ai-research-http.ts";
+
+test("явные команды перемещают пользователя по древу, обычный вопрос экран не меняет", () => {
+  assert.equal(
+    explicitViewControlRequest("Покажи Анну на древе", "gallery"),
+    true,
+  );
+  assert.equal(
+    explicitViewControlRequest("Перемести меня к Анне", "tree"),
+    true,
+  );
+  assert.equal(
+    explicitViewControlRequest("Найди Василия в дереве", "tree"),
+    true,
+  );
+  assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
+});
 
 test("web researcher uses Yandex AI Studio function calling through server only", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-"));
@@ -145,7 +162,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "Найди Анну",
+        message: "Перемести меня к Анне",
         context: { view: "tree", personIds: ["anna-ai-test"] },
       }),
     });
@@ -162,6 +179,9 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         label: "Лебедь Анна Семёновна",
       },
     );
+    assert.deepEqual(payload.uiActions, [
+      { type: "focus_people", personIds: ["anna-ai-test"] },
+    ]);
     assert.deepEqual(
       payload.references.find(
         (reference: { kind: string }) => reference.kind === "source",
@@ -185,6 +205,10 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     assert.match(
       firstMessages[0].content || "",
       /только если эта связь явно присутствует в photo\.documentedRelationships[\s\S]*Никогда не угадывай родство/,
+    );
+    assert.match(
+      firstMessages[0].content || "",
+      /переместить его к человеку на древе[\s\S]*action=focus_people/,
     );
 
     const secondMessages = requests[1].body.messages as Array<{
