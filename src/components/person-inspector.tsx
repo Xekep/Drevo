@@ -88,9 +88,13 @@ export function PersonInspector({
             <CopyArchiveLink target={{ kind: "person", id: person.id }} />
           )}
           {canEdit && owns(user, person) && (
-            <button onClick={onEdit} className="person-edit-button">
+            <button
+              onClick={onEdit}
+              className="person-edit-button"
+              aria-label="Изменить человека"
+              title="Изменить человека"
+            >
               <Pencil size={16} />
-              Изменить
             </button>
           )}
           {canEdit && (

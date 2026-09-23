@@ -350,7 +350,7 @@ function PhotoViewerContent({
                           onClick={() => previewPerson(person.id)}
                           onDoubleClick={() => onPerson(person.id)}
                           aria-label={`Показать сведения: ${fullName(person)}`}
-                          title="Двойной клик — показать в древе"
+                          title="Двойной клик — перейти к человеку в древе"
                         >
                           <span>
                             {person.name} {person.surname}
@@ -495,7 +495,7 @@ function PhotoViewerContent({
                     onBlur={() => setHighlightedPerson(null)}
                     onClick={() => previewPerson(person.id)}
                     onDoubleClick={() => onPerson(person.id)}
-                    title="Двойной клик — показать в древе"
+                    title="Двойной клик — перейти к человеку в древе"
                   >
                     {fullName(person)}
                   </button>

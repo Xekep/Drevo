@@ -1,5 +1,69 @@
 import { expect, test } from "@playwright/test";
 
+test("заставка закрывает архив до завершения загрузки после входа", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("drevo:entry-sequence", String(Date.now())),
+  );
+  await page.route("**/api/family?projection=overview", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await route.continue();
+  });
+  await page.goto("/tree", { waitUntil: "domcontentloaded" });
+  const entry = page.getByRole("dialog", { name: "Открываем семейный архив" });
+  await expect(entry).toBeVisible();
+  await expect(entry).not.toHaveClass(/is-ready/);
+  await expect(entry).toHaveClass(/is-ready/);
+  await entry.getByRole("button", { name: "Пропустить" }).click();
+  await expect(entry).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).toBeVisible();
+});
+
+test("блоки сводки имеют одинаковую ширину на широком экране", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto("/insights");
+  await expect(page.locator(".warnings-card")).toBeVisible();
+  const widths = await page
+    .locator(
+      ".insight-facts:not(.secondary-facts), .insights-more, .insights-columns, .warnings-card",
+    )
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().width),
+    );
+  expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
+});
+
+test("действия карточки человека остаются в одном ряду", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/tree");
+  await page.getByTestId("rf__node-e2e-memorial-person").click();
+  const actions = page.locator(
+    ".inspector-heading .inspector-person-actions button",
+  );
+  await expect(actions.first()).toBeVisible();
+  const positions = await actions.evaluateAll((buttons) =>
+    buttons.map((button) => button.getBoundingClientRect().top),
+  );
+  expect(Math.max(...positions) - Math.min(...positions)).toBeLessThan(2);
+  const fits = await page
+    .locator(".inspector-heading")
+    .evaluate((heading) =>
+      [...heading.querySelectorAll("button")].every(
+        (button) =>
+          button.getBoundingClientRect().right <=
+          heading.getBoundingClientRect().right,
+      ),
+    );
+  expect(fits).toBe(true);
+});
+
 test("на телефоне карточка уступает место открытому ИИ-исследователю", async ({
   page,
 }, testInfo) => {

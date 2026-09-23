@@ -221,8 +221,8 @@
   padding: 0;
 }
 .inspector-person-actions .person-edit-button {
-  min-height: var(--control-height);
-  padding: 7px 10px;
+  min-height: 36px;
+  padding: 0;
   border-radius: var(--control-radius);
 }
 .inspector-actions-slot {

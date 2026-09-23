@@ -33,10 +33,17 @@ export function clearEntrySequence() {
   }
 }
 
-export function EntrySequence({ onFinish }: { onFinish: () => void }) {
+export function EntrySequence({
+  onFinish,
+  ready,
+}: {
+  onFinish: () => void;
+  ready: boolean;
+}) {
   const skip = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    if (!ready) return;
     skip.current?.focus();
     const timer = window.setTimeout(onFinish, ENTRY_DURATION_MS);
     const onKeyDown = (event: KeyboardEvent) => {
@@ -53,11 +60,11 @@ export function EntrySequence({ onFinish }: { onFinish: () => void }) {
       window.clearTimeout(timer);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [onFinish]);
+  }, [onFinish, ready]);
 
   return (
     <div
-      className="entry-sequence"
+      className={`entry-sequence ${ready ? "is-ready" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label="Открываем семейный архив"
@@ -86,14 +93,16 @@ export function EntrySequence({ onFinish }: { onFinish: () => void }) {
         </strong>
         <i />
       </div>
-      <button
-        ref={skip}
-        className="entry-sequence-skip"
-        type="button"
-        onClick={onFinish}
-      >
-        Пропустить
-      </button>
+      {ready && (
+        <button
+          ref={skip}
+          className="entry-sequence-skip"
+          type="button"
+          onClick={onFinish}
+        >
+          Пропустить
+        </button>
+      )}
     </div>
   );
 }

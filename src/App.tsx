@@ -808,9 +808,15 @@ export default function App() {
           Подгружаем сведения и фотографии…
         </div>
       )}
-      {entryPending && family && user && !archive.loadingDetails && (
-        <EntrySequence onFinish={finishEntry} />
-      )}
+      {entryPending &&
+        !archive.error &&
+        !archive.needsLogin &&
+        (!family || user) && (
+          <EntrySequence
+            onFinish={finishEntry}
+            ready={!!family && !!user && !archive.loadingDetails}
+          />
+        )}
       {login && <LoginDialog onClose={() => setLogin(false)} />}
       {family && (
         <PhotoWorkspaceOverlays
