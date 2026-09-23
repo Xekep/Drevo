@@ -216,16 +216,11 @@ export function PersonPanel({
                   {person.deathPlace && <p>{person.deathPlace}</p>}
                 </div>
               </div>
-            ) : person.birth ? (
-              <div className="living-note">
-                <span className="tiny-dot" />
-                История продолжается
-              </div>
             ) : null}
             <LifeSpan person={person} />
             {(person.biography || person.occupation) && (
               <div className="biography">
-                <h3>{person.occupation || "Сохранённая история"}</h3>
+                <h3>{person.occupation || "Биография"}</h3>
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}
@@ -302,7 +297,7 @@ export function PersonPanel({
             ) : (
               <div className="empty-sources">
                 <BookOpen size={28} strokeWidth={1} />
-                <h3>У истории ещё есть пробелы</h3>
+                <h3>Источники не добавлены</h3>
                 <p>Источники об этом человеке пока не добавлены в архив.</p>
               </div>
             )}
