@@ -220,6 +220,15 @@ function containsInternalToolText(
   content: string,
   allowedNames: ReadonlySet<string>,
 ) {
+  if (
+    /["']name["']\s*:\s*["'][a-z][a-z0-9_]*["']\s*,\s*["']parameters["']\s*:/i.test(
+      content,
+    ) ||
+    /\b(?:get|find|search|list|propose|control)_[a-z0-9_]+\s*\(\s*\{/i.test(
+      content,
+    )
+  )
+    return true;
   return [...allowedNames].some((name) =>
     new RegExp(
       `\\b${name}\\s*\\(|["']name["']\\s*:\\s*["']${name}["']`,
