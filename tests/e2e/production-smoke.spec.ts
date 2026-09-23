@@ -477,7 +477,10 @@ test("семья на древе подсвечивается без режим�
   await expect(page).toHaveURL(/\/tree/);
   await expect
     .poll(() => page.locator(".flow-person.is-spotlit").count())
-    .toBeGreaterThanOrEqual(members);
+    .toBe(members);
+  await expect(
+    page.locator(".flow-person.is-outside-spotlight").first(),
+  ).toBeVisible();
   await expect(page.locator(".flow-person.is-selected")).toHaveCount(0);
   await expect(page.locator(".comparison-content")).toHaveCount(0);
 });

@@ -60,7 +60,7 @@ export const PersonNode = memo(function PersonNode({
   const overview = detail === "overview" || detail === "distant";
   return (
     <div
-      className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}

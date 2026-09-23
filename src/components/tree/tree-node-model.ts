@@ -28,6 +28,7 @@ type TreeNodeModelInput = {
   expanded: ReadonlySet<string>;
   query: string;
   spotlight?: ReadonlySet<string>;
+  spotlightOccurrences?: ReadonlySet<string>;
   growthDelays: ReadonlyMap<string, number>;
 };
 
@@ -43,6 +44,7 @@ export function buildTreeNodeModel({
   expanded,
   query,
   spotlight,
+  spotlightOccurrences,
   growthDelays,
 }: TreeNodeModelInput) {
   const childrenCount = new Map<string, number>();
@@ -172,7 +174,14 @@ export function buildTreeNodeModel({
           expanded: expanded.has(person.id),
           childrenCount: childrenCount.get(person.id) || 0,
           dimmed: !matchesPerson(person, query),
-          spotlit: spotlight?.has(person.id) || false,
+          spotlit: spotlightOccurrences
+            ? spotlightOccurrences.has(occurrence.id)
+            : spotlight?.has(person.id) || false,
+          outsideSpotlight:
+            !!spotlight?.size &&
+            !(spotlightOccurrences
+              ? spotlightOccurrences.has(occurrence.id)
+              : spotlight.has(person.id)),
         },
         draggable: false,
       };

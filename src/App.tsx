@@ -760,10 +760,10 @@ export default function App() {
                   loadingDetails={archive.loadingDetails}
                   save={save}
                   onPerson={showPerson}
-                  onReveal={(ids) => {
+                  onReveal={(ids, groupId) => {
                     lastUrlTarget.current = "";
                     setView("tree", undefined, true);
-                    revealFamily(ids);
+                    revealFamily(ids, groupId);
                   }}
                   onPhoto={openPhotoUrl}
                   onAddPhoto={() => photoWorkspace.openUpload()}

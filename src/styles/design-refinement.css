@@ -86,8 +86,8 @@
   }
 
   .insight-fact {
-    min-height: 154px;
-    padding: 18px;
+    min-height: 0;
+    padding: 17px;
   }
 
   .insights-card {

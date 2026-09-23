@@ -7,7 +7,7 @@ import {
   Camera,
   Clock3,
   MapPin,
-  Sparkles,
+  ChartNoAxesCombined,
   UsersRound,
 } from "lucide-react";
 import { analyzeFamilyInsights, type Family } from "../domain";
@@ -26,7 +26,7 @@ export default function InsightsPage({
   if (!family.people.length)
     return (
       <section className="insights-page insights-empty">
-        <Sparkles size={28} />
+        <ChartNoAxesCombined size={28} />
         <h1>Сводка архива</h1>
         <p>Сначала добавьте людей в древо. Пока здесь нечего подсчитать.</p>
       </section>
@@ -38,7 +38,7 @@ export default function InsightsPage({
       CalendarRange,
       Baby,
       UsersRound,
-      Sparkles,
+      ChartNoAxesCombined,
       UsersRound,
       BookOpenCheck,
       MapPin,
@@ -59,7 +59,7 @@ export default function InsightsPage({
           <small>{fact.title}</small>
           <strong>{fact.value}</strong>
           <p>{fact.detail}</p>
-          {personId && <span className="insight-open">Открыть человека</span>}
+          {personId && <span className="insight-open">Открыть карточку →</span>}
         </span>
       </>
     );
@@ -84,19 +84,16 @@ export default function InsightsPage({
     <section className="insights-page">
       <header className="insights-heading">
         <div>
-          <span className="section-label">ФАКТЫ И СВЯЗИ</span>
           <h1>Сводка архива</h1>
-          <p>
-            Факты рассчитываются из связей, дат, событий и фотографий в архиве.
-          </p>
+          <p>Люди, материалы и факты из семейного архива.</p>
         </div>
         <section
           className="insights-summary"
           aria-label="Семейный архив в цифрах"
         >
-          <h2>Наша история в цифрах</h2>
+          <h2>В архиве</h2>
           <ArchiveSummary people={family.people} detailed />
-          <p>По известным датам жизни и связям между поколениями.</p>
+          <p>Годы указаны по сохранившимся датам.</p>
         </section>
       </header>
 
@@ -128,10 +125,8 @@ export default function InsightsPage({
         <article className="insights-card">
           <header>
             <div>
-              <span className="section-label">ФАМИЛИИ И ИМЕНА</span>
-              <h2>Что повторяется чаще всего</h2>
+              <h2>Фамилии и имена</h2>
             </div>
-            <Sparkles size={20} />
           </header>
           <div className="name-ranking">
             <div>
@@ -160,10 +155,8 @@ export default function InsightsPage({
         <article className="insights-card data-card">
           <header>
             <div>
-              <span className="section-label">МАТЕРИАЛЫ</span>
-              <h2>Что уже есть в архиве</h2>
+              <h2>Материалы</h2>
             </div>
-            <Camera size={20} />
           </header>
           <div className="archive-materials">
             <span>
@@ -188,10 +181,8 @@ export default function InsightsPage({
       <article className="insights-card warnings-card">
         <header>
           <div>
-            <span className="section-label">ПРОВЕРКА ДАННЫХ</span>
-            <h2>Что стоит перепроверить</h2>
+            <h2>Проверить записи</h2>
           </div>
-          <AlertTriangle size={20} />
         </header>
         {insights.warnings.length ? (
           <div className="insight-warnings">

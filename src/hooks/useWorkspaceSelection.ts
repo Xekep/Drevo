@@ -10,7 +10,7 @@ type State = {
 type Action =
   | { type: "choose"; id: string; additive: boolean }
   | { type: "reveal"; ids: string[] }
-  | { type: "revealFamily"; ids: string[] }
+  | { type: "revealFamily"; ids: string[]; groupId: string }
   | { type: "compare" }
   | { type: "link" }
   | { type: "clear" }
@@ -62,6 +62,7 @@ function reducer(state: State, action: Action): State {
           ids: action.ids,
           token: (state.focus?.token || 0) + 1,
           purpose: "family",
+          groupId: action.groupId,
         },
       };
     case "choose": {
@@ -102,7 +103,8 @@ export function useWorkspaceSelection() {
     [],
   );
   const revealFamily = useCallback(
-    (ids: string[]) => dispatch({ type: "revealFamily", ids }),
+    (ids: string[], groupId: string) =>
+      dispatch({ type: "revealFamily", ids, groupId }),
     [],
   );
   return { ...state, choose, reveal, revealFamily, dispatch };

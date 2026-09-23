@@ -6,6 +6,7 @@ export type PersonNodeData = {
   childrenCount: number;
   dimmed: boolean;
   spotlit?: boolean;
+  outsideSpotlight?: boolean;
   household?: boolean;
   occurrences?: number;
   familyFocus?: boolean;
@@ -22,6 +23,7 @@ export function samePersonNodeData(a: PersonNodeData, b: PersonNodeData) {
     a.childrenCount === b.childrenCount &&
     a.dimmed === b.dimmed &&
     a.spotlit === b.spotlit &&
+    a.outsideSpotlight === b.outsideSpotlight &&
     a.household === b.household &&
     a.occurrences === b.occurrences &&
     a.familyFocus === b.familyFocus &&

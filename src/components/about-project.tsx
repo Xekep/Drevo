@@ -1,68 +1,42 @@
-import {
-  TreeDeciduous,
-  BookOpen,
-  Users,
-  Heart,
-  ArrowRight,
-} from "lucide-react";
+import { TreeDeciduous, BookOpen, Users } from "lucide-react";
 import { EditorDialog } from "./editor-dialog";
 
 export function AboutProject({ onClose }: { onClose: () => void }) {
   return (
     <EditorDialog title="О проекте" onClose={onClose}>
       <div className="about-story">
-        <TreeDeciduous size={38} strokeWidth={1.2} />
-        <div className="eyebrow">ЛЮДИ · СВЯЗИ · ИСТОЧНИКИ</div>
-        <h2>
-          Семейный архив
-          <br />в деталях<span>.</span>
-        </h2>
+        <TreeDeciduous size={30} strokeWidth={1.5} aria-hidden="true" />
+        <h2>Drevo</h2>
         <p>
-          Люди, родственные связи, фотографии и документы — всё, что помогает
-          сохранить историю семьи.
+          Это мой пет-проект для семейной истории. Я собираю здесь людей,
+          родственные связи, фотографии и документы, чтобы не терять их по
+          разным папкам и записям.
         </p>
         <div className="about-instructions">
           <div>
-            <TreeDeciduous size={18} />
+            <TreeDeciduous size={18} aria-hidden="true" />
             <span>
-              <b>Смотрите поколения</b>
-              <p>
-                Исследуйте поколения в «Древе» или переключитесь на
-                «Хронологию»: реальные годы жизни, века и исторические эпохи.
-              </p>
+              <b>Древо и хронология</b>
+              <p>Показывают связи между людьми и известные годы их жизни.</p>
             </span>
           </div>
           <div>
-            <BookOpen size={18} />
+            <BookOpen size={18} aria-hidden="true" />
             <span>
-              <b>Изучайте карточки людей</b>
-              <p>
-                Нажмите на человека: откроются даты, места, портрет,
-                воспоминания и источники. В фотоальбоме — все снимки, на которых
-                он отмечен.
-              </p>
+              <b>Карточки и фотографии</b>
+              <p>Даты, места, воспоминания, источники и семейные снимки.</p>
             </span>
           </div>
           <div>
-            <Users size={18} />
+            <Users size={18} aria-hidden="true" />
             <span>
-              <b>Проверяйте родство</b>
-              <p>
-                Включите «Родство» и выберите двух людей. Узнайте, кем они
-                приходятся друг другу и кто их связывает.
-              </p>
+              <b>Проверка родства</b>
+              <p>Выберите двух людей, чтобы увидеть связь между ними.</p>
             </span>
           </div>
         </div>
-        <div className="about-demo">
-          <Heart size={16} />
-          <p>
-            Семейная история составлена из сведений и связей, добавленных в
-            архив.
-          </p>
-        </div>
-        <button className="dialog-done" onClick={onClose}>
-          Перейти к истории <ArrowRight size={15} />
+        <button type="button" className="dialog-done" onClick={onClose}>
+          Вернуться в архив
         </button>
       </div>
     </EditorDialog>
