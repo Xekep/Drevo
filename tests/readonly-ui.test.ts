@@ -134,8 +134,9 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
     const about = renderToStaticMarkup(
       createElement(AboutProject, { onClose: noop }),
     );
-    assert.match(about, /Семейный архив/);
-    assert.match(about, /Перейти к истории/);
+    assert.match(about, /мой пет-проект/);
+    assert.match(about, /Древо и хронология/);
+    assert.match(about, /Карточки и фотографии/);
     const { PersonHints } = await server.ssrLoadModule(
       "/src/components/person-hints.tsx",
     );
