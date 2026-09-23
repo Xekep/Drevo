@@ -4,7 +4,13 @@ import {
   TREE_NODE_WIDTH as W,
   TREE_NODE_HEIGHT as H,
 } from "./tree-layout-constants.ts";
-import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
+import {
+  bounds,
+  routeRelationships,
+  segmentContact,
+  Spatial,
+  type EdgeRoute,
+} from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
 import { familyLeafGroups, compactFamilyLayout } from "./family-packing.ts";
 import { optimizeBranches } from "./branch-routing.ts";
@@ -58,11 +64,12 @@ export function familyUnions(people: LayoutPerson[]) {
 }
 
 /** Генерационная проекция с визуальными повторами, не копиями записей в архиве. */
-export async function unionGeometry(
+async function geometryForSeed(
   people: LayoutPerson[],
   layout: (graph: ElkNode) => Promise<ElkNode>,
-  reverse = false,
-  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+  reverse: boolean,
+  links: Pick<FamilyLink, "type" | "from" | "to">[],
+  seed: number,
 ): Promise<TreeGeometry> {
   const units = familyUnions(people);
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -247,7 +254,7 @@ export async function unionGeometry(
         "elk.algorithm": "layered",
         "elk.direction": "DOWN",
         "elk.edgeRouting": "ORTHOGONAL",
-        "elk.randomSeed": "1",
+        "elk.randomSeed": String(seed),
         "elk.spacing.nodeNode": "64",
         "elk.spacing.componentComponent": "100",
         "elk.layered.spacing.nodeNodeBetweenLayers": "100",
@@ -430,4 +437,82 @@ export async function unionGeometry(
     siblingGroups,
     branches,
   };
+}
+
+function mainRouteContacts(geometry: TreeGeometry) {
+  type Point = EdgeRoute["points"][number];
+  type Segment = ReturnType<typeof bounds> & {
+    a: Point;
+    b: Point;
+    union: string;
+  };
+  const lines = new Spatial<Segment>();
+  let contacts = 0;
+  for (const branch of geometry.branches || [])
+    for (let i = 1; i < branch.route.points.length; i++) {
+      const a = branch.route.points[i - 1],
+        b = branch.route.points[i];
+      if (a.x === b.x && a.y === b.y) continue;
+      const box = bounds(a, b);
+      for (const previous of lines.query(box))
+        if (
+          previous.union !== branch.union &&
+          segmentContact(a, b, previous.a, previous.b)
+        )
+          contacts++;
+      lines.add({ ...box, a, b, union: branch.union });
+    }
+  return contacts;
+}
+
+/** Сравниваем видимые маршруты после ELK, группировки листьев и их прокладки. */
+export async function unionGeometry(
+  people: LayoutPerson[],
+  layout: (graph: ElkNode) => Promise<ElkNode>,
+  reverse = false,
+  links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+): Promise<TreeGeometry> {
+  let best = await geometryForSeed(people, layout, reverse, links, 1);
+  let contacts = mainRouteContacts(best);
+  if (!contacts) return best;
+
+  const extent = (geometry: TreeGeometry) => {
+    const xs = geometry.positions.map(([, p]) => p.x),
+      ys = geometry.positions.map(([, p]) => p.y);
+    return {
+      width: Math.max(...xs) - Math.min(...xs) + W,
+      height: Math.max(...ys) - Math.min(...ys) + H,
+    };
+  };
+  const initial = extent(best);
+  // На больших архивах ограничиваем число запусков ELK, сохраняя
+  // детерминированный результат для одного и того же набора людей.
+  const seeds =
+    people.length <= 300
+      ? [15, 20, 12, 4, 8]
+      : people.length <= 2000
+        ? [15, 20]
+        : [];
+  for (const seed of seeds) {
+    let candidate: TreeGeometry;
+    try {
+      candidate = await geometryForSeed(people, layout, reverse, links, seed);
+    } catch {
+      continue;
+    }
+    const size = extent(candidate);
+    if (
+      Math.max(size.width, size.height) >
+        Math.max(initial.width, initial.height) * 1.4 ||
+      size.width * size.height > initial.width * initial.height * 1.5
+    )
+      continue;
+    const next = mainRouteContacts(candidate);
+    if (next < contacts) {
+      best = candidate;
+      contacts = next;
+    }
+    if (!contacts) break;
+  }
+  return best;
 }
