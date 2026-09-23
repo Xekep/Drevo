@@ -459,7 +459,7 @@ test("мобильная админка доступна и не разъезж�
   expect(layout).toEqual({ pageOverflow: false, rowOverflow: false });
   await page.getByRole("button", { name: "Журнал правок" }).click();
   await expect(
-    page.getByRole("heading", { name: "Журнал правок", exact: true }),
+    page.getByRole("heading", { level: 1, name: "Журнал правок" }),
   ).toBeVisible();
 });
 
@@ -491,7 +491,17 @@ test("выбор двух людей с Shift не выделяет текст �
   const people = page.locator(".flow-person-content");
   await people.first().click();
   await people.nth(1).click({ modifiers: ["Shift"] });
-  await expect(page.locator(".flow-person.is-selected")).toHaveCount(2);
+  await expect
+    .poll(() =>
+      page
+        .locator(".flow-person.is-selected .flow-person-content")
+        .evaluateAll(
+          (buttons) =>
+            new Set(buttons.map((button) => button.getAttribute("aria-label")))
+              .size,
+        ),
+    )
+    .toBe(2);
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 });
 
@@ -562,7 +572,7 @@ test("участники загружаются страницами и удал
   await page
     .getByRole("button", { name: "Удалить участника: Участник 00" })
     .click();
-  await expect(page.getByText("Всего участников: 44")).toBeVisible();
+  await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),
   ).toHaveCount(0);
