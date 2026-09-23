@@ -895,8 +895,10 @@
     -webkit-user-select: none;
   }
   .inspector-heading > span {
-    font-size: 12px;
-    letter-spacing: 0.6px;
+    display: none;
+  }
+  .inspector-heading > button:first-of-type {
+    margin-left: auto;
   }
   .inspector-heading > button {
     min-width: 44px;

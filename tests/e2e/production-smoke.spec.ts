@@ -11,6 +11,7 @@ test("на телефоне карточка уступает место отк�
   await page.getByTestId("rf__node-e2e-memorial-person").click();
   const card = page.locator(".inspector-dock");
   await expect(card).toBeVisible();
+  await expect(card.locator(".inspector-heading > span")).toBeHidden();
   const dove = card.locator(".memorial-dove");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await expect(page.locator(".research-assistant")).toBeVisible();
