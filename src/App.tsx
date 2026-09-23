@@ -90,8 +90,17 @@ export default function App() {
     [canEdit, uploadArchive],
   );
   const selection = useWorkspaceSelection(),
-    { selected, compare, linkFrom, focus, choose, reveal, dispatch } =
-      selection;
+    {
+      selected,
+      compare,
+      linkFrom,
+      focus,
+      spotlight,
+      choose,
+      reveal,
+      revealFamily,
+      dispatch,
+    } = selection;
   const navigationDirty = useRef(false);
   const [requestedView, setView] = useArchiveView(
     useCallback(() => {
@@ -606,6 +615,7 @@ export default function App() {
                       preview={preview}
                       query={query}
                       highlighted={highlighted}
+                      spotlight={spotlight}
                       onIntroComplete={() =>
                         setAssistantNudgeToken((value) => value + 1)
                       }
@@ -751,13 +761,9 @@ export default function App() {
                   save={save}
                   onPerson={showPerson}
                   onReveal={(ids) => {
-                    const target: ArchiveTarget | undefined =
-                      ids.length === 1
-                        ? { kind: "person", id: ids[0] }
-                        : undefined;
-                    lastUrlTarget.current = targetKey(target || null);
-                    setView("tree", target);
-                    reveal(ids);
+                    lastUrlTarget.current = "";
+                    setView("tree", undefined, true);
+                    revealFamily(ids);
                   }}
                   onPhoto={openPhotoUrl}
                   onAddPhoto={() => photoWorkspace.openUpload()}

@@ -39,6 +39,55 @@ type UserPatch = {
 };
 type UsersPage = { users: ArchiveUser[]; next: string | null; total: number };
 const USERS_PAGE_SIZE = 20;
+const ADMIN_SECTIONS = [
+  {
+    label: "Архив",
+    items: [
+      { id: "users", label: "Участники", icon: Users },
+      { id: "access", label: "Доступ и древо", icon: ArrowDownUp },
+      { id: "data", label: "Данные и копии", icon: DatabaseBackup },
+    ],
+  },
+  {
+    label: "Инструменты",
+    items: [
+      { id: "ai", label: "Yandex AI", icon: Bot },
+      { id: "mcp", label: "MCP-токены", icon: KeyRound },
+      { id: "shares", label: "Временные ссылки", icon: Link2 },
+      { id: "audit", label: "Журнал правок", icon: History },
+    ],
+  },
+] as const;
+const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  users: {
+    title: "Участники",
+    description: "Аккаунты, роли и доступ к семейному архиву.",
+  },
+  access: {
+    title: "Доступ и древо",
+    description: "Публичный просмотр и направление поколений.",
+  },
+  data: {
+    title: "Данные и копии",
+    description: "Резервные копии, восстановление и перенос архива.",
+  },
+  ai: {
+    title: "Yandex AI",
+    description: "Подключение исследователя, лимиты и использование.",
+  },
+  mcp: {
+    title: "MCP-токены",
+    description: "Доступ внешних клиентов к инструментам архива.",
+  },
+  shares: {
+    title: "Временные ссылки",
+    description: "Выданные гостям ссылки на семейные ветви.",
+  },
+  audit: {
+    title: "Журнал правок",
+    description: "История изменений и действий участников.",
+  },
+};
 
 function AdminUserRow({
   user,
@@ -66,8 +115,13 @@ function AdminUserRow({
   return (
     <article className="admin-user-row" aria-label={`Участник: ${user.name}`}>
       <div className="admin-user-name" title={user.name}>
-        <b>{user.name}</b>
-        {!user.approved && <small>Ожидает одобрения</small>}
+        <span className="admin-user-avatar" aria-hidden="true">
+          {user.name.trim().slice(0, 1).toLocaleUpperCase("ru-RU") || "?"}
+        </span>
+        <span className="admin-user-identity">
+          <b>{user.name}</b>
+          {!user.approved && <small>Ожидает одобрения</small>}
+        </span>
       </div>
       <label className="admin-user-select">
         <span>Роль</span>
@@ -242,50 +296,46 @@ export function AdminPanel({
     <main className="admin-page">
       <aside className="admin-sidebar">
         <div className="admin-mark">
-          <ShieldCheck size={28} />
+          <span className="admin-mark-icon">
+            <ShieldCheck size={20} />
+          </span>
           <span>
-            УПРАВЛЕНИЕ
-            <br />
-            <b>Семейный архив</b>
+            <small>DREVO</small>
+            <b>Управление архивом</b>
           </span>
         </div>
         <nav aria-label="Разделы админки">
-          {[
-            ["users", "Участники", Users],
-            ["access", "Доступ и древо", ArrowDownUp],
-            ["data", "Данные и копии", DatabaseBackup],
-            ["ai", "Yandex AI", Bot],
-            ["mcp", "MCP-токены", KeyRound],
-            ["shares", "Временные ссылки", Link2],
-            ["audit", "Журнал правок", History],
-          ].map(([id, label, Icon]) => {
-            const ItemIcon = Icon as typeof Users;
-            return (
-              <button
-                key={String(id)}
-                aria-current={section === id ? "page" : undefined}
-                onClick={() => {
-                  setSection(String(id));
-                  setNotice("");
-                }}
-              >
-                <ItemIcon size={18} />
-                {String(label)}
-              </button>
-            );
-          })}
+          {ADMIN_SECTIONS.map((group) => (
+            <div className="admin-nav-group" key={group.label}>
+              <span className="admin-nav-label">{group.label}</span>
+              {group.items.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-current={section === id ? "page" : undefined}
+                  onClick={() => {
+                    setSection(id);
+                    setNotice("");
+                  }}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
-        <button className="admin-back" onClick={onClose}>
+        <button className="admin-back" type="button" onClick={onClose}>
           <ArrowLeft size={16} />
           Вернуться к древу
         </button>
       </aside>
       <div className="admin-content">
-        <span className="section-label">АДМИНИСТРАТОР</span>
-        <h1>Управление архивом</h1>
-        <p className="admin-subtitle">
-          Доступ для семьи, вид древа и сохранность вашей истории.
-        </p>
+        <header className="admin-page-header">
+          <span className="section-label">УПРАВЛЕНИЕ АРХИВОМ</span>
+          <h1>{ADMIN_INTRO[section].title}</h1>
+          <p className="admin-subtitle">{ADMIN_INTRO[section].description}</p>
+        </header>
         {!settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && section === "users" && (
           <section className="admin-card archive-form">
@@ -308,7 +358,9 @@ export function AdminPanel({
               </p>
             )}
             <div className="admin-users-toolbar">
-              <span>Всего участников: {usersTotal}</span>
+              <span>
+                Всего участников <b>{usersTotal}</b>
+              </span>
               <span role="status">{busy ? "Сохраняем…" : notice}</span>
             </div>
             {usersLoading ? (

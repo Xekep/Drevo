@@ -147,6 +147,18 @@ test("ссылка на снимок открывает просмотр и за
   await expect(
     page.locator(".photo-person-sidebar .profile-head"),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Закрыть сведения о человеке" }),
+  ).toHaveCount(0);
+  const toolbarButtons = [
+    page.locator(".photo-person-sidebar").getByRole("button", { name: "О снимке" }),
+    page.getByRole("button", { name: "Показать в древе" }),
+    page.getByRole("button", { name: "Скопировать ссылку" }),
+    page.getByRole("button", { name: "Закрыть просмотр фото" }),
+  ];
+  const positions = await Promise.all(toolbarButtons.map((button) => button.boundingBox()));
+  expect(positions.every(Boolean)).toBe(true);
+  expect(Math.max(...positions.map((box) => box!.y)) - Math.min(...positions.map((box) => box!.y))).toBeLessThan(2);
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page
     .locator(".photo-person-sidebar")

@@ -34,6 +34,16 @@ export function useFamilyView(
     focusToken: focus?.token,
   }));
   const [collapsed, setCollapsed] = useState(new Set<string>());
+  if (focus?.purpose === "family" && focus.token !== view.focusToken) {
+    setView({
+      mode: "all",
+      anchor: null,
+      expanded: new Set(),
+      revealed: focus.ids,
+      focusToken: focus.token,
+    });
+    if (collapsed.size) setCollapsed(new Set());
+  }
   const newFocus = !!focus && focus.token !== view.focusToken;
   const requested = newFocus ? focus.ids[0] : view.anchor;
   const anchor =

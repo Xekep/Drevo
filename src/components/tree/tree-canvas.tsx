@@ -61,7 +61,7 @@ export type ConnectionDraft = {
   note?: string;
   hint?: string;
 };
-export type TreeFocus = { ids: string[]; token: number };
+export type TreeFocus = { ids: string[]; token: number; purpose?: "family" };
 type Props = {
   comparisonAction?: ReactNode;
   restricted?: boolean;
@@ -84,6 +84,7 @@ type Props = {
   preview: ConnectionDraft | null;
   query: string;
   highlighted: string[];
+  spotlight?: string[];
   onIntroComplete?: () => void;
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
@@ -91,6 +92,19 @@ const nodeTypes = { person: PersonNode, household: HouseholdNode },
 function Canvas(props: Props) {
   const narrow = useNarrowScreen();
   const container = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = container.current;
+    const preventTextSelection = (event: Event) => {
+      if (
+        !(event.target as Element).closest(
+          "input, textarea, [contenteditable='true']",
+        )
+      )
+        event.preventDefault();
+    };
+    node?.addEventListener("selectstart", preventTextSelection);
+    return () => node?.removeEventListener("selectstart", preventTextSelection);
+  }, []);
   const screen = useTreeFullscreen(container);
   const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
   const [createAt, setCreateAt] = useState<TreeCreateAtDraft | null>(null);
@@ -193,6 +207,7 @@ function Canvas(props: Props) {
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
+        spotlight: new Set(props.spotlight || []),
         growthDelays,
       }),
     [
@@ -207,6 +222,7 @@ function Canvas(props: Props) {
       familyView.hidden,
       familyView.expanded,
       props.query,
+      props.spotlight,
       growthDelays,
     ],
   );

@@ -8,6 +8,7 @@ test("на телефоне карточка уступает место отк�
     route.fulfill({ json: { enabled: true, streaming: true } }),
   );
   await page.goto("/tree");
+  await expect(page.getByText("Нужна помощь?", { exact: true })).toBeHidden();
   await page.getByTestId("rf__node-e2e-memorial-person").click();
   const card = page.locator(".inspector-dock");
   await expect(card).toBeVisible();
@@ -442,7 +443,7 @@ test("мобильная админка доступна и не разъезж�
   );
   await page.goto("/admin");
   await expect(
-    page.getByRole("heading", { name: "Управление архивом" }),
+    page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Участники" })).toBeVisible();
   const row = page.locator(".admin-user-row").first();
@@ -456,6 +457,52 @@ test("мобильная админка доступна и не разъезж�
       element.querySelector(".admin-user-row")!.clientWidth + 1,
   }));
   expect(layout).toEqual({ pageOverflow: false, rowOverflow: false });
+  await page.getByRole("button", { name: "Журнал правок" }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Журнал правок" }),
+  ).toBeVisible();
+});
+
+test("семья на древе подсвечивается без режима родства", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/families");
+  const group = page.locator(".family-group").first();
+  await expect(group).toBeVisible();
+  const members =
+    (await group.locator(".family-person").count()) +
+    (await group.locator(".family-children button").count());
+  await group.getByRole("button", { name: "Показать семью на древе" }).click();
+  await expect(page).toHaveURL(/\/tree/);
+  await expect
+    .poll(() => page.locator(".flow-person.is-spotlit").count())
+    .toBeGreaterThanOrEqual(members);
+  await expect(page.locator(".flow-person.is-selected")).toHaveCount(0);
+  await expect(page.locator(".comparison-content")).toHaveCount(0);
+});
+
+test("выбор двух людей с Shift не выделяет текст на древе", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  const people = page.locator(".flow-person-content");
+  await people.first().click();
+  await people.nth(1).click({ modifiers: ["Shift"] });
+  await expect
+    .poll(() =>
+      page
+        .locator(".flow-person.is-selected .flow-person-content")
+        .evaluateAll(
+          (buttons) =>
+            new Set(buttons.map((button) => button.getAttribute("aria-label")))
+              .size,
+        ),
+    )
+    .toBe(2);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 });
 
 test("интересные данные не превращаются в длинную ленту карточек", async ({
@@ -525,7 +572,7 @@ test("участники загружаются страницами и удал
   await page
     .getByRole("button", { name: "Удалить участника: Участник 00" })
     .click();
-  await expect(page.getByText("Всего участников: 44")).toBeVisible();
+  await expect(page.getByText(/Всего участников\s*44/)).toBeVisible();
   await expect(
     page.getByRole("article", { name: "Участник: Участник 00" }),
   ).toHaveCount(0);

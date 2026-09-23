@@ -60,7 +60,7 @@ export const PersonNode = memo(function PersonNode({
   const overview = detail === "overview" || detail === "distant";
   return (
     <div
-      className={`flow-person ${selected ? "is-selected" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
@@ -83,6 +83,9 @@ export const PersonNode = memo(function PersonNode({
       <button
         className="flow-person-content"
         {...longPress.handlers}
+        onMouseDown={(event) => {
+          if (event.shiftKey) event.preventDefault();
+        }}
         onContextMenu={(event) => {
           if (longPress.active() || longPress.suppressClick.current)
             event.preventDefault();
