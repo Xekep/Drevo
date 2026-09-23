@@ -1226,16 +1226,11 @@
 .about-story {
   padding: 8px 30px 26px;
 }
-.about-story > svg {
-  color: #789364;
-  margin-bottom: 12px;
-}
-.about-story h2 {
-  font-family: var(--serif);
-  font-size: 32px;
-  line-height: 1.12;
-  font-weight: 400;
-  letter-spacing: -0.5px;
+.about-story .about-lead {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 .about-story p {
   font-size: 13px;
@@ -1244,6 +1239,9 @@
 }
 .about-story > p {
   margin-top: 12px;
+}
+.about-story > p:first-child {
+  margin-top: 0;
 }
 .about-story .about-instructions {
   display: flex;
