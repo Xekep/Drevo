@@ -1,12 +1,18 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Check, Send, Sparkles, X } from "lucide-react";
-import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 type AnswerReference =
@@ -32,36 +38,82 @@ type UiAction =
 
 type PanelPosition = { left: number; top: number };
 type LauncherPosition = { left: number; top: number };
+type ResizeDirection = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+type PanelRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+const RESIZE_DIRECTIONS: Array<{
+  direction: ResizeDirection;
+  label: string;
+}> = [
+  {
+    direction: "n",
+    label: "Изменить высоту сверху",
+  },
+  { direction: "ne", label: "Изменить размер сверху справа" },
+  { direction: "e", label: "Изменить ширину справа" },
+  { direction: "se", label: "Изменить размер снизу справа" },
+  { direction: "s", label: "Изменить высоту снизу" },
+  { direction: "sw", label: "Изменить размер снизу слева" },
+  { direction: "w", label: "Изменить ширину слева" },
+  { direction: "nw", label: "Изменить размер сверху слева" },
+];
 
 let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | undefined;
+let mermaidRenderId = 0;
+const mermaidSvgCache = new Map<string, string>(),
+  mermaidSvgPending = new Map<string, Promise<string>>();
+
+function renderMermaid(source: string) {
+  const cached = mermaidSvgCache.get(source);
+  if (cached) return Promise.resolve(cached);
+  const pending = mermaidSvgPending.get(source);
+  if (pending) return pending;
+  mermaidModule ||= import("mermaid").then((module) => {
+    module.default.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "neutral",
+      fontFamily: "inherit",
+    });
+    return module.default;
+  });
+  const rendering = mermaidModule
+    .then((mermaid) => mermaid.render(`drevo-ai-${++mermaidRenderId}`, source))
+    .then(({ svg }) => {
+      if (mermaidSvgCache.size >= 32)
+        mermaidSvgCache.delete(mermaidSvgCache.keys().next().value!);
+      mermaidSvgCache.set(source, svg);
+      return svg;
+    })
+    .finally(() => mermaidSvgPending.delete(source));
+  mermaidSvgPending.set(source, rendering);
+  return rendering;
+}
 
 function MermaidDiagram({ source }: { source: string }) {
-  const host = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState("");
+  const [rendered, setRendered] = useState<{
+    source: string;
+    svg: string;
+    error: string;
+  }>(() => ({ source, svg: mermaidSvgCache.get(source) || "", error: "" }));
+  const cached = mermaidSvgCache.get(source) || "",
+    svg = rendered.source === source ? rendered.svg : cached,
+    error = rendered.source === source ? rendered.error : "";
 
   useEffect(() => {
+    if (mermaidSvgCache.has(source)) return;
     let active = true;
-    mermaidModule ||= import("mermaid").then((module) => {
-      module.default.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        theme: "neutral",
-        fontFamily: "inherit",
-      });
-      return module.default;
-    });
-    void mermaidModule
-      .then((mermaid) =>
-        mermaid.render(
-          `drevo-ai-${crypto.randomUUID().replaceAll("-", "")}`,
-          source,
-        ),
-      )
-      .then(({ svg }) => {
-        if (active && host.current) host.current.innerHTML = svg;
+    void renderMermaid(source)
+      .then((value) => {
+        if (active) setRendered({ source, svg: value, error: "" });
       })
       .catch(() => {
-        if (active) setError("Не удалось построить схему");
+        if (active)
+          setRendered({ source, svg: "", error: "Не удалось построить схему" });
       });
     return () => {
       active = false;
@@ -72,16 +124,48 @@ function MermaidDiagram({ source }: { source: string }) {
     <pre className="research-mermaid-error">{error}</pre>
   ) : (
     <div
-      ref={host}
       className="research-mermaid"
       role="img"
       aria-label="Схема, построенная ИИ-исследователем"
+      dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
     />
   );
 }
 
 function escapePattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function resizedPanelRect(
+  rect: PanelRect,
+  direction: ResizeDirection,
+  deltaX: number,
+  deltaY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  const margin = 8,
+    minWidth = Math.min(340, viewportWidth - margin * 2),
+    minHeight = Math.min(420, viewportHeight - margin * 2);
+  let left = rect.left,
+    right = rect.left + rect.width,
+    top = rect.top,
+    bottom = rect.top + rect.height;
+  if (direction.includes("e"))
+    right = Math.min(
+      viewportWidth - margin,
+      Math.max(left + minWidth, right + deltaX),
+    );
+  if (direction.includes("w"))
+    left = Math.max(margin, Math.min(right - minWidth, left + deltaX));
+  if (direction.includes("s"))
+    bottom = Math.min(
+      viewportHeight - margin,
+      Math.max(top + minHeight, bottom + deltaY),
+    );
+  if (direction.includes("n"))
+    top = Math.max(margin, Math.min(bottom - minHeight, top + deltaY));
+  return { left, top, width: right - left, height: bottom - top };
 }
 
 function outsideCodeFences(
@@ -181,7 +265,7 @@ function markdownAnswer(message: Message) {
   return value;
 }
 
-function MarkdownAnswer({
+const MarkdownAnswer = memo(function MarkdownAnswer({
   message,
   onPerson,
   onChoosePerson,
@@ -192,6 +276,45 @@ function MarkdownAnswer({
   onChoosePerson: (id: string, label: string) => void;
   onPhoto: (id: string) => void;
 }) {
+  const components = useMemo<Components>(
+    () => ({
+      a: ({ href = "", children }) => {
+        const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
+        if (!match)
+          return (
+            <a href={href} target="_blank" rel="noreferrer">
+              {children}
+            </a>
+          );
+        const id = decodeURIComponent(match[2]),
+          label = String(children);
+        return (
+          <button
+            type="button"
+            className="research-inline-reference"
+            onClick={() =>
+              match[1] === "photo"
+                ? onPhoto(id)
+                : match[1] === "choose-person"
+                  ? onChoosePerson(id, label)
+                  : onPerson(id)
+            }
+          >
+            {children}
+          </button>
+        );
+      },
+      code: ({ className, children, ...props }) =>
+        className === "language-mermaid" ? (
+          <MermaidDiagram source={String(children).trim()} />
+        ) : (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        ),
+    }),
+    [onChoosePerson, onPerson, onPhoto],
+  );
   return (
     <div className="research-markdown">
       <ReactMarkdown
@@ -199,50 +322,13 @@ function MarkdownAnswer({
         urlTransform={(url) =>
           url.startsWith("#drevo-") ? url : defaultUrlTransform(url)
         }
-        components={{
-          a: ({ href = "", children }) => {
-            const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(
-              href,
-            );
-            if (!match)
-              return (
-                <a href={href} target="_blank" rel="noreferrer">
-                  {children}
-                </a>
-              );
-            const id = decodeURIComponent(match[2]),
-              label = String(children);
-            return (
-              <button
-                type="button"
-                className="research-inline-reference"
-                onClick={() =>
-                  match[1] === "photo"
-                    ? onPhoto(id)
-                    : match[1] === "choose-person"
-                      ? onChoosePerson(id, label)
-                      : onPerson(id)
-                }
-              >
-                {children}
-              </button>
-            );
-          },
-          code: ({ className, children, ...props }) =>
-            className === "language-mermaid" ? (
-              <MermaidDiagram source={String(children).trim()} />
-            ) : (
-              <code className={className} {...props}>
-                {children}
-              </code>
-            ),
-        }}
+        components={components}
       >
         {markdownAnswer(message)}
       </ReactMarkdown>
     </div>
   );
-}
+});
 type SuggestionValue = string | boolean | undefined;
 type SuggestionBase = {
   id: string;
@@ -516,7 +602,20 @@ export function ResearchAssistant({
       pointerId: number;
       offsetX: number;
       offsetY: number;
-    } | null>(null);
+      left: number;
+      top: number;
+    } | null>(null),
+    resize = useRef<{
+      pointerId: number;
+      direction: ResizeDirection;
+      startX: number;
+      startY: number;
+      startRect: PanelRect;
+      latest: PanelRect;
+    } | null>(null),
+    sendLatest = useRef<(text?: string) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
 
   useEffect(() => {
     if (view !== "tree") return;
@@ -626,27 +725,134 @@ export function ResearchAssistant({
       pointerId: event.pointerId,
       offsetX: event.clientX - rect.left,
       offsetY: event.clientY - rect.top,
+      left: rect.left,
+      top: rect.top,
     };
     setPanelPosition({ left: rect.left, top: rect.top });
+    panel.current?.classList.add("is-dragging");
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const moveDrag = (event: ReactPointerEvent<HTMLElement>) => {
     const state = drag.current;
     if (!state || state.pointerId !== event.pointerId) return;
-    setPanelPosition(
-      clampPanelPosition(
-        event.clientX - state.offsetX,
-        event.clientY - state.offsetY,
-      ),
+    const next = clampPanelPosition(
+      event.clientX - state.offsetX,
+      event.clientY - state.offsetY,
     );
+    state.left = next.left;
+    state.top = next.top;
+    if (panel.current) {
+      panel.current.style.left = `${next.left}px`;
+      panel.current.style.top = `${next.top}px`;
+      panel.current.style.right = "auto";
+      panel.current.style.bottom = "auto";
+    }
   };
 
   const stopDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (drag.current?.pointerId !== event.pointerId) return;
+    const state = drag.current;
     drag.current = null;
+    panel.current?.classList.remove("is-dragging");
+    setPanelPosition({ left: state.left, top: state.top });
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const applyPanelRect = (next: PanelRect) => {
+    if (!panel.current) return;
+    panel.current.style.left = `${next.left}px`;
+    panel.current.style.top = `${next.top}px`;
+    panel.current.style.right = "auto";
+    panel.current.style.bottom = "auto";
+    panel.current.style.width = `${next.width}px`;
+    panel.current.style.height = `${next.height}px`;
+  };
+
+  const startResize = (
+    direction: ResizeDirection,
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0 || innerWidth <= 600 || !panel.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = panel.current.getBoundingClientRect(),
+      startRect = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    resize.current = {
+      pointerId: event.pointerId,
+      direction,
+      startX: event.clientX,
+      startY: event.clientY,
+      startRect,
+      latest: startRect,
+    };
+    setPanelPosition({ left: rect.left, top: rect.top });
+    panel.current.classList.add("is-resizing");
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const state = resize.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    state.latest = resizedPanelRect(
+      state.startRect,
+      state.direction,
+      event.clientX - state.startX,
+      event.clientY - state.startY,
+      innerWidth,
+      innerHeight,
+    );
+    applyPanelRect(state.latest);
+  };
+
+  const stopResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const state = resize.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    resize.current = null;
+    panel.current?.classList.remove("is-resizing");
+    setPanelPosition({ left: state.latest.left, top: state.latest.top });
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const resizeWithKeyboard = (
+    direction: ResizeDirection,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (!panel.current || innerWidth <= 600) return;
+    const step = event.shiftKey ? 32 : 12,
+      horizontal =
+        event.key === "ArrowLeft"
+          ? -step
+          : event.key === "ArrowRight"
+            ? step
+            : 0,
+      vertical =
+        event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+    if (!horizontal && !vertical) return;
+    event.preventDefault();
+    const rect = panel.current.getBoundingClientRect(),
+      next = resizedPanelRect(
+        {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        direction,
+        horizontal,
+        vertical,
+        innerWidth,
+        innerHeight,
+      );
+    applyPanelRect(next);
+    setPanelPosition({ left: next.left, top: next.top });
   };
 
   useEffect(() => {
@@ -676,6 +882,15 @@ export function ResearchAssistant({
   useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "end" });
   }, [open, messages, busy, suggestions]);
+
+  useEffect(() => {
+    sendLatest.current = send;
+  });
+  const choosePerson = useCallback((id: string, label: string) => {
+    void sendLatest.current(
+      `Выбран человек: ${label} (personId: ${id}). Продолжи мой предыдущий запрос для этого человека.`,
+    );
+  }, []);
 
   if (!enabled) return null;
 
@@ -901,6 +1116,21 @@ export function ResearchAssistant({
               : undefined
           }
         >
+          {RESIZE_DIRECTIONS.map(({ direction, label }) => (
+            <button
+              key={direction}
+              type="button"
+              className={`research-resize-handle is-${direction}`}
+              data-testid={`research-resize-${direction}`}
+              aria-label={label}
+              tabIndex={direction.length === 1 ? 0 : -1}
+              onPointerDown={(event) => startResize(direction, event)}
+              onPointerMove={moveResize}
+              onPointerUp={stopResize}
+              onPointerCancel={stopResize}
+              onKeyDown={(event) => resizeWithKeyboard(direction, event)}
+            />
+          ))}
           <header
             onPointerDown={startDrag}
             onPointerMove={moveDrag}
@@ -965,11 +1195,7 @@ export function ResearchAssistant({
                   <MarkdownAnswer
                     message={message}
                     onPerson={onPerson}
-                    onChoosePerson={(id, label) =>
-                      void send(
-                        `Выбран человек: ${label} (personId: ${id}). Продолжи мой предыдущий запрос для этого человека.`,
-                      )
-                    }
+                    onChoosePerson={choosePerson}
                     onPhoto={onPhoto}
                   />
                 ) : (

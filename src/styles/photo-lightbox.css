@@ -25,9 +25,6 @@
 .photo-lightbox .photo-viewer {
   height: 100%;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 25vw, 350px);
-}
-.photo-lightbox .photo-viewer.person-open {
   grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 420px);
 }
 .photo-lightbox .photo-stage {

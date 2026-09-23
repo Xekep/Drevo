@@ -87,11 +87,86 @@
   min-height: 420px;
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
-  resize: both;
+  resize: none;
   border: 1px solid #d7dfd1;
   border-radius: 16px;
   background: #fbfcf9;
   box-shadow: 0 24px 70px #2638262b;
+}
+.research-assistant.is-dragging,
+.research-assistant.is-resizing {
+  user-select: none;
+  will-change: left, top, width, height;
+}
+.research-resize-handle {
+  position: absolute;
+  z-index: 4;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+}
+.research-resize-handle.is-n,
+.research-resize-handle.is-s {
+  right: 16px;
+  left: 16px;
+  height: 10px;
+  cursor: ns-resize;
+}
+.research-resize-handle.is-n {
+  top: 0;
+}
+.research-resize-handle.is-s {
+  bottom: 0;
+}
+.research-resize-handle.is-e,
+.research-resize-handle.is-w {
+  top: 16px;
+  bottom: 16px;
+  width: 10px;
+  cursor: ew-resize;
+}
+.research-resize-handle.is-e {
+  right: 0;
+}
+.research-resize-handle.is-w {
+  left: 0;
+}
+.research-resize-handle.is-ne,
+.research-resize-handle.is-se,
+.research-resize-handle.is-sw,
+.research-resize-handle.is-nw {
+  width: 16px;
+  height: 16px;
+}
+.research-resize-handle.is-ne,
+.research-resize-handle.is-sw {
+  cursor: nesw-resize;
+}
+.research-resize-handle.is-se,
+.research-resize-handle.is-nw {
+  cursor: nwse-resize;
+}
+.research-resize-handle.is-ne,
+.research-resize-handle.is-nw {
+  top: 0;
+}
+.research-resize-handle.is-se,
+.research-resize-handle.is-sw {
+  bottom: 0;
+}
+.research-resize-handle.is-ne,
+.research-resize-handle.is-se {
+  right: 0;
+}
+.research-resize-handle.is-sw,
+.research-resize-handle.is-nw {
+  left: 0;
+}
+.research-resize-handle:focus-visible {
+  outline: 2px solid #6f8d67;
+  outline-offset: -3px;
 }
 .research-assistant > header {
   min-height: 52px;
@@ -451,6 +526,9 @@
     max-width: none;
     max-height: none;
     resize: none;
+  }
+  .research-resize-handle {
+    display: none;
   }
   .research-assistant > header {
     cursor: default;

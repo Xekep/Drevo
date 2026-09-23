@@ -139,7 +139,7 @@ const ANALYZE_PHOTO_TOOL = {
 const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять текущим интерфейсом только по явной просьбе пользователя: плавно показать людей или цепочку на древе, открыть карточку человека либо фотографию. Не вызывай этот инструмент просто потому, что упомянул запись в ответе.",
+    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people плавно перемещает древо к одному человеку либо показывает и подсвечивает цепочку между несколькими людьми; action=open_person открывает карточку; action=open_photo открывает фотографию. Если просят переместить, провести, найти или показать человека на древе, после search_people обязательно вызови focus_people. Не вызывай инструмент только потому, что упомянул запись в ответе.",
   inputSchema: {
     type: "object",
     properties: {
@@ -160,6 +160,19 @@ const CONTROL_VIEW_TOOL = {
     additionalProperties: false,
   },
 } as const;
+
+export function explicitViewControlRequest(message: string, view = "") {
+  const directInterfaceRequest =
+      /(?:покаж(?:и|ь)?|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,60}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк)|(?:на древе|в дереве|на карте).{0,60}(?:покаж(?:и|ь)?|найди|выдел|подсвет|перемест|центрир)/iu.test(
+        message,
+      ),
+    treeMovementRequest =
+      view === "tree" &&
+      /(?:перемест|перенес|проведи|перейди|навед|центрир).{0,40}(?:меня|к|на|до)/iu.test(
+        message,
+      );
+  return directInterfaceRequest || treeMovementRequest;
+}
 
 function estimateTokens(value: unknown) {
   const serialized =
@@ -669,6 +682,7 @@ export function aiResearchHttp({
         "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
+        "Если пользователь просит найти, показать, приблизить или переместить его к человеку на древе, сначала найди человека через search_people, затем обязательно вызови control_archive_view с action=focus_people и реальным personId. Для показа родственной цепочки передай в focus_people всех людей цепочки по порядку. action=open_person используй только когда пользователь просит открыть карточку.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
         "Число поколений бери только из totals.generations результата get_archive_insights. generationDistribution описывает сохранённые уровни раскладки и не должна противоречить генеалогической глубине.",
@@ -711,12 +725,13 @@ export function aiResearchHttp({
       proposalErrors: string[] = [];
     let analyzedPhotos = 0;
     const uiActions: UiAction[] = [],
-      viewControlRequested =
-        /(?:покаж(?:и|ь)?|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемести).{0,40}(?:древ|карточ|фото|люд|человек|цепоч|связ)|(?:на древе|на карте).{0,40}(?:покаж(?:и|ь)?|найди|выдел|подсвет)/iu.test(
-          message,
-        ),
+      viewControlRequested = explicitViewControlRequest(message, view),
       photoViewRequested =
         /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
+          message,
+        ),
+      personCardViewRequested =
+        /(?:открой|покаж(?:и|ь)?).{0,40}карточ|карточ.{0,40}(?:открой|покаж(?:и|ь)?)/iu.test(
           message,
         );
 
@@ -757,6 +772,22 @@ export function aiResearchHttp({
         ) {
           const photoId = referencedPhotos.values().next().value;
           if (photoId) uiActions.push({ type: "open_photo", photoId });
+        }
+        if (
+          viewControlRequested &&
+          !photoViewRequested &&
+          !uiActions.some(
+            (action) =>
+              action.type === "focus_people" || action.type === "open_person",
+          )
+        ) {
+          const personIds = [...referencedPeople].slice(0, 20);
+          if (personIds.length)
+            uiActions.push(
+              personCardViewRequested
+                ? { type: "open_person", personId: personIds[0] }
+                : { type: "focus_people", personIds },
+            );
         }
         const references: AnswerReference[] = [
           ...[...referencedPeople].slice(0, 12).map((id) => ({

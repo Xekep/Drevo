@@ -120,9 +120,23 @@ test("ссылка на снимок открывает просмотр и за
   await expect(page).toHaveURL("http://127.0.0.1:4173/photos/e2e-photo");
   await page.goto("/photos/e2e-photo");
   if (testInfo.project.name === "desktop") {
+    const stageBefore = await page.locator(".photo-stage").boundingBox(),
+      informationBefore = await page
+        .locator("#photo-information")
+        .boundingBox();
+    expect(stageBefore).not.toBeNull();
+    expect(informationBefore).not.toBeNull();
     await page
       .getByRole("button", { name: /Показать сведения:.*Иван/ })
       .click();
+    const stageAfter = await page.locator(".photo-stage").boundingBox(),
+      personSidebar = await page.locator(".photo-person-sidebar").boundingBox();
+    expect(stageAfter).not.toBeNull();
+    expect(personSidebar).not.toBeNull();
+    expect(Math.abs(stageAfter!.width - stageBefore!.width)).toBeLessThan(1);
+    expect(
+      Math.abs(personSidebar!.width - informationBefore!.width),
+    ).toBeLessThan(1);
   } else {
     await page.locator(".tag-image img").tap({ position: { x: 20, y: 20 } });
     await expect(page.locator(".photo-viewer")).toHaveClass(/show-tags/);
