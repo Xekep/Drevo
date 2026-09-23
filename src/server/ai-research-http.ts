@@ -174,6 +174,47 @@ export function explicitViewControlRequest(message: string, view = "") {
   return directInterfaceRequest || treeMovementRequest;
 }
 
+export function recoverTextToolCalls(
+  content: string,
+  allowedNames: ReadonlySet<string>,
+): ToolCall[] {
+  const fenced = [...content.matchAll(/```[^\r\n]*\r?\n([\s\S]*?)```/g)],
+    outside = content.replace(/```[^\r\n]*\r?\n[\s\S]*?```/g, "").trim(),
+    candidates =
+      fenced.length && !outside ? fenced.map((match) => match[1]) : [content];
+  return candidates.flatMap((candidate, index) => {
+    const match = candidate
+      .trim()
+      .match(/^([a-z][a-z0-9_]*)\s*\(\s*([\s\S]*?)\s*\)\s*;?$/i);
+    if (!match || !allowedNames.has(match[1])) return [];
+    try {
+      const args = JSON.parse(match[2]);
+      if (!args || typeof args !== "object" || Array.isArray(args)) return [];
+      return [
+        {
+          id: `recovered-tool-${index}`,
+          type: "function",
+          function: { name: match[1], arguments: JSON.stringify(args) },
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function needsArchiveLookupRetry(request: string, answer: string) {
+  const archiveQuestion =
+      /(?:брат|сестр|родител|мат(?:ь|ери)|отец|отца|мам|пап|сын|доч|дет|супруг|муж|жен|родств|предк|потом|родил|умер|жил|фото|сним|источник|архив|древ)/iu.test(
+        request,
+      ),
+    unverifiedAbsence =
+      /(?:в архиве|в базе).{0,40}(?:нет|не найден)|не удалось найти.{0,40}(?:человек|люд|данн)|нет данных/iu.test(
+        answer,
+      );
+  return archiveQuestion || unverifiedAbsence;
+}
+
 function estimateTokens(value: unknown) {
   const serialized =
     typeof value === "string" ? value : JSON.stringify(value ?? "");
@@ -560,6 +601,7 @@ export function aiResearchHttp({
       >();
     let buffer = "",
       content = "",
+      emittedLength = 0,
       reportedUsage: ModelUsage | undefined;
 
     const consumeFrame = (frame: string) => {
@@ -577,7 +619,13 @@ export function aiResearchHttp({
       if (!delta) return;
       if (typeof delta.content === "string" && delta.content) {
         content += delta.content;
-        onDelta(delta.content);
+        const trimmed = content.trimStart(),
+          couldBeFencedBlock =
+            !trimmed || "```".startsWith(trimmed) || trimmed.startsWith("```");
+        if (!couldBeFencedBlock) {
+          onDelta(content.slice(emittedLength));
+          emittedLength = content.length;
+        }
       }
       for (const item of delta.tool_calls || []) {
         const index =
@@ -671,12 +719,21 @@ export function aiResearchHttp({
             .slice(0, 2)
         : [],
       view = typeof context.view === "string" ? context.view : "",
+      history = validHistory(body.history),
+      lookupContext = [
+        ...history
+          .filter((item) => item.role === "user")
+          .slice(-2)
+          .map((item) => String(item.content || "")),
+        message,
+      ].join("\n"),
       system = [
         "Ты исследователь семейного архива Drevo.",
         "Опирайся только на данные инструментов и слова пользователя.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
+        "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
         "Учитывай предыдущие реплики: короткие продолжения вроде «перечисли», «покажи их» или «а подробнее?» относятся к последнему предмету разговора. Для перечисления всех доступных людей вызывай list_people, а не search_people.",
         "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
@@ -703,7 +760,7 @@ export function aiResearchHttp({
         .join("\n"),
       messages: ModelMessage[] = [
         { role: "system", content: system },
-        ...validHistory(body.history),
+        ...history,
         { role: "user", content: message },
       ],
       peopleById = new Map(
@@ -723,8 +780,16 @@ export function aiResearchHttp({
       >(),
       createdSuggestionIds = new Set<string>(),
       proposalErrors: string[] = [];
-    let analyzedPhotos = 0;
+    let analyzedPhotos = 0,
+      executedTools = 0,
+      lookupRetryUsed = false;
     const uiActions: UiAction[] = [],
+      allowedToolNames = new Set([
+        ...RESEARCH_TOOL_DEFINITIONS.map((tool) => tool.name),
+        ANALYZE_PHOTO_TOOL.name,
+        CONTROL_VIEW_TOOL.name,
+        ...(canPropose ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name) : []),
+      ]),
       viewControlRequested = explicitViewControlRequest(message, view),
       photoViewRequested =
         /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
@@ -762,10 +827,44 @@ export function aiResearchHttp({
         answer = completion.message;
       metrics.inputTokens += completion.inputTokens;
       metrics.outputTokens += completion.outputTokens;
+      if (
+        !answer.tool_calls?.length &&
+        typeof answer.content === "string" &&
+        answer.content.trim()
+      ) {
+        const recovered = recoverTextToolCalls(
+          answer.content,
+          allowedToolNames,
+        ).map((call, index) => ({
+          ...call,
+          id: `recovered-tool-${round}-${index}`,
+        }));
+        if (recovered.length) {
+          answer.content = null;
+          answer.tool_calls = recovered;
+        }
+      }
       messages.push(answer);
 
       const calls = answer.tool_calls || [];
       if (!calls.length) {
+        if (
+          !lookupRetryUsed &&
+          executedTools === 0 &&
+          needsArchiveLookupRetry(
+            lookupContext,
+            typeof answer.content === "string" ? answer.content : "",
+          )
+        ) {
+          lookupRetryUsed = true;
+          messages.push({
+            role: "system",
+            content:
+              "Предыдущий ответ не был проверен по архиву. Не повторяй его и не делай вывод об отсутствии данных. Сейчас обязательно вызови подходящий инструмент; если назван человек, начни с search_people, учитывая полное имя и разговорные формы имени из контекста.",
+          });
+          onStatus("Уточняю данные в архиве…");
+          continue;
+        }
         if (
           photoViewRequested &&
           !uiActions.some((action) => action.type === "open_photo")
@@ -827,6 +926,7 @@ export function aiResearchHttp({
 
       onStatus("Проверяю данные архива…");
       for (const call of calls) {
+        executedTools++;
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === call.function.name,
         );

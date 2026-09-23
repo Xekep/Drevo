@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Check, Send, Sparkles, X } from "lucide-react";
+import { Check, Send, Sparkles, Trash2, X } from "lucide-react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -906,6 +906,15 @@ export function ResearchAssistant({
     }
   }
 
+  function clearDialog() {
+    if (busy) return;
+    setMessages([]);
+    setDraft("");
+    setError("");
+    setStreamStatus("");
+    setReviewedSuggestions({});
+  }
+
   async function send(text = draft) {
     const message = text.trim();
     if (!message || busy) return;
@@ -1144,13 +1153,25 @@ export function ResearchAssistant({
                 <b>ИИ-исследователь</b>
               </span>
             </div>
-            <button
-              type="button"
-              aria-label="Закрыть ИИ-исследователя"
-              onClick={() => setOpen(false)}
-            >
-              <X size={18} />
-            </button>
+            <div className="research-assistant-header-actions">
+              <button
+                type="button"
+                aria-label="Очистить диалог"
+                title="Очистить диалог"
+                disabled={busy || (!messages.length && !draft && !error)}
+                onClick={clearDialog}
+              >
+                <Trash2 size={17} />
+              </button>
+              <button
+                type="button"
+                aria-label="Закрыть ИИ-исследователя"
+                title="Закрыть"
+                onClick={() => setOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
           </header>
           <div className="research-assistant-messages">
             {canEdit && suggestions.length > 0 && (

@@ -70,7 +70,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "search_people",
     description:
-      "Найти людей в семейном архиве по имени, фамилии, отчеству, году или месту.",
+      "Найти людей в семейном архиве по имени, фамилии, отчеству, году или месту. Поиск нормализует порядок слов, падежные окончания и небольшие опечатки.",
     scope: "tree:read",
     inputSchema: objectSchema(
       {
@@ -92,7 +92,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "get_family",
     description:
-      "Получить ближайшую семью человека: родителей, супругов и детей.",
+      "Получить ближайшую семью человека: родителей, супругов, детей, родных и неполнородных братьев и сестёр.",
     scope: "tree:read",
     inputSchema: objectSchema(
       { personId: { type: "string", minLength: 1, maxLength: 200 } },
@@ -295,10 +295,64 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
 
 function normalized(value: string) {
   return value
+    .normalize("NFKC")
     .trim()
     .toLocaleLowerCase("ru")
     .replaceAll("ё", "е")
     .replace(/\s+/g, " ");
+}
+
+function searchTokens(value: string) {
+  return normalized(value).match(/[\p{L}\p{N}]+/gu) || [];
+}
+
+function tokenSimilarity(left: string, right: string) {
+  if (left === right) return 1;
+  if (!left || !right) return 0;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index),
+    beforePrevious = [...previous];
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex++) {
+      const substitution =
+        previous[rightIndex - 1] +
+        Number(left[leftIndex - 1] !== right[rightIndex - 1]);
+      current[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        substitution,
+      );
+      if (
+        leftIndex > 1 &&
+        rightIndex > 1 &&
+        left[leftIndex - 1] === right[rightIndex - 2] &&
+        left[leftIndex - 2] === right[rightIndex - 1]
+      )
+        current[rightIndex] = Math.min(
+          current[rightIndex],
+          beforePrevious[rightIndex - 2] + 1,
+        );
+    }
+    beforePrevious = previous;
+    previous = current;
+  }
+  const editScore =
+    1 - previous[right.length] / Math.max(left.length, right.length);
+  let prefix = 0;
+  while (
+    prefix < left.length &&
+    prefix < right.length &&
+    left[prefix] === right[prefix]
+  )
+    prefix++;
+  const prefixScore = prefix >= 2 ? Math.min(0.82, 0.52 + prefix * 0.05) : 0;
+  return Math.max(editScore, prefixScore);
+}
+
+function minimumTokenSimilarity(token: string) {
+  if (token.length <= 2) return 1;
+  if (token.length === 3) return 2 / 3;
+  return 0.6;
 }
 
 function cleanPerson(person: Person) {
@@ -838,18 +892,43 @@ export function executeResearchTool(
 
   if (name === "search_people") {
     const query = normalized(stringArg(args, "query")),
-      queryTokens = query.split(" ").filter(Boolean),
-      limit = numberArg(args, "limit", 20, 1, 50);
-    const matches = family.people
-      .map((person) => {
+      searchablePeople = family.people.map((person) => {
         const fields = [
-          fullName(person),
-          person.maidenName || "",
-          person.birth || "",
-          person.death || "",
-          person.birthPlace,
-          person.deathPlace || "",
-        ].map(normalized);
+            fullName(person),
+            person.maidenName || "",
+            person.birth || "",
+            person.death || "",
+            person.birthPlace,
+            person.deathPlace || "",
+          ].map(normalized),
+          tokens = fields.flatMap(searchTokens);
+        return { person, fields, tokens };
+      }),
+      archiveTokens = [
+        ...new Set(searchablePeople.flatMap((item) => item.tokens)),
+      ],
+      similarityCache = new Map<string, number>(),
+      similarity = (left: string, right: string) => {
+        const key = `${left}\0${right}`;
+        let value = similarityCache.get(key);
+        if (value === undefined) {
+          value = tokenSimilarity(left, right);
+          similarityCache.set(key, value);
+        }
+        return value;
+      },
+      queryTokens = searchTokens(query)
+        .filter((token) => token.length >= 2)
+        .slice(0, 16)
+        .filter((token) =>
+          archiveTokens.some(
+            (archiveToken) =>
+              similarity(token, archiveToken) >= minimumTokenSimilarity(token),
+          ),
+        ),
+      limit = numberArg(args, "limit", 20, 1, 50);
+    const matches = searchablePeople
+      .map(({ person, fields, tokens }) => {
         let score = fields.reduce(
           (value, field, index) =>
             field === query
@@ -861,10 +940,27 @@ export function executeResearchTool(
                   : value,
           0,
         );
-        const joined = fields.join(" "),
-          tokenMatches = queryTokens.filter((token) => joined.includes(token));
-        if (queryTokens.length && tokenMatches.length === queryTokens.length)
-          score = Math.max(score, 60 + Math.min(20, queryTokens.length * 5));
+        const similarities = queryTokens.map((token) =>
+            tokens.reduce(
+              (best, fieldToken) =>
+                Math.max(best, similarity(token, fieldToken)),
+              0,
+            ),
+          ),
+          matching = similarities.filter(
+            (similarity, index) =>
+              similarity >= minimumTokenSimilarity(queryTokens[index]),
+          ),
+          completeMatch =
+            similarities.length > 0 && matching.length === similarities.length;
+        if (completeMatch)
+          score = Math.max(
+            score,
+            (matching.reduce((sum, value) => sum + value, 0) /
+              matching.length) *
+              80 +
+              Math.min(16, matching.length * 4),
+          );
         return { person, score };
       })
       .filter((item) => item.score > 0)
@@ -894,7 +990,22 @@ export function executeResearchTool(
       people = new Map(family.people.map((item) => [item.id, item])),
       children = family.people.filter((item) =>
         item.parents.includes(person.id),
-      );
+      ),
+      parentIds = new Set(person.parents),
+      siblings = family.people.flatMap((candidate) => {
+        if (candidate.id === person.id) return [];
+        const sharedParentIds = candidate.parents.filter((id) =>
+          parentIds.has(id),
+        );
+        if (!sharedParentIds.length) return [];
+        return [
+          {
+            person: cleanPerson(candidate),
+            sharedParentIds,
+            kind: sharedParentIds.length >= 2 ? "full" : "half_or_unknown",
+          },
+        ];
+      });
     return {
       person: cleanPerson(person),
       parents: person.parents.flatMap((id) =>
@@ -904,6 +1015,7 @@ export function executeResearchTool(
         people.has(id) ? [cleanPerson(people.get(id)!)] : [],
       ),
       children: children.map(cleanPerson),
+      siblings,
     };
   }
 

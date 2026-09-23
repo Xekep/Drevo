@@ -204,6 +204,14 @@
   height: 34px;
   border-radius: 7px;
 }
+.research-assistant > header .research-assistant-header-actions {
+  gap: 2px;
+  color: inherit;
+}
+.research-assistant > header button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
 .research-assistant-messages {
   overflow-y: auto;
   padding: 16px;

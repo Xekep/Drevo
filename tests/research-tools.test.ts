@@ -113,6 +113,13 @@ test("research tools search people and traverse genealogy", () => {
     reversedName.people.map((person) => person.id),
     ["child"],
   );
+  const normalizedShortName = executeResearchTool(family, "search_people", {
+    query: "у Васи Скулко",
+  }) as { people: Array<{ id: string }> };
+  assert.deepEqual(
+    normalizedShortName.people.map((person) => person.id),
+    ["child"],
+  );
 
   const ancestors = executeResearchTool(family, "get_ancestors", {
     personId: "grandchild",
@@ -134,6 +141,64 @@ test("research tools search people and traverse genealogy", () => {
   assert.deepEqual(
     descendants.people.map((item) => item.person.id),
     ["child", "grandchild"],
+  );
+});
+
+test("family lookup returns siblings without guessing whether incomplete parentage is full", () => {
+  const sister = person("sister", "Татьяна", "1944", {
+      surname: "Вьюхина",
+      sex: "f",
+      parents: ["father", "mother"],
+    }),
+    halfBrother = person("half-brother", "Пётр", "1950", {
+      sex: "m",
+      parents: ["father"],
+    }),
+    siblingFamily = {
+      ...family,
+      people: [...family.people, sister, halfBrother],
+    },
+    search = executeResearchTool(siblingFamily, "search_people", {
+      query: "У Тани Вьюхиной есть братья?",
+    }) as { people: Array<{ id: string }> },
+    typoSearch = executeResearchTool(siblingFamily, "search_people", {
+      query: "Татяна Вюхена",
+    }) as { people: Array<{ id: string }> },
+    result = executeResearchTool(siblingFamily, "get_family", {
+      personId: "sister",
+    }) as unknown as {
+      siblings: Array<{
+        person: { id: string };
+        sharedParentIds: string[];
+        kind: string;
+      }>;
+    };
+  assert.deepEqual(
+    search.people.map((person) => person.id),
+    ["sister"],
+  );
+  assert.deepEqual(
+    typoSearch.people.map((person) => person.id),
+    ["sister"],
+  );
+  assert.deepEqual(
+    result.siblings.map((item) => ({
+      id: item.person.id,
+      sharedParentIds: item.sharedParentIds,
+      kind: item.kind,
+    })),
+    [
+      {
+        id: "child",
+        sharedParentIds: ["father", "mother"],
+        kind: "full",
+      },
+      {
+        id: "half-brother",
+        sharedParentIds: ["father"],
+        kind: "half_or_unknown",
+      },
+    ],
   );
 });
 

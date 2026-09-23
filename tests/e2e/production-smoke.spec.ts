@@ -154,6 +154,8 @@ test("ИИ-исследователь не перекрывает навигац
     panel.getByRole("button", { name: "Отправить запрос" }),
   ).toHaveCount(0);
   await expect(header).not.toContainText("Анализирует архив");
+  const clearDialog = panel.getByRole("button", { name: "Очистить диалог" });
+  await expect(clearDialog).toBeDisabled();
   await expect(panel.locator(".research-assistant-empty button")).toHaveCount(
     0,
   );
@@ -261,6 +263,11 @@ test("ИИ-исследователь не перекрывает навигац
   ).toBeVisible();
   await expect(panel.getByRole("button", { name: "Ещё снимок" })).toBeVisible();
   await expect(panel.locator("img")).toHaveCount(0);
+  await expect(clearDialog).toBeEnabled();
+  await clearDialog.click();
+  await expect(panel.locator("article")).toHaveCount(0);
+  await expect(panel.locator(".research-assistant-empty")).toBeVisible();
+  await expect(clearDialog).toBeDisabled();
 
   await page.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
   await page.goto("/photos");
