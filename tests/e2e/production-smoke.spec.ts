@@ -793,7 +793,7 @@ test("mobile tree appears fully without branch drawing", async ({
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(page.locator(".flow-person")).toHaveCount(6);
+  await expect(page.locator(".flow-person")).toHaveCount(7);
   await expect(canvas).not.toHaveClass(/is-growing/);
   await expect(canvas).toHaveAttribute("aria-busy", "false");
   await expect(
