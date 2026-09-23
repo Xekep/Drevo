@@ -202,6 +202,79 @@ test("family lookup returns siblings without guessing whether incomplete parenta
   );
 });
 
+test("cousin lookup finds the requested degree and excludes siblings", () => {
+  const grandfather = person("cousin-grandfather", "Иван", "1910", {
+      sex: "m",
+    }),
+    grandmother = person("cousin-grandmother", "Мария", "1912", {
+      sex: "f",
+    }),
+    firstParent = person("cousin-parent-a", "Анна", "1935", {
+      sex: "f",
+      parents: [grandfather.id, grandmother.id],
+      parentageComplete: true,
+    }),
+    secondParent = person("cousin-parent-b", "Пётр", "1938", {
+      sex: "m",
+      parents: [grandfather.id, grandmother.id],
+      parentageComplete: true,
+    }),
+    reference = person("cousin-reference", "Татьяна", "1960", {
+      surname: "Вьюхина",
+      sex: "f",
+      parents: [firstParent.id],
+    }),
+    sibling = person("cousin-sibling", "Александра", "1962", {
+      surname: "Вьюхина",
+      sex: "f",
+      parents: [firstParent.id],
+    }),
+    cousin = person("cousin-result", "Василий", "1964", {
+      sex: "m",
+      parents: [secondParent.id],
+    }),
+    cousinFamily: Family = {
+      ...family,
+      people: [
+        grandfather,
+        grandmother,
+        firstParent,
+        secondParent,
+        reference,
+        sibling,
+        cousin,
+      ],
+    },
+    result = executeResearchTool(cousinFamily, "get_cousins", {
+      personId: reference.id,
+      degree: 2,
+    }) as {
+      person: { id: string };
+      degree: number;
+      relatives: Array<{
+        person: { id: string };
+        term: string;
+        commonAncestors: Array<{ id: string }>;
+        path: Array<{ id: string }>;
+      }>;
+      total: number;
+      hasMore: boolean;
+    };
+
+  assert.equal(result.person.id, reference.id);
+  assert.equal(result.degree, 2);
+  assert.equal(result.total, 1);
+  assert.equal(result.hasMore, false);
+  assert.equal(result.relatives[0].person.id, cousin.id);
+  assert.equal(result.relatives[0].term, "двоюродный брат");
+  assert.deepEqual(
+    new Set(result.relatives[0].commonAncestors.map((item) => item.id)),
+    new Set([grandfather.id, grandmother.id]),
+  );
+  assert.ok(result.relatives[0].path.some((item) => item.id === secondParent.id));
+  assert.ok(!result.relatives.some((item) => item.person.id === sibling.id));
+});
+
 test("archive insight generation count matches the tree summary", () => {
   const result = executeResearchTool(family, "get_archive_insights", {}) as {
     totals: { generations: number };
