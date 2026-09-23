@@ -72,7 +72,9 @@
 
   .insights-heading,
   .insight-facts,
+  .insights-more,
   .insights-columns,
+  .warnings-card,
   .insights-loading {
     max-width: 1480px;
   }

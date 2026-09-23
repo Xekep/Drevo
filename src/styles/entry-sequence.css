@@ -10,6 +10,15 @@
     radial-gradient(ellipse 70% 60% at 50% 46%, #2e4a3b 0%, transparent 100%),
     #14231e;
   animation: entry-sequence-out 1650ms ease-in both;
+  animation-play-state: paused;
+}
+
+.entry-sequence.is-ready {
+  animation-play-state: running;
+}
+
+.entry-sequence:not(.is-ready) :is(path, circle, .entry-sequence-title) {
+  animation-play-state: paused;
 }
 
 .entry-sequence-grain {
