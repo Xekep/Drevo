@@ -12,17 +12,20 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
     <EditorDialog title="О проекте" onClose={onClose}>
       <div className="about-story">
         <TreeDeciduous size={38} strokeWidth={1.2} />
-        <div className="eyebrow">МЕСТО ДЛЯ СЕМЕЙНОЙ ПАМЯТИ</div>
+        <div className="eyebrow">ЛЮДИ · СВЯЗИ · ИСТОЧНИКИ</div>
         <h2>
-          История начинается
-          <br />с семьи<span>.</span>
+          Семейный архив
+          <br />в деталях<span>.</span>
         </h2>
-        <p>«Древо» соединяет людей, события и эпохи в одну семейную историю.</p>
+        <p>
+          Люди, родственные связи, фотографии и документы — всё, что помогает
+          сохранить историю семьи.
+        </p>
         <div className="about-instructions">
           <div>
             <TreeDeciduous size={18} />
             <span>
-              <b>Путешествуйте во времени</b>
+              <b>Смотрите поколения</b>
               <p>
                 Исследуйте поколения в «Древе» или переключитесь на
                 «Хронологию»: реальные годы жизни, века и исторические эпохи.
@@ -32,7 +35,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
           <div>
             <BookOpen size={18} />
             <span>
-              <b>Открывайте истории</b>
+              <b>Изучайте карточки людей</b>
               <p>
                 Нажмите на человека: откроются даты, места, портрет,
                 воспоминания и источники. В фотоальбоме — все снимки, на которых
@@ -43,7 +46,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
           <div>
             <Users size={18} />
             <span>
-              <b>Находите общее</b>
+              <b>Проверяйте родство</b>
               <p>
                 Включите «Родство» и выберите двух людей. Узнайте, кем они
                 приходятся друг другу и кто их связывает.

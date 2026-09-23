@@ -11,7 +11,7 @@ import {
   CircleHelp,
   Menu,
   MapPin,
-  Sparkles,
+  ChartNoAxesCombined,
   X,
 } from "lucide-react";
 import {
@@ -90,7 +90,7 @@ export function ArchiveNavigation({
             ["families", "Семьи", Heart],
             ["gallery", "Фото", Image],
             ["places", "Места", MapPin],
-            ["insights", "Интересное", Sparkles],
+            ["insights", "Сводка", ChartNoAxesCombined],
           ] as const
         )
           .filter(([id]) =>
@@ -124,7 +124,7 @@ export function ArchiveNavigation({
                 ["families", "Семьи", Heart],
                 ["gallery", "Фото", Image],
                 ["places", "Места", MapPin],
-                ["insights", "Интересное", Sparkles],
+                ["insights", "Сводка", ChartNoAxesCombined],
               ] as const
             )
               .filter(([id]) =>

@@ -42,6 +42,11 @@ import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
 import { ResearchAssistant } from "./components/research-assistant";
+import {
+  clearEntrySequence,
+  EntrySequence,
+  shouldPlayEntrySequence,
+} from "./components/entry-sequence";
 
 type PersonDraft = {
   person?: Person;
@@ -112,6 +117,11 @@ export default function App() {
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
     [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
+  const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
+  const finishEntry = useCallback(() => {
+    clearEntrySequence();
+    setEntryPending(false);
+  }, []);
   const [shareDraft, setShareDraft] = useState<{
     anchor: Person;
     people: Person[];
@@ -787,6 +797,9 @@ export default function App() {
         <div className="archive-loading-details" role="status">
           Подгружаем сведения и фотографии…
         </div>
+      )}
+      {entryPending && family && user && !archive.loadingDetails && (
+        <EntrySequence onFinish={finishEntry} />
       )}
       {login && <LoginDialog onClose={() => setLogin(false)} />}
       {family && (

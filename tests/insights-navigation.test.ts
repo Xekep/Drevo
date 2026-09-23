@@ -12,7 +12,11 @@ test("interesting data is a regular archive section on desktop and mobile", () =
     new URL("src/components/archive-navigation.tsx", root),
     "utf8",
   );
-  assert.equal((navigation.match(/\["insights", "Интересное", Sparkles\]/g) || []).length, 2);
+  assert.equal(
+    (navigation.match(/\["insights", "Сводка", ChartNoAxesCombined\]/g) || [])
+      .length,
+    2,
+  );
 });
 
 test("secondary archive sections are code-split away from App", () => {
