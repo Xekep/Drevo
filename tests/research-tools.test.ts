@@ -113,11 +113,11 @@ test("research tools search people and traverse genealogy", () => {
     reversedName.people.map((person) => person.id),
     ["child"],
   );
-  const familiarInflectedName = executeResearchTool(family, "search_people", {
+  const normalizedShortName = executeResearchTool(family, "search_people", {
     query: "у Васи Скулко",
   }) as { people: Array<{ id: string }> };
   assert.deepEqual(
-    familiarInflectedName.people.map((person) => person.id),
+    normalizedShortName.people.map((person) => person.id),
     ["child"],
   );
 
@@ -161,6 +161,9 @@ test("family lookup returns siblings without guessing whether incomplete parenta
     search = executeResearchTool(siblingFamily, "search_people", {
       query: "У Тани Вьюхиной есть братья?",
     }) as { people: Array<{ id: string }> },
+    typoSearch = executeResearchTool(siblingFamily, "search_people", {
+      query: "Татяна Вюхена",
+    }) as { people: Array<{ id: string }> },
     result = executeResearchTool(siblingFamily, "get_family", {
       personId: "sister",
     }) as unknown as {
@@ -172,6 +175,10 @@ test("family lookup returns siblings without guessing whether incomplete parenta
     };
   assert.deepEqual(
     search.people.map((person) => person.id),
+    ["sister"],
+  );
+  assert.deepEqual(
+    typoSearch.people.map((person) => person.id),
     ["sister"],
   );
   assert.deepEqual(
