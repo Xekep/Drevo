@@ -65,6 +65,40 @@ test("textual model tool call is recovered instead of being shown as Arduino cod
     ),
     [],
   );
+  const sample = [
+    "Вызову данные о её родственниках:",
+    '```json\n{"name":"get_family","parameters":{"personId":"person-42"}}\n```',
+    "Построю хронологию:",
+    '```\n{"name":"get_timeline","parameters":{"personId":"person-42"}}\n```',
+  ].join("\n\n");
+  assert.deepEqual(
+    recoverTextToolCalls(sample, new Set(["get_family", "get_timeline"])),
+    [
+      {
+        id: "recovered-tool-0",
+        type: "function",
+        function: {
+          name: "get_family",
+          arguments: '{"personId":"person-42"}',
+        },
+      },
+      {
+        id: "recovered-tool-1",
+        type: "function",
+        function: {
+          name: "get_timeline",
+          arguments: '{"personId":"person-42"}',
+        },
+      },
+    ],
+  );
+  assert.deepEqual(
+    recoverTextToolCalls(
+      sample.replace("get_timeline", "delete_everything"),
+      new Set(["get_family", "get_timeline"]),
+    ),
+    [],
+  );
 });
 
 test("stream only exposes the checked answer after textual tool calls", async () => {
@@ -77,7 +111,7 @@ test("stream only exposes the checked answer after textual tool calls", async ()
     calls++;
     const content =
       calls === 1
-        ? '```arduino\nsearch_people({"query":"Иван Петрович"})\n```'
+        ? 'Вызову данные о семье:\n```json\n{"name":"get_family","parameters":{"personId":"person-42"}}\n```\nЗатем хронологию:\n```json\n{"name":"get_timeline","parameters":{"personId":"person-42"}}\n```\nСкоро вернусь!'
         : "[[person:person-42|Иван Петрович]] найден. person-42 (personId: person-42).";
     return new Response(
       `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`,
@@ -133,7 +167,7 @@ test("stream only exposes the checked answer after textual tool calls", async ()
     assert.equal(deltas.length, 1);
     assert.doesNotMatch(
       deltas[0].data.text.replace(/\[\[[^\]]+\]\]/g, ""),
-      /search_people|person-42|personId/,
+      /get_family|get_timeline|person-42|personId|Скоро вернусь/,
     );
     assert.match(deltas[0].data.text, /Иван Петрович/);
     assert.match(

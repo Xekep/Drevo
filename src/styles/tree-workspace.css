@@ -556,6 +556,25 @@
     0 0 0 4px #749e611c,
     0 5px 20px #31502d18;
 }
+.tree-canvas .flow-person.is-spotlit {
+  border-color: #719077;
+  box-shadow: 0 0 0 3px #6f967634;
+  animation: family-spotlight 1.5s ease-in-out 2;
+}
+@keyframes family-spotlight {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px #6f967634;
+  }
+  50% {
+    box-shadow: 0 0 0 8px #7ca98654;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tree-canvas .flow-person.is-spotlit {
+    animation: none;
+  }
+}
 .flow-person.is-dimmed {
   opacity: 0.4;
 }

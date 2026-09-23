@@ -333,7 +333,25 @@
 }
 .inspector-person-actions button[aria-expanded="true"] {
   background: #e9f0e1;
-  border-color: #acbba1;
+  border-color: transparent;
+}
+.inspector-dock .inspector-heading .inspector-person-actions button,
+.inspector-dock .inspector-heading > button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: #526456;
+}
+.inspector-dock .inspector-heading .inspector-person-actions button:hover,
+.inspector-dock .inspector-heading > button:hover {
+  background: #f0f4ee;
+}
+.inspector-dock
+  .inspector-heading
+  .inspector-person-actions
+  button[aria-expanded="true"] {
+  background: #e9f0e6;
 }
 .profile-head .profile-avatar {
   width: 112px;

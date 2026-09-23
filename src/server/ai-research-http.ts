@@ -179,28 +179,41 @@ export function recoverTextToolCalls(
   allowedNames: ReadonlySet<string>,
 ): ToolCall[] {
   const fenced = [...content.matchAll(/```[^\r\n]*\r?\n([\s\S]*?)```/g)],
-    outside = content.replace(/```[^\r\n]*\r?\n[\s\S]*?```/g, "").trim(),
-    candidates =
-      fenced.length && !outside ? fenced.map((match) => match[1]) : [content];
-  return candidates.flatMap((candidate, index) => {
-    const match = candidate
-      .trim()
-      .match(/^([a-z][a-z0-9_]*)\s*\(\s*([\s\S]*?)\s*\)\s*;?$/i);
-    if (!match || !allowedNames.has(match[1])) return [];
+    candidates = fenced.length ? fenced.map((match) => match[1]) : [content];
+  if (candidates.length > 6) return [];
+  const calls: ToolCall[] = [];
+  for (const [index, candidate] of candidates.entries()) {
     try {
-      const args = JSON.parse(match[2]);
-      if (!args || typeof args !== "object" || Array.isArray(args)) return [];
-      return [
-        {
-          id: `recovered-tool-${index}`,
-          type: "function",
-          function: { name: match[1], arguments: JSON.stringify(args) },
+      const match = candidate
+        .trim()
+        .match(/^([a-z][a-z0-9_]*)\s*\(\s*([\s\S]*?)\s*\)\s*;?$/i);
+      const parsed = match
+        ? { name: match[1], parameters: JSON.parse(match[2]) }
+        : JSON.parse(candidate.trim());
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        typeof parsed.name !== "string" ||
+        !allowedNames.has(parsed.name) ||
+        !parsed.parameters ||
+        typeof parsed.parameters !== "object" ||
+        Array.isArray(parsed.parameters)
+      )
+        return [];
+      calls.push({
+        id: `recovered-tool-${index}`,
+        type: "function",
+        function: {
+          name: parsed.name,
+          arguments: JSON.stringify(parsed.parameters),
         },
-      ];
+      });
     } catch {
       return [];
     }
-  });
+  }
+  return calls;
 }
 
 function containsInternalToolText(
@@ -208,7 +221,10 @@ function containsInternalToolText(
   allowedNames: ReadonlySet<string>,
 ) {
   return [...allowedNames].some((name) =>
-    new RegExp(`\\b${name}\\s*\\(`, "i").test(content),
+    new RegExp(
+      `\\b${name}\\s*\\(|["']name["']\\s*:\\s*["']${name}["']`,
+      "i",
+    ).test(content),
   );
 }
 
@@ -775,6 +791,7 @@ export function aiResearchHttp({
         "Если пользователь просит найти, показать, приблизить или переместить его к человеку на древе, сначала найди человека через search_people, затем обязательно вызови control_archive_view с action=focus_people и реальным personId. Для показа родственной цепочки передай в focus_people всех людей цепочки по порядку. action=open_person используй только когда пользователь просит открыть карточку.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
+        "Никогда не печатай JSON-вызовы инструментов, даже в блоках кода или как план действий. Вызывай инструменты через tool_calls и только затем дай окончательный ответ. Не обещай «скоро вернуться»: обработай запрос в текущем ответе или честно сообщи, каких данных не хватает.",
         "Число поколений бери только из totals.generations результата get_archive_insights. generationDistribution описывает сохранённые уровни раскладки и не должна противоречить генеалогической глубине.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
         canPropose
@@ -892,7 +909,7 @@ export function aiResearchHttp({
           messages.push({
             role: "system",
             content:
-              "В предыдущем тексте оказалась внутренняя команда. Дай проверенный ответ пользователю обычным языком без имён функций и идентификаторов. Если требуются данные, вызови инструмент структурированно.",
+              "В предыдущем тексте оказалась внутренняя команда или JSON-вызов. Не показывай их пользователю. Вызови нужный инструмент структурированно через tool_calls, затем дай завершённый проверенный ответ обычным языком без ID и обещаний вернуться позже.",
           });
           onStatus("Уточняю ответ по данным архива…");
           continue;

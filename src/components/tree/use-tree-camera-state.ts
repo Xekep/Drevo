@@ -24,7 +24,7 @@ type TreeCameraStateInput = {
   mode: TreeMode;
   reverse: boolean;
   ready: boolean;
-  focus: { ids: string[]; token: number } | null;
+  focus: { ids: string[]; token: number; purpose?: "family" } | null;
   positions: Map<string, { x: number; y: number }>;
   selected: string[];
   narrow: boolean;
@@ -115,9 +115,9 @@ export function useTreeCameraState({
           lastFocus.current = focus.token;
           viewportUpdate = flow.fitView({
             nodes: focus.ids.map((id) => ({ id })),
-            maxZoom: 1,
-            minZoom: narrow ? 0.55 : 0.15,
-            padding: 0.5,
+            maxZoom: focus.purpose === "family" ? 0.95 : 1,
+            minZoom: focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
+            padding: focus.purpose === "family" ? 0.34 : 0.5,
             duration: window.matchMedia("(prefers-reduced-motion: reduce)")
               .matches
               ? 0

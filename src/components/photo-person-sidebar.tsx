@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ArrowLeft, ArrowUpRight, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { fullName, type Family, type Person } from "../domain";
 import { PersonPanel } from "./person-panel";
 
@@ -10,7 +10,6 @@ type Props = {
   onSelect: (id: string) => void;
   onTree: (id: string) => void;
   onBack: () => void;
-  onClose: () => void;
 };
 
 export function PhotoPersonSidebar({
@@ -20,7 +19,6 @@ export function PhotoPersonSidebar({
   onSelect,
   onTree,
   onBack,
-  onClose,
 }: Props) {
   const sidebar = useRef<HTMLElement>(null);
 
@@ -38,26 +36,19 @@ export function PhotoPersonSidebar({
       tabIndex={-1}
     >
       <div className="photo-person-sidebar-actions">
-        <button type="button" onClick={onBack}>
-          <ArrowLeft size={16} />О снимке
+        <button type="button" onClick={onBack} aria-label="О снимке">
+          <ArrowLeft size={16} />
+          <span>О снимке</span>
         </button>
         <button
           type="button"
-          className="photo-person-sidebar-close"
-          onClick={onClose}
-          aria-label="Закрыть сведения о человеке"
+          onClick={() => onTree(person.id)}
+          aria-label="Показать в древе"
         >
-          <X size={18} />
+          <ArrowUpRight size={17} />
+          <span>Показать в древе</span>
         </button>
       </div>
-      <button
-        type="button"
-        className="photo-person-tree-link"
-        onClick={() => onTree(person.id)}
-      >
-        Показать в древе
-        <ArrowUpRight size={17} />
-      </button>
       <PersonPanel
         key={person.id}
         idPrefix="photo-person"

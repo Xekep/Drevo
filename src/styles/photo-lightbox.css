@@ -248,45 +248,29 @@
   gap: 0;
 }
 .photo-person-sidebar-actions {
+  position: fixed;
+  z-index: 7;
+  top: max(14px, env(safe-area-inset-top));
+  right: calc(max(16px, env(safe-area-inset-right)) + 108px);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
 }
 .photo-lightbox .photo-person-sidebar-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 40px;
-  border-radius: 9px;
-  padding: 7px 10px;
-  color: var(--photo-accent);
-  background: var(--photo-button-bg);
-  font-size: 12px;
-}
-.photo-lightbox .photo-person-sidebar-actions .photo-person-sidebar-close {
-  width: 40px;
-  padding: 0;
-}
-.photo-lightbox .photo-person-tree-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
   min-height: 44px;
-  border-radius: 10px;
-  margin-bottom: 18px;
-  padding: 10px 14px;
-  color: #f7faf2;
-  background: #415d40;
-  font-size: 13px;
-  font-weight: 600;
+  border-radius: 22px;
+  padding: 8px 12px;
+  color: #fff;
+  background: #ffffff1c;
+  font-size: 12px;
+  white-space: nowrap;
 }
-.photo-lightbox .photo-tools .photo-person-tree-link:hover:not(:disabled) {
-  background: #324c34;
+.photo-lightbox .photo-person-sidebar-actions button:hover:not(:disabled) {
+  background: #ffffff32;
 }
 .photo-lightbox .photo-person-sidebar .profile-head {
   padding-inline: 0;
@@ -344,6 +328,16 @@
   .photo-lightbox .photo-person-sidebar {
     max-height: 68dvh;
     padding-top: 18px;
+  }
+  .photo-person-sidebar-actions {
+    gap: 5px;
+  }
+  .photo-lightbox .photo-person-sidebar-actions button {
+    width: 44px;
+    padding: 0;
+  }
+  .photo-person-sidebar-actions button span {
+    display: none;
   }
   .photo-lightbox .person-open .photo-image-space {
     height: clamp(96px, calc(32dvh - 72px), 220px);

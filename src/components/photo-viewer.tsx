@@ -415,18 +415,16 @@ function PhotoViewerContent({
               <Download size={16} />
               Скачать оригинал
             </a>
-            <button
-              className="photo-info-toggle"
-              aria-expanded={infoOpen && !viewedPerson}
-              aria-controls="photo-information"
-              onClick={() => {
-                setViewedPersonId(null);
-                setHighlightedPerson(null);
-                setInfoOpen(viewedPerson ? true : !infoOpen);
-              }}
-            >
-              <Info size={18} />О снимке
-            </button>
+            {!viewedPerson && (
+              <button
+                className="photo-info-toggle"
+                aria-expanded={infoOpen}
+                aria-controls="photo-information"
+                onClick={() => setInfoOpen(!infoOpen)}
+              >
+                <Info size={18} />О снимке
+              </button>
+            )}
           </footer>
         </div>
         <aside
@@ -815,11 +813,6 @@ function PhotoViewerContent({
             onTree={onPerson}
             onBack={() => {
               setViewedPersonId(null);
-              setHighlightedPerson(null);
-            }}
-            onClose={() => {
-              setViewedPersonId(null);
-              setInfoOpen(false);
               setHighlightedPerson(null);
             }}
           />
