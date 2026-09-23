@@ -264,13 +264,13 @@
   min-height: 44px;
   border-radius: 22px;
   padding: 8px 12px;
-  color: #fff;
-  background: #ffffff1c;
+  color: #405738;
+  background: #e8eedf;
   font-size: 12px;
   white-space: nowrap;
 }
 .photo-lightbox .photo-person-sidebar-actions button:hover:not(:disabled) {
-  background: #ffffff32;
+  background: #dce6d1;
 }
 .photo-lightbox .photo-person-sidebar .profile-head {
   padding-inline: 0;
@@ -335,6 +335,8 @@
   .photo-lightbox .photo-person-sidebar-actions button {
     width: 44px;
     padding: 0;
+    color: #fff;
+    background: #ffffff1c;
   }
   .photo-person-sidebar-actions button span {
     display: none;
