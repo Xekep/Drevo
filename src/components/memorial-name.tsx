@@ -25,7 +25,8 @@ export function MemorialName({ children }: { children: ReactNode }) {
     let disposed = false,
       begun = false,
       ready = false,
-      visible = false,
+      intersecting = false,
+      running = false,
       timer = 0,
       started = 0,
       lastFrame = -1;
@@ -38,6 +39,7 @@ export function MemorialName({ children }: { children: ReactNode }) {
       if (disposed) return;
       const elapsed = now - started;
       if (elapsed >= 1900) {
+        running = false;
         setFlight({ phase: "finished", frame: 0 });
         return;
       }
@@ -49,12 +51,28 @@ export function MemorialName({ children }: { children: ReactNode }) {
       timer = window.requestAnimationFrame(tick);
     };
     const begin = () => {
-      if (disposed || begun || !ready || !visible) return;
+      if (disposed || begun || !ready || !isVisible()) return;
       begun = true;
       if (media.matches) return still();
+      running = true;
       started = performance.now();
       setFlight({ phase: "flying", frame: 1 });
       timer = window.requestAnimationFrame(tick);
+    };
+    const isVisible = () =>
+      intersecting &&
+      !document.hidden &&
+      !element.current?.closest("[hidden], [inert]");
+    const syncVisibility = () => {
+      if (isVisible()) return begin();
+      // Если карточка закрылась или её заслонил ассистент, следующий показ
+      // начинает пролёт заново, вместо завершения анимации за кадром.
+      if (running) {
+        running = false;
+        begun = false;
+        stop();
+        setFlight({ phase: "waiting", frame: 0 });
+      }
     };
     const change = () => {
       // Явный reduce немедленно останавливает пролёт.
@@ -65,12 +83,20 @@ export function MemorialName({ children }: { children: ReactNode }) {
     if (media.matches) still();
     const observer = new IntersectionObserver(
       ([entry]) => {
-        visible = entry.isIntersecting && entry.intersectionRatio >= 0.5;
-        begin();
+        intersecting = entry.isIntersecting && entry.intersectionRatio >= 0.35;
+        syncVisibility();
       },
-      { threshold: 0.5 },
+      { threshold: [0, 0.35] },
     );
     if (element.current) observer.observe(element.current);
+    const dock = element.current?.closest(".inspector-dock");
+    const dockObserver = new MutationObserver(syncVisibility);
+    if (dock)
+      dockObserver.observe(dock, {
+        attributes: true,
+        attributeFilter: ["hidden", "inert"],
+      });
+    document.addEventListener("visibilitychange", syncVisibility);
     const loaded = () => {
       ready = true;
       begin();
@@ -88,6 +114,8 @@ export function MemorialName({ children }: { children: ReactNode }) {
       disposed = true;
       stop();
       observer.disconnect();
+      dockObserver.disconnect();
+      document.removeEventListener("visibilitychange", syncVisibility);
       image.onload = null;
       image.onerror = null;
       media.removeEventListener("change", change);

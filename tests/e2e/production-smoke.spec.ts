@@ -11,11 +11,14 @@ test("на телефоне карточка уступает место отк�
   await page.getByTestId("rf__node-e2e-memorial-person").click();
   const card = page.locator(".inspector-dock");
   await expect(card).toBeVisible();
+  const dove = card.locator(".memorial-dove");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await expect(page.locator(".research-assistant")).toBeVisible();
   await expect(card).toBeHidden();
+  await expect(dove).toHaveCSS("animation-name", "none");
   await page.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
   await expect(card).toBeVisible();
+  await expect(dove).toHaveCSS("animation-name", "dove-leave");
 });
 
 test("настройка AI Studio содержит ключ, Folder ID и список моделей", async ({
