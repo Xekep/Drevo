@@ -559,6 +559,7 @@ function SuggestionCard({
 
 export function ResearchAssistant({
   view,
+  onOpenChange,
   personIds,
   currentPersonName,
   nudgeToken = 0,
@@ -569,6 +570,7 @@ export function ResearchAssistant({
   onReveal,
 }: {
   view: string;
+  onOpenChange?: (open: boolean) => void;
   personIds: string[];
   currentPersonName?: string;
   nudgeToken?: number;
@@ -616,6 +618,11 @@ export function ResearchAssistant({
     sendLatest = useRef<(text?: string) => Promise<void>>(() =>
       Promise.resolve(),
     );
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => onOpenChange?.(false);
+  }, [onOpenChange, open]);
 
   useEffect(() => {
     if (view !== "tree") return;

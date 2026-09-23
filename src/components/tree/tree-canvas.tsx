@@ -122,6 +122,12 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [growing, setGrowing] = useState(true);
+  const [initialCameraReady, setInitialCameraReady] = useState(false);
+  const markInitialCameraReady = useCallback(
+    () => setInitialCameraReady(true),
+    [],
+  );
+  const growthActive = growing && !narrow;
   const introHandled = useRef(false);
   const introComplete = useRef(props.onIntroComplete);
   useEffect(() => {
@@ -217,12 +223,19 @@ function Canvas(props: Props) {
     if (!growing || !ready || !nodes.length) return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      treeGrowthDuration(maxGrowthDelay, growthDelays),
+      narrow ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
     );
     return () => window.clearTimeout(timer);
-  }, [growing, ready, nodes.length, maxGrowthDelay, growthDelays]);
+  }, [growing, ready, nodes.length, maxGrowthDelay, growthDelays, narrow]);
   useEffect(() => {
-    if (growing || !ready || !nodes.length || introHandled.current) return;
+    if (
+      growing ||
+      (narrow && !initialCameraReady) ||
+      !ready ||
+      !nodes.length ||
+      introHandled.current
+    )
+      return;
     introHandled.current = true;
     let active = true;
     const done = () => {
@@ -260,6 +273,7 @@ function Canvas(props: Props) {
     };
   }, [
     growing,
+    initialCameraReady,
     ready,
     nodes.length,
     user?.personId,
@@ -298,7 +312,7 @@ function Canvas(props: Props) {
       peopleMap,
       context,
       root,
-      familyPeople: family.people,
+      onInitialViewReady: markInitialCameraReady,
       expanded: familyView.expanded,
       collapsed,
     });
@@ -393,12 +407,12 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${growing ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
-        aria-busy={growing}
+        aria-busy={growthActive}
         onContextMenu={(event) => {
-          if (growing) event.preventDefault();
+          if (growthActive) event.preventDefault();
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
@@ -548,7 +562,7 @@ function Canvas(props: Props) {
           zoomOnPinch
           zoomOnDoubleClick={!screen.fullscreen}
           selectionOnDrag={false}
-          panOnDrag={growing ? false : [0, 1]}
+          panOnDrag={growthActive ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
           onlyRenderVisibleElements

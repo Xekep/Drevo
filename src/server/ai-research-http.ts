@@ -203,9 +203,49 @@ export function recoverTextToolCalls(
   });
 }
 
+function containsInternalToolText(
+  content: string,
+  allowedNames: ReadonlySet<string>,
+) {
+  return [...allowedNames].some((name) =>
+    new RegExp(`\\b${name}\\s*\\(`, "i").test(content),
+  );
+}
+
+export function humanizeResearchAnswer(
+  answer: string,
+  people: Map<string, string>,
+  photos: Map<string, string>,
+) {
+  const labels = [...people, ...photos].sort(
+    ([left], [right]) => right.length - left.length,
+  );
+  return answer
+    .split(/(\[\[(?:person|choose-person|photo):[^\]]+\]\]|```[\s\S]*?```)/g)
+    .map((segment, index) => {
+      if (index % 2) return segment;
+      let text = segment.replace(
+        /\s*\(\s*(?:personId|photoId)\s*:\s*[^)]+\)/giu,
+        "",
+      );
+      text = text.replace(/\b(?:personId|photoId)\s*[:=]\s*[^\s,;]+/giu, "");
+      for (const [id, label] of labels)
+        if (id && text.includes(id))
+          text = text.replaceAll(
+            new RegExp(
+              `(?<![\\p{L}\\p{N}_-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_-])`,
+              "gu",
+            ),
+            () => label,
+          );
+      return text;
+    })
+    .join("");
+}
+
 function needsArchiveLookupRetry(request: string, answer: string) {
   const archiveQuestion =
-      /(?:брат|сестр|двоюрод|троюрод|четвероюрод|пятиюрод|шестиюрод|семиюрод|восьмиюрод|девятиюрод|десятиюрод|родител|мат(?:ь|ери)|отец|отца|мам|пап|сын|доч|дет|супруг|муж|жен|родств|предк|потом|родил|умер|жил|фото|сним|источник|архив|древ)/iu.test(
+      /(?:брат|сестр|двоюрод|троюрод|четвероюрод|пятиюрод|шестиюрод|семиюрод|восьмиюрод|девятиюрод|десятиюрод|родител|мат(?:ь|ери)|отец|отца|мам|пап|сын|доч|дет|супруг|муж|жен|родств|предк|потом|родил|умер|жил|фото|сним|источник|архив|древ|анализ|противореч|статист|пробел|неточност|дубл|сводк)/iu.test(
         request,
       ),
     unverifiedAbsence =
@@ -559,7 +599,6 @@ export function aiResearchHttp({
     messages: ModelMessage[],
     canPropose: boolean,
     runtime: ReturnType<typeof aiRuntimeConfig>,
-    onDelta: (text: string) => void,
     signal: AbortSignal,
   ): Promise<{
     message: ModelMessage;
@@ -601,7 +640,6 @@ export function aiResearchHttp({
       >();
     let buffer = "",
       content = "",
-      emittedLength = 0,
       reportedUsage: ModelUsage | undefined;
 
     const consumeFrame = (frame: string) => {
@@ -619,13 +657,6 @@ export function aiResearchHttp({
       if (!delta) return;
       if (typeof delta.content === "string" && delta.content) {
         content += delta.content;
-        const trimmed = content.trimStart(),
-          couldBeFencedBlock =
-            !trimmed || "```".startsWith(trimmed) || trimmed.startsWith("```");
-        if (!couldBeFencedBlock) {
-          onDelta(content.slice(emittedLength));
-          emittedLength = content.length;
-        }
       }
       for (const item of delta.tool_calls || []) {
         const index =
@@ -732,6 +763,7 @@ export function aiResearchHttp({
         "Опирайся только на данные инструментов и слова пользователя.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
+        "Для обзора архива используй get_archive_insights; для пробелов, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
         "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Для вопроса о двоюродных, троюродных и более дальних братьях или сёстрах вызови get_cousins. degree=2 означает двоюродных, degree=3 — троюродных, degree=4 — четвероюродных и далее. В коротком продолжении вроде «а двоюродные?» используй человека из предыдущих реплик и не проси уже указанные сведения повторно.",
@@ -783,7 +815,8 @@ export function aiResearchHttp({
       proposalErrors: string[] = [];
     let analyzedPhotos = 0,
       executedTools = 0,
-      lookupRetryUsed = false;
+      lookupRetryUsed = false,
+      internalOutputRetryUsed = false;
     const uiActions: UiAction[] = [],
       allowedToolNames = new Set([
         ...RESEARCH_TOOL_DEFINITIONS.map((tool) => tool.name),
@@ -820,10 +853,10 @@ export function aiResearchHttp({
 
     onStatus("Обрабатываю запрос…");
 
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < 12; round++) {
       metrics.providerCalls++;
       const completion = stream
-          ? await completeStream(messages, canPropose, runtime, onDelta, signal)
+          ? await completeStream(messages, canPropose, runtime, signal)
           : await complete(messages, canPropose, runtime),
         answer = completion.message;
       metrics.inputTokens += completion.inputTokens;
@@ -849,6 +882,21 @@ export function aiResearchHttp({
 
       const calls = answer.tool_calls || [];
       if (!calls.length) {
+        const rawContent =
+          typeof answer.content === "string" ? answer.content : "";
+        if (
+          containsInternalToolText(rawContent, allowedToolNames) &&
+          !internalOutputRetryUsed
+        ) {
+          internalOutputRetryUsed = true;
+          messages.push({
+            role: "system",
+            content:
+              "В предыдущем тексте оказалась внутренняя команда. Дай проверенный ответ пользователю обычным языком без имён функций и идентификаторов. Если требуются данные, вызови инструмент структурированно.",
+          });
+          onStatus("Уточняю ответ по данным архива…");
+          continue;
+        }
         if (
           !lookupRetryUsed &&
           executedTools === 0 &&
@@ -911,14 +959,22 @@ export function aiResearchHttp({
             : typeof answer.content === "string" && answer.content.trim()
               ? answer.content
               : "Модель не сформировала текстовый ответ.";
+        const safeAnswer = containsInternalToolText(rawAnswer, allowedToolNames)
+          ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
+          : humanizeResearchAnswer(
+              repairArchiveMarkers(
+                rawAnswer,
+                peopleById,
+                photosById,
+                referencedPeople,
+                referencedPhotos,
+              ),
+              peopleById,
+              photosById,
+            );
+        onDelta(safeAnswer);
         return {
-          answer: repairArchiveMarkers(
-            rawAnswer,
-            peopleById,
-            photosById,
-            referencedPeople,
-            referencedPhotos,
-          ),
+          answer: safeAnswer,
           references,
           suggestionIds: [...createdSuggestionIds],
           uiActions,
