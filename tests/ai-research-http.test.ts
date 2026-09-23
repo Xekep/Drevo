@@ -197,6 +197,134 @@ test("researcher retries an unverified archive answer and executes a textual too
   }
 });
 
+test("researcher resolves a short cousin follow-up from conversation history", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-cousins-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  const requests: Array<Record<string, unknown>> = [];
+  const aiFetch: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+    if (requests.length === 1)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "cousins-call",
+                  type: "function",
+                  function: {
+                    name: "get_cousins",
+                    arguments: '{"personId":"tatyana-cousins","degree":2}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    return Response.json({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content:
+              "У [[person:tatyana-cousins|Вьюхина Татьяна Ивановна]] есть двоюродный брат [[person:vasily-cousins|Скулко Василий Петрович]].",
+          },
+        },
+      ],
+    });
+  };
+  const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      aiFetch,
+    ),
+    base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read(),
+      makePerson = (
+        id: string,
+        surname: string,
+        name: string,
+        sex: "m" | "f",
+        parents: string[] = [],
+      ) => ({
+        id,
+        surname,
+        name,
+        patronymic: sex === "f" ? "Ивановна" : "Петрович",
+        sex,
+        birth: "1900",
+        birthPlace: "",
+        parents,
+        spouses: [],
+        generation: 1,
+        column: 0,
+        sources: [],
+      });
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          makePerson("grandfather-cousins", "Вьюхин", "Иван", "m"),
+          makePerson("parent-a-cousins", "Вьюхина", "Анна", "f", [
+            "grandfather-cousins",
+          ]),
+          makePerson("parent-b-cousins", "Скулко", "Пётр", "m", [
+            "grandfather-cousins",
+          ]),
+          makePerson("tatyana-cousins", "Вьюхина", "Татьяна", "f", [
+            "parent-a-cousins",
+          ]),
+          makePerson("vasily-cousins", "Скулко", "Василий", "m", [
+            "parent-b-cousins",
+          ]),
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "а двоюродные",
+        history: [
+          { role: "user", content: "Какие родственники есть у Татьяны?" },
+          {
+            role: "assistant",
+            content:
+              "У [[person:tatyana-cousins|Вьюхина Татьяна Ивановна]] есть родные сёстры.",
+          },
+        ],
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.match(payload.answer, /Василий/);
+    assert.equal(requests.length, 2);
+    assert.match(JSON.stringify(requests[0].messages), /а двоюродные/);
+    assert.match(JSON.stringify(requests[0].messages), /tatyana-cousins/);
+    assert.match(JSON.stringify(requests[0].tools), /get_cousins/);
+    assert.match(JSON.stringify(requests[1].messages), /vasily-cousins/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("web researcher uses Yandex AI Studio function calling through server only", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-"));
   process.env.YANDEX_AI_API_KEY = "test-key";

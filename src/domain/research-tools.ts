@@ -100,6 +100,20 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     ),
   },
   {
+    name: "get_cousins",
+    description:
+      "Найти всех доступных родственников человека одной боковой степени: degree=2 — двоюродные братья и сёстры, degree=3 — троюродные, далее аналогично. Используй также для коротких продолжений диалога вроде «а двоюродные?».",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        personId: { type: "string", minLength: 1, maxLength: 200 },
+        degree: { type: "integer", minimum: 2, maximum: 10, default: 2 },
+        limit: { type: "integer", minimum: 1, maximum: 100, default: 100 },
+      },
+      ["personId"],
+    ),
+  },
+  {
     name: "get_ancestors",
     description: "Получить известных предков человека на заданную глубину.",
     scope: "tree:read",
@@ -606,6 +620,27 @@ function lineage(
   return result;
 }
 
+function idsAtDistance(
+  starts: Iterable<string>,
+  distance: number,
+  next: (id: string) => Iterable<string>,
+) {
+  let frontier = new Set(starts);
+  const visited = new Set(frontier);
+  for (let level = 0; level < distance; level++) {
+    const following = new Set<string>();
+    for (const id of frontier)
+      for (const relatedId of next(id))
+        if (!visited.has(relatedId)) {
+          visited.add(relatedId);
+          following.add(relatedId);
+        }
+    frontier = following;
+    if (!frontier.size) break;
+  }
+  return frontier;
+}
+
 function missingFor(person: Person) {
   const missing: string[] = [];
   if (!person.birth) missing.push("дата рождения");
@@ -1016,6 +1051,83 @@ export function executeResearchTool(
       ),
       children: children.map(cleanPerson),
       siblings,
+    };
+  }
+
+  if (name === "get_cousins") {
+    const person = personOrThrow(family, stringArg(args, "personId")),
+      degree = numberArg(args, "degree", 2, 2, 10),
+      limit = numberArg(args, "limit", 100, 1, 100),
+      people = new Map(family.people.map((item) => [item.id, item])),
+      children = new Map<string, string[]>();
+    for (const child of family.people)
+      for (const parentId of child.parents) {
+        if (!people.has(parentId)) continue;
+        const ids = children.get(parentId) || [];
+        ids.push(child.id);
+        children.set(parentId, ids);
+      }
+    const ancestors = idsAtDistance(
+        [person.id],
+        degree,
+        (id) => people.get(id)?.parents || [],
+      ),
+      candidates = new Set<string>();
+    for (const ancestorId of ancestors)
+      for (const candidateId of idsAtDistance(
+        [ancestorId],
+        degree,
+        (id) => children.get(id) || [],
+      ))
+        if (candidateId !== person.id) candidates.add(candidateId);
+
+    const relatives = [...candidates]
+      .flatMap((candidateId) => {
+        const candidate = people.get(candidateId);
+        if (!candidate) return [];
+        const relation = analyzeKinship(
+          candidate,
+          person,
+          family.people,
+          family.links,
+        );
+        if (
+          relation.kind !== "blood" ||
+          relation.distances?.[0] !== degree ||
+          relation.distances[1] !== degree ||
+          !relation.roles?.[0]
+        )
+          return [];
+        return [
+          {
+            person: {
+              id: candidate.id,
+              name: fullName(candidate),
+              birth: candidate.birth,
+              death: candidate.death,
+            },
+            term: relation.roles[0].term,
+            description: relation.roles[0].description,
+            commonAncestors: relation.common.flatMap((id) => {
+              const ancestor = people.get(id);
+              return ancestor ? [{ id, name: fullName(ancestor) }] : [];
+            }),
+            path: relation.path.flatMap((id) => {
+              const pathPerson = people.get(id);
+              return pathPerson ? [{ id, name: fullName(pathPerson) }] : [];
+            }),
+          },
+        ];
+      })
+      .sort((left, right) =>
+        left.person.name.localeCompare(right.person.name, "ru"),
+      );
+    return {
+      person: { id: person.id, name: fullName(person) },
+      degree,
+      relatives: relatives.slice(0, limit),
+      total: relatives.length,
+      hasMore: relatives.length > limit,
     };
   }
 
