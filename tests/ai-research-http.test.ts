@@ -7,6 +7,7 @@ import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import {
   explicitViewControlRequest,
+  recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
 } from "../src/server/ai-research-http.ts";
@@ -25,6 +26,175 @@ test("явные команды перемещают пользователя п
     true,
   );
   assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
+});
+
+test("textual model tool call is recovered instead of being shown as Arduino code", () => {
+  assert.deepEqual(
+    recoverTextToolCalls(
+      '```arduino\nsearch_people({"query":"Татьяна Вьюхина"})\n```',
+      new Set(["search_people"]),
+    ),
+    [
+      {
+        id: "recovered-tool-0",
+        type: "function",
+        function: {
+          name: "search_people",
+          arguments: '{"query":"Татьяна Вьюхина"}',
+        },
+      },
+    ],
+  );
+  assert.deepEqual(
+    recoverTextToolCalls(
+      '```arduino\ndelete_everything({"yes":true})\n```',
+      new Set(["search_people"]),
+    ),
+    [],
+  );
+});
+
+test("researcher retries an unverified archive answer and executes a textual tool call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-retry-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  const requests: Array<Record<string, unknown>> = [];
+  const aiFetch: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+    if (requests.length === 1)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: "В архиве нет данных о Тане Вьюхиной.",
+            },
+          },
+        ],
+      });
+    if (requests.length === 2)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content:
+                '```arduino\nsearch_people({"query":"Татьяна Вьюхина"})\n```',
+            },
+          },
+        ],
+      });
+    if (requests.length === 3)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "family-call",
+                  type: "function",
+                  function: {
+                    name: "get_family",
+                    arguments: '{"personId":"tatyana-retry"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    return Response.json({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content:
+              "У [[person:tatyana-retry|Вьюхина Татьяна Ивановна]] есть брат [[person:brother-retry|Вьюхин Пётр Иванович]].",
+          },
+        },
+      ],
+    });
+  };
+  const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      aiFetch,
+    ),
+    base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read(),
+      parent = {
+        id: "parent-retry",
+        surname: "Вьюхин",
+        name: "Иван",
+        patronymic: "",
+        sex: "m" as const,
+        birth: "1900",
+        birthPlace: "",
+        parents: [],
+        spouses: [],
+        generation: 1,
+        column: 0,
+        sources: [],
+      };
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          ...current.family.people,
+          parent,
+          {
+            ...parent,
+            id: "tatyana-retry",
+            surname: "Вьюхина",
+            name: "Татьяна",
+            patronymic: "Ивановна",
+            sex: "f",
+            parents: ["parent-retry"],
+          },
+          {
+            ...parent,
+            id: "brother-retry",
+            name: "Пётр",
+            patronymic: "Иванович",
+            parents: ["parent-retry"],
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "У Тани Вьюхиной есть братья?" }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.doesNotMatch(payload.answer, /arduino|search_people/);
+    assert.match(payload.answer, /Пётр/);
+    assert.equal(requests.length, 4);
+    assert.match(
+      JSON.stringify(requests[1].messages),
+      /Предыдущий ответ не был проверен по архиву/,
+    );
+    assert.match(JSON.stringify(requests[2].messages), /tatyana-retry/);
+    assert.match(JSON.stringify(requests[3].messages), /brother-retry/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("web researcher uses Yandex AI Studio function calling through server only", async () => {

@@ -92,7 +92,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "get_family",
     description:
-      "Получить ближайшую семью человека: родителей, супругов и детей.",
+      "Получить ближайшую семью человека: родителей, супругов, детей, родных и неполнородных братьев и сестёр.",
     scope: "tree:read",
     inputSchema: objectSchema(
       { personId: { type: "string", minLength: 1, maxLength: 200 } },
@@ -299,6 +299,59 @@ function normalized(value: string) {
     .toLocaleLowerCase("ru")
     .replaceAll("ё", "е")
     .replace(/\s+/g, " ");
+}
+
+const familiarNameForms = new Map<string, string[]>([
+  ["таня", ["татьяна"]],
+  ["тани", ["татьяна"]],
+  ["тане", ["татьяна"]],
+  ["таню", ["татьяна"]],
+  ["таней", ["татьяна"]],
+  ["паша", ["павел"]],
+  ["паши", ["павел"]],
+  ["вася", ["василий"]],
+  ["васи", ["василий"]],
+  ["саша", ["александр", "александра"]],
+  ["женя", ["евгений", "евгения"]],
+]);
+const nameSearchStopWords = new Set([
+  "у",
+  "про",
+  "о",
+  "об",
+  "для",
+  "найди",
+  "найти",
+  "покажи",
+  "показать",
+  "человек",
+  "есть",
+  "ли",
+  "брат",
+  "братья",
+  "сестра",
+  "сестры",
+]);
+
+function tokenMatches(queryToken: string, fieldToken: string) {
+  if (
+    fieldToken === queryToken ||
+    fieldToken.includes(queryToken) ||
+    queryToken.includes(fieldToken)
+  )
+    return true;
+  const variants = familiarNameForms.get(queryToken) || [];
+  if (variants.some((variant) => fieldToken === variant)) return true;
+  let prefix = 0;
+  while (
+    prefix < queryToken.length &&
+    prefix < fieldToken.length &&
+    queryToken[prefix] === fieldToken[prefix]
+  )
+    prefix++;
+  return (
+    prefix >= 5 && prefix >= Math.min(queryToken.length, fieldToken.length) - 2
+  );
 }
 
 function cleanPerson(person: Person) {
@@ -838,7 +891,9 @@ export function executeResearchTool(
 
   if (name === "search_people") {
     const query = normalized(stringArg(args, "query")),
-      queryTokens = query.split(" ").filter(Boolean),
+      queryTokens = query
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((token) => token && !nameSearchStopWords.has(token)),
       limit = numberArg(args, "limit", 20, 1, 50);
     const matches = family.people
       .map((person) => {
@@ -861,9 +916,13 @@ export function executeResearchTool(
                   : value,
           0,
         );
-        const joined = fields.join(" "),
-          tokenMatches = queryTokens.filter((token) => joined.includes(token));
-        if (queryTokens.length && tokenMatches.length === queryTokens.length)
+        const fieldTokens = fields.flatMap((field) =>
+            field.split(/[^\p{L}\p{N}]+/u).filter(Boolean),
+          ),
+          matchingTokens = queryTokens.filter((token) =>
+            fieldTokens.some((fieldToken) => tokenMatches(token, fieldToken)),
+          );
+        if (queryTokens.length && matchingTokens.length === queryTokens.length)
           score = Math.max(score, 60 + Math.min(20, queryTokens.length * 5));
         return { person, score };
       })
@@ -894,7 +953,22 @@ export function executeResearchTool(
       people = new Map(family.people.map((item) => [item.id, item])),
       children = family.people.filter((item) =>
         item.parents.includes(person.id),
-      );
+      ),
+      parentIds = new Set(person.parents),
+      siblings = family.people.flatMap((candidate) => {
+        if (candidate.id === person.id) return [];
+        const sharedParentIds = candidate.parents.filter((id) =>
+          parentIds.has(id),
+        );
+        if (!sharedParentIds.length) return [];
+        return [
+          {
+            person: cleanPerson(candidate),
+            sharedParentIds,
+            kind: sharedParentIds.length >= 2 ? "full" : "half_or_unknown",
+          },
+        ];
+      });
     return {
       person: cleanPerson(person),
       parents: person.parents.flatMap((id) =>
@@ -904,6 +978,7 @@ export function executeResearchTool(
         people.has(id) ? [cleanPerson(people.get(id)!)] : [],
       ),
       children: children.map(cleanPerson),
+      siblings,
     };
   }
 
