@@ -96,6 +96,45 @@ test("Ctrl+колесо масштабирует древо и не меняет
   );
 });
 
+test("выход из специальных режимов возвращает опорного человека в центр", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  const person = page.getByTestId("rf__node-e2e-child");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await person.locator(".flow-person-content").click();
+
+  const distanceFromCenter = async () => {
+    const [canvasBox, personBox] = await Promise.all([
+      canvas.boundingBox(),
+      person.boundingBox(),
+    ]);
+    if (!canvasBox || !personBox) return 1000;
+    return Math.hypot(
+      personBox.x + personBox.width / 2 - (canvasBox.x + canvasBox.width / 2),
+      personBox.y + personBox.height / 2 - (canvasBox.y + canvasBox.height / 2),
+    );
+  };
+  const expectCentered = async () =>
+    expect.poll(distanceFromCenter, { timeout: 2_000 }).toBeLessThan(16);
+
+  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await page.getByRole("button", { name: "Всё древо" }).click();
+  await expectCentered();
+
+  await page.getByRole("button", { name: "Общие предки" }).click();
+  await page.getByRole("button", { name: "Всё древо" }).click();
+  await expectCentered();
+
+  await page.getByRole("button", { name: "Веер" }).click();
+  await expect(page.locator(".fan-chart-svg")).toBeVisible();
+  await page.getByRole("button", { name: "Веер" }).click();
+  await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
+  await expectCentered();
+});
+
 test("Ctrl+колесо не меняет масштаб страницы вне дерева", async ({
   page,
 }, testInfo) => {
