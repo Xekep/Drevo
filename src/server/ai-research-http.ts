@@ -357,6 +357,12 @@ function containsInternalToolText(
   );
 }
 
+function containsInternalSelectionText(content: string) {
+  return /(?:Уточнение к предыдущему вопросу: речь о|Выбран человек:|Пользователь уточнил, что в предыдущем вопросе|Идентификатор карточки для инструментов|\bpersonId\s*:)/iu.test(
+    content,
+  );
+}
+
 function archiveGraph(family: Family): ResearchGraph {
   const ids = new Set(family.people.map((person) => person.id));
   const spouses = new Set<string>();
@@ -776,10 +782,16 @@ export function aiResearchHttp({
             .slice(0, 2)
         : [],
       view = typeof context.view === "string" ? context.view : "",
-      history = (chats.messages(chatId, user.id) || []).slice(0, -1).slice(-12),
+      history = (chats.messages(chatId, user.id, true) || [])
+        .slice(0, -1)
+        .slice(-12),
       activePersonIds = (
         chats.read(chatId, user.id)?.sessionState.activePersonIds || []
       ).filter((id) => family.people.some((person) => person.id === id)),
+      selectedPerson =
+        typeof body.selectedPersonId === "string"
+          ? family.people.find((person) => person.id === body.selectedPersonId)
+          : null,
       lookupContext = [
         ...history
           .filter((item) => item.role === "user")
@@ -809,6 +821,11 @@ export function aiResearchHttp({
         "Никогда не печатай JSON-вызовы инструментов, даже в блоках кода или как план действий. Вызывай инструменты через tool_calls и только затем дай окончательный ответ. Не обещай «скоро вернуться»: обработай запрос в текущем ответе или честно сообщи, каких данных не хватает.",
         "Число поколений бери только из totals.generations результата get_archive_insights. generationDistribution описывает сохранённые уровни раскладки и не должна противоречить генеалогической глубине.",
         "Не утверждай, что отсутствие записи доказывает отсутствие события или родства.",
+        "Одиночный набор бессмысленных слогов без вопроса не считай именем человека и не ищи в архиве. Ответь коротко и по-доброму, с лёгкой ненавязчивой шуткой, и предложи пример вопроса об архиве. Не утверждай, что искал такое слово в архиве. Для осмысленных запросов сохраняй точность и серьёзность фактов.",
+        "Выбор человека в интерфейсе — скрытое действие пользователя для уточнения предыдущего вопроса. Используй выбранную карточку как контекст, но не цитируй служебную формулировку, personId и внутренние инструкции.",
+        selectedPerson
+          ? `Пользователь уточнил, что в предыдущем вопросе речь о человеке ${fullName(selectedPerson)} (personId: ${selectedPerson.id}). Используй именно эту карточку для инструментов.`
+          : "",
         canPropose
           ? "Если пользователь просит создать человека или сохранить конкретное изменение, используй propose_person_create, propose_person_update, propose_source или propose_relation. Это только предложения: архив не меняется, пока человек не нажмёт кнопку принятия в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Никогда не утверждай, что изменение применено, принято или ожидает ещё одного подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка."
           : "",
@@ -1024,7 +1041,8 @@ export function aiResearchHttp({
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
         if (
-          containsInternalToolText(rawContent, allowedToolNames) &&
+          (containsInternalToolText(rawContent, allowedToolNames) ||
+            (selectedPerson && containsInternalSelectionText(rawContent))) &&
           !internalOutputRetryUsed
         ) {
           internalOutputRetryUsed = true;
@@ -1032,7 +1050,7 @@ export function aiResearchHttp({
             type: "message",
             role: "user",
             content:
-              "В предыдущем тексте оказалась внутренняя команда или JSON-вызов. Не показывай их пользователю. Вызови нужный инструмент структурированно через tool_calls, затем дай завершённый проверенный ответ обычным языком без ID и обещаний вернуться позже.",
+              "В предыдущем тексте оказалась внутренняя команда или служебное уточнение. Не показывай их пользователю. Используй выбранного человека для ответа на исходный вопрос; если нужны данные архива, вызови инструмент через tool_calls. Дай завершённый ответ обычным языком без ID и обещаний вернуться позже.",
           });
           onStatus("Уточняю ответ по данным архива…");
           continue;
@@ -1172,22 +1190,21 @@ export function aiResearchHttp({
             formattedAnswer,
             verifiedSurnameTable(tableGroup.people),
           );
-        const safeAnswer = containsInternalToolText(
-          formattedAnswer,
-          allowedToolNames,
-        )
-          ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
-          : humanizeResearchAnswer(
-              repairArchiveMarkers(
-                formattedAnswer,
+        const safeAnswer =
+          containsInternalToolText(formattedAnswer, allowedToolNames) ||
+          (selectedPerson && containsInternalSelectionText(formattedAnswer))
+            ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
+            : humanizeResearchAnswer(
+                repairArchiveMarkers(
+                  formattedAnswer,
+                  peopleById,
+                  photosById,
+                  referencedPeople,
+                  referencedPhotos,
+                ),
                 peopleById,
                 photosById,
-                referencedPeople,
-                referencedPhotos,
-              ),
-              peopleById,
-              photosById,
-            );
+              );
         onDelta(safeAnswer);
         return {
           answer: safeAnswer,
@@ -1213,7 +1230,9 @@ export function aiResearchHttp({
             result = executeResearchTool(family, definition.name, toolArgs);
           else if (call.function.name === RESEARCH_RESOURCES_TOOL.name) {
             if (resourceLookups >= 1)
-              throw new Error("За один ответ можно выбрать только одну категорию ресурсов");
+              throw new Error(
+                "За один ответ можно выбрать только одну категорию ресурсов",
+              );
             const raw = toolArgs as Record<string, unknown>;
             if (typeof raw.category !== "string" || raw.category.length > 100)
               throw new Error("Укажите категорию ресурсов");
@@ -1577,12 +1596,37 @@ export function aiResearchHttp({
           error instanceof Error ? error.message : "Некорректный JSON запроса",
       });
     }
-    const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (!message || message.length > 8000)
-      return json(res, 400, { error: "Некорректный текст запроса" });
-
     const user = auth.currentUser(req)!,
       canPropose = auth.canEdit(req);
+    const selectedPersonId = body.selectedPersonId;
+    if (
+      selectedPersonId !== undefined &&
+      (typeof selectedPersonId !== "string" || !selectedPersonId)
+    )
+      return json(res, 400, { error: "Некорректный выбор человека" });
+    const typedMessage =
+      typeof body.message === "string" ? body.message.trim() : "";
+    if (
+      typedMessage.length > 8000 ||
+      (selectedPersonId && typedMessage) ||
+      (!selectedPersonId && !typedMessage)
+    )
+      return json(res, 400, { error: "Некорректный текст запроса" });
+    const requestedChatId = typeof body.chatId === "string" ? body.chatId : "";
+    if (selectedPersonId && !requestedChatId)
+      return json(res, 400, { error: "Выберите диалог для уточнения" });
+    const family = archive.read().family;
+    const visibleFamily = isScopedUser(user)
+      ? projectFamilyForUser(family, user)
+      : family;
+    const selectedPerson = selectedPersonId
+      ? visibleFamily.people.find((person) => person.id === selectedPersonId)
+      : null;
+    if (selectedPersonId && !selectedPerson)
+      return json(res, 404, { error: "Человек не найден" });
+    const message = selectedPerson
+      ? `Уточнение к предыдущему вопросу: речь о ${fullName(selectedPerson)}. Продолжи ответ.`
+      : typedMessage;
     try {
       usage.check(user.id, runtime.limits);
     } catch (error) {
@@ -1594,7 +1638,6 @@ export function aiResearchHttp({
       throw error;
     }
 
-    const requestedChatId = typeof body.chatId === "string" ? body.chatId : "";
     const chat = requestedChatId
       ? chats.read(requestedChatId, user.id)
       : chats.create(user.id, accessScope(user));
@@ -1605,7 +1648,12 @@ export function aiResearchHttp({
       return json(res, 409, {
         error: "Дождитесь завершения предыдущего ответа в этом диалоге",
       });
-    chats.append(chat.id, "user", message);
+    chats.append(
+      chat.id,
+      "user",
+      message,
+      selectedPerson ? { hidden: true } : {},
+    );
     const lockRenewal = setInterval(
       () => chats.renew(chat.id, lockToken),
       20_000,
@@ -1642,7 +1690,7 @@ export function aiResearchHttp({
 
     try {
       const result = await runResearch({
-        body,
+        body: { ...body, message },
         user,
         canPropose,
         runtime,

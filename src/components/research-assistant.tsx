@@ -703,9 +703,10 @@ export function ResearchAssistant({
       startRect: PanelRect;
       latest: PanelRect;
     } | null>(null),
-    sendLatest = useRef<(text?: string) => Promise<void>>(() =>
-      Promise.resolve(),
-    );
+    chatSelection = useRef(0),
+    sendLatest = useRef<
+      (text?: string, selectedPersonId?: string) => Promise<void>
+    >(() => Promise.resolve());
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -715,6 +716,7 @@ export function ResearchAssistant({
   useEffect(() => {
     if (!enabled) return;
     let active = true;
+    const selection = chatSelection.current;
     void fetch("/api/ai/chats", { credentials: "same-origin" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Не удалось загрузить диалоги");
@@ -727,7 +729,7 @@ export function ResearchAssistant({
           const response = await fetch(`/api/ai/chats/${data.chats[0].id}`);
           if (!response.ok) return;
           const detail = (await response.json()) as { messages: Message[] };
-          if (active) {
+          if (active && selection === chatSelection.current) {
             setChatId(data.chats[0].id);
             setMessages(detail.messages);
           }
@@ -737,7 +739,8 @@ export function ResearchAssistant({
         if (active) setError("Не удалось загрузить историю диалогов");
       })
       .finally(() => {
-        if (active) setChatLoading(false);
+        if (active && selection === chatSelection.current)
+          setChatLoading(false);
       });
     return () => {
       active = false;
@@ -1013,10 +1016,8 @@ export function ResearchAssistant({
   useEffect(() => {
     sendLatest.current = send;
   });
-  const choosePerson = useCallback((id: string, label: string) => {
-    void sendLatest.current(
-      `Выбран человек: ${label} (personId: ${id}). Продолжи мой предыдущий запрос для этого человека.`,
-    );
+  const choosePerson = useCallback((id: string) => {
+    void sendLatest.current("", id);
   }, []);
 
   if (!enabled) return null;
@@ -1035,21 +1036,33 @@ export function ResearchAssistant({
 
   async function openChat(id: string) {
     if (busy || id === chatId) return;
+    const selection = ++chatSelection.current;
     if (!id) {
       setChatId("");
       setMessages([]);
       setError("");
+      setChatLoading(false);
       return;
     }
-    const response = await fetch(`/api/ai/chats/${id}`);
-    if (!response.ok) {
-      setError("Не удалось открыть диалог");
-      return;
-    }
-    const data = (await response.json()) as { messages: Message[] };
+    const previousId = chatId;
+    const previousMessages = messages;
     setChatId(id);
-    setMessages(data.messages);
-    setError("");
+    setChatLoading(true);
+    try {
+      const response = await fetch(`/api/ai/chats/${id}`);
+      if (!response.ok) throw new Error("Не удалось открыть диалог");
+      const data = (await response.json()) as { messages: Message[] };
+      if (selection !== chatSelection.current) return;
+      setMessages(data.messages);
+      setError("");
+    } catch {
+      if (selection !== chatSelection.current) return;
+      setChatId(previousId);
+      setMessages(previousMessages);
+      setError("Не удалось открыть диалог");
+    } finally {
+      if (selection === chatSelection.current) setChatLoading(false);
+    }
   }
 
   async function clearDialog() {
@@ -1073,11 +1086,17 @@ export function ResearchAssistant({
     setReviewedSuggestions({});
   }
 
-  async function send(text = draft) {
+  async function send(text = draft, selectedPersonId?: string) {
     const message = text.trim();
-    if (!message || busy || chatLoading) return;
-    setMessages((current) => [...current, { role: "user", content: message }]);
-    setDraft("");
+    if ((!message && !selectedPersonId) || busy || chatLoading) return;
+    if (selectedPersonId && !chatId) return;
+    if (!selectedPersonId) {
+      setMessages((current) => [
+        ...current,
+        { role: "user", content: message },
+      ]);
+      setDraft("");
+    }
     setBusy(true);
     setStreamStatus("Обрабатываю запрос…");
     setActivities([]);
@@ -1088,6 +1107,7 @@ export function ResearchAssistant({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
+          ...(selectedPersonId ? { selectedPersonId } : {}),
           ...(chatId ? { chatId } : {}),
           context: { view, personIds },
         }),
@@ -1123,6 +1143,18 @@ export function ResearchAssistant({
         };
         if (parsed.event === "chat" && data.chatId) {
           setChatId(data.chatId);
+          setChats((current) =>
+            current.some((item) => item.id === data.chatId)
+              ? current
+              : [
+                  {
+                    id: data.chatId!,
+                    title: message.slice(0, 80),
+                    updatedAt: new Date().toISOString(),
+                  },
+                  ...current,
+                ],
+          );
           return;
         }
         if (parsed.event === "status") {
@@ -1145,7 +1177,9 @@ export function ResearchAssistant({
             setChats((current) => [
               {
                 id: data.chatId!,
-                title: message.slice(0, 80),
+                title:
+                  current.find((item) => item.id === data.chatId)?.title ||
+                  message.slice(0, 80),
                 updatedAt: new Date().toISOString(),
               },
               ...current.filter((item) => item.id !== data.chatId),

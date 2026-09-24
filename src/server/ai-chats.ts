@@ -14,6 +14,7 @@ type ChatRow = {
 export type AiChatMessage = {
   role: "user" | "assistant";
   content: string;
+  hidden?: boolean;
   references?: unknown[];
   suggestionIds?: string[];
   files?: Array<{ name: string; url: string }>;
@@ -55,7 +56,9 @@ export function aiChatStore(db: DatabaseSync) {
           .prepare(
             `SELECT ai_chats.id,updated_at,
              (SELECT content FROM ai_chat_messages
-              WHERE chat_id=ai_chats.id AND role='user' ORDER BY id LIMIT 1) AS title
+              WHERE chat_id=ai_chats.id AND role='user'
+                AND json_extract(data,'$.hidden') IS NOT 1
+              ORDER BY id LIMIT 1) AS title
            FROM ai_chats WHERE user_id=? AND access_scope=?
            ORDER BY updated_at DESC LIMIT 50`,
           )
@@ -70,7 +73,11 @@ export function aiChatStore(db: DatabaseSync) {
         title: row.title?.slice(0, 80) || "Новый диалог",
       }));
     },
-    messages(id: string, userId: string): AiChatMessage[] | null {
+    messages(
+      id: string,
+      userId: string,
+      includeHidden = false,
+    ): AiChatMessage[] | null {
       if (!read(id, userId)) return null;
       return (
         db
@@ -83,11 +90,13 @@ export function aiChatStore(db: DatabaseSync) {
           content: string;
           data: string;
         }>
-      ).map((row) => ({
-        role: row.role,
-        content: row.content,
-        ...JSON.parse(row.data),
-      }));
+      )
+        .map((row) => ({
+          role: row.role,
+          content: row.content,
+          ...JSON.parse(row.data),
+        }))
+        .filter((message) => includeHidden || message.hidden !== true);
     },
     append(
       id: string,
