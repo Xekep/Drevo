@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import {
   Bot,
   CheckCircle2,
@@ -43,12 +50,26 @@ type AiAdminStatus = {
       totalTokens: number;
       errors: number;
       averageLatencyMs: number;
+      models: Array<{
+        model: string;
+        providerCalls: number;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      }>;
     };
     history: Array<{
       day: string;
       inputTokens: number;
       outputTokens: number;
       totalTokens: number;
+      models: Array<{
+        model: string;
+        providerCalls: number;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      }>;
     }>;
     recent: Array<{
       id: number;
@@ -65,6 +86,33 @@ type AiAdminStatus = {
   };
   baseUrl: string;
 };
+
+type ModelUsage = AiAdminStatus["usage"]["history"][number]["models"][number];
+
+function modelLabel(model: string) {
+  return model.replace(/^gpt:\/\/[^/]+\//, "");
+}
+
+function modelHue(model: string) {
+  let hash = 0;
+  for (const char of model) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % 360;
+}
+
+function modelStyle(model: string): CSSProperties {
+  return { "--model-hue": modelHue(model) } as CSSProperties;
+}
+
+function usageDetails(models: ModelUsage[]) {
+  return models
+    .map(
+      (model) =>
+        `${modelLabel(model.model)}: вход ${model.inputTokens.toLocaleString(
+          "ru-RU",
+        )}, выход ${model.outputTokens.toLocaleString("ru-RU")}`,
+    )
+    .join(" · ");
+}
 
 export function AiSettingsAdmin() {
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
@@ -83,9 +131,20 @@ export function AiSettingsAdmin() {
     [notice, setNotice] = useState("");
 
   const historyMax = Math.max(
-    1,
-    ...(status?.usage.history.map((item) => item.totalTokens) || []),
-  );
+      1,
+      ...(status?.usage.history.map((item) => item.totalTokens) || []),
+    ),
+    historyModels = useMemo(
+      () =>
+        [
+          ...new Set(
+            status?.usage.history.flatMap((item) =>
+              item.models.map((model) => model.model),
+            ) || [],
+          ),
+        ],
+      [status],
+    );
 
   const applyStatus = useCallback((next: AiAdminStatus) => {
     setStatus(next);
@@ -514,11 +573,21 @@ export function AiSettingsAdmin() {
             </div>
             <div className="ai-token-chart">
               <div className="ai-token-chart-heading">
-                <h4>Расход токенов за 14 дней</h4>
-                <span>
-                  <i className="input" /> запрос
-                  <i className="output" /> ответ
-                </span>
+                <div>
+                  <h4>Расход токенов за 14 дней</h4>
+                  <small>тёмный сегмент — вход, светлый — выход</small>
+                </div>
+                <div className="ai-token-model-legend" aria-label="Модели">
+                  {historyModels.map((item) => (
+                    <span key={item} title={item}>
+                      <i style={modelStyle(item)}>
+                        <b className="input" />
+                        <b className="output" />
+                      </i>
+                      {modelLabel(item)}
+                    </span>
+                  ))}
+                </div>
               </div>
               <div
                 className="ai-token-bars"
@@ -527,13 +596,22 @@ export function AiSettingsAdmin() {
               >
                 {status.usage.history.map((item, index) => {
                   const height = item.totalTokens
-                    ? Math.max(5, (item.totalTokens / historyMax) * 100)
-                    : 2;
+                      ? Math.max(5, (item.totalTokens / historyMax) * 100)
+                      : 2,
+                    date = new Date(
+                      `${item.day}T00:00:00Z`,
+                    ).toLocaleDateString("ru-RU"),
+                    details = usageDetails(item.models),
+                    title = `${date}: ${item.totalTokens.toLocaleString(
+                      "ru-RU",
+                    )} токенов${
+                      details ? ` · ${details}` : ""
+                    }`;
                   return (
                     <div
                       className="ai-token-day"
                       key={item.day}
-                      aria-label={`${new Date(`${item.day}T00:00:00Z`).toLocaleDateString("ru-RU")}: ${item.totalTokens.toLocaleString("ru-RU")} токенов`}
+                      aria-label={title}
                     >
                       <div className="ai-token-column">
                         <div
@@ -543,24 +621,32 @@ export function AiSettingsAdmin() {
                               : "ai-token-stack is-empty"
                           }
                           style={{ height: `${height}%` }}
-                          title={`${new Date(`${item.day}T00:00:00Z`).toLocaleDateString("ru-RU")}: ${item.totalTokens.toLocaleString("ru-RU")} токенов`}
+                          title={title}
                         >
-                          {item.totalTokens > 0 && (
-                            <>
-                              <span
+                          {item.models.map((model) => (
+                            <span
+                              className="ai-token-model-segment"
+                              key={model.model}
+                              style={{
+                                ...modelStyle(model.model),
+                                flex: model.totalTokens || 0.001,
+                              }}
+                              title={`${modelLabel(model.model)} · вход ${model.inputTokens.toLocaleString(
+                                "ru-RU",
+                              )} · выход ${model.outputTokens.toLocaleString(
+                                "ru-RU",
+                              )}`}
+                            >
+                              <i
                                 className="input"
-                                style={{
-                                  flex: item.inputTokens || 0.001,
-                                }}
+                                style={{ flex: model.inputTokens || 0.001 }}
                               />
-                              <span
+                              <i
                                 className="output"
-                                style={{
-                                  flex: item.outputTokens || 0.001,
-                                }}
+                                style={{ flex: model.outputTokens || 0.001 }}
                               />
-                            </>
-                          )}
+                            </span>
+                          ))}
                         </div>
                       </div>
                       {(index === 0 ||
@@ -590,7 +676,8 @@ export function AiSettingsAdmin() {
                       <b>{item.model}</b>
                       <small>
                         {new Date(item.at).toLocaleString("ru-RU")} ·{" "}
-                        {item.totalTokens.toLocaleString("ru-RU")} ток. ·{" "}
+                        вход {item.inputTokens.toLocaleString("ru-RU")} · выход{" "}
+                        {item.outputTokens.toLocaleString("ru-RU")} ·{" "}
                         {item.providerCalls} выз. · {item.latencyMs} мс
                       </small>
                     </div>
