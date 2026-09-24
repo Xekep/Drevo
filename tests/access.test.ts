@@ -508,7 +508,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     cache
       .prepare("INSERT INTO geocode_cache(query,data,saved_at) VALUES(?,?,?)")
       .run(
-        "https://photon.komoot.io/api/:https://www.wikidata.org/w/api.php:москва",
+        "v2:https://photon.komoot.io/api/:https://www.wikidata.org/w/api.php:москва",
         JSON.stringify({
           query: "Москва",
           candidates: [],

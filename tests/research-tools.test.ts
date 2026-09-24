@@ -88,6 +88,83 @@ test("research tools expose a stable read-only catalogue", () => {
   );
 });
 
+test("surname group includes birth surname and grammatical forms, and only direct parents", () => {
+  const branch: Family = {
+    ...family,
+    people: [
+      person("root", "Иван", "1900", { surname: "Чепчугов", sex: "m" }),
+      person("other-parent", "Мария", "1901", { surname: "Вьюхина", sex: "f" }),
+      person("daughter", "Анна", "1930", {
+        surname: "Родина",
+        maidenName: "Чепчугова",
+        sex: "f",
+        parents: ["root", "other-parent"],
+      }),
+      person("son", "Павел", "1932", {
+        surname: "Чепчугов",
+        parents: ["root", "other-parent"],
+      }),
+      person("grandson", "Дмитрий", "1960", {
+        surname: "Родин",
+        parents: ["daughter"],
+      }),
+      person("unrelated", "Василий", "1933", { surname: "Скулко" }),
+    ],
+  };
+  const result = executeResearchTool(branch, "get_surname_group", {
+    surname: "Чепчуговых",
+  }) as {
+    people: Array<{ id: string; birthSurname: string | null }>;
+    personIds: string[];
+    edges: Array<{ from: string; to: string; type: string }>;
+    mermaid: string;
+  };
+  assert.deepEqual(
+    result.people.map((item) => item.id),
+    ["root", "daughter", "son"],
+  );
+  assert.equal(result.people[1].birthSurname, "Чепчугова");
+  assert.deepEqual(
+    new Set(result.personIds),
+    new Set(["root", "daughter", "son", "other-parent"]),
+  );
+  assert.ok(
+    result.edges.some(
+      (edge) =>
+        edge.from === "root" &&
+        edge.to === "daughter" &&
+        edge.type === "parent",
+    ),
+  );
+  assert.match(result.mermaid, /^graph TD\n/);
+  assert.doesNotMatch(result.mermaid, /Дмитрий|Василий/);
+});
+
+test("evidence tools distinguish card sources from unsourced events and awards", () => {
+  const archive: Family = {
+    ...family,
+    people: [
+      person("a", "Иван", "1900", {
+        events: [{ id: "move", type: "move", date: "1920" }],
+        awards: [{ id: "prize", name: "Медаль" }],
+      }),
+    ],
+  };
+  const gaps = executeResearchTool(archive, "find_evidence_gaps", {
+    personId: "a",
+  }) as { gaps: Array<{ kind: string }>; total: number };
+  assert.deepEqual(
+    gaps.gaps.map((gap) => gap.kind),
+    ["card", "event", "award"],
+  );
+  assert.equal(gaps.total, 3);
+  const coverage = executeResearchTool(archive, "get_evidence_coverage", {
+    personId: "a",
+  }) as { note: string; records: Array<{ cardSourceCount: number }> };
+  assert.match(coverage.note, /не привязаны к отдельным полям/);
+  assert.equal(coverage.records[0].cardSourceCount, 0);
+});
+
 test("research tools search people and traverse genealogy", () => {
   const listed = executeResearchTool(family, "list_people", {
     limit: 100,
@@ -271,7 +348,9 @@ test("cousin lookup finds the requested degree and excludes siblings", () => {
     new Set(result.relatives[0].commonAncestors.map((item) => item.id)),
     new Set([grandfather.id, grandmother.id]),
   );
-  assert.ok(result.relatives[0].path.some((item) => item.id === secondParent.id));
+  assert.ok(
+    result.relatives[0].path.some((item) => item.id === secondParent.id),
+  );
   assert.ok(!result.relatives.some((item) => item.person.id === sibling.id));
 });
 

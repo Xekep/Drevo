@@ -3,8 +3,35 @@ import assert from "node:assert/strict";
 import {
   cleanPdfAnswer,
   linkResearchReferences,
+  normalizeResearchMarkdown,
+  replaceResearchTable,
   researchPdfFilename,
+  verifiedSurnameTable,
 } from "../src/domain/research-answer.ts";
+
+test("repairs malformed surname table and empty diagram using verified genealogy", () => {
+  const source =
+    "| ФИОДата рожденияМесто рожденияДата смертиПримечания | | | | |\n| --- | --- | --- | --- | --- |\n| Иван | — | — | — | Отец |\n```mermaid\n```\nНе удалось построить схему";
+  const result = normalizeResearchMarkdown(
+    source,
+    'graph TD\n  n0["Иван"]',
+    true,
+  );
+  assert.match(
+    result,
+    /^\| ФИО \| Дата рождения \| Место рождения \| Дата смерти \| Примечания \|/,
+  );
+  assert.match(result, /```mermaid\ngraph TD\n/);
+  assert.doesNotMatch(result, /Не удалось построить схему/);
+});
+
+test("surname table uses archived fields and clickable people regardless of model formatting", () => {
+  const table = verifiedSurnameTable([{ id: "person-1", name: "Родина Анна", birthSurname: "Чепчугова", birth: "1930", birthPlace: "", death: null }]);
+  const answer = replaceResearchTable("Ветвь:\n\n| Слитый заголовок | |\n| --- | --- |\n| неточно | неточно |\n\nПроверено.", table);
+  assert.match(answer, /\| ФИО \| Фамилия при рождении \| Дата рождения \| Место рождения \| Дата смерти \|/);
+  assert.match(answer, /\[\[person:person-1\|Родина Анна\]\] \| Чепчугова \| 1930 \| — \| —/);
+  assert.doesNotMatch(answer, /неточно|Слитый заголовок/);
+});
 
 test("ссылка на готовый PDF остаётся только у вложения, имя короткое", () => {
   assert.equal(

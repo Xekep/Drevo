@@ -9,6 +9,7 @@ import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
+  surnameGroup,
 } from "../domain/research-tools.ts";
 import {
   RESEARCH_PROPOSAL_TOOLS,
@@ -23,7 +24,10 @@ import { fetchAiStudioModels } from "./ai-models.ts";
 import { researchPdf, type ResearchGraph } from "./research-pdf.ts";
 import {
   cleanPdfAnswer,
+  normalizeResearchMarkdown,
+  replaceResearchTable,
   researchPdfFilename,
+  verifiedSurnameTable,
 } from "../domain/research-answer.ts";
 
 type ToolCall = {
@@ -189,6 +193,7 @@ const CREATE_PDF_TOOL = {
 
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
+  | { type: "filter_people"; personIds: string[]; label: string }
   | { type: "open_person"; personId: string }
   | { type: "open_photo"; photoId: string }
   | { type: "zoom_in" | "zoom_out" };
@@ -211,7 +216,7 @@ const ANALYZE_PHOTO_TOOL = {
 const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people перемещает древо к людям; zoom_in и zoom_out меняют текущий масштаб древа, если просят приблизить или отдалить; open_person открывает карточку; open_photo открывает фотографию. Для перемещения к названному человеку сначала вызови search_people. Не вызывай инструмент лишь из-за упоминания человека.",
+    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people перемещает древо к людям; action=filter_surname временно показывает только людей с текущей фамилией или фамилией при рождении и ближайших известных родителей, перестраивая связи. Сначала вызови get_surname_group. zoom_in и zoom_out меняют масштаб; open_person открывает карточку; open_photo открывает фотографию. Не вызывай инструмент лишь из-за упоминания человека.",
   inputSchema: {
     type: "object",
     properties: {
@@ -219,6 +224,7 @@ const CONTROL_VIEW_TOOL = {
         type: "string",
         enum: [
           "focus_people",
+          "filter_surname",
           "open_person",
           "open_photo",
           "zoom_in",
@@ -233,6 +239,7 @@ const CONTROL_VIEW_TOOL = {
       },
       personId: { type: "string", minLength: 1, maxLength: 200 },
       photoId: { type: "string", minLength: 1, maxLength: 200 },
+      surname: { type: "string", minLength: 2, maxLength: 100 },
     },
     required: ["action"],
     additionalProperties: false,
@@ -241,7 +248,7 @@ const CONTROL_VIEW_TOOL = {
 
 export function explicitViewControlRequest(message: string, view = "") {
   const directInterfaceRequest =
-      /(?:покаж(?:и|ь)?|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,60}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк)|(?:на древе|в дереве|на карте).{0,60}(?:покаж(?:и|ь)?|найди|выдел|подсвет|перемест|центрир)/iu.test(
+      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк|предк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|найди|выдел|подсвет|перемест|центрир)/iu.test(
         message,
       ),
     treeMovementRequest =
@@ -381,6 +388,9 @@ function researchToolStatus(name: string) {
     find_possible_duplicates: "Проверяю похожие карточки…",
     get_research_backlog: "Составляю дальнейшие шаги исследования…",
     get_genealogy_graph: "Строю схему родственных связей…",
+    get_surname_group: "Проверяю фамилии при рождении и связи родни…",
+    get_evidence_coverage: "Сверяю записи с прикреплёнными источниками…",
+    find_evidence_gaps: "Ищу записи без прикреплённых источников…",
     search_people: "Ищу людей в архиве…",
     list_people: "Составляю список людей…",
     get_sources: "Изучаю указанные источники…",
@@ -956,7 +966,8 @@ export function aiResearchHttp({
         "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
-        "Если пользователь просит найти, показать или переместить его к человеку на древе, сначала найди человека через search_people, затем вызови control_archive_view с action=focus_people. Для показа родственной цепочки передай всех людей по порядку. Если уже смотрит на нужную часть дерева и просит приблизить или отдалить, используй zoom_in или zoom_out. action=open_person используй только для открытия карточки.",
+        "Если пользователь просит оставить на древе только носителей фамилии (включая фамилию при рождении) и ближайших предков, вызови get_surname_group с фамилией, затем control_archive_view с action=filter_surname и surname. Это временный фильтр с пересчётом дерева. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people: это лишь перемещает камеру. Если просит приблизить или отдалить, используй zoom_in или zoom_out.",
+        "Для таблицы по фамилии включая фамилию при рождении вызови get_surname_group. У Markdown-таблицы отдельная строка заголовков с разделителями | между всеми столбцами, затем строка | --- | для каждого столбца. Для проверки источников используй get_evidence_coverage и find_evidence_gaps; источник карточки не подтверждает автоматически каждое поле.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
         "Никогда не печатай JSON-вызовы инструментов, даже в блоках кода или как план действий. Вызывай инструменты через tool_calls и только затем дай окончательный ответ. Не обещай «скоро вернуться»: обработай запрос в текущем ответе или честно сообщи, каких данных не хватает.",
@@ -970,7 +981,7 @@ export function aiResearchHttp({
         "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
         "Сначала выполни действие, затем коротко скажи, что изменилось. Не описывай внутренние проверки, не приписывай интерфейсу состояние, которого не видишь, и не добавляй стандартное «если хотите, могу...» после завершённого действия.",
         "Когда сравнение или распределение подтверждённых чисел будет понятнее на диаграмме, можешь добавить компактный Mermaid pie или xychart рядом с кратким объяснением. Не придумывай значения и не дублируй таблицу графиком без пользы. Для родственных связей показывай схему только по данным get_genealogy_graph.",
-        "Если пользователь просит схему в чате, вызови get_genealogy_graph и вставь возвращённое поле mermaid в fenced-блок ```mermaid без изменений. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
+        "Если пользователь просит схему в чате, вызови get_genealogy_graph или get_surname_group и вставь непустое поле mermaid в fenced-блок ```mermaid без изменений. Не выводи пустой блок или текст ошибки рендеринга. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
         "Если пользователь просит PDF, собери сведения инструментами и вызови create_pdf через tool_calls. Передай подготовленный Markdown с нужными таблицами и Mermaid graph/flowchart, pie или xychart; остальные типы PDF пока не поддерживает. Схема архива занимает один отдельный лист A4. В ответе кратко поясни содержимое файла: не печатай URL, пустую ссылку, «скачать по ссылке» или название файла, ссылка появится в интерфейсе. Не обещай готовый файл до created: true.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
@@ -1006,6 +1017,8 @@ export function aiResearchHttp({
       lookupRetryUsed = false,
       internalOutputRetryUsed = false,
       pdfRetryUsed = false;
+    let verifiedMermaid = "";
+    let verifiedSurname = "";
     const uiActions: UiAction[] = [],
       files: ResearchFile[] = [],
       allowedToolNames = new Set([
@@ -1016,6 +1029,11 @@ export function aiResearchHttp({
         ...(canPropose ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name) : []),
       ]),
       viewControlRequested = explicitViewControlRequest(message, view),
+      filterSurnameRequested =
+        viewControlRequested &&
+        /(?:древ|дерев).{0,95}(?:только|остав|убер|скрой|предк)|(?:только|остав|убер|скрой).{0,95}(?:древ|дерев)/iu.test(
+          message,
+        ),
       photoViewRequested =
         /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
           message,
@@ -1148,6 +1166,7 @@ export function aiResearchHttp({
         }
         if (
           viewControlRequested &&
+          !filterSurnameRequested &&
           !photoViewRequested &&
           !uiActions.some(
             (action) =>
@@ -1162,6 +1181,35 @@ export function aiResearchHttp({
                 : { type: "focus_people", personIds },
             );
         }
+        if (
+          filterSurnameRequested &&
+          !uiActions.some((action) => action.type === "filter_people")
+        ) {
+          const mentioned =
+            /(?:древе|дереве|по|род[ауе]|ветк[еиу])\s+([а-яё]{4,})/iu.exec(
+              message,
+            )?.[1];
+          const surname = verifiedSurname || mentioned || "";
+          if (surname) {
+            const group = surnameGroup(family, surname);
+            if (group.people.length) {
+              uiActions.push({
+                type: "filter_people",
+                personIds: group.personIds,
+                label: group.surname,
+              });
+              if (!verifiedMermaid) verifiedMermaid = group.mermaid;
+            }
+          }
+        }
+        const surnameFromMessage =
+          /(?:древе|дереве|по|род[ауе]|ветк[еиу])\s+([а-яё]{4,})/iu.exec(message)?.[1] || "";
+        const tableGroup =
+          /(?:таблиц|сводк)/iu.test(message) && (verifiedSurname || surnameFromMessage)
+            ? surnameGroup(family, verifiedSurname || surnameFromMessage)
+            : null;
+        if (tableGroup?.people.length)
+          for (const person of tableGroup.people) referencedPeople.add(person.id);
         const references: AnswerReference[] = [
           ...[...referencedPeople].slice(0, 250).map((id) => ({
             kind: "person" as const,
@@ -1190,14 +1238,24 @@ export function aiResearchHttp({
         const preparedAnswer = files.length
           ? cleanPdfAnswer(rawAnswer) || "PDF готов."
           : rawAnswer;
-        const safeAnswer = containsInternalToolText(
+        let formattedAnswer = normalizeResearchMarkdown(
           preparedAnswer,
+          verifiedMermaid,
+          /(?:схем|граф)/iu.test(message),
+        );
+        if (tableGroup?.people.length && !pdfRequested)
+          formattedAnswer = replaceResearchTable(
+            formattedAnswer,
+            verifiedSurnameTable(tableGroup.people),
+          );
+        const safeAnswer = containsInternalToolText(
+          formattedAnswer,
           allowedToolNames,
         )
           ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
           : humanizeResearchAnswer(
               repairArchiveMarkers(
-                preparedAnswer,
+                formattedAnswer,
                 peopleById,
                 photosById,
                 referencedPeople,
@@ -1328,6 +1386,21 @@ export function aiResearchHttp({
               };
               uiActions.push(action);
               result = { scheduled: true, action };
+            } else if (raw.action === "filter_surname") {
+              if (!filterSurnameRequested || typeof raw.surname !== "string")
+                throw new Error(
+                  "Нужна явная просьба показать только эту ветвь на древе",
+                );
+              const group = surnameGroup(family, raw.surname);
+              if (!group.people.length)
+                throw new Error("Фамилия не найдена в доступном архиве");
+              const action: UiAction = {
+                type: "filter_people",
+                personIds: group.personIds,
+                label: group.surname,
+              };
+              uiActions.push(action);
+              result = { scheduled: true, action };
             } else if (
               raw.action === "open_person" &&
               typeof raw.personId === "string" &&
@@ -1389,6 +1462,17 @@ export function aiResearchHttp({
             graphInPdfRequested ? "PDF со схемой связей готов" : "PDF готов",
           );
         collectPersonReferences(result, peopleById, referencedPeople);
+        if (
+          (call.function.name === "get_genealogy_graph" ||
+            call.function.name === "get_surname_group") &&
+          result &&
+          typeof result === "object"
+        ) {
+          const graph = result as { mermaid?: string; surname?: string };
+          if (graph.mermaid?.startsWith("graph "))
+            verifiedMermaid = graph.mermaid;
+          if (graph.surname) verifiedSurname = graph.surname;
+        }
         collectPersonReferences(result, photosById, referencedPhotos);
         if (
           definition?.name === "get_sources" &&

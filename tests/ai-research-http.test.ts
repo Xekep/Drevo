@@ -40,6 +40,13 @@ test("явные команды перемещают пользователя п
     true,
   );
   assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
+  assert.equal(
+    explicitViewControlRequest(
+      "отобрази на древе чепчуговых только и их предков ближайших",
+      "tree",
+    ),
+    true,
+  );
 });
 
 test("короткая команда приближения действует только в древе", () => {
@@ -689,6 +696,19 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       (message) => message.role === "tool",
     );
     assert.match(toolMessage?.content || "", /Анна/);
+    const filteredResponse = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "отобрази на древе Лебедь только и её ближайших предков",
+        context: { view: "tree" },
+      }),
+    });
+    assert.equal(filteredResponse.status, 200);
+    const filtered = await filteredResponse.json();
+    assert.deepEqual(filtered.uiActions, [
+      { type: "filter_people", personIds: ["anna-ai-test"], label: "Лебедь" },
+    ]);
   } finally {
     await app.close();
     for (const key of [

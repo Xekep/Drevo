@@ -130,7 +130,12 @@ export default function App() {
     [assistantZoom, setAssistantZoom] = useState<{
       token: number;
       direction: "in" | "out";
-    }>({ token: 0, direction: "in" });
+    }>({ token: 0, direction: "in" }),
+    [assistantFilter, setAssistantFilter] = useState<{
+      ids: string[];
+      label: string;
+      token: number;
+    } | null>(null);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -653,6 +658,8 @@ export default function App() {
                       onAdd={newPerson}
                       onLink={startLink}
                       focus={focus}
+                      assistantFilter={assistantFilter}
+                      onClearAssistantFilter={() => setAssistantFilter(null)}
                       zoomRequest={assistantZoom}
                       preview={preview}
                       query={query}
@@ -897,6 +904,11 @@ export default function App() {
             lastUrlTarget.current = targetKey(target || null);
             setView("tree", target);
             reveal(ids);
+          }}
+          onFilter={(ids, label) => {
+            if (!ids.length) return;
+            setView("tree");
+            setAssistantFilter({ ids, label, token: Date.now() });
           }}
           onZoom={(direction) =>
             setAssistantZoom((previous) => ({

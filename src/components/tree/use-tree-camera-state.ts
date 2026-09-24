@@ -157,7 +157,18 @@ export function useTreeCameraState({
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
         } else if (changedContext || reverseChanged) {
-          if ((switchedMode || reverseChanged) && selected.length)
+          if (changedContext && context.includes(":research:"))
+            viewportUpdate = flow.fitView({
+              minZoom: 0.05,
+              maxZoom: narrow ? 0.9 : 1,
+              padding: 0.2,
+              duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+                .matches
+                ? 0
+                : 650,
+              ease: (progress) => 1 - (1 - progress) ** 3,
+            });
+          else if ((switchedMode || reverseChanged) && selected.length)
             viewportUpdate = flow.fitView({
               nodes: selected.map((id) => ({ id })),
               maxZoom: 1,

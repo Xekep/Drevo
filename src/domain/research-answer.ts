@@ -28,6 +28,61 @@ export function cleanPdfAnswer(answer: string) {
     .trim();
 }
 
+/** Repair a common model formatting error without changing the table data. */
+export function normalizeResearchMarkdown(
+  answer: string,
+  verifiedMermaid = "",
+  graphRequested = false,
+) {
+  let result = answer
+    .replace(/```(?:mermaid)?\s*\n\s*```/giu, "")
+    .replace(/^\s*Не удалось построить схему\s*$/gimu, "")
+    .replace(
+      /^\|\s*ФИОДата рожденияМесто рожденияДата смертиПримечания\s*\|[^\n]*$/gimu,
+      "| ФИО | Дата рождения | Место рождения | Дата смерти | Примечания |",
+    );
+  if (verifiedMermaid)
+    result = result.replace(
+      /```mermaid\s*\n\s*(?:graph|flowchart)\s[\s\S]*?```/giu,
+      `\x60\x60\x60mermaid\n${verifiedMermaid}\n\x60\x60\x60`,
+    );
+  if (
+    graphRequested &&
+    verifiedMermaid &&
+    !/```mermaid\s*\n\s*(?:graph|flowchart)\s/iu.test(result)
+  )
+    result += `\n\n\x60\x60\x60mermaid\n${verifiedMermaid}\n\x60\x60\x60`;
+  return result.trim();
+}
+
+export function verifiedSurnameTable(
+  people: Array<{
+    id: string;
+    name: string;
+    birthSurname: string | null;
+    birth: string | null;
+    birthPlace: string | null;
+    death: string | null;
+  }>,
+) {
+  const cell = (value: string | null) =>
+    (value || "—").replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
+  const heading = "| ФИО | Фамилия при рождении | Дата рождения | Место рождения | Дата смерти |\n| --- | --- | --- | --- | --- |";
+  const rows = [...people]
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+    .map((person) =>
+      `| [[person:${person.id}|${cell(person.name)}]] | ${cell(person.birthSurname)} | ${cell(person.birth)} | ${cell(person.birthPlace)} | ${cell(person.death)} |`,
+    );
+  return [heading, ...rows].join("\n");
+}
+
+export function replaceResearchTable(answer: string, table: string) {
+  const pattern = /(^|\n)\|[^\n]*\|\n\|[\s:|-]+\|\n(?:\|[^\n]*\|(?:\n|$))+/m;
+  return pattern.test(answer)
+    ? answer.replace(pattern, (_match, prefix: string) => `${prefix}${table}\n`)
+    : `${answer.trim()}\n\n${table}`;
+}
+
 export function researchPdfFilename(title: string) {
   const short = title
     .split(/[:：]/, 1)[0]
