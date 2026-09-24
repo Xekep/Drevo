@@ -169,6 +169,21 @@ function Canvas(props: Props) {
     fanAnchor && family.people.some((person) => person.id === fanAnchor)
       ? fanAnchor
       : null;
+  const lastFanNavigationFocus = useRef(focus?.token || -1);
+  useEffect(() => {
+    if (!focus || focus.purpose === "family" || focus.ids.length !== 1) return;
+    if (!activeFanAnchor) {
+      lastFanNavigationFocus.current = focus.token;
+      return;
+    }
+    if (focus.token === lastFanNavigationFocus.current) return;
+    lastFanNavigationFocus.current = focus.token;
+    const next = focus.ids[0];
+    if (!family.people.some((person) => person.id === next)) return;
+    fanMorphSources.current = [];
+    setFanMorphing(false);
+    setFanAnchor(next);
+  }, [activeFanAnchor, family.people, focus]);
   const [growing, setGrowing] = useState(true);
   useEffect(() => {
     if (!activeFanAnchor || !fanMorphing) return;
