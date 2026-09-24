@@ -55,6 +55,7 @@ import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
+import { captureFanMorphSources, runFanMorph } from "./fan-morph";
 
 export type ConnectionDraft = {
   from: string;
@@ -529,11 +530,23 @@ function Canvas(props: Props) {
                 const next =
                   selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
+                const element = container.current;
+                const morph =
+                  element &&
+                  !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                    ? captureFanMorphSources(
+                        element,
+                        family,
+                        next,
+                        occurrencePeople,
+                      )
+                    : [];
                 rememberContext();
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
                 setFanAnchor(next);
+                if (element && morph.length) void runFanMorph(element, morph);
               }}
               fanActive={!!activeFanAnchor}
               onAll={() => {
