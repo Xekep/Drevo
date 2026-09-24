@@ -25,11 +25,10 @@ export function captureFanMorphSources(
   const cards = new Map<string, { rect: Rect; node: HTMLElement }>();
 
   for (const wrapper of container.querySelectorAll<HTMLElement>(
-    "[data-testid^='rf__node-']",
+    ".react-flow__node[data-id]",
   )) {
-    const testId = wrapper.dataset.testid || wrapper.getAttribute("data-testid");
-    if (!testId?.startsWith("rf__node-")) continue;
-    const occurrenceId = testId.slice("rf__node-".length);
+    const occurrenceId = wrapper.dataset.id;
+    if (!occurrenceId) continue;
     const personId = occurrencePeople.get(occurrenceId) || occurrenceId;
     if (cards.has(personId)) continue;
 
