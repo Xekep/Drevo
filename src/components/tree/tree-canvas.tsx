@@ -26,6 +26,7 @@ import {
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
+import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
 import {
   RelationshipEdge,
@@ -192,6 +193,7 @@ function Canvas(props: Props) {
   >();
   const context = `${mode}:${familyView.mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
+  useCtrlWheelZoom(container, flow, !activeFanAnchor);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
     visible,
