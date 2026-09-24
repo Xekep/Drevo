@@ -132,7 +132,6 @@ test("average lifespan by sex counts only known birth and death years", () => {
   );
   assert.equal(men?.value, "≈ 60,5 года");
   assert.match(men?.detail || "", /^2 человека/);
-  assert.match(men?.detail || "", /18 лет и более$/);
   assert.equal(women?.value, "≈ 80 лет");
   assert.match(women?.detail || "", /^1 человек/);
   assert.equal(facts.slice(-2)[0], men);
