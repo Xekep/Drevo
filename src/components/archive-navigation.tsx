@@ -6,7 +6,6 @@ import {
   Heart,
   ShieldCheck,
   Search,
-  Plus,
   LogOut,
   CircleHelp,
   Menu,
@@ -181,8 +180,6 @@ export function ArchiveHeader({
   query,
   onQuery,
   onSelect,
-  onAdd,
-  canEdit,
   busy,
   onLogin,
   user,
@@ -192,8 +189,6 @@ export function ArchiveHeader({
   query: string;
   onQuery: (query: string) => void;
   onSelect: (id: string) => void;
-  onAdd: () => void;
-  canEdit: boolean;
   busy: boolean;
   onLogin: () => void;
   user: ArchiveUser | null;
@@ -338,12 +333,6 @@ export function ArchiveHeader({
       </div>
       <div className="archive-header-actions">
         {busy && <span role="status">Сохраняем…</span>}
-        {canEdit && (
-          <button className="primary-action" onClick={onAdd} disabled={busy}>
-            <Plus size={18} />
-            <span>Добавить</span>
-          </button>
-        )}
         {!user && (
           <button className="login-action" onClick={onLogin}>
             Войти

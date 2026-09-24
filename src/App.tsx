@@ -498,8 +498,6 @@ export default function App() {
           query={query}
           onQuery={setQuery}
           onSelect={showPerson}
-          onAdd={() => setAddMenu(!addMenu)}
-          canEdit={canEdit}
           busy={busy}
           onLogin={() => setLogin(true)}
           user={user}
