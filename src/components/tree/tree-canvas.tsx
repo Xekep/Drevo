@@ -180,9 +180,16 @@ function Canvas(props: Props) {
     lastFanNavigationFocus.current = focus.token;
     const next = focus.ids[0];
     if (!family.people.some((person) => person.id === next)) return;
-    fanMorphSources.current = [];
-    setFanMorphing(false);
-    setFanAnchor(next);
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      fanMorphSources.current = [];
+      setFanMorphing(false);
+      setFanAnchor(next);
+    });
+    return () => {
+      active = false;
+    };
   }, [activeFanAnchor, family.people, focus]);
   const [growing, setGrowing] = useState(true);
   useEffect(() => {
