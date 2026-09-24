@@ -54,6 +54,7 @@ test("1024-D backfill imports beside legacy tokens and can be rerun", () => {
       ...legacy,
       descriptor: Array(1024).fill(0.04),
       sourcePhotoId: "photo",
+      sourceTagId: "tag",
       model: "human-faceres-3.3.6",
     };
     assert.deepEqual(importFaceDescriptors(archive.db, [human]), {
@@ -64,7 +65,7 @@ test("1024-D backfill imports beside legacy tokens and can be rerun", () => {
     });
     const rows = archive.db
       .prepare(
-        "SELECT id,model,source_photo_id FROM face_descriptors ORDER BY model",
+        "SELECT id,model,source_photo_id,source_tag_id FROM face_descriptors ORDER BY model",
       )
       .all();
     assert.equal(rows.length, 2);
@@ -74,6 +75,7 @@ test("1024-D backfill imports beside legacy tokens and can be rerun", () => {
     );
     assert.match(String(rows[1].id), /^face-[a-f0-9]{32}$/);
     assert.equal(rows[1].source_photo_id, "photo");
+    assert.equal(rows[1].source_tag_id, "photo:tag");
     assert.deepEqual(importFaceDescriptors(archive.db, [human]), {
       received: 1,
       inserted: 0,
