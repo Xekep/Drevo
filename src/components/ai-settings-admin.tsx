@@ -552,9 +552,11 @@ export function AiSettingsAdmin() {
               <div>
                 <b>{status.usage.today.totalTokens.toLocaleString("ru-RU")}</b>
                 <span>
-                  токенов
+                  вход {status.usage.today.inputTokens.toLocaleString("ru-RU")} ·
+                  выход{" "}
+                  {status.usage.today.outputTokens.toLocaleString("ru-RU")}
                   {status.limits.dailyTokens
-                    ? ` / ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
+                    ? ` · лимит ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
                     : ""}
                 </span>
               </div>
