@@ -108,8 +108,14 @@ export function FanChart({
           const labelRadius =
             slot.generation === 0 ? ROOT_RADIUS * 0.5 : (inner + outer) / 2;
           const label = polar(labelRadius, mid);
+          const availableArc =
+            labelRadius * ((angle * Math.PI) / 180);
+          const denseLabel =
+            slot.generation > 0 && availableArc < 150;
           const rotation =
-            slot.generation === 0 ? 0 : ((mid + 90) % 360 + 360) % 360;
+            slot.generation === 0 || denseLabel
+              ? 0
+              : ((mid + 90) % 360 + 360) % 360;
           const person = slot.personId ? people.get(slot.personId) : undefined;
           const side =
             slot.generation === 0
@@ -133,6 +139,7 @@ export function FanChart({
               key={`${slot.generation}:${slot.index}`}
               data-fan-slot={`${slot.generation}:${slot.index}`}
               data-fan-generation={slot.generation}
+              data-label-orientation={denseLabel ? "horizontal" : "tangential"}
               className={className}
               role={person ? "button" : undefined}
               tabIndex={person ? 0 : undefined}
@@ -156,13 +163,22 @@ export function FanChart({
               {person ? <title>{fullName(person)}</title> : null}
               {person ? (
                 <text
-                  className="fan-sector-label"
+                  className={`fan-sector-label${denseLabel ? " is-horizontal" : ""}`}
+                  data-label-orientation={denseLabel ? "horizontal" : "tangential"}
                   transform={`translate(${label.x} ${label.y}) rotate(${rotation})`}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   aria-hidden="true"
                 >
-                  <tspan x="0" dy={slot.generation <= 2 ? "-7" : "0"}>
+                  <tspan
+                    x="0"
+                    dy={
+                      slot.generation <= 2 ||
+                      (denseLabel && slot.generation <= 3 && !!person.surname)
+                        ? "-7"
+                        : "0"
+                    }
+                  >
                     {clipped(person.surname || person.name, nameLimit)}
                   </tspan>
                   {slot.generation <= 3 && person.surname && (
