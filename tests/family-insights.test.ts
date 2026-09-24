@@ -142,7 +142,7 @@ test("average lifespan by sex counts only known birth and death years", () => {
     title: "Пустой",
     description: "",
     demo: false,
-    people: [people[3]],
+    people: people.filter((item) => item.id === "living"),
   }).facts;
   assert.equal(empty.at(-2)?.value, "Нет данных");
   assert.equal(empty.at(-1)?.value, "Нет данных");
