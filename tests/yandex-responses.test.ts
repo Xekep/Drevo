@@ -61,7 +61,7 @@ test("only a missing conversation triggers recovery", () => {
   );
 });
 
-test("Responses client sends documented compaction, truncation and call outputs", async () => {
+test("Responses client sends array compaction, truncation and call outputs", async () => {
   const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
   const client = yandexResponsesClient(async (url, init) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -97,10 +97,9 @@ test("Responses client sends documented compaction, truncation and call outputs"
   });
   assert.equal(requests[0].url, "https://example.test/v1/responses");
   assert.equal(requests[0].body.conversation, "conversation-1");
-  assert.deepEqual(requests[0].body.context_management, {
-    type: "compaction",
-    compact_threshold: 32000,
-  });
+  assert.deepEqual(requests[0].body.context_management, [
+    { type: "compaction", compact_threshold: 32000 },
+  ]);
   assert.equal(requests[0].body.truncation, "auto");
   assert.deepEqual(requests[0].body.input, [
     {
@@ -123,7 +122,49 @@ test("Responses client sends documented compaction, truncation and call outputs"
   assert.equal("previous_response_id" in requests[0].body, false);
 });
 
-test("provider rejection of compaction falls back once and remembers the model", async () => {
+test("provider accepting object compaction after array rejection reuses that shape", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const client = yandexResponsesClient(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    bodies.push(body);
+    if (Array.isArray(body.context_management))
+      return Response.json(
+        { error: { message: "Bad Request" } },
+        { status: 400 },
+      );
+    return Response.json({
+      id: `response-${bodies.length}`,
+      status: "completed",
+      output_text: "OK",
+      output: [],
+    });
+  });
+  const options = {
+    runtime: {
+      baseUrl: "https://example.test/v1",
+      apiKey: "test-key",
+      folderId: "folder",
+      modelUri: "gpt://folder/model",
+    },
+    conversationId: "conversation-1",
+    input: "Проверка",
+    instructions: "Кратко",
+    tools: [],
+    compactThreshold: 32000,
+    automaticTruncation: true,
+  };
+  assert.equal((await client.respond(options)).compactionAvailable, true);
+  assert.equal((await client.respond(options)).compactionAvailable, true);
+  assert.equal(bodies.length, 3);
+  assert.ok(Array.isArray(bodies[0].context_management));
+  assert.deepEqual(bodies[1].context_management, {
+    type: "compaction",
+    compact_threshold: 32000,
+  });
+  assert.deepEqual(bodies[2].context_management, bodies[1].context_management);
+});
+
+test("provider rejection of both compaction shapes falls back once and remembers the model", async () => {
   const bodies: Array<Record<string, unknown>> = [];
   const client = yandexResponsesClient(async (_url, init) => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -156,11 +197,15 @@ test("provider rejection of compaction falls back once and remembers the model",
   };
   assert.equal((await client.respond(options)).compactionAvailable, false);
   assert.equal((await client.respond(options)).compactionAvailable, false);
-  assert.equal(bodies.length, 3);
-  assert.ok(bodies[0].context_management);
-  assert.equal(bodies[1].context_management, undefined);
+  assert.equal(bodies.length, 4);
+  assert.ok(Array.isArray(bodies[0].context_management));
+  assert.deepEqual(bodies[1].context_management, {
+    type: "compaction",
+    compact_threshold: 32000,
+  });
   assert.equal(bodies[2].context_management, undefined);
-  assert.equal(bodies[2].truncation, "auto");
+  assert.equal(bodies[3].context_management, undefined);
+  assert.equal(bodies[3].truncation, "auto");
 });
 
 test("local chats persist, reuse remote context and recover a missing conversation", async () => {
