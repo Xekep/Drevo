@@ -7,6 +7,7 @@ type Descriptor = {
   personId: string;
   descriptor: number[];
   sourcePhotoId?: string;
+  sourceTagId?: string;
   model: FaceModel;
 };
 
@@ -50,6 +51,8 @@ function parseDescriptors(values: unknown): Descriptor[] {
         typeof sample.sourcePhotoId === "string"
           ? sample.sourcePhotoId
           : undefined,
+      sourceTagId:
+        typeof sample.sourceTagId === "string" ? sample.sourceTagId : undefined,
       model,
     };
   });
@@ -59,19 +62,26 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
   const descriptors = parseDescriptors(values);
   const person = db.prepare("SELECT 1 FROM people WHERE id=?");
   const tagged = db.prepare(
-    "SELECT 1 FROM photo_tags WHERE photo_id=? AND person_id=? LIMIT 1",
+    `SELECT id
+       FROM photo_tags
+      WHERE photo_id=?
+        AND person_id=?
+        AND (? IS NULL OR id=?)
+      ORDER BY rowid
+      LIMIT 1`,
   );
   const existing = db.prepare(
-    "SELECT person_id,data,source_photo_id,model FROM face_descriptors WHERE id=?",
+    "SELECT person_id,data,source_photo_id,source_tag_id,model FROM face_descriptors WHERE id=?",
   );
   const insert = db.prepare(
     `INSERT INTO face_descriptors
-       (id,person_id,data,source_photo_id,model)
-     VALUES(?,?,?,?,?)
+       (id,person_id,data,source_photo_id,source_tag_id,model)
+     VALUES(?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        person_id=excluded.person_id,
        data=excluded.data,
        source_photo_id=excluded.source_photo_id,
+       source_tag_id=excluded.source_tag_id,
        model=excluded.model`,
   );
   let inserted = 0;
@@ -82,13 +92,27 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
     for (const sample of descriptors) {
       if (!person.get(sample.personId))
         throw new Error(`Unknown person: ${sample.personId}`);
-      if (
-        sample.model === "human-faceres-3.3.6" &&
-        !tagged.get(sample.sourcePhotoId || "", sample.personId)
-      )
+      const requestedTagRowId =
+        sample.model === "human-faceres-3.3.6" && sample.sourceTagId
+          ? `${sample.sourcePhotoId}:${sample.sourceTagId}`
+          : null;
+      const confirmedTag =
+        sample.model === "human-faceres-3.3.6"
+          ? tagged.get(
+              sample.sourcePhotoId || "",
+              sample.personId,
+              requestedTagRowId,
+              requestedTagRowId,
+            )
+          : undefined;
+      if (sample.model === "human-faceres-3.3.6" && !confirmedTag)
         throw new Error(
           `Missing confirmed photo tag: ${sample.sourcePhotoId} / ${sample.personId}`,
         );
+      const sourceTagRowId =
+        sample.model === "human-faceres-3.3.6"
+          ? String(confirmedTag!.id)
+          : null;
       // A legacy sample may have used the same tag ID. Model-scoped IDs keep
       // both generations without silently discarding the new 1024-D sample.
       const id =
@@ -109,6 +133,7 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
         previous.person_id === sample.personId &&
         previous.data === data &&
         previous.source_photo_id === (sample.sourcePhotoId || null) &&
+        previous.source_tag_id === sourceTagRowId &&
         previous.model === sample.model
       ) {
         skipped++;
@@ -121,6 +146,7 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
         sample.personId,
         data,
         sample.sourcePhotoId || null,
+        sourceTagRowId,
         sample.model,
       );
       if (previous) updated++;
