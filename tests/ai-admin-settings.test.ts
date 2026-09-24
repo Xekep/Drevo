@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 
 test("admin can save encrypted AI Studio credentials and select a model", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-admin-")),
@@ -63,7 +64,13 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     });
   };
 
-  const app = await startServer(0, databasePath, true, undefined, aiFetch),
+  const app = await startServer(
+      0,
+      databasePath,
+      true,
+      undefined,
+      adaptLegacyAiFake(aiFetch),
+    ),
     base =
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 

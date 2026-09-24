@@ -7,10 +7,8 @@ import {
 } from "./ai-settings.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { aiUsageStore } from "./ai-usage.ts";
-import {
-  fetchAiStudioModels,
-  type AiStudioModel,
-} from "./ai-models.ts";
+import { fetchAiStudioModels, type AiStudioModel } from "./ai-models.ts";
+import { yandexResponsesClient } from "./yandex-responses.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -22,11 +20,6 @@ async function readJson(req: IncomingMessage) {
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-
-type AiTestResponse = {
-  choices?: Array<{ message?: { content?: string | null } }>;
-  error?: { message?: string };
-};
 
 export function adminAiHttp({
   auth,
@@ -151,40 +144,38 @@ export function adminAiHttp({
             "AI Studio не настроена: задайте API-ключ и Folder ID в админке или в окружении сервера",
         });
       try {
-        const response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-              Authorization: `Api-Key ${runtime.apiKey}`,
-              "Content-Type": "application/json",
-              ...(runtime.folderId
-                ? { "OpenAI-Project": runtime.folderId }
-                : {}),
-            },
-            body: JSON.stringify({
-              model: runtime.modelUri,
-              messages: [
-                {
-                  role: "user",
-                  content:
-                    "Это проверка подключения Drevo. Ответь одним словом: OK",
-                },
-              ],
-              temperature: 0,
-            }),
-          }),
-          data = (await response.json()) as AiTestResponse;
-        if (!response.ok)
-          return json(res, 502, {
-            error:
-              data.error?.message ||
-              `AI Studio вернула HTTP ${response.status}`,
+        const client = yandexResponsesClient(fetcher);
+        const conversationId = await client.createConversation(runtime);
+        let answer = "";
+        try {
+          const result = await client.respond({
+            runtime,
+            conversationId,
+            input: "Это проверка подключения Drevo. Ответь одним словом: OK",
+            instructions: "Ответь коротко.",
+            tools: [
+              {
+                type: "function",
+                name: "drevo_connection_check",
+                description: "Проверочный инструмент подключения",
+                parameters: { type: "object", properties: {} },
+              },
+            ],
+            compactThreshold: runtime.compactionEnabled
+              ? runtime.compactThresholdTokens
+              : null,
+            automaticTruncation: runtime.automaticTruncation,
           });
+          answer = result.text;
+        } finally {
+          void client
+            .deleteConversation(runtime, conversationId)
+            .catch(() => {});
+        }
         return json(res, 200, {
           ok: true,
           model: runtime.model,
-          answer:
-            data.choices?.[0]?.message?.content?.trim() ||
-            "Подключение установлено",
+          answer: answer.trim() || "Подключение установлено",
         });
       } catch (error) {
         return json(res, 502, {

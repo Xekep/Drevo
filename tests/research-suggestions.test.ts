@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
 
 test("AI person update stays pending until a human accepts it", async () => {
@@ -64,11 +65,10 @@ test("AI person update stays pending until a human accepts it", async () => {
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base =
-      "http://127.0.0.1:" +
-      (app.server.address() as { port: number }).port;
+      "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
     const current = app.archive.read(),
@@ -161,7 +161,6 @@ test("AI person update stays pending until a human accepts it", async () => {
   }
 });
 
-
 test("AI source and relation proposals require separate human acceptance", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-suggestion-extra-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
@@ -191,9 +190,8 @@ test("AI source and relation proposals require separate human acceptance", async
       });
 
     const request =
-      [...body.messages]
-        .reverse()
-        .find((message) => message.role === "user")?.content || "";
+      [...body.messages].reverse().find((message) => message.role === "user")
+        ?.content || "";
     if (request.includes("новую карточку"))
       return Response.json({
         choices: [
@@ -244,7 +242,8 @@ test("AI source and relation proposals require separate human acceptance", async
                         type: "archive",
                         reference: "Ф. 1, оп. 2, д. 3",
                       },
-                      reason: "Пользователь просит сохранить найденный источник.",
+                      reason:
+                        "Пользователь просит сохранить найденный источник.",
                       evidence: ["Архивный шифр передан пользователем."],
                     }),
                   },
@@ -288,11 +287,10 @@ test("AI source and relation proposals require separate human acceptance", async
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base =
-      "http://127.0.0.1:" +
-      (app.server.address() as { port: number }).port;
+      "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
     const current = app.archive.read(),
@@ -430,9 +428,15 @@ test("AI source and relation proposals require separate human acceptance", async
     });
     assert.equal(createChat.status, 200);
     const createResult = await createChat.json();
-    assert.equal(createResult.suggestionIds.length, 1, JSON.stringify(createResult));
     assert.equal(
-      app.archive.read().family.people.some((person) => person.surname === "Пупкин"),
+      createResult.suggestionIds.length,
+      1,
+      JSON.stringify(createResult),
+    );
+    assert.equal(
+      app.archive
+        .read()
+        .family.people.some((person) => person.surname === "Пупкин"),
       false,
     );
     queue = await fetch(base + "/api/research/suggestions").then((response) =>
@@ -448,9 +452,11 @@ test("AI source and relation proposals require separate human acceptance", async
     );
     assert.equal(createAccepted.status, 200);
     assert.equal(
-      app.archive.read().family.people.some(
-        (person) => person.surname === "Пупкин" && person.birth === "1991",
-      ),
+      app.archive
+        .read()
+        .family.people.some(
+          (person) => person.surname === "Пупкин" && person.birth === "1991",
+        ),
       true,
     );
   } finally {

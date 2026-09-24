@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import { researchPdf } from "../src/server/research-pdf.ts";
 import { parseResearchMermaid } from "../src/server/research-pdf-visuals.ts";
 
@@ -141,7 +142,7 @@ test("AI attaches a downloadable PDF only to an explicit PDF request", async () 
     join(dir, "drevo.sqlite"),
     true,
     undefined,
-    aiFetch,
+    adaptLegacyAiFake(aiFetch),
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
@@ -223,7 +224,7 @@ test("a requested relationship graph is embedded in the downloaded PDF", async (
     join(dir, "drevo.sqlite"),
     true,
     undefined,
-    aiFetch,
+    adaptLegacyAiFake(aiFetch),
   );
   try {
     const snapshot = app.archive.read();
@@ -311,7 +312,7 @@ test("a model claim without a generated file never becomes a download link", asy
     join(dir, "drevo.sqlite"),
     true,
     undefined,
-    aiFetch,
+    adaptLegacyAiFake(aiFetch),
   );
   try {
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;

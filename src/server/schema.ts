@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 15;
+export const ARCHIVE_SCHEMA_VERSION = 16;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -111,11 +111,7 @@ function version(db: DatabaseSync) {
   return Number(db.prepare("PRAGMA user_version").get()?.user_version ?? 0);
 }
 
-function tableHasColumn(
-  db: DatabaseSync,
-  table: string,
-  column: string,
-) {
+function tableHasColumn(db: DatabaseSync, table: string, column: string) {
   return db
     .prepare(`PRAGMA table_info(${table})`)
     .all()
@@ -457,6 +453,60 @@ function migrate(db: DatabaseSync, target: number) {
         SELECT id,model,provider_calls,input_tokens,output_tokens,total_tokens
         FROM ai_usage
         WHERE provider_calls>0 OR total_tokens>0;
+    `);
+    return;
+  }
+  if (target === 16) {
+    for (const [table, column, sql] of [
+      [
+        "ai_settings",
+        "compaction_enabled",
+        "INTEGER NOT NULL DEFAULT 1 CHECK(compaction_enabled IN (0,1))",
+      ],
+      [
+        "ai_settings",
+        "compact_threshold_tokens",
+        "INTEGER NOT NULL DEFAULT 32000 CHECK(compact_threshold_tokens BETWEEN 1000 AND 1000000)",
+      ],
+      [
+        "ai_settings",
+        "automatic_truncation",
+        "INTEGER NOT NULL DEFAULT 1 CHECK(automatic_truncation IN (0,1))",
+      ],
+      [
+        "ai_settings",
+        "max_tool_iterations",
+        "INTEGER NOT NULL DEFAULT 8 CHECK(max_tool_iterations BETWEEN 1 AND 20)",
+      ],
+      ["ai_usage", "cached_input_tokens", "INTEGER NOT NULL DEFAULT 0"],
+    ])
+      if (!tableHasColumn(db, table, column))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${sql}`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ai_chats (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        access_scope TEXT NOT NULL,
+        yandex_conversation_id TEXT,
+        session_state TEXT NOT NULL DEFAULT '{"schemaVersion":1,"activePersonIds":[]}'
+          CHECK(json_valid(session_state)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        busy_token TEXT,
+        busy_until INTEGER
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS ai_chats_user_updated ON ai_chats(user_id,updated_at DESC);
+      CREATE TRIGGER IF NOT EXISTS ai_chats_user_delete AFTER DELETE ON users
+        BEGIN DELETE FROM ai_chats WHERE user_id=OLD.id; END;
+      CREATE TABLE IF NOT EXISTS ai_chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id TEXT NOT NULL REFERENCES ai_chats(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+        content TEXT NOT NULL,
+        data TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(data)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS ai_chat_messages_chat_id ON ai_chat_messages(chat_id,id);
     `);
     return;
   }

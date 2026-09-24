@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
 import {
   explicitViewControlRequest,
@@ -152,7 +153,7 @@ test("stream only exposes the checked answer after textual tool calls", async ()
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
@@ -286,7 +287,7 @@ test("researcher retries an unverified archive answer and executes a textual too
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
@@ -345,7 +346,7 @@ test("researcher retries an unverified archive answer and executes a textual too
       JSON.stringify(requests[1].messages),
       /Предыдущий ответ не был проверен по архиву/,
     );
-    assert.match(JSON.stringify(requests[2].messages), /tatyana-retry/);
+    assert.match(JSON.stringify(requests[2].messages), /get_family/);
     assert.match(JSON.stringify(requests[3].messages), /brother-retry/);
   } finally {
     await app.close();
@@ -369,6 +370,39 @@ test("researcher resolves a short cousin follow-up from conversation history", a
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     requests.push(body);
     if (requests.length === 1)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "person-call",
+                  type: "function",
+                  function: {
+                    name: "search_people",
+                    arguments: '{"query":"Татьяна Вьюхина"}',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+    if (requests.length === 2)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content:
+                "У [[person:tatyana-cousins|Вьюхина Татьяна Ивановна]] есть родные сёстры.",
+            },
+          },
+        ],
+      });
+    if (requests.length === 3)
       return Response.json({
         choices: [
           {
@@ -406,7 +440,7 @@ test("researcher resolves a short cousin follow-up from conversation history", a
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
@@ -452,29 +486,29 @@ test("researcher resolves a short cousin follow-up from conversation history", a
       },
       current.revision,
     );
+    const firstResponse = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Какие родственники есть у Татьяны?" }),
+    });
+    assert.equal(firstResponse.status, 200);
+    const firstPayload = await firstResponse.json();
     const response = await fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "а двоюродные",
-        history: [
-          { role: "user", content: "Какие родственники есть у Татьяны?" },
-          {
-            role: "assistant",
-            content:
-              "У [[person:tatyana-cousins|Вьюхина Татьяна Ивановна]] есть родные сёстры.",
-          },
-        ],
+        chatId: firstPayload.chatId,
       }),
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.match(payload.answer, /Василий/);
-    assert.equal(requests.length, 2);
-    assert.match(JSON.stringify(requests[0].messages), /а двоюродные/);
-    assert.match(JSON.stringify(requests[0].messages), /tatyana-cousins/);
-    assert.match(JSON.stringify(requests[0].tools), /get_cousins/);
-    assert.match(JSON.stringify(requests[1].messages), /vasily-cousins/);
+    assert.equal(requests.length, 4);
+    assert.match(JSON.stringify(requests[2].messages), /а двоюродные/);
+    assert.match(JSON.stringify(requests[2].messages), /tatyana-cousins/);
+    assert.match(JSON.stringify(requests[2].tools), /get_cousins/);
+    assert.match(JSON.stringify(requests[3].messages), /vasily-cousins/);
   } finally {
     await app.close();
     for (const key of [
@@ -548,7 +582,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     join(dir, "drevo.sqlite"),
     true,
     undefined,
-    aiFetch,
+    adaptLegacyAiFake(aiFetch),
   );
   const base =
     "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
@@ -801,7 +835,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {

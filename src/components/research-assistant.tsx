@@ -666,6 +666,11 @@ export function ResearchAssistant({
     [open, setOpen] = useState(false),
     [draft, setDraft] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
+    [chatId, setChatId] = useState(""),
+    [chats, setChats] = useState<
+      Array<{ id: string; title: string; updatedAt: string }>
+    >([]),
+    [chatLoading, setChatLoading] = useState(true),
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
     [reviewBusy, setReviewBusy] = useState(""),
@@ -706,6 +711,38 @@ export function ResearchAssistant({
     onOpenChange?.(open);
     return () => onOpenChange?.(false);
   }, [onOpenChange, open]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    void fetch("/api/ai/chats", { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить диалоги");
+        return (await response.json()) as { chats: typeof chats };
+      })
+      .then(async (data) => {
+        if (!active) return;
+        setChats(data.chats);
+        if (data.chats[0]) {
+          const response = await fetch(`/api/ai/chats/${data.chats[0].id}`);
+          if (!response.ok) return;
+          const detail = (await response.json()) as { messages: Message[] };
+          if (active) {
+            setChatId(data.chats[0].id);
+            setMessages(detail.messages);
+          }
+        }
+      })
+      .catch(() => {
+        if (active) setError("Не удалось загрузить историю диалогов");
+      })
+      .finally(() => {
+        if (active) setChatLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
 
   useEffect(() => {
     if (view !== "tree") return;
@@ -996,8 +1033,38 @@ export function ResearchAssistant({
     }
   }
 
-  function clearDialog() {
+  async function openChat(id: string) {
+    if (busy || id === chatId) return;
+    if (!id) {
+      setChatId("");
+      setMessages([]);
+      setError("");
+      return;
+    }
+    const response = await fetch(`/api/ai/chats/${id}`);
+    if (!response.ok) {
+      setError("Не удалось открыть диалог");
+      return;
+    }
+    const data = (await response.json()) as { messages: Message[] };
+    setChatId(id);
+    setMessages(data.messages);
+    setError("");
+  }
+
+  async function clearDialog() {
     if (busy) return;
+    if (chatId) {
+      const response = await fetch(`/api/ai/chats/${chatId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        setError("Не удалось удалить диалог");
+        return;
+      }
+      setChats((current) => current.filter((item) => item.id !== chatId));
+    }
+    setChatId("");
     setMessages([]);
     setDraft("");
     setError("");
@@ -1008,8 +1075,7 @@ export function ResearchAssistant({
 
   async function send(text = draft) {
     const message = text.trim();
-    if (!message || busy) return;
-    const history = messages.slice(-10);
+    if (!message || busy || chatLoading) return;
     setMessages((current) => [...current, { role: "user", content: message }]);
     setDraft("");
     setBusy(true);
@@ -1022,7 +1088,7 @@ export function ResearchAssistant({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
-          history,
+          ...(chatId ? { chatId } : {}),
           context: { view, personIds },
         }),
       });
@@ -1053,7 +1119,12 @@ export function ResearchAssistant({
           suggestionIds?: string[];
           uiActions?: UiAction[];
           files?: Array<{ name: string; url: string }>;
+          chatId?: string;
         };
+        if (parsed.event === "chat" && data.chatId) {
+          setChatId(data.chatId);
+          return;
+        }
         if (parsed.event === "status") {
           if (data.message && data.message !== "Соединение установлено") {
             setStreamStatus(data.message);
@@ -1069,6 +1140,17 @@ export function ResearchAssistant({
         }
         if (parsed.event === "done") {
           finished = true;
+          if (data.chatId) {
+            setChatId(data.chatId);
+            setChats((current) => [
+              {
+                id: data.chatId!,
+                title: message.slice(0, 80),
+                updatedAt: new Date().toISOString(),
+              },
+              ...current.filter((item) => item.id !== data.chatId),
+            ]);
+          }
           setStreamStatus("");
           setActivities([]);
           setMessages((current) => [
@@ -1245,7 +1327,7 @@ export function ResearchAssistant({
                 aria-label="Очистить диалог"
                 title="Очистить диалог"
                 disabled={busy || (!messages.length && !draft && !error)}
-                onClick={clearDialog}
+                onClick={() => void clearDialog()}
               >
                 <Trash2 size={17} />
               </button>
@@ -1259,7 +1341,24 @@ export function ResearchAssistant({
               </button>
             </div>
           </header>
+          {chats.length > 0 && (
+            <select
+              className="research-chat-select"
+              aria-label="Выбрать диалог"
+              value={chatId}
+              disabled={busy}
+              onChange={(event) => void openChat(event.target.value)}
+            >
+              <option value="">Новый диалог</option>
+              {chats.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="research-assistant-messages">
+            {chatLoading && <p role="status">Загружаю историю…</p>}
             {canEdit && suggestions.length > 0 && (
               <section
                 className="research-suggestions"
@@ -1387,6 +1486,7 @@ export function ResearchAssistant({
           >
             <textarea
               value={draft}
+              disabled={chatLoading}
               rows={3}
               maxLength={8000}
               placeholder="Например: что искать дальше по выбранному человеку?"
@@ -1402,7 +1502,7 @@ export function ResearchAssistant({
               <button
                 type="submit"
                 className="primary-action"
-                disabled={busy}
+                disabled={busy || chatLoading}
                 aria-label="Отправить запрос"
               >
                 <Send size={17} />

@@ -30,6 +30,10 @@ type AiAdminStatus = {
   model: string;
   modelOverride: string;
   modelSource: "database" | "environment" | "default";
+  compactionEnabled: boolean;
+  compactThresholdTokens: number;
+  automaticTruncation: boolean;
+  maxToolIterations: number;
   models: Array<{
     id: string;
     label: string;
@@ -124,6 +128,10 @@ export function AiSettingsAdmin() {
     [requestsPerMinute, setRequestsPerMinute] = useState(6),
     [dailyRequests, setDailyRequests] = useState(100),
     [dailyTokens, setDailyTokens] = useState(250000),
+    [compactionEnabled, setCompactionEnabled] = useState(true),
+    [compactThresholdTokens, setCompactThresholdTokens] = useState(32000),
+    [automaticTruncation, setAutomaticTruncation] = useState(true),
+    [maxToolIterations, setMaxToolIterations] = useState(8),
     [busy, setBusy] = useState(false),
     [testing, setTesting] = useState(false),
     [loadingModels, setLoadingModels] = useState(false),
@@ -135,14 +143,13 @@ export function AiSettingsAdmin() {
       ...(status?.usage.history.map((item) => item.totalTokens) || []),
     ),
     historyModels = useMemo(
-      () =>
-        [
-          ...new Set(
-            status?.usage.history.flatMap((item) =>
-              item.models.map((model) => model.model),
-            ) || [],
-          ),
-        ],
+      () => [
+        ...new Set(
+          status?.usage.history.flatMap((item) =>
+            item.models.map((model) => model.model),
+          ) || [],
+        ),
+      ],
       [status],
     );
 
@@ -157,6 +164,10 @@ export function AiSettingsAdmin() {
     setRequestsPerMinute(next.limits.requestsPerMinute);
     setDailyRequests(next.limits.dailyRequests);
     setDailyTokens(next.limits.dailyTokens);
+    setCompactionEnabled(next.compactionEnabled);
+    setCompactThresholdTokens(next.compactThresholdTokens);
+    setAutomaticTruncation(next.automaticTruncation);
+    setMaxToolIterations(next.maxToolIterations);
   }, []);
 
   const load = useCallback(async () => {
@@ -198,6 +209,10 @@ export function AiSettingsAdmin() {
             requestsPerMinute,
             dailyRequests,
             dailyTokens,
+            compactionEnabled,
+            compactThresholdTokens,
+            automaticTruncation,
+            maxToolIterations,
           }),
         }),
         data = await response.json();
@@ -467,6 +482,71 @@ export function AiSettingsAdmin() {
               </div>
             </fieldset>
 
+            <details className="ai-context-settings">
+              <summary>Контекст диалога</summary>
+              <label
+                className="setting-toggle"
+                htmlFor="ai-compaction-enabled"
+                aria-label="Сжимать длинный диалог"
+              >
+                <span>
+                  <b>Сжимать длинный диалог</b>
+                </span>
+                <input
+                  id="ai-compaction-enabled"
+                  type="checkbox"
+                  checked={compactionEnabled}
+                  onChange={(event) =>
+                    setCompactionEnabled(event.target.checked)
+                  }
+                />
+              </label>
+              <label htmlFor="ai-compact-threshold">
+                Порог сжатия, токенов
+                <input
+                  id="ai-compact-threshold"
+                  type="number"
+                  min={1000}
+                  max={1000000}
+                  disabled={!compactionEnabled}
+                  value={compactThresholdTokens}
+                  onChange={(event) =>
+                    setCompactThresholdTokens(Number(event.target.value))
+                  }
+                />
+              </label>
+              <label
+                className="setting-toggle"
+                htmlFor="ai-truncation-enabled"
+                aria-label="Автоматически сокращать контекст при переполнении"
+              >
+                <span>
+                  <b>Автоматически сокращать контекст при переполнении</b>
+                </span>
+                <input
+                  id="ai-truncation-enabled"
+                  type="checkbox"
+                  checked={automaticTruncation}
+                  onChange={(event) =>
+                    setAutomaticTruncation(event.target.checked)
+                  }
+                />
+              </label>
+              <label htmlFor="ai-tool-iterations">
+                Максимум шагов инструментов
+                <input
+                  id="ai-tool-iterations"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxToolIterations}
+                  onChange={(event) =>
+                    setMaxToolIterations(Number(event.target.value))
+                  }
+                />
+              </label>
+            </details>
+
             {status.credentialError && (
               <p className="form-error" role="alert">
                 {status.credentialError}
@@ -552,8 +632,8 @@ export function AiSettingsAdmin() {
               <div>
                 <b>{status.usage.today.totalTokens.toLocaleString("ru-RU")}</b>
                 <span>
-                  вход {status.usage.today.inputTokens.toLocaleString("ru-RU")} ·
-                  выход{" "}
+                  вход {status.usage.today.inputTokens.toLocaleString("ru-RU")}{" "}
+                  · выход{" "}
                   {status.usage.today.outputTokens.toLocaleString("ru-RU")}
                   {status.limits.dailyTokens
                     ? ` · лимит ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
@@ -600,15 +680,13 @@ export function AiSettingsAdmin() {
                   const height = item.totalTokens
                       ? Math.max(5, (item.totalTokens / historyMax) * 100)
                       : 2,
-                    date = new Date(
-                      `${item.day}T00:00:00Z`,
-                    ).toLocaleDateString("ru-RU"),
+                    date = new Date(`${item.day}T00:00:00Z`).toLocaleDateString(
+                      "ru-RU",
+                    ),
                     details = usageDetails(item.models),
                     title = `${date}: ${item.totalTokens.toLocaleString(
                       "ru-RU",
-                    )} токенов${
-                      details ? ` · ${details}` : ""
-                    }`;
+                    )} токенов${details ? ` · ${details}` : ""}`;
                   return (
                     <div
                       className="ai-token-day"
@@ -677,8 +755,8 @@ export function AiSettingsAdmin() {
                     <div>
                       <b>{item.model}</b>
                       <small>
-                        {new Date(item.at).toLocaleString("ru-RU")} ·{" "}
-                        вход {item.inputTokens.toLocaleString("ru-RU")} · выход{" "}
+                        {new Date(item.at).toLocaleString("ru-RU")} · вход{" "}
+                        {item.inputTokens.toLocaleString("ru-RU")} · выход{" "}
                         {item.outputTokens.toLocaleString("ru-RU")} ·{" "}
                         {item.providerCalls} выз. · {item.latencyMs} мс
                       </small>
