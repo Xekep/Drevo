@@ -37,6 +37,59 @@ test("блоки сводки имеют одинаковую ширину на 
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
 });
 
+test("Ctrl+колесо масштабирует древо и не меняет масштаб страницы", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+
+  const pageZoomBlocked = await page.evaluate(() => {
+    const event = new WheelEvent("wheel", {
+      ctrlKey: true,
+      deltaY: -100,
+      bubbles: true,
+      cancelable: true,
+    });
+    return !window.dispatchEvent(event);
+  });
+  expect(pageZoomBlocked).toBe(true);
+
+  const viewport = page.locator(".react-flow__viewport");
+  const before = await viewport.getAttribute("style");
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.evaluate(
+    ({ x, y }) => {
+      const target = document.elementFromPoint(x, y);
+      target?.dispatchEvent(
+        new WheelEvent("wheel", {
+          ctrlKey: true,
+          deltaY: -120,
+          clientX: x,
+          clientY: y,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 },
+  );
+  await expect
+    .poll(() => viewport.getAttribute("style"))
+    .not.toBe(before);
+
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Веер" }).click();
+  const fan = page.locator(".fan-chart-svg");
+  await expect(fan).toBeVisible();
+  await expect(fan).toHaveCSS("animation-name", "fan-chart-enter");
+});
+
 test("действия карточки человека остаются в одном ряду", async ({
   page,
 }, testInfo) => {
