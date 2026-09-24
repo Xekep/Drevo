@@ -1,0 +1,139 @@
+export type ResearchAnswerReference =
+  | { kind: "person"; id: string; label: string }
+  | { kind: "photo"; id: string; label: string }
+  | {
+      kind: "source";
+      personId: string;
+      label: string;
+      reference?: string;
+      url?: string;
+    };
+
+const escapePattern = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function outsideCodeFences(value: string, transform: (part: string) => string) {
+  return value
+    .split(/(```[\s\S]*?```)/g)
+    .map((part, index) => (index % 2 ? part : transform(part)))
+    .join("");
+}
+
+function markdownLink(label: string, href: string) {
+  return `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`;
+}
+
+/** Only verified references from the response are eligible for automatic links. */
+export function linkResearchReferences(
+  content: string,
+  references: ResearchAnswerReference[] = [],
+) {
+  const placeholders: string[] = [];
+  const reserve = (markdown: string) => {
+    const token = `DREVOREF${placeholders.length}TOKEN`;
+    placeholders.push(markdown);
+    return token;
+  };
+
+  let value = outsideCodeFences(content, (part) => {
+    let normalized = part;
+    for (const match of part.matchAll(
+      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
+    ))
+      normalized = normalized.replace(
+        new RegExp(
+          `${escapePattern(match[3])}[ \\t\\u00a0]*\\(${escapePattern(match[0])}\\)`,
+          "gu",
+        ),
+        match[0],
+      );
+    return normalized.replace(
+      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\](?:[ \t\u00a0]+\3)?/g,
+      (_marker, kind: string, id: string, label: string) =>
+        reserve(
+          markdownLink(label, `#drevo-${kind}-${encodeURIComponent(id)}`),
+        ),
+    );
+  });
+
+  for (const reference of references) {
+    if (reference.kind !== "photo") continue;
+    value = outsideCodeFences(value, (part) =>
+      part.replace(
+        new RegExp(
+          `!\\[([^\\]]*)\\]\\(${escapePattern(reference.id)}\\)`,
+          "gu",
+        ),
+        (_whole, alt: string) =>
+          reserve(
+            markdownLink(
+              alt.trim() || reference.label,
+              `#drevo-photo-${encodeURIComponent(reference.id)}`,
+            ),
+          ),
+      ),
+    );
+  }
+
+  const candidates = references.flatMap((reference) => {
+    const href =
+      reference.kind === "person"
+        ? `#drevo-person-${encodeURIComponent(reference.id)}`
+        : reference.kind === "photo"
+          ? `#drevo-photo-${encodeURIComponent(reference.id)}`
+          : reference.url ||
+            `#drevo-person-${encodeURIComponent(reference.personId)}`;
+    const names = [reference.label];
+    if (reference.kind === "person") {
+      const [surname, first, patronymic] = reference.label.split(/\s+/);
+      if (surname && first)
+        names.push(`${surname} ${first}`, `${first} ${surname}`);
+      if (surname && first && patronymic)
+        names.push(`${first} ${patronymic} ${surname}`);
+    }
+    return names.map((name) => ({ name, href }));
+  });
+  const owners = new Map<string, Set<string>>();
+  for (const { name, href } of candidates) {
+    const key = name.toLocaleLowerCase("ru").replaceAll("ё", "е");
+    const group = owners.get(key) || new Set<string>();
+    group.add(href);
+    owners.set(key, group);
+  }
+  const unique = candidates
+    .filter(
+      ({ name }) =>
+        owners.get(name.toLocaleLowerCase("ru").replaceAll("ё", "е"))?.size ===
+        1,
+    )
+    .sort((a, b) => b.name.length - a.name.length);
+
+  value = outsideCodeFences(value, (part) =>
+    part
+      .split(/(\[[^\]]+\]\([^)]+\)|`[^`]*`|DREVOREF\d+TOKEN)/g)
+      .map((segment, index) => {
+        if (index % 2) return segment;
+        let text = segment;
+        for (const { name, href } of unique) {
+          const spelling = escapePattern(name)
+            .replaceAll("е", "[её]")
+            .replaceAll("Е", "[ЕЁ]");
+          text = text.replace(
+            new RegExp(
+              `(?<![\\p{L}\\p{N}])${spelling}(?![\\p{L}\\p{N}])`,
+              "giu",
+            ),
+            (match) => reserve(markdownLink(match, href)),
+          );
+        }
+        return text;
+      })
+      .join(""),
+  );
+  // Replacement may introduce links in earlier placeholders; restore them only
+  // after all auto-linking has finished.
+  placeholders.forEach((markdown, index) => {
+    value = value.replaceAll(`DREVOREF${index}TOKEN`, () => markdown);
+  });
+  return value;
+}

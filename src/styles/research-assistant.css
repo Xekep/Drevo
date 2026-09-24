@@ -309,9 +309,11 @@
   margin-top: 4px;
 }
 .research-markdown table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .research-markdown th,
 .research-markdown td {
@@ -322,6 +324,12 @@
 }
 .research-markdown th {
   background: #f1f5ed;
+}
+.research-markdown tbody tr:nth-child(even) {
+  background: #fafcf9;
+}
+.research-markdown tbody tr:hover {
+  background: #f3f7f1;
 }
 .research-markdown blockquote {
   padding-left: 10px;

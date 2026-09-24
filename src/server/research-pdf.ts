@@ -1,16 +1,99 @@
 import PDFDocument from "pdfkit";
 import { fileURLToPath } from "node:url";
-import ELK from "elkjs/lib/elk.bundled.js";
-import type { ElkNode } from "elkjs";
+import {
+  drawResearchChart,
+  drawResearchGraph,
+  parseResearchMermaid,
+  type ResearchGraph,
+} from "./research-pdf-visuals.ts";
 
-export type ResearchGraph = {
-  nodes: Array<{ id: string; name: string; birth?: string; death?: string }>;
-  edges: Array<{ from: string; to: string; type: string }>;
-};
+export type { ResearchGraph } from "./research-pdf-visuals.ts";
 
 const font = fileURLToPath(
   new URL("../../assets/DejaVuSans.ttf", import.meta.url),
 );
+
+function plainText(line: string) {
+  return line
+    .replace(/\[\[(?:person|choose-person|photo):[^|\]]+\|([^\]]+)\]\]/g, "$1")
+    .replace(/\[([^\]]+)\]\((?:https?:\/\/[^)]+|#[^)]+)\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .trim();
+}
+
+function drawTable(doc: PDFKit.PDFDocument, lines: string[]) {
+  const rows = lines
+    .filter((line) => !/^\s*\|?[\s:|-]+\|[\s:|-]*\s*$/.test(line))
+    .map((line) =>
+      line
+        .replace(/^\s*\||\|\s*$/g, "")
+        .split("|")
+        .map(plainText),
+    );
+  const columns = Math.max(...rows.map((row) => row.length));
+  if (!columns || columns > 8) {
+    for (const line of lines) doc.fontSize(9).text(plainText(line));
+    return;
+  }
+  const left = 48,
+    width = doc.page.width - 96,
+    columnWidth = width / columns;
+  rows.forEach((row, index) => {
+    doc.font("Drevo").fontSize(8.5);
+    const height = Math.max(
+      27,
+      ...row.map(
+        (cell) => doc.heightOfString(cell, { width: columnWidth - 14 }) + 12,
+      ),
+    );
+    if (doc.y + height > doc.page.height - 48)
+      doc.addPage({ size: "A4", margin: 48 });
+    const y = doc.y;
+    if (index === 0) doc.rect(left, y, width, height).fill("#edf3ec");
+    row.forEach((cell, column) => {
+      const x = left + column * columnWidth;
+      doc.rect(x, y, columnWidth, height).stroke("#d7e1d7");
+      doc.fillColor("#35483b").text(cell, x + 7, y + 6, {
+        width: columnWidth - 14,
+        height: height - 10,
+        ellipsis: true,
+      });
+    });
+    doc.y = y + height;
+  });
+  doc.moveDown(0.6);
+}
+
+function drawMarkdown(doc: PDFKit.PDFDocument, content: string) {
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    if (
+      /^\s*\|.+\|\s*$/.test(lines[index]) &&
+      /^\s*\|?\s*:?-{3,}/.test(lines[index + 1] || "")
+    ) {
+      const table: string[] = [];
+      while (index < lines.length && /^\s*\|.+\|\s*$/.test(lines[index]))
+        table.push(lines[index++]);
+      drawTable(doc, table);
+      index--;
+      continue;
+    }
+    const value = plainText(lines[index]);
+    if (!value) {
+      doc.moveDown(0.35);
+      continue;
+    }
+    const heading = /^#{1,4}\s+/.test(value);
+    doc
+      .font("Drevo")
+      .fillColor(heading ? "#283e2d" : "#354232")
+      .fontSize(heading ? 13 : 10)
+      .text(value.replace(/^#{1,4}\s+/, "").replace(/^[-*]\s+/, "• "), {
+        lineGap: 3,
+        paragraphGap: heading ? 8 : 4,
+      });
+  }
+}
 
 export async function researchPdf(
   title: string,
@@ -27,40 +110,10 @@ export async function researchPdf(
       "Некорректный заголовок или объём документа (до 30 000 символов)",
     );
 
-  // The diagram uses verified archive relations, not model prose or Mermaid code.
-  let layout: ElkNode | undefined;
-  if (graph) {
-    if (
-      !graph.nodes.length ||
-      graph.nodes.length > 180 ||
-      graph.edges.length > 500
-    )
-      throw new RangeError("Схема слишком велика для одного PDF");
-    const ids = new Set(graph.nodes.map((node) => node.id));
-    layout = await new ELK().layout({
-      id: "family",
-      layoutOptions: {
-        "elk.algorithm": "layered",
-        "elk.direction": "DOWN",
-        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-        "elk.spacing.nodeNode": "28",
-        "elk.layered.spacing.nodeNodeBetweenLayers": "54",
-      },
-      children: graph.nodes.map((node) => ({
-        id: node.id,
-        width: 172,
-        height: 54,
-      })),
-      edges: graph.edges
-        .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
-        .map((edge, index) => ({
-          id: `edge-${index}`,
-          sources: [edge.from],
-          targets: [edge.to],
-        })),
-    });
-  }
-
+  const parts = content.split(/```mermaid[^\r\n]*\r?\n([\s\S]*?)```/gi),
+    visuals = parts.map((part, index) =>
+      index % 2 ? parseResearchMermaid(part) : undefined,
+    );
   const document = new PDFDocument({
     size: "A4",
     margin: 48,
@@ -73,108 +126,38 @@ export async function researchPdf(
     document.on("end", () => resolve(Buffer.concat(chunks)));
     document.on("error", reject);
   });
-  document.font("Drevo").fontSize(18).text(title.trim(), { lineGap: 4 });
-  document.moveDown(0.8);
-  for (const line of content.split(/\r?\n/)) {
-    const value = line
-      .replace(/\[\[(?:person|photo):[^|\]]+\|([^\]]+)\]\]/g, "$1")
-      .replace(/\[([^\]]+)\]\((?:https?:\/\/[^)]+|#[^)]+)\)/g, "$1")
-      .replace(/\*\*|__|`/g, "")
-      .trim();
-    if (!value) {
-      document.moveDown(0.5);
+  document
+    .font("Drevo")
+    .fontSize(18)
+    .fillColor("#263e31")
+    .text(title.trim(), { lineGap: 4 });
+  document.moveDown(0.7);
+
+  let drawnVerified = false;
+  for (const [index, part] of parts.entries()) {
+    const visual = visuals[index];
+    if (!visual) {
+      drawMarkdown(document, part);
       continue;
     }
-    const heading = /^#{1,4}\s+/.test(value);
-    document
-      .fontSize(heading ? 13 : 10.5)
-      .text(value.replace(/^#{1,4}\s+/, "").replace(/^[-*]\s+/, "• "), {
-        lineGap: 4,
-        paragraphGap: heading ? 7 : 3,
-      });
+    if (visual.kind === "graph") {
+      // Avoid printing the same family graph twice if the model put its
+      // Mermaid version in the proposed report as well as the verified data.
+      const verifiedNames = new Set(graph?.nodes.map((node) => node.name));
+      if (
+        graph &&
+        graph.nodes.length === visual.graph.nodes.length &&
+        visual.graph.nodes.every((node) => verifiedNames.has(node.name))
+      ) {
+        if (!drawnVerified) await drawResearchGraph(document, graph);
+        drawnVerified = true;
+      } else
+        await drawResearchGraph(document, visual.graph, "Схема исследования");
+    } else drawResearchChart(document, visual);
+    // Charts may be followed by prose; do not append an empty final page.
+    if (parts[index + 1]?.trim()) document.addPage({ size: "A4", margin: 48 });
   }
-  if (layout && graph) {
-    const margin = 42,
-      graphWidth = layout.width || 0,
-      graphHeight = layout.height || 0,
-      scale = Math.min(
-        1,
-        10000 / (graphWidth + 84),
-        10000 / (graphHeight + 126),
-      ),
-      width = Math.max(842, graphWidth * scale + margin * 2),
-      height = Math.max(595, graphHeight * scale + margin * 2 + 42);
-    document.addPage({ size: [width, height], margin: 0 });
-    document
-      .font("Drevo")
-      .fillColor("#283e2d")
-      .fontSize(16)
-      .text("Схема родственных связей", margin, 24);
-    document
-      .save()
-      .translate((width - graphWidth * scale) / 2, margin + 42)
-      .scale(scale);
-    const ids = new Set(graph.nodes.map((node) => node.id));
-    const kind = new Map(
-      graph.edges
-        .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
-        .map((edge, index) => [`edge-${index}`, edge.type]),
-    );
-    for (const edge of layout.edges || []) {
-      const color = kind.get(edge.id) === "parent" ? "#5b7657" : "#b07e57";
-      for (const section of edge.sections || []) {
-        const points = [
-          section.startPoint,
-          ...(section.bendPoints || []),
-          section.endPoint,
-        ];
-        document.save().strokeColor(color).lineWidth(1.4);
-        if (kind.get(edge.id) !== "parent") document.dash(5, { space: 3 });
-        points.forEach((point, index) =>
-          index
-            ? document.lineTo(point.x, point.y)
-            : document.moveTo(point.x, point.y),
-        );
-        document.stroke().restore();
-      }
-    }
-    const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-    for (const node of layout.children || []) {
-      const person = byId.get(node.id);
-      if (!person) continue;
-      const x = node.x || 0,
-        y = node.y || 0;
-      document
-        .roundedRect(x, y, 172, 54, 7)
-        .fillAndStroke("#f0f5eb", "#a5b99a");
-      document
-        .fillColor("#273d2d")
-        .font("Drevo")
-        .fontSize(9)
-        .text(person.name, x + 8, y + 7, {
-          width: 156,
-          height: 35,
-          ellipsis: true,
-        });
-      const dates = [person.birth?.slice(0, 4), person.death?.slice(0, 4)]
-        .filter(Boolean)
-        .join(" — ");
-      if (dates)
-        document
-          .fontSize(7)
-          .fillColor("#61725b")
-          .text(dates, x + 8, y + 42, { width: 156 });
-    }
-    document.restore();
-    document
-      .fontSize(8)
-      .fillColor("#61725b")
-      .text(
-        "Сплошные линии — родитель и ребёнок; пунктир — брак или иная связь.",
-        margin,
-        height - 18,
-      );
-  }
+  if (graph && !drawnVerified) await drawResearchGraph(document, graph);
   document.end();
   return completed;
 }
