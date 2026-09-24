@@ -241,11 +241,59 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await page.route("**/api/admin/ai", async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch(),
-      status = (await response.json()) as Record<string, unknown>;
+      status = (await response.json()) as Record<string, unknown>,
+      usage = status.usage as {
+        today: Record<string, unknown>;
+        history: Array<Record<string, unknown>>;
+        recent: Array<Record<string, unknown>>;
+      },
+      usageModels = [
+        {
+          model: "gpt://folder-1/yandexgpt-5.1/latest",
+          providerCalls: 2,
+          inputTokens: 1200,
+          outputTokens: 300,
+          totalTokens: 1500,
+        },
+        {
+          model: "gpt://folder-1/deepseek-v4-flash/latest",
+          providerCalls: 1,
+          inputTokens: 700,
+          outputTokens: 500,
+          totalTokens: 1200,
+        },
+      ];
     await route.fulfill({
       response,
       json: {
         ...status,
+        usage: {
+          ...usage,
+          today: {
+            ...usage.today,
+            inputTokens: 1900,
+            outputTokens: 800,
+            totalTokens: 2700,
+            models: usageModels,
+          },
+          history: usage.history.map((item, index) =>
+            index === usage.history.length - 1
+              ? {
+                  ...item,
+                  inputTokens: 1900,
+                  outputTokens: 800,
+                  totalTokens: 2700,
+                  models: usageModels,
+                }
+              : {
+                  ...item,
+                  inputTokens: 0,
+                  outputTokens: 0,
+                  totalTokens: 0,
+                  models: [],
+                },
+          ),
+        },
         models: [
           {
             id: "gpt://folder-1/yandexgpt-5.1/latest",
@@ -287,6 +335,16 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     }),
   ).toBeVisible();
   await expect(page.locator(".ai-token-day")).toHaveCount(14);
+  await expect(page.locator(".ai-token-model-segment")).toHaveCount(2);
+  await expect(page.getByLabel("Модели")).toContainText(
+    "yandexgpt-5.1/latest",
+  );
+  await expect(page.getByLabel("Модели")).toContainText(
+    "deepseek-v4-flash/latest",
+  );
+  await expect(
+    page.locator(".ai-token-model-segment").first(),
+  ).toHaveAttribute("title", /вход 1.?200 · выход 300/);
 
   await page.getByRole("button", { name: "MCP-токены" }).click();
   const permissions = page.getByLabel("Разрешения");

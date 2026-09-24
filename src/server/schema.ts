@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 14;
+export const ARCHIVE_SCHEMA_VERSION = 15;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -435,6 +435,28 @@ function migrate(db: DatabaseSync, target: number) {
       ALTER TABLE face_descriptors_v14 RENAME TO face_descriptors;
       CREATE INDEX face_descriptors_person ON face_descriptors(person_id);
       CREATE INDEX face_descriptors_source_tag ON face_descriptors(source_tag_id);
+    `);
+    return;
+  }
+  if (target === 15) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ai_usage_models (
+        usage_id INTEGER NOT NULL REFERENCES ai_usage(id) ON DELETE CASCADE,
+        model TEXT NOT NULL,
+        provider_calls INTEGER NOT NULL,
+        input_tokens INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        PRIMARY KEY(usage_id,model)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS ai_usage_models_model
+        ON ai_usage_models(model,usage_id);
+      INSERT OR IGNORE INTO ai_usage_models(
+        usage_id,model,provider_calls,input_tokens,output_tokens,total_tokens
+      )
+        SELECT id,model,provider_calls,input_tokens,output_tokens,total_tokens
+        FROM ai_usage
+        WHERE provider_calls>0 OR total_tokens>0;
     `);
     return;
   }

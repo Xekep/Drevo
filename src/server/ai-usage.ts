@@ -6,6 +6,14 @@ export type AiUsageLimits = {
   dailyTokens: number;
 };
 
+export type AiModelUsage = {
+  model: string;
+  providerCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
 export type AiUsageSummary = {
   today: {
     requests: number;
@@ -15,12 +23,14 @@ export type AiUsageSummary = {
     totalTokens: number;
     errors: number;
     averageLatencyMs: number;
+    models: AiModelUsage[];
   };
   history: Array<{
     day: string;
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
+    models: AiModelUsage[];
   }>;
   recent: Array<{
     id: number;
@@ -122,10 +132,12 @@ export function aiUsageStore(db: DatabaseSync) {
         providerCalls: number;
         inputTokens: number;
         outputTokens: number;
+        models?: AiModelUsage[];
       },
     ) {
       const input = Math.max(0, Math.round(value.inputTokens)),
         output = Math.max(0, Math.round(value.outputTokens));
+      const providerCalls = Math.max(0, Math.round(value.providerCalls));
       db.prepare(
         `UPDATE ai_usage SET
           status=?,provider_calls=?,input_tokens=?,output_tokens=?,
@@ -133,13 +145,49 @@ export function aiUsageStore(db: DatabaseSync) {
          WHERE id=?`,
       ).run(
         value.status,
-        Math.max(0, Math.round(value.providerCalls)),
+        providerCalls,
         input,
         output,
         input + output,
         Math.max(0, Date.now() - started),
         id,
       );
+
+      const fallbackModel = String(
+          db.prepare("SELECT model FROM ai_usage WHERE id=?").get(id)?.model || "",
+        ),
+        models =
+          value.models?.length
+            ? value.models
+            : fallbackModel
+              ? [
+                  {
+                    model: fallbackModel,
+                    providerCalls,
+                    inputTokens: input,
+                    outputTokens: output,
+                    totalTokens: input + output,
+                  },
+                ]
+              : [];
+      db.prepare("DELETE FROM ai_usage_models WHERE usage_id=?").run(id);
+      const insertModel = db.prepare(
+        `INSERT INTO ai_usage_models(
+          usage_id,model,provider_calls,input_tokens,output_tokens,total_tokens
+        ) VALUES(?,?,?,?,?,?)`,
+      );
+      for (const model of models) {
+        const modelInput = Math.max(0, Math.round(model.inputTokens)),
+          modelOutput = Math.max(0, Math.round(model.outputTokens));
+        insertModel.run(
+          id,
+          model.model,
+          Math.max(0, Math.round(model.providerCalls)),
+          modelInput,
+          modelOutput,
+          modelInput + modelOutput,
+        );
+      }
     },
 
     summary(limit = 20): AiUsageSummary {
@@ -157,19 +205,26 @@ export function aiUsageStore(db: DatabaseSync) {
              FROM ai_usage WHERE started_ms>=?`,
           )
           .get(todayStart())!,
-        historyRows = db
+        modelRows = db
           .prepare(
             `SELECT
-               strftime('%Y-%m-%d', started_ms / 1000, 'unixepoch') AS day,
-               coalesce(sum(input_tokens),0) AS input_tokens,
-               coalesce(sum(output_tokens),0) AS output_tokens,
-               coalesce(sum(total_tokens),0) AS total_tokens
-             FROM ai_usage
-             WHERE started_ms>=?
-             GROUP BY day
-             ORDER BY day`,
+               strftime('%Y-%m-%d', u.started_ms / 1000, 'unixepoch') AS day,
+               m.model AS model,
+               coalesce(sum(m.provider_calls),0) AS provider_calls,
+               coalesce(sum(m.input_tokens),0) AS input_tokens,
+               coalesce(sum(m.output_tokens),0) AS output_tokens,
+               coalesce(sum(m.total_tokens),0) AS total_tokens
+             FROM ai_usage_models m
+             JOIN ai_usage u ON u.id=m.usage_id
+             WHERE u.started_ms>=?
+             GROUP BY day,m.model
+             ORDER BY day,m.model`,
           )
           .all(historyStart),
+        todayModelRows = modelRows.filter(
+          (row) =>
+            String(row.day) === new Date(todayStart()).toISOString().slice(0, 10),
+        ),
         rows = db
           .prepare(
             `SELECT id,at,user_id,model,status,provider_calls,input_tokens,
@@ -186,16 +241,40 @@ export function aiUsageStore(db: DatabaseSync) {
           totalTokens: Number(day.total_tokens),
           errors: Number(day.errors),
           averageLatencyMs: Math.round(Number(day.average_latency_ms)),
+          models: todayModelRows.map((row) => ({
+            model: String(row.model),
+            providerCalls: Number(row.provider_calls),
+            inputTokens: Number(row.input_tokens),
+            outputTokens: Number(row.output_tokens),
+            totalTokens: Number(row.total_tokens),
+          })),
         },
         history: Array.from({ length: 14 }, (_, index) => {
           const date = new Date(historyStart + index * 86_400_000),
             key = date.toISOString().slice(0, 10),
-            row = historyRows.find((item) => String(item.day) === key);
+            models = modelRows
+              .filter((row) => String(row.day) === key)
+              .map((row) => ({
+                model: String(row.model),
+                providerCalls: Number(row.provider_calls),
+                inputTokens: Number(row.input_tokens),
+                outputTokens: Number(row.output_tokens),
+                totalTokens: Number(row.total_tokens),
+              })),
+            inputTokens = models.reduce(
+              (sum, model) => sum + model.inputTokens,
+              0,
+            ),
+            outputTokens = models.reduce(
+              (sum, model) => sum + model.outputTokens,
+              0,
+            );
           return {
             day: key,
-            inputTokens: Number(row?.input_tokens || 0),
-            outputTokens: Number(row?.output_tokens || 0),
-            totalTokens: Number(row?.total_tokens || 0),
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            models,
           };
         }),
         recent: rows.map((row) => ({

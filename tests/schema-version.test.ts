@@ -64,6 +64,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "research_suggestions",
       "ai_settings",
       "ai_usage",
+      "ai_usage_models",
       "mcp_usage",
     ])
       assert.ok(tables.has(table), `missing table ${table}`);

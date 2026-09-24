@@ -182,6 +182,15 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
       inputTokens: 12,
       outputTokens: 3,
       totalTokens: 15,
+      models: [
+        {
+          model: yandexModel,
+          providerCalls: 1,
+          inputTokens: 12,
+          outputTokens: 3,
+          totalTokens: 15,
+        },
+      ],
     });
 
     const beforeLimitedChat = requests.length;
