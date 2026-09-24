@@ -1,17 +1,19 @@
 import { unionGeometry } from "../../domain/union-layout";
 import { unionTimeline } from "../../domain/union-timeline";
-import { layoutUnions } from "./elk-layout";
+import { createUnionLayout } from "./elk-layout";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 
 self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
   const { requestId, people, links, mode, reverse } = event.data;
+  let engine: ReturnType<typeof createUnionLayout> | undefined;
   try {
+    engine = createUnionLayout();
     const geometry =
       mode === "generations"
-        ? await unionGeometry(people, layoutUnions, reverse, links)
+        ? await unionGeometry(people, engine.layout, reverse, links)
         : unionTimeline(
             people,
-            await unionGeometry(people, layoutUnions, false, links),
+            await unionGeometry(people, engine.layout, false, links),
             reverse,
             links,
           );
@@ -25,5 +27,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
     self.postMessage(
       requestId === undefined ? { error } : { requestId, error },
     );
+  } finally {
+    engine?.dispose();
   }
 };

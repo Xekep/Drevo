@@ -13,20 +13,20 @@ export function useTreeLayout(
   const { people, links } = family;
   // Выбор карточки, фотография и текстовая правка не перезапускают геометрию,
   // если состав видимой семейной проекции остался прежним.
+  const projected = useMemo(
+    () => projectTree({ people, links }, visible),
+    [people, links, visible],
+  );
   const key = useMemo(
-    () =>
-      JSON.stringify({
-        ...projectTree({ people, links }, visible),
-        mode,
-        reverse,
-      }),
-    [people, links, visible, mode, reverse],
+    () => JSON.stringify({ ...projected, mode, reverse }),
+    [projected, mode, reverse],
   );
   const [result, setResult] = useState<{
     key: string;
     geometry: TreeGeometry | null;
+    visible: ReadonlySet<string>;
     error: string;
-  }>({ key: "", geometry: null, error: "" });
+  }>({ key: "", geometry: null, visible, error: "" });
   const [busy, setBusy] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
@@ -70,8 +70,8 @@ export function useTreeLayout(
       setBusy(false);
       setResult((previous) =>
         "error" in data
-          ? { key, geometry: previous.geometry, error: data.error }
-          : { key, geometry: data.geometry, error: "" },
+          ? { ...previous, key, error: data.error }
+          : { key, geometry: data.geometry, visible, error: "" },
       );
     };
     const onMessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
@@ -89,17 +89,18 @@ export function useTreeLayout(
 
     worker.addEventListener("message", onMessage);
     worker.addEventListener("error", onError);
-    worker.postMessage({ requestId, ...JSON.parse(key) });
+    worker.postMessage({ requestId, ...projected, mode, reverse });
 
     return () => {
       clearTimeout(timer);
       worker.removeEventListener("message", onMessage);
       worker.removeEventListener("error", onError);
     };
-  }, [key]);
+  }, [key, projected, mode, reverse, visible]);
 
   return {
     geometry: result.geometry,
+    renderVisible: result.geometry ? result.visible : visible,
     ready: result.key === key && !result.error,
     problem: result.key === key ? result.error : "",
     layoutBusy: busy,

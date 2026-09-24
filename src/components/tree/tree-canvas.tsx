@@ -212,12 +212,13 @@ function Canvas(props: Props) {
   }, [activeFanAnchor, fanMorphing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
+  const [growthStarted, setGrowthStarted] = useState(false);
   const markInitialCameraReady = useCallback(
     () => setInitialCameraReady(true),
     [],
   );
-  const growthPreparing = growing && !narrow && !initialCameraReady;
-  const growthActive = growing && !narrow && initialCameraReady;
+  const growthPreparing = growing && !narrow && !growthStarted;
+  const growthActive = growing && !narrow && growthStarted;
   const introHandled = useRef(false);
   const introComplete = useRef(props.onIntroComplete);
   useEffect(() => {
@@ -270,12 +271,8 @@ function Canvas(props: Props) {
     : `${mode}:${familyView.mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
   useCtrlWheelZoom(container, flow, !activeFanAnchor);
-  const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
-    family,
-    visible,
-    mode,
-    reverse,
-  );
+  const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
+    useTreeLayout(family, visible, mode, reverse);
   useEffect(() => {
     const request = props.zoomRequest;
     if (
@@ -320,7 +317,7 @@ function Canvas(props: Props) {
         family,
         geometry,
         mode,
-        visible,
+        visible: renderVisible,
         selected,
         collapsed,
         root: familyView.mode === "family" && !props.assistantFilter ? root : null,
@@ -337,7 +334,7 @@ function Canvas(props: Props) {
       family,
       geometry,
       mode,
-      visible,
+      renderVisible,
       selected,
       collapsed,
       root,
@@ -365,7 +362,7 @@ function Canvas(props: Props) {
       !growing ||
       !ready ||
       !nodes.length ||
-      (!narrow && !initialCameraReady)
+      (!narrow && !growthStarted)
     )
       return;
     const timer = window.setTimeout(
@@ -380,7 +377,7 @@ function Canvas(props: Props) {
     maxGrowthDelay,
     growthDelays,
     narrow,
-    initialCameraReady,
+    growthStarted,
   ]);
   useEffect(() => {
     if (
@@ -512,7 +509,7 @@ function Canvas(props: Props) {
         mode,
         geometry,
         connections,
-        visible,
+        visible: renderVisible,
         positions,
         occurrencePeople,
         peopleMap,
@@ -532,7 +529,7 @@ function Canvas(props: Props) {
       mode,
       geometry,
       connections,
-      visible,
+      renderVisible,
       positions,
       occurrencePeople,
       peopleMap,
@@ -546,6 +543,44 @@ function Canvas(props: Props) {
       growthDelays,
     ],
   );
+  useEffect(() => {
+    if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
+      return;
+    let frame = 0;
+    let attempts = 0;
+    const startWhenMounted = () => {
+      const element = container.current;
+      if (!element) return;
+      const mountedNodes = element.querySelectorAll(".react-flow__node").length;
+      const mountedEdges = element.querySelectorAll(".react-flow__edge").length;
+      // React Flow measures nodes before rendering their edges. Give both a
+      // shared animation start, or a late edge may follow its descendant card.
+      const mounted =
+        displayNodes.length <= 500
+          ? mountedNodes >= displayNodes.length &&
+            mountedEdges >= displayEdges.length
+          : attempts >= 2 &&
+            mountedNodes > 0 &&
+            (!displayEdges.length || mountedEdges > 0);
+      if (mounted) {
+        setGrowthStarted(true);
+      } else if (++attempts < 30) {
+        frame = requestAnimationFrame(startWhenMounted);
+      } else {
+        setGrowthStarted(true);
+      }
+    };
+    frame = requestAnimationFrame(startWhenMounted);
+    return () => cancelAnimationFrame(frame);
+  }, [
+    growing,
+    narrow,
+    ready,
+    initialCameraReady,
+    growthStarted,
+    displayNodes.length,
+    displayEdges.length,
+  ]);
   const connect = useCallback(
     (c: FlowConnection) => {
       if (c.source && c.target)
@@ -571,7 +606,7 @@ function Canvas(props: Props) {
         className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanMorphing ? "is-fan-morphing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
-        aria-busy={growthActive}
+        aria-busy={growthPreparing || growthActive}
         onContextMenu={(event) => {
           if (growthActive) event.preventDefault();
         }}
@@ -781,7 +816,7 @@ function Canvas(props: Props) {
           panOnDrag={growthActive ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
-          onlyRenderVisibleElements
+          onlyRenderVisibleElements={!growing || displayNodes.length > 500}
           fitView={false}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
           ariaLabelConfig={{

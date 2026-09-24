@@ -1277,6 +1277,7 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
   await expect(nodes).toHaveCount(7);
+  await expect(page.locator(".tree-grow-edge")).toHaveCount(6);
   const delays = await nodes.evaluateAll((items) =>
     items
       .map((item) => getComputedStyle(item).animationDelay)
