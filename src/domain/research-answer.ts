@@ -9,6 +9,36 @@ export type ResearchAnswerReference =
       url?: string;
     };
 
+/** A file is already attached to the chat message; remove model-written duplicates. */
+export function cleanPdfAnswer(answer: string) {
+  return answer
+    .replace(
+      /\[[^\]]+\]\((?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[^)]+\)/giu,
+      "",
+    )
+    .replace(
+      /(?:Вы можете скачать файл по ссылке|Скачать файл можно по ссылке|Ссылка на скачивание|Ссылка)\s*:\s*(?:`+\s*`+|(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[^\s)]*)?/giu,
+      "",
+    )
+    .replace(/(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[a-f\d-]+/giu, "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line, index, lines) => line.trim() || lines[index - 1]?.trim())
+    .join("\n")
+    .trim();
+}
+
+export function researchPdfFilename(title: string) {
+  const short = title
+    .split(/[:：]/, 1)[0]
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48)
+    .trim();
+  return `${short || "Отчёт"}.pdf`;
+}
+
 const escapePattern = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
