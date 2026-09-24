@@ -64,6 +64,9 @@ export function FamilyViewTools({
             Общие предки
           </button>
         )}
+        <button type="button" title="Веер предков">
+          Веер
+        </button>
         {anchor && <button onClick={onAll}>Всё древо</button>}
         {anchor && onShare && (
           <button className="tree-family-share" onClick={onShare}>
