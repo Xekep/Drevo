@@ -45,7 +45,7 @@ export function FamilyViewTools({
             </span>
           </span>
         )}
-        {anchor && (
+        {anchor && !fanActive && (
           <span className="tree-family-count" role="status">
             {count} из {total}
           </span>
