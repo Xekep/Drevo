@@ -40,7 +40,11 @@ function parseDescriptors(values: unknown): Descriptor[] {
       (model === "human-faceres-3.3.6" &&
         (typeof sample.sourcePhotoId !== "string" ||
           !sample.sourcePhotoId ||
-          sample.sourcePhotoId.length > 200))
+          sample.sourcePhotoId.length > 200)) ||
+      (sample.sourceTagId !== undefined &&
+        (typeof sample.sourceTagId !== "string" ||
+          !sample.sourceTagId ||
+          sample.sourceTagId.length > 200))
     )
       throw new Error("Invalid face descriptor input");
     return {
