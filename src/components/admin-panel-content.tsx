@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowDownUp,
   Bot,
+  BookOpen,
   DatabaseBackup,
   Download,
   ShieldCheck,
@@ -26,6 +27,7 @@ import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { McpTokenAdmin } from "./mcp-token-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
+import { ResearchResourcesAdmin } from "./research-resources-admin";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -52,6 +54,7 @@ const ADMIN_SECTIONS = [
     label: "Инструменты",
     items: [
       { id: "ai", label: "Yandex AI", icon: Bot },
+      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
       { id: "shares", label: "Временные ссылки", icon: Link2 },
       { id: "audit", label: "Журнал правок", icon: History },
@@ -74,6 +77,10 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   ai: {
     title: "Yandex AI",
     description: "Подключение исследователя, лимиты и использование.",
+  },
+  resources: {
+    title: "Ресурсы поиска",
+    description: "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
   },
   mcp: {
     title: "MCP-токены",
@@ -541,6 +548,7 @@ export function AdminPanel({
           </form>
         )}
         {section === "ai" && <AiSettingsAdmin />}
+        {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
         {section === "audit" && (

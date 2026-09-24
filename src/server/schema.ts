@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
+import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 16;
+export const ARCHIVE_SCHEMA_VERSION = 17;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -508,6 +509,50 @@ function migrate(db: DatabaseSync, target: number) {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS ai_chat_messages_chat_id ON ai_chat_messages(chat_id,id);
     `);
+    return;
+  }
+  if (target === 17) {
+    const existingCatalog = db.prepare(
+      "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='research_categories'",
+    ).get();
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS research_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        sort_order INTEGER NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS research_resources (
+        id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL REFERENCES research_categories(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        description TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        UNIQUE(category_id,url)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS research_resources_category_order
+        ON research_resources(category_id,sort_order,id);
+    `);
+    if (existingCatalog) return;
+    const category = db.prepare(
+      "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,?)",
+    );
+    const resource = db.prepare(
+      "INSERT INTO research_resources(id,category_id,name,url,description,sort_order) VALUES(?,?,?,?,?,?)",
+    );
+    for (const [categoryIndex, group] of researchCatalogSeed.entries()) {
+      const categoryId = `seed-category-${categoryIndex}`;
+      category.run(categoryId, group.name, categoryIndex);
+      for (const [resourceIndex, item] of group.resources.entries())
+        resource.run(
+          `seed-resource-${categoryIndex}-${resourceIndex}`,
+          categoryId,
+          item.name,
+          item.url,
+          item.description,
+          resourceIndex,
+        );
+    }
     return;
   }
   throw new Error(`Нет миграции SQLite до версии ${target}`);

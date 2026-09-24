@@ -23,6 +23,7 @@ import type { imagePreviews } from "./image-previews.ts";
 import { fetchAiStudioModels } from "./ai-models.ts";
 import { researchPdf, type ResearchGraph } from "./research-pdf.ts";
 import { aiChatStore } from "./ai-chats.ts";
+import type { researchCatalogStore } from "./research-catalog.ts";
 import {
   yandexResponsesClient,
   YandexResponseError,
@@ -202,6 +203,21 @@ const ANALYZE_PHOTO_TOOL = {
       question: { type: "string", maxLength: 2000 },
     },
     required: ["photoId"],
+    additionalProperties: false,
+  },
+} as const;
+
+const RESEARCH_RESOURCES_TOOL = {
+  name: "find_research_resources",
+  description:
+    "Подобрать из каталога внешние сайты для генеалогического поиска. Передай название одной категории и тему или местность. Результат содержит не более пяти ссылок; выбери только релевантные. Ссылки не подтверждают факты архива.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      category: { type: "string", minLength: 1, maxLength: 100 },
+      query: { type: "string", maxLength: 200 },
+    },
+    required: ["category"],
     additionalProperties: false,
   },
 } as const;
@@ -387,6 +403,7 @@ function researchToolStatus(name: string) {
     search_people: "Ищу людей в архиве…",
     list_people: "Составляю список людей…",
     get_sources: "Изучаю указанные источники…",
+    find_research_resources: "Подбираю подходящие сайты для поиска…",
     analyze_photo: "Изучаю фотографию…",
     create_pdf: "Готовлю PDF и приложения…",
   };
@@ -586,6 +603,7 @@ export function aiResearchHttp({
   usage,
   media,
   previewImage,
+  researchCatalog,
   publicOrigin,
   fetcher = fetch,
 }: {
@@ -596,6 +614,7 @@ export function aiResearchHttp({
   usage: ReturnType<typeof aiUsageStore>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
+  researchCatalog: ReturnType<typeof researchCatalogStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
@@ -775,6 +794,7 @@ export function aiResearchHttp({
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Для обзора архива используй get_archive_insights; для пробелов, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
+        `Когда нужен следующий шаг поиска вне Drevo, вызови find_research_resources. Категории каталога: ${researchCatalog.categoryNames().join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
         "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Для вопроса о двоюродных, троюродных и более дальних братьях или сёстрах вызови get_cousins. degree=2 означает двоюродных, degree=3 — троюродных, degree=4 — четвероюродных и далее. В коротком продолжении вроде «а двоюродные?» используй человека из предыдущих реплик и не проси уже указанные сведения повторно.",
         "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
@@ -829,6 +849,7 @@ export function aiResearchHttp({
       createdSuggestionIds = new Set<string>(),
       proposalErrors: string[] = [];
     let analyzedPhotos = 0,
+      resourceLookups = 0,
       executedTools = 0,
       lookupRetryUsed = false,
       internalOutputRetryUsed = false,
@@ -840,6 +861,7 @@ export function aiResearchHttp({
       allowedToolNames = new Set([
         ...RESEARCH_TOOL_DEFINITIONS.map((tool) => tool.name),
         ANALYZE_PHOTO_TOOL.name,
+        RESEARCH_RESOURCES_TOOL.name,
         CONTROL_VIEW_TOOL.name,
         CREATE_PDF_TOOL.name,
         ...(canPropose ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name) : []),
@@ -925,6 +947,7 @@ export function aiResearchHttp({
           tools: [
             ...RESEARCH_TOOL_DEFINITIONS,
             ANALYZE_PHOTO_TOOL,
+            RESEARCH_RESOURCES_TOOL,
             CONTROL_VIEW_TOOL,
             CREATE_PDF_TOOL,
             ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
@@ -1188,7 +1211,18 @@ export function aiResearchHttp({
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (definition)
             result = executeResearchTool(family, definition.name, toolArgs);
-          else if (call.function.name === CREATE_PDF_TOOL.name) {
+          else if (call.function.name === RESEARCH_RESOURCES_TOOL.name) {
+            if (resourceLookups >= 1)
+              throw new Error("За один ответ можно выбрать только одну категорию ресурсов");
+            const raw = toolArgs as Record<string, unknown>;
+            if (typeof raw.category !== "string" || raw.category.length > 100)
+              throw new Error("Укажите категорию ресурсов");
+            resourceLookups++;
+            result = researchCatalog.search(
+              raw.category,
+              typeof raw.query === "string" ? raw.query.slice(0, 200) : "",
+            );
+          } else if (call.function.name === CREATE_PDF_TOOL.name) {
             if (!pdfRequested)
               throw new Error("PDF создаётся только по просьбе пользователя");
             if (files.length >= 3)

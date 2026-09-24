@@ -167,6 +167,26 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       (await request("/api/session", reader).then((r) => r.json())).user.role,
       "reader",
     );
+    assert.equal((await request("/api/admin/research-resources")).status, 401);
+    assert.equal(
+      (await request("/api/admin/research-resources", reader)).status,
+      403,
+    );
+    assert.equal(
+      (await request("/api/admin/research-resources", admin)).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(
+          "/api/admin/research-resources/categories",
+          reader,
+          "POST",
+          { name: "Чужая категория" },
+        )
+      ).status,
+      403,
+    );
     assert.equal((await request("/api/users", reader)).status, 403);
     assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
     assert.equal((await request("/api/export.json", reader)).status, 401);

@@ -1,0 +1,202 @@
+.research-resources-admin {
+  min-width: 0;
+}
+.research-resources-heading,
+.research-resources-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.research-resources-heading > span {
+  white-space: nowrap;
+  color: #70806f;
+  font-size: 12px;
+}
+.research-resources-heading p {
+  margin: 5px 0 18px;
+}
+.research-resources-layout {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  gap: 26px;
+}
+.research-resources-categories {
+  border-right: 1px solid #e5ebe3;
+  padding-right: 20px;
+  min-width: 0;
+}
+.research-resources-categories h3,
+.research-resources-detail h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+.research-resources-categories nav {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 24px;
+}
+.research-resources-categories nav button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 40px;
+}
+.research-resources-categories nav button[aria-current="page"] {
+  background: #edf4e9;
+  color: #34553a;
+  font-weight: 650;
+}
+.research-resources-categories nav small {
+  color: #778577;
+}
+.research-resources-categories form label,
+.research-resources-category-editor label,
+.research-resources-editor label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #536555;
+}
+.research-resources-add-category,
+.research-resources-category-editor > div {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.research-resources-add-category input,
+.research-resources-category-editor input {
+  min-width: 0;
+  flex: 1;
+}
+.research-resources-add-category button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #dce6d9;
+  border-radius: 8px;
+}
+.research-resources-category-editor {
+  margin-bottom: 24px;
+}
+.research-resources-category-editor > div {
+  margin-top: 7px;
+}
+.research-resources-category-editor button,
+.research-resources-list-head button,
+.research-resources-list article button,
+.research-resources-editor button {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid #dce6d9;
+  border-radius: 8px;
+}
+.research-resources-list-head {
+  align-items: center;
+  margin-bottom: 9px;
+}
+.research-resources-list-head h3 {
+  margin: 0;
+}
+.research-resources-list-head button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #345f3d;
+}
+.research-resources-list {
+  border-top: 1px solid #e9eee8;
+  max-height: 60vh;
+  overflow: auto;
+}
+.research-resources-list article {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 2px;
+  border-bottom: 1px solid #e9eee8;
+}
+.research-resources-list article > div {
+  min-width: 0;
+}
+.research-resources-list strong {
+  font-size: 13px;
+}
+.research-resources-list p {
+  margin: 4px 0;
+}
+.research-resources-list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.research-resources-editor {
+  display: grid;
+  gap: 11px;
+  margin: 12px 0 20px;
+  padding: 16px;
+  background: #f5f8f3;
+  border: 1px solid #dfe9da;
+  border-radius: 10px;
+}
+.research-resources-editor h4 {
+  margin: 0;
+}
+.research-resources-editor label input,
+.research-resources-editor label textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.research-resources-editor > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.research-resources-delete {
+  color: #94493e;
+}
+@media (max-width: 780px) {
+  .research-resources-layout {
+    grid-template-columns: 1fr;
+  }
+  .research-resources-categories {
+    border-right: 0;
+    border-bottom: 1px solid #e5ebe3;
+    padding: 0 0 18px;
+  }
+  .research-resources-categories nav {
+    display: flex;
+    overflow-x: auto;
+    gap: 5px;
+    margin-bottom: 15px;
+  }
+  .research-resources-categories nav button {
+    flex: none;
+  }
+  .research-resources-list {
+    max-height: none;
+  }
+}
+@media (max-width: 440px) {
+  .research-resources-heading {
+    display: block;
+  }
+  .research-resources-category-editor > div {
+    flex-wrap: wrap;
+  }
+  .research-resources-category-editor input {
+    flex-basis: 100%;
+  }
+  .research-resources-list article {
+    align-items: flex-start;
+  }
+}

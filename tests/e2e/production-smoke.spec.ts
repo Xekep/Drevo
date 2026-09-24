@@ -1399,8 +1399,15 @@ test("the initial tree grows from roots toward descendants", async ({
   const assistantTrigger = page.getByRole("button", {
       name: "Открыть ИИ-исследователя",
     }),
-    cameraTools = page.locator(".flow-camera-tools"),
-    triggerBeforeCard = await assistantTrigger.boundingBox(),
+    cameraTools = page.locator(".flow-camera-tools");
+  await expect
+    .poll(() =>
+      assistantTrigger.evaluate((element) =>
+        element.getAnimations().every((animation) => animation.playState !== "running"),
+      ),
+    )
+    .toBe(true);
+  const triggerBeforeCard = await assistantTrigger.boundingBox(),
     toolsBeforeCard = await cameraTools.boundingBox();
   expect(triggerBeforeCard).not.toBeNull();
   expect(toolsBeforeCard).not.toBeNull();
@@ -1446,7 +1453,7 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(
     await godparentPath.evaluate((path) => getComputedStyle(path).markerEnd),
   ).not.toBe("none");
-  const labelDistance = await godparent.evaluate((button) => {
+  const labelDistance = () => godparent.evaluate((button) => {
     const path = document.querySelector<SVGPathElement>(
       ".relationship-godparent .tree-edge-final-path",
     );
@@ -1467,7 +1474,7 @@ test("the initial tree grows from roots toward descendants", async ({
     }
     return nearest;
   });
-  expect(labelDistance).toBeLessThan(3);
+  await expect.poll(labelDistance).toBeLessThan(3);
   expect(
     await page
       .locator(".flow-person-content strong")

@@ -32,6 +32,8 @@ import { researchSuggestionsHttp } from "./research-suggestions-http.ts";
 import { aiSettingsStore } from "./ai-settings.ts";
 import { adminAiHttp } from "./admin-ai-http.ts";
 import { aiUsageStore } from "./ai-usage.ts";
+import { researchCatalogStore } from "./research-catalog.ts";
+import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
 
 export function sharingHttp({
   archive,
@@ -57,6 +59,7 @@ export function sharingHttp({
   const suggestions = researchSuggestionStore(archive.db);
   const aiSettings = aiSettingsStore(archive.db);
   const aiUsage = aiUsageStore(archive.db);
+  const researchCatalog = researchCatalogStore(archive.db);
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({
     auth,
@@ -73,6 +76,7 @@ export function sharingHttp({
     usage: aiUsage,
     media,
     previewImage,
+    researchCatalog,
     publicOrigin,
     fetcher: aiFetch,
   });
@@ -88,6 +92,11 @@ export function sharingHttp({
     usage: aiUsage,
     publicOrigin,
     fetcher: aiFetch,
+  });
+  const adminResearchResources = adminResearchResourcesHttp({
+    auth,
+    catalog: researchCatalog,
+    publicOrigin,
   });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
@@ -146,6 +155,7 @@ export function sharingHttp({
     if (await adminAccess(req, res, url)) return true;
     if (await adminMcp(req, res, url)) return true;
     if (await adminAi(req, res, url)) return true;
+    if (await adminResearchResources(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await places(req, res, url)) return true;
     if (await adminSharing(req, res, url)) return true;
