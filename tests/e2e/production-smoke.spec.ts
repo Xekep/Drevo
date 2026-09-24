@@ -139,6 +139,35 @@ test("выход из специальных режимов возвращает
   await expectCentered();
 });
 
+test("Ctrl+A не выделяет страницу, но работает в полях ввода", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/people");
+
+  const pageSelectAllBlocked = await page.evaluate(() => {
+    const event = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    return !document.body.dispatchEvent(event);
+  });
+  expect(pageSelectAllBlocked).toBe(true);
+
+  const search = page.getByRole("combobox", { name: "Найти человека" });
+  await search.fill("Тестовый текст");
+  await search.press("Control+A");
+  const selection = await search.evaluate((input: HTMLInputElement) => ({
+    start: input.selectionStart,
+    end: input.selectionEnd,
+    length: input.value.length,
+  }));
+  expect(selection.start).toBe(0);
+  expect(selection.end).toBe(selection.length);
+});
+
 test("Ctrl+колесо не меняет масштаб страницы вне дерева", async ({
   page,
 }, testInfo) => {
