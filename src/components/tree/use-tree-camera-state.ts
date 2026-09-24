@@ -129,10 +129,7 @@ export function useTreeCameraState({
             maxZoom: 1,
             minZoom: narrow ? 0.55 : 0.15,
             padding: narrow ? 0.3 : 0.48,
-            duration: window.matchMedia("(prefers-reduced-motion: reduce)")
-              .matches
-              ? 0
-              : 560,
+            duration: 560,
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
           void Promise.resolve(viewportUpdate).then(
@@ -150,10 +147,7 @@ export function useTreeCameraState({
             maxZoom: focus.purpose === "family" ? 0.95 : 1,
             minZoom: focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
             padding: focus.purpose === "family" ? 0.34 : 0.5,
-            duration: window.matchMedia("(prefers-reduced-motion: reduce)")
-              .matches
-              ? 0
-              : 650,
+            duration: 650,
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
         } else if (changedContext || reverseChanged) {
@@ -162,10 +156,7 @@ export function useTreeCameraState({
               minZoom: 0.05,
               maxZoom: narrow ? 0.9 : 1,
               padding: 0.2,
-              duration: window.matchMedia("(prefers-reduced-motion: reduce)")
-                .matches
-                ? 0
-                : 650,
+              duration: 650,
               ease: (progress) => 1 - (1 - progress) ** 3,
             });
           else if ((switchedMode || reverseChanged) && selected.length)
