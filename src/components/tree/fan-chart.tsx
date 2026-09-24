@@ -118,7 +118,7 @@ export function FanChart({
             slot.generation === 0
               ? 0
               : denseLabel
-                ? ((tangentialRotation + 90) % 360 + 360) % 360
+                ? ((tangentialRotation - 90) % 360 + 360) % 360
                 : tangentialRotation;
           const person = slot.personId ? people.get(slot.personId) : undefined;
           const side =
