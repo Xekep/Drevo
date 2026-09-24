@@ -74,12 +74,6 @@ export async function runFanMorph(
   container: HTMLElement,
   sources: FanMorphSource[],
 ) {
-  if (
-    !sources.length ||
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  )
-    return;
-
   await frame();
   await frame();
 
