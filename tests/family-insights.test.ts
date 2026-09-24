@@ -111,6 +111,7 @@ test("average lifespan by sex counts only known birth and death years", () => {
   const people = [
     person("m1", "Пётр", "1900", 1, { sex: "m", death: "1970" }),
     person("m2", "Иван", "1901", 1, { sex: "m", death: "1952" }),
+    person("m-child", "Миша", "1940", 1, { sex: "m", death: "1941" }),
     person("f1", "Анна", "1910", 1, { sex: "f", death: "1990" }),
     person("living", "Мария", "1920", 1, { sex: "f" }),
     person("unknown", "Алексей", "", 1, { sex: "m", death: "1980" }),
@@ -131,6 +132,7 @@ test("average lifespan by sex counts only known birth and death years", () => {
   );
   assert.equal(men?.value, "≈ 60,5 года");
   assert.match(men?.detail || "", /^2 человека/);
+  assert.match(men?.detail || "", /18 лет и более$/);
   assert.equal(women?.value, "≈ 80 лет");
   assert.match(women?.detail || "", /^1 человек/);
   assert.equal(facts.slice(-2)[0], men);
