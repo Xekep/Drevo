@@ -99,7 +99,6 @@
 }
 @media (max-width: 899px) {
   .fan-chart {
-    inset-top: 58px;
     overflow: auto;
     justify-content: flex-start;
   }
