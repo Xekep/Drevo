@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
+import { linkResearchReferences } from "../src/domain/research-answer.ts";
 import {
   explicitViewControlRequest,
   humanizeResearchAnswer,
@@ -24,6 +25,23 @@ test("research answer keeps clickable markers but replaces raw archive ids", () 
       new Map(),
     ),
     "[[person:person-42|Иван Петрович]] найден. Иван Петрович упомянут в записи.",
+  );
+});
+
+test("raw photo IDs become a clickable photo instead of a service identifier", () => {
+  const id = "d6688201-4f30-47a2-a99b-39d0bb5ec2cf";
+  const answer = humanizeResearchAnswer(
+    `Самая большая фотография — это фотография с идентификатором Фотография ${id}.`,
+    new Map(),
+    new Map([[id, "Фотография"]]),
+  );
+  assert.equal(
+    answer,
+    `Самая большая фотография — это [[photo:${id}|Фотография]].`,
+  );
+  assert.equal(
+    linkResearchReferences(answer),
+    `Самая большая фотография — это [Фотография](#drevo-photo-${id}).`,
   );
 });
 

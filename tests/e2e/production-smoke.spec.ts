@@ -1290,7 +1290,7 @@ test("the initial tree grows from roots toward descendants", async ({
     "0.52s",
     "0.55s",
     "0.58s",
-    "1.07s",
+    "1.1s",
     "1.13s",
   ]);
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
@@ -1330,10 +1330,10 @@ test("the initial tree grows from roots toward descendants", async ({
     );
   expect(edgeDelays).toEqual([
     "0.28s",
-    "0.34s",
-    "0.55s",
+    "0.28s",
     "0.83s",
-    "0.89s",
+    "0.86s",
+    "0.86s",
     "1.41s",
   ]);
   const godparent = page.getByRole("button", {

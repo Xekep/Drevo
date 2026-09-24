@@ -1,12 +1,29 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
 import type { Person } from "../../domain/types.ts";
-import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
+import {
+  TREE_NODE_HEIGHT,
+  TREE_NODE_WIDTH,
+  type TreeGeometry,
+  type TreeMode,
+} from "../../domain/tree-layout.ts";
 
 type CameraFlow = {
   getViewport: () => Viewport;
   getZoom: () => number;
-  setViewport: (viewport: Viewport) => unknown;
+  setCenter: (
+    x: number,
+    y: number,
+    options?: {
+      zoom?: number;
+      duration?: number;
+      ease?: (progress: number) => number;
+    },
+  ) => unknown;
+  setViewport: (
+    viewport: Viewport,
+    options?: { duration?: number; ease?: (progress: number) => number },
+  ) => unknown;
   fitView: (options: {
     nodes?: { id: string }[];
     minZoom?: number;
@@ -78,7 +95,9 @@ export function useTreeCameraState({
   const cameras = useRef<Record<string, Viewport>>({});
   const lastFocus = useRef(-1);
   // Открытие карточки меняет ширину полотна уже после запроса фокуса.
-  const lastFocusCanvas = useRef<{ width: number; height: number } | null>(null);
+  const lastFocusCanvas = useRef<{ width: number; height: number } | null>(
+    null,
+  );
   const lastReturn = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
@@ -114,6 +133,12 @@ export function useTreeCameraState({
       () => {
         let viewportUpdate: unknown;
         const changedContext = previousContext.current !== context;
+        const contextDuration =
+          initialViewSent.current &&
+          !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? 520
+            : 0;
+        const contextEase = (progress: number) => 1 - (1 - progress) ** 3;
         const switchedMode =
           !!previousContext.current &&
           previousContext.current.split(":")[0] !== mode;
@@ -150,23 +175,42 @@ export function useTreeCameraState({
           focus.ids.every((id) => positions.has(id))
         ) {
           lastFocus.current = focus.token;
-          lastFocusCanvas.current = { width: canvasWidth, height: canvasHeight };
-          viewportUpdate = flow.fitView({
-            nodes: focus.ids.map((id) => ({ id })),
-            maxZoom: focus.purpose === "family" ? 0.95 : 1,
-            minZoom: focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
-            padding: focus.purpose === "family" ? 0.34 : 0.5,
-            duration: 650,
-            ease: (progress) => 1 - (1 - progress) ** 3,
-          });
+          lastFocusCanvas.current = {
+            width: canvasWidth,
+            height: canvasHeight,
+          };
+          const target =
+            focus.ids.length === 1 && focus.purpose !== "family"
+              ? positions.get(focus.ids[0])
+              : undefined;
+          viewportUpdate = target
+            ? flow.setCenter(
+                target.x + TREE_NODE_WIDTH / 2,
+                target.y + TREE_NODE_HEIGHT / 2,
+                {
+                  zoom: Math.max(flow.getZoom(), narrow ? 0.82 : 0.9),
+                  duration: 650,
+                  ease: (progress) => 1 - (1 - progress) ** 3,
+                },
+              )
+            : flow.fitView({
+                nodes: focus.ids.map((id) => ({ id })),
+                maxZoom: focus.purpose === "family" ? 0.95 : 1,
+                minZoom:
+                  focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
+                padding: focus.purpose === "family" ? 0.34 : 0.5,
+                duration: 650,
+                ease: (progress) => 1 - (1 - progress) ** 3,
+              });
         } else if (changedContext || reverseChanged) {
           if (changedContext && context.includes(":research:"))
             viewportUpdate = flow.fitView({
+              nodes: [...positions.keys()].map((id) => ({ id })),
               minZoom: 0.05,
               maxZoom: narrow ? 0.9 : 1,
               padding: 0.2,
-              duration: 650,
-              ease: (progress) => 1 - (1 - progress) ** 3,
+              duration: contextDuration,
+              ease: contextEase,
             });
           else if ((switchedMode || reverseChanged) && selected.length)
             viewportUpdate = flow.fitView({
@@ -174,6 +218,8 @@ export function useTreeCameraState({
               maxZoom: 1,
               minZoom: narrow ? 0.55 : 0.15,
               padding: 0.4,
+              duration: contextDuration,
+              ease: contextEase,
             });
           else if (root)
             viewportUpdate = flow.fitView({
@@ -181,13 +227,18 @@ export function useTreeCameraState({
                 ? [root, ...(peopleMap.get(root)?.spouses || [])]
                     .filter((id) => positions.has(id))
                     .map((id) => ({ id }))
-                : undefined,
+                : [...positions.keys()].map((id) => ({ id })),
               maxZoom: 0.95,
               minZoom: narrow ? 0.55 : 0.25,
               padding: 0.28,
+              duration: contextDuration,
+              ease: contextEase,
             });
           else if (cameras.current[context] && !reverseChanged)
-            viewportUpdate = flow.setViewport(cameras.current[context]);
+            viewportUpdate = flow.setViewport(cameras.current[context], {
+              duration: contextDuration,
+              ease: contextEase,
+            });
           else {
             const padding = initialTreePadding(
               canvasWidth,
@@ -196,9 +247,12 @@ export function useTreeCameraState({
             );
             // На входе помещаем всё дерево, затем отдельно ведём камеру к человеку.
             viewportUpdate = flow.fitView({
+              nodes: [...positions.keys()].map((id) => ({ id })),
               maxZoom: narrow ? 0.9 : 1,
               minZoom: 0.05,
               padding,
+              duration: contextDuration,
+              ease: contextEase,
             });
           }
         } else if (narrow) {

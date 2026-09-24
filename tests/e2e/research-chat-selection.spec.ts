@@ -54,11 +54,15 @@ test("choice is invisible to the user and chat picker keeps the original title",
   await expect(
     panel.getByRole("button", { name: "Иван Петров" }),
   ).toBeVisible();
-  const picker = panel.getByRole("combobox", { name: "Выбрать диалог" });
-  await expect(picker).toHaveValue("chat-one");
-  await expect(picker.locator('option[value="chat-one"]')).toHaveText(
-    "Расскажи об Иване",
-  );
+  const picker = panel.getByRole("button", { name: "Выбрать диалог" });
+  const menu = panel.locator(".research-chat-menu");
+  await expect(picker).toContainText("Расскажи об Иване");
+  await picker.click();
+  await expect(
+    menu.getByRole("button", { name: "Расскажи об Иване" }),
+  ).toHaveAttribute("aria-current", "true");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Иван Петров" }).click();
   await expect.poll(() => submitted.length).toBe(2);
@@ -69,23 +73,55 @@ test("choice is invisible to the user and chat picker keeps the original title",
   });
   await expect(panel.locator("article.is-user")).toHaveCount(1);
   await expect(panel).not.toContainText("personId");
-  await expect(picker).toHaveValue("chat-one");
-  await expect(picker.locator('option[value="chat-one"]')).toHaveText(
-    "Расскажи об Иване",
-  );
+  await expect(picker).toContainText("Расскажи об Иване");
 
-  await picker.selectOption("");
-  await expect(picker).toHaveValue("");
+  await picker.click();
+  await menu.getByRole("button", { name: "Новый диалог" }).click();
+  await expect(picker).toContainText("Новый диалог");
   await textarea.fill("Новый вопрос");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
-  await expect(picker).toHaveValue("chat-two");
-  await picker.selectOption("chat-one");
-  await expect(picker).toHaveValue("chat-one");
-  await picker.selectOption("");
-  await expect(picker).toHaveValue("");
+  await expect(picker).toContainText("Новый вопрос");
+  await picker.click();
+  await menu.getByRole("button", { name: "Расскажи об Иване" }).click();
+  await expect(picker).toContainText("Расскажи об Иване");
+  await picker.click();
+  await menu.getByRole("button", { name: "Новый диалог" }).click();
+  await expect(picker).toContainText("Новый диалог");
   await page.waitForTimeout(300);
-  await expect(picker).toHaveValue("");
-  await picker.selectOption("chat-one");
-  await expect(picker).toHaveValue("chat-one");
+  await expect(picker).toContainText("Новый диалог");
+  await picker.click();
+  await menu.getByRole("button", { name: "Расскажи об Иване" }).click();
+  await expect(picker).toContainText("Расскажи об Иване");
   await expect(panel.locator("article.is-user")).toHaveCount(1);
+});
+
+test("dialog history stays compact and searchable", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: Array.from({ length: 20 }, (_, index) => ({
+      id: `chat-${index}`, title: `Разговор ${index}`, updatedAt: "2026-09-25",
+    })) } }),
+  );
+  await page.route("**/api/ai/chats/chat-0", (route) =>
+    route.fulfill({ json: { messages: [] } }),
+  );
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  const picker = panel.getByRole("button", { name: "Выбрать диалог" });
+  await expect(picker).toContainText("Разговор 0");
+  await picker.click();
+  const menu = panel.locator(".research-chat-menu");
+  await expect(menu).toBeVisible();
+  const bounds = await menu.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.height).toBeLessThan(275);
+  await menu.getByRole("searchbox", { name: "Поиск диалога" }).fill("17");
+  await expect(menu.locator(".research-chat-menu-list button")).toHaveCount(2);
+  await expect(menu.getByRole("button", { name: "Разговор 17" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(picker).toBeFocused();
 });

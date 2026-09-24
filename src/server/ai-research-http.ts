@@ -421,9 +421,10 @@ export function humanizeResearchAnswer(
   people: Map<string, string>,
   photos: Map<string, string>,
 ) {
-  const labels = [...people, ...photos].sort(
-    ([left], [right]) => right.length - left.length,
-  );
+  const labels = [
+    ...[...people].map(([id, label]) => ({ id, label, kind: "person" })),
+    ...[...photos].map(([id, label]) => ({ id, label, kind: "photo" })),
+  ].sort((left, right) => right.id.length - left.id.length);
   return answer
     .split(/(\[\[(?:person|choose-person|photo):[^\]]+\]\]|```[\s\S]*?```)/g)
     .map((segment, index) => {
@@ -433,18 +434,37 @@ export function humanizeResearchAnswer(
         "",
       );
       text = text.replace(/\b(?:personId|photoId)\s*[:=]\s*[^\s,;]+/giu, "");
-      for (const [id, label] of labels)
+      text = text.replace(
+        /(?:фотографи[яюи]|снимок)\s+с\s+идентификатором\s+/giu,
+        "",
+      );
+      for (const { id, label, kind } of labels)
         if (id && text.includes(id))
           text = text.replaceAll(
             new RegExp(
               `(?<![\\p{L}\\p{N}_-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_-])`,
               "gu",
             ),
-            () => label,
+            () => (kind === "photo" ? `[[photo:${id}|${label}]]` : label),
           );
+      text = text.replace(/(?:фотография|снимок)\s+(?=\[\[photo:)/giu, "");
       return text;
     })
     .join("");
+}
+
+function markedPeopleLabel(count: number) {
+  const lastTwo = count % 100,
+    last = count % 10,
+    noun =
+      lastTwo >= 11 && lastTwo <= 14
+        ? "человек"
+        : last === 1
+          ? "человек"
+          : last >= 2 && last <= 4
+            ? "человека"
+            : "человек";
+  return `${count} ${noun}`;
 }
 
 function needsArchiveLookupRetry(request: string, answer: string) {
@@ -852,10 +872,22 @@ export function aiResearchHttp({
         family.people.map((person) => [person.id, fullName(person)]),
       ),
       photosById = new Map(
-        (family.photos || []).map((photo) => [
-          photo.id,
-          photo.title.trim() || `Фотография ${photo.id}`,
-        ]),
+        (family.photos || []).map((photo) => {
+          const title = photo.title.trim(),
+            details = [photo.takenAt || photo.year, photo.place]
+              .filter(Boolean)
+              .join(" · "),
+            peopleCount = new Set(photo.tags.map((tag) => tag.personId)).size,
+            peopleLabel = peopleCount
+              ? ` · ${markedPeopleLabel(peopleCount)}`
+              : "";
+          return [
+            photo.id,
+            title && !title.includes(photo.id)
+              ? title
+              : details || `Фотография${peopleLabel}`,
+          ];
+        }),
       ),
       referencedPeople = new Set<string>(),
       referencedPhotos = new Set<string>(),

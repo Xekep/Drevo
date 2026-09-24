@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
+  ChevronDown,
   Minus,
   Plus,
   RotateCcw,
@@ -670,6 +671,8 @@ export function ResearchAssistant({
     [chats, setChats] = useState<
       Array<{ id: string; title: string; updatedAt: string }>
     >([]),
+    [chatMenuOpen, setChatMenuOpen] = useState(false),
+    [chatSearch, setChatSearch] = useState(""),
     [chatLoading, setChatLoading] = useState(true),
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [busy, setBusy] = useState(false),
@@ -686,6 +689,8 @@ export function ResearchAssistant({
     ),
     [nudgeVisible, setNudgeVisible] = useState(false);
   const end = useRef<HTMLDivElement>(null),
+    chatPicker = useRef<HTMLDivElement>(null),
+    chatPickerTrigger = useRef<HTMLButtonElement>(null),
     panel = useRef<HTMLElement>(null),
     lastNudge = useRef(0),
     drag = useRef<{
@@ -712,6 +717,25 @@ export function ResearchAssistant({
     onOpenChange?.(open);
     return () => onOpenChange?.(false);
   }, [onOpenChange, open]);
+
+  useEffect(() => {
+    if (!chatMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!chatPicker.current?.contains(event.target as Node))
+        setChatMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setChatMenuOpen(false);
+      chatPickerTrigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [chatMenuOpen]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -750,17 +774,33 @@ export function ResearchAssistant({
   useEffect(() => {
     if (view !== "tree") return;
     let frame = 0;
+    let observedControls: HTMLElement | null = null;
     const observer = new ResizeObserver(() => update()),
+      mutations = new MutationObserver(() => update()),
       update = () => {
-        const controls = document.querySelector<HTMLElement>(
-          ".tree-canvas .flow-camera-tools, .tree-canvas .flow-fullscreen-tools",
-        );
-        if (!controls) return;
-        const rect = controls.getBoundingClientRect(),
-          next = {
-            left: Math.max(8, rect.left - 50),
-            top: Math.max(8, rect.bottom - 42),
-          };
+        const canvas = document.querySelector<HTMLElement>(".tree-canvas");
+        if (!canvas) return;
+        const controls = [
+          ...canvas.querySelectorAll<HTMLElement>(
+            ".flow-camera-tools, .flow-fullscreen-tools",
+          ),
+        ].find((item) => item.getBoundingClientRect().width > 0);
+        if (observedControls !== controls) {
+          if (observedControls) observer.unobserve(observedControls);
+          if (controls) observer.observe(controls);
+          observedControls = controls || null;
+        }
+        const rect = controls?.getBoundingClientRect(),
+          canvasRect = canvas.getBoundingClientRect(),
+          next = rect
+            ? {
+                left: Math.max(8, rect.left - 50),
+                top: Math.max(8, rect.bottom - 42),
+              }
+            : {
+                left: Math.max(8, canvasRect.right - 62),
+                top: Math.max(8, canvasRect.bottom - 62),
+              };
         setLauncherPosition((current) =>
           current?.left === next.left && current.top === next.top
             ? current
@@ -768,12 +808,11 @@ export function ResearchAssistant({
         );
       },
       attach = () => {
-        const controls = document.querySelector<HTMLElement>(
-            ".tree-canvas .flow-camera-tools, .tree-canvas .flow-fullscreen-tools",
-          ),
-          canvas = controls?.closest<HTMLElement>(".tree-canvas");
-        if (controls) observer.observe(controls);
-        if (canvas) observer.observe(canvas);
+        const canvas = document.querySelector<HTMLElement>(".tree-canvas");
+        if (canvas) {
+          observer.observe(canvas);
+          mutations.observe(canvas, { childList: true });
+        }
         update();
       };
     frame = requestAnimationFrame(attach);
@@ -784,6 +823,7 @@ export function ResearchAssistant({
       window.clearTimeout(retry);
       window.removeEventListener("resize", update);
       observer.disconnect();
+      mutations.disconnect();
     };
   }, [view]);
 
@@ -1035,6 +1075,8 @@ export function ResearchAssistant({
   }
 
   async function openChat(id: string) {
+    setChatMenuOpen(false);
+    setChatSearch("");
     if (busy || id === chatId) return;
     const selection = ++chatSelection.current;
     if (!id) {
@@ -1376,20 +1418,67 @@ export function ResearchAssistant({
             </div>
           </header>
           {chats.length > 0 && (
-            <select
-              className="research-chat-select"
-              aria-label="Выбрать диалог"
-              value={chatId}
-              disabled={busy}
-              onChange={(event) => void openChat(event.target.value)}
-            >
-              <option value="">Новый диалог</option>
-              {chats.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-            </select>
+            <div className="research-chat-picker" ref={chatPicker}>
+              <button
+                ref={chatPickerTrigger}
+                type="button"
+                className="research-chat-picker-trigger"
+                aria-label="Выбрать диалог"
+                aria-expanded={chatMenuOpen}
+                aria-controls="research-chat-menu"
+                disabled={busy}
+                onClick={() => setChatMenuOpen((value) => !value)}
+              >
+                <span>
+                  {chats.find((item) => item.id === chatId)?.title ||
+                    "Новый диалог"}
+                </span>
+                <ChevronDown size={16} aria-hidden="true" />
+              </button>
+              {chatMenuOpen && (
+                <div
+                  id="research-chat-menu"
+                  className="research-chat-menu"
+                  aria-label="Диалоги"
+                >
+                  {chats.length > 8 && (
+                    <input
+                      type="search"
+                      aria-label="Поиск диалога"
+                      placeholder="Найти диалог"
+                      value={chatSearch}
+                      onChange={(event) => setChatSearch(event.target.value)}
+                    />
+                  )}
+                  <div className="research-chat-menu-list">
+                    <button
+                      type="button"
+                      aria-current={!chatId ? "true" : undefined}
+                      onClick={() => void openChat("")}
+                    >
+                      Новый диалог
+                    </button>
+                    {chats
+                      .filter((item) =>
+                        item.title
+                          .toLocaleLowerCase("ru")
+                          .includes(chatSearch.trim().toLocaleLowerCase("ru")),
+                      )
+                      .map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          aria-current={item.id === chatId ? "true" : undefined}
+                          title={item.title}
+                          onClick={() => void openChat(item.id)}
+                        >
+                          {item.title}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           <div className="research-assistant-messages">
             {chatLoading && <p role="status">Загружаю историю…</p>}

@@ -226,6 +226,14 @@ function Canvas(props: Props) {
   }, [props.onIntroComplete]);
   const [layoutSettling, setLayoutSettling] = useState(false);
   const settledLayout = useRef("");
+  const settledNodes = useRef<Array<PersonNodeType | HouseholdNodeType>>([]);
+  const settledEdges = useRef<RelationshipEdgeType[]>([]);
+  const layoutTimer = useRef<number | null>(null);
+  const [layoutTransition, setLayoutTransition] = useState<{
+    enteringNodes: ReadonlySet<string>;
+    exitingNodes: Array<PersonNodeType | HouseholdNodeType>;
+    exitingEdges: RelationshipEdgeType[];
+  } | null>(null);
   const [extraVisible, setExtraVisible] = useState(true);
   const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
   const choiceClose = useRef<HTMLButtonElement>(null);
@@ -282,13 +290,23 @@ function Canvas(props: Props) {
       !initialCameraReady ||
       !introCameraFinished ||
       growing
-    ) return;
+    )
+      return;
     lastAssistantZoom.current = request.token;
     const duration = window.matchMedia("(prefers-reduced-motion: reduce)")
-      .matches ? 0 : 320;
+      .matches
+      ? 0
+      : 320;
     if (request.direction === "in") void flow.zoomIn({ duration });
     else void flow.zoomOut({ duration });
-  }, [flow, props.zoomRequest, ready, initialCameraReady, introCameraFinished, growing]);
+  }, [
+    flow,
+    props.zoomRequest,
+    ready,
+    initialCameraReady,
+    introCameraFinished,
+    growing,
+  ]);
   const spotlightNodes = useMemo(
     () =>
       geometry && focus?.purpose === "family" && focus.groupId
@@ -320,7 +338,8 @@ function Canvas(props: Props) {
         visible: renderVisible,
         selected,
         collapsed,
-        root: familyView.mode === "family" && !props.assistantFilter ? root : null,
+        root:
+          familyView.mode === "family" && !props.assistantFilter ? root : null,
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
@@ -358,12 +377,7 @@ function Canvas(props: Props) {
     maxGrowthDelay,
   } = nodeModel;
   useEffect(() => {
-    if (
-      !growing ||
-      !ready ||
-      !nodes.length ||
-      (!narrow && !growthStarted)
-    )
+    if (!growing || !ready || !nodes.length || (!narrow && !growthStarted))
       return;
     const timer = window.setTimeout(
       () => setGrowing(false),
@@ -437,18 +451,6 @@ function Canvas(props: Props) {
     flow,
     narrow,
   ]);
-  useLayoutEffect(() => {
-    if (!ready || !geometry) return;
-    const previous = settledLayout.current;
-    settledLayout.current = layoutKey;
-    if (!previous || previous === layoutKey) return;
-    setLayoutSettling(true);
-    const timer = window.setTimeout(
-      () => setLayoutSettling(false),
-      TREE_LAYOUT_TRANSITION_MS,
-    );
-    return () => window.clearTimeout(timer);
-  }, [geometry, layoutKey, ready]);
   const { rememberContext, resetContext, rememberViewport } =
     useTreeCameraState({
       flow,
@@ -543,6 +545,80 @@ function Canvas(props: Props) {
       onEdge,
       growthDelays,
     ],
+  );
+  useLayoutEffect(() => {
+    if (!ready || !geometry) return;
+    const previous = settledLayout.current;
+    const oldNodes = settledNodes.current;
+    const oldEdges = settledEdges.current;
+    settledLayout.current = layoutKey;
+    settledNodes.current = displayNodes;
+    settledEdges.current = displayEdges;
+    if (!previous || previous === layoutKey) return;
+    const nodeIds = new Set(displayNodes.map((node) => node.id));
+    const edgeIds = new Set(displayEdges.map((edge) => edge.id));
+    const previousIds = new Set(oldNodes.map((node) => node.id));
+    setLayoutTransition({
+      enteringNodes: new Set(
+        displayNodes
+          .filter((node) => !previousIds.has(node.id))
+          .map((node) => node.id),
+      ),
+      exitingNodes: oldNodes.filter((node) => !nodeIds.has(node.id)),
+      exitingEdges: oldEdges.filter((edge) => !edgeIds.has(edge.id)),
+    });
+    setLayoutSettling(true);
+    if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+    layoutTimer.current = window.setTimeout(() => {
+      setLayoutTransition(null);
+      setLayoutSettling(false);
+      layoutTimer.current = null;
+    }, TREE_LAYOUT_TRANSITION_MS);
+  }, [geometry, layoutKey, ready, displayNodes, displayEdges]);
+  useEffect(
+    () => () => {
+      if (layoutTimer.current !== null)
+        window.clearTimeout(layoutTimer.current);
+    },
+    [],
+  );
+  const renderedNodes = useMemo(
+    () =>
+      layoutTransition
+        ? [
+            ...displayNodes.map((node) =>
+              layoutTransition.enteringNodes.has(node.id)
+                ? {
+                    ...node,
+                    className: `${node.className || ""} tree-enter-node`,
+                  }
+                : node,
+            ),
+            ...layoutTransition.exitingNodes.map((node) => ({
+              ...node,
+              className: `${node.className || ""} tree-exit-node`,
+              style: { ...node.style, pointerEvents: "none" as const },
+              selectable: false,
+              focusable: false,
+            })),
+          ]
+        : displayNodes,
+    [displayNodes, layoutTransition],
+  );
+  const renderedEdges = useMemo(
+    () =>
+      layoutTransition
+        ? [
+            ...displayEdges,
+            ...layoutTransition.exitingEdges.map((edge) => ({
+              ...edge,
+              className: `${edge.className || ""} tree-exit-edge`,
+              selectable: false,
+              focusable: false,
+            })),
+          ]
+        : displayEdges,
+    [displayEdges, layoutTransition],
   );
   useEffect(() => {
     if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
@@ -645,22 +721,36 @@ function Canvas(props: Props) {
           {props.assistantFilter && (
             <div className="tree-family-tools" role="status">
               <span className="tree-family-count">
-                {props.assistantFilter.label}: {visible.size} из {family.people.length}
+                {props.assistantFilter.label}: {visible.size} из{" "}
+                {family.people.length}
               </span>
-              <button type="button" onClick={() => {
+              <button
+                type="button"
+                onClick={() => {
                 props.onClearAssistantFilter?.();
                 familyView.showAll();
-              }}>Всё древо</button>
+                }}
+              >
+                Всё древо
+              </button>
             </div>
           )}
-          {family.people.length > 0 && !props.restricted && !props.assistantFilter && (
+          {family.people.length > 0 &&
+            !props.restricted &&
+            !props.assistantFilter && (
             <FamilyViewTools
               onShare={
                 root && props.onShare
                   ? () => props.onShare!(root, [...visible])
                   : undefined
               }
-              anchor={activeFanAnchor ? peopleMap.get(activeFanAnchor) : root ? peopleMap.get(root) : undefined}
+                anchor={
+                  activeFanAnchor
+                    ? peopleMap.get(activeFanAnchor)
+                    : root
+                      ? peopleMap.get(root)
+                      : undefined
+                }
               selected={peopleMap.get(selected[0])}
               count={visible.size}
               total={family.people.length}
@@ -693,8 +783,7 @@ function Canvas(props: Props) {
                   returnToPerson(target);
                   return;
                 }
-                const next =
-                  selected[0] || root || familyView.defaultAnchor;
+                  const next = selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
                 const element = container.current;
                 const morph = element
@@ -736,8 +825,8 @@ function Canvas(props: Props) {
         ) : (
           <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           proOptions={{ hideAttribution: true }}
-          nodes={displayNodes}
-          edges={displayEdges}
+            nodes={renderedNodes}
+            edges={renderedEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
@@ -758,7 +847,8 @@ function Canvas(props: Props) {
             if (!box || !point) return;
             const handle = state.fromHandle?.id;
             setCreateAt({
-              id: occurrencePeople.get(state.fromNode.id) || state.fromNode.id,
+                id:
+                  occurrencePeople.get(state.fromNode.id) || state.fromNode.id,
               type: relativeAtHandle(handle, reverse),
               x: Math.max(
                 10,
@@ -789,7 +879,8 @@ function Canvas(props: Props) {
               const last = lastPaneTap.current;
               if (
                 now - last.time < 350 &&
-                Math.hypot(event.clientX - last.x, event.clientY - last.y) < 30
+                  Math.hypot(event.clientX - last.x, event.clientY - last.y) <
+                    30
               ) {
                 screen.exit();
                 lastPaneTap.current = { time: 0, x: 0, y: 0 };
@@ -878,9 +969,9 @@ function Canvas(props: Props) {
           onClose={() => setCreateAt(null)}
         />
         )}
-        {!activeFanAnchor && mode === "timeline" && geometry?.mode === "timeline" && (
-          <EraOverlay geometry={geometry} />
-        )}
+        {!activeFanAnchor &&
+          mode === "timeline" &&
+          geometry?.mode === "timeline" && <EraOverlay geometry={geometry} />}
         {!activeFanAnchor && problem && (
           <div className="tree-notice" role="alert">
             {problem}

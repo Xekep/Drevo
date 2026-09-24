@@ -23,7 +23,7 @@ function cssMilliseconds(value: string) {
   return Number.parseFloat(value);
 }
 
-test("tree growth follows birth dates and continues each ready family branch", () => {
+test("tree growth follows birth dates and finishes a generation before its descendants", () => {
   const people = [
     person("root", "1940-01-01"),
     person("older", "1965-01-01", ["root"], ["spouse"]),
@@ -62,8 +62,41 @@ test("tree growth follows birth dates and continues each ready family branch", (
       delays,
     )["--tree-growth-delay"],
   );
-  assert.equal(grandchildLine, delays.get("spouse")! + delays.nodeMs);
-  assert.ok(grandchildLine < parentGenerationReady);
+  assert.equal(grandchildLine, parentGenerationReady);
+  assert.equal(delays.get("grandchild"), grandchildLine + delays.edgeMs);
+});
+
+test("independent branches share a generation-wide arrow phase", () => {
+  const delays = treeGrowthDelays([
+    person("root-a", "1900"),
+    person("root-b", "1910"),
+    person("child-a", "1930", ["root-a"]),
+    person("child-b", "1940", ["root-b"]),
+    person("grandchild", "1960", ["child-a"]),
+  ]);
+  const lineA = cssMilliseconds(
+    treeConnectionGrowthStyle(
+      { from: "root-a", to: "child-a", type: "parent" },
+      delays,
+    )["--tree-growth-delay"],
+  );
+  const lineB = cssMilliseconds(
+    treeConnectionGrowthStyle(
+      { from: "root-b", to: "child-b", type: "parent" },
+      delays,
+    )["--tree-growth-delay"],
+  );
+  assert.equal(lineA, lineB);
+  assert.equal(lineA, delays.get("root-b")! + delays.nodeMs);
+  assert.equal(delays.get("child-a"), lineA + delays.edgeMs);
+  assert.ok(delays.get("child-b")! >= delays.get("child-a")!);
+  const grandchildLine = cssMilliseconds(
+    treeConnectionGrowthStyle(
+      { from: "child-a", to: "grandchild", type: "parent" },
+      delays,
+    )["--tree-growth-delay"],
+  );
+  assert.equal(grandchildLine, delays.get("child-b")! + delays.nodeMs);
   assert.equal(delays.get("grandchild"), grandchildLine + delays.edgeMs);
 });
 

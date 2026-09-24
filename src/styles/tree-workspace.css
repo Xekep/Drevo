@@ -494,6 +494,22 @@
 .tree-canvas.is-layout-settling .react-flow__edge {
   animation: tree-edge-settle 440ms ease-out both;
 }
+.tree-canvas .react-flow__node.tree-enter-node {
+  animation: tree-layout-enter 440ms ease-out both;
+}
+.tree-canvas .react-flow__node.tree-exit-node,
+.tree-canvas .react-flow__edge.tree-exit-edge {
+  pointer-events: none;
+  animation: tree-layout-exit 440ms ease-in both;
+}
+@keyframes tree-layout-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes tree-layout-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 @keyframes tree-branch-reveal {
   to {
     opacity: 1;
@@ -543,7 +559,7 @@
 }
 @keyframes tree-card-grow {
   from {
-    transform: translateY(14px) scale(0.82, 0.35);
+    transform: translateY(8px);
   }
   to {
     transform: none;
@@ -1077,6 +1093,11 @@
   }
   .tree-canvas.is-growing .tree-grow-edge .tree-edge-growth-path {
     display: none;
+  }
+  .tree-canvas .react-flow__node.tree-enter-node,
+  .tree-canvas .react-flow__node.tree-exit-node,
+  .tree-canvas .react-flow__edge.tree-exit-edge {
+    animation: none;
   }
 }
 .tree-canvas .react-flow__attribution {
