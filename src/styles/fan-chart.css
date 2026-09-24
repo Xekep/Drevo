@@ -134,3 +134,52 @@
     animation: none;
   }
 }
+
+.fan-morph-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fan-morph-card {
+  position: absolute;
+  z-index: 1;
+  transform-origin: center;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+.fan-morph-card > .flow-person-content {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  box-shadow: 0 8px 26px #304b2c24;
+}
+.tree-canvas.is-fan-morphing .fan-chart-svg {
+  animation: fan-chart-assemble 470ms cubic-bezier(0.2, 0.76, 0.22, 1) both;
+}
+@keyframes fan-chart-assemble {
+  0% {
+    opacity: 0.04;
+    transform: translateY(14px) scale(0.955);
+    filter: blur(1.5px);
+  }
+  42% {
+    opacity: 0.32;
+    transform: translateY(7px) scale(0.98);
+    filter: blur(0.6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fan-morph-overlay {
+    display: none;
+  }
+  .tree-canvas.is-fan-morphing .fan-chart-svg {
+    animation: none;
+  }
+}
