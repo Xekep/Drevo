@@ -26,14 +26,11 @@ export function TreeCameraTools({ selected }: { selected: string[] }) {
         title="К выбранному человеку"
         aria-label="К выбранному человеку"
         onClick={() => {
-          const reducedMotion = window.matchMedia(
-            "(prefers-reduced-motion: reduce)",
-          ).matches;
           void flow.fitView({
             nodes: selected.map((id) => ({ id })),
             maxZoom: 1,
             padding: 0.4,
-            duration: reducedMotion ? 0 : 480,
+            duration: 480,
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
         }}
