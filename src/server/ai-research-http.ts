@@ -113,7 +113,54 @@ type ResearchMetrics = {
   providerCalls: number;
   inputTokens: number;
   outputTokens: number;
+  models: Map<
+    string,
+    {
+      providerCalls: number;
+      inputTokens: number;
+      outputTokens: number;
+    }
+  >;
 };
+
+function recordModelCall(metrics: ResearchMetrics, model: string) {
+  metrics.providerCalls++;
+  const current = metrics.models.get(model) || {
+    providerCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  };
+  current.providerCalls++;
+  metrics.models.set(model, current);
+}
+
+function recordModelTokens(
+  metrics: ResearchMetrics,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+) {
+  metrics.inputTokens += inputTokens;
+  metrics.outputTokens += outputTokens;
+  const current = metrics.models.get(model) || {
+    providerCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  };
+  current.inputTokens += inputTokens;
+  current.outputTokens += outputTokens;
+  metrics.models.set(model, current);
+}
+
+function modelUsage(metrics: ResearchMetrics) {
+  return [...metrics.models].map(([model, usage]) => ({
+    model,
+    providerCalls: usage.providerCalls,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.inputTokens + usage.outputTokens,
+  }));
+}
 
 type ResearchResult = {
   answer: string;
@@ -662,9 +709,10 @@ export function aiResearchHttp({
     question: string,
     dataUrl: string,
     runtime: ReturnType<typeof aiRuntimeConfig>,
+    modelUri: string,
   ) {
     const body = {
-        model: await visionModelUri(runtime),
+        model: modelUri,
         messages: [
           {
             role: "user",
@@ -1017,13 +1065,17 @@ export function aiResearchHttp({
     onStatus("Обрабатываю запрос…");
 
     for (let round = 0; round < 12; round++) {
-      metrics.providerCalls++;
+      recordModelCall(metrics, runtime.modelUri);
       const completion = stream
           ? await completeStream(messages, canPropose, runtime, signal)
           : await complete(messages, canPropose, runtime),
         answer = completion.message;
-      metrics.inputTokens += completion.inputTokens;
-      metrics.outputTokens += completion.outputTokens;
+      recordModelTokens(
+        metrics,
+        runtime.modelUri,
+        completion.inputTokens,
+        completion.outputTokens,
+      );
       if (
         !answer.tool_calls?.length &&
         typeof answer.content === "string" &&
@@ -1226,15 +1278,21 @@ export function aiResearchHttp({
               { path: source.path, cacheKey: source.name },
               "ai",
             );
-            metrics.providerCalls++;
+            const visionModel = await visionModelUri(runtime);
+            recordModelCall(metrics, visionModel);
             const visual = await analyzeImage(
               question,
               `data:image/jpeg;base64,${bytes.toString("base64")}`,
               runtime,
+              visionModel,
             );
             analyzedPhotos++;
-            metrics.inputTokens += visual.inputTokens;
-            metrics.outputTokens += visual.outputTokens;
+            recordModelTokens(
+              metrics,
+              visionModel,
+              visual.inputTokens,
+              visual.outputTokens,
+            );
             result = {
               ...executeResearchTool(family, "get_photo", { photoId }),
               visualAnalysis: visual.content,
@@ -1452,6 +1510,7 @@ export function aiResearchHttp({
         providerCalls: 0,
         inputTokens: 0,
         outputTokens: 0,
+        models: new Map(),
       },
       controller = new AbortController();
     if (stream)
@@ -1490,6 +1549,7 @@ export function aiResearchHttp({
         providerCalls: metrics.providerCalls,
         inputTokens: metrics.inputTokens,
         outputTokens: metrics.outputTokens,
+        models: modelUsage(metrics),
       });
 
       if (stream) {
@@ -1510,6 +1570,7 @@ export function aiResearchHttp({
         providerCalls: metrics.providerCalls,
         inputTokens: metrics.inputTokens,
         outputTokens: metrics.outputTokens,
+        models: modelUsage(metrics),
       });
       if (stream) {
         sse(res, "error", {
