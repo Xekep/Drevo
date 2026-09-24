@@ -146,6 +146,24 @@ test("веер послойно раскрывается даже без зах�
   await expect(outerLayer).toHaveCSS("opacity", "1");
 });
 
+test("веер увеличивается на 2K экране", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Веер" }).click();
+  const fan = page.locator(".fan-chart-svg");
+  await expect(fan).toBeVisible();
+  await expect
+    .poll(async () => (await fan.boundingBox())?.width || 0)
+    .toBeGreaterThan(1450);
+});
+
 test("выход из специальных режимов возвращает опорного человека в центр", async ({
   page,
 }, testInfo) => {
@@ -1304,6 +1322,8 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   const viewport = page.locator(".react-flow__viewport");
   const transform = await viewport.getAttribute("style");
+  await page.waitForTimeout(120);
+  await expect(viewport).toHaveAttribute("style", transform!);
   const firstCard = await page
     .locator(".flow-person-content")
     .first()
@@ -1464,6 +1484,41 @@ test("the initial tree grows from roots toward descendants", async ({
     "animation-name",
     "tree-edge-label-reveal",
   );
+});
+
+test("переход к выбранному человеку остаётся плавным", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+
+  const person = page.getByTestId("rf__node-e2e-child");
+  await person.locator(".flow-person-content").click();
+
+  const pane = page.locator(".react-flow__pane"),
+    box = await pane.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width * 0.65, box!.y + box!.height * 0.65);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.25, box!.y + box!.height * 0.25, {
+    steps: 4,
+  });
+  await page.mouse.up();
+
+  const viewport = page.locator(".react-flow__viewport"),
+    before = await viewport.getAttribute("style");
+  await page.getByRole("button", { name: "К выбранному человеку" }).click();
+  await page.waitForTimeout(90);
+  const middle = await viewport.getAttribute("style");
+  await page.waitForTimeout(520);
+  const after = await viewport.getAttribute("style");
+
+  expect(middle).not.toBe(before);
+  expect(middle).not.toBe(after);
+  expect(after).not.toBe(before);
 });
 
 test("collapsing descendants moves the remaining cards smoothly", async ({
