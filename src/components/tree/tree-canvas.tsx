@@ -211,6 +211,7 @@ function Canvas(props: Props) {
     };
   }, [activeFanAnchor, fanMorphing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
+  const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
   const [growthStarted, setGrowthStarted] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -482,6 +483,7 @@ function Canvas(props: Props) {
       context,
       root,
       onInitialViewReady: markInitialCameraReady,
+      manualCameraOverride,
       expanded: familyView.expanded,
       collapsed,
     });
@@ -496,8 +498,8 @@ function Canvas(props: Props) {
     () => ({
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
-        if (!introCameraFinished || focus)
-          void flow.setViewport(flow.getViewport(), { duration: 0 });
+        setManualCameraOverride(true);
+        void flow.setViewport(flow.getViewport(), { duration: 0 });
         if (!introCameraFinished) setIntroCameraFinished(true);
         onChoose(id, additive);
       },
@@ -520,7 +522,6 @@ function Canvas(props: Props) {
       personOccurrences,
       flow,
       introCameraFinished,
-      focus,
     ],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);

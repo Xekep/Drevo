@@ -54,6 +54,7 @@ type TreeCameraStateInput = {
   context: string;
   root: string | null;
   onInitialViewReady?: () => void;
+  manualCameraOverride: boolean;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
 };
@@ -87,6 +88,7 @@ export function useTreeCameraState({
   context,
   root,
   onInitialViewReady,
+  manualCameraOverride,
   expanded,
   collapsed,
 }: TreeCameraStateInput) {
@@ -131,6 +133,13 @@ export function useTreeCameraState({
     const timer = setTimeout(
       () => {
         let viewportUpdate: unknown;
+        if (manualCameraOverride && !initialViewSent.current) {
+          initialViewSent.current = true;
+          previousContext.current = context;
+          previousReverse.current = reverse;
+          onInitialViewReady?.();
+          return;
+        }
         const changedContext = previousContext.current !== context;
         const motionEnabled = !window.matchMedia(
           "(prefers-reduced-motion: reduce)",
@@ -272,6 +281,7 @@ export function useTreeCameraState({
     mode,
     reverse,
     onInitialViewReady,
+    manualCameraOverride,
     focus,
     returnPersonId,
     returnToken,

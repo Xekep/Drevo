@@ -204,6 +204,7 @@ test("opening a card after a profile link does not restore its old focus", async
         : Infinity;
     })
     .toBeLessThan(20);
+  await page.waitForTimeout(750);
   const viewport = page.locator(".react-flow__viewport");
   const before = await viewport.getAttribute("style");
   const other = page.getByTestId("rf__node-e2e-spouse");
@@ -226,15 +227,21 @@ test("clicking a card during the personal camera move cancels that move", async 
   });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).toHaveClass(/is-growing/, { timeout: 5_000 });
   const viewport = page.locator(".react-flow__viewport");
-  await expect
-    .poll(async () => {
-      const first = await viewport.getAttribute("style");
-      await page.waitForTimeout(50);
-      return first !== (await viewport.getAttribute("style"));
-    })
-    .toBe(true);
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector(".tree-canvas");
+    const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+    if (!canvas || !viewport) return false;
+    const state = window as typeof window & { __cameraSample?: string };
+    const current = viewport.style.transform;
+    const moving =
+      !canvas.classList.contains("is-growing") &&
+      state.__cameraSample !== undefined &&
+      state.__cameraSample !== current;
+    state.__cameraSample = current;
+    return moving;
+  }, null, { timeout: 10_000, polling: "raf" });
   await page
     .getByTestId("rf__node-e2e-spouse")
     .locator(".flow-person-content")
