@@ -68,11 +68,11 @@ export function FamilyViewTools({
             Общие предки
           </button>
         )}
-        {(selected || anchor) && (
+        {!fanActive && (selected || anchor) && (
           <button
             type="button"
             onClick={onFan}
-            aria-pressed={fanActive}
+            aria-pressed={false}
             title={`Веер предков: ${fullName(selected || anchor!)}`}
           >
             Веер
