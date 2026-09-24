@@ -1208,6 +1208,10 @@ export function aiResearchHttp({
           /(?:таблиц|сводк)/iu.test(message) && (verifiedSurname || surnameFromMessage)
             ? surnameGroup(family, verifiedSurname || surnameFromMessage)
             : null;
+        if (!verifiedMermaid && (tableGroup?.people.length || /(?:схем|граф)/iu.test(message))) {
+          const group = tableGroup || (surnameFromMessage ? surnameGroup(family, surnameFromMessage) : null);
+          if (group?.people.length) verifiedMermaid = group.mermaid;
+        }
         if (tableGroup?.people.length)
           for (const person of tableGroup.people) referencedPeople.add(person.id);
         const references: AnswerReference[] = [
