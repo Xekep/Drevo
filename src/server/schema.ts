@@ -386,14 +386,6 @@ function migrate(db: DatabaseSync, target: number) {
           ADD COLUMN source_tag_id TEXT REFERENCES photo_tags(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS face_descriptors_source_tag
           ON face_descriptors(source_tag_id);
-        CREATE TRIGGER IF NOT EXISTS face_descriptor_tag_update
-        AFTER UPDATE OF person_id, photo_id ON photo_tags
-        BEGIN
-          UPDATE face_descriptors
-             SET person_id=NEW.person_id,
-                 source_photo_id=NEW.photo_id
-           WHERE source_tag_id=NEW.id;
-        END;
       `);
       return;
     }
@@ -443,14 +435,6 @@ function migrate(db: DatabaseSync, target: number) {
       ALTER TABLE face_descriptors_v14 RENAME TO face_descriptors;
       CREATE INDEX face_descriptors_person ON face_descriptors(person_id);
       CREATE INDEX face_descriptors_source_tag ON face_descriptors(source_tag_id);
-      CREATE TRIGGER face_descriptor_tag_update
-      AFTER UPDATE OF person_id, photo_id ON photo_tags
-      BEGIN
-        UPDATE face_descriptors
-           SET person_id=NEW.person_id,
-               source_photo_id=NEW.photo_id
-         WHERE source_tag_id=NEW.id;
-      END;
     `);
     return;
   }
@@ -515,6 +499,22 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     db.exec(
       "CREATE INDEX IF NOT EXISTS photo_tags_photo ON photo_tags(photo_id)",
     );
+  if (
+    tableHasColumn(db, "face_descriptors", "source_tag_id") &&
+    tableHasColumn(db, "face_descriptors", "source_photo_id")
+  )
+    db.exec(`
+      DROP TRIGGER IF EXISTS face_descriptor_tag_person_update;
+      DROP TRIGGER IF EXISTS face_descriptor_tag_update;
+      CREATE TRIGGER face_descriptor_tag_update
+      AFTER UPDATE OF person_id, photo_id ON photo_tags
+      BEGIN
+        UPDATE face_descriptors
+           SET person_id=NEW.person_id,
+               source_photo_id=NEW.photo_id
+         WHERE source_tag_id=NEW.id;
+      END;
+    `);
   const workflowExtension = "2026-09-persistent-workflow-stages";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(workflowExtension)
