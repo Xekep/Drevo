@@ -129,7 +129,6 @@ export default function App() {
     [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
-    if (requestedView !== "tree" && view !== "tree") return;
     const preventPageZoom = (event: WheelEvent) => {
       if (event.ctrlKey) event.preventDefault();
     };
@@ -138,7 +137,7 @@ export default function App() {
       passive: false,
     });
     return () => window.removeEventListener("wheel", preventPageZoom, true);
-  }, [requestedView, view]);
+  }, []);
   const finishEntry = useCallback(() => {
     clearEntrySequence();
     setEntryPending(false);

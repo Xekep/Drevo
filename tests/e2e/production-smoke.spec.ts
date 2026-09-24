@@ -90,6 +90,28 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await expect(fan).toHaveCSS("animation-name", "fan-chart-enter");
 });
 
+test("Ctrl+колесо не меняет масштаб страницы вне дерева", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  for (const path of ["/people", "/insights"]) {
+    await page.goto(path);
+    await expect(
+      page.getByRole("navigation", { name: "Разделы архива" }),
+    ).toBeVisible();
+    const blocked = await page.evaluate(() => {
+      const event = new WheelEvent("wheel", {
+        ctrlKey: true,
+        deltaY: -100,
+        bubbles: true,
+        cancelable: true,
+      });
+      return !window.dispatchEvent(event);
+    });
+    expect(blocked).toBe(true);
+  }
+});
+
 test("действия карточки человека остаются в одном ряду", async ({
   page,
 }, testInfo) => {
