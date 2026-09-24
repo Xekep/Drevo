@@ -41,6 +41,7 @@ test("fresh SQLite archive gets current schema version", () => {
     assert.ok(columns(db, "ai_settings").includes("folder_id"));
     assert.ok(columns(db, "mcp_tokens").includes("rate_limit_per_minute"));
     assert.ok(columns(db, "mcp_tokens").includes("bound_user_id"));
+    assert.ok(columns(db, "face_descriptors").includes("source_tag_id"));
     const tables = tableNames(db);
     for (const table of [
       "archive",
