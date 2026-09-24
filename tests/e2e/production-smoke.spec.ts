@@ -1563,27 +1563,38 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
     child.boundingBox(),
     sibling.boundingBox(),
   ]);
+  await canvas.evaluate((element) => {
+    const observed = window as typeof window & {
+      treeLayoutSettled?: boolean;
+      treeCardMoved?: boolean;
+    };
+    observed.treeLayoutSettled = false;
+    observed.treeCardMoved = false;
+    new MutationObserver(() => {
+      if (element.classList.contains("is-layout-settling"))
+        observed.treeLayoutSettled = true;
+    }).observe(element, { attributes: true, attributeFilter: ["class"] });
+    element.addEventListener("transitionrun", (event) => {
+      if (
+        event instanceof TransitionEvent &&
+        event.propertyName === "transform" &&
+        event.target instanceof Element &&
+        event.target.matches(
+          "[data-testid='rf__node-e2e-child'], [data-testid='rf__node-e2e-sibling']",
+        )
+      ) observed.treeCardMoved = true;
+    });
+  });
   await child.getByRole("button", { name: "Свернуть потомков" }).click();
 
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
-  await expect(canvas).toHaveClass(/is-layout-settling/);
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & { treeLayoutSettled?: boolean }
+  ).treeLayoutSettled)).toBe(true);
   await expect(child).toHaveCSS("transition-duration", "0.44s");
-  const hasTransformTransition = await page
-    .locator(
-      "[data-testid='rf__node-e2e-child'], [data-testid='rf__node-e2e-sibling']",
-    )
-    .evaluateAll((nodes) =>
-      nodes.some((node) =>
-        node
-          .getAnimations()
-          .some(
-            (animation) =>
-              animation instanceof CSSTransition &&
-              animation.transitionProperty === "transform",
-          ),
-      ),
-    );
-  expect(hasTransformTransition).toBe(true);
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & { treeCardMoved?: boolean }
+  ).treeCardMoved)).toBe(true);
 
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 1_000,
