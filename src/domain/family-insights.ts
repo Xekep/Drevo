@@ -430,8 +430,8 @@ export function analyzeFamilyInsights(
           ? "Нет данных"
           : `≈ ${average.toLocaleString("ru-RU")} ${Number.isInteger(average) ? plural(average, "год", "года", "лет") : "года"}`,
       detail: ages.length
-        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти, проживших 18 лет и более`
-        : "Нет записей с известными годами рождения и смерти среди проживших 18 лет и более",
+        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти`
+        : "Нет записей с известными годами рождения и смерти",
     });
   }
 
