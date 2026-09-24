@@ -164,6 +164,33 @@ test("веер увеличивается на 2K экране", async ({ page }
     .toBeGreaterThan(1450);
 });
 
+test("активный веер перестраивается при переходе к родственнику из карточки", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Веер" }).click();
+
+  const fan = page.locator(".fan-chart");
+  await expect(fan).toBeVisible();
+  await expect(canvas).not.toHaveClass(/is-fan-morphing/, { timeout: 2_500 });
+  const before = await fan.getAttribute("aria-label");
+
+  await page.locator(".inspector-dock .relatives button").first().click();
+
+  await expect(page.locator(".fan-chart-svg")).toBeVisible();
+  await expect
+    .poll(() => fan.getAttribute("aria-label"))
+    .not.toBe(before);
+});
+
 test("выход из специальных режимов возвращает опорного человека в центр", async ({
   page,
 }, testInfo) => {
