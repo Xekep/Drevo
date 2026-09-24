@@ -93,6 +93,7 @@ export function parseYandexResponse(response: RawResponse) {
 
 export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
   const compactionUnavailable = new Set<string>();
+  const objectCompactionModels = new Set<string>();
   function headers(apiKey: string, folderId: string) {
     return {
       Authorization: `Api-Key ${apiKey}`,
@@ -198,6 +199,10 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       let compactionAvailable =
         options.compactThreshold !== null &&
         !compactionUnavailable.has(compactionKey);
+      const compaction = {
+        type: "compaction",
+        compact_threshold: options.compactThreshold,
+      };
       const input =
         typeof options.input === "string"
           ? options.input
@@ -230,55 +235,74 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
         tool_choice: "auto",
         temperature: 0.2,
         truncation: options.automaticTruncation ? "auto" : "disabled",
-        ...(!compactionAvailable
-          ? {}
-          : {
-              context_management: {
-                type: "compaction",
-                compact_threshold: options.compactThreshold,
-              },
-            }),
         ...(options.stream ? { stream: true } : {}),
       };
-      let response: Response;
-      try {
-        response = await request(
-          runtime.baseUrl,
-          "/responses",
-          "POST",
-          runtime.apiKey,
-          runtime.folderId,
-          body,
-          options.signal,
-        );
-      } catch (error) {
-        if (
-          !compactionAvailable ||
-          !(error instanceof YandexResponseError) ||
-          error.status !== 400
-        )
-          throw error;
-        response = await request(
-          runtime.baseUrl,
-          "/responses",
-          "POST",
-          runtime.apiKey,
-          runtime.folderId,
-          { ...body, context_management: undefined },
-          options.signal,
-        );
-        compactionUnavailable.add(compactionKey);
-        compactionAvailable = false;
-        console.warn(
-          JSON.stringify({
-            event: "ai.compaction_unavailable",
-            model: runtime.modelUri,
-            providerStatus: error.status,
-            providerErrorCode: error.code,
-            fallback: options.automaticTruncation ? "truncation_auto" : "none",
-          }),
-        );
+      const shapes = !compactionAvailable
+        ? (["none"] as const)
+        : objectCompactionModels.has(compactionKey)
+          ? (["object", "none"] as const)
+          : (["array", "object", "none"] as const);
+      let response: Response | undefined;
+      let rejection: YandexResponseError | undefined;
+      for (const shape of shapes) {
+        try {
+          response = await request(
+            runtime.baseUrl,
+            "/responses",
+            "POST",
+            runtime.apiKey,
+            runtime.folderId,
+            {
+              ...body,
+              ...(shape === "array"
+                ? { context_management: [compaction] }
+                : shape === "object"
+                  ? { context_management: compaction }
+                  : {}),
+            },
+            options.signal,
+          );
+          if (
+            shape === "object" &&
+            !objectCompactionModels.has(compactionKey)
+          ) {
+            objectCompactionModels.add(compactionKey);
+            console.warn(
+              JSON.stringify({
+                event: "ai.compaction_object_fallback",
+                model: runtime.modelUri,
+              }),
+            );
+          }
+          if (shape === "none" && compactionAvailable) {
+            compactionUnavailable.add(compactionKey);
+            objectCompactionModels.delete(compactionKey);
+            compactionAvailable = false;
+            console.warn(
+              JSON.stringify({
+                event: "ai.compaction_unavailable",
+                model: runtime.modelUri,
+                providerStatus: rejection?.status,
+                providerErrorCode: rejection?.code,
+                fallback: options.automaticTruncation
+                  ? "truncation_auto"
+                  : "none",
+              }),
+            );
+          }
+          break;
+        } catch (error) {
+          if (
+            shape === "none" ||
+            !(error instanceof YandexResponseError) ||
+            error.status !== 400
+          )
+            throw error;
+          rejection = error;
+        }
       }
+      if (!response)
+        throw rejection || new Error("Yandex AI Studio не ответила");
       if (!options.stream)
         return {
           ...parseYandexResponse((await response.json()) as RawResponse),
