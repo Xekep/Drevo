@@ -150,10 +150,21 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .entry-sequence,
-  .entry-sequence-lines path,
-  .entry-sequence-lines circle,
+  .entry-sequence {
+    animation: entry-sequence-out 1650ms ease-in both !important;
+  }
+  .entry-sequence-lines path {
+    animation: entry-sequence-draw 1100ms cubic-bezier(0.18, 0.65, 0.25, 1)
+      100ms forwards !important;
+  }
+  .entry-sequence-lines path:nth-child(2),
+  .entry-sequence-lines path:nth-child(4) {
+    animation-delay: 230ms !important;
+  }
+  .entry-sequence-lines circle {
+    animation: entry-sequence-points 500ms ease-out 670ms forwards !important;
+  }
   .entry-sequence-title {
-    animation: none;
+    animation: entry-sequence-title-in 950ms ease-out both !important;
   }
 }
