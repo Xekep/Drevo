@@ -1300,6 +1300,19 @@
   color: var(--ink);
   font-weight: 600;
 }
+.about-story .about-signature {
+  margin-top: 16px;
+  text-align: right;
+}
+.about-signature a {
+  color: #63794d;
+  text-decoration: none;
+  border-bottom: 1px solid #cbd7c0;
+}
+.about-signature a:hover {
+  color: #3e5f2e;
+  border-bottom-color: #8eaa7f;
+}
 .name-sex-hint {
   display: flex !important;
   align-items: center;

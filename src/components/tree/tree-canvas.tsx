@@ -55,6 +55,11 @@ import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
+import {
+  captureFanMorphSources,
+  runFanMorph,
+  type FanMorphSource,
+} from "./fan-morph";
 
 export type ConnectionDraft = {
   from: string;
@@ -144,11 +149,31 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
+  const [fanMorphing, setFanMorphing] = useState(false);
+  const fanMorphSources = useRef<FanMorphSource[]>([]);
   const activeFanAnchor =
     fanAnchor && family.people.some((person) => person.id === fanAnchor)
       ? fanAnchor
       : null;
   const [growing, setGrowing] = useState(true);
+  useEffect(() => {
+    if (!activeFanAnchor || !fanMorphing) return;
+    const element = container.current;
+    const sources = fanMorphSources.current;
+    if (!element || !sources.length) {
+      setFanMorphing(false);
+      return;
+    }
+    let active = true;
+    void runFanMorph(element, sources).finally(() => {
+      if (!active) return;
+      fanMorphSources.current = [];
+      setFanMorphing(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [activeFanAnchor, fanMorphing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const markInitialCameraReady = useCallback(
     () => setInitialCameraReady(true),
@@ -456,7 +481,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanMorphing ? "is-fan-morphing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
         aria-busy={growthActive}
@@ -523,16 +548,26 @@ function Canvas(props: Props) {
               }}
               onFan={() => {
                 if (activeFanAnchor) {
+                  fanMorphSources.current = [];
+                  setFanMorphing(false);
                   setFanAnchor(null);
                   return;
                 }
                 const next =
                   selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
+                const element = container.current;
+                const morph =
+                  element &&
+                  !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                    ? captureFanMorphSources(element, family, next)
+                    : [];
                 rememberContext();
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
+                fanMorphSources.current = morph;
+                setFanMorphing(morph.length > 0);
                 setFanAnchor(next);
               }}
               fanActive={!!activeFanAnchor}

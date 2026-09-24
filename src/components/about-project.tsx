@@ -81,6 +81,11 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
             </ul>
           </div>
         </details>
+        <p className="about-signature">
+          <a href="https://vk.ru/xekep" target="_blank" rel="noreferrer">
+            Евгений С.
+          </a>
+        </p>
         <button type="button" className="dialog-done" onClick={onClose}>
           Вернуться в архив
         </button>

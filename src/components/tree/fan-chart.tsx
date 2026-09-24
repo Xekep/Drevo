@@ -131,6 +131,7 @@ export function FanChart({
           return (
             <g
               key={`${slot.generation}:${slot.index}`}
+              data-fan-slot={`${slot.generation}:${slot.index}`}
               className={className}
               role={person ? "button" : undefined}
               tabIndex={person ? 0 : undefined}
