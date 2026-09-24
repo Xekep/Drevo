@@ -71,6 +71,72 @@ test("выбор человека записывается в адрес и во
   );
 });
 
+test("переход из снимка перестраивает открытый веер вокруг человека", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.totals.photos = 1;
+    await route.fulfill({ response, json: data });
+  });
+  await page.route(
+    "**/api/family?projection=page&collection=photos&**",
+    (route) => {
+      const token = new URL(route.request().url()).searchParams.get("token");
+      return route.fulfill({
+        json: {
+          pageToken: token,
+          total: 1,
+          items: [
+            {
+              id: "e2e-fan-photo",
+              url: "/media/e2e-fan-photo.png",
+              title: "Семейный снимок",
+              tags: [
+                {
+                  id: "e2e-fan-tag",
+                  personId: "e2e-memorial-person",
+                  x: 0.3,
+                  y: 0.2,
+                  width: 0.25,
+                  height: 0.4,
+                },
+              ],
+            },
+          ],
+        },
+      });
+    },
+  );
+  await page.route("**/media/e2e-fan-photo.png**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"/>',
+    }),
+  );
+
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Веер" }).click();
+  const fan = page.locator(".fan-chart");
+  await expect(fan).toHaveAttribute("aria-label", /Пётр/);
+
+  await page.locator(".archive-nav .nav-sections").getByRole("button", { name: "Фото" }).click();
+  await page.locator(".photo-tile").first().click();
+  await page.getByRole("button", { name: /Показать сведения:.*Иван/ }).click();
+  await page.getByRole("button", { name: "Показать в древе" }).click();
+
+  await expect(page).toHaveURL(/\/people\/e2e-memorial-person$/);
+  await expect(fan).toBeVisible();
+  await expect(fan).toHaveAttribute("aria-label", /Иван/);
+});
+
 test("ссылка на снимок открывает просмотр и закрывается без потери маршрута", async ({
   page,
 }, testInfo) => {
