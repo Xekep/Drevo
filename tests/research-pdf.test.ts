@@ -38,7 +38,7 @@ test("PDF draws a separate page from verified people and relationship edges", as
   assert.ok(bytes.length > 4000);
 });
 
-test("большая схема, круговая диаграмма и график помещаются в обычные страницы PDF", async () => {
+test("большая схема занимает один отдельный лист A4, диаграммы помещаются на A4", async () => {
   const nodes = Array.from({ length: 111 }, (_, index) => ({
     id: `p${index}`,
     name: `Чепчугов Человек ${index}`,
@@ -73,15 +73,13 @@ test("большая схема, круговая диаграмма и граф
   const source = bytes.toString("latin1"),
     pageCount = Number(/\/Count (\d+)/.exec(source)?.[1]),
     sizes = [...source.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)];
-  assert.ok(
-    pageCount > 4,
-    `ожидались обзор и листы с деталями, получено ${pageCount}`,
-  );
+  assert.equal(pageCount, 4, "текст, круговая диаграмма, график и схема");
   assert.equal(sizes.length, pageCount);
   for (const [, width, height] of sizes) {
-    assert.ok(
-      Number(width) <= 1191 && Number(height) <= 843,
-      `нестандартный огромный лист: ${width} × ${height}`,
+    assert.deepEqual(
+      [Number(width), Number(height)].sort((a, b) => a - b),
+      [595.28, 841.89],
+      `ожидался один лист A4: ${width} × ${height}`,
     );
   }
   assert.ok(bytes.length > 8000);
@@ -129,7 +127,7 @@ test("AI attaches a downloadable PDF only to an explicit PDF request", async () 
           }
         : {
             content:
-              "Готово, отчёт приложен. Ссылка: /api/ai/files/7449c409-8874-4739-8574-158fab22f458",
+              "Готово, отчёт приложен. Вы можете скачать файл по ссылке: ``",
           };
     return new Response(
       `data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`,

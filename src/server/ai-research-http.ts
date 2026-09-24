@@ -21,6 +21,10 @@ import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import { fetchAiStudioModels } from "./ai-models.ts";
 import { researchPdf, type ResearchGraph } from "./research-pdf.ts";
+import {
+  cleanPdfAnswer,
+  researchPdfFilename,
+} from "../domain/research-answer.ts";
 
 type ToolCall = {
   id: string;
@@ -139,7 +143,8 @@ const CREATE_PDF_TOOL = {
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
   | { type: "open_person"; personId: string }
-  | { type: "open_photo"; photoId: string };
+  | { type: "open_photo"; photoId: string }
+  | { type: "zoom_in" | "zoom_out" };
 
 const ANALYZE_PHOTO_TOOL = {
   name: "analyze_photo",
@@ -159,13 +164,19 @@ const ANALYZE_PHOTO_TOOL = {
 const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people плавно перемещает древо к одному человеку либо показывает и подсвечивает цепочку между несколькими людьми; action=open_person открывает карточку; action=open_photo открывает фотографию. Если просят переместить, провести, найти или показать человека на древе, после search_people обязательно вызови focus_people. Не вызывай инструмент только потому, что упомянул запись в ответе.",
+    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people перемещает древо к людям; zoom_in и zoom_out меняют текущий масштаб древа, если просят приблизить или отдалить; open_person открывает карточку; open_photo открывает фотографию. Для перемещения к названному человеку сначала вызови search_people. Не вызывай инструмент лишь из-за упоминания человека.",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
-        enum: ["focus_people", "open_person", "open_photo"],
+        enum: [
+          "focus_people",
+          "open_person",
+          "open_photo",
+          "zoom_in",
+          "zoom_out",
+        ],
       },
       personIds: {
         type: "array",
@@ -192,6 +203,27 @@ export function explicitViewControlRequest(message: string, view = "") {
         message,
       );
   return directInterfaceRequest || treeMovementRequest;
+}
+
+export function shortTreeZoomRequest(message: string, view: string) {
+  if (view !== "tree") return null;
+  const command = message
+    .trim()
+    .replace(/[.!?]+$/, "")
+    .trim();
+  if (
+    /^(?:(?:так|ну|давай|ты|ещ[её]|пожалуйста)\s+)*(?:приблизь|приблизи|увеличь)(?:\s+(?:ещ[её]|древо|дерево|пожалуйста))*$/iu.test(
+      command,
+    )
+  )
+    return "zoom_in" as const;
+  if (
+    /^(?:(?:так|ну|давай|ты|ещ[её]|пожалуйста)\s+)*(?:отдали|уменьши)(?:\s+(?:ещ[её]|древо|дерево|пожалуйста))*$/iu.test(
+      command,
+    )
+  )
+    return "zoom_out" as const;
+  return null;
 }
 
 export function recoverTextToolCalls(
@@ -876,7 +908,7 @@ export function aiResearchHttp({
         "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
-        "Если пользователь просит найти, показать, приблизить или переместить его к человеку на древе, сначала найди человека через search_people, затем обязательно вызови control_archive_view с action=focus_people и реальным personId. Для показа родственной цепочки передай в focus_people всех людей цепочки по порядку. action=open_person используй только когда пользователь просит открыть карточку.",
+        "Если пользователь просит найти, показать или переместить его к человеку на древе, сначала найди человека через search_people, затем вызови control_archive_view с action=focus_people. Для показа родственной цепочки передай всех людей по порядку. Если уже смотрит на нужную часть дерева и просит приблизить или отдалить, используй zoom_in или zoom_out. action=open_person используй только для открытия карточки.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
         "Никогда не печатай JSON-вызовы инструментов, даже в блоках кода или как план действий. Вызывай инструменты через tool_calls и только затем дай окончательный ответ. Не обещай «скоро вернуться»: обработай запрос в текущем ответе или честно сообщи, каких данных не хватает.",
@@ -888,9 +920,10 @@ export function aiResearchHttp({
         requesterPromptContext(user, family),
         requesterAccessContext(user, canPropose),
         "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
+        "Сначала выполни действие, затем коротко скажи, что изменилось. Не описывай внутренние проверки, не приписывай интерфейсу состояние, которого не видишь, и не добавляй стандартное «если хотите, могу...» после завершённого действия.",
         "Когда сравнение или распределение подтверждённых чисел будет понятнее на диаграмме, можешь добавить компактный Mermaid pie или xychart рядом с кратким объяснением. Не придумывай значения и не дублируй таблицу графиком без пользы. Для родственных связей показывай схему только по данным get_genealogy_graph.",
         "Если пользователь просит схему в чате, вызови get_genealogy_graph и вставь возвращённое поле mermaid в fenced-блок ```mermaid без изменений. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
-        "Если пользователь просит PDF, сначала собери необходимые сведения доступными инструментами, затем обязательно вызови create_pdf через tool_calls с заголовком и содержимым в Markdown. Передай в content все требуемые таблицы и диаграммы, используя fenced-блоки Mermaid graph/flowchart, pie или xychart; другие типы PDF пока не поддерживает. Для анализа архива сервер сам добавляет отдельную схему реальных связей. В обычном ответе кратко поясни содержимое файла; не печатай URL, ссылка на скачивание появится автоматически. Не обещай готовый файл, пока инструмент не вернул created: true.",
+        "Если пользователь просит PDF, собери сведения инструментами и вызови create_pdf через tool_calls. Передай подготовленный Markdown с нужными таблицами и Mermaid graph/flowchart, pie или xychart; остальные типы PDF пока не поддерживает. Схема архива занимает один отдельный лист A4. В ответе кратко поясни содержимое файла: не печатай URL, пустую ссылку, «скачать по ссылке» или название файла, ссылка появится в интерфейсе. Не обещай готовый файл до created: true.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
           : "",
@@ -970,6 +1003,16 @@ export function aiResearchHttp({
           files: [],
         };
     }
+
+    const zoom = shortTreeZoomRequest(message, view);
+    if (zoom)
+      return {
+        answer: zoom === "zoom_in" ? "Приблизил древо." : "Отдалил древо.",
+        references: [],
+        suggestionIds: [],
+        uiActions: [{ type: zoom }],
+        files: [],
+      };
 
     onStatus("Обрабатываю запрос…");
 
@@ -1092,16 +1135,17 @@ export function aiResearchHttp({
                 : typeof answer.content === "string" && answer.content.trim()
                   ? answer.content
                   : "Модель не сформировала текстовый ответ.";
-        const safeAnswer = containsInternalToolText(rawAnswer, allowedToolNames)
+        const preparedAnswer = files.length
+          ? cleanPdfAnswer(rawAnswer) || "PDF готов."
+          : rawAnswer;
+        const safeAnswer = containsInternalToolText(
+          preparedAnswer,
+          allowedToolNames,
+        )
           ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
           : humanizeResearchAnswer(
               repairArchiveMarkers(
-                files.length
-                  ? rawAnswer.replace(
-                      /(?:Скачать файл можно по ссылке:|Ссылка:)\s*(?=(?:\[[^\]]+\]\()?\s*(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/)|\[[^\]]+\]\((?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[a-f\d-]+\)|(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[a-f\d-]+/giu,
-                      "",
-                    )
-                  : rawAnswer,
+                preparedAnswer,
                 peopleById,
                 photosById,
                 referencedPeople,
@@ -1147,12 +1191,7 @@ export function aiResearchHttp({
                 graphInPdfRequested ? archiveGraph(family) : undefined,
               ),
               id = randomUUID(),
-              name = `${
-                title
-                  .replace(/[\\/:*?"<>|]/g, " ")
-                  .trim()
-                  .slice(0, 80) || "Исследование"
-              }.pdf`,
+              name = researchPdfFilename(title),
               url = `/api/ai/files/${id}`;
             for (const [key, item] of pdfFiles)
               if (item.expires < Date.now()) pdfFiles.delete(key);
@@ -1201,12 +1240,22 @@ export function aiResearchHttp({
               visualAnalysis: visual.content,
             };
           } else if (call.function.name === CONTROL_VIEW_TOOL.name) {
-            if (!viewControlRequested)
+            const zoomRequest = shortTreeZoomRequest(message, view);
+            if (!viewControlRequested && !zoomRequest)
               throw new Error(
                 "Пользователь явно не просил менять текущий экран",
               );
             const raw = toolArgs as Record<string, unknown>;
-            if (raw.action === "focus_people") {
+            if (raw.action === "zoom_in" || raw.action === "zoom_out") {
+              if (
+                view !== "tree" ||
+                !/(?:приблиз|увелич|отдал|уменьш)/iu.test(message)
+              )
+                throw new Error("Нужна явная просьба изменить масштаб древа");
+              const action: UiAction = { type: raw.action };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else if (raw.action === "focus_people") {
               const personIds = Array.isArray(raw.personIds)
                 ? raw.personIds.filter(
                     (id): id is string =>

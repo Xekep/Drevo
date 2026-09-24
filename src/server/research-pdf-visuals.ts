@@ -22,7 +22,7 @@ export type ResearchVisual =
     };
 
 const A4 = { width: 841.89, height: 595.28 },
-  A3 = { width: 1190.55, height: 841.89 },
+  portraitA4 = { width: A4.height, height: A4.width },
   margin = 38,
   palette = [
     "#486d57",
@@ -158,17 +158,17 @@ export function parseResearchMermaid(source: string): ResearchVisual {
 function visualPage(
   doc: PDFKit.PDFDocument,
   title: string,
-  format: "A4" | "A3" = "A4",
+  orientation: "landscape" | "portrait" = "landscape",
 ) {
-  const bounds = format === "A4" ? A4 : A3;
-  doc.addPage({ size: format, layout: "landscape", margin: 0 });
+  const bounds = orientation === "landscape" ? A4 : portraitA4;
+  doc.addPage({ size: "A4", layout: orientation, margin: 0 });
   doc
     .font("Drevo")
-    .fontSize(14)
+    .fontSize(13)
     .fillColor("#263e31")
-    .text(title, margin, 24, {
-      width: bounds.width - margin * 2,
-      height: 28,
+    .text(title, 20, 16, {
+      width: bounds.width - 40,
+      height: 24,
       ellipsis: true,
     });
   return bounds;
@@ -180,29 +180,22 @@ function graphDrawing(
   layout: ElkNode,
   bounds: { width: number; height: number },
   viewport: {
-    x: number;
-    y: number;
     width: number;
     height: number;
     scale: number;
-    detail?: boolean;
   },
 ) {
   const area = {
-    x: margin,
-    y: 68,
-    width: bounds.width - margin * 2,
-    height: bounds.height - 116,
+    x: 20,
+    y: 49,
+    width: bounds.width - 40,
+    height: bounds.height - 80,
   };
   doc.save().rect(area.x, area.y, area.width, area.height).clip();
   doc
     .translate(
-      area.x +
-        (area.width - viewport.width * viewport.scale) / 2 -
-        viewport.x * viewport.scale,
-      area.y +
-        (area.height - viewport.height * viewport.scale) / 2 -
-        viewport.y * viewport.scale,
+      area.x + (area.width - viewport.width * viewport.scale) / 2,
+      area.y + (area.height - viewport.height * viewport.scale) / 2,
     )
     .scale(viewport.scale);
   const types = new Map(
@@ -232,24 +225,14 @@ function graphDrawing(
     if (!person) continue;
     const x = node.x || 0,
       y = node.y || 0;
-    // Detail sheets overlap. Draw a card only on pages where the whole card
-    // fits; every card is still present in the overview and on a detail sheet.
-    if (
-      viewport.detail &&
-      (x < viewport.x ||
-        y < viewport.y ||
-        x + 172 > viewport.x + viewport.width ||
-        y + 54 > viewport.y + viewport.height)
-    )
-      continue;
-    doc.roundedRect(x, y, 172, 54, 3).fillAndStroke("#ffffff", "#a9b9aa");
+    doc.rect(x, y, 148, 44).fillAndStroke("#ffffff", "#a9b9aa");
     doc
       .fillColor("#263a30")
       .font("Drevo")
-      .fontSize(9)
-      .text(person.name, x + 8, y + 7, {
-        width: 156,
-        height: 35,
+      .fontSize(8.5)
+      .text(person.name, x + 6, y + 5, {
+        width: 136,
+        height: 30,
         ellipsis: true,
       });
     const dates = [person.birth?.slice(0, 4), person.death?.slice(0, 4)]
@@ -257,9 +240,9 @@ function graphDrawing(
       .join(" — ");
     if (dates)
       doc
-        .fontSize(7)
+        .fontSize(6.5)
         .fillColor("#637168")
-        .text(dates, x + 8, y + 42, { width: 156 });
+        .text(dates, x + 6, y + 34, { width: 136 });
   }
   doc.restore();
 }
@@ -281,38 +264,59 @@ export async function drawResearchGraph(
   const edges = graph.edges.filter(
     (edge) => ids.has(edge.from) && ids.has(edge.to),
   );
-  const layout = await new ELK().layout<ElkNode>({
-    id: "family",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.spacing.nodeNode": "28",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "54",
-    },
-    children: graph.nodes.map((node) => ({
-      id: node.id,
-      width: 172,
-      height: 54,
-    })),
-    edges: edges.map((edge, index) => ({
-      id: `edge-${index}`,
-      sources: [edge.from],
-      targets: [edge.to],
-    })),
-  });
-  const width = Math.max(1, layout.width || 0),
-    height = Math.max(1, layout.height || 0);
-  const areaWidth = A4.width - margin * 2,
-    areaHeight = A4.height - 116;
-  const overviewScale = Math.min(1, areaWidth / width, areaHeight / height);
-  const overview = visualPage(doc, title);
-  graphDrawing(doc, { ...graph, edges }, layout, overview, {
-    x: 0,
-    y: 0,
+  const layouts = await Promise.all(
+    (["DOWN", "RIGHT"] as const).map((direction) =>
+      new ELK().layout<ElkNode>({
+        id: "family",
+        layoutOptions: {
+          "elk.algorithm": "layered",
+          "elk.direction": direction,
+          "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+          "elk.spacing.nodeNode": "14",
+          "elk.layered.spacing.nodeNodeBetweenLayers":
+            direction === "RIGHT" ? "92" : "46",
+        },
+        children: graph.nodes.map((node) => ({
+          id: node.id,
+          width: 148,
+          height: 44,
+        })),
+        edges: edges.map((edge, index) => ({
+          id: `edge-${index}`,
+          sources: [edge.from],
+          targets: [edge.to],
+        })),
+      }),
+    ),
+  );
+  const options = layouts.flatMap((layout) =>
+    (["landscape", "portrait"] as const).map((orientation) => {
+      const bounds = orientation === "landscape" ? A4 : portraitA4;
+      return {
+        layout,
+        orientation,
+        scale: Math.min(
+          1,
+          (bounds.width - 40) / Math.max(1, layout.width || 0),
+          (bounds.height - 80) / Math.max(1, layout.height || 0),
+        ),
+      };
+    }),
+  );
+  const best = options.reduce((previous, candidate) =>
+    candidate.scale > previous.scale ? candidate : previous,
+  );
+  const width = Math.max(1, best.layout.width || 0),
+    height = Math.max(1, best.layout.height || 0),
+    bounds = visualPage(
+      doc,
+      `${title} · ${graph.nodes.length} человек`,
+      best.orientation,
+    );
+  graphDrawing(doc, { ...graph, edges }, best.layout, bounds, {
     width,
     height,
-    scale: overviewScale,
+    scale: best.scale,
   });
   doc
     .font("Drevo")
@@ -320,54 +324,9 @@ export async function drawResearchGraph(
     .fillColor("#69796f")
     .text(
       "Сплошные линии — родители и дети; пунктир — брак или другая связь.",
-      margin,
-      A4.height - 29,
+      20,
+      bounds.height - 23,
     );
-  if (overviewScale >= 0.64) return;
-
-  // An A4 overview contains every node. A3 detail sheets let readers inspect
-  // large archives without a non-standard, giant PDF page or tiny labels.
-  const detailWidth = A3.width - margin * 2,
-    detailHeight = A3.height - 116;
-  let detailScale = 0.85;
-  while (
-    Math.ceil(width / (detailWidth / detailScale - 192)) *
-      Math.ceil(height / (detailHeight / detailScale - 74)) >
-    40
-  )
-    detailScale *= 0.85;
-  const tileWidth = detailWidth / detailScale,
-    tileHeight = detailHeight / detailScale;
-  const strideX = tileWidth - 192,
-    strideY = tileHeight - 74;
-  const cols = Math.max(1, Math.ceil((width - tileWidth) / strideX) + 1),
-    rows = Math.max(1, Math.ceil((height - tileHeight) / strideY) + 1);
-  for (let row = 0; row < rows; row++)
-    for (let col = 0; col < cols; col++) {
-      const index = row * cols + col + 1,
-        bounds = visualPage(
-          doc,
-          `${title} · фрагмент ${index} из ${cols * rows}`,
-          "A3",
-        );
-      graphDrawing(doc, { ...graph, edges }, layout, bounds, {
-        x: col * strideX,
-        y: row * strideY,
-        width: tileWidth,
-        height: tileHeight,
-        scale: detailScale,
-        detail: true,
-      });
-      doc
-        .font("Drevo")
-        .fontSize(8)
-        .fillColor("#69796f")
-        .text(
-          `Участок ${col + 1}/${cols} по горизонтали, ${row + 1}/${rows} по вертикали. Общая схема — на предыдущей странице.`,
-          margin,
-          A3.height - 28,
-        );
-    }
 }
 
 export function drawResearchChart(
