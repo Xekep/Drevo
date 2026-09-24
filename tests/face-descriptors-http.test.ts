@@ -127,6 +127,7 @@ test("face matching stays server-side and saving still requires confirmation", a
       personId: "first",
       descriptor: Array(128).fill(0.01),
       sourcePhotoId: "source-photo",
+      sourceTagId: "tag-first",
       model: "face-api-1.7.15",
     });
     assert.equal(response.status, 201);
@@ -134,6 +135,12 @@ test("face matching stays server-side and saving still requires confirmation", a
       .prepare("SELECT COUNT(*) AS count FROM face_descriptors")
       .get() as { count: number };
     assert.equal(Number(count.count), 4);
+    assert.equal(
+      archive.db
+        .prepare("SELECT source_tag_id FROM face_descriptors WHERE id=?")
+        .get("confirmed")!.source_tag_id,
+      "source-photo:tag-first",
+    );
 
     // Legacy 128-D templates do not consume the Human model's sample quota.
     const addLegacy = archive.db.prepare(
@@ -150,6 +157,7 @@ test("face matching stays server-side and saving still requires confirmation", a
       personId: "first",
       descriptor: Array(1024).fill(0.04),
       sourcePhotoId: "source-photo",
+      sourceTagId: "tag-first",
       model: "human-faceres-3.3.6",
     });
     assert.equal(response.status, 201);
@@ -184,6 +192,67 @@ test("face matching stays server-side and saving still requires confirmation", a
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+    archive.close();
+  }
+});
+
+
+test("face descriptors follow corrected tags and disappear with removed tags", () => {
+  const archive = openArchive(":memory:", family);
+  try {
+    archive.db
+      .prepare(
+        `INSERT INTO face_descriptors
+           (id,person_id,data,source_photo_id,source_tag_id,model)
+         VALUES(?,?,?,?,?,?)`,
+      )
+      .run(
+        "remembered",
+        "first",
+        JSON.stringify(Array(1024).fill(0.04)),
+        "source-photo",
+        "source-photo:tag-first",
+        "human-faceres-3.3.6",
+      );
+
+    let current = archive.read();
+    archive.write(
+      {
+        ...current.family,
+        photos: current.family.photos!.map((photo) => ({
+          ...photo,
+          tags: photo.tags.map((tag) =>
+            tag.id === "tag-first" ? { ...tag, personId: "second" } : tag,
+          ),
+        })),
+      },
+      current.revision,
+    );
+    assert.equal(
+      archive.db
+        .prepare("SELECT person_id FROM face_descriptors WHERE id=?")
+        .get("remembered")!.person_id,
+      "second",
+    );
+
+    current = archive.read();
+    archive.write(
+      {
+        ...current.family,
+        photos: current.family.photos!.map((photo) => ({
+          ...photo,
+          tags: photo.tags.filter((tag) => tag.id !== "tag-first"),
+        })),
+      },
+      current.revision,
+    );
+    assert.equal(
+      archive.db
+        .prepare("SELECT count(*) AS n FROM face_descriptors WHERE id=?")
+        .get("remembered")!.n,
+      0,
+    );
+  } finally {
     archive.close();
   }
 });
