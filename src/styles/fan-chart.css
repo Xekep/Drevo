@@ -36,7 +36,7 @@
   color: #76816d;
 }
 .fan-chart-svg {
-  width: min(100%, 1180px);
+  width: min(100%, clamp(1180px, 62vw, 1560px));
   height: 100%;
   min-height: 390px;
   overflow: visible;
