@@ -139,6 +139,7 @@ export function FanChart({
               key={`${slot.generation}:${slot.index}`}
               data-fan-slot={`${slot.generation}:${slot.index}`}
               data-fan-generation={slot.generation}
+              data-label-orientation={denseLabel ? "horizontal" : "tangential"}
               className={className}
               role={person ? "button" : undefined}
               tabIndex={person ? 0 : undefined}
@@ -169,7 +170,15 @@ export function FanChart({
                   dominantBaseline="middle"
                   aria-hidden="true"
                 >
-                  <tspan x="0" dy={slot.generation <= 2 ? "-7" : "0"}>
+                  <tspan
+                    x="0"
+                    dy={
+                      slot.generation <= 2 ||
+                      (denseLabel && slot.generation <= 3 && !!person.surname)
+                        ? "-7"
+                        : "0"
+                    }
+                  >
                     {clipped(person.surname || person.name, nameLimit)}
                   </tspan>
                   {slot.generation <= 3 && person.surname && (
