@@ -386,11 +386,12 @@ function migrate(db: DatabaseSync, target: number) {
           ADD COLUMN source_tag_id TEXT REFERENCES photo_tags(id) ON DELETE CASCADE;
         CREATE INDEX IF NOT EXISTS face_descriptors_source_tag
           ON face_descriptors(source_tag_id);
-        CREATE TRIGGER IF NOT EXISTS face_descriptor_tag_person_update
-        AFTER UPDATE OF person_id ON photo_tags
+        CREATE TRIGGER IF NOT EXISTS face_descriptor_tag_update
+        AFTER UPDATE OF person_id, photo_id ON photo_tags
         BEGIN
           UPDATE face_descriptors
-             SET person_id=NEW.person_id
+             SET person_id=NEW.person_id,
+                 source_photo_id=NEW.photo_id
            WHERE source_tag_id=NEW.id;
         END;
       `);
@@ -401,7 +402,7 @@ function migrate(db: DatabaseSync, target: number) {
     // confirmed tag where possible and drop orphaned samples left by corrected
     // or removed photo annotations.
     db.exec(`
-      DROP TRIGGER IF EXISTS face_descriptor_tag_person_update;
+      DROP TRIGGER IF EXISTS face_descriptor_tag_update;
       DROP TABLE IF EXISTS face_descriptors_v14;
       CREATE TABLE face_descriptors_v14 (
         id TEXT PRIMARY KEY,
@@ -442,11 +443,12 @@ function migrate(db: DatabaseSync, target: number) {
       ALTER TABLE face_descriptors_v14 RENAME TO face_descriptors;
       CREATE INDEX face_descriptors_person ON face_descriptors(person_id);
       CREATE INDEX face_descriptors_source_tag ON face_descriptors(source_tag_id);
-      CREATE TRIGGER face_descriptor_tag_person_update
-      AFTER UPDATE OF person_id ON photo_tags
+      CREATE TRIGGER face_descriptor_tag_update
+      AFTER UPDATE OF person_id, photo_id ON photo_tags
       BEGIN
         UPDATE face_descriptors
-           SET person_id=NEW.person_id
+           SET person_id=NEW.person_id,
+               source_photo_id=NEW.photo_id
          WHERE source_tag_id=NEW.id;
       END;
     `);
@@ -487,7 +489,7 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       db.exec(`
         ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 1 CHECK(approved IN (0,1));
         ALTER TABLE face_descriptors ADD COLUMN created_by TEXT;
-        ALTER TABLE face_descriptors ADD COLUMN source_photo_id TEXT;
+        ALTER TABLE face_descriptors ADD COLUMN source_photo_id TEXT REFERENCES photos(id) ON DELETE CASCADE;
         ALTER TABLE face_descriptors ADD COLUMN model TEXT NOT NULL DEFAULT 'face-api-1.7.15';
         CREATE TABLE oauth_transactions (
           state_hash TEXT PRIMARY KEY,
