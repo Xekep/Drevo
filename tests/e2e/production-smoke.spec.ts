@@ -87,6 +87,7 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await page.getByRole("button", { name: "Веер" }).click();
   const fan = page.locator(".fan-chart-svg");
   await expect(fan).toBeVisible();
+  await expect(page.getByRole("button", { name: "Веер" })).toHaveCount(0);
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-fan-morphing/);
   await expect(page.locator(".fan-morph-card")).not.toHaveCount(0);
@@ -133,9 +134,32 @@ test("выход из специальных режимов возвращает
 
   await page.getByRole("button", { name: "Веер" }).click();
   await expect(page.locator(".fan-chart-svg")).toBeVisible();
-  await page.getByRole("button", { name: "Веер" }).click();
+  await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
   await expectCentered();
+});
+
+test("Ctrl+A не выделяет страницу, но работает в полях ввода", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/people");
+
+  await page.getByRole("button", { name: "Люди" }).focus();
+  await page.keyboard.press("Control+A");
+  const pageSelection = await page.evaluate(() => window.getSelection()?.toString() || "");
+  expect(pageSelection).toBe("");
+
+  const search = page.getByRole("combobox", { name: "Найти человека" });
+  await search.fill("Тестовый текст");
+  await search.press("Control+A");
+  const selection = await search.evaluate((input: HTMLInputElement) => ({
+    start: input.selectionStart,
+    end: input.selectionEnd,
+    length: input.value.length,
+  }));
+  expect(selection.start).toBe(0);
+  expect(selection.end).toBe(selection.length);
 });
 
 test("Ctrl+колесо не меняет масштаб страницы вне дерева", async ({
