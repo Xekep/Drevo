@@ -457,6 +457,7 @@ function Canvas(props: Props) {
       mode,
       reverse,
       ready,
+      focusReady: !growing && introCameraFinished,
       focus: cameraFocus,
       returnPersonId: returnTarget?.id || null,
       returnToken: returnTarget?.token || 0,

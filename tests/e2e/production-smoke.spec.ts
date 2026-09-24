@@ -625,6 +625,7 @@ test("ИИ-исследователь не перекрывает навигац
   ).toBe(true);
   const focusedCard = page.getByTestId("rf__node-e2e-grandchild");
   await expect(focusedCard).toHaveClass(/selected/);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, { timeout: 10_000 });
   await expect
     .poll(async () => {
       const [cardBox, canvasBox] = await Promise.all([
@@ -1442,11 +1443,11 @@ test("the initial tree grows from roots toward descendants", async ({
   const godparentPath = page.locator(
     ".relationship-godparent .tree-edge-final-path",
   );
-  expect(
-    await godparentPath.evaluate(
-      (path) => getComputedStyle(path).strokeDasharray,
-    ),
-  ).toContain("5px");
+  await expect
+    .poll(() =>
+      godparentPath.evaluate((path) => getComputedStyle(path).strokeDasharray),
+    )
+    .toContain("5px");
   await expect(
     page.locator(".relationship-godparent .tree-edge-growth-path"),
   ).toHaveCSS("marker-end", "none");

@@ -24,6 +24,7 @@ type TreeCameraStateInput = {
   mode: TreeMode;
   reverse: boolean;
   ready: boolean;
+  focusReady: boolean;
   focus: { ids: string[]; token: number; purpose?: "family" } | null;
   returnPersonId: string | null;
   returnToken: number;
@@ -56,6 +57,7 @@ export function useTreeCameraState({
   mode,
   reverse,
   ready,
+  focusReady,
   focus,
   returnPersonId,
   returnToken,
@@ -75,6 +77,8 @@ export function useTreeCameraState({
   const canvasHeight = useStore((state) => state.height);
   const cameras = useRef<Record<string, Viewport>>({});
   const lastFocus = useRef(-1);
+  // Открытие карточки меняет ширину полотна уже после запроса фокуса.
+  const lastFocusCanvas = useRef<{ width: number; height: number } | null>(null);
   const lastReturn = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
@@ -137,11 +141,16 @@ export function useTreeCameraState({
             () => onReturnComplete?.(),
           );
         } else if (
+          focusReady &&
           focus &&
-          focus.token !== lastFocus.current &&
+          (focus.token !== lastFocus.current ||
+            !lastFocusCanvas.current ||
+            Math.abs(lastFocusCanvas.current.width - canvasWidth) > 2 ||
+            Math.abs(lastFocusCanvas.current.height - canvasHeight) > 2) &&
           focus.ids.every((id) => positions.has(id))
         ) {
           lastFocus.current = focus.token;
+          lastFocusCanvas.current = { width: canvasWidth, height: canvasHeight };
           viewportUpdate = flow.fitView({
             nodes: focus.ids.map((id) => ({ id })),
             maxZoom: focus.purpose === "family" ? 0.95 : 1,
@@ -235,6 +244,7 @@ export function useTreeCameraState({
     canvasHeight,
     peopleMap,
     ready,
+    focusReady,
     context,
     root,
     expanded,
