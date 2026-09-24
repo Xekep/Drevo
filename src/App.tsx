@@ -128,6 +128,17 @@ export default function App() {
     [assistantOpen, setAssistantOpen] = useState(false),
     [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
+  useEffect(() => {
+    if (requestedView !== "tree" && view !== "tree") return;
+    const preventPageZoom = (event: WheelEvent) => {
+      if (event.ctrlKey) event.preventDefault();
+    };
+    window.addEventListener("wheel", preventPageZoom, {
+      capture: true,
+      passive: false,
+    });
+    return () => window.removeEventListener("wheel", preventPageZoom, true);
+  }, [requestedView, view]);
   const finishEntry = useCallback(() => {
     clearEntrySequence();
     setEntryPending(false);
