@@ -534,12 +534,7 @@ function Canvas(props: Props) {
                 const morph =
                   element &&
                   !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-                    ? captureFanMorphSources(
-                        element,
-                        family,
-                        next,
-                        occurrencePeople,
-                      )
+                    ? captureFanMorphSources(element, family, next)
                     : [];
                 rememberContext();
                 setGrowing(false);
