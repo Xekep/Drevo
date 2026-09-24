@@ -326,10 +326,9 @@ test("reduced motion skips the tree and fan transitions", async ({
     .locator(".flow-person-content")
     .click();
   await page.getByRole("button", { name: "Семья выбранного" }).click();
-  await expect(canvas.locator(".tree-exit-node").first()).toHaveCSS(
-    "animation-name",
-    "none",
-  );
+  const selectedCard = page.getByTestId("rf__node-e2e-child");
+  await expect(selectedCard).toHaveCSS("animation-name", "none");
+  await expect(selectedCard).toHaveCSS("transition-duration", "0s");
   await page.getByRole("button", { name: "Всё древо" }).click();
   await page.getByRole("button", { name: "Веер", exact: true }).click();
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
