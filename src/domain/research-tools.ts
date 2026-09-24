@@ -37,6 +37,74 @@ function graphMermaid(
   ].join("\n");
 }
 
+/** Match grammatical variants against forms actually present in this archive. */
+function surnameKeys(value: string) {
+  const word = normalized(value);
+  const keys = new Set([word]);
+  if (word.length < 5) return keys;
+  if (/(?:овых|евых|иных|ыных|овым|евым|иным|ыным)$/.test(word))
+    keys.add(word.slice(0, -2));
+  if (/(?:ова|ева|ина|ына)$/.test(word)) keys.add(word.slice(0, -1));
+  if (/(?:ская|цкая)$/.test(word)) keys.add(`${word.slice(0, -2)}ий`);
+  if (/(?:ая|яя)$/.test(word))
+    for (const suffix of ["ый", "ий", "ой"])
+      keys.add(`${word.slice(0, -2)}${suffix}`);
+  if (/(?:ов|ев|ин|ын)$/.test(word)) keys.add(`${word}а`);
+  if (/(?:ский|цкий)$/.test(word)) keys.add(`${word.slice(0, -2)}ая`);
+  if (/(?:ый|ий|ой)$/.test(word)) keys.add(`${word.slice(0, -2)}ая`);
+  return keys;
+}
+
+export function surnameGroup(family: Family, surname: string) {
+  const requested = surnameKeys(surname);
+  const matches = family.people.filter((person) =>
+    [person.surname, person.maidenName || ""].some(
+      (form) =>
+        form && [...surnameKeys(form)].some((key) => requested.has(key)),
+    ),
+  );
+  const ids = new Set(matches.map((person) => person.id));
+  const available = new Set(family.people.map((person) => person.id));
+  for (const person of matches)
+    for (const parent of person.parents)
+      if (available.has(parent)) ids.add(parent);
+  const nodes = family.people
+    .filter((person) => ids.has(person.id))
+    .map((person) => ({ id: person.id, name: fullName(person) }));
+  const edges: Array<{ from: string; to: string; type: string }> = [];
+  const spouses = new Set<string>();
+  for (const person of family.people.filter((item) => ids.has(item.id))) {
+    for (const parent of person.parents)
+      if (ids.has(parent))
+        edges.push({ from: parent, to: person.id, type: "parent" });
+    for (const spouse of person.spouses)
+      if (ids.has(spouse)) {
+        const pair = [person.id, spouse].sort();
+        const key = pair.join("\0");
+        if (!spouses.has(key)) {
+          spouses.add(key);
+          edges.push({ from: pair[0], to: pair[1], type: "spouse" });
+        }
+      }
+  }
+  return {
+    surname,
+    people: matches.map((person) => ({
+      id: person.id,
+      name: fullName(person),
+      surname: person.surname,
+      birthSurname: person.maidenName || null,
+      birth: person.birth || null,
+      birthPlace: person.birthPlace || null,
+      death: person.death || null,
+    })),
+    nodes,
+    edges,
+    personIds: [...ids],
+    mermaid: nodes.length ? graphMermaid(nodes, edges) : "",
+  };
+}
+
 export type ResearchScope = "tree:read" | "sources:read" | "analysis:read";
 
 export type ResearchToolDefinition = {
@@ -79,6 +147,38 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       },
       ["query"],
     ),
+  },
+  {
+    name: "get_surname_group",
+    description:
+      "Получить всех людей с указанной текущей фамилией или фамилией при рождении, включая грамматические формы, и проверенную схему связей с их ближайшими известными родителями. Используй для сводной таблицы по роду и показа ветви на древе. personIds — точный набор для фильтра дерева.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      { surname: { type: "string", minLength: 2, maxLength: 100 } },
+      ["surname"],
+    ),
+  },
+  {
+    name: "get_evidence_coverage",
+    description:
+      "Оценить покрытие источниками карточек, событий и наград человека или фамильной группы. Источник карточки связан с карточкой целиком и не доказывает отдельно каждую дату или родство.",
+    scope: "sources:read",
+    inputSchema: objectSchema({
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      surname: { type: "string", minLength: 2, maxLength: 100 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+    }),
+  },
+  {
+    name: "find_evidence_gaps",
+    description:
+      "Найти записанные события и награды без прикреплённых источников, а также карточки без источников. Это задачи для проверки, а не доказательство неверности записей.",
+    scope: "sources:read",
+    inputSchema: objectSchema({
+      personId: { type: "string", minLength: 1, maxLength: 200 },
+      surname: { type: "string", minLength: 2, maxLength: 100 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 30 },
+    }),
   },
   {
     name: "get_person",
@@ -903,6 +1003,80 @@ export function executeResearchTool(
     rawArgs && typeof rawArgs === "object"
       ? (rawArgs as Record<string, unknown>)
       : {};
+
+  if (name === "get_surname_group")
+    return surnameGroup(family, stringArg(args, "surname"));
+
+  if (name === "get_evidence_coverage" || name === "find_evidence_gaps") {
+    const personId = stringArg(args, "personId", false);
+    const surname = stringArg(args, "surname", false);
+    const surnameIds = surname
+      ? new Set(surnameGroup(family, surname).people.map((person) => person.id))
+      : null;
+    const candidates = personId
+      ? [personOrThrow(family, personId)]
+      : surnameIds
+        ? family.people.filter((person) => surnameIds.has(person.id))
+        : family.people;
+    const limit = numberArg(
+      args,
+      "limit",
+      name === "find_evidence_gaps" ? 30 : 50,
+      1,
+      100,
+    );
+    const records = candidates.map((person) => ({
+      person: { id: person.id, name: fullName(person) },
+      cardSourceCount: person.sources.length,
+      knownFacts: [
+        person.birth && "дата рождения",
+        person.birthPlace && "место рождения",
+        person.death && "дата смерти",
+        person.deathPlace && "место смерти",
+      ].filter(Boolean),
+      events: (person.events || []).map((event) => ({
+        id: event.id,
+        title: event.title || event.type,
+        date: event.date,
+        sourceCount: event.sources?.length || 0,
+      })),
+      awards: (person.awards || []).map((award) => ({
+        id: award.id,
+        title: award.name,
+        sourceCount: award.source ? 1 : 0,
+      })),
+    }));
+    if (name === "get_evidence_coverage")
+      return {
+        total: records.length,
+        records: records.slice(0, limit),
+        note: "Источники карточки не привязаны к отдельным полям; автоматически подтвердить конкретный факт по ним нельзя.",
+      };
+    const gaps = records.flatMap((record) => [
+      ...(!record.cardSourceCount && record.knownFacts.length
+        ? [{ person: record.person, kind: "card", facts: record.knownFacts }]
+        : []),
+      ...record.events
+        .filter((event) => !event.sourceCount)
+        .map((event) => ({
+          person: record.person,
+          kind: "event",
+          item: event,
+        })),
+      ...record.awards
+        .filter((award) => !award.sourceCount)
+        .map((award) => ({
+          person: record.person,
+          kind: "award",
+          item: award,
+        })),
+    ]);
+    return {
+      total: gaps.length,
+      gaps: gaps.slice(0, limit),
+      truncated: gaps.length > limit,
+    };
+  }
 
   if (name === "list_people") {
     const offset = numberArg(args, "offset", 0, 0, 1_000_000),

@@ -94,6 +94,8 @@ type Props = {
   onAddRelative: (id: string, type: "parent" | "child" | "spouse") => void;
   onLink: () => void;
   focus: TreeFocus | null;
+  assistantFilter?: { ids: string[]; label: string; token: number } | null;
+  onClearAssistantFilter?: () => void;
   zoomRequest?: { token: number; direction: "in" | "out" };
   preview: ConnectionDraft | null;
   query: string;
@@ -224,13 +226,25 @@ function Canvas(props: Props) {
     focus,
     props.preview,
   );
-  const { anchor: root, visible, collapsed, toggle: toggleView } = familyView;
+  const showAllBranches = familyView.showAll;
+  const filterToken = props.assistantFilter?.token;
+  useEffect(() => {
+    if (filterToken) showAllBranches();
+  }, [filterToken, showAllBranches]);
+  const { anchor: root, collapsed, toggle: toggleView } = familyView;
+  const visible = useMemo(() => {
+    if (!props.assistantFilter) return familyView.visible;
+    const allowed = new Set(family.people.map((person) => person.id));
+    return new Set(props.assistantFilter.ids.filter((id) => allowed.has(id)));
+  }, [family.people, familyView.visible, props.assistantFilter]);
   const flow = useReactFlow<
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
   >();
   const lastAssistantZoom = useRef(0);
-  const context = `${mode}:${familyView.mode}:${root || "all"}`;
+  const context = props.assistantFilter
+    ? `${mode}:research:${props.assistantFilter.token}`
+    : `${mode}:${familyView.mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
   useCtrlWheelZoom(container, flow, !activeFanAnchor);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
@@ -286,7 +300,7 @@ function Canvas(props: Props) {
         visible,
         selected,
         collapsed,
-        root: familyView.mode === "family" ? root : null,
+        root: familyView.mode === "family" && !props.assistantFilter ? root : null,
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
@@ -304,6 +318,7 @@ function Canvas(props: Props) {
       selected,
       collapsed,
       root,
+      props.assistantFilter,
       familyView.mode,
       familyView.hidden,
       familyView.expanded,
@@ -557,7 +572,18 @@ function Canvas(props: Props) {
             </button>
           )}
           {narrow && props.comparisonAction}
-          {family.people.length > 0 && !props.restricted && (
+          {props.assistantFilter && (
+            <div className="tree-family-tools" role="status">
+              <span className="tree-family-count">
+                {props.assistantFilter.label}: {visible.size} из {family.people.length}
+              </span>
+              <button type="button" onClick={() => {
+                props.onClearAssistantFilter?.();
+                familyView.showAll();
+              }}>Всё древо</button>
+            </div>
+          )}
+          {family.people.length > 0 && !props.restricted && !props.assistantFilter && (
             <FamilyViewTools
               onShare={
                 root && props.onShare
@@ -575,12 +601,14 @@ function Canvas(props: Props) {
               }
               mode={familyView.mode}
               onFamily={() => {
+                props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
                 setFanAnchor(null);
                 familyView.enter();
               }}
               onCommon={() => {
+                props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
                 setFanAnchor(null);
@@ -615,6 +643,7 @@ function Canvas(props: Props) {
               }}
               fanActive={!!activeFanAnchor}
               onAll={() => {
+                props.onClearAssistantFilter?.();
                 const target = activeFanAnchor || root;
                 rememberContext();
                 setFanAnchor(null);

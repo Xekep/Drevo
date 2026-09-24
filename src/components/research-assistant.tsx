@@ -40,6 +40,7 @@ type Message = {
 };
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
+  | { type: "filter_people"; personIds: string[]; label: string }
   | { type: "open_person"; personId: string }
   | { type: "open_photo"; photoId: string }
   | { type: "zoom_in" | "zoom_out" };
@@ -381,7 +382,8 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
         );
       },
       code: ({ className, children, ...props }) =>
-        className === "language-mermaid" ? (
+        className === "language-mermaid" &&
+        !String(children).trim() ? null : className === "language-mermaid" ? (
           <MermaidDiagram source={String(children).trim()} />
         ) : (
           <code className={className} {...props}>
@@ -644,6 +646,7 @@ export function ResearchAssistant({
   onPerson,
   onPhoto,
   onReveal,
+  onFilter,
   onZoom,
 }: {
   view: string;
@@ -656,6 +659,7 @@ export function ResearchAssistant({
   onPerson: (id: string) => void;
   onPhoto: (id: string) => void;
   onReveal: (ids: string[]) => void;
+  onFilter: (ids: string[], label: string) => void;
   onZoom: (direction: "in" | "out") => void;
 }) {
   const [enabled, setEnabled] = useState(false),
@@ -1082,6 +1086,8 @@ export function ResearchAssistant({
           ]);
           for (const action of data.uiActions || []) {
             if (action.type === "focus_people") onReveal(action.personIds);
+            else if (action.type === "filter_people")
+              onFilter(action.personIds, action.label);
             else if (action.type === "open_person") onPerson(action.personId);
             else if (action.type === "open_photo") onPhoto(action.photoId);
             else if (action.type === "zoom_in") onZoom("in");
