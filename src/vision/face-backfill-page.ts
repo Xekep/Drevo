@@ -54,6 +54,7 @@ async function run() {
     personId: string;
     descriptor: number[];
     sourcePhotoId: string;
+    sourceTagId: string;
     model: string;
   }> = [];
   let unmatched = 0;
@@ -93,6 +94,7 @@ async function run() {
           personId: tag.personId,
           descriptor: face.embedding,
           sourcePhotoId: photo.id,
+          sourceTagId: tag.id,
           model: "human-faceres-3.3.6",
         });
       }
