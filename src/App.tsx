@@ -132,11 +132,31 @@ export default function App() {
     const preventPageZoom = (event: WheelEvent) => {
       if (event.ctrlKey) event.preventDefault();
     };
+    const preventPageSelectAll = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a")
+        return;
+      const target = event.target;
+      const editable =
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement &&
+          !["button", "checkbox", "color", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(
+            target.type,
+          )) ||
+        (target instanceof Element &&
+          !!target.closest(
+            '[contenteditable]:not([contenteditable="false"])',
+          ));
+      if (!editable) event.preventDefault();
+    };
     window.addEventListener("wheel", preventPageZoom, {
       capture: true,
       passive: false,
     });
-    return () => window.removeEventListener("wheel", preventPageZoom, true);
+    window.addEventListener("keydown", preventPageSelectAll, true);
+    return () => {
+      window.removeEventListener("wheel", preventPageZoom, true);
+      window.removeEventListener("keydown", preventPageSelectAll, true);
+    };
   }, []);
   const finishEntry = useCallback(() => {
     clearEntrySequence();
