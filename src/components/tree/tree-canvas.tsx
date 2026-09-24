@@ -194,7 +194,8 @@ function Canvas(props: Props) {
     () => setInitialCameraReady(true),
     [],
   );
-  const growthActive = growing && !narrow;
+  const growthPreparing = growing && !narrow && !initialCameraReady;
+  const growthActive = growing && !narrow && initialCameraReady;
   const introHandled = useRef(false);
   const introComplete = useRef(props.onIntroComplete);
   useEffect(() => {
@@ -338,13 +339,27 @@ function Canvas(props: Props) {
     maxGrowthDelay,
   } = nodeModel;
   useEffect(() => {
-    if (!growing || !ready || !nodes.length) return;
+    if (
+      !growing ||
+      !ready ||
+      !nodes.length ||
+      (!narrow && !initialCameraReady)
+    )
+      return;
     const timer = window.setTimeout(
       () => setGrowing(false),
       narrow ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
     );
     return () => window.clearTimeout(timer);
-  }, [growing, ready, nodes.length, maxGrowthDelay, growthDelays, narrow]);
+  }, [
+    growing,
+    ready,
+    nodes.length,
+    maxGrowthDelay,
+    growthDelays,
+    narrow,
+    initialCameraReady,
+  ]);
   useEffect(() => {
     if (
       growing ||
@@ -376,16 +391,13 @@ function Canvas(props: Props) {
         active = false;
       };
     }
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
     void flow
       .fitView({
         nodes: [{ id: occurrence }],
         minZoom: narrow ? 0.72 : 0.55,
         maxZoom: narrow ? 0.96 : 1.08,
         padding: narrow ? 0.75 : 0.9,
-        duration: reducedMotion ? 0 : 620,
+        duration: 620,
         ease: (progress) => 1 - (1 - progress) ** 3,
       })
       .then(done, done);
@@ -534,7 +546,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanMorphing ? "is-fan-morphing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanMorphing ? "is-fan-morphing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
         aria-busy={growthActive}
