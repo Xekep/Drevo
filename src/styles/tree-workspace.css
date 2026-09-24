@@ -1267,6 +1267,39 @@
 .about-instructions p {
   margin-top: 3px;
 }
+.about-stack {
+  margin-top: 22px;
+  border-top: 1px solid #e4eadc;
+  border-bottom: 1px solid #e4eadc;
+}
+.about-stack summary {
+  cursor: pointer;
+  padding: 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.about-stack-content {
+  padding: 0 0 15px;
+}
+.about-stack-content > p {
+  margin-bottom: 9px;
+}
+.about-stack-content ul {
+  margin: 0;
+  padding-left: 19px;
+  display: grid;
+  gap: 7px;
+}
+.about-stack-content li {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #67745e;
+}
+.about-stack-content b {
+  color: var(--ink);
+  font-weight: 600;
+}
 .name-sex-hint {
   display: flex !important;
   align-items: center;

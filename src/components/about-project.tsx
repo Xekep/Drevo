@@ -40,6 +40,47 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
             </span>
           </div>
         </div>
+        <details className="about-stack">
+          <summary>Как это работает</summary>
+          <div className="about-stack-content">
+            <p>Основной стек Drevo:</p>
+            <ul>
+              <li>
+                <b>TypeScript</b> — основной язык проекта.
+              </li>
+              <li>
+                <b>React</b> — интерфейс приложения.
+              </li>
+              <li>
+                <b>Node.js</b> — серверная часть.
+              </li>
+              <li>
+                <b>SQLite</b> — хранение данных.
+              </li>
+              <li>
+                <b>React Flow и ELK</b> — отображение и автоматическая раскладка
+                семейного древа.
+              </li>
+              <li>
+                <b>Human / TensorFlow.js</b> — нейросетевой анализ фотографий и
+                распознавание лиц.
+              </li>
+              <li>
+                <b>Leaflet</b> — отображение мест и семейной географии на карте.
+              </li>
+              <li>
+                <b>Yandex AI Studio</b> — встроенные функции искусственного
+                интеллекта.
+              </li>
+              <li>
+                <b>MCP</b> — подключение внешних ИИ-инструментов к данным Drevo.
+              </li>
+              <li>
+                <b>GEDCOM</b> — импорт и экспорт генеалогических данных.
+              </li>
+            </ul>
+          </div>
+        </details>
         <button type="button" className="dialog-done" onClick={onClose}>
           Вернуться в архив
         </button>
