@@ -104,6 +104,7 @@ type AnswerReference =
 type ResearchMetrics = {
   providerCalls: number;
   agentIterations: number;
+  compactionAvailable: boolean | null;
   toolCallCount: number;
   cachedTokens: number;
   responseId: string;
@@ -966,6 +967,7 @@ export function aiResearchHttp({
       let recoveredToolCalls = false;
       pendingInput.length = 0;
       metrics.responseId = completion.id;
+      metrics.compactionAvailable = completion.compactionAvailable;
       metrics.cachedTokens += completion.cachedTokens;
       recordModelTokens(
         metrics,
@@ -1579,6 +1581,7 @@ export function aiResearchHttp({
       metrics: ResearchMetrics = {
         providerCalls: 0,
         agentIterations: 0,
+        compactionAvailable: null,
         toolCallCount: 0,
         cachedTokens: 0,
         responseId: "",
@@ -1664,6 +1667,7 @@ export function aiResearchHttp({
           outputTokens: metrics.outputTokens,
           cachedTokens: metrics.cachedTokens,
           compactionEnabled: runtime.compactionEnabled,
+          compactionAvailable: metrics.compactionAvailable,
           compactThreshold: runtime.compactThresholdTokens,
           truncationMode: runtime.automaticTruncation ? "auto" : "disabled",
           latencyMs: Date.now() - usageRun.started,

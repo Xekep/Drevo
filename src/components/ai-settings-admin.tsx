@@ -238,7 +238,7 @@ export function AiSettingsAdmin() {
         data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI Studio не ответила");
       setNotice(
-        `Подключение работает · ${data.model}${data.answer ? ` · ${data.answer}` : ""}`,
+        `Подключение работает · ${data.model}${data.answer ? ` · ${data.answer}` : ""}${compactionEnabled && !data.compactionAvailable ? " · Yandex не принимает сжатие контекста; используется автоматическое усечение" : ""}`,
       );
     } catch (reason) {
       setError((reason as Error).message);
