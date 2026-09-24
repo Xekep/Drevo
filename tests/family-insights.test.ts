@@ -106,3 +106,105 @@ test("family insights flag only clearly suspicious date relationships", () => {
     result.warnings.some((warning) => warning.title === "Возможный дубль"),
   );
 });
+
+test("average lifespan by sex counts only known birth and death years", () => {
+  const people = [
+    person("m1", "Пётр", "1900", 1, { sex: "m", death: "1970" }),
+    person("m2", "Иван", "1901", 1, { sex: "m", death: "1952" }),
+    person("f1", "Анна", "1910", 1, { sex: "f", death: "1990" }),
+    person("living", "Мария", "1920", 1, { sex: "f" }),
+    person("unknown", "Алексей", "", 1, { sex: "m", death: "1980" }),
+    person("other", "Саша", "1900", 1, { sex: "u", death: "2000" }),
+    person("reversed", "Николай", "1980", 1, { sex: "m", death: "1970" }),
+  ];
+  const facts = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people,
+  }).facts;
+  const men = facts.find(
+    (fact) => fact.title === "Средняя продолжительность жизни мужчин",
+  );
+  const women = facts.find(
+    (fact) => fact.title === "Средняя продолжительность жизни женщин",
+  );
+  assert.equal(men?.value, "≈ 60,5 года");
+  assert.match(men?.detail || "", /^2 человека/);
+  assert.equal(women?.value, "≈ 80 лет");
+  assert.match(women?.detail || "", /^1 человек/);
+  assert.equal(facts.slice(-2)[0], men);
+  assert.equal(facts.slice(-2)[1], women);
+
+  const empty = analyzeFamilyInsights({
+    title: "Пустой",
+    description: "",
+    demo: false,
+    people: [people[3]],
+  }).facts;
+  assert.equal(empty.at(-2)?.value, "Нет данных");
+  assert.equal(empty.at(-1)?.value, "Нет данных");
+});
+
+test("surname ranking combines feminine and masculine forms", () => {
+  const people = [
+    person("a", "Анна", "1900", 1, { sex: "f", surname: "Иванова" }),
+    person("b", "Иван", "1900", 1, { sex: "m", surname: "Иванов" }),
+    person("c", "Мария", "1900", 1, { sex: "f", surname: "Петровская" }),
+    person("d", "Пётр", "1900", 1, { sex: "m", surname: "Петровский" }),
+    person("e", "Елена", "1900", 1, { sex: "f", surname: "Скулко" }),
+    person("f", "Василий", "1900", 1, { sex: "m", surname: "Скулко" }),
+    person("g", "Ольга", "1900", 1, { sex: "f", surname: "Сова" }),
+    person("h", "Николай", "1900", 1, { sex: "m", surname: "Сова" }),
+    person("i", "Нина", "1900", 1, { sex: "f", surname: "Семёнова" }),
+    person("j", "Семён", "1900", 1, { sex: "m", surname: "Семёнов" }),
+  ];
+  const result = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people,
+  });
+  assert.deepEqual(
+    result.topSurnames.map(({ label, count }) => [label, count]),
+    [
+      ["Иванов", 2],
+      ["Петровский", 2],
+      ["Семёнов", 2],
+      ["Скулко", 2],
+      ["Сова", 2],
+    ],
+  );
+  assert.ok(
+    result.facts.some(
+      (fact) =>
+        fact.title === "Самая частая фамилия" && fact.value === "Иванов",
+    ),
+  );
+});
+
+test("surname ranking prefers recorded masculine forms and preserves invariant names", () => {
+  const people = [
+    person("f1", "Анна", "1900", 1, { sex: "f", surname: "Калина" }),
+    person("m1", "Иван", "1900", 1, { sex: "m", surname: "Калина" }),
+    person("f2", "Мария", "1900", 1, { sex: "f", surname: "Большая" }),
+    person("m2", "Пётр", "1900", 1, { sex: "m", surname: "Большой" }),
+    person("f3", "Ольга", "1900", 1, { sex: "f", surname: "Тихая" }),
+    person("f4", "Вера", "1900", 1, { sex: "f", surname: "Ильина" }),
+  ];
+  const result = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people,
+  });
+  assert.deepEqual(
+    result.topSurnames.map(({ label, count }) => [label, count]),
+    [
+      ["Большой", 2],
+      ["Калина", 2],
+      ["Ильин", 1],
+      ["Тихая", 1],
+    ],
+  );
+});
