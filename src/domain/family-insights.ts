@@ -368,6 +368,30 @@ export function analyzeFamilyInsights(
       detail: `${places[0].count} упоминаний в сведениях о людях`,
     });
 
+  for (const [sex, label] of [
+    ["m", "мужчин"],
+    ["f", "женщин"],
+  ] as const) {
+    const ages = lifespans
+      .filter(({ person }) => person.sex === sex)
+      .map(({ age }) => age);
+    const average = ages.length
+      ? Math.round(
+          (ages.reduce((sum, age) => sum + age, 0) / ages.length) * 10,
+        ) / 10
+      : null;
+    facts.push({
+      title: `Средняя продолжительность жизни ${label}`,
+      value:
+        average === null
+          ? "Нет данных"
+          : `≈ ${average.toLocaleString("ru-RU")} ${Number.isInteger(average) ? plural(average, "год", "года", "лет") : "года"}`,
+      detail: ages.length
+        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти`
+        : "Нет записей с известными годами рождения и смерти",
+    });
+  }
+
   const deceased = people.filter(hasRecordedDeath),
     hasSources = people.filter(
       (person) =>
