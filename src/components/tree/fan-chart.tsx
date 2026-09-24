@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import "../../styles/fan-chart.css";
 import {
   ancestorFanSlots,
   fullName,
@@ -81,7 +82,7 @@ export function FanChart({
       <div className="fan-chart-meta">
         <strong>{fullName(root)}</strong>
         <span>
-          {GENERATIONS} поколений · {known} известных предков и исходный человек
+          {GENERATIONS} поколений · {Math.max(0, known - 1)} известных предков
         </span>
       </div>
       <svg
