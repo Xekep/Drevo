@@ -741,8 +741,7 @@ test("новый человек начинается с имени, а нагр�
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
-  await page.getByRole("button", { name: "Добавить", exact: true }).click();
-  await page.getByRole("button", { name: "Человека", exact: true }).click();
+  await page.getByRole("button", { name: "Человек", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Новый человек" }),
   ).toBeVisible();
