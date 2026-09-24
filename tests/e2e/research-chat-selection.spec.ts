@@ -48,6 +48,9 @@ test("choice is invisible to the user and chat picker keeps the original title",
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   const panel = page.locator(".research-assistant");
+  expect(
+    (await panel.locator(".research-assistant-messages").boundingBox())?.height,
+  ).toBeGreaterThan(150);
   const textarea = panel.locator("textarea");
   await textarea.fill("Расскажи об Иване");
   await panel.getByRole("button", { name: "Отправить запрос" }).click();
@@ -100,9 +103,15 @@ test("dialog history stays compact and searchable", async ({ page }) => {
     route.fulfill({ json: { enabled: true, streaming: true } }),
   );
   await page.route("**/api/ai/chats", (route) =>
-    route.fulfill({ json: { chats: Array.from({ length: 20 }, (_, index) => ({
-      id: `chat-${index}`, title: `Разговор ${index}`, updatedAt: "2026-09-25",
-    })) } }),
+    route.fulfill({
+      json: {
+        chats: Array.from({ length: 20 }, (_, index) => ({
+          id: `chat-${index}`,
+          title: `Разговор ${index}`,
+          updatedAt: "2026-09-25",
+        })),
+      },
+    }),
   );
   await page.route("**/api/ai/chats/chat-0", (route) =>
     route.fulfill({ json: { messages: [] } }),
@@ -116,8 +125,21 @@ test("dialog history stays compact and searchable", async ({ page }) => {
   const menu = panel.locator(".research-chat-menu");
   await expect(menu).toBeVisible();
   const bounds = await menu.boundingBox();
+  const triggerBounds = await picker.boundingBox();
+  const messagesBounds = await panel
+    .locator(".research-assistant-messages")
+    .boundingBox();
   expect(bounds).not.toBeNull();
+  expect(triggerBounds).not.toBeNull();
+  expect(messagesBounds).not.toBeNull();
   expect(bounds!.height).toBeLessThan(275);
+  expect(
+    Math.abs(bounds!.y - (triggerBounds!.y + triggerBounds!.height + 4)),
+  ).toBeLessThan(2);
+  expect(
+    Math.abs(messagesBounds!.y - (triggerBounds!.y + triggerBounds!.height)),
+  ).toBeLessThan(2);
+  expect(messagesBounds!.height).toBeGreaterThan(150);
   await menu.getByRole("searchbox", { name: "Поиск диалога" }).fill("17");
   await expect(menu.locator(".research-chat-menu-list button")).toHaveCount(2);
   await expect(menu.getByRole("button", { name: "Разговор 17" })).toBeVisible();

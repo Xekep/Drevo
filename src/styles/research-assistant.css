@@ -81,7 +81,7 @@
   width: min(430px, calc(100vw - 36px));
   height: min(680px, calc(100dvh - 36px));
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   min-width: 340px;
   min-height: 420px;
@@ -227,6 +227,7 @@
   cursor: default;
 }
 .research-chat-picker {
+  grid-row: 2;
   position: relative;
   min-width: 0;
   margin: 8px 12px 0;
@@ -309,6 +310,7 @@
   outline-offset: 2px;
 }
 .research-assistant-messages {
+  grid-row: 3;
   overflow-y: auto;
   padding: 16px;
   overscroll-behavior: contain;
@@ -616,6 +618,7 @@
   line-height: 1.7;
 }
 .research-assistant > form {
+  grid-row: 4;
   position: relative;
   display: block;
   padding: 12px;
