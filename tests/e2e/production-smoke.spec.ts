@@ -96,6 +96,7 @@ test("Ctrl+колесо масштабирует древо и не меняет
     { timeout: 2_500 },
   );
   await expect(outerLayer).toHaveCSS("opacity", "1");
+  await expect(fan).toHaveCSS("animation-name", "none");
 });
 
 test("выход из специальных режимов возвращает опорного человека в центр", async ({
