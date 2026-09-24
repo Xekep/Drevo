@@ -10,6 +10,8 @@ export function FamilyViewTools({
   mode,
   onFamily,
   onCommon,
+  onFan,
+  fanActive,
   onAll,
   onReset,
   onShare,
@@ -22,6 +24,8 @@ export function FamilyViewTools({
   mode: "all" | "family" | "common";
   onFamily: () => void;
   onCommon: () => void;
+  onFan: () => void;
+  fanActive: boolean;
   onAll: () => void;
   onReset: () => void;
   onShare?: () => void;
@@ -33,7 +37,7 @@ export function FamilyViewTools({
         {anchor && (
           <span
             className="tree-family-name"
-            title={`${mode === "common" ? "Общие предки" : "Семья"}: ${fullName(anchor)}`}
+            title={`${fanActive ? "Веер" : mode === "common" ? "Общие предки" : "Семья"}: ${fullName(anchor)}`}
           >
             <GitBranch size={15} />
             <span>
@@ -41,7 +45,7 @@ export function FamilyViewTools({
             </span>
           </span>
         )}
-        {anchor && (
+        {anchor && !fanActive && (
           <span className="tree-family-count" role="status">
             {count} из {total}
           </span>
@@ -62,6 +66,16 @@ export function FamilyViewTools({
             aria-pressed={false}
           >
             Общие предки
+          </button>
+        )}
+        {(selected || anchor) && (
+          <button
+            type="button"
+            onClick={onFan}
+            aria-pressed={fanActive}
+            title={`Веер предков: ${fullName(selected || anchor!)}`}
+          >
+            Веер
           </button>
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}

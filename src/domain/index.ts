@@ -18,3 +18,5 @@ export * from "./family-insights.ts";
 export * from "./research-tools.ts";
 
 export * from "./duplicate-analysis.ts";
+
+export * from "./fan-chart.ts";

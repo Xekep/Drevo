@@ -53,6 +53,7 @@ import {
 import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
+import { FanChart } from "./fan-chart";
 
 export type ConnectionDraft = {
   from: string;
@@ -141,6 +142,11 @@ function Canvas(props: Props) {
     focus,
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
+  const [fanAnchor, setFanAnchor] = useState<string | null>(null);
+  const activeFanAnchor =
+    fanAnchor && family.people.some((person) => person.id === fanAnchor)
+      ? fanAnchor
+      : null;
   const [growing, setGrowing] = useState(true);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -185,7 +191,7 @@ function Canvas(props: Props) {
     RelationshipEdgeType
   >();
   const context = `${mode}:${familyView.mode}:${root || "all"}`;
-  useTouchZoom(container, flow, !screen.fullscreen);
+  useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
     visible,
@@ -440,6 +446,7 @@ function Canvas(props: Props) {
   );
   function switchMode(next: TreeMode) {
     rememberContext();
+    setFanAnchor(null);
     setMode(next);
     setEdgeChoices([]);
   }
@@ -447,7 +454,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
         aria-busy={growthActive}
@@ -492,7 +499,7 @@ function Canvas(props: Props) {
                   ? () => props.onShare!(root, [...visible])
                   : undefined
               }
-              anchor={root ? peopleMap.get(root) : undefined}
+              anchor={activeFanAnchor ? peopleMap.get(activeFanAnchor) : root ? peopleMap.get(root) : undefined}
               selected={peopleMap.get(selected[0])}
               count={visible.size}
               total={family.people.length}
@@ -504,14 +511,32 @@ function Canvas(props: Props) {
               mode={familyView.mode}
               onFamily={() => {
                 rememberContext();
+                setFanAnchor(null);
                 familyView.enter();
               }}
               onCommon={() => {
                 rememberContext();
+                setFanAnchor(null);
                 familyView.enterCommon();
               }}
+              onFan={() => {
+                if (activeFanAnchor) {
+                  setFanAnchor(null);
+                  return;
+                }
+                const next =
+                  selected[0] || root || familyView.defaultAnchor;
+                if (!next) return;
+                rememberContext();
+                setGrowing(false);
+                setEdgeChoices([]);
+                setCreateAt(null);
+                setFanAnchor(next);
+              }}
+              fanActive={!!activeFanAnchor}
               onAll={() => {
                 rememberContext();
+                setFanAnchor(null);
                 familyView.showAll();
               }}
               onReset={() => {
@@ -522,7 +547,15 @@ function Canvas(props: Props) {
           )}
         </div>
         {!narrow && props.comparisonAction}
-        <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
+        {activeFanAnchor ? (
+          <FanChart
+            family={family}
+            anchorId={activeFanAnchor}
+            selected={selected}
+            onChoose={(id) => onChoose(id, false)}
+          />
+        ) : (
+          <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           proOptions={{ hideAttribution: true }}
           nodes={displayNodes}
           edges={displayEdges}
@@ -646,7 +679,9 @@ function Canvas(props: Props) {
             <TreeCameraTools selected={selected} />
           )}
         </ReactFlow>
-        <TreeEdgeChoices
+        )}
+        {!activeFanAnchor && (
+          <TreeEdgeChoices
           choices={edgeChoices}
           peopleMap={peopleMap}
           connections={connections}
@@ -654,17 +689,20 @@ function Canvas(props: Props) {
           onClose={() => setEdgeChoices([])}
           onSelect={onEdge}
         />
-        <TreeCreateAt
+        )}
+        {!activeFanAnchor && (
+          <TreeCreateAt
           draft={props.canEdit ? createAt : null}
           busy={props.busy}
           personName={createAt ? peopleMap.get(createAt.id)?.name : undefined}
           onAdd={props.onAddRelative}
           onClose={() => setCreateAt(null)}
         />
-        {mode === "timeline" && geometry?.mode === "timeline" && (
+        )}
+        {!activeFanAnchor && mode === "timeline" && geometry?.mode === "timeline" && (
           <EraOverlay geometry={geometry} />
         )}
-        {problem && (
+        {!activeFanAnchor && problem && (
           <div className="tree-notice" role="alert">
             {problem}
           </div>
