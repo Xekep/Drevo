@@ -65,6 +65,20 @@ test("textual model tool call is recovered instead of being shown as Arduino cod
     ),
     [],
   );
+  assert.deepEqual(
+    recoverTextToolCalls(
+      'Создаю отчёт:\n```\ncreate_pdf\n{"title":"Семейный архив","content":"Текст"}\n```',
+      new Set(["create_pdf"]),
+    ).map((call) => [call.function.name, JSON.parse(call.function.arguments)]),
+    [["create_pdf", { title: "Семейный архив", content: "Текст" }]],
+  );
+  assert.deepEqual(
+    recoverTextToolCalls(
+      "```\nget_archive_insights\n{}\n```",
+      new Set(["get_archive_insights"]),
+    ).map((call) => call.function.name),
+    ["get_archive_insights"],
+  );
   const sample = [
     "Вызову данные о её родственниках:",
     '```json\n{"name":"get_family","parameters":{"personId":"person-42"}}\n```',

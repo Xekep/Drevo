@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("ИИ показывает готовый ответ и раскрывает Mermaid-граф с масштабом", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 750, height: 500 });
   await page.route("**/api/ai/status", (route) =>
     route.fulfill({ json: { enabled: true, streaming: true } }),
   );
@@ -38,6 +39,28 @@ test("ИИ показывает готовый ответ и раскрывае�
   await expect(dialog.locator(".research-mermaid-canvas svg")).toBeVisible();
   await dialog.getByRole("button", { name: "Увеличить схему" }).click();
   await expect(dialog).toContainText("125%");
+  for (let index = 0; index < 6; index++)
+    await dialog.getByRole("button", { name: "Увеличить схему" }).click();
+  const canvas = dialog.locator(".research-mermaid-canvas");
+  await expect
+    .poll(() =>
+      canvas.evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
+  const before = await canvas.evaluate((element) => element.scrollTop);
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box!.x + box!.width / 2,
+    box!.y + box!.height / 2 - 90,
+    { steps: 4 },
+  );
+  await page.mouse.up();
+  await expect
+    .poll(() => canvas.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(before);
   await dialog.getByRole("button", { name: "Закрыть схему" }).click();
   await expect(dialog).toHaveCount(0);
 });

@@ -20,7 +20,7 @@ import type { Family } from "../domain/types.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import { fetchAiStudioModels } from "./ai-models.ts";
-import { researchPdf } from "./research-pdf.ts";
+import { researchPdf, type ResearchGraph } from "./research-pdf.ts";
 
 type ToolCall = {
   id: string;
@@ -124,7 +124,7 @@ type ResearchFile = { name: string; url: string };
 const CREATE_PDF_TOOL = {
   name: "create_pdf",
   description:
-    "Создать PDF из подготовленного текста по явной просьбе пользователя. Передай заголовок и проверенное содержимое; файл будет приложен к ответу автоматически. Не помещай в документ данные, которые не доступны пользователю.",
+    "Создать PDF из подготовленного текста по явной просьбе пользователя. Передай заголовок и проверенное содержимое; файл будет приложен к ответу автоматически. Для анализа архива и при просьбе о графе сервер добавит страницу с нарисованной схемой из реальных данных архива. Не помещай в документ данные, которые не доступны пользователю.",
   inputSchema: {
     type: "object",
     properties: {
@@ -207,9 +207,14 @@ export function recoverTextToolCalls(
       const match = candidate
         .trim()
         .match(/^([a-z][a-z0-9_]*)\s*\(\s*([\s\S]*?)\s*\)\s*;?$/i);
+      const split = candidate
+        .trim()
+        .match(/^([a-z][a-z0-9_]*)\s*\r?\n\s*(\{[\s\S]*\})\s*$/i);
       const parsed = match
         ? { name: match[1], parameters: JSON.parse(match[2]) }
-        : JSON.parse(candidate.trim());
+        : split
+          ? { name: split[1], parameters: JSON.parse(split[2]) }
+          : JSON.parse(candidate.trim());
       if (
         !parsed ||
         typeof parsed !== "object" ||
@@ -251,10 +256,59 @@ function containsInternalToolText(
     return true;
   return [...allowedNames].some((name) =>
     new RegExp(
-      `\\b${name}\\s*\\(|["']name["']\\s*:\\s*["']${name}["']`,
+      `\\b${name}\\s*(?:\\(|\\r?\\n\\s*\\{)|["']name["']\\s*:\\s*["']${name}["']`,
       "i",
     ).test(content),
   );
+}
+
+function archiveGraph(family: Family): ResearchGraph {
+  const ids = new Set(family.people.map((person) => person.id));
+  const spouses = new Set<string>();
+  const edges: ResearchGraph["edges"] = [];
+  for (const person of family.people) {
+    for (const parentId of person.parents)
+      if (ids.has(parentId))
+        edges.push({ from: parentId, to: person.id, type: "parent" });
+    for (const spouseId of person.spouses)
+      if (ids.has(spouseId)) {
+        const [from, to] = [person.id, spouseId].sort(),
+          key = `${from}\0${to}`;
+        if (!spouses.has(key)) {
+          spouses.add(key);
+          edges.push({ from, to, type: "spouse" });
+        }
+      }
+  }
+  for (const link of family.links || [])
+    if (ids.has(link.from) && ids.has(link.to))
+      edges.push({ from: link.from, to: link.to, type: link.type });
+  return {
+    nodes: family.people.map((person) => ({
+      id: person.id,
+      name: fullName(person),
+      birth: person.birth,
+      death: person.death,
+    })),
+    edges,
+  };
+}
+
+function researchToolStatus(name: string) {
+  const labels: Record<string, string> = {
+    get_archive_insights: "Собираю статистику и факты архива…",
+    find_missing_data: "Ищу пробелы в карточках людей…",
+    find_inconsistencies: "Проверяю противоречия в данных…",
+    find_possible_duplicates: "Проверяю похожие карточки…",
+    get_research_backlog: "Составляю дальнейшие шаги исследования…",
+    get_genealogy_graph: "Строю схему родственных связей…",
+    search_people: "Ищу людей в архиве…",
+    list_people: "Составляю список людей…",
+    get_sources: "Изучаю указанные источники…",
+    analyze_photo: "Изучаю фотографию…",
+    create_pdf: "Готовлю PDF и приложения…",
+  };
+  return labels[name] || "Проверяю связанные сведения в архиве…";
 }
 
 export function humanizeResearchAnswer(
@@ -834,8 +888,8 @@ export function aiResearchHttp({
         requesterPromptContext(user, family),
         requesterAccessContext(user, canPropose),
         "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
-        "Если пользователь просит схему, граф или визуализацию родства, обязательно вызови get_genealogy_graph и вставь возвращённое поле mermaid в fenced-блок ```mermaid без изменений. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
-        "Если пользователь просит PDF, сначала собери необходимые сведения доступными инструментами, затем вызови create_pdf с заголовком и подготовленным текстом. В обычном ответе кратко поясни содержимое файла; ссылка на скачивание появится автоматически. При просьбе преобразовать предыдущий ответ используй контекст диалога. Не выдавай текстовый файл за готовый PDF.",
+        "Если пользователь просит схему в чате, вызови get_genealogy_graph и вставь возвращённое поле mermaid в fenced-блок ```mermaid без изменений. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
+        "Если пользователь просит PDF, сначала собери необходимые сведения доступными инструментами, затем обязательно вызови create_pdf через tool_calls с заголовком и подготовленным текстом. При просьбе о графе связей в PDF сервер сам добавляет отдельную страницу с нарисованной схемой реальных связей архива. В обычном ответе кратко поясни содержимое файла; не печатай URL, ссылка на скачивание появится автоматически. Не обещай готовый файл, пока инструмент не вернул created: true.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
           : "",
@@ -868,7 +922,8 @@ export function aiResearchHttp({
     let analyzedPhotos = 0,
       executedTools = 0,
       lookupRetryUsed = false,
-      internalOutputRetryUsed = false;
+      internalOutputRetryUsed = false,
+      pdfRetryUsed = false;
     const uiActions: UiAction[] = [],
       files: ResearchFile[] = [],
       allowedToolNames = new Set([
@@ -886,7 +941,16 @@ export function aiResearchHttp({
       personCardViewRequested =
         /(?:открой|покаж(?:и|ь)?).{0,40}карточ|карточ.{0,40}(?:открой|покаж(?:и|ь)?)/iu.test(
           message,
-        );
+        ),
+      pdfRequested =
+        /(?:pdf|пдф)/iu.test(message) ||
+        /(?:сдела|созда|сформир|подготов|дай|гони|пришл|скача).{0,45}(?:файл|документ)|(?:файл|документ).{0,35}(?:готов|скача|пришл)|(?:в документе|в файле).{0,70}(?:граф|схем)/iu.test(
+          message,
+        ),
+      graphInPdfRequested =
+        pdfRequested &&
+        family.people.length > 0 &&
+        /(?:граф|схем|анализ)/iu.test(lookupContext);
 
     if (
       canPropose &&
@@ -952,6 +1016,16 @@ export function aiResearchHttp({
           onStatus("Уточняю ответ по данным архива…");
           continue;
         }
+        if (pdfRequested && !files.length && !pdfRetryUsed) {
+          pdfRetryUsed = true;
+          messages.push({
+            role: "system",
+            content:
+              "Пользователь просит PDF, но файл ещё не создан. Вызови create_pdf именно через tool_calls. Если не можешь создать файл, прямо объясни причину и не утверждай, что он приложен.",
+          });
+          onStatus("Создаю запрошенный PDF…");
+          continue;
+        }
         if (
           !lookupRetryUsed &&
           executedTools === 0 &&
@@ -1005,20 +1079,28 @@ export function aiResearchHttp({
             label: photosById.get(id)!,
           })),
         ];
-        const rawAnswer = createdSuggestionIds.size
-          ? createdSuggestionIds.size === 1
-            ? "Подготовлено предложение. Проверьте данные ниже и нажмите ✓, чтобы применить изменение, или ×, чтобы отклонить."
-            : "Подготовлены предложения. Проверьте данные ниже и примите или отклоните каждое кнопками ✓ и ×."
-          : proposalErrors.length
-            ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
-            : typeof answer.content === "string" && answer.content.trim()
-              ? answer.content
-              : "Модель не сформировала текстовый ответ.";
+        const rawAnswer =
+          pdfRequested && !files.length
+            ? "Не удалось создать PDF. Попробуйте повторить запрос."
+            : createdSuggestionIds.size
+              ? createdSuggestionIds.size === 1
+                ? "Подготовлено предложение. Проверьте данные ниже и нажмите ✓, чтобы применить изменение, или ×, чтобы отклонить."
+                : "Подготовлены предложения. Проверьте данные ниже и примите или отклоните каждое кнопками ✓ и ×."
+              : proposalErrors.length
+                ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
+                : typeof answer.content === "string" && answer.content.trim()
+                  ? answer.content
+                  : "Модель не сформировала текстовый ответ.";
         const safeAnswer = containsInternalToolText(rawAnswer, allowedToolNames)
           ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
           : humanizeResearchAnswer(
               repairArchiveMarkers(
-                rawAnswer,
+                files.length
+                  ? rawAnswer.replace(
+                      /(?:Скачать файл можно по ссылке:|Ссылка:)\s*(?=(?:\[[^\]]+\]\()?\s*(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/)|\[[^\]]+\]\((?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[a-f\d-]+\)|(?:https?:\/\/[^\s)]*)?\/api\/ai\/files\/[a-f\d-]+/giu,
+                      "",
+                    )
+                  : rawAnswer,
                 peopleById,
                 photosById,
                 referencedPeople,
@@ -1037,18 +1119,9 @@ export function aiResearchHttp({
         };
       }
 
-      onStatus("Проверяю данные архива…");
       for (const call of calls) {
         executedTools++;
-        onStatus(
-          call.function.name === CREATE_PDF_TOOL.name
-            ? "Готовлю PDF…"
-            : call.function.name === "get_genealogy_graph"
-              ? "Строю схему родства…"
-              : call.function.name === "analyze_photo"
-                ? "Изучаю фотографию…"
-                : "Проверяю сведения в архиве…",
-        );
+        onStatus(researchToolStatus(call.function.name));
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === call.function.name,
         );
@@ -1059,7 +1132,7 @@ export function aiResearchHttp({
           if (definition)
             result = executeResearchTool(family, definition.name, toolArgs);
           else if (call.function.name === CREATE_PDF_TOOL.name) {
-            if (!/(?:pdf|пдф|файл|документ)/iu.test(message))
+            if (!pdfRequested)
               throw new Error("PDF создаётся только по просьбе пользователя");
             if (files.length >= 3)
               throw new Error("За один запрос можно создать не более трёх PDF");
@@ -1067,7 +1140,11 @@ export function aiResearchHttp({
               title = typeof raw.title === "string" ? raw.title.trim() : "",
               content =
                 typeof raw.content === "string" ? raw.content.trim() : "",
-              bytes = await researchPdf(title, content),
+              bytes = await researchPdf(
+                title,
+                content,
+                graphInPdfRequested ? archiveGraph(family) : undefined,
+              ),
               id = randomUUID(),
               name = `${
                 title
@@ -1199,6 +1276,10 @@ export function aiResearchHttp({
                 : "Ошибка исследовательского инструмента",
           };
         }
+        if (call.function.name === CREATE_PDF_TOOL.name && files.length)
+          onStatus(
+            graphInPdfRequested ? "PDF со схемой связей готов" : "PDF готов",
+          );
         collectPersonReferences(result, peopleById, referencedPeople);
         collectPersonReferences(result, photosById, referencedPhotos);
         if (
@@ -1336,7 +1417,6 @@ export function aiResearchHttp({
         "X-Accel-Buffering": "no",
       });
       res.flushHeaders?.();
-      sse(res, "status", { message: "Соединение установлено" });
     }
 
     try {

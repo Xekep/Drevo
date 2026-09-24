@@ -117,7 +117,15 @@ function renderMermaid(source: string) {
 
 function MermaidDiagram({ source }: { source: string }) {
   const [expanded, setExpanded] = useState(false),
-    [zoom, setZoom] = useState(1);
+    [zoom, setZoom] = useState(1),
+    [panning, setPanning] = useState(false);
+  const drag = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+  } | null>(null);
   const [rendered, setRendered] = useState<{
     source: string;
     svg: string;
@@ -239,7 +247,41 @@ function MermaidDiagram({ source }: { source: string }) {
                   </button>
                 </div>
               </header>
-              <div className="research-mermaid-canvas">
+              <div
+                className={`research-mermaid-canvas${panning ? " is-panning" : ""}`}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  const target = event.currentTarget;
+                  drag.current = {
+                    pointerId: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                    left: target.scrollLeft,
+                    top: target.scrollTop,
+                  };
+                  target.setPointerCapture(event.pointerId);
+                  setPanning(true);
+                  event.preventDefault();
+                }}
+                onPointerMove={(event) => {
+                  const start = drag.current;
+                  if (!start || start.pointerId !== event.pointerId) return;
+                  event.currentTarget.scrollLeft =
+                    start.left - (event.clientX - start.x);
+                  event.currentTarget.scrollTop =
+                    start.top - (event.clientY - start.y);
+                }}
+                onPointerUp={(event) => {
+                  if (drag.current?.pointerId !== event.pointerId) return;
+                  drag.current = null;
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                  setPanning(false);
+                }}
+                onPointerCancel={() => {
+                  drag.current = null;
+                  setPanning(false);
+                }}
+              >
                 <div
                   style={{ width: `${Math.max(300, naturalWidth * zoom)}px` }}
                   dangerouslySetInnerHTML={{ __html: svg }}
@@ -1052,7 +1094,7 @@ export function ResearchAssistant({
     setMessages((current) => [...current, { role: "user", content: message }]);
     setDraft("");
     setBusy(true);
-    setStreamStatus("Соединяюсь…");
+    setStreamStatus("Обрабатываю запрос…");
     setActivities([]);
     setError("");
     try {
@@ -1094,9 +1136,9 @@ export function ResearchAssistant({
           files?: Array<{ name: string; url: string }>;
         };
         if (parsed.event === "status") {
-          if (data.message) {
+          if (data.message && data.message !== "Соединение установлено") {
             setStreamStatus(data.message);
-            if (steps.at(-1) !== data.message) {
+            if (!steps.includes(data.message)) {
               steps.push(data.message);
               setActivities([...steps]);
             }
@@ -1336,11 +1378,11 @@ export function ResearchAssistant({
                   !!message.activities?.length && (
                     <details className="research-activity">
                       <summary>Как готовился ответ</summary>
-                      <ol>
+                      <div className="research-activity-steps">
                         {message.activities.map((step, position) => (
-                          <li key={position}>{step}</li>
+                          <p key={position}>{step}</p>
                         ))}
-                      </ol>
+                      </div>
                     </details>
                   )}
                 <article className={`is-${message.role}`}>
@@ -1399,11 +1441,11 @@ export function ResearchAssistant({
                   </span>
                 </summary>
                 {activities.length > 1 && (
-                  <ol>
+                  <div className="research-activity-steps">
                     {activities.slice(0, -1).map((step, position) => (
-                      <li key={position}>{step}</li>
+                      <p key={position}>{step}</p>
                     ))}
-                  </ol>
+                  </div>
                 )}
               </details>
             )}
