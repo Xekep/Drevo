@@ -103,6 +103,7 @@ type AnswerReference =
 
 type ResearchMetrics = {
   providerCalls: number;
+  agentIterations: number;
   toolCallCount: number;
   cachedTokens: number;
   responseId: string;
@@ -911,6 +912,7 @@ export function aiResearchHttp({
     pendingInput.push({ type: "message", role: "user", content: message });
 
     for (let round = 0; round <= runtime.maxToolIterations; round++) {
+      metrics.agentIterations++;
       recordModelCall(metrics, runtime.modelUri);
       let completion;
       try {
@@ -1575,6 +1577,7 @@ export function aiResearchHttp({
     const usageRun = usage.begin(user.id, runtime.model),
       metrics: ResearchMetrics = {
         providerCalls: 0,
+        agentIterations: 0,
         toolCallCount: 0,
         cachedTokens: 0,
         responseId: "",
@@ -1653,6 +1656,7 @@ export function aiResearchHttp({
             ?.yandexConversationId,
           model: runtime.modelUri,
           providerCalls: metrics.providerCalls,
+          agentIterations: metrics.agentIterations,
           toolCallCount: metrics.toolCallCount,
           responseId: metrics.responseId,
           inputTokens: metrics.inputTokens,
@@ -1680,6 +1684,21 @@ export function aiResearchHttp({
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
       chats.setRemote(chat.id, null);
+      console.warn(
+        JSON.stringify({
+          event: "ai.turn_failed",
+          localConversationId: chat.id,
+          model: runtime.modelUri,
+          responseId: metrics.responseId,
+          agentIterations: metrics.agentIterations,
+          toolCallCount: metrics.toolCallCount,
+          providerErrorCode:
+            error instanceof YandexResponseError ? error.code : undefined,
+          providerStatus:
+            error instanceof YandexResponseError ? error.status : undefined,
+          latencyMs: Date.now() - usageRun.started,
+        }),
+      );
       usage.finish(usageRun.id, usageRun.started, {
         status: "error",
         providerCalls: metrics.providerCalls,
