@@ -71,6 +71,50 @@ function topValues(values: string[], limit = 6) {
     .slice(0, limit);
 }
 
+function rankSurnames(people: Person[], limit = 6) {
+  const counts = new Map<string, { label: string; count: number }>(),
+    maleForms = new Map(
+      people
+        .filter((person) => person.sex === "m" && person.surname.trim())
+        .map((person) => [normalized(person.surname), person.surname.trim()]),
+    );
+  for (const person of people) {
+    const original = person.surname.trim();
+    if (!original) continue;
+    let label = original;
+    if (person.sex === "f" && !maleForms.has(normalized(original))) {
+      const candidates = /[сц]кая$/iu.test(original)
+        ? [`${original.slice(0, -2)}ий`]
+        : original.length >= 5 && /(?:ова|ева|ёва|ина|ына)$/iu.test(original)
+          ? [original.slice(0, -1)]
+          : /яя$/iu.test(original)
+            ? [`${original.slice(0, -2)}ий`]
+            : /ая$/iu.test(original)
+              ? ["ый", "ий", "ой"].map(
+                  (ending) => `${original.slice(0, -2)}${ending}`,
+                )
+              : [];
+      const recorded = candidates.find((candidate) =>
+        maleForms.has(normalized(candidate)),
+      );
+      label = recorded
+        ? maleForms.get(normalized(recorded))!
+        : /ая$/iu.test(original) && !/[сц]кая$/iu.test(original)
+          ? original
+          : candidates[0] || original;
+    }
+    const key = normalized(label);
+    const current = counts.get(key);
+    if (current) {
+      current.count++;
+      if (person.sex === "m") current.label = original;
+    } else counts.set(key, { label, count: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ru"))
+    .slice(0, limit);
+}
+
 function childCounts(people: Person[]) {
   const counts = new Map<string, number>();
   for (const child of people)
@@ -267,7 +311,7 @@ export function analyzeFamilyInsights(
       const year = yearOf(person.birth);
       return year === null ? [] : [{ person, year }];
     }),
-    topSurnames = topValues(people.map((person) => person.surname)),
+    topSurnames = rankSurnames(people),
     topNames = topValues(people.map((person) => person.name)),
     peak = peakLiving(people, currentYear),
     photos = family.photos || [],

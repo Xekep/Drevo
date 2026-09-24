@@ -145,3 +145,66 @@ test("average lifespan by sex counts only known birth and death years", () => {
   assert.equal(empty.at(-2)?.value, "Нет данных");
   assert.equal(empty.at(-1)?.value, "Нет данных");
 });
+
+test("surname ranking combines feminine and masculine forms", () => {
+  const people = [
+    person("a", "Анна", "1900", 1, { sex: "f", surname: "Иванова" }),
+    person("b", "Иван", "1900", 1, { sex: "m", surname: "Иванов" }),
+    person("c", "Мария", "1900", 1, { sex: "f", surname: "Петровская" }),
+    person("d", "Пётр", "1900", 1, { sex: "m", surname: "Петровский" }),
+    person("e", "Елена", "1900", 1, { sex: "f", surname: "Скулко" }),
+    person("f", "Василий", "1900", 1, { sex: "m", surname: "Скулко" }),
+    person("g", "Ольга", "1900", 1, { sex: "f", surname: "Сова" }),
+    person("h", "Николай", "1900", 1, { sex: "m", surname: "Сова" }),
+    person("i", "Нина", "1900", 1, { sex: "f", surname: "Семёнова" }),
+    person("j", "Семён", "1900", 1, { sex: "m", surname: "Семёнов" }),
+  ];
+  const result = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people,
+  });
+  assert.deepEqual(
+    result.topSurnames.map(({ label, count }) => [label, count]),
+    [
+      ["Иванов", 2],
+      ["Петровский", 2],
+      ["Семёнов", 2],
+      ["Скулко", 2],
+      ["Сова", 2],
+    ],
+  );
+  assert.ok(
+    result.facts.some(
+      (fact) =>
+        fact.title === "Самая частая фамилия" && fact.value === "Иванов",
+    ),
+  );
+});
+
+test("surname ranking prefers recorded masculine forms and preserves invariant names", () => {
+  const people = [
+    person("f1", "Анна", "1900", 1, { sex: "f", surname: "Калина" }),
+    person("m1", "Иван", "1900", 1, { sex: "m", surname: "Калина" }),
+    person("f2", "Мария", "1900", 1, { sex: "f", surname: "Большая" }),
+    person("m2", "Пётр", "1900", 1, { sex: "m", surname: "Большой" }),
+    person("f3", "Ольга", "1900", 1, { sex: "f", surname: "Тихая" }),
+    person("f4", "Вера", "1900", 1, { sex: "f", surname: "Ильина" }),
+  ];
+  const result = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people,
+  });
+  assert.deepEqual(
+    result.topSurnames.map(({ label, count }) => [label, count]),
+    [
+      ["Большой", 2],
+      ["Калина", 2],
+      ["Ильин", 1],
+      ["Тихая", 1],
+    ],
+  );
+});
