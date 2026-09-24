@@ -645,6 +645,7 @@ function PhotoViewerContent({
                       <button
                         disabled={!personId || busy}
                         onClick={async () => {
+                          const tagId = crypto.randomUUID();
                           if (
                             await update({
                               ...photo,
@@ -652,7 +653,7 @@ function PhotoViewerContent({
                                 ...photo.tags,
                                 {
                                   ...rect,
-                                  id: crypto.randomUUID(),
+                                  id: tagId,
                                   personId,
                                 },
                               ],
@@ -667,6 +668,7 @@ function PhotoViewerContent({
                                   personId,
                                   sample.descriptor,
                                   photo.id,
+                                  tagId,
                                 );
                               } catch {
                                 setScanStatus(

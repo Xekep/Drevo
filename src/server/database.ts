@@ -20,6 +20,7 @@ export type StoredFaceDescriptor = {
   data: string;
   createdBy?: string;
   sourcePhotoId?: string;
+  sourceTagId?: string;
   model: string;
 };
 
@@ -366,8 +367,8 @@ export function openArchive(path: string, seed: Family) {
         db.exec("DELETE FROM face_descriptors");
         const insert = db.prepare(
           `INSERT INTO face_descriptors
-             (id,person_id,data,created_by,source_photo_id,model)
-           VALUES(?,?,?,?,?,?)`,
+             (id,person_id,data,created_by,source_photo_id,source_tag_id,model)
+           VALUES(?,?,?,?,?,?,?)`,
         );
         for (const sample of faceDescriptors)
           insert.run(
@@ -376,6 +377,7 @@ export function openArchive(path: string, seed: Family) {
             sample.data,
             sample.createdBy || null,
             sample.sourcePhotoId || null,
+            sample.sourceTagId || null,
             sample.model,
           );
       }

@@ -434,6 +434,12 @@
   flex: 1;
   overflow: auto;
   padding: 24px;
+  cursor: grab;
+  touch-action: none;
+}
+.research-mermaid-canvas.is-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 .research-mermaid-canvas svg {
   display: block;
@@ -461,9 +467,15 @@
 .research-activity summary {
   cursor: pointer;
 }
-.research-activity ol {
+.research-activity-steps {
   margin: 8px 0 0;
-  padding-left: 22px;
+  padding-left: 12px;
+  border-left: 2px solid #dce7d8;
+}
+.research-activity-steps p {
+  margin: 0 0 7px;
+  color: #53684f;
+  line-height: 1.4;
 }
 .research-file {
   display: inline-flex;

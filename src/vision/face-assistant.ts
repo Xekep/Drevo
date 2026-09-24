@@ -155,6 +155,7 @@ export async function saveFaceDescriptor(
   personId: string,
   descriptor: number[],
   sourcePhotoId: string,
+  sourceTagId: string,
 ) {
   const response = await fetch("/api/faces/descriptors", {
     method: "POST",
@@ -165,6 +166,7 @@ export async function saveFaceDescriptor(
       personId,
       descriptor,
       sourcePhotoId,
+      sourceTagId,
       model: FACE_MODEL,
     }),
   });
