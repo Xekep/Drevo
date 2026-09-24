@@ -121,6 +121,13 @@ test("backfill rejects unconfirmed provenance and rolls back the batch", () => {
     );
     assert.throws(
       () =>
+        importFaceDescriptors(archive.db, [
+          { ...valid, sourceTagId: "wrong-tag" },
+        ]),
+      /Missing confirmed photo tag/,
+    );
+    assert.throws(
+      () =>
         importFaceDescriptors(archive.db, [{ ...valid, descriptor: [0.1] }]),
       /Invalid face descriptor input/,
     );
