@@ -202,10 +202,9 @@ function generationStats(people: Person[]): InsightGeneration[] {
     .map(([generation, group]) => {
       const lifespans = group.flatMap((person) => {
         const birth = yearOf(person.birth),
-          death = yearOf(person.death);
-        return birth !== null && death !== null && death >= birth
-          ? [death - birth]
-          : [];
+          death = yearOf(person.death),
+          age = birth !== null && death !== null ? death - birth : null;
+        return age !== null && age >= 18 ? [age] : [];
       });
       return {
         generation,
@@ -302,11 +301,11 @@ export function analyzeFamilyInsights(
     spousePairs = uniqueSpousePairs(people),
     lifespans = people.flatMap((person) => {
       const birth = yearOf(person.birth),
-        death = yearOf(person.death);
-      return birth !== null && death !== null && death >= birth
-        ? [{ person, age: death - birth }]
-        : [];
+        death = yearOf(person.death),
+        age = birth !== null && death !== null ? death - birth : null;
+      return age !== null && age >= 0 ? [{ person, age }] : [];
     }),
+    adultLifespans = lifespans.filter(({ age }) => age >= 18),
     knownBirths = people.flatMap((person) => {
       const year = yearOf(person.birth);
       return year === null ? [] : [{ person, year }];
@@ -416,7 +415,7 @@ export function analyzeFamilyInsights(
     ["m", "мужчин"],
     ["f", "женщин"],
   ] as const) {
-    const ages = lifespans
+    const ages = adultLifespans
       .filter(({ person }) => person.sex === sex)
       .map(({ age }) => age);
     const average = ages.length
@@ -431,8 +430,8 @@ export function analyzeFamilyInsights(
           ? "Нет данных"
           : `≈ ${average.toLocaleString("ru-RU")} ${Number.isInteger(average) ? plural(average, "год", "года", "лет") : "года"}`,
       detail: ages.length
-        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти`
-        : "Нет записей с известными годами рождения и смерти",
+        ? `${ages.length} ${plural(ages.length, "человек", "человека", "человек")} с известными годами рождения и смерти, проживших 18 лет и более`
+        : "Нет записей с известными годами рождения и смерти среди проживших 18 лет и более",
     });
   }
 
