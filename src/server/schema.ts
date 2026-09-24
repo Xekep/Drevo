@@ -401,6 +401,7 @@ function migrate(db: DatabaseSync, target: number) {
     // confirmed tag where possible and drop orphaned samples left by corrected
     // or removed photo annotations.
     db.exec(`
+      DROP TRIGGER IF EXISTS face_descriptor_tag_person_update;
       DROP TABLE IF EXISTS face_descriptors_v14;
       CREATE TABLE face_descriptors_v14 (
         id TEXT PRIMARY KEY,
