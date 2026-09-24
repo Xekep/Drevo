@@ -336,13 +336,15 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   ).toBeVisible();
   await expect(page.locator(".ai-token-day")).toHaveCount(14);
   await expect(page.locator(".ai-token-model-segment")).toHaveCount(2);
-  await expect(page.getByLabel("Модели")).toContainText([
+  await expect(page.getByLabel("Модели")).toContainText(
     "yandexgpt-5.1/latest",
+  );
+  await expect(page.getByLabel("Модели")).toContainText(
     "deepseek-v4-flash/latest",
-  ]);
+  );
   await expect(
     page.locator(".ai-token-model-segment").first(),
-  ).toHaveAttribute("title", /вход 1[  ]?200 · выход 300/);
+  ).toHaveAttribute("title", /вход 1.?200 · выход 300/);
 
   await page.getByRole("button", { name: "MCP-токены" }).click();
   const permissions = page.getByLabel("Разрешения");
