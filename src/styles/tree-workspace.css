@@ -205,6 +205,9 @@
   inset: 0;
   z-index: 20;
 }
+.tree-canvas.is-growth-preparing .react-flow__viewport {
+  visibility: hidden;
+}
 .tree-canvas .react-flow {
   position: absolute;
   top: 0;
