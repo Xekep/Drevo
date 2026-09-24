@@ -236,6 +236,63 @@ test("failed migration rolls back its DDL and keeps the previous version", () =>
   }
 });
 
+test("schema v14 binds valid face descriptors to tags and removes stale corrections", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    db.exec(`
+      DROP TRIGGER IF EXISTS face_descriptor_tag_update;
+      DROP TABLE face_descriptors;
+      CREATE TABLE face_descriptors (
+        id TEXT PRIMARY KEY,
+        person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        data TEXT NOT NULL CHECK(json_valid(data)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        created_by TEXT,
+        source_photo_id TEXT,
+        model TEXT NOT NULL DEFAULT 'face-api-1.7.15'
+      ) STRICT;
+      CREATE INDEX face_descriptors_person ON face_descriptors(person_id);
+
+      INSERT INTO people(id,data) VALUES
+        ('first','{}'),
+        ('second','{}');
+      INSERT INTO photos(id,data) VALUES ('photo','{}');
+      INSERT INTO photo_tags(id,photo_id,person_id,data) VALUES
+        ('photo:tag-first','photo','first','{"id":"tag-first","personId":"first","x":0,"y":0,"width":1,"height":1}');
+      INSERT INTO face_descriptors(
+        id,person_id,data,source_photo_id,model
+      ) VALUES
+        ('valid','first','[0.1]','photo','human-faceres-3.3.6'),
+        ('stale','second','[0.2]','photo','human-faceres-3.3.6');
+      PRAGMA user_version=13;
+    `);
+
+    initializeArchiveSchema(db);
+
+    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT id,person_id,source_photo_id,source_tag_id FROM face_descriptors ORDER BY id",
+        )
+        .all()
+        .map((row) => ({ ...row })),
+      [
+        {
+          id: "valid",
+          person_id: "first",
+          source_photo_id: "photo",
+          source_tag_id: "photo:tag-first",
+        },
+      ],
+    );
+    assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    db.close();
+  }
+});
+
 test("future schema version is rejected without changing the database", () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-schema-test-")),
     file = join(directory, "future.sqlite"),
