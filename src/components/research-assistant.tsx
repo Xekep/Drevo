@@ -8,7 +8,17 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Check, Send, Sparkles, Trash2, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  Check,
+  Minus,
+  Plus,
+  RotateCcw,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -30,6 +40,8 @@ type Message = {
   content: string;
   references?: AnswerReference[];
   suggestionIds?: string[];
+  files?: Array<{ name: string; url: string }>;
+  activities?: string[];
 };
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
@@ -72,13 +84,22 @@ function renderMermaid(source: string) {
   if (cached) return Promise.resolve(cached);
   const pending = mermaidSvgPending.get(source);
   if (pending) return pending;
-  mermaidModule ||= import("mermaid").then((module) => {
+  mermaidModule ||= import("mermaid").then(async (module) => {
     module.default.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       theme: "neutral",
       fontFamily: "inherit",
+      flowchart: { defaultRenderer: "elk", useMaxWidth: false },
+      elk: {
+        mergeEdges: true,
+        nodePlacementStrategy: "BRANDES_KOEPF",
+        cycleBreakingStrategy: "GREEDY",
+      },
     });
+    module.default.registerLayoutLoaders(
+      (await import("@mermaid-js/layout-elk")).default,
+    );
     return module.default;
   });
   const rendering = mermaidModule
@@ -95,6 +116,8 @@ function renderMermaid(source: string) {
 }
 
 function MermaidDiagram({ source }: { source: string }) {
+  const [expanded, setExpanded] = useState(false),
+    [zoom, setZoom] = useState(1);
   const [rendered, setRendered] = useState<{
     source: string;
     svg: string;
@@ -120,15 +143,113 @@ function MermaidDiagram({ source }: { source: string }) {
     };
   }, [source]);
 
+  useEffect(() => {
+    if (!expanded) return;
+    const close = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [expanded]);
+
+  const viewBox = /viewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/.exec(svg),
+    naturalWidth = viewBox ? Number(viewBox[1]) : 900;
+
   return error ? (
     <pre className="research-mermaid-error">{error}</pre>
   ) : (
-    <div
-      className="research-mermaid"
-      role="img"
-      aria-label="Схема, построенная ИИ-исследователем"
-      dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
-    />
+    <>
+      <div className="research-mermaid">
+        {svg && (
+          <button
+            type="button"
+            className="research-mermaid-expand"
+            onClick={() => {
+              setZoom(1);
+              setExpanded(true);
+            }}
+            aria-label="Развернуть схему"
+            title="Развернуть схему"
+          >
+            <span aria-hidden="true">⛶</span>
+          </button>
+        )}
+        <div
+          role="img"
+          aria-label="Схема, построенная ИИ-исследователем"
+          dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
+        />
+      </div>
+      {expanded &&
+        createPortal(
+          <div
+            className="research-mermaid-overlay"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setExpanded(false);
+            }}
+          >
+            <section
+              className="research-mermaid-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Схема родства"
+            >
+              <header>
+                <strong>Схема родства</strong>
+                <div className="research-mermaid-controls">
+                  <button
+                    type="button"
+                    aria-label="Уменьшить схему"
+                    disabled={zoom <= 0.25}
+                    onClick={() =>
+                      setZoom((value) =>
+                        Math.max(0.25, +(value / 1.25).toFixed(2)),
+                      )
+                    }
+                  >
+                    <Minus size={18} />
+                  </button>
+                  <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+                  <button
+                    type="button"
+                    aria-label="Увеличить схему"
+                    disabled={zoom >= 4}
+                    onClick={() =>
+                      setZoom((value) =>
+                        Math.min(4, +(value * 1.25).toFixed(2)),
+                      )
+                    }
+                  >
+                    <Plus size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Сбросить масштаб"
+                    onClick={() => setZoom(1)}
+                  >
+                    <RotateCcw size={17} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Закрыть схему"
+                    onClick={() => setExpanded(false)}
+                  >
+                    <X size={19} />
+                  </button>
+                </div>
+              </header>
+              <div className="research-mermaid-canvas">
+                <div
+                  style={{ width: `${Math.max(300, naturalWidth * zoom)}px` }}
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -591,6 +712,7 @@ export function ResearchAssistant({
       Record<string, "accepted" | "rejected">
     >({}),
     [streamStatus, setStreamStatus] = useState(""),
+    [activities, setActivities] = useState<string[]>([]),
     [error, setError] = useState(""),
     [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null),
     [launcherPosition, setLauncherPosition] = useState<LauncherPosition | null>(
@@ -919,6 +1041,7 @@ export function ResearchAssistant({
     setDraft("");
     setError("");
     setStreamStatus("");
+    setActivities([]);
     setReviewedSuggestions({});
   }
 
@@ -926,14 +1049,11 @@ export function ResearchAssistant({
     const message = text.trim();
     if (!message || busy) return;
     const history = messages.slice(-10);
-    setMessages((current) => [
-      ...current,
-      { role: "user", content: message },
-      { role: "assistant", content: "", references: [] },
-    ]);
+    setMessages((current) => [...current, { role: "user", content: message }]);
     setDraft("");
     setBusy(true);
     setStreamStatus("Соединяюсь…");
+    setActivities([]);
     setError("");
     try {
       const response = await fetch("/api/ai/chat/stream", {
@@ -958,14 +1078,7 @@ export function ResearchAssistant({
       let buffer = "",
         finished = false;
 
-      const updateAssistant = (updater: (message: Message) => Message) =>
-        setMessages((current) => {
-          const next = [...current],
-            index = next.length - 1;
-          if (index < 0 || next[index].role !== "assistant") return current;
-          next[index] = updater(next[index]);
-          return next;
-        });
+      const steps: string[] = [];
 
       const consume = (frame: string) => {
         const parsed = parseSseFrame(frame);
@@ -978,32 +1091,38 @@ export function ResearchAssistant({
           references?: AnswerReference[];
           suggestionIds?: string[];
           uiActions?: UiAction[];
+          files?: Array<{ name: string; url: string }>;
         };
         if (parsed.event === "status") {
-          if (data.message) setStreamStatus(data.message);
+          if (data.message) {
+            setStreamStatus(data.message);
+            if (steps.at(-1) !== data.message) {
+              steps.push(data.message);
+              setActivities([...steps]);
+            }
+          }
           return;
         }
         if (parsed.event === "delta") {
-          if (data.text)
-            updateAssistant((item) => ({
-              ...item,
-              content: item.content + data.text,
-            }));
           return;
         }
         if (parsed.event === "done") {
           finished = true;
           setStreamStatus("");
-          updateAssistant((item) => ({
-            ...item,
-            content: data.answer || item.content,
-            references: Array.isArray(data.references)
-              ? data.references
-              : item.references,
-            suggestionIds: Array.isArray(data.suggestionIds)
-              ? data.suggestionIds
-              : item.suggestionIds,
-          }));
+          setActivities([]);
+          setMessages((current) => [
+            ...current,
+            {
+              role: "assistant",
+              content: data.answer || "Модель не сформировала текстовый ответ.",
+              references: Array.isArray(data.references) ? data.references : [],
+              suggestionIds: Array.isArray(data.suggestionIds)
+                ? data.suggestionIds
+                : [],
+              files: Array.isArray(data.files) ? data.files : [],
+              activities: steps,
+            },
+          ]);
           for (const action of data.uiActions || []) {
             if (action.type === "focus_people") onReveal(action.personIds);
             else if (action.type === "open_person") onPerson(action.personId);
@@ -1034,15 +1153,10 @@ export function ResearchAssistant({
 
       if (canEdit) await loadSuggestions();
     } catch (reason) {
-      setMessages((current) => {
-        const last = current.at(-1);
-        return last?.role === "assistant" && !last.content
-          ? current.slice(0, -1)
-          : current;
-      });
       setError((reason as Error).message);
     } finally {
       setStreamStatus("");
+      setActivities([]);
       setBusy(false);
     }
   }
@@ -1217,44 +1331,81 @@ export function ResearchAssistant({
               </div>
             )}
             {messages.map((message, index) => (
-              <article key={index} className={`is-${message.role}`}>
-                <small>{message.role === "user" ? "Вы" : "Drevo AI"}</small>
-                {message.role === "assistant" ? (
-                  <MarkdownAnswer
-                    message={message}
-                    onPerson={onPerson}
-                    onChoosePerson={choosePerson}
-                    onPhoto={onPhoto}
-                  />
-                ) : (
-                  <p>{message.content}</p>
-                )}
+              <div key={index}>
                 {message.role === "assistant" &&
-                  message.suggestionIds?.map((id) => {
-                    const suggestion = suggestions.find(
-                      (item) => item.id === id,
-                    );
-                    return suggestion ? (
-                      <SuggestionCard
-                        key={id}
-                        suggestion={suggestion}
-                        disabled={!!reviewBusy}
-                        onReview={(suggestionId, action) =>
-                          void review(suggestionId, action)
-                        }
-                      />
-                    ) : reviewedSuggestions[id] ? (
-                      <p className="research-suggestion-result" key={id}>
-                        {reviewedSuggestions[id] === "accepted"
-                          ? "✓ Изменение применено"
-                          : "× Предложение отклонено"}
-                      </p>
-                    ) : null;
-                  })}
-              </article>
+                  !!message.activities?.length && (
+                    <details className="research-activity">
+                      <summary>Как готовился ответ</summary>
+                      <ol>
+                        {message.activities.map((step, position) => (
+                          <li key={position}>{step}</li>
+                        ))}
+                      </ol>
+                    </details>
+                  )}
+                <article className={`is-${message.role}`}>
+                  <small>{message.role === "user" ? "Вы" : "Drevo AI"}</small>
+                  {message.role === "assistant" ? (
+                    <MarkdownAnswer
+                      message={message}
+                      onPerson={onPerson}
+                      onChoosePerson={choosePerson}
+                      onPhoto={onPhoto}
+                    />
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
+                  {message.role === "assistant" &&
+                    message.files?.map((file) => (
+                      <a
+                        className="research-file"
+                        key={file.url}
+                        href={file.url}
+                        download={file.name}
+                      >
+                        Скачать {file.name}
+                      </a>
+                    ))}
+                  {message.role === "assistant" &&
+                    message.suggestionIds?.map((id) => {
+                      const suggestion = suggestions.find(
+                        (item) => item.id === id,
+                      );
+                      return suggestion ? (
+                        <SuggestionCard
+                          key={id}
+                          suggestion={suggestion}
+                          disabled={!!reviewBusy}
+                          onReview={(suggestionId, action) =>
+                            void review(suggestionId, action)
+                          }
+                        />
+                      ) : reviewedSuggestions[id] ? (
+                        <p className="research-suggestion-result" key={id}>
+                          {reviewedSuggestions[id] === "accepted"
+                            ? "✓ Изменение применено"
+                            : "× Предложение отклонено"}
+                        </p>
+                      ) : null;
+                    })}
+                </article>
+              </div>
             ))}
             {busy && (
-              <p role="status">{streamStatus || "ИИ формирует ответ…"}</p>
+              <details className="research-activity" open>
+                <summary>
+                  <span role="status">
+                    {streamStatus || "ИИ формирует ответ…"}
+                  </span>
+                </summary>
+                {activities.length > 1 && (
+                  <ol>
+                    {activities.slice(0, -1).map((step, position) => (
+                      <li key={position}>{step}</li>
+                    ))}
+                  </ol>
+                )}
+              </details>
             )}
             {error && (
               <p className="form-error" role="alert">

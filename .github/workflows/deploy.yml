@@ -72,6 +72,7 @@ jobs:
         run: |
           mkdir -p release/src release/public
           cp -R dist ops release/
+          cp -R assets release/
           cp -R src/domain src/server release/src/
           cp -R public/data release/public/
           cp ops/runtime/package.json ops/runtime/package-lock.json release/
