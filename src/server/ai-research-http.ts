@@ -1342,20 +1342,21 @@ export function aiResearchHttp({
             result = { suggestion };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
+          const detail =
+            error instanceof Error ? error.message : "Ошибка инструмента";
+          const safeDetail =
+            /SQLITE|\b(?:database|ENOENT|EACCES|ECONN\w*|ETIMEDOUT)\b|[A-Za-z]:\\|\/var\//i.test(
+              detail,
+            )
+              ? "Внутренняя ошибка инструмента"
+              : detail.slice(0, 300);
           if (
             RESEARCH_PROPOSAL_TOOLS.some(
               (tool) => tool.name === call.function.name,
             )
           )
-            proposalErrors.push(
-              error instanceof Error ? error.message : "Ошибка предложения",
-            );
-          result = {
-            error:
-              error instanceof Error
-                ? error.message
-                : "Ошибка исследовательского инструмента",
-          };
+            proposalErrors.push(safeDetail);
+          result = { error: safeDetail };
         }
         if (call.function.name === CREATE_PDF_TOOL.name && files.length)
           onStatus(
