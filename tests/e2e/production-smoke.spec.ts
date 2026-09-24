@@ -89,6 +89,21 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await expect(fan).toBeVisible();
   await expect(page.getByRole("button", { name: "Веер" })).toHaveCount(0);
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
+  await expect(
+    page.locator(
+      '[data-fan-generation="4"][data-label-orientation="horizontal"]',
+    ),
+  ).not.toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-fan-generation="3"][data-label-orientation="horizontal"]',
+    ),
+  ).not.toHaveCount(0);
+  await expect(
+    page.locator(
+      '[data-fan-generation="2"][data-label-orientation="tangential"]',
+    ),
+  ).not.toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-fan-morphing/);
   await expect(page.locator(".fan-morph-card")).not.toHaveCount(0);
   await expect(outerLayer).toHaveCSS("opacity", "0");
