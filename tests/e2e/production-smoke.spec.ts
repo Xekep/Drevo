@@ -134,7 +134,7 @@ test("выход из специальных режимов возвращает
 
   await page.getByRole("button", { name: "Веер" }).click();
   await expect(page.locator(".fan-chart-svg")).toBeVisible();
-  await page.getByRole("button", { name: "Веер" }).click();
+  await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
   await expectCentered();
 });
@@ -145,16 +145,10 @@ test("Ctrl+A не выделяет страницу, но работает в п
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/people");
 
-  const pageSelectAllBlocked = await page.evaluate(() => {
-    const event = new KeyboardEvent("keydown", {
-      key: "a",
-      ctrlKey: true,
-      bubbles: true,
-      cancelable: true,
-    });
-    return !document.body.dispatchEvent(event);
-  });
-  expect(pageSelectAllBlocked).toBe(true);
+  await page.getByRole("button", { name: "Люди" }).focus();
+  await page.keyboard.press("Control+A");
+  const pageSelection = await page.evaluate(() => window.getSelection()?.toString() || "");
+  expect(pageSelection).toBe("");
 
   const search = page.getByRole("combobox", { name: "Найти человека" });
   await search.fill("Тестовый текст");
