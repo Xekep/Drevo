@@ -19,7 +19,7 @@ export function shouldPlayEntrySequence() {
       sessionStorage.removeItem(ENTRY_KEY);
       return false;
     }
-    return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return true;
   } catch {
     return false;
   }

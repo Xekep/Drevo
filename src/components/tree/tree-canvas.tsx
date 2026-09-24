@@ -174,7 +174,7 @@ function Canvas(props: Props) {
     if (!activeFanAnchor || !fanMorphing) return;
     const element = container.current;
     const sources = fanMorphSources.current;
-    if (!element || !sources.length) {
+    if (!element) {
       setFanMorphing(false);
       return;
     }
@@ -627,18 +627,16 @@ function Canvas(props: Props) {
                   selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
                 const element = container.current;
-                const morph =
-                  element &&
-                  !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-                    ? captureFanMorphSources(element, family, next)
-                    : [];
+                const morph = element
+                  ? captureFanMorphSources(element, family, next)
+                  : [];
                 rememberContext();
                 clearReturnTarget();
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
                 fanMorphSources.current = morph;
-                setFanMorphing(morph.length > 0);
+                setFanMorphing(true);
                 setFanAnchor(next);
               }}
               fanActive={!!activeFanAnchor}

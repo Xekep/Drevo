@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("заставка закрывает архив до завершения загрузки после входа", async ({
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() =>
     sessionStorage.setItem("drevo:entry-sequence", String(Date.now())),
   );
@@ -15,6 +16,11 @@ test("заставка закрывает архив до завершения �
   await expect(entry).toBeVisible();
   await expect(entry).not.toHaveClass(/is-ready/);
   await expect(entry).toHaveClass(/is-ready/);
+  await expect(entry).toHaveCSS("animation-name", "entry-sequence-out");
+  await expect(entry.locator(".entry-sequence-title")).toHaveCSS(
+    "animation-name",
+    "entry-sequence-title-in",
+  );
   await entry.getByRole("button", { name: "Пропустить" }).click();
   await expect(entry).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toBeVisible();
@@ -44,6 +50,7 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
 
   const pageZoomBlocked = await page.evaluate(() => {
     const event = new WheelEvent("wheel", {
@@ -113,6 +120,30 @@ test("Ctrl+колесо масштабирует древо и не меняет
   );
   await expect(outerLayer).toHaveCSS("opacity", "1");
   await expect(fan).toHaveCSS("animation-name", "none");
+});
+
+test("веер послойно раскрывается даже без захваченных карточек", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.locator(".flow-person").evaluateAll((cards) => {
+    for (const card of cards) card.removeAttribute("data-person-id");
+  });
+  await page.getByRole("button", { name: "Веер" }).click();
+
+  const outerLayer = page.locator('[data-fan-generation="4"]').first();
+  await expect(canvas).toHaveClass(/is-fan-morphing/);
+  await expect(page.locator(".fan-morph-card")).toHaveCount(0);
+  await expect(outerLayer).toHaveCSS("opacity", "0");
+  await expect(canvas).not.toHaveClass(/is-fan-morphing/, { timeout: 2_500 });
+  await expect(outerLayer).toHaveCSS("opacity", "1");
 });
 
 test("выход из специальных режимов возвращает опорного человека в центр", async ({
@@ -1418,17 +1449,21 @@ test("the initial tree grows from roots toward descendants", async ({
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
+  await expect(canvas).toHaveClass(/is-growing/);
   await expect(page.locator(".tree-grow-node").first()).toHaveCSS(
     "animation-name",
-    "none",
+    "tree-branch-reveal",
   );
   await expect(
     page.locator(".tree-grow-edge .tree-edge-final-path").first(),
-  ).toHaveCSS("animation-name", "none");
+  ).toHaveCSS("animation-name", "tree-edge-final-reveal");
   await expect(
     page.locator(".tree-grow-edge .tree-edge-growth-path").first(),
-  ).toHaveCSS("display", "none");
-  await expect(godparent).toHaveCSS("animation-name", "none");
+  ).toHaveCSS("animation-name", "tree-edge-draw");
+  await expect(godparent).toHaveCSS(
+    "animation-name",
+    "tree-edge-label-reveal",
+  );
 });
 
 test("collapsing descendants moves the remaining cards smoothly", async ({

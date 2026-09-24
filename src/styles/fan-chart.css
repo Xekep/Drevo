@@ -151,11 +151,3 @@
 .tree-canvas.is-fan-morphing .fan-chart-meta {
   opacity: 0;
 }
-@media (prefers-reduced-motion: reduce) {
-  .fan-morph-overlay {
-    display: none;
-  }
-  .tree-canvas.is-fan-morphing .fan-chart-svg {
-    animation: none;
-  }
-}

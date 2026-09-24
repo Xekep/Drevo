@@ -578,6 +578,31 @@
   .tree-canvas .flow-person.is-spotlit {
     animation: none;
   }
+  .tree-canvas.is-growing .tree-grow-node,
+  .tree-canvas.is-growing .tree-grow-surface {
+    animation: tree-branch-reveal var(--tree-growth-node-duration, 280ms)
+      ease-out var(--tree-growth-delay) both !important;
+  }
+  .tree-canvas.is-growing .tree-grow-edge .tree-edge-final-path {
+    animation: tree-edge-final-reveal var(--tree-growth-edge-duration, 240ms)
+      linear var(--tree-growth-delay) both !important;
+  }
+  .tree-canvas.is-growing .tree-grow-edge .tree-edge-growth-path {
+    animation: tree-edge-draw var(--tree-growth-edge-duration, 240ms)
+      ease-in-out var(--tree-growth-delay) both !important;
+  }
+  .tree-canvas.is-growing .tree-grow-edge-junction {
+    animation: tree-edge-label-reveal 160ms ease-out var(--tree-edge-label-delay)
+      both !important;
+  }
+  .tree-canvas.is-growing .tree-grow-edge-label {
+    animation: tree-edge-label-reveal 160ms ease-out var(--tree-growth-delay)
+      both !important;
+  }
+  .tree-canvas.is-growing .tree-grow-node .flow-person {
+    animation: tree-card-grow var(--tree-growth-node-duration, 280ms)
+      cubic-bezier(0.2, 0.75, 0.25, 1) var(--tree-growth-delay) both !important;
+  }
 }
 .flow-person.is-dimmed {
   opacity: 0.4;
