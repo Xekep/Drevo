@@ -91,12 +91,12 @@ test("Ctrl+колесо масштабирует древо и не меняет
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
   await expect(
     page.locator(
-      '[data-fan-generation="4"][data-label-orientation="horizontal"]',
+      '[data-fan-generation="4"][data-label-orientation="radial"]',
     ),
   ).not.toHaveCount(0);
   await expect(
     page.locator(
-      '[data-fan-generation="3"][data-label-orientation="horizontal"]',
+      '[data-fan-generation="3"][data-label-orientation="radial"]',
     ),
   ).not.toHaveCount(0);
   await expect(
