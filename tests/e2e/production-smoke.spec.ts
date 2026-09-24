@@ -87,7 +87,13 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await page.getByRole("button", { name: "Веер" }).click();
   const fan = page.locator(".fan-chart-svg");
   await expect(fan).toBeVisible();
-  await expect(fan).toHaveCSS("animation-name", "fan-chart-enter");
+  await expect(page.locator(".tree-canvas")).toHaveClass(/is-fan-morphing/);
+  await expect(page.locator(".fan-morph-card")).not.toHaveCount(0);
+  await expect(fan).toHaveCSS("animation-name", "fan-chart-assemble");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-fan-morphing/,
+    { timeout: 1_500 },
+  );
 });
 
 test("действия карточки человека остаются в одном ряду", async ({
