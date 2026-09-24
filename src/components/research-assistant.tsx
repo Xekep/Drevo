@@ -41,7 +41,8 @@ type Message = {
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
   | { type: "open_person"; personId: string }
-  | { type: "open_photo"; photoId: string };
+  | { type: "open_photo"; photoId: string }
+  | { type: "zoom_in" | "zoom_out" };
 
 type PanelPosition = { left: number; top: number };
 type LauncherPosition = { left: number; top: number };
@@ -643,6 +644,7 @@ export function ResearchAssistant({
   onPerson,
   onPhoto,
   onReveal,
+  onZoom,
 }: {
   view: string;
   onOpenChange?: (open: boolean) => void;
@@ -654,6 +656,7 @@ export function ResearchAssistant({
   onPerson: (id: string) => void;
   onPhoto: (id: string) => void;
   onReveal: (ids: string[]) => void;
+  onZoom: (direction: "in" | "out") => void;
 }) {
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
@@ -1081,6 +1084,8 @@ export function ResearchAssistant({
             if (action.type === "focus_people") onReveal(action.personIds);
             else if (action.type === "open_person") onPerson(action.personId);
             else if (action.type === "open_photo") onPhoto(action.photoId);
+            else if (action.type === "zoom_in") onZoom("in");
+            else if (action.type === "zoom_out") onZoom("out");
           }
           return;
         }

@@ -1,6 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { linkResearchReferences } from "../src/domain/research-answer.ts";
+import {
+  cleanPdfAnswer,
+  linkResearchReferences,
+  researchPdfFilename,
+} from "../src/domain/research-answer.ts";
+
+test("ссылка на готовый PDF остаётся только у вложения, имя короткое", () => {
+  assert.equal(
+    cleanPdfAnswer(
+      "Готово, отчёт приложен. Вы можете скачать файл по ссылке: ``",
+    ),
+    "Готово, отчёт приложен.",
+  );
+  assert.equal(
+    cleanPdfAnswer(
+      "Отчёт готов. Скачать файл можно по ссылке: /api/ai/files/7449c409-8874-4739-8574-158fab22f458",
+    ),
+    "Отчёт готов.",
+  );
+  assert.equal(
+    researchPdfFilename(
+      "Анализ семейного архива: род Чепчуговых и связанные семьи",
+    ),
+    "Анализ семейного архива.pdf",
+  );
+});
 
 test("все проверенные ФИО и уникальные короткие формы становятся ссылками", () => {
   const references = Array.from({ length: 18 }, (_, index) => ({

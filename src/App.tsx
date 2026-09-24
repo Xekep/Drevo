@@ -126,7 +126,11 @@ export default function App() {
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
     [assistantOpen, setAssistantOpen] = useState(false),
-    [assistantNudgeToken, setAssistantNudgeToken] = useState(0);
+    [assistantNudgeToken, setAssistantNudgeToken] = useState(0),
+    [assistantZoom, setAssistantZoom] = useState<{
+      token: number;
+      direction: "in" | "out";
+    }>({ token: 0, direction: "in" });
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -620,6 +624,7 @@ export default function App() {
                       onAdd={newPerson}
                       onLink={startLink}
                       focus={focus}
+                      zoomRequest={assistantZoom}
                       preview={preview}
                       query={query}
                       highlighted={highlighted}
@@ -864,6 +869,12 @@ export default function App() {
             setView("tree", target);
             reveal(ids);
           }}
+          onZoom={(direction) =>
+            setAssistantZoom((previous) => ({
+              token: previous.token + 1,
+              direction,
+            }))
+          }
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (

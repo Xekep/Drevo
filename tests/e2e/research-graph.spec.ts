@@ -64,3 +64,37 @@ test("ИИ показывает готовый ответ и раскрывае�
   await dialog.getByRole("button", { name: "Закрыть схему" }).click();
   await expect(dialog).toHaveCount(0);
 });
+
+test("короткая команда приближает само древо", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: done\ndata: ${JSON.stringify({
+        answer: "Приблизил древо.",
+        references: [],
+        suggestionIds: [],
+        uiActions: [{ type: "zoom_in" }],
+        files: [],
+      })}\n\n`,
+    }),
+  );
+  await page.goto("/tree");
+  const zoomLabel = page.locator(".flow-camera-tools span");
+  await expect(zoomLabel).toBeVisible();
+  await expect
+    .poll(async () => Number((await zoomLabel.textContent())?.replace("%", "")))
+    .toBeGreaterThan(0);
+  const before = Number((await zoomLabel.textContent())?.replace("%", ""));
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  await page.locator(".research-assistant textarea").fill("так ты приблизь");
+  await page.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(page.getByText("Приблизил древо.")).toBeVisible();
+  await expect
+    .poll(async () => Number((await zoomLabel.textContent())?.replace("%", "")))
+    .toBeGreaterThan(before);
+});

@@ -94,6 +94,7 @@ type Props = {
   onAddRelative: (id: string, type: "parent" | "child" | "spouse") => void;
   onLink: () => void;
   focus: TreeFocus | null;
+  zoomRequest?: { token: number; direction: "in" | "out" };
   preview: ConnectionDraft | null;
   query: string;
   highlighted: string[];
@@ -186,6 +187,7 @@ function Canvas(props: Props) {
     };
   }, [activeFanAnchor, fanMorphing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
+  const [introCameraFinished, setIntroCameraFinished] = useState(false);
   const markInitialCameraReady = useCallback(
     () => setInitialCameraReady(true),
     [],
@@ -227,6 +229,7 @@ function Canvas(props: Props) {
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
   >();
+  const lastAssistantZoom = useRef(0);
   const context = `${mode}:${familyView.mode}:${root || "all"}`;
   useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
   useCtrlWheelZoom(container, flow, !activeFanAnchor);
@@ -236,6 +239,22 @@ function Canvas(props: Props) {
     mode,
     reverse,
   );
+  useEffect(() => {
+    const request = props.zoomRequest;
+    if (
+      !request?.token ||
+      request.token === lastAssistantZoom.current ||
+      !ready ||
+      !initialCameraReady ||
+      !introCameraFinished ||
+      growing
+    ) return;
+    lastAssistantZoom.current = request.token;
+    const duration = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches ? 0 : 320;
+    if (request.direction === "in") void flow.zoomIn({ duration });
+    else void flow.zoomOut({ duration });
+  }, [flow, props.zoomRequest, ready, initialCameraReady, introCameraFinished, growing]);
   const spotlightNodes = useMemo(
     () =>
       geometry && focus?.purpose === "family" && focus.groupId
@@ -323,7 +342,10 @@ function Canvas(props: Props) {
     introHandled.current = true;
     let active = true;
     const done = () => {
-      if (active) introComplete.current?.();
+      if (active) {
+        setIntroCameraFinished(true);
+        introComplete.current?.();
+      }
     };
     const personId = user?.personId,
       occurrence = personId ? personOccurrences.get(personId)?.[0] : undefined,

@@ -11,6 +11,7 @@ import {
   recoverTextToolCalls,
   requesterAccessContext,
   requesterPromptContext,
+  shortTreeZoomRequest,
 } from "../src/server/ai-research-http.ts";
 
 test("research answer keeps clickable markers but replaces raw archive ids", () => {
@@ -39,6 +40,13 @@ test("явные команды перемещают пользователя п
     true,
   );
   assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
+});
+
+test("короткая команда приближения действует только в древе", () => {
+  assert.equal(shortTreeZoomRequest("так ты приблизь", "tree"), "zoom_in");
+  assert.equal(shortTreeZoomRequest("отдали ещё", "tree"), "zoom_out");
+  assert.equal(shortTreeZoomRequest("так ты приблизь", "gallery"), null);
+  assert.equal(shortTreeZoomRequest("приблизь Анну", "tree"), null);
 });
 
 test("textual model tool call is recovered instead of being shown as Arduino code", () => {
@@ -627,6 +635,23 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     assert.deepEqual(payload.uiActions, [
       { type: "focus_people", personIds: ["anna-ai-test"] },
     ]);
+    const zoomResponse = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "так ты приблизь",
+        context: { view: "tree", personIds: ["anna-ai-test"] },
+      }),
+    });
+    assert.equal(zoomResponse.status, 200);
+    const zoom = await zoomResponse.json();
+    assert.equal(zoom.answer, "Приблизил древо.");
+    assert.deepEqual(zoom.uiActions, [{ type: "zoom_in" }]);
+    assert.equal(
+      requests.length,
+      2,
+      "короткое действие не требует вызова модели",
+    );
     assert.deepEqual(
       payload.references.find(
         (reference: { kind: string }) => reference.kind === "source",
