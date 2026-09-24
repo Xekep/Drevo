@@ -19,20 +19,17 @@ export function captureFanMorphSources(
   container: HTMLElement,
   family: Family,
   anchorId: string,
-  occurrencePeople: ReadonlyMap<string, string>,
 ): FanMorphSource[] {
   const canvas = container.getBoundingClientRect();
   const cards = new Map<string, { rect: Rect; node: HTMLElement }>();
 
-  for (const wrapper of container.querySelectorAll<HTMLElement>(
-    ".react-flow__node[data-id]",
+  for (const card of container.querySelectorAll<HTMLElement>(
+    ".flow-person[data-person-id]",
   )) {
-    const occurrenceId = wrapper.dataset.id;
-    if (!occurrenceId) continue;
-    const personId = occurrencePeople.get(occurrenceId) || occurrenceId;
-    if (cards.has(personId)) continue;
+    const personId = card.dataset.personId;
+    if (!personId || cards.has(personId)) continue;
 
-    const node = wrapper.querySelector<HTMLElement>(".flow-person-content");
+    const node = card.querySelector<HTMLElement>(".flow-person-content");
     if (!node) continue;
     const rect = node.getBoundingClientRect();
     if (
