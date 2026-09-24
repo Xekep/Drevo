@@ -24,17 +24,12 @@ import ReactMarkdown, {
   type Components,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  linkResearchReferences,
+  type ResearchAnswerReference,
+} from "../domain/research-answer.ts";
 
-type AnswerReference =
-  | { kind: "person"; id: string; label: string }
-  | { kind: "photo"; id: string; label: string }
-  | {
-      kind: "source";
-      personId: string;
-      label: string;
-      reference?: string;
-      url?: string;
-    };
+type AnswerReference = ResearchAnswerReference;
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -88,9 +83,27 @@ function renderMermaid(source: string) {
     module.default.initialize({
       startOnLoad: false,
       securityLevel: "strict",
-      theme: "neutral",
-      fontFamily: "inherit",
-      flowchart: { defaultRenderer: "elk", useMaxWidth: false },
+      look: "classic",
+      theme: "base",
+      themeVariables: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "13px",
+        primaryColor: "#ffffff",
+        primaryBorderColor: "#a7b7a6",
+        primaryTextColor: "#2f4134",
+        secondaryColor: "#f3f6f1",
+        tertiaryColor: "#ffffff",
+        lineColor: "#68826f",
+      },
+      flowchart: {
+        defaultRenderer: "elk",
+        useMaxWidth: false,
+        curve: "linear",
+        htmlLabels: false,
+        nodeSpacing: 36,
+        rankSpacing: 54,
+        diagramPadding: 12,
+      },
       elk: {
         mergeEdges: true,
         nodePlacementStrategy: "BRANDES_KOEPF",
@@ -295,10 +308,6 @@ function MermaidDiagram({ source }: { source: string }) {
   );
 }
 
-function escapePattern(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function resizedPanelRect(
   rect: PanelRect,
   direction: ResizeDirection,
@@ -329,103 +338,6 @@ function resizedPanelRect(
   if (direction.includes("n"))
     top = Math.max(margin, Math.min(bottom - minHeight, top + deltaY));
   return { left, top, width: right - left, height: bottom - top };
-}
-
-function outsideCodeFences(
-  value: string,
-  transform: (segment: string) => string,
-) {
-  return value
-    .split(/(```[\s\S]*?```)/g)
-    .map((segment, index) => (index % 2 ? segment : transform(segment)))
-    .join("");
-}
-
-function markdownAnswer(message: Message) {
-  const represented = new Set(
-    [
-      ...message.content.matchAll(
-        /\[\[(person|choose-person|photo):([^|\]\s]+)/g,
-      ),
-    ].map((match) => `${match[1]}:${match[2]}`),
-  );
-  const placeholders: string[] = [];
-  let value = outsideCodeFences(message.content, (segment) => {
-    let normalized = segment;
-    for (const match of segment.matchAll(
-      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
-    )) {
-      const marker = match[0],
-        label = match[3];
-      normalized = normalized.replace(
-        new RegExp(
-          `${escapePattern(label)}[ \\t\\u00a0]*\\(${escapePattern(marker)}\\)`,
-          "gu",
-        ),
-        marker,
-      );
-    }
-    return normalized.replace(
-      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\](?:[ \t\u00a0]+\3)?/g,
-      (_whole, kind: string, id: string, label: string) => {
-        const token = `DREVOREF${placeholders.length}TOKEN`;
-        placeholders.push(
-          `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-${kind}-${encodeURIComponent(id)})`,
-        );
-        return token;
-      },
-    );
-  });
-  for (const reference of message.references || []) {
-    if (reference.kind === "photo")
-      value = outsideCodeFences(value, (segment) =>
-        segment.replace(
-          new RegExp(
-            `!\\[([^\\]]*)\\]\\(${escapePattern(reference.id)}\\)`,
-            "gu",
-          ),
-          (_whole, alt: string) => {
-            const token = `DREVOREF${placeholders.length}TOKEN`,
-              label = alt.trim() || reference.label;
-            placeholders.push(
-              `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](#drevo-photo-${encodeURIComponent(reference.id)})`,
-            );
-            return token;
-          },
-        ),
-      );
-    if (
-      (reference.kind === "person" &&
-        (represented.has(`person:${reference.id}`) ||
-          represented.has(`choose-person:${reference.id}`))) ||
-      (reference.kind === "photo" && represented.has(`photo:${reference.id}`))
-    )
-      continue;
-    const href =
-      reference.kind === "person"
-        ? `#drevo-person-${encodeURIComponent(reference.id)}`
-        : reference.kind === "photo"
-          ? `#drevo-photo-${encodeURIComponent(reference.id)}`
-          : reference.url ||
-            `#drevo-person-${encodeURIComponent(reference.personId)}`;
-    const labelPattern = escapePattern(reference.label);
-    value = outsideCodeFences(value, (segment) =>
-      segment
-        .replace(
-          new RegExp(`(${labelPattern})(?:[ \\t\\u00a0]+\\1)+`, "giu"),
-          "$1",
-        )
-        .replace(
-          new RegExp(labelPattern, "giu"),
-          (label) =>
-            `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`,
-        ),
-    );
-  }
-  placeholders.forEach((markdown, index) => {
-    value = value.replace(`DREVOREF${index}TOKEN`, markdown);
-  });
-  return value;
 }
 
 const MarkdownAnswer = memo(function MarkdownAnswer({
@@ -487,7 +399,7 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
         }
         components={components}
       >
-        {markdownAnswer(message)}
+        {linkResearchReferences(message.content, message.references)}
       </ReactMarkdown>
     </div>
   );

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 import { researchPdf } from "../src/server/research-pdf.ts";
+import { parseResearchMermaid } from "../src/server/research-pdf-visuals.ts";
 
 test("PDF contains Cyrillic text and is a real PDF", async () => {
   const bytes = await researchPdf(
@@ -35,6 +36,81 @@ test("PDF draws a separate page from verified people and relationship edges", as
   );
   assert.match(bytes.toString("latin1"), /\/Count 2\b/);
   assert.ok(bytes.length > 4000);
+});
+
+test("большая схема, круговая диаграмма и график помещаются в обычные страницы PDF", async () => {
+  const nodes = Array.from({ length: 111 }, (_, index) => ({
+    id: `p${index}`,
+    name: `Чепчугов Человек ${index}`,
+  }));
+  const edges = nodes.slice(1).map((person, index) => ({
+    from: `p${Math.floor(index / 2)}`,
+    to: person.id,
+    type: "parent",
+  }));
+  const bytes = await researchPdf(
+    "Полный анализ",
+    [
+      "## Статистика",
+      "| Поколение | Люди |",
+      "| --- | ---: |",
+      "| Первое | 7 |",
+      "```mermaid",
+      "pie",
+      "  title Распределение по полу",
+      '  "Мужчины" : 53',
+      '  "Женщины" : 58',
+      "```",
+      "```mermaid",
+      "xychart-beta",
+      '  title "По поколениям"',
+      '  x-axis ["Первое", "Второе", "Третье"]',
+      "  bar [7, 24, 80]",
+      "```",
+    ].join("\n"),
+    { nodes, edges },
+  );
+  const source = bytes.toString("latin1"),
+    pageCount = Number(/\/Count (\d+)/.exec(source)?.[1]),
+    sizes = [...source.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)];
+  assert.ok(
+    pageCount > 4,
+    `ожидались обзор и листы с деталями, получено ${pageCount}`,
+  );
+  assert.equal(sizes.length, pageCount);
+  for (const [, width, height] of sizes) {
+    assert.ok(
+      Number(width) <= 1191 && Number(height) <= 843,
+      `нестандартный огромный лист: ${width} × ${height}`,
+    );
+  }
+  assert.ok(bytes.length > 8000);
+});
+
+test("Mermaid из ответа превращается в схему или график, а неизвестный формат отвергается", async () => {
+  assert.deepEqual(
+    parseResearchMermaid("graph TD\na[Анна] --> b[Иван]").kind,
+    "graph",
+  );
+  assert.deepEqual(
+    parseResearchMermaid('xychart-beta\nx-axis ["1900", "2000"]\nline [1, 4]')
+      .kind,
+    "chart",
+  );
+  const bytes = await researchPdf(
+    "Проверка схемы",
+    "Описание подтверждённой связи.\n```mermaid\ngraph TD\na[Анна] --> b[Иван]\n```",
+  );
+  assert.match(bytes.toString("latin1"), /\/Count 2\b/);
+  await assert.rejects(
+    researchPdf("Архив", "```mermaid\nsequenceDiagram\nA->>B: связь\n```"),
+    /поддерживаются Mermaid/,
+  );
+  assert.equal(parseResearchMermaid("graph TD\na -->|связь| b").kind, "graph");
+  assert.throws(
+    () => parseResearchMermaid("graph TD\na --> b --> c"),
+    /неподдерживаемом формате/,
+  );
 });
 
 test("AI attaches a downloadable PDF only to an explicit PDF request", async () => {
