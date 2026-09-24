@@ -375,6 +375,8 @@
   border-radius: 7px;
   background: #fff;
   color: #3e6040;
+  font-size: 22px;
+  line-height: 1;
   cursor: pointer;
 }
 .research-mermaid-overlay {
@@ -440,9 +442,16 @@
   max-width: none;
 }
 @media (max-width: 600px) {
-  .research-mermaid-overlay { padding: 8px; }
-  .research-mermaid-dialog header { flex-wrap: wrap; }
-  .research-mermaid-controls { width: 100%; justify-content: flex-end; }
+  .research-mermaid-overlay {
+    padding: 8px;
+  }
+  .research-mermaid-dialog header {
+    flex-wrap: wrap;
+  }
+  .research-mermaid-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 .research-activity {
   margin: 4px 0 13px;

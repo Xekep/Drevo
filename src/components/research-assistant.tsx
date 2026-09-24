@@ -11,7 +11,6 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
-  Expand,
   Minus,
   Plus,
   RotateCcw,
@@ -172,7 +171,7 @@ function MermaidDiagram({ source }: { source: string }) {
             aria-label="Развернуть схему"
             title="Развернуть схему"
           >
-            <Expand size={16} />
+            <span aria-hidden="true">⛶</span>
           </button>
         )}
         <div
@@ -1394,7 +1393,11 @@ export function ResearchAssistant({
             ))}
             {busy && (
               <details className="research-activity" open>
-                <summary><span role="status">{streamStatus || "ИИ формирует ответ…"}</span></summary>
+                <summary>
+                  <span role="status">
+                    {streamStatus || "ИИ формирует ответ…"}
+                  </span>
+                </summary>
                 {activities.length > 1 && (
                   <ol>
                     {activities.slice(0, -1).map((step, position) => (
