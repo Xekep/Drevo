@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const ARCHIVE_SCHEMA_VERSION = 13;
+export const ARCHIVE_SCHEMA_VERSION = 14;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -373,6 +373,81 @@ function migrate(db: DatabaseSync, target: number) {
         ON research_suggestions(status,created_at DESC);
       CREATE INDEX research_suggestions_creator
         ON research_suggestions(created_by,status);
+    `);
+    return;
+  }
+  if (target === 14) {
+    // Fresh databases reach v14 before the older provenance extension runs.
+    // In that case only add the nullable tag reference; the extension below
+    // will add created_by/source_photo_id/model afterwards.
+    if (!tableHasColumn(db, "face_descriptors", "source_photo_id")) {
+      db.exec(`
+        ALTER TABLE face_descriptors
+          ADD COLUMN source_tag_id TEXT REFERENCES photo_tags(id) ON DELETE CASCADE;
+        CREATE INDEX IF NOT EXISTS face_descriptors_source_tag
+          ON face_descriptors(source_tag_id);
+        CREATE TRIGGER IF NOT EXISTS face_descriptor_tag_person_update
+        AFTER UPDATE OF person_id ON photo_tags
+        BEGIN
+          UPDATE face_descriptors
+             SET person_id=NEW.person_id
+           WHERE source_tag_id=NEW.id;
+        END;
+      `);
+      return;
+    }
+
+    // Existing descriptors only knew the source photo. Bind them to a current
+    // confirmed tag where possible and drop orphaned samples left by corrected
+    // or removed photo annotations.
+    db.exec(`
+      DROP TABLE IF EXISTS face_descriptors_v14;
+      CREATE TABLE face_descriptors_v14 (
+        id TEXT PRIMARY KEY,
+        person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        data TEXT NOT NULL CHECK(json_valid(data)),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        created_by TEXT,
+        source_photo_id TEXT REFERENCES photos(id) ON DELETE CASCADE,
+        source_tag_id TEXT REFERENCES photo_tags(id) ON DELETE CASCADE,
+        model TEXT NOT NULL DEFAULT 'face-api-1.7.15'
+      ) STRICT;
+      INSERT INTO face_descriptors_v14(
+        id,person_id,data,created_at,created_by,source_photo_id,source_tag_id,model
+      )
+      SELECT
+        d.id,d.person_id,d.data,d.created_at,d.created_by,d.source_photo_id,
+        CASE
+          WHEN d.source_photo_id IS NULL THEN NULL
+          ELSE (
+            SELECT pt.id
+              FROM photo_tags pt
+             WHERE pt.photo_id=d.source_photo_id
+               AND pt.person_id=d.person_id
+             ORDER BY pt.rowid
+             LIMIT 1
+          )
+        END,
+        d.model
+      FROM face_descriptors d
+      WHERE d.source_photo_id IS NULL
+         OR EXISTS (
+           SELECT 1
+             FROM photo_tags pt
+            WHERE pt.photo_id=d.source_photo_id
+              AND pt.person_id=d.person_id
+         );
+      DROP TABLE face_descriptors;
+      ALTER TABLE face_descriptors_v14 RENAME TO face_descriptors;
+      CREATE INDEX face_descriptors_person ON face_descriptors(person_id);
+      CREATE INDEX face_descriptors_source_tag ON face_descriptors(source_tag_id);
+      CREATE TRIGGER face_descriptor_tag_person_update
+      AFTER UPDATE OF person_id ON photo_tags
+      BEGIN
+        UPDATE face_descriptors
+           SET person_id=NEW.person_id
+         WHERE source_tag_id=NEW.id;
+      END;
     `);
     return;
   }
