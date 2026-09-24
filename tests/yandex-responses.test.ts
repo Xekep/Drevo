@@ -123,6 +123,46 @@ test("Responses client sends documented compaction, truncation and call outputs"
   assert.equal("previous_response_id" in requests[0].body, false);
 });
 
+test("provider rejection of compaction falls back once and remembers the model", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const client = yandexResponsesClient(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    bodies.push(body);
+    if (body.context_management)
+      return Response.json(
+        { error: { message: "Bad Request: Failed to read request" } },
+        { status: 400 },
+      );
+    return Response.json({
+      id: `response-${bodies.length}`,
+      status: "completed",
+      output_text: "OK",
+      output: [],
+    });
+  });
+  const options = {
+    runtime: {
+      baseUrl: "https://example.test/v1",
+      apiKey: "test-key",
+      folderId: "folder",
+      modelUri: "gpt://folder/model",
+    },
+    conversationId: "conversation-1",
+    input: "Проверка",
+    instructions: "Кратко",
+    tools: [],
+    compactThreshold: 32000,
+    automaticTruncation: true,
+  };
+  assert.equal((await client.respond(options)).compactionAvailable, false);
+  assert.equal((await client.respond(options)).compactionAvailable, false);
+  assert.equal(bodies.length, 3);
+  assert.ok(bodies[0].context_management);
+  assert.equal(bodies[1].context_management, undefined);
+  assert.equal(bodies[2].context_management, undefined);
+  assert.equal(bodies[2].truncation, "auto");
+});
+
 test("local chats persist, reuse remote context and recover a missing conversation", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-responses-"));
   process.env.YANDEX_AI_API_KEY = "test-key";

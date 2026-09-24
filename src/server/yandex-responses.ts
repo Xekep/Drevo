@@ -92,6 +92,7 @@ export function parseYandexResponse(response: RawResponse) {
 }
 
 export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
+  const compactionUnavailable = new Set<string>();
   function headers(apiKey: string, folderId: string) {
     return {
       Authorization: `Api-Key ${apiKey}`,
@@ -193,6 +194,10 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       stream?: boolean;
     }) {
       const { runtime } = options;
+      const compactionKey = `${runtime.baseUrl}\0${runtime.modelUri}`;
+      let compactionAvailable =
+        options.compactThreshold !== null &&
+        !compactionUnavailable.has(compactionKey);
       const input =
         typeof options.input === "string"
           ? options.input
@@ -225,7 +230,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
         tool_choice: "auto",
         temperature: 0.2,
         truncation: options.automaticTruncation ? "auto" : "disabled",
-        ...(options.compactThreshold === null
+        ...(!compactionAvailable
           ? {}
           : {
               context_management: {
@@ -235,17 +240,50 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
             }),
         ...(options.stream ? { stream: true } : {}),
       };
-      const response = await request(
-        runtime.baseUrl,
-        "/responses",
-        "POST",
-        runtime.apiKey,
-        runtime.folderId,
-        body,
-        options.signal,
-      );
+      let response: Response;
+      try {
+        response = await request(
+          runtime.baseUrl,
+          "/responses",
+          "POST",
+          runtime.apiKey,
+          runtime.folderId,
+          body,
+          options.signal,
+        );
+      } catch (error) {
+        if (
+          !compactionAvailable ||
+          !(error instanceof YandexResponseError) ||
+          error.status !== 400
+        )
+          throw error;
+        response = await request(
+          runtime.baseUrl,
+          "/responses",
+          "POST",
+          runtime.apiKey,
+          runtime.folderId,
+          { ...body, context_management: undefined },
+          options.signal,
+        );
+        compactionUnavailable.add(compactionKey);
+        compactionAvailable = false;
+        console.warn(
+          JSON.stringify({
+            event: "ai.compaction_unavailable",
+            model: runtime.modelUri,
+            providerStatus: error.status,
+            providerErrorCode: error.code,
+            fallback: options.automaticTruncation ? "truncation_auto" : "none",
+          }),
+        );
+      }
       if (!options.stream)
-        return parseYandexResponse((await response.json()) as RawResponse);
+        return {
+          ...parseYandexResponse((await response.json()) as RawResponse),
+          compactionAvailable,
+        };
       if (!response.body)
         throw new Error("Yandex AI Studio не вернула поток ответа");
       const reader = response.body.getReader();
@@ -299,7 +337,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
         throw new Error(
           "Поток Yandex AI Studio завершился без response.completed",
         );
-      return parseYandexResponse(completed);
+      return { ...parseYandexResponse(completed), compactionAvailable };
     },
   };
 }

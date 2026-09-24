@@ -147,6 +147,7 @@ export function adminAiHttp({
         const client = yandexResponsesClient(fetcher);
         const conversationId = await client.createConversation(runtime);
         let answer = "";
+        let compactionAvailable = false;
         try {
           const result = await client.respond({
             runtime,
@@ -167,6 +168,7 @@ export function adminAiHttp({
             automaticTruncation: runtime.automaticTruncation,
           });
           answer = result.text;
+          compactionAvailable = result.compactionAvailable;
         } finally {
           void client
             .deleteConversation(runtime, conversationId)
@@ -176,6 +178,7 @@ export function adminAiHttp({
           ok: true,
           model: runtime.model,
           answer: answer.trim() || "Подключение установлено",
+          compactionAvailable,
         });
       } catch (error) {
         return json(res, 502, {
