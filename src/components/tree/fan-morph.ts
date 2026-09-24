@@ -80,7 +80,6 @@ export async function runFanMorph(
   )
     return;
 
-  container.classList.add("is-fan-morphing");
   await frame();
   await frame();
 
@@ -170,6 +169,5 @@ export async function runFanMorph(
     // The transition may be cancelled by a rapid mode switch.
   } finally {
     overlay.remove();
-    container.classList.remove("is-fan-morphing");
   }
 }
