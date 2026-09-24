@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
@@ -19,6 +20,7 @@ import type { Family } from "../domain/types.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import { fetchAiStudioModels } from "./ai-models.ts";
+import { researchPdf } from "./research-pdf.ts";
 
 type ToolCall = {
   id: string;
@@ -114,7 +116,25 @@ type ResearchResult = {
   references: AnswerReference[];
   suggestionIds: string[];
   uiActions: UiAction[];
+  files: ResearchFile[];
 };
+
+type ResearchFile = { name: string; url: string };
+
+const CREATE_PDF_TOOL = {
+  name: "create_pdf",
+  description:
+    "Создать PDF из подготовленного текста по явной просьбе пользователя. Передай заголовок и проверенное содержимое; файл будет приложен к ответу автоматически. Не помещай в документ данные, которые не доступны пользователю.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 160 },
+      content: { type: "string", minLength: 1, maxLength: 30000 },
+    },
+    required: ["title", "content"],
+    additionalProperties: false,
+  },
+} as const;
 
 type UiAction =
   | { type: "focus_people"; personIds: string[] }
@@ -466,6 +486,10 @@ export function aiResearchHttp({
   publicOrigin?: string;
   fetcher?: typeof fetch;
 }) {
+  const pdfFiles = new Map<
+    string,
+    { ownerId: string; name: string; bytes: Buffer; expires: number }
+  >();
   let visionModelCache:
     { key: string; modelUri: string; expiresAt: number } | undefined;
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -487,6 +511,7 @@ export function aiResearchHttp({
       ...RESEARCH_TOOL_DEFINITIONS,
       ANALYZE_PHOTO_TOOL,
       CONTROL_VIEW_TOOL,
+      CREATE_PDF_TOOL,
       ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
     ];
     return {
@@ -810,6 +835,7 @@ export function aiResearchHttp({
         requesterAccessContext(user, canPropose),
         "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
         "Если пользователь просит схему, граф или визуализацию родства, обязательно вызови get_genealogy_graph и вставь возвращённое поле mermaid в fenced-блок ```mermaid без изменений. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
+        "Если пользователь просит PDF, сначала собери необходимые сведения доступными инструментами, затем вызови create_pdf с заголовком и подготовленным текстом. В обычном ответе кратко поясни содержимое файла; ссылка на скачивание появится автоматически. При просьбе преобразовать предыдущий ответ используй контекст диалога. Не выдавай текстовый файл за готовый PDF.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
           : "",
@@ -844,10 +870,12 @@ export function aiResearchHttp({
       lookupRetryUsed = false,
       internalOutputRetryUsed = false;
     const uiActions: UiAction[] = [],
+      files: ResearchFile[] = [],
       allowedToolNames = new Set([
         ...RESEARCH_TOOL_DEFINITIONS.map((tool) => tool.name),
         ANALYZE_PHOTO_TOOL.name,
         CONTROL_VIEW_TOOL.name,
+        CREATE_PDF_TOOL.name,
         ...(canPropose ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name) : []),
       ]),
       viewControlRequested = explicitViewControlRequest(message, view),
@@ -874,6 +902,7 @@ export function aiResearchHttp({
           references: [],
           suggestionIds: pending.map((suggestion) => suggestion.id),
           uiActions: [],
+          files: [],
         };
     }
 
@@ -1004,12 +1033,22 @@ export function aiResearchHttp({
           references,
           suggestionIds: [...createdSuggestionIds],
           uiActions,
+          files,
         };
       }
 
       onStatus("Проверяю данные архива…");
       for (const call of calls) {
         executedTools++;
+        onStatus(
+          call.function.name === CREATE_PDF_TOOL.name
+            ? "Готовлю PDF…"
+            : call.function.name === "get_genealogy_graph"
+              ? "Строю схему родства…"
+              : call.function.name === "analyze_photo"
+                ? "Изучаю фотографию…"
+                : "Проверяю сведения в архиве…",
+        );
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
           (item) => item.name === call.function.name,
         );
@@ -1019,7 +1058,35 @@ export function aiResearchHttp({
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (definition)
             result = executeResearchTool(family, definition.name, toolArgs);
-          else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
+          else if (call.function.name === CREATE_PDF_TOOL.name) {
+            if (!/(?:pdf|пдф|файл|документ)/iu.test(message))
+              throw new Error("PDF создаётся только по просьбе пользователя");
+            if (files.length >= 3)
+              throw new Error("За один запрос можно создать не более трёх PDF");
+            const raw = toolArgs as Record<string, unknown>,
+              title = typeof raw.title === "string" ? raw.title.trim() : "",
+              content =
+                typeof raw.content === "string" ? raw.content.trim() : "",
+              bytes = await researchPdf(title, content),
+              id = randomUUID(),
+              name = `${
+                title
+                  .replace(/[\\/:*?"<>|]/g, " ")
+                  .trim()
+                  .slice(0, 80) || "Исследование"
+              }.pdf`,
+              url = `/api/ai/files/${id}`;
+            for (const [key, item] of pdfFiles)
+              if (item.expires < Date.now()) pdfFiles.delete(key);
+            pdfFiles.set(id, {
+              ownerId: user.id,
+              name,
+              bytes,
+              expires: Date.now() + 30 * 60_000,
+            });
+            files.push({ name, url });
+            result = { created: true, file: { name, url } };
+          } else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
             if (analyzedPhotos >= 3)
               throw new Error(
                 "За один ответ можно проанализировать не более трёх фотографий",
@@ -1163,6 +1230,31 @@ export function aiResearchHttp({
   ): Promise<boolean> => {
     const path = url.pathname,
       stream = path === "/api/ai/chat/stream";
+    if (path.startsWith("/api/ai/files/")) {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      if (!auth.canRead(req))
+        return json(res, 401, { error: "Войдите в архив" });
+      const id = path.slice("/api/ai/files/".length),
+        file = pdfFiles.get(id);
+      if (
+        !file ||
+        file.expires < Date.now() ||
+        file.ownerId !== auth.currentUser(req)?.id
+      )
+        return json(res, 404, {
+          error: "Файл не найден или срок ссылки истёк",
+        });
+      res.writeHead(200, {
+        "Content-Type": "application/pdf",
+        "Content-Length": file.bytes.length,
+        "Content-Disposition": `attachment; filename="drevo-research.pdf"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(file.bytes);
+      return true;
+    }
     if (
       path !== "/api/ai/status" &&
       path !== "/api/ai/chat" &&
@@ -1276,6 +1368,7 @@ export function aiResearchHttp({
           references: result.references,
           suggestionIds: result.suggestionIds,
           uiActions: result.uiActions,
+          files: result.files,
         });
         res.end();
         return true;
