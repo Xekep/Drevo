@@ -132,6 +132,7 @@ export function aiUsageStore(db: DatabaseSync) {
         providerCalls: number;
         inputTokens: number;
         outputTokens: number;
+        cachedInputTokens?: number;
         models?: AiModelUsage[];
       },
     ) {
@@ -141,7 +142,7 @@ export function aiUsageStore(db: DatabaseSync) {
       db.prepare(
         `UPDATE ai_usage SET
           status=?,provider_calls=?,input_tokens=?,output_tokens=?,
-          total_tokens=?,latency_ms=?
+          total_tokens=?,cached_input_tokens=?,latency_ms=?
          WHERE id=?`,
       ).run(
         value.status,
@@ -149,27 +150,28 @@ export function aiUsageStore(db: DatabaseSync) {
         input,
         output,
         input + output,
+        Math.max(0, Math.round(value.cachedInputTokens || 0)),
         Math.max(0, Date.now() - started),
         id,
       );
 
       const fallbackModel = String(
-          db.prepare("SELECT model FROM ai_usage WHERE id=?").get(id)?.model || "",
+          db.prepare("SELECT model FROM ai_usage WHERE id=?").get(id)?.model ||
+            "",
         ),
-        models =
-          value.models?.length
-            ? value.models
-            : fallbackModel
-              ? [
-                  {
-                    model: fallbackModel,
-                    providerCalls,
-                    inputTokens: input,
-                    outputTokens: output,
-                    totalTokens: input + output,
-                  },
-                ]
-              : [];
+        models = value.models?.length
+          ? value.models
+          : fallbackModel
+            ? [
+                {
+                  model: fallbackModel,
+                  providerCalls,
+                  inputTokens: input,
+                  outputTokens: output,
+                  totalTokens: input + output,
+                },
+              ]
+            : [];
       db.prepare("DELETE FROM ai_usage_models WHERE usage_id=?").run(id);
       const insertModel = db.prepare(
         `INSERT INTO ai_usage_models(
@@ -223,7 +225,8 @@ export function aiUsageStore(db: DatabaseSync) {
           .all(historyStart),
         todayModelRows = modelRows.filter(
           (row) =>
-            String(row.day) === new Date(todayStart()).toISOString().slice(0, 10),
+            String(row.day) ===
+            new Date(todayStart()).toISOString().slice(0, 10),
         ),
         rows = db
           .prepare(

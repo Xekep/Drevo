@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
+import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
 
 function providerStream(frames: unknown[]) {
@@ -95,7 +96,7 @@ test("AI research stream preserves tool calling and emits the checked answer", a
       join(dir, "drevo.sqlite"),
       true,
       undefined,
-      aiFetch,
+      adaptLegacyAiFake(aiFetch),
     ),
     base =
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;

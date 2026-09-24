@@ -11,6 +11,10 @@ export type AiSettings = {
   requestsPerMinute: number;
   dailyRequests: number;
   dailyTokens: number;
+  compactionEnabled: boolean;
+  compactThresholdTokens: number;
+  automaticTruncation: boolean;
+  maxToolIterations: number;
 };
 
 type AiSettingsRow = {
@@ -21,6 +25,10 @@ type AiSettingsRow = {
   requests_per_minute: unknown;
   daily_requests: unknown;
   daily_tokens: unknown;
+  compaction_enabled: unknown;
+  compact_threshold_tokens: unknown;
+  automatic_truncation: unknown;
+  max_tool_iterations: unknown;
 };
 
 function modelValue(value: unknown) {
@@ -50,12 +58,7 @@ function apiKeyValue(value: unknown) {
   return apiKey;
 }
 
-function integerValue(
-  value: unknown,
-  label: string,
-  min: number,
-  max: number,
-) {
+function integerValue(value: unknown, label: string, min: number, max: number) {
   if (
     typeof value !== "number" ||
     !Number.isInteger(value) ||
@@ -79,7 +82,9 @@ export function aiSettingsStore(db: DatabaseSync) {
     return db
       .prepare(
         `SELECT enabled,model,folder_id,api_key_ciphertext,
-                requests_per_minute,daily_requests,daily_tokens
+                requests_per_minute,daily_requests,daily_tokens,
+                compaction_enabled,compact_threshold_tokens,
+                automatic_truncation,max_tool_iterations
          FROM ai_settings WHERE id=1`,
       )
       .get() as AiSettingsRow;
@@ -95,6 +100,10 @@ export function aiSettingsStore(db: DatabaseSync) {
       requestsPerMinute: Number(value.requests_per_minute),
       dailyRequests: Number(value.daily_requests),
       dailyTokens: Number(value.daily_tokens),
+      compactionEnabled: !!value.compaction_enabled,
+      compactThresholdTokens: Number(value.compact_threshold_tokens),
+      automaticTruncation: !!value.automatic_truncation,
+      maxToolIterations: Number(value.max_tool_iterations),
     };
   }
 
@@ -128,16 +137,19 @@ export function aiSettingsStore(db: DatabaseSync) {
       const raw = value as Record<string, unknown>;
       if (typeof raw.enabled !== "boolean")
         throw new Error("Укажите, включён ли ИИ-исследователь");
-      if (
-        raw.clearApiKey !== undefined &&
-        typeof raw.clearApiKey !== "boolean"
-      )
+      if (raw.clearApiKey !== undefined && typeof raw.clearApiKey !== "boolean")
         throw new Error("Некорректная команда удаления API-ключа");
+      if (
+        (raw.compactionEnabled !== undefined &&
+          typeof raw.compactionEnabled !== "boolean") ||
+        (raw.automaticTruncation !== undefined &&
+          typeof raw.automaticTruncation !== "boolean")
+      )
+        throw new Error("Некорректные настройки контекста AI Studio");
 
       const before = read(),
         current = row(),
-        newApiKey =
-          raw.apiKey === undefined ? "" : apiKeyValue(raw.apiKey),
+        newApiKey = raw.apiKey === undefined ? "" : apiKeyValue(raw.apiKey),
         clearApiKey = raw.clearApiKey === true;
       let ciphertext = String(current.api_key_ciphertext || "");
       if (clearApiKey) ciphertext = "";
@@ -165,12 +177,35 @@ export function aiSettingsStore(db: DatabaseSync) {
           0,
           1000000000,
         ),
+        compactionEnabled:
+          raw.compactionEnabled === undefined
+            ? before.compactionEnabled
+            : raw.compactionEnabled === true,
+        compactThresholdTokens:
+          raw.compactThresholdTokens === undefined
+            ? before.compactThresholdTokens
+            : integerValue(
+                raw.compactThresholdTokens,
+                "Порог сжатия",
+                1000,
+                1000000,
+              ),
+        automaticTruncation:
+          raw.automaticTruncation === undefined
+            ? before.automaticTruncation
+            : raw.automaticTruncation === true,
+        maxToolIterations:
+          raw.maxToolIterations === undefined
+            ? before.maxToolIterations
+            : integerValue(raw.maxToolIterations, "Шагов инструментов", 1, 20),
       };
 
       db.prepare(
         `UPDATE ai_settings SET
           enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
-          requests_per_minute=?,daily_requests=?,daily_tokens=?
+          requests_per_minute=?,daily_requests=?,daily_tokens=?,
+          compaction_enabled=?,compact_threshold_tokens=?,
+          automatic_truncation=?,max_tool_iterations=?
          WHERE id=1`,
       ).run(
         Number(afterInput.enabled),
@@ -180,6 +215,10 @@ export function aiSettingsStore(db: DatabaseSync) {
         afterInput.requestsPerMinute,
         afterInput.dailyRequests,
         afterInput.dailyTokens,
+        Number(afterInput.compactionEnabled),
+        afterInput.compactThresholdTokens,
+        Number(afterInput.automaticTruncation),
+        afterInput.maxToolIterations,
       );
 
       const after = read(),
@@ -220,11 +259,13 @@ export function aiSettingsStore(db: DatabaseSync) {
                 },
               ]
             : []),
-          ...([
-            ["requestsPerMinute", "Запросов в минуту"],
-            ["dailyRequests", "Запросов в день"],
-            ["dailyTokens", "Токенов в день"],
-          ] as const).flatMap(([key, label]) =>
+          ...(
+            [
+              ["requestsPerMinute", "Запросов в минуту"],
+              ["dailyRequests", "Запросов в день"],
+              ["dailyTokens", "Токенов в день"],
+            ] as const
+          ).flatMap(([key, label]) =>
             before[key] !== after[key]
               ? [
                   {
@@ -306,6 +347,10 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
       dailyRequests: stored.dailyRequests,
       dailyTokens: stored.dailyTokens,
     },
+    compactionEnabled: stored.compactionEnabled,
+    compactThresholdTokens: stored.compactThresholdTokens,
+    automaticTruncation: stored.automaticTruncation,
+    maxToolIterations: stored.maxToolIterations,
     baseUrl,
   };
 }
@@ -328,6 +373,10 @@ export function publicAiStatus(settings: ReturnType<typeof aiSettingsStore>) {
     modelOverride: runtime.modelOverride,
     modelSource: runtime.modelSource,
     limits: runtime.limits,
+    compactionEnabled: runtime.compactionEnabled,
+    compactThresholdTokens: runtime.compactThresholdTokens,
+    automaticTruncation: runtime.automaticTruncation,
+    maxToolIterations: runtime.maxToolIterations,
     baseUrl: runtime.baseUrl,
   };
 }
