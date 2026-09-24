@@ -355,6 +355,19 @@ function createRestoreStore(
         ) {
           const people = new Set(family.people.map((person) => person.id));
           const photos = new Set((family.photos || []).map((photo) => photo.id));
+          const tags = new Map<
+            string,
+            { photoId: string; personId: string }
+          >();
+          const firstTagByPhotoPerson = new Map<string, string>();
+          for (const photo of family.photos || [])
+            for (const tag of photo.tags) {
+              const id = `${photo.id}:${tag.id}`;
+              tags.set(id, { photoId: photo.id, personId: tag.personId });
+              const key = `${photo.id}\0${tag.personId}`;
+              if (!firstTagByPhotoPerson.has(key))
+                firstTagByPhotoPerson.set(key, id);
+            }
           faceDescriptors = source
             .prepare("SELECT * FROM face_descriptors ORDER BY rowid")
             .all()
@@ -369,6 +382,14 @@ function createRestoreStore(
                 sourcePhotoId = row.source_photo_id
                   ? String(row.source_photo_id)
                   : undefined,
+                sourceTagId = row.source_tag_id
+                  ? String(row.source_tag_id)
+                  : sourcePhotoId
+                    ? firstTagByPhotoPerson.get(
+                        `${sourcePhotoId}\0${personId}`,
+                      )
+                    : undefined,
+                sourceTag = sourceTagId ? tags.get(sourceTagId) : undefined,
                 model = row.model ? String(row.model) : "face-api-1.7.15",
                 dimensions =
                   model === "face-api-1.7.15"
@@ -379,6 +400,10 @@ function createRestoreStore(
               if (
                 !people.has(personId) ||
                 (sourcePhotoId && !photos.has(sourcePhotoId)) ||
+                (sourcePhotoId &&
+                  (!sourceTag ||
+                    sourceTag.photoId !== sourcePhotoId ||
+                    sourceTag.personId !== personId)) ||
                 !Array.isArray(descriptor) ||
                 descriptor.length !== dimensions ||
                 !descriptor.every(
@@ -392,6 +417,7 @@ function createRestoreStore(
                 data: JSON.stringify(descriptor),
                 createdBy: row.created_by ? String(row.created_by) : undefined,
                 sourcePhotoId,
+                sourceTagId,
                 model,
               }];
             });

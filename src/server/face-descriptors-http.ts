@@ -19,6 +19,7 @@ type FaceDescriptor = {
   personId: string;
   descriptor: number[];
   sourcePhotoId: string;
+  sourceTagId?: string;
   model: FaceModel;
 };
 
@@ -40,10 +41,8 @@ function json(res: ServerResponse, status: number, value: unknown) {
 function parseDescriptor(value: unknown): FaceDescriptor {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Ожидается отпечаток лица");
-  const { id, personId, descriptor, sourcePhotoId, model } = value as Record<
-    string,
-    unknown
-  >;
+  const { id, personId, descriptor, sourcePhotoId, sourceTagId, model } =
+    value as Record<string, unknown>;
   const [modelName, spec] = modelSpec(model);
   if (
     typeof id !== "string" ||
@@ -53,6 +52,10 @@ function parseDescriptor(value: unknown): FaceDescriptor {
     personId.length > 200 ||
     typeof sourcePhotoId !== "string" ||
     !/^[a-zA-Z0-9-]{1,200}$/.test(sourcePhotoId) ||
+    (sourceTagId !== undefined &&
+      (typeof sourceTagId !== "string" ||
+        !sourceTagId ||
+        sourceTagId.length > 200)) ||
     !Array.isArray(descriptor) ||
     descriptor.length !== spec.dimensions ||
     !descriptor.every(
@@ -63,7 +66,15 @@ function parseDescriptor(value: unknown): FaceDescriptor {
     )
   )
     throw new Error("Некорректный отпечаток лица");
-  return { id, personId, descriptor, sourcePhotoId, model: modelName };
+  return {
+    id,
+    personId,
+    descriptor,
+    sourcePhotoId,
+    sourceTagId:
+      typeof sourceTagId === "string" ? sourceTagId : undefined,
+    model: modelName,
+  };
 }
 
 function parseMatchDescriptor(value: unknown) {
@@ -236,45 +247,75 @@ export function faceDescriptorsHttp({
         .get(sample.personId);
       if (!person)
         return json(res, 400, { error: "Человек не найден в архиве" });
+      const requestedTagRowId = sample.sourceTagId
+        ? `${sample.sourcePhotoId}:${sample.sourceTagId}`
+        : null;
       const source = archive.db
         .prepare(
-          `SELECT photos.data AS photo
+          `SELECT photo_tags.id AS tag_id, photos.data AS photo
              FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
-            WHERE photos.id=? AND photo_tags.person_id=? LIMIT 1`,
+            WHERE photos.id=?
+              AND photo_tags.person_id=?
+              AND (? IS NULL OR photo_tags.id=?)
+            ORDER BY photo_tags.rowid DESC
+            LIMIT 1`,
         )
-        .get(sample.sourcePhotoId, sample.personId);
+        .get(
+          sample.sourcePhotoId,
+          sample.personId,
+          requestedTagRowId,
+          requestedTagRowId,
+        );
       if (!source)
         return json(res, 400, {
           error: "Отпечаток должен относиться к сохранённой отметке на фото",
         });
+      const sourceTagRowId = String(source.tag_id);
       const photo = JSON.parse(String(source.photo)) as { createdBy?: string };
       if (actor.role !== "admin" && photo.createdBy !== actor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
       const count = Number(
         archive.db
           .prepare(
-            "SELECT count(*) AS n FROM face_descriptors WHERE person_id=? AND model=?",
+            `SELECT count(*) AS n
+               FROM face_descriptors
+              WHERE person_id=?
+                AND model=?
+                AND (source_tag_id IS NULL OR source_tag_id<>?)`,
           )
-          .get(sample.personId, sample.model)!.n,
+          .get(sample.personId, sample.model, sourceTagRowId)!.n,
       );
       if (count >= 20)
         return json(res, 409, {
           error: "Для этого человека уже сохранено максимальное число образцов",
         });
-      archive.db
-        .prepare(
-          `INSERT OR IGNORE INTO face_descriptors
-             (id,person_id,data,created_by,source_photo_id,model)
-           VALUES(?,?,?,?,?,?)`,
-        )
-        .run(
-          sample.id,
-          sample.personId,
-          JSON.stringify(sample.descriptor),
-          actor.id,
-          sample.sourcePhotoId,
-          sample.model,
-        );
+      archive.db.exec("BEGIN IMMEDIATE");
+      try {
+        archive.db
+          .prepare(
+            "DELETE FROM face_descriptors WHERE source_tag_id=? AND model=?",
+          )
+          .run(sourceTagRowId, sample.model);
+        archive.db
+          .prepare(
+            `INSERT INTO face_descriptors
+               (id,person_id,data,created_by,source_photo_id,source_tag_id,model)
+             VALUES(?,?,?,?,?,?,?)`,
+          )
+          .run(
+            sample.id,
+            sample.personId,
+            JSON.stringify(sample.descriptor),
+            actor.id,
+            sample.sourcePhotoId,
+            sourceTagRowId,
+            sample.model,
+          );
+        archive.db.exec("COMMIT");
+      } catch (error) {
+        archive.db.exec("ROLLBACK");
+        throw error;
+      }
       return json(res, 201, { ok: true });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
