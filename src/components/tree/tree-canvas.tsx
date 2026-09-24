@@ -143,6 +143,10 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
+  const activeFanAnchor =
+    fanAnchor && family.people.some((person) => person.id === fanAnchor)
+      ? fanAnchor
+      : null;
   const [growing, setGrowing] = useState(true);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -182,16 +186,12 @@ function Canvas(props: Props) {
     props.preview,
   );
   const { anchor: root, visible, collapsed, toggle: toggleView } = familyView;
-  useEffect(() => {
-    if (fanAnchor && !family.people.some((person) => person.id === fanAnchor))
-      setFanAnchor(null);
-  }, [fanAnchor, family.people]);
   const flow = useReactFlow<
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
   >();
   const context = `${mode}:${familyView.mode}:${root || "all"}`;
-  useTouchZoom(container, flow, !screen.fullscreen && !fanAnchor);
+  useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
   const { geometry, ready, problem, layoutBusy, layoutKey } = useTreeLayout(
     family,
     visible,
@@ -454,7 +454,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${fanAnchor ? "is-fan" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
         aria-busy={growthActive}
@@ -499,7 +499,7 @@ function Canvas(props: Props) {
                   ? () => props.onShare!(root, [...visible])
                   : undefined
               }
-              anchor={fanAnchor ? peopleMap.get(fanAnchor) : root ? peopleMap.get(root) : undefined}
+              anchor={activeFanAnchor ? peopleMap.get(activeFanAnchor) : root ? peopleMap.get(root) : undefined}
               selected={peopleMap.get(selected[0])}
               count={visible.size}
               total={family.people.length}
@@ -520,7 +520,7 @@ function Canvas(props: Props) {
                 familyView.enterCommon();
               }}
               onFan={() => {
-                if (fanAnchor) {
+                if (activeFanAnchor) {
                   setFanAnchor(null);
                   return;
                 }
@@ -533,7 +533,7 @@ function Canvas(props: Props) {
                 setCreateAt(null);
                 setFanAnchor(next);
               }}
-              fanActive={!!fanAnchor}
+              fanActive={!!activeFanAnchor}
               onAll={() => {
                 rememberContext();
                 setFanAnchor(null);
@@ -547,10 +547,10 @@ function Canvas(props: Props) {
           )}
         </div>
         {!narrow && props.comparisonAction}
-        {fanAnchor ? (
+        {activeFanAnchor ? (
           <FanChart
             family={family}
-            anchorId={fanAnchor}
+            anchorId={activeFanAnchor}
             selected={selected}
             onChoose={(id) => onChoose(id, false)}
           />
@@ -680,7 +680,7 @@ function Canvas(props: Props) {
           )}
         </ReactFlow>
         )}
-        {!fanAnchor && (
+        {!activeFanAnchor && (
           <TreeEdgeChoices
           choices={edgeChoices}
           peopleMap={peopleMap}
@@ -690,7 +690,7 @@ function Canvas(props: Props) {
           onSelect={onEdge}
         />
         )}
-        {!fanAnchor && (
+        {!activeFanAnchor && (
           <TreeCreateAt
           draft={props.canEdit ? createAt : null}
           busy={props.busy}
@@ -699,10 +699,10 @@ function Canvas(props: Props) {
           onClose={() => setCreateAt(null)}
         />
         )}
-        {!fanAnchor && mode === "timeline" && geometry?.mode === "timeline" && (
+        {!activeFanAnchor && mode === "timeline" && geometry?.mode === "timeline" && (
           <EraOverlay geometry={geometry} />
         )}
-        {!fanAnchor && problem && (
+        {!activeFanAnchor && problem && (
           <div className="tree-notice" role="alert">
             {problem}
           </div>
