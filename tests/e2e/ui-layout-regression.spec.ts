@@ -1,0 +1,80 @@
+import { expect, test } from "@playwright/test";
+
+test("tree card and assistant fit common viewport widths without hiding each other", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({
+      json: {
+        chats: [
+          { id: "chat-a", title: "Семейный диалог", updatedAt: "2026-09-25" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/ai/chats/chat-a", (route) =>
+    route.fulfill({
+      json: {
+        messages: [
+          { role: "user", content: "Вопрос" },
+          { role: "assistant", content: "Ответ" },
+        ],
+      },
+    }),
+  );
+  for (const width of [320, 360, 390, 768, 1024, 1440, 1920]) {
+    await page.setViewportSize({ width, height: width < 500 ? 720 : 900 });
+    await page.goto("/people/e2e-memorial-person");
+    await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".inspector-dock")).toBeVisible();
+    await page
+      .getByRole("button", { name: "Открыть ИИ-исследователя" })
+      .click();
+    const panel = page.locator(".research-assistant");
+    await expect(panel).toBeVisible();
+    const geometry = await page.evaluate(() => {
+      const p = document
+        .querySelector<HTMLElement>(".research-assistant")!
+        .getBoundingClientRect();
+      const form = document
+        .querySelector<HTMLElement>(".research-assistant > form")!
+        .getBoundingClientRect();
+      const messages = document
+        .querySelector<HTMLElement>(".research-assistant-messages")!
+        .getBoundingClientRect();
+      const inspector = document
+        .querySelector<HTMLElement>(".inspector-dock")!
+        .getBoundingClientRect();
+      return {
+        overflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        panelLeft: p.left,
+        panelRight: p.right,
+        panelTop: p.top,
+        panelBottom: p.bottom,
+        formTop: form.top,
+        messagesTop: messages.top,
+        messagesBottom: messages.bottom,
+        inspectorLeft: inspector.left,
+      };
+    });
+    expect(geometry.overflow).toBeLessThanOrEqual(1);
+    expect(geometry.panelLeft).toBeGreaterThanOrEqual(-1);
+    expect(geometry.panelRight).toBeLessThanOrEqual(width + 1);
+    expect(geometry.messagesBottom).toBeLessThanOrEqual(geometry.formTop + 1);
+    if (width >= 900)
+      expect(geometry.panelRight).toBeLessThanOrEqual(
+        geometry.inspectorLeft - 12,
+      );
+  }
+  expect(pageErrors).toEqual([]);
+});

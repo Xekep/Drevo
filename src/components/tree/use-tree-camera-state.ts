@@ -101,7 +101,6 @@ export function useTreeCameraState({
   const lastReturn = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
-  const mobileCamera = useRef("");
   const initialViewSent = useRef(false);
   const rememberContext = useCallback(() => {
     cameras.current[context] = flow.getViewport();
@@ -133,11 +132,11 @@ export function useTreeCameraState({
       () => {
         let viewportUpdate: unknown;
         const changedContext = previousContext.current !== context;
+        const motionEnabled = !window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
         const contextDuration =
-          initialViewSent.current &&
-          !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? 520
-            : 0;
+          initialViewSent.current && motionEnabled ? 520 : 0;
         const contextEase = (progress: number) => 1 - (1 - progress) ** 3;
         const switchedMode =
           !!previousContext.current &&
@@ -158,7 +157,7 @@ export function useTreeCameraState({
             maxZoom: 1,
             minZoom: narrow ? 0.55 : 0.15,
             padding: narrow ? 0.3 : 0.48,
-            duration: 560,
+            duration: motionEnabled ? 560 : 0,
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
           void Promise.resolve(viewportUpdate).then(
@@ -189,7 +188,7 @@ export function useTreeCameraState({
                 target.y + TREE_NODE_HEIGHT / 2,
                 {
                   zoom: Math.max(flow.getZoom(), narrow ? 0.82 : 0.9),
-                  duration: 650,
+                  duration: motionEnabled ? 650 : 0,
                   ease: (progress) => 1 - (1 - progress) ** 3,
                 },
               )
@@ -199,7 +198,7 @@ export function useTreeCameraState({
                 minZoom:
                   focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
                 padding: focus.purpose === "family" ? 0.34 : 0.5,
-                duration: 650,
+                duration: motionEnabled ? 650 : 0,
                 ease: (progress) => 1 - (1 - progress) ** 3,
               });
         } else if (changedContext || reverseChanged) {
@@ -253,18 +252,6 @@ export function useTreeCameraState({
               padding,
               duration: contextDuration,
               ease: contextEase,
-            });
-          }
-        } else if (narrow) {
-          const key = `${selected.join(":")}:${canvasWidth}:${canvasHeight}`;
-          if (mobileCamera.current !== key) {
-            mobileCamera.current = key;
-            if (!selected.length) return;
-            viewportUpdate = flow.fitView({
-              nodes: selected.map((id) => ({ id })),
-              minZoom: 0.55,
-              maxZoom: Math.max(0.65, Math.min(0.9, flow.getZoom())),
-              padding: 0.18,
             });
           }
         }

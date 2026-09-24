@@ -111,13 +111,8 @@ test("Ctrl+колесо масштабирует древо и не меняет
       '[data-fan-generation="2"][data-label-orientation="tangential"]',
     ),
   ).not.toHaveCount(0);
-  await expect(page.locator(".tree-canvas")).toHaveClass(/is-fan-morphing/);
-  await expect(page.locator(".fan-morph-card")).not.toHaveCount(0);
-  await expect(outerLayer).toHaveCSS("opacity", "0");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-fan-morphing/,
-    { timeout: 2_500 },
-  );
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-fan-morphing/);
+  await expect(page.locator(".fan-morph-card")).toHaveCount(0);
   await expect(outerLayer).toHaveCSS("opacity", "1");
   await expect(fan).toHaveCSS("animation-name", "none");
 });
@@ -1505,28 +1500,15 @@ test("the initial tree grows from roots toward descendants", async ({
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await expect(canvas).toHaveClass(/is-growing/);
-  await expect(page.locator(".tree-grow-node").first()).toHaveCSS(
-    "animation-name",
-    "tree-branch-reveal",
-  );
-  await expect(
-    page.locator(".tree-grow-edge .tree-edge-final-path").first(),
-  ).toHaveCSS("animation-name", "tree-edge-final-reveal");
-  await expect(
-    page.locator(".tree-grow-edge .tree-edge-growth-path").first(),
-  ).toHaveCSS("animation-name", "tree-edge-draw");
-  await expect(godparent).toHaveCSS(
-    "animation-name",
-    "tree-edge-label-reveal",
-  );
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 3_000 });
+  await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS("animation-name", "none");
+  await expect(godparent).toHaveCSS("animation-name", "none");
 });
 
 test("переход к выбранному человеку остаётся плавным", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });

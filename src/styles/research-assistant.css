@@ -94,6 +94,17 @@
   box-shadow: 0 24px 70px #2638262b;
 }
 
+@media (min-width: 900px) {
+  body:has(.archive-workspace .inspector-dock:not([hidden]))
+    .research-assistant:not([style]) {
+    right: calc(clamp(340px, 26vw, 380px) + 36px);
+  }
+  body:has(.archive-workspace .inspector-dock[data-editing="true"]:not([hidden]))
+    .research-assistant:not([style]) {
+    right: calc(clamp(400px, 34vw, 480px) + 36px);
+  }
+}
+
 @media (max-width: 899px) {
   .research-assistant {
     z-index: 1200;

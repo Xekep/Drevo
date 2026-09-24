@@ -30,7 +30,10 @@ export function TreeCameraTools({ selected }: { selected: string[] }) {
             nodes: selected.map((id) => ({ id })),
             maxZoom: 1,
             padding: 0.4,
-            duration: 480,
+            duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+              .matches
+              ? 0
+              : 480,
             ease: (progress) => 1 - (1 - progress) ** 3,
           });
         }}

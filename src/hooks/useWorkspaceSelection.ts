@@ -5,6 +5,7 @@ type State = {
   compare: boolean;
   linkFrom: string | null;
   focus: TreeFocus | null;
+  focusSerial: number;
   spotlight: string[];
 };
 type Action =
@@ -24,6 +25,7 @@ function reducer(state: State, action: Action): State {
         compare: false,
         linkFrom: null,
         spotlight: [],
+        focus: null,
       };
     case "compare":
       return {
@@ -32,6 +34,7 @@ function reducer(state: State, action: Action): State {
         selected: state.selected.slice(0, 1),
         linkFrom: null,
         spotlight: [],
+        focus: null,
       };
     case "link":
       return {
@@ -39,6 +42,7 @@ function reducer(state: State, action: Action): State {
         linkFrom: state.selected[0] || "",
         compare: false,
         spotlight: [],
+        focus: null,
       };
     case "finishLink":
       return { ...state, linkFrom: null };
@@ -49,7 +53,8 @@ function reducer(state: State, action: Action): State {
         compare: action.ids.length === 2,
         linkFrom: null,
         spotlight: [],
-        focus: { ids: action.ids, token: (state.focus?.token || 0) + 1 },
+        focusSerial: state.focusSerial + 1,
+        focus: { ids: action.ids, token: state.focusSerial + 1 },
       };
     case "revealFamily":
       return {
@@ -58,9 +63,10 @@ function reducer(state: State, action: Action): State {
         compare: false,
         linkFrom: null,
         spotlight: action.ids,
+        focusSerial: state.focusSerial + 1,
         focus: {
           ids: action.ids,
-          token: (state.focus?.token || 0) + 1,
+          token: state.focusSerial + 1,
           purpose: "family",
           groupId: action.groupId,
         },
@@ -72,6 +78,7 @@ function reducer(state: State, action: Action): State {
           selected: [action.id],
           linkFrom: action.id,
           spotlight: [],
+          focus: null,
         };
       const comparison = state.compare || action.additive;
       const selected = comparison
@@ -81,7 +88,13 @@ function reducer(state: State, action: Action): State {
             : state.selected
           : [...state.selected.slice(0, 1), action.id]
         : [action.id];
-      return { ...state, selected, compare: comparison, spotlight: [] };
+      return {
+        ...state,
+        selected,
+        compare: comparison,
+        spotlight: [],
+        focus: null,
+      };
     }
   }
 }
@@ -91,6 +104,7 @@ export function useWorkspaceSelection() {
     compare: false,
     linkFrom: null,
     focus: null,
+    focusSerial: 0,
     spotlight: [],
   });
   const choose = useCallback(

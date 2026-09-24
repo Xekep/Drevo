@@ -377,11 +377,19 @@ function Canvas(props: Props) {
     maxGrowthDelay,
   } = nodeModel;
   useEffect(() => {
-    if (!growing || !ready || !nodes.length || (!narrow && !growthStarted))
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (
+      !growing ||
+      !ready ||
+      !nodes.length ||
+      (!narrow && !growthStarted && !reduced)
+    )
       return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      narrow ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
+      narrow || reduced ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
     );
     return () => window.clearTimeout(timer);
   }, [
@@ -430,7 +438,9 @@ function Canvas(props: Props) {
         minZoom: narrow ? 0.72 : 0.55,
         maxZoom: narrow ? 0.96 : 1.08,
         padding: narrow ? 0.75 : 0.9,
-        duration: 620,
+        duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? 0
+          : 620,
         ease: (progress) => 1 - (1 - progress) ** 3,
       })
       .then(done, done);
@@ -486,6 +496,9 @@ function Canvas(props: Props) {
     () => ({
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
+        if (!introCameraFinished || focus)
+          void flow.setViewport(flow.getViewport(), { duration: 0 });
+        if (!introCameraFinished) setIntroCameraFinished(true);
         onChoose(id, additive);
       },
       collapse: toggleBranch,
@@ -501,7 +514,14 @@ function Canvas(props: Props) {
           });
       },
     }),
-    [onChoose, toggleBranch, personOccurrences, flow],
+    [
+      onChoose,
+      toggleBranch,
+      personOccurrences,
+      flow,
+      introCameraFinished,
+      focus,
+    ],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
   const displayEdges = useMemo<RelationshipEdgeType[]>(
@@ -785,17 +805,21 @@ function Canvas(props: Props) {
                 }
                   const next = selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
+                const reduced = window.matchMedia(
+                  "(prefers-reduced-motion: reduce)",
+                ).matches;
                 const element = container.current;
-                const morph = element
-                  ? captureFanMorphSources(element, family, next)
-                  : [];
+                const morph =
+                  !reduced && element
+                    ? captureFanMorphSources(element, family, next)
+                    : [];
                 rememberContext();
                 clearReturnTarget();
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
                 fanMorphSources.current = morph;
-                setFanMorphing(true);
+                setFanMorphing(!reduced);
                 setFanAnchor(next);
               }}
               fanActive={!!activeFanAnchor}
