@@ -112,10 +112,14 @@ export function FanChart({
             labelRadius * ((angle * Math.PI) / 180);
           const denseLabel =
             slot.generation > 0 && availableArc < 150;
+          const tangentialRotation =
+            ((mid + 90) % 360 + 360) % 360;
           const rotation =
-            slot.generation === 0 || denseLabel
+            slot.generation === 0
               ? 0
-              : ((mid + 90) % 360 + 360) % 360;
+              : denseLabel
+                ? ((tangentialRotation + 90) % 360 + 360) % 360
+                : tangentialRotation;
           const person = slot.personId ? people.get(slot.personId) : undefined;
           const side =
             slot.generation === 0
@@ -139,7 +143,7 @@ export function FanChart({
               key={`${slot.generation}:${slot.index}`}
               data-fan-slot={`${slot.generation}:${slot.index}`}
               data-fan-generation={slot.generation}
-              data-label-orientation={denseLabel ? "horizontal" : "tangential"}
+              data-label-orientation={denseLabel ? "radial" : "tangential"}
               className={className}
               role={person ? "button" : undefined}
               tabIndex={person ? 0 : undefined}
@@ -163,8 +167,8 @@ export function FanChart({
               {person ? <title>{fullName(person)}</title> : null}
               {person ? (
                 <text
-                  className={`fan-sector-label${denseLabel ? " is-horizontal" : ""}`}
-                  data-label-orientation={denseLabel ? "horizontal" : "tangential"}
+                  className="fan-sector-label"
+                  data-label-orientation={denseLabel ? "radial" : "tangential"}
                   transform={`translate(${label.x} ${label.y}) rotate(${rotation})`}
                   textAnchor="middle"
                   dominantBaseline="middle"
