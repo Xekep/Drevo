@@ -1,0 +1,119 @@
+.fan-chart {
+  position: absolute;
+  inset: 58px 0 0;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 92%, #ffffff 0, #f8f7f2 58%, #f3f4ec 100%);
+}
+.fan-chart-meta {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  max-width: min(440px, calc(100% - 36px));
+  padding: 8px 11px;
+  border: 1px solid #dfe5d8;
+  border-radius: 9px;
+  background: #fffffff2;
+  color: #405439;
+  box-shadow: 0 4px 16px #344b2910;
+  pointer-events: none;
+}
+.fan-chart-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.fan-chart-meta span {
+  font-size: 11px;
+  color: #76816d;
+}
+.fan-chart-svg {
+  width: min(100%, 1180px);
+  height: 100%;
+  min-height: 390px;
+  overflow: visible;
+}
+.fan-sector {
+  outline: none;
+}
+.fan-sector path {
+  vector-effect: non-scaling-stroke;
+  stroke: #cfd8c7;
+  stroke-width: 1;
+  transition:
+    fill 120ms ease,
+    stroke 120ms ease,
+    opacity 120ms ease;
+}
+.fan-sector--root path {
+  fill: #dce9d3;
+}
+.fan-sector--father path {
+  fill: #edf4e7;
+}
+.fan-sector--mother path {
+  fill: #f5eee5;
+}
+.fan-sector.is-empty path {
+  fill: #f8f8f3;
+  stroke: #dde1d8;
+  stroke-dasharray: 3 3;
+}
+.fan-sector.is-known {
+  cursor: pointer;
+}
+.fan-sector.is-known:hover path,
+.fan-sector.is-known:focus-visible path {
+  fill: #e2edd9;
+  stroke: #79906d;
+  stroke-width: 1.5;
+}
+.fan-sector.is-selected path {
+  stroke: #4f7655;
+  stroke-width: 2;
+}
+.fan-sector-label,
+.fan-sector-empty-label {
+  pointer-events: none;
+  fill: #354531;
+  font-size: 12px;
+  font-weight: 600;
+}
+.fan-sector-years {
+  fill: #788073;
+  font-size: 9px;
+  font-weight: 400;
+}
+.fan-sector-empty-label {
+  fill: #a6ada0;
+  font-size: 16px;
+  font-weight: 400;
+}
+@media (max-width: 899px) {
+  .fan-chart {
+    inset-top: 58px;
+    overflow: auto;
+    justify-content: flex-start;
+  }
+  .fan-chart-svg {
+    width: 900px;
+    min-width: 900px;
+    height: 100%;
+    min-height: 480px;
+  }
+  .fan-chart-meta {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
+  }
+}
