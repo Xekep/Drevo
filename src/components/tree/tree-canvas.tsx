@@ -149,6 +149,17 @@ function Canvas(props: Props) {
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
+  const [returnTarget, setReturnTarget] = useState<{
+    id: string;
+    token: number;
+  } | null>(null);
+  const returnToken = useRef(0);
+  const returnToPerson = useCallback((id?: string | null) => {
+    if (!id) return;
+    returnToken.current += 1;
+    setReturnTarget({ id, token: returnToken.current });
+  }, []);
+  const clearReturnTarget = useCallback(() => setReturnTarget(null), []);
   const [fanMorphing, setFanMorphing] = useState(false);
   const fanMorphSources = useRef<FanMorphSource[]>([]);
   const activeFanAnchor =
@@ -379,6 +390,10 @@ function Canvas(props: Props) {
       reverse,
       ready,
       focus: cameraFocus,
+      returnPersonId: returnTarget?.id || null,
+      returnToken: returnTarget?.token || 0,
+      personOccurrences,
+      onReturnComplete: clearReturnTarget,
       positions,
       selected,
       narrow,
@@ -473,6 +488,7 @@ function Canvas(props: Props) {
   );
   function switchMode(next: TreeMode) {
     rememberContext();
+    if (activeFanAnchor) returnToPerson(activeFanAnchor);
     setFanAnchor(null);
     setMode(next);
     setEdgeChoices([]);
@@ -538,19 +554,23 @@ function Canvas(props: Props) {
               mode={familyView.mode}
               onFamily={() => {
                 rememberContext();
+                clearReturnTarget();
                 setFanAnchor(null);
                 familyView.enter();
               }}
               onCommon={() => {
                 rememberContext();
+                clearReturnTarget();
                 setFanAnchor(null);
                 familyView.enterCommon();
               }}
               onFan={() => {
                 if (activeFanAnchor) {
+                  const target = activeFanAnchor;
                   fanMorphSources.current = [];
                   setFanMorphing(false);
                   setFanAnchor(null);
+                  returnToPerson(target);
                   return;
                 }
                 const next =
@@ -563,6 +583,7 @@ function Canvas(props: Props) {
                     ? captureFanMorphSources(element, family, next)
                     : [];
                 rememberContext();
+                clearReturnTarget();
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
@@ -572,9 +593,11 @@ function Canvas(props: Props) {
               }}
               fanActive={!!activeFanAnchor}
               onAll={() => {
+                const target = activeFanAnchor || root;
                 rememberContext();
                 setFanAnchor(null);
                 familyView.showAll();
+                returnToPerson(target);
               }}
               onReset={() => {
                 resetContext();

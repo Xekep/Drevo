@@ -25,6 +25,10 @@ type TreeCameraStateInput = {
   reverse: boolean;
   ready: boolean;
   focus: { ids: string[]; token: number; purpose?: "family" } | null;
+  returnPersonId: string | null;
+  returnToken: number;
+  personOccurrences: Map<string, string[]>;
+  onReturnComplete?: () => void;
   positions: Map<string, { x: number; y: number }>;
   selected: string[];
   narrow: boolean;
@@ -53,6 +57,10 @@ export function useTreeCameraState({
   reverse,
   ready,
   focus,
+  returnPersonId,
+  returnToken,
+  personOccurrences,
+  onReturnComplete,
   positions,
   selected,
   narrow,
@@ -67,6 +75,7 @@ export function useTreeCameraState({
   const canvasHeight = useStore((state) => state.height);
   const cameras = useRef<Record<string, Viewport>>({});
   const lastFocus = useRef(-1);
+  const lastReturn = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const mobileCamera = useRef("");
@@ -107,7 +116,30 @@ export function useTreeCameraState({
         const reverseChanged = previousReverse.current !== reverse;
         previousContext.current = context;
         previousReverse.current = reverse;
-        if (
+        const returnOccurrence = returnPersonId
+          ? personOccurrences
+              .get(returnPersonId)
+              ?.find((id) => positions.has(id))
+          : undefined;
+        if (returnPersonId && returnToken !== lastReturn.current) {
+          if (!returnOccurrence) return;
+          lastReturn.current = returnToken;
+          viewportUpdate = flow.fitView({
+            nodes: [{ id: returnOccurrence }],
+            maxZoom: 1,
+            minZoom: narrow ? 0.55 : 0.15,
+            padding: narrow ? 0.3 : 0.48,
+            duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+              .matches
+              ? 0
+              : 560,
+            ease: (progress) => 1 - (1 - progress) ** 3,
+          });
+          void Promise.resolve(viewportUpdate).then(
+            () => onReturnComplete?.(),
+            () => onReturnComplete?.(),
+          );
+        } else if (
           focus &&
           focus.token !== lastFocus.current &&
           focus.ids.every((id) => positions.has(id))
@@ -189,6 +221,10 @@ export function useTreeCameraState({
     reverse,
     onInitialViewReady,
     focus,
+    returnPersonId,
+    returnToken,
+    personOccurrences,
+    onReturnComplete,
     positions,
     selected,
     flow,
