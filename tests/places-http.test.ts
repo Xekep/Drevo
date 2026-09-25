@@ -6,7 +6,6 @@ import { openArchive } from "../src/server/database.ts";
 import type { createAuth } from "../src/server/auth.ts";
 import type { settingsStore } from "../src/server/settings.ts";
 import {
-  currentGeocodingStore,
   geocodingStore,
   type GeocodingStore,
 } from "../src/server/geocoding.ts";
@@ -65,7 +64,7 @@ test("places HTTP searches only visible family places and rechecks access after 
       archive,
       auth,
       visibility,
-      geocoding: () => geocoding,
+      geocoding,
     }),
     server = createServer(async (req, res) => {
       if (await handler(req, res, new URL(req.url || "/", "http://localhost")))
@@ -108,7 +107,7 @@ test("places HTTP searches only visible family places and rechecks access after 
   }
 });
 
-test("geocoding registry exposes the active store and clears it on close", () => {
+test("closed geocoding store rejects further work", async () => {
   const db = new DatabaseSync(":memory:");
   initializeArchiveSchema(db);
   const store = geocodingStore(
@@ -117,9 +116,8 @@ test("geocoding registry exposes the active store and clears it on close", () =>
     0,
   );
   try {
-    assert.equal(currentGeocodingStore(db), store);
     store.close();
-    assert.throws(() => currentGeocodingStore(db));
+    await assert.rejects(store.locate("Москва"), /остановлен/);
   } finally {
     db.close();
   }

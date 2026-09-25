@@ -19,10 +19,10 @@ import { restoreStore } from "./restore.ts";
 import { geocodingStore } from "./geocoding.ts";
 import { assertProductionOrigin } from "./runtime-config.ts";
 import { imagePreviews } from "./image-previews.ts";
-import { sharingHttp } from "./sharing-http.ts";
+import { archiveHttp } from "./archive-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
-import { backupManager } from "./backup-manager.ts";
+import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -61,9 +61,16 @@ export async function startServer(
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
   const auth = createAuth(users, archive.db, publicOrigin);
-  const backups = backupManager(archive.db, dbPath);
-  const manageBackups = backupManagementHttp({ backups, restores, auth, publicOrigin });
-  const sharing = sharingHttp({
+  const backups = backupCoordinator(archive.db, dbPath);
+  const manageBackups = backupManagementHttp({
+    backups,
+    restores,
+    auth,
+    publicOrigin,
+  });
+  const handleArchive = archiveHttp({
+    geocoding,
+    restores,
     archive,
     auth,
     media,
@@ -126,7 +133,7 @@ export async function startServer(
       path = parsedUrl.pathname;
     if (path.startsWith("/api/")) auth.refreshSession(req, res);
     if (await manageBackups(req, res, parsedUrl)) return;
-    if (await sharing(req, res, parsedUrl)) return;
+    if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
 
@@ -150,7 +157,8 @@ export async function startServer(
 
   let activeRequests = 0;
   const server = createServer((req, res) => {
-    const requestId = randomUUID(), started = Date.now();
+    const requestId = randomUUID(),
+      started = Date.now();
     res.setHeader("X-Request-ID", requestId);
     activeRequests++;
     void handle(req, res)
@@ -175,21 +183,22 @@ export async function startServer(
       .finally(() => {
         activeRequests--;
         const path = (req.url || "").split("?")[0];
-        if (production) console.log(
-          JSON.stringify({
-            level: "info",
-            event: "request",
-            requestId,
-            method: req.method,
-            route: /^\/(?:s|api\/shared)\//.test(path)
-              ? path.startsWith("/s/")
-                ? "/s/[redacted]"
-                : "/api/shared/[redacted]"
-              : path,
-            status: res.statusCode,
-            durationMs: Date.now() - started,
-          }),
-        );
+        if (production)
+          console.log(
+            JSON.stringify({
+              level: "info",
+              event: "request",
+              requestId,
+              method: req.method,
+              route: /^\/(?:s|api\/shared)\//.test(path)
+                ? path.startsWith("/s/")
+                  ? "/s/[redacted]"
+                  : "/api/shared/[redacted]"
+                : path,
+              status: res.statusCode,
+              durationMs: Date.now() - started,
+            }),
+          );
       });
   });
   await new Promise<void>((done, reject) => {

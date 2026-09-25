@@ -271,7 +271,7 @@ type StoredDocument = {
   personIds: string[];
 };
 
-function createRestoreStore(
+export function restoreStore(
   archive: ReturnType<typeof openArchive>,
   dbPath: string,
 ) {
@@ -696,23 +696,4 @@ function createRestoreStore(
   };
 }
 
-export type RestoreStore = ReturnType<typeof createRestoreStore>;
-const restoreStores = new WeakMap<
-  ReturnType<typeof openArchive>,
-  RestoreStore
->();
-
-export function restoreStore(
-  archive: ReturnType<typeof openArchive>,
-  dbPath: string,
-) {
-  const store = createRestoreStore(archive, dbPath);
-  restoreStores.set(archive, store);
-  return store;
-}
-
-export function currentRestoreStore(archive: ReturnType<typeof openArchive>) {
-  const store = restoreStores.get(archive);
-  if (!store) throw new Error("Хранилище восстановления не инициализировано");
-  return store;
-}
+export type RestoreStore = ReturnType<typeof restoreStore>;

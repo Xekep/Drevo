@@ -17,8 +17,6 @@ export type GeocodingStore = {
   close(): void;
 };
 
-const geocodingStores = new WeakMap<DatabaseSync, GeocodingStore>();
-
 /** Один общий последовательный поиск; постоянный кэш не зависит от посетителя. */
 export function geocodingStore(
   db: DatabaseSync,
@@ -40,7 +38,8 @@ export function geocodingStore(
         process.env.HISTORICAL_GEOCODER_URL ||
         "https://www.wikidata.org/w/api.php",
       key = "v2:" + provider + ":" + wiki + ":" + placeKey(query);
-    if (closed || query.length < 2 || query.length > 250)
+    if (closed) return Promise.reject(new Error("Поиск остановлен"));
+    if (query.length < 2 || query.length > 250)
       return Promise.reject(
         new Error("Укажите название населённого пункта (до 250 символов)"),
       );
@@ -216,15 +215,7 @@ export function geocodingStore(
     locate,
     close: () => {
       closed = true;
-      if (geocodingStores.get(db) === store) geocodingStores.delete(db);
     },
   };
-  geocodingStores.set(db, store);
-  return store;
-}
-
-export function currentGeocodingStore(db: DatabaseSync) {
-  const store = geocodingStores.get(db);
-  if (!store) throw new Error("Хранилище геокодирования не инициализировано");
   return store;
 }

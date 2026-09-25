@@ -1,3 +1,4 @@
+import type { ResearchAnswerReference as AnswerReference } from "../domain/research-answer.ts";
 import type { IncomingMessage } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
@@ -57,17 +58,6 @@ export function requesterAccessContext(user: ArchiveUser, canPropose: boolean) {
     return `${readScope} Пользователь может подтверждать изменения любых объектов архива.`;
   return `${readScope} Пользователь может создавать новые карточки, но редактировать и связывать только созданные им объекты. Сервер отдельно проверяет право на каждое предложение.`;
 }
-export type AnswerReference =
-  | { kind: "person"; id: string; label: string }
-  | { kind: "photo"; id: string; label: string }
-  | {
-      kind: "source";
-      personId: string;
-      label: string;
-      reference?: string;
-      url?: string;
-    };
-
 export type ResearchMetrics = {
   providerCalls: number;
   agentIterations: number;
@@ -126,16 +116,6 @@ export function modelUsage(metrics: ResearchMetrics) {
   }));
 }
 
-export type ResearchResult = {
-  answer: string;
-  references: AnswerReference[];
-  suggestionIds: string[];
-  uiActions: UiAction[];
-  files: ResearchFile[];
-};
-
-export type ResearchFile = { name: string; url: string };
-
 export const CREATE_PDF_TOOL = {
   name: "create_pdf",
   description:
@@ -150,13 +130,6 @@ export const CREATE_PDF_TOOL = {
     additionalProperties: false,
   },
 } as const;
-
-export type UiAction =
-  | { type: "focus_people"; personIds: string[] }
-  | { type: "filter_people"; personIds: string[]; label: string }
-  | { type: "open_person"; personId: string }
-  | { type: "open_photo"; photoId: string }
-  | { type: "zoom_in" | "zoom_out" };
 
 export const ANALYZE_PHOTO_TOOL = {
   name: "analyze_photo",

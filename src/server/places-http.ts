@@ -16,7 +16,7 @@ export function placesHttp({
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
   visibility: ReturnType<typeof settingsStore>;
-  geocoding: () => GeocodingStore;
+  geocoding: GeocodingStore;
   publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -34,8 +34,7 @@ export function placesHttp({
     url: URL,
   ): Promise<boolean> => {
     if (url.pathname !== "/api/places/locate") return false;
-    if (req.method !== "GET")
-      return json(res, 405, { error: "Ожидается GET" });
+    if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });
 
     const access = visibility.read();
     if (!auth.canRead(req) && !access.publicTree && !access.publicAlbums)
@@ -52,7 +51,8 @@ export function placesHttp({
       const settings = visibility.read(),
         { family } = archive.read(),
         people = auth.canRead(req) || settings.publicTree ? family.people : [],
-        photos = auth.canRead(req) || settings.publicAlbums ? family.photos : [];
+        photos =
+          auth.canRead(req) || settings.publicAlbums ? family.photos : [];
       return familyPlaces(people, photos).some(
         (place) => place.key === placeKey(query),
       );
@@ -63,7 +63,7 @@ export function placesHttp({
         error: "Можно искать только места из доступного архива",
       });
     try {
-      const result = await geocoding().locate(query);
+      const result = await geocoding.locate(query);
       if (!permittedQuery())
         return json(res, 403, { error: "Доступ к этому месту закрыт" });
       return json(res, 200, result);

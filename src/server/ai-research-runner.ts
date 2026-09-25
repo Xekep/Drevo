@@ -1,3 +1,9 @@
+import type { ResearchAnswerReference as AnswerReference } from "../domain/research-answer.ts";
+import type {
+  ResearchFile,
+  ResearchResult,
+  UiAction,
+} from "../shared/research-protocol.ts";
 import { randomUUID } from "node:crypto";
 import { archivePaths } from "../domain/archive-routes.ts";
 import { fullName, plural } from "../domain/dates.ts";
@@ -17,7 +23,7 @@ import {
 } from "../domain/research-tools.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { aiChatStore } from "./ai-chats.ts";
-import { fetchAiStudioModels } from "./ai-models.ts";
+import { aiVision } from "./ai-vision.ts";
 import { aiRuntimeConfig } from "./ai-settings.ts";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
@@ -37,7 +43,6 @@ import {
 
 import {
   ANALYZE_PHOTO_TOOL,
-  type AnswerReference,
   archiveGraph,
   collectPersonReferences,
   collectSourceReferences,
@@ -45,12 +50,10 @@ import {
   containsInternalToolText,
   CONTROL_VIEW_TOOL,
   CREATE_PDF_TOOL,
-  estimateTokens,
   explicitViewControlRequest,
   humanizeResearchAnswer,
   markedPeopleLabel,
   type ModelMessage,
-  type ModelResponse,
   needsArchiveLookupRetry,
   recordModelCall,
   recordModelTokens,
@@ -59,17 +62,13 @@ import {
   requesterAccessContext,
   requesterPromptContext,
   RESEARCH_RESOURCES_TOOL,
-  type ResearchFile,
   type ResearchMetrics,
-  type ResearchResult,
   researchToolStatus,
   resourceMarkdown,
   shortTreeZoomRequest,
   specificResourceRequest,
   surnameInTreeRequest,
   treeSubsetRequest,
-  type UiAction,
-  usageTokens,
 } from "./ai-research-support.ts";
 export function createResearchRunner({
   archive,
@@ -94,93 +93,7 @@ export function createResearchRunner({
   >;
 }) {
   const responses = yandexResponsesClient(fetcher);
-  let visionModelCache:
-    { key: string; modelUri: string; expiresAt: number } | undefined;
-  function providerHeaders(runtime: ReturnType<typeof aiRuntimeConfig>) {
-    return {
-      Authorization: `Api-Key ${runtime.apiKey}`,
-      "Content-Type": "application/json",
-      ...(runtime.folderId ? { "OpenAI-Project": runtime.folderId } : {}),
-    };
-  }
-
-  async function visionModelUri(runtime: ReturnType<typeof aiRuntimeConfig>) {
-    const folderId =
-        runtime.folderId ||
-        /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
-        "",
-      key = `${runtime.baseUrl}\0${folderId}`;
-    if (
-      visionModelCache?.key === key &&
-      visionModelCache.expiresAt > Date.now()
-    )
-      return visionModelCache.modelUri;
-    const current = runtime.modelUri.replace(/^gpt:\/\/[^/]+\//, "");
-    if (/^qwen3\.6-35b-a3b(?:\/latest)?$/.test(current))
-      return runtime.modelUri;
-    const models = await fetchAiStudioModels({
-        baseUrl: runtime.baseUrl,
-        apiKey: runtime.apiKey,
-        folderId,
-        fetcher,
-      }),
-      selected = models.find((model) => model.label === "qwen3.6-35b-a3b");
-    if (!selected)
-      throw new Error(
-        "В этом Folder ID нет модели Qwen3.6-35B для анализа фотографий",
-      );
-    visionModelCache = {
-      key,
-      modelUri: selected.id,
-      expiresAt: Date.now() + 5 * 60_000,
-    };
-    return selected.id;
-  }
-
-  async function analyzeImage(
-    question: string,
-    dataUrl: string,
-    runtime: ReturnType<typeof aiRuntimeConfig>,
-    modelUri: string,
-    signal: AbortSignal,
-  ) {
-    const body = {
-        model: modelUri,
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: question },
-              { type: "image_url", image_url: { url: dataUrl } },
-            ],
-          },
-        ],
-        temperature: 0.2,
-      },
-      response = await fetcher(`${runtime.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: providerHeaders(runtime),
-        body: JSON.stringify(body),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
-      }),
-      data = (await response.json()) as ModelResponse;
-    if (!response.ok)
-      throw new Error(
-        data.error?.message ||
-          `Модель анализа фотографий вернула HTTP ${response.status}`,
-      );
-    const message = data.choices?.[0]?.message,
-      content =
-        typeof message?.content === "string" ? message.content.trim() : "";
-    if (!content)
-      throw new Error("Модель анализа фотографий не вернула описание");
-    const reported = usageTokens(data.usage);
-    return {
-      content,
-      inputTokens: reported.input ?? estimateTokens(body),
-      outputTokens: reported.output ?? estimateTokens(message),
-    };
-  }
+  const vision = aiVision(fetcher);
 
   async function runResearch({
     body,
@@ -965,9 +878,9 @@ export function createResearchRunner({
               { path: source.path, cacheKey: source.name },
               "ai",
             );
-            const visionModel = await visionModelUri(runtime);
+            const visionModel = await vision.modelUri(runtime);
             recordModelCall(metrics, visionModel);
-            const visual = await analyzeImage(
+            const visual = await vision.analyze(
               question,
               `data:image/jpeg;base64,${bytes.toString("base64")}`,
               runtime,

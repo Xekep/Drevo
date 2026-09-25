@@ -1,3 +1,4 @@
+import { validateBackupSettings } from "../src/server/backup-store.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -17,10 +18,9 @@ import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { openArchive } from "../src/server/database.ts";
 import {
-  backupManager,
+  backupCoordinator,
   BackupBusyError,
-  validateBackupSettings,
-} from "../src/server/backup-manager.ts";
+} from "../src/server/backup-coordinator.ts";
 import type { BackupRemote } from "../src/server/backup-remote.ts";
 import { startServer } from "../src/server/index.ts";
 import { userStore } from "../src/server/users.ts";
@@ -47,7 +47,7 @@ function fixture(remote?: BackupRemote) {
   mkdirSync(join(directory, "uploads"));
   const archive = openArchive(path, seed);
   let clock = Date.now();
-  const manager = backupManager(archive.db, path, {
+  const manager = backupCoordinator(archive.db, path, {
     schedule: false,
     now: () => clock,
     remote,
@@ -135,7 +135,7 @@ test("full managed copy includes database, files and encryption key; count reten
 test("schedule and lease survive another instance; disabled schedule never creates a copy", async () => {
   const f = fixture();
   const connection = new DatabaseSync(f.path);
-  const other = backupManager(connection, f.path, { schedule: false });
+  const other = backupCoordinator(connection, f.path, { schedule: false });
   try {
     f.manager.save(
       { ...f.manager.status(actor.id).settings, intervalHours: 1 },

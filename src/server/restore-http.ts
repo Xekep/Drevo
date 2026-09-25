@@ -1,10 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError } from "./database.ts";
-import {
-  RestoreTooLargeError,
-  type RestoreStore,
-} from "./restore.ts";
+import { RestoreTooLargeError, type RestoreStore } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
@@ -14,7 +11,7 @@ export function restoreHttp({
   auth,
   publicOrigin,
 }: {
-  restores: () => RestoreStore;
+  restores: RestoreStore;
   auth: ReturnType<typeof createAuth>;
   publicOrigin?: string;
 }) {
@@ -59,7 +56,7 @@ export function restoreHttp({
     try {
       if (preview) {
         const actor = auth.currentUser(req)!;
-        const result = await restores().previewStream(req, actor, () => {
+        const result = await restores.previewStream(req, actor, () => {
           const current = auth.currentUser(req);
           if (!current || current.role !== "admin")
             throw new ForbiddenError("Доступ администратора отозван");
@@ -83,7 +80,7 @@ export function restoreHttp({
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
         return json(res, 400, { error: "Подтвердите замену данных" });
-      return json(res, 200, await restores().apply(body.token, actor));
+      return json(res, 200, await restores.apply(body.token, actor));
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
       return json(

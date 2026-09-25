@@ -13,14 +13,14 @@ import { archiveQueryHttp } from "./archive-query-http.ts";
 import { coreHttp } from "./core-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
 import { placesHttp } from "./places-http.ts";
-import { currentGeocodingStore } from "./geocoding.ts";
+import type { GeocodingStore } from "./geocoding.ts";
 import { publicSharingHttp } from "./public-sharing-http.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
 import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
-import { currentRestoreStore } from "./restore.ts";
+import type { RestoreStore } from "./restore.ts";
 import { faceDescriptorsHttp } from "./face-descriptors-http.ts";
 import { mcpTokenStore } from "./mcp-tokens.ts";
 import { adminMcpHttp } from "./admin-mcp-http.ts";
@@ -36,7 +36,7 @@ import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
 import { documentsHttp } from "./documents-http.ts";
 
-export function sharingHttp({
+export function archiveHttp({
   archive,
   auth,
   media,
@@ -46,6 +46,8 @@ export function sharingHttp({
   serveStatic,
   aiFetch,
   uploadsDirectory,
+  geocoding,
+  restores,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
@@ -56,6 +58,8 @@ export function sharingHttp({
   serveStatic: ReturnType<typeof productionStaticHttp>;
   aiFetch?: typeof fetch;
   uploadsDirectory: string;
+  geocoding: GeocodingStore;
+  restores: RestoreStore;
 }) {
   const tokens = mcpTokenStore(archive.db);
   const mcpUsage = mcpUsageStore(archive.db);
@@ -125,7 +129,7 @@ export function sharingHttp({
     archive,
     auth,
     visibility,
-    geocoding: () => currentGeocodingStore(archive.db),
+    geocoding,
     publicOrigin,
   });
   const shares = sharesStore(archive.db),
@@ -145,7 +149,7 @@ export function sharingHttp({
       shares,
     });
   const restore = restoreHttp({
-    restores: () => currentRestoreStore(archive),
+    restores,
     auth,
     publicOrigin,
   });

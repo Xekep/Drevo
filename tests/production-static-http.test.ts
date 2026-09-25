@@ -146,7 +146,7 @@ test("production static handler does not synchronously read request files", () =
 
 test("server entry wires one static handler into the HTTP chain", () => {
   const entry = readFileSync("src/server/index.ts", "utf8"),
-    chain = readFileSync("src/server/sharing-http.ts", "utf8");
+    chain = readFileSync("src/server/archive-http.ts", "utf8");
   assert.equal(
     (entry.match(/productionStaticHttp\s*\(/g) || []).length,
     1,

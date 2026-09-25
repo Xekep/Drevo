@@ -1,12 +1,12 @@
+import { BackupInputError } from "./backup-store.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import {
   BackupBusyError,
-  BackupInputError,
-  type BackupManager,
-} from "./backup-manager.ts";
+  type BackupCoordinator,
+} from "./backup-coordinator.ts";
 import type { RestoreStore } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
@@ -31,7 +31,7 @@ export function backupManagementHttp({
   auth,
   publicOrigin,
 }: {
-  backups: BackupManager;
+  backups: BackupCoordinator;
   restores: RestoreStore;
   auth: ReturnType<typeof createAuth>;
   publicOrigin?: string;
