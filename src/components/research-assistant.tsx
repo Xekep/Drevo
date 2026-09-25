@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -690,6 +691,7 @@ export function ResearchAssistant({
     ),
     [nudgeVisible, setNudgeVisible] = useState(false);
   const end = useRef<HTMLDivElement>(null),
+    composer = useRef<HTMLTextAreaElement>(null),
     chatPicker = useRef<HTMLDivElement>(null),
     chatPickerTrigger = useRef<HTMLButtonElement>(null),
     panel = useRef<HTMLElement>(null),
@@ -715,6 +717,13 @@ export function ResearchAssistant({
     sendLatest = useRef<
       (text?: string, selectedPersonId?: string) => Promise<void>
     >(() => Promise.resolve());
+
+  useLayoutEffect(() => {
+    const field = composer.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, 150)}px`;
+  }, [draft, open]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -1585,7 +1594,6 @@ export function ResearchAssistant({
                     </details>
                   )}
                 <article className={`is-${message.role}`}>
-                  <small>{message.role === "user" ? "Вы" : "Drevo AI"}</small>
                   {message.role === "assistant" ? (
                     <MarkdownAnswer
                       message={message}
@@ -1662,11 +1670,12 @@ export function ResearchAssistant({
             }}
           >
             <textarea
+              ref={composer}
               value={draft}
               disabled={chatLoading}
-              rows={3}
+              rows={1}
               maxLength={8000}
-              placeholder="Например: что искать дальше по выбранному человеку?"
+              placeholder="Спросите об архиве…"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {

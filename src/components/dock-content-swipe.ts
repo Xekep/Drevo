@@ -39,7 +39,7 @@ export function bindDockContentSwipe(
     const nestedDialog = target.closest("dialog, [role=dialog]");
     // На мобильном сам InspectorDock имеет role=dialog. Игнорировать нужно
     // только вложенные модальные окна, иначе свайп карточки отключает себя сам.
-    if (nestedDialog && nestedDialog !== panel) return;
+    if (nestedDialog && panel.contains(nestedDialog) && nestedDialog !== panel) return;
     if (window.getSelection()?.toString()) return;
     let atTop = true;
     for (let node: Element | null = target; node; node = node.parentElement) {

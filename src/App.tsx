@@ -895,7 +895,7 @@ export default function App() {
             user.personId ? map.get(user.personId)?.name : undefined
           }
           nudgeToken={assistantNudgeToken}
-          canEdit={canEdit}
+          canEdit={allowedEdit}
           onChanged={archive.reload}
           onPerson={showPerson}
           onPhoto={openPhotoUrl}

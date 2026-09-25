@@ -214,12 +214,21 @@ function Canvas(props: Props) {
   const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
   const [growthStarted, setGrowthStarted] = useState(false);
+  const [growthRevealed, setGrowthRevealed] = useState(false);
   const markInitialCameraReady = useCallback(
     () => setInitialCameraReady(true),
     [],
   );
-  const growthPreparing = growing && !narrow && !growthStarted;
+  const growthPreparing = growing && !narrow && !growthRevealed;
   const growthActive = growing && !narrow && growthStarted;
+  useEffect(() => {
+    if (!growthActive || growthRevealed) return;
+    // Let the browser apply the first animation frame while the viewport is
+    // still hidden. Revealing it in the same frame can briefly paint cards at
+    // their final positions before delayed animations take effect.
+    const frame = requestAnimationFrame(() => setGrowthRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [growthActive, growthRevealed]);
   const introHandled = useRef(false);
   const introComplete = useRef(props.onIntroComplete);
   useEffect(() => {

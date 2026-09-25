@@ -7,6 +7,11 @@ test("an unfinished answer can be stopped and a new chat stays isolated", async 
   await page.route("**/api/ai/chats", (route) =>
     route.fulfill({ json: { chats: [] } }),
   );
+  let deleted = false;
+  await page.route("**/api/ai/chats/chat-2", (route) => {
+    deleted = route.request().method() === "DELETE";
+    return route.fulfill({ json: { ok: true } });
+  });
   let releaseFirst: (() => void) | undefined;
   const first = new Promise<void>((resolve) => { releaseFirst = resolve; });
   let finishFirst: (() => void) | undefined;
@@ -43,6 +48,9 @@ test("an unfinished answer can be stopped and a new chat stays isolated", async 
   releaseFirst?.();
   await firstHandled;
   await expect(panel).not.toContainText("Ответ 1");
+  await panel.getByRole("button", { name: "Удалить диалог" }).click();
+  await expect(panel.locator("article")).toHaveCount(0);
+  expect(deleted).toBe(true);
 });
 
 test("choice is invisible to the user and chat picker keeps the original title", async ({
@@ -191,4 +199,76 @@ test("dialog history stays compact and searchable", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(picker).toBeFocused();
+});
+
+test("chat composer grows with text and messages use compact roles", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream; charset=utf-8",
+      body: 'event: chat\ndata: {"chatId":"chat-compact"}\n\nevent: done\ndata: {"chatId":"chat-compact","answer":"Короткий ответ","suggestionIds":[]}\n\n',
+    }),
+  );
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  const field = panel.locator("textarea");
+  await expect(field).toHaveAttribute("rows", "1");
+  expect(await field.evaluate((element) => getComputedStyle(element).resize)).toBe("none");
+  const initialHeight = (await field.boundingBox())!.height;
+  expect(initialHeight).toBeLessThan(45);
+  await field.fill("Строка 1\nСтрока 2\nСтрока 3");
+  await expect.poll(async () => (await field.boundingBox())!.height).toBeGreaterThan(initialHeight);
+  const send = panel.getByRole("button", { name: "Отправить запрос" });
+  const buttonBox = (await send.boundingBox())!;
+  expect(Math.abs(buttonBox.width - buttonBox.height)).toBeLessThan(1);
+  await send.click();
+  await expect(panel.locator("article.is-assistant")).toContainText("Короткий ответ");
+  await expect(panel.locator("article.is-user")).toHaveCount(1);
+  await expect(panel.locator("article small")).toHaveCount(0);
+  expect(await panel.locator("article.is-assistant").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+  expect(await panel.locator("article.is-user").evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+  await expect.poll(async () => (await field.boundingBox())!.height).toBe(initialHeight);
+});
+
+test("pending AI edits have visible accept and reject actions", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  await page.route("**/api/research/suggestions", (route) =>
+    route.fulfill({
+      json: {
+        suggestions: [{
+          id: "suggest-1",
+          kind: "person_update",
+          personName: "Иван Тестов",
+          reason: "Исправить год рождения",
+          evidence: [],
+          payload: { before: { birth: "1941" }, changes: { birth: "1940" } },
+        }],
+      },
+    }),
+  );
+  let reviewed = "";
+  await page.route("**/api/research/suggestions/suggest-1/reject", (route) => {
+    reviewed = route.request().method();
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  const suggestion = panel.locator(".research-suggestion");
+  await expect(suggestion.getByRole("button", { name: "Принять предложение" })).toBeVisible();
+  await expect(suggestion.getByRole("button", { name: "Отклонить предложение" })).toBeVisible();
+  await suggestion.getByRole("button", { name: "Отклонить предложение" }).click();
+  await expect(suggestion).toHaveCount(0);
+  expect(reviewed).toBe("POST");
 });
