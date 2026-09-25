@@ -17,6 +17,9 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
   await expect(timeline.locator(".timeline-band img")).not.toHaveCount(0);
   await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(6);
+  const marker = page.locator(".timeline-center-marker output");
+  await expect(marker).toBeVisible();
+  const yearBefore = Number(await marker.textContent());
 
   const before = await timeline.evaluate((element) => element.scrollLeft);
   const area = await timeline.boundingBox();
@@ -34,6 +37,9 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await page.mouse.up();
   const after = await timeline.evaluate((element) => element.scrollLeft);
   expect(after).toBeGreaterThan(before);
+  await expect
+    .poll(async () => Number(await marker.textContent()))
+    .toBeGreaterThan(yearBefore);
   const portrait = timeline.locator(".timeline-person").first();
   const portraitBox = await portrait.boundingBox();
   expect(portraitBox?.x).toBeGreaterThanOrEqual(area.x - 1);
@@ -64,6 +70,9 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   });
   await expect(timeline).toBeVisible();
   await expect(timeline.locator(".timeline-person-row")).toHaveCount(6);
+  const marker = page.locator(".timeline-center-marker output");
+  await expect(marker).toBeVisible();
+  const yearBefore = Number(await marker.textContent());
   const bounds = await timeline.boundingBox();
   const portrait = await timeline
     .locator(".timeline-person")
@@ -94,6 +103,9 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   await expect
     .poll(() => timeline.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(before);
+  await expect
+    .poll(async () => Number(await marker.textContent()))
+    .toBeGreaterThan(yearBefore);
   await timeline.screenshot({
     path: testInfo.outputPath("timeline-mobile.png"),
   });

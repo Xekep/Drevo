@@ -105,10 +105,12 @@ export function horizontalTimeline(
   reverse = false,
   currentYear = new Date().getFullYear(),
 ) {
-  const prepared = people.map((person) => ({
-    person,
-    items: personItems(person),
-  }));
+  const prepared = people
+    .filter((person) => !!person.birth)
+    .map((person) => ({
+      person,
+      items: personItems(person),
+    }));
   const datedYears = prepared.flatMap(({ items }) =>
     items.flatMap((item) => (item.year === null ? [] : [item.year])),
   );
@@ -119,6 +121,14 @@ export function horizontalTimeline(
   const width = (end - start) * YEAR_WIDTH;
   const yearX = (year: number) =>
     (reverse ? end - year : year - start) * YEAR_WIDTH;
+  const yearAtX = (x: number) =>
+    Math.max(
+      start,
+      Math.min(
+        end,
+        Math.round(reverse ? end - x / YEAR_WIDTH : start + x / YEAR_WIDTH),
+      ),
+    );
   const rows: TimelineRow[] = prepared
     .sort((a, b) => {
       const ay = a.person.birth ? dateYear(a.person.birth) : Infinity;
@@ -176,6 +186,7 @@ export function horizontalTimeline(
     end,
     width,
     yearX,
+    yearAtX,
     rows,
     eras,
     ticks,

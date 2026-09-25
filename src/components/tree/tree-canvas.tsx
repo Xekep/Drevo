@@ -1012,7 +1012,6 @@ function Canvas(props: Props) {
         {!activeFanAnchor && mode === "timeline" && (
           <HorizontalTimeline
             people={timelinePeople}
-            reverse={reverse}
             selected={selected}
             focus={focus}
             onChoose={onChoose}

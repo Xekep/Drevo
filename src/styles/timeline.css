@@ -4,12 +4,12 @@
 }
 .mode-timeline {
   --timeline-rail: 0px;
+  --timeline-person-width: 226px;
 }
 .mode-timeline .tree-mode-bar {
   z-index: 7;
 }
 .horizontal-timeline {
-  --timeline-person-width: 226px;
   position: absolute;
   inset: 68px 0 0;
   z-index: 1;
@@ -19,6 +19,36 @@
   background: #f7f9f4;
   cursor: grab;
   touch-action: pan-x pan-y;
+}
+.timeline-center-marker {
+  position: absolute;
+  top: 68px;
+  bottom: 0;
+  left: calc(50% + var(--timeline-person-width) / 2);
+  z-index: 6;
+  width: 0;
+  border-left: 2px solid #4e7654a8;
+  pointer-events: none;
+}
+.timeline-center-marker output {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  min-width: 45px;
+  transform: translateX(-50%);
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: #355a3e;
+  box-shadow: 0 2px 8px #223d2833;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.timeline-empty {
+  margin: 24px;
+  color: #62725b;
 }
 .horizontal-timeline.is-dragging {
   cursor: grabbing;
@@ -346,7 +376,7 @@
   font-size: 10px;
 }
 @media (max-width: 899px) {
-  .horizontal-timeline {
+  .mode-timeline {
     --timeline-person-width: 148px;
   }
   .timeline-board {

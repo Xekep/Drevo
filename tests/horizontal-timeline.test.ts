@@ -83,4 +83,24 @@ test("reverse chronology mirrors event and era positions without changing dates"
   assert.ok(forward.eras.some((era) => era.name === "Россия"));
   assert.match(forward.rows[0].status, /Нет записи о смерти/);
   assert.doesNotMatch(forward.rows[0].status, /сейчас/);
+  assert.equal(forward.yearAtX(forward.yearX(1880)), 1880);
+  assert.equal(forward.yearAtX(forward.yearX(1990)), 1990);
+});
+
+test("chronology excludes people without a birth date even when they have dated events", () => {
+  const model = horizontalTimeline(
+    [
+      person("dated", "1900"),
+      person("unknown", "", {
+        events: [{ id: "event", type: "work", date: "1950" }],
+      }),
+    ],
+    false,
+    2026,
+  );
+  assert.deepEqual(
+    model.rows.map((row) => row.person.id),
+    ["dated"],
+  );
+  assert.ok(model.yearX(1900) < model.yearX(2026));
 });
