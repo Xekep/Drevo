@@ -1,9 +1,34 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function freezeGrowthBeforeFirstFrame(page: Page) {
+  await page.addInitScript(() => {
+    const install = () => {
+      if (!document.documentElement) return false;
+      const style = document.createElement("style");
+      style.textContent = `
+        .tree-canvas.is-growing .tree-grow-node,
+        .tree-canvas.is-growing .tree-grow-surface,
+        .tree-canvas.is-growing .tree-grow-node .flow-person,
+        .tree-canvas.is-growing .tree-edge-growth-path {
+          animation-play-state: paused !important;
+        }
+      `;
+      document.documentElement.append(style);
+      return true;
+    };
+    if (install()) return;
+    const observer = new MutationObserver(() => {
+      if (install()) observer.disconnect();
+    });
+    observer.observe(document, { childList: true });
+  });
+}
 
 test("later-born descendants appear exactly when their incoming line finishes", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await freezeGrowthBeforeFirstFrame(page);
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
@@ -45,6 +70,7 @@ test("growth draws parent arrows before descendants without squeezing cards", as
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await freezeGrowthBeforeFirstFrame(page);
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
