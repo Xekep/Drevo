@@ -110,3 +110,35 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
     path: testInfo.outputPath("timeline-mobile.png"),
   });
 });
+
+test("era emblems stay vertically centered while chronology scrolls", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Хронология" }).click();
+  const timeline = page.getByRole("region", {
+    name: /Горизонтальная хронология/,
+  });
+  const emblem = timeline.locator(".timeline-band.soviet img");
+  await expect(emblem).toBeVisible();
+  const centerY = async () => {
+    const bounds = await emblem.boundingBox();
+    if (!bounds) throw new Error("Era emblem has no bounds");
+    return bounds.y + bounds.height / 2;
+  };
+  const viewport = await timeline.boundingBox();
+  if (!viewport) throw new Error("Timeline has no bounds");
+  const before = await centerY();
+  expect(Math.abs(before - (viewport.y + viewport.height / 2))).toBeLessThan(8);
+  const scrollTop = await timeline.evaluate((element) => {
+    element.scrollTop = Math.min(150, element.scrollHeight - element.clientHeight);
+    return element.scrollTop;
+  });
+  expect(scrollTop).toBeGreaterThan(40);
+  await expect
+    .poll(async () => Math.abs((await centerY()) - before))
+    .toBeLessThan(3);
+});
