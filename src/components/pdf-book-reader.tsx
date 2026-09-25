@@ -214,10 +214,11 @@ export function PdfBookReader({
           const shift =
             flip.getOrientation() !== "landscape"
               ? 0
-              : index === 0
-                ? -0.5
-                : index === pdf.numPages - 1 && pdf.numPages % 2 === 0
-                  ? 0.5
+              : index === pdf.numPages - 1 &&
+                  (pdf.numPages === 1 || pdf.numPages % 2 === 0)
+                ? 0.5
+                : index === 0
+                  ? -0.5
                   : 0;
           root.style.transform = `translateX(${shift * flip.getBoundsRect().pageWidth}px)`;
         };
@@ -328,8 +329,13 @@ export function PdfBookReader({
           </p>
         )}
         <div className="pdf-book-stage">
-          <div ref={host} className="pdf-book-host" aria-label="Страницы PDF"
-            aria-busy={loading} style={{ visibility: loading || error ? "hidden" : "visible" }} />
+          <div
+            ref={host}
+            className="pdf-book-host"
+            aria-label="Страницы PDF"
+            aria-busy={loading}
+            style={{ visibility: loading || error ? "hidden" : "visible" }}
+          />
           {loading && (
             <p className="pdf-book-message" role="status">
               Открываем документ…

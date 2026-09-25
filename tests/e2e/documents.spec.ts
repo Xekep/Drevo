@@ -179,6 +179,17 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
         )
         .toBeGreaterThan(0);
       const rect = await image.boundingBox();
+      await expect
+        .poll(async () => {
+          const [pageBox, stageBox] = await Promise.all([
+            image.boundingBox(),
+            reader.locator(".pdf-book-stage").boundingBox(),
+          ]);
+          return Math.abs(
+            pageBox!.x + pageBox!.width / 2 - stageBox!.x - stageBox!.width / 2,
+          );
+        })
+        .toBeLessThan(3);
       expect(rect!.width).toBeGreaterThan(100);
       expect(rect!.height).toBeGreaterThan(100);
       if (variant === "landscape")
