@@ -282,9 +282,10 @@ function Canvas(props: Props) {
   const { anchor: root, collapsed, toggle: toggleView } = familyView;
   const visible = useMemo(() => {
     if (!props.assistantFilter) return familyView.visible;
-    const allowed = new Set(family.people.map((person) => person.id));
-    return new Set(props.assistantFilter.ids.filter((id) => allowed.has(id)));
-  }, [family.people, familyView.visible, props.assistantFilter]);
+    return new Set(
+      props.assistantFilter.ids.filter((id) => familyView.visible.has(id)),
+    );
+  }, [familyView.visible, props.assistantFilter]);
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
     [family.people, visible],

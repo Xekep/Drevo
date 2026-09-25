@@ -325,6 +325,50 @@ test("clicking a card during the personal camera move cancels that move", async 
   expect(await viewport.getAttribute("style")).toBe(afterClick);
 });
 
+test("branches collapse and expand inside an AI-filtered tree", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: done\ndata: ${JSON.stringify({ answer: "Оставил нужную ветвь.", references: [], suggestionIds: [], uiActions: [{ type: "filter_people", personIds: ["e2e-memorial-person", "e2e-child", "e2e-grandchild"], label: "Выбранная ветвь" }] })}\n\n`,
+    }),
+  );
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await panel.getByRole("textbox").fill("Убери из древа лишних");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(page.locator(".tree-family-tools")).toContainText(
+    "Выбранная ветвь: 3",
+  );
+  await panel.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+
+  const parent = page.getByTestId("rf__node-e2e-child");
+  const descendant = page.getByTestId("rf__node-e2e-grandchild");
+  await expect(descendant).toBeVisible();
+  await parent.getByRole("button", { name: "Свернуть потомков" }).click();
+  await expect(descendant).toHaveCount(0);
+  await expect(page.locator(".tree-family-tools")).toContainText(
+    "Выбранная ветвь: 2",
+  );
+  await parent.getByRole("button", { name: "Развернуть потомков" }).click();
+  await expect(descendant).toBeVisible();
+  await expect(page.locator(".tree-family-tools")).toContainText(
+    "Выбранная ветвь: 3",
+  );
+});
+
 test("manual card selection does not break a later AI navigation", async ({
   page,
 }, testInfo) => {
