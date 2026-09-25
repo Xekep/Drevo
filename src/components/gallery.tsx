@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus } from "lucide-react";
 import type { Family } from "../domain";
 import { photoCaption, photoLabel } from "../domain/photo-metadata";
@@ -26,7 +27,6 @@ export function Gallery({
   personFilter?: string | null;
   onClearFilter: () => void;
 }) {
-  const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState("");
   const [mode, setMode] = useState<"all" | "people" | "years">("all"),
@@ -41,6 +41,61 @@ export function Gallery({
     }, 600);
     return () => window.clearTimeout(timer);
   }, [canEdit]);
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      Array.from(event.dataTransfer?.types || []).includes("Files");
+    const dialogOpen = () => !!document.querySelector("dialog[open]");
+    const reset = () => setDragging(false);
+    const onDragEnter = (event: DragEvent) => {
+      if (!hasFiles(event) || dialogOpen()) return;
+      event.preventDefault();
+      if (canEdit) setDragging(true);
+    };
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event) || dialogOpen()) return;
+      event.preventDefault();
+      if (event.dataTransfer)
+        event.dataTransfer.dropEffect = canEdit ? "copy" : "none";
+      if (canEdit) setDragging(true);
+    };
+    const onDragLeave = (event: DragEvent) => {
+      if (
+        event.clientX <= 0 ||
+        event.clientY <= 0 ||
+        event.clientX >= window.innerWidth ||
+        event.clientY >= window.innerHeight
+      )
+        reset();
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      const alreadyHandled = event.defaultPrevented;
+      event.preventDefault();
+      reset();
+      if (alreadyHandled || dialogOpen() || !canEdit) return;
+      const files = event.dataTransfer?.files;
+      const problem =
+        files?.length !== 1
+          ? "Перетащите один снимок за раз."
+          : photoFileError(files[0]);
+      setDropError(problem);
+      if (!problem && files) onDropPhoto(files[0]);
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    window.addEventListener("dragend", reset);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+      window.removeEventListener("dragend", reset);
+      window.removeEventListener("blur", reset);
+    };
+  }, [canEdit, onDropPhoto]);
   const available = (family.photos || []).filter(
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),
@@ -52,48 +107,17 @@ export function Gallery({
   const browsingAlbums = mode !== "all" && !album;
   const filterPerson = family.people.find((p) => p.id === personFilter);
   return (
-    <section
-      className={`gallery-view ${dragging && canEdit ? "is-file-dragging" : ""}`}
-      aria-label="Галерея семейных фотографий"
-      onDragEnter={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        e.preventDefault();
-        if (canEdit) {
-          dragDepth.current++;
-          setDragging(true);
-        }
-      }}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = canEdit ? "copy" : "none";
-      }}
-      onDragLeave={() => {
-        dragDepth.current = Math.max(0, dragDepth.current - 1);
-        if (!dragDepth.current) setDragging(false);
-      }}
-      onDrop={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
-        e.preventDefault();
-        dragDepth.current = 0;
-        setDragging(false);
-        if (!canEdit) return;
-        const files = e.dataTransfer.files;
-        const problem =
-          files.length !== 1
-            ? "Перетащите один снимок за раз."
-            : photoFileError(files[0]);
-        setDropError(problem);
-        if (!problem) onDropPhoto(files[0]);
-      }}
-    >
-      {dragging && canEdit && (
-        <div className="gallery-drop-overlay" role="status">
-          <ImagePlus size={46} strokeWidth={1.2} />
-          <b>Отпустите снимок, чтобы добавить</b>
-          <span>JPG, PNG, WebP или GIF · до 20 МБ</span>
-        </div>
-      )}
+    <section className="gallery-view" aria-label="Галерея семейных фотографий">
+      {dragging &&
+        canEdit &&
+        createPortal(
+          <div className="gallery-drop-overlay" role="status">
+            <ImagePlus size={46} strokeWidth={1.2} />
+            <b>Отпустите снимок, чтобы добавить</b>
+            <span>JPG, PNG, WebP или GIF · до 20 МБ</span>
+          </div>,
+          document.body,
+        )}
       {dropError && (
         <p className="form-error" role="alert">
           {dropError}

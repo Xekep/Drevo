@@ -54,10 +54,6 @@
 .gallery-photo-heading {
   align-items: flex-start;
 }
-.gallery-view.is-file-dragging {
-  outline: 2px dashed #8aab75;
-  outline-offset: -12px;
-}
 .editor-dialog.photo-upload-dialog {
   height: min(780px, 92dvh);
   overflow: hidden;
@@ -131,24 +127,37 @@
   }
 }
 .gallery-drop-overlay {
-  position: sticky;
-  top: 12px;
-  z-index: 10;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   display: grid;
+  align-content: center;
   justify-items: center;
-  gap: 12px;
-  padding: 36px 20px;
-  margin-bottom: -180px;
-  border-radius: 18px;
-  border: 1px solid #c7d8bc;
-  background: #f3f8edef;
-  backdrop-filter: blur(12px);
-  color: #42603c;
+  gap: 14px;
+  padding: 36px 24px;
+  background: #193b2cb8;
+  backdrop-filter: blur(6px);
+  color: #f8fff4;
   pointer-events: none;
   text-align: center;
 }
+.gallery-drop-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border: 2px dashed #d2e8c2;
+  border-radius: 20px;
+}
+.gallery-drop-overlay > * {
+  position: relative;
+}
+.gallery-drop-overlay b {
+  font-size: clamp(18px, 3vw, 28px);
+  font-weight: 600;
+}
 .gallery-drop-overlay span {
-  font-size: 12px;
+  font-size: 14px;
+  color: #dcebd5;
 }
 .gallery-heading-copy {
   flex: 1;
