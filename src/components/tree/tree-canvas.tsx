@@ -323,7 +323,15 @@ function Canvas(props: Props) {
   useTouchZoom(container, flow, !growthLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !growthLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
-    useTreeLayout(family, visible, layoutMode, reverse);
+    useTreeLayout(
+      family,
+      visible,
+      layoutMode,
+      reverse,
+      user
+        ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
+        : null,
+    );
   useEffect(() => {
     const request = props.zoomRequest;
     if (

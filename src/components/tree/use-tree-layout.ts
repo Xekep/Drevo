@@ -3,12 +3,16 @@ import type { Family } from "../../domain/types";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout";
 import { projectTree } from "../../domain/family-neighborhood";
 import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
+import type { LayoutWorkerRequest } from "./layout-worker-protocol";
+import { createLayoutMemoryCache, layoutCacheKey } from "./layout-cache";
+import { readLayout, writeLayout } from "./layout-storage";
 
 export function useTreeLayout(
   family: Family,
   visible: ReadonlySet<string>,
   mode: TreeMode,
   reverse: boolean,
+  cacheScope: string | null = null,
 ) {
   const { people, links } = family;
   // Выбор карточки, фотография и текстовая правка не перезапускают геометрию,
@@ -18,15 +22,31 @@ export function useTreeLayout(
     [people, links, visible],
   );
   const key = useMemo(
-    () => JSON.stringify({ ...projected, mode, reverse }),
+    () => layoutCacheKey({ ...projected, mode, reverse }),
     [projected, mode, reverse],
   );
+  // Stabilize by content, not React object identity. Preserve the input order
+  // because ELK's model-order constraint is part of the layout contract.
+  const input = useMemo(
+    () => (JSON.parse(key) as { input: LayoutWorkerRequest }).input,
+    [key],
+  );
+  const layoutVisible = useMemo(
+    () => new Set(input.people.map((p) => p.id)),
+    [input],
+  );
+  const cache = useMemo(() => {
+    // A different account/access policy owns a different in-memory cache.
+    void cacheScope;
+    return createLayoutMemoryCache();
+  }, [cacheScope]);
   const [result, setResult] = useState<{
     key: string;
     geometry: TreeGeometry | null;
     visible: ReadonlySet<string>;
     error: string;
-  }>({ key: "", geometry: null, visible, error: "" });
+    scope: string | null;
+  }>({ key: "", geometry: null, visible, error: "", scope: cacheScope });
   const [busy, setBusy] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
@@ -50,59 +70,109 @@ export function useTreeLayout(
       workerRef.current = null;
       pendingRef.current = false;
     }
-    const worker =
-      workerRef.current ||
-      new Worker(new URL("./layout.worker.ts", import.meta.url), {
-        type: "module",
-      });
-    workerRef.current = worker;
-
     const requestId = ++requestRef.current;
-    pendingRef.current = true;
+    let cancelled = false;
+    let detach = () => {};
     const timer = setTimeout(() => {
       if (requestRef.current === requestId) setBusy(true);
     }, 80);
     const finish = (data: TaggedLayoutWorkerResponse) => {
-      if (data.requestId !== requestId || requestRef.current !== requestId)
+      if (
+        cancelled ||
+        data.requestId !== requestId ||
+        requestRef.current !== requestId
+      )
         return;
       clearTimeout(timer);
       pendingRef.current = false;
       setBusy(false);
       setResult((previous) =>
         "error" in data
-          ? { ...previous, key, error: data.error }
-          : { key, geometry: data.geometry, visible, error: "" },
+          ? {
+              ...previous,
+              key,
+              error: data.error,
+              scope: cacheScope,
+              geometry:
+                previous.scope === cacheScope ? previous.geometry : null,
+            }
+          : {
+              key,
+              geometry: data.geometry,
+              visible: layoutVisible,
+              error: "",
+              scope: cacheScope,
+            },
       );
     };
-    const onMessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) =>
-      finish(event.data);
-    const onError = () => {
-      worker.terminate();
-      if (workerRef.current === worker) workerRef.current = null;
-      pendingRef.current = false;
-      finish({
-        requestId,
-        error:
-          "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
-      });
+    const calculate = () => {
+      if (cancelled) return;
+      try {
+        const worker =
+          workerRef.current ||
+          new Worker(new URL("./layout.worker.ts", import.meta.url), {
+            type: "module",
+          });
+        workerRef.current = worker;
+        pendingRef.current = true;
+        const onMessage = (event: MessageEvent<TaggedLayoutWorkerResponse>) => {
+          const data = event.data;
+          if (cancelled || data.requestId !== requestId) return;
+          if (!("error" in data)) {
+            cache.set(key, data.geometry);
+            if (cacheScope) void writeLayout(cacheScope, key, data.geometry);
+          }
+          finish(data);
+        };
+        const onError = () => {
+          worker.terminate();
+          if (workerRef.current === worker) workerRef.current = null;
+          finish({
+            requestId,
+            error:
+              "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
+          });
+        };
+        worker.addEventListener("message", onMessage);
+        worker.addEventListener("error", onError);
+        detach = () => {
+          worker.removeEventListener("message", onMessage);
+          worker.removeEventListener("error", onError);
+        };
+        worker.postMessage({ requestId, ...input });
+      } catch {
+        finish({
+          requestId,
+          error:
+            "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.",
+        });
+      }
     };
-
-    worker.addEventListener("message", onMessage);
-    worker.addEventListener("error", onError);
-    worker.postMessage({ requestId, ...projected, mode, reverse });
+    const cached = cache.get(key);
+    if (cached) finish({ requestId, geometry: cached });
+    else if (cacheScope) {
+      void readLayout(cacheScope, key).then((geometry) => {
+        if (cancelled) return;
+        if (geometry) {
+          cache.set(key, geometry);
+          finish({ requestId, geometry });
+        } else calculate();
+      });
+    } else calculate();
 
     return () => {
       clearTimeout(timer);
-      worker.removeEventListener("message", onMessage);
-      worker.removeEventListener("error", onError);
+      cancelled = true;
+      detach();
     };
-  }, [key, projected, mode, reverse, visible]);
+  }, [key, input, layoutVisible, cache, cacheScope]);
 
+  const sameScope = result.scope === cacheScope;
   return {
-    geometry: result.geometry,
-    renderVisible: result.geometry ? result.visible : visible,
-    ready: result.key === key && !result.error,
-    problem: result.key === key ? result.error : "",
+    geometry: sameScope ? result.geometry : null,
+    renderVisible: sameScope && result.geometry ? result.visible : visible,
+    ready: sameScope && result.key === key && !result.error,
+    problem: sameScope && result.key === key ? result.error : "",
     layoutBusy: busy,
     layoutKey: key,
   };

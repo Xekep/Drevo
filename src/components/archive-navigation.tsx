@@ -22,6 +22,7 @@ import {
   type ArchiveUser,
 } from "../domain";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
+import { clearLayoutStorage } from "./tree/layout-storage";
 export type { ArchiveView } from "../domain/archive-routes";
 export function ArchiveNavigation({
   view,
@@ -81,6 +82,7 @@ export function ArchiveNavigation({
         window.location.reload();
         return;
       }
+      await clearLayoutStorage();
       window.location.replace("/");
     } catch {
       window.location.reload();

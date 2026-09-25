@@ -3,11 +3,11 @@ import { unionTimeline } from "../../domain/union-timeline";
 import { createUnionLayout } from "./elk-layout";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 
+let engine: ReturnType<typeof createUnionLayout> | undefined;
 self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
   const { requestId, people, links, mode, reverse } = event.data;
-  let engine: ReturnType<typeof createUnionLayout> | undefined;
   try {
-    engine = createUnionLayout();
+    engine ??= createUnionLayout();
     const geometry =
       mode === "generations"
         ? await unionGeometry(people, engine.layout, reverse, links)
@@ -22,12 +22,12 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
       requestId === undefined ? geometry : { requestId, geometry },
     );
   } catch {
+    engine?.dispose();
+    engine = undefined;
     const error =
       "Не удалось рассчитать расположение. Переключите представление, чтобы повторить.";
     self.postMessage(
       requestId === undefined ? { error } : { requestId, error },
     );
-  } finally {
-    engine?.dispose();
   }
 };

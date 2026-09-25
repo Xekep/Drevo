@@ -52,6 +52,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
       const state = {
         lost: [] as string[],
         seen: new Set<string>(),
+        rechecked: new Set<string>(),
         frames: 0,
         blocked: 0,
         unblocked: 0,
@@ -94,6 +95,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
                 g.display !== "none" &&
                 g.visibility === "visible" &&
                 Number.parseFloat(g.strokeDashoffset) < 0.95);
+            if (state.seen.has(id)) state.rechecked.add(id);
             if (state.seen.has(id) && !drawn && !state.lost.includes(id)) {
               if (state.details.length < 3)
                 state.details.push({
@@ -152,6 +154,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
           __edgeContinuity: {
             lost: string[];
             seen: Set<string>;
+            rechecked: Set<string>;
             frames: number;
             blocked: number;
             unblocked: number;
@@ -162,13 +165,17 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
       return {
         lost: state.lost,
         seen: state.seen.size,
+        rechecked: state.rechecked.size,
         frames: state.frames,
         blocked: state.blocked,
         unblocked: state.unblocked,
         details: state.details,
       };
     });
-    expect(result.frames).toBeGreaterThan(10);
+    // Correctness must not depend on the CI machine's FPS. Require repeated
+    // observations of distinct already-drawn edges, not an arbitrary frame rate.
+    expect(result.frames).toBeGreaterThan(1);
+    expect(result.rechecked).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
     expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
     if (scenario !== "idle") {
