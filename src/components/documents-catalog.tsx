@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { BookOpenText, Plus, Search, Upload, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { BookOpenText, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { PdfBookReader } from "./pdf-book-reader";
 import "../styles/documents.css";
 
@@ -9,6 +16,7 @@ export type ListedDocument = {
   url: string;
   size: number;
   createdAt: string;
+  canDelete?: boolean;
   people: Array<{ id: string; name: string }>;
 };
 
@@ -24,6 +32,8 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
   const [selected, setSelected] = useState<ListedDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const controller = useRef<AbortController | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -34,37 +44,49 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
   const [personResults, setPersonResults] = useState<PersonOption[]>([]);
   const [selectedPeople, setSelectedPeople] = useState<PersonOption[]>([]);
 
-  const load = useCallback(async (offset: number) => {
-    controller.current?.abort();
-    const request = new AbortController();
-    controller.current = request;
-    if (!offset) {
-      setDocuments([]);
-      setTotal(0);
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/documents?offset=${offset}&limit=${PAGE_SIZE}&q=${encodeURIComponent(query.trim())}`,
-        { signal: request.signal },
-      );
-      if (!response.ok) throw new Error("Не удалось загрузить документы");
-      const page = (await response.json()) as DocumentPage;
-      if (request.signal.aborted) return;
-      setTotal(page.total);
-      setDocuments((current) => offset ? [...current, ...page.items] : page.items);
-    } catch (reason) {
-      if (!request.signal.aborted)
-        setError(reason instanceof Error ? reason.message : "Не удалось загрузить документы");
-    } finally {
-      if (!request.signal.aborted) setLoading(false);
-    }
-  }, [query]);
+  const load = useCallback(
+    async (offset: number) => {
+      controller.current?.abort();
+      const request = new AbortController();
+      controller.current = request;
+      if (!offset) {
+        setDocuments([]);
+        setTotal(0);
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(
+          `/api/documents?offset=${offset}&limit=${PAGE_SIZE}&q=${encodeURIComponent(query.trim())}`,
+          { signal: request.signal },
+        );
+        if (!response.ok) throw new Error("Не удалось загрузить документы");
+        const page = (await response.json()) as DocumentPage;
+        if (request.signal.aborted) return;
+        setTotal(page.total);
+        setDocuments((current) =>
+          offset ? [...current, ...page.items] : page.items,
+        );
+      } catch (reason) {
+        if (!request.signal.aborted)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Не удалось загрузить документы",
+          );
+      } finally {
+        if (!request.signal.aborted) setLoading(false);
+      }
+    },
+    [query],
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(0), query ? 180 : 0);
-    return () => { window.clearTimeout(timer); controller.current?.abort(); };
+    return () => {
+      window.clearTimeout(timer);
+      controller.current?.abort();
+    };
   }, [load, query]);
 
   useEffect(() => {
@@ -83,7 +105,10 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         if (!request.signal.aborted) setPersonResults([]);
       }
     }, 180);
-    return () => { window.clearTimeout(timer); request.abort(); };
+    return () => {
+      window.clearTimeout(timer);
+      request.abort();
+    };
   }, [personQuery]);
 
   const upload = async (event: FormEvent<HTMLFormElement>) => {
@@ -96,15 +121,17 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          "X-Document-Metadata": encodeURIComponent(JSON.stringify({
-            title: title.trim(),
-            personIds: selectedPeople.map((person) => person.id),
-          })),
+          "X-Document-Metadata": encodeURIComponent(
+            JSON.stringify({
+              title: title.trim(),
+              personIds: selectedPeople.map((person) => person.id),
+            }),
+          ),
         },
         body: file,
       });
       if (!response.ok) {
-        const result = await response.json() as { error?: string };
+        const result = (await response.json()) as { error?: string };
         throw new Error(result.error || "Не удалось загрузить документ");
       }
       setUploadOpen(false);
@@ -114,14 +141,21 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
       setSelectedPeople([]);
       void load(0);
     } catch (reason) {
-      setUploadError(reason instanceof Error ? reason.message : "Не удалось загрузить документ");
+      setUploadError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось загрузить документ",
+      );
     } finally {
       setUploading(false);
     }
   };
 
   const groups = useMemo(() => {
-    const grouped = new Map<string, { name: string; items: ListedDocument[] }>();
+    const grouped = new Map<
+      string,
+      { name: string; items: ListedDocument[] }
+    >();
     for (const document of documents) {
       if (!document.people.length) {
         const group = grouped.get("") || { name: "Без привязки", items: [] };
@@ -129,7 +163,10 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         grouped.set("", group);
       }
       for (const person of document.people) {
-        const group = grouped.get(person.id) || { name: person.name, items: [] };
+        const group = grouped.get(person.id) || {
+          name: person.name,
+          items: [],
+        };
         group.items.push(document);
         grouped.set(person.id, group);
       }
@@ -139,28 +176,77 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
     );
   }, [documents]);
 
+  const remove = async (entry: ListedDocument) => {
+    if (
+      deleting ||
+      !window.confirm(
+        `Удалить документ «${entry.title}»? PDF и его привязки к людям будут удалены из архива.`,
+      )
+    )
+      return;
+    setDeleting(entry.id);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/documents/${entry.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const result = (await response.json()) as { error?: string };
+        throw new Error(result.error || "Не удалось удалить документ");
+      }
+      setSelected((current) => (current?.id === entry.id ? null : current));
+      await load(0);
+    } catch (reason) {
+      setDeleteError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось удалить документ",
+      );
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   return (
     <section className="documents-catalog">
       <header className="documents-heading">
         <div>
           <span className="documents-eyebrow">Семейный архив</span>
           <h1>Документы</h1>
-          <p>Загруженные участниками PDF-документы, связанные с людьми в архиве.</p>
+          <p>
+            Загруженные участниками PDF-документы, связанные с людьми в архиве.
+          </p>
         </div>
         <div className="documents-heading-actions">
-          {total > 0 && <span className="documents-count">{total} документов</span>}
+          {total > 0 && (
+            <span className="documents-count">{total} документов</span>
+          )}
           {mayEdit && (
-            <button type="button" className="documents-add" onClick={() => setUploadOpen((open) => !open)} aria-expanded={uploadOpen}>
+            <button
+              type="button"
+              className="documents-add"
+              onClick={() => setUploadOpen((open) => !open)}
+              aria-expanded={uploadOpen}
+            >
               <Plus size={18} /> Добавить PDF
             </button>
           )}
         </div>
       </header>
       {uploadOpen && (
-        <form className="documents-upload" onSubmit={(event) => void upload(event)}>
+        <form
+          className="documents-upload"
+          onSubmit={(event) => void upload(event)}
+        >
           <div className="documents-upload-heading">
             <h2>Новый документ</h2>
-            <button type="button" onClick={() => setUploadOpen(false)} aria-label="Закрыть форму"><X size={18} /></button>
+            <button
+              type="button"
+              onClick={() => setUploadOpen(false)}
+              aria-label="Закрыть форму"
+            >
+              <X size={18} />
+            </button>
           </div>
           <label>
             PDF-файл · до 20 МБ
@@ -177,7 +263,12 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
           </label>
           <label>
             Название
-            <input value={title} maxLength={160} required onChange={(event) => setTitle(event.target.value)} />
+            <input
+              value={title}
+              maxLength={160}
+              required
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </label>
           <label>
             К кому относится
@@ -192,31 +283,64 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
             />
           </label>
           {personResults.length > 0 && personQuery.trim().length > 1 && (
-            <div className="documents-person-results" role="listbox" aria-label="Найденные люди">
-              {personResults.filter((person) => !selectedPeople.some((item) => item.id === person.id)).map((person) => (
-                <button type="button" key={person.id} onClick={() => {
-                  setSelectedPeople((current) => [...current, person]);
-                  setPersonQuery("");
-                  setPersonResults([]);
-                }}>
-                  <strong>{person.label}</strong><small>{person.detail}</small>
-                </button>
-              ))}
+            <div
+              className="documents-person-results"
+              role="listbox"
+              aria-label="Найденные люди"
+            >
+              {personResults
+                .filter(
+                  (person) =>
+                    !selectedPeople.some((item) => item.id === person.id),
+                )
+                .map((person) => (
+                  <button
+                    type="button"
+                    key={person.id}
+                    onClick={() => {
+                      setSelectedPeople((current) => [...current, person]);
+                      setPersonQuery("");
+                      setPersonResults([]);
+                    }}
+                  >
+                    <strong>{person.label}</strong>
+                    <small>{person.detail}</small>
+                  </button>
+                ))}
             </div>
           )}
           <div className="documents-selected-people">
             {selectedPeople.map((person) => (
               <span key={person.id}>
                 {person.label}
-                <button type="button" aria-label={`Убрать ${person.label}`} onClick={() => setSelectedPeople((current) => current.filter((item) => item.id !== person.id))}>
+                <button
+                  type="button"
+                  aria-label={`Убрать ${person.label}`}
+                  onClick={() =>
+                    setSelectedPeople((current) =>
+                      current.filter((item) => item.id !== person.id),
+                    )
+                  }
+                >
                   <X size={14} />
                 </button>
               </span>
             ))}
           </div>
-          {uploadError && <p role="alert" className="documents-upload-error">{uploadError}</p>}
-          <button type="submit" className="documents-upload-submit" disabled={uploading || !file || !title.trim() || !selectedPeople.length}>
-            <Upload size={18} /> {uploading ? "Загружаем…" : "Добавить документ"}
+          {uploadError && (
+            <p role="alert" className="documents-upload-error">
+              {uploadError}
+            </p>
+          )}
+          <button
+            type="submit"
+            className="documents-upload-submit"
+            disabled={
+              uploading || !file || !title.trim() || !selectedPeople.length
+            }
+          >
+            <Upload size={18} />{" "}
+            {uploading ? "Загружаем…" : "Добавить документ"}
           </button>
         </form>
       )}
@@ -230,7 +354,11 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
             aria-label="Найти документ или человека"
           />
           {query && (
-            <button type="button" onClick={() => setQuery("")} aria-label="Очистить поиск">
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Очистить поиск"
+            >
               <X size={16} />
             </button>
           )}
@@ -245,7 +373,9 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         </div>
       )}
       {!error && loading && !documents.length && (
-        <p className="documents-state" role="status">Загружаем документы…</p>
+        <p className="documents-state" role="status">
+          Загружаем документы…
+        </p>
       )}
       {!error && !loading && !documents.length && !query && (
         <div className="documents-state documents-empty">
@@ -258,6 +388,11 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         <p className="documents-state">По запросу ничего не найдено.</p>
       )}
       <div className="documents-groups">
+        {deleteError && !selected && (
+          <p role="alert" className="documents-upload-error">
+            {deleteError}
+          </p>
+        )}
         {groups.map(([personId, group]) => (
           <section className="documents-group" key={personId}>
             <div className="documents-group-heading">
@@ -266,18 +401,36 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
             </div>
             <div className="documents-grid">
               {group.items.map((document) => (
-                <button
-                  type="button"
-                  className="document-item"
-                  key={document.id}
-                  onClick={() => setSelected(document)}
-                >
-                  <span className="document-item-icon"><BookOpenText size={25} strokeWidth={1.5} /></span>
-                  <span className="document-item-text">
-                    <strong>{document.title}</strong>
-                    <small>PDF · Открыть книгу</small>
-                  </span>
-                </button>
+                <div className="document-item-row" key={document.id}>
+                  <button
+                    type="button"
+                    className="document-item"
+                    onClick={() => {
+                      setDeleteError("");
+                      setSelected(document);
+                    }}
+                  >
+                    <span className="document-item-icon">
+                      <BookOpenText size={25} strokeWidth={1.5} />
+                    </span>
+                    <span className="document-item-text">
+                      <strong>{document.title}</strong>
+                      <small>PDF · Открыть книгу</small>
+                    </span>
+                  </button>
+                  {mayEdit && document.canDelete && (
+                    <button
+                      type="button"
+                      className="document-delete"
+                      aria-label={`Удалить документ «${document.title}»`}
+                      title="Удалить документ"
+                      disabled={deleting !== null}
+                      onClick={() => void remove(document)}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </section>
@@ -290,10 +443,24 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
           disabled={loading}
           onClick={() => void load(documents.length)}
         >
-          {loading ? "Загружаем…" : `Показать ещё · ${total - documents.length}`}
+          {loading
+            ? "Загружаем…"
+            : `Показать ещё · ${total - documents.length}`}
         </button>
       )}
-      {selected && <PdfBookReader document={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <PdfBookReader
+          document={selected}
+          onClose={() => setSelected(null)}
+          onDelete={
+            mayEdit && selected.canDelete
+              ? () => void remove(selected)
+              : undefined
+          }
+          deleting={deleting === selected.id}
+          deleteError={deleteError}
+        />
+      )}
     </section>
   );
 }

@@ -11,6 +11,8 @@ import type { mediaStore } from "./media.ts";
 import { fullName } from "../domain/index.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { owns } from "../domain/access.ts";
+import { auditStore } from "./audit.ts";
 import {
   documentUploadQuota,
   UploadQuotaError,
@@ -42,6 +44,7 @@ export function documentsHttp({
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
   const quota = documentUploadQuota(db);
+  const audit = auditStore(db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -86,7 +89,8 @@ export function documentsHttp({
   ): Promise<boolean> => {
     const list = url.pathname === "/api/documents";
     const file = /^\/api\/documents\/([a-f0-9-]{36})\/file$/.exec(url.pathname);
-    if (!list && !file) return false;
+    const item = /^\/api\/documents\/([a-f0-9-]{36})$/.exec(url.pathname);
+    if (!list && !file && !item) return false;
     if (!auth.canRead(req))
       return json(res, 401, { error: "Войдите, чтобы открыть документы" });
 
@@ -144,6 +148,8 @@ export function documentsHttp({
       const people = new Map(
         access.people.map((person) => [person.id, fullName(person)]),
       );
+      const actor = auth.currentUser(req),
+        mayEdit = auth.canEdit(req);
       return json(res, 200, {
         total,
         items: rows.map((row) => ({
@@ -151,12 +157,68 @@ export function documentsHttp({
           title: row.title,
           size: row.file_size,
           createdAt: row.created_at,
+          canDelete: mayEdit && owns(actor, { createdBy: row.uploaded_by }),
           url: `/api/documents/${row.id}/file`,
           people: (links.get(row.id) || [])
             .filter((id) => people.has(id))
             .map((id) => ({ id, name: people.get(id) })),
         })),
       });
+    }
+
+    if (item && req.method === "DELETE") {
+      if (!auth.canEdit(req))
+        return json(res, 403, { error: "Нет прав на удаление документа" });
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      const row = db
+        .prepare("SELECT * FROM documents WHERE id=?")
+        .get(item[1]) as Row | undefined;
+      const access = visible(req);
+      const personIds = row ? associations([row.id]).get(row.id) || [] : [];
+      if (
+        !row ||
+        (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+      )
+        return json(res, 404, { error: "Документ не найден" });
+      const actor = auth.currentUser(req);
+      if (!owns(actor, { createdBy: row.uploaded_by }))
+        return json(res, 403, {
+          error: "Удалить документ может его автор или администратор",
+        });
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("DELETE FROM documents WHERE id=?").run(row.id);
+        audit.record(
+          {
+            action: "Удалён документ",
+            entity: "document",
+            entityId: row.id,
+            label: row.title,
+            personIds,
+            details: [],
+          },
+          actor!,
+        );
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      // The committed catalogue removal revokes access first. A filesystem
+      // cleanup failure must not expose the file again or report a false rollback.
+      if (/^[a-f0-9-]{36}\.pdf$/.test(row.file_name)) {
+        await unlink(join(uploadsDirectory, row.file_name)).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code !== "ENOENT")
+              console.error("Не удалось удалить файл документа", {
+                id: row.id,
+                code: error.code,
+              });
+          },
+        );
+      }
+      return json(res, 200, { deleted: true });
     }
 
     if (file && req.method === "GET") {
