@@ -1,4 +1,5 @@
 import type { ResearchResult, UiAction } from "../shared/research-protocol.ts";
+import { browserTimeZone } from "../data/browser-time-zone";
 import {
   useResearchPanel,
   RESIZE_DIRECTIONS,
@@ -778,7 +779,13 @@ export function ResearchAssistant({
           message,
           ...(selectedPersonId ? { selectedPersonId } : {}),
           ...(chatId ? { chatId } : {}),
-          context: { view, personIds, openPersonId, openPhotoId },
+          context: {
+            view,
+            personIds,
+            openPersonId,
+            openPhotoId,
+            timeZone: browserTimeZone(),
+          },
         }),
       });
       if (!response.ok) {

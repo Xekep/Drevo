@@ -117,9 +117,12 @@ function ageInMonths(birth: string, end: string) {
   if (birth.length === 10 && end.length === 10 && endDay < birthDay) months--;
   return Math.max(0, months);
 }
-export function ageLabel(p: Person) {
+export function ageLabel(
+  p: Person,
+  today = new Date().toISOString().slice(0, 10),
+) {
   if (!p.birth || (hasRecordedDeath(p) && !p.death)) return "";
-  const end = p.death || new Date().toISOString().slice(0, 10);
+  const end = p.death || today;
   const age =
     dateYear(end) -
     dateYear(p.birth) -

@@ -1,4 +1,4 @@
-import { fullName } from "./dates.ts";
+import { ageLabel, dateBound, fullName, hasRecordedDeath } from "./dates.ts";
 import { analyzeFamilyInsights } from "./family-insights.ts";
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
@@ -1039,6 +1039,7 @@ export function executeResearchTool(
   family: Family,
   name: string,
   rawArgs: unknown,
+  referenceDate?: string,
 ) {
   const args =
     rawArgs && typeof rawArgs === "object"
@@ -1241,7 +1242,21 @@ export function executeResearchTool(
 
   if (name === "get_person") {
     const person = personOrThrow(family, stringArg(args, "personId"));
-    return { person: cleanPerson(person) };
+    return {
+      person: cleanPerson(person),
+      ...(referenceDate
+        ? {
+            age: {
+              asOfDate: referenceDate,
+              kind: hasRecordedDeath(person) ? "at_death" : "current",
+              label:
+                person.birth && dateBound(person.birth, false) <= referenceDate
+                  ? ageLabel(person, referenceDate) || null
+                  : null,
+            },
+          }
+        : {}),
+    };
   }
 
   if (name === "get_family") {

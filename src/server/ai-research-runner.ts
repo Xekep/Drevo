@@ -5,6 +5,11 @@ import type {
   UiAction,
 } from "../shared/research-protocol.ts";
 import { randomUUID } from "node:crypto";
+import {
+  CURRENT_TIME_TOOL,
+  researchClock,
+  researchTimeInstruction,
+} from "./research-clock.ts";
 import { archivePaths } from "../domain/archive-routes.ts";
 import { fullName, plural } from "../domain/dates.ts";
 import {
@@ -140,6 +145,7 @@ export function createResearchRunner({
         body.context && typeof body.context === "object"
           ? (body.context as Record<string, unknown>)
           : {},
+      currentTime = researchClock(context.timeZone),
       personIds = Array.isArray(context.personIds)
         ? context.personIds
             .filter((id): id is string => typeof id === "string")
@@ -352,6 +358,7 @@ export function createResearchRunner({
         )
       : RESEARCH_TOOL_DEFINITIONS;
     const allowedToolNames = new Set([
+      CURRENT_TIME_TOOL.name,
       ...researchDefinitions.map((tool) => tool.name),
       ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL.name] : []),
       RESEARCH_RESOURCES_TOOL.name,
@@ -465,8 +472,11 @@ export function createResearchRunner({
         runtime,
         conversationId,
         input: pendingInput,
-        instructions: system,
+        instructions: [system, researchTimeInstruction(currentTime())].join(
+          "\n",
+        ),
         tools: [
+          CURRENT_TIME_TOOL,
           ...researchDefinitions,
           ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL] : []),
           RESEARCH_RESOURCES_TOOL,
@@ -795,7 +805,8 @@ export function createResearchRunner({
       }
 
       for (const call of calls) {
-        executedTools++;
+        // Reading the clock is not evidence of an archive lookup.
+        if (call.function.name !== CURRENT_TIME_TOOL.name) executedTools++;
         metrics.toolCallCount++;
         onStatus(researchToolStatus(call.function.name));
         const definition = RESEARCH_TOOL_DEFINITIONS.find(
@@ -805,8 +816,15 @@ export function createResearchRunner({
           toolArgs: unknown = {};
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
-          if (definition)
-            result = executeResearchTool(family, definition.name, toolArgs);
+          if (call.function.name === CURRENT_TIME_TOOL.name)
+            result = currentTime();
+          else if (definition)
+            result = executeResearchTool(
+              family,
+              definition.name,
+              toolArgs,
+              currentTime().date,
+            );
           else if (call.function.name === RESEARCH_RESOURCES_TOOL.name) {
             if (resourceLookups >= 1)
               throw new Error(
