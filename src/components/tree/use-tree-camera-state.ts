@@ -174,15 +174,18 @@ export function useTreeCameraState({
           );
         } else if (returnPersonId && returnToken !== lastReturn.current) {
           if (!returnOccurrence) return;
+          const target = positions.get(returnOccurrence);
+          if (!target) return;
           lastReturn.current = returnToken;
-          viewportUpdate = flow.fitView({
-            nodes: [{ id: returnOccurrence }],
-            maxZoom: 1,
-            minZoom: narrow ? 0.55 : 0.15,
-            padding: narrow ? 0.3 : 0.48,
-            duration: motionEnabled ? 560 : 0,
-            ease: (progress) => 1 - (1 - progress) ** 3,
-          });
+          viewportUpdate = flow.setCenter(
+            target.x + TREE_NODE_WIDTH / 2,
+            target.y + TREE_NODE_HEIGHT / 2,
+            {
+              zoom: Math.min(1, Math.max(flow.getZoom(), narrow ? 0.82 : 0.9)),
+              duration: motionEnabled ? 560 : 0,
+              ease: (progress) => 1 - (1 - progress) ** 3,
+            },
+          );
           void Promise.resolve(viewportUpdate).then(
             () => onReturnComplete?.(),
             () => onReturnComplete?.(),

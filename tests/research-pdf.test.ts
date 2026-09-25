@@ -8,6 +8,25 @@ import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import { researchPdf } from "../src/server/research-pdf.ts";
 import { parseResearchMermaid } from "../src/server/research-pdf-visuals.ts";
 
+test("shared visual parser preserves people, dates and relation labels", () => {
+  const result = parseResearchMermaid(
+    'graph TD\n  n0["Анна<br/>1900–1980"] -->|родитель → ребёнок| n1[Сын]\n  n0 ---|супруги| n2[Иван]\n  n2 -.->|крёстный родитель| n1',
+  );
+  assert.equal(result.kind, "graph");
+  if (result.kind !== "graph") return;
+  assert.equal(result.graph.nodes[0].label, "Анна\n1900–1980");
+  assert.deepEqual(result.graph.edges.map((edge) => edge.type), [
+    "parent",
+    "spouse",
+    "other",
+  ]);
+  assert.deepEqual(result.graph.edges.map((edge) => edge.label), [
+    "родитель → ребёнок",
+    "супруги",
+    "крёстный родитель",
+  ]);
+});
+
 test("PDF contains Cyrillic text and is a real PDF", async () => {
   const bytes = await researchPdf(
     "Семейный архив",
@@ -106,6 +125,10 @@ test("Mermaid из ответа превращается в схему или г
     /поддерживаются Mermaid/,
   );
   assert.equal(parseResearchMermaid("graph TD\na -->|связь| b").kind, "graph");
+  const dotted = parseResearchMermaid('graph TD\na -. "крёстный" .-> b');
+  assert.equal(dotted.kind, "graph");
+  if (dotted.kind === "graph")
+    assert.equal(dotted.graph.edges[0].label, "крёстный");
   assert.throws(
     () => parseResearchMermaid("graph TD\na --> b --> c"),
     /неподдерживаемом формате/,

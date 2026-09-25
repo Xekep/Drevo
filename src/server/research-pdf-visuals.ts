@@ -1,25 +1,9 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkNode } from "elkjs";
 
-export type ResearchGraph = {
-  nodes: Array<{ id: string; name: string; birth?: string; death?: string }>;
-  edges: Array<{ from: string; to: string; type: string }>;
-};
-
-export type ResearchVisual =
-  | { kind: "graph"; graph: ResearchGraph }
-  | {
-      kind: "pie";
-      title: string;
-      values: Array<{ label: string; value: number }>;
-    }
-  | {
-      kind: "chart";
-      title: string;
-      labels: string[];
-      values: number[];
-      series: "bar" | "line";
-    };
+import type { ResearchGraph, ResearchVisual } from "../domain/research-visual.ts";
+export { parseResearchMermaid } from "../domain/research-visual.ts";
+export type { ResearchGraph, ResearchVisual } from "../domain/research-visual.ts";
 
 const A4 = { width: 841.89, height: 595.28 },
   portraitA4 = { width: A4.height, height: A4.width },
@@ -33,127 +17,6 @@ const A4 = { width: 841.89, height: 595.28 },
     "#977f9b",
     "#ac7669",
   ];
-
-function validNumber(value: string) {
-  const number = Number(value.replace(",", "."));
-  return Number.isFinite(number) && number >= 0 ? number : undefined;
-}
-
-/** Convert the diagram formats the research assistant can request into verified vector primitives. */
-export function parseResearchMermaid(source: string): ResearchVisual {
-  const lines = source
-    .trim()
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (/^pie\b/i.test(lines[0])) {
-    let title =
-      lines[0].match(/\btitle\s+(.+)$/i)?.[1]?.trim() || "Распределение";
-    const values: Array<{ label: string; value: number }> = [];
-    for (const line of lines.slice(1)) {
-      if (/^title\s+/i.test(line))
-        title = line.replace(/^title\s+/i, "").trim();
-      const match = /^"([^"]+)"\s*:\s*(\d+(?:[.,]\d+)?)$/.exec(line);
-      if (match) {
-        const value = validNumber(match[2]);
-        if (value !== undefined) values.push({ label: match[1], value });
-      }
-    }
-    if (
-      !values.length ||
-      values.length > 30 ||
-      !values.some((item) => item.value > 0)
-    )
-      throw new RangeError(
-        "Для круговой диаграммы нужны от 1 до 30 числовых значений",
-      );
-    return { kind: "pie", title, values };
-  }
-  if (/^xychart(?:-beta)?\b/i.test(lines[0])) {
-    const title =
-      lines
-        .find((line) => /^title\s+/i.test(line))
-        ?.replace(/^title\s+/i, "")
-        .replace(/^"|"$/g, "") || "Данные архива";
-    const axis = lines.find((line) => /^x-axis\s+/i.test(line));
-    const series = lines.find((line) => /^(?:bar|line)\s*\[/i.test(line));
-    const raw = series?.match(/^(bar|line)\s*\[([^\]]+)\]/i);
-    if (!raw)
-      throw new RangeError(
-        "График должен содержать bar или line с числовыми значениями",
-      );
-    const values = raw[2].split(",").map((item) => validNumber(item.trim()));
-    if (
-      !values.length ||
-      values.length > 100 ||
-      values.some((item) => item === undefined)
-    )
-      throw new RangeError("Для графика нужны от 1 до 100 числовых значений");
-    const labelContent = axis?.match(/\[([^\]]+)\]/)?.[1] || "";
-    const labels = [
-      ...labelContent.matchAll(/"([^"]+)"|'([^']+)'|([^,\s]+)/g),
-    ].map((match) => match[1] || match[2] || match[3]);
-    return {
-      kind: "chart",
-      title,
-      series: raw[1].toLowerCase() as "bar" | "line",
-      labels: values.map((_, index) => labels[index] || String(index + 1)),
-      values: values as number[],
-    };
-  }
-  if (/^(?:graph|flowchart)\s+(?:TD|TB|LR|RL|BT)\b/i.test(lines[0])) {
-    const nodes = new Map<string, string>();
-    const edges: ResearchGraph["edges"] = [];
-    for (const line of lines.slice(1)) {
-      const reduced = line.replace(
-        /([a-z][\w-]*)\s*(?:\["([^"]+)"\]|\[([^\]]+)\]|\("([^"]+)"\))/giu,
-        (
-          _whole,
-          id: string,
-          quoted?: string,
-          square?: string,
-          round?: string,
-        ) => {
-          nodes.set(
-            id,
-            (quoted || square || round || id).replace(/<[^>]+>/g, " ").trim(),
-          );
-          return id;
-        },
-      );
-      const edge =
-        /^([a-z][\w-]*)\s*(-->(?:\|[^|]+\|)?|---|==>|-\.\s*(?:"[^"]+"\s*)?\.->)\s*([a-z][\w-]*)\s*;?$/iu.exec(
-          reduced,
-        );
-      if (edge) {
-        if (!nodes.has(edge[1])) nodes.set(edge[1], edge[1]);
-        if (!nodes.has(edge[3])) nodes.set(edge[3], edge[3]);
-        edges.push({
-          from: edge[1],
-          to: edge[3],
-          type:
-            edge[2] === "---"
-              ? "spouse"
-              : edge[2].startsWith("-->")
-                ? "parent"
-                : "other",
-        });
-      } else if (/-->|---|==>|-\.|\.->/.test(reduced))
-        throw new RangeError(
-          "Схема содержит связь в неподдерживаемом формате Mermaid",
-        );
-    }
-    if (!nodes.size || nodes.size > 180 || edges.length > 500)
-      throw new RangeError("Схема должна содержать от 1 до 180 узлов");
-    return {
-      kind: "graph",
-      graph: { nodes: [...nodes].map(([id, name]) => ({ id, name })), edges },
-    };
-  }
-  throw new RangeError(
-    "В PDF поддерживаются Mermaid graph/flowchart, pie и xychart",
-  );
-}
 
 function visualPage(
   doc: PDFKit.PDFDocument,

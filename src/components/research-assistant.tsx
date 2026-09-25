@@ -9,19 +9,17 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
   LoaderCircle,
-  Minus,
-  Plus,
   Send,
   Sparkles,
   Square,
   Trash2,
   X,
 } from "lucide-react";
+import { ResearchVisualChart } from "./charts/research-visual-chart";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -73,289 +71,6 @@ const RESIZE_DIRECTIONS: Array<{
   { direction: "w", label: "Изменить ширину слева" },
   { direction: "nw", label: "Изменить размер сверху слева" },
 ];
-
-let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | undefined;
-let mermaidRenderId = 0;
-const mermaidSvgCache = new Map<string, string>(),
-  mermaidSvgPending = new Map<string, Promise<string>>();
-
-function renderMermaid(source: string) {
-  const cached = mermaidSvgCache.get(source);
-  if (cached) return Promise.resolve(cached);
-  const pending = mermaidSvgPending.get(source);
-  if (pending) return pending;
-  mermaidModule ||= import("mermaid").then(async (module) => {
-    module.default.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      look: "classic",
-      theme: "base",
-      themeVariables: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "13px",
-        primaryColor: "#ffffff",
-        primaryBorderColor: "#a7b7a6",
-        primaryTextColor: "#2f4134",
-        secondaryColor: "#f3f6f1",
-        tertiaryColor: "#ffffff",
-        lineColor: "#68826f",
-      },
-      flowchart: {
-        defaultRenderer: "elk",
-        useMaxWidth: false,
-        curve: "linear",
-        htmlLabels: false,
-        nodeSpacing: 36,
-        rankSpacing: 54,
-        diagramPadding: 12,
-      },
-      elk: {
-        mergeEdges: true,
-        nodePlacementStrategy: "BRANDES_KOEPF",
-        cycleBreakingStrategy: "GREEDY",
-      },
-    });
-    module.default.registerLayoutLoaders(
-      (await import("@mermaid-js/layout-elk")).default,
-    );
-    return module.default;
-  });
-  const rendering = mermaidModule
-    .then((mermaid) => mermaid.render(`drevo-ai-${++mermaidRenderId}`, source))
-    .then(({ svg }) => {
-      if (mermaidSvgCache.size >= 32)
-        mermaidSvgCache.delete(mermaidSvgCache.keys().next().value!);
-      mermaidSvgCache.set(source, svg);
-      return svg;
-    })
-    .finally(() => mermaidSvgPending.delete(source));
-  mermaidSvgPending.set(source, rendering);
-  return rendering;
-}
-
-function MermaidDiagram({ source }: { source: string }) {
-  const [expanded, setExpanded] = useState(false),
-    [zoom, setZoom] = useState(1),
-    [panning, setPanning] = useState(false);
-  const drag = useRef<{
-    pointerId: number;
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-  } | null>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const wheelAnchor = useRef<{
-    x: number;
-    y: number;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [rendered, setRendered] = useState<{
-    source: string;
-    svg: string;
-    error: string;
-  }>(() => ({ source, svg: mermaidSvgCache.get(source) || "", error: "" }));
-  const cached = mermaidSvgCache.get(source) || "",
-    svg = rendered.source === source ? rendered.svg : cached,
-    error = rendered.source === source ? rendered.error : "";
-
-  useEffect(() => {
-    if (mermaidSvgCache.has(source)) return;
-    let active = true;
-    void renderMermaid(source)
-      .then((value) => {
-        if (active) setRendered({ source, svg: value, error: "" });
-      })
-      .catch(() => {
-        if (active)
-          setRendered({ source, svg: "", error: "Не удалось построить схему" });
-      });
-    return () => {
-      active = false;
-    };
-  }, [source]);
-
-  useEffect(() => {
-    if (!expanded) return;
-    const close = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setExpanded(false);
-    };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [expanded]);
-
-  const viewBox = /viewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/.exec(svg),
-    naturalWidth = viewBox ? Number(viewBox[1]) : 900;
-
-  useLayoutEffect(() => {
-    if (!expanded || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const anchor = wheelAnchor.current;
-    if (anchor) {
-      canvas.scrollLeft =
-        (anchor.left / anchor.width) * canvas.scrollWidth - anchor.x;
-      canvas.scrollTop =
-        (anchor.top / anchor.height) * canvas.scrollHeight - anchor.y;
-      wheelAnchor.current = null;
-    } else {
-      canvas.scrollLeft = (canvas.scrollWidth - canvas.clientWidth) / 2;
-      canvas.scrollTop = (canvas.scrollHeight - canvas.clientHeight) / 2;
-    }
-  }, [expanded, zoom]);
-
-  useEffect(() => {
-    if (!expanded || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const zoomAtPointer = (event: WheelEvent) => {
-      event.preventDefault();
-      const nextZoom = Math.max(
-        0.25,
-        Math.min(4, +(zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12)).toFixed(2)),
-      );
-      if (nextZoom === zoom) return;
-      const rect = canvas.getBoundingClientRect();
-      wheelAnchor.current = {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-        left: canvas.scrollLeft + event.clientX - rect.left,
-        top: canvas.scrollTop + event.clientY - rect.top,
-        width: canvas.scrollWidth,
-        height: canvas.scrollHeight,
-      };
-      setZoom(nextZoom);
-    };
-    canvas.addEventListener("wheel", zoomAtPointer, { passive: false });
-    return () => canvas.removeEventListener("wheel", zoomAtPointer);
-  }, [expanded, zoom]);
-
-  return error ? (
-    <pre className="research-mermaid-error">{error}</pre>
-  ) : (
-    <>
-      <div className="research-mermaid">
-        {svg && (
-          <button
-            type="button"
-            className="research-mermaid-expand"
-            onClick={() => {
-              setZoom(1);
-              setExpanded(true);
-            }}
-            aria-label="Развернуть схему"
-            title="Развернуть схему"
-          >
-            <span aria-hidden="true">⛶</span>
-          </button>
-        )}
-        <div
-          role="img"
-          aria-label="Схема, построенная ИИ-исследователем"
-          dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
-        />
-      </div>
-      {expanded &&
-        createPortal(
-          <div
-            className="research-mermaid-overlay"
-            role="presentation"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) setExpanded(false);
-            }}
-          >
-            <section
-              className="research-mermaid-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Схема родства"
-            >
-              <header>
-                <strong>Схема родства</strong>
-                <div className="research-mermaid-controls">
-                  <button
-                    type="button"
-                    aria-label="Уменьшить схему"
-                    disabled={zoom <= 0.25}
-                    onClick={() =>
-                      setZoom((value) =>
-                        Math.max(0.25, +(value / 1.25).toFixed(2)),
-                      )
-                    }
-                  >
-                    <Minus size={18} />
-                  </button>
-                  <span aria-live="polite">{Math.round(zoom * 100)}%</span>
-                  <button
-                    type="button"
-                    aria-label="Увеличить схему"
-                    disabled={zoom >= 4}
-                    onClick={() =>
-                      setZoom((value) =>
-                        Math.min(4, +(value * 1.25).toFixed(2)),
-                      )
-                    }
-                  >
-                    <Plus size={18} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Закрыть схему"
-                    onClick={() => setExpanded(false)}
-                  >
-                    <X size={19} />
-                  </button>
-                </div>
-              </header>
-              <div
-                ref={canvasRef}
-                className={`research-mermaid-canvas${panning ? " is-panning" : ""}`}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-                  const target = event.currentTarget;
-                  drag.current = {
-                    pointerId: event.pointerId,
-                    x: event.clientX,
-                    y: event.clientY,
-                    left: target.scrollLeft,
-                    top: target.scrollTop,
-                  };
-                  target.setPointerCapture(event.pointerId);
-                  setPanning(true);
-                  event.preventDefault();
-                }}
-                onPointerMove={(event) => {
-                  const start = drag.current;
-                  if (!start || start.pointerId !== event.pointerId) return;
-                  event.currentTarget.scrollLeft =
-                    start.left - (event.clientX - start.x);
-                  event.currentTarget.scrollTop =
-                    start.top - (event.clientY - start.y);
-                }}
-                onPointerUp={(event) => {
-                  if (drag.current?.pointerId !== event.pointerId) return;
-                  drag.current = null;
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-                  setPanning(false);
-                }}
-                onPointerCancel={() => {
-                  drag.current = null;
-                  setPanning(false);
-                }}
-              >
-                <div
-                  style={{ width: `${Math.max(300, naturalWidth * zoom)}px` }}
-                  dangerouslySetInnerHTML={{ __html: svg }}
-                />
-              </div>
-            </section>
-          </div>,
-          document.body,
-        )}
-    </>
-  );
-}
 
 function resizedPanelRect(
   rect: PanelRect,
@@ -431,7 +146,7 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
       code: ({ className, children, ...props }) =>
         className === "language-mermaid" &&
         !String(children).trim() ? null : className === "language-mermaid" ? (
-          <MermaidDiagram source={String(children).trim()} />
+          <ResearchVisualChart source={String(children).trim()} />
         ) : (
           <code className={className} {...props}>
             {children}

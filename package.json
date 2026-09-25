@@ -23,13 +23,12 @@
     "prebuild": "npm run prepare:models"
   },
   "dependencies": {
-    "@mermaid-js/layout-elk": "^0.1.9",
     "@vladmandic/human": "3.3.6",
     "@xyflow/react": "^12.11.6",
+    "echarts": "^6.1.0",
     "elkjs": "^0.12.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.42.0",
-    "mermaid": "11.17.2",
     "pdfkit": "^0.20.2",
     "react": "19.2.6",
     "react-dom": "19.2.6",

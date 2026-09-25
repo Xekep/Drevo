@@ -1,9 +1,7 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
-  type CSSProperties,
   type FormEvent,
 } from "react";
 import {
@@ -14,6 +12,7 @@ import {
   Save,
   TriangleAlert,
 } from "lucide-react";
+import { AiTokenUsageChart } from "./charts/ai-token-usage-chart";
 
 type AiAdminStatus = {
   enabled: boolean;
@@ -91,33 +90,6 @@ type AiAdminStatus = {
   baseUrl: string;
 };
 
-type ModelUsage = AiAdminStatus["usage"]["history"][number]["models"][number];
-
-function modelLabel(model: string) {
-  return model.replace(/^gpt:\/\/[^/]+\//, "");
-}
-
-function modelHue(model: string) {
-  let hash = 0;
-  for (const char of model) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return hash % 360;
-}
-
-function modelStyle(model: string): CSSProperties {
-  return { "--model-hue": modelHue(model) } as CSSProperties;
-}
-
-function usageDetails(models: ModelUsage[]) {
-  return models
-    .map(
-      (model) =>
-        `${modelLabel(model.model)}: вход ${model.inputTokens.toLocaleString(
-          "ru-RU",
-        )}, выход ${model.outputTokens.toLocaleString("ru-RU")}`,
-    )
-    .join(" · ");
-}
-
 export function AiSettingsAdmin() {
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
@@ -137,21 +109,6 @@ export function AiSettingsAdmin() {
     [loadingModels, setLoadingModels] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-
-  const historyMax = Math.max(
-      1,
-      ...(status?.usage.history.map((item) => item.totalTokens) || []),
-    ),
-    historyModels = useMemo(
-      () => [
-        ...new Set(
-          status?.usage.history.flatMap((item) =>
-            item.models.map((model) => model.model),
-          ) || [],
-        ),
-      ],
-      [status],
-    );
 
   const applyStatus = useCallback((next: AiAdminStatus) => {
     setStatus(next);
@@ -654,95 +611,8 @@ export function AiSettingsAdmin() {
               </div>
             </div>
             <div className="ai-token-chart">
-              <div className="ai-token-chart-heading">
-                <div>
-                  <h4>Расход токенов за 14 дней</h4>
-                  <small>тёмный сегмент — вход, светлый — выход</small>
-                </div>
-                <div className="ai-token-model-legend" aria-label="Модели">
-                  {historyModels.map((item) => (
-                    <span key={item} title={item}>
-                      <i style={modelStyle(item)}>
-                        <b className="input" />
-                        <b className="output" />
-                      </i>
-                      {modelLabel(item)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div
-                className="ai-token-bars"
-                role="img"
-                aria-label="Столбчатая диаграмма расхода токенов за последние 14 дней"
-              >
-                {status.usage.history.map((item, index) => {
-                  const height = item.totalTokens
-                      ? Math.max(5, (item.totalTokens / historyMax) * 100)
-                      : 2,
-                    date = new Date(`${item.day}T00:00:00Z`).toLocaleDateString(
-                      "ru-RU",
-                    ),
-                    details = usageDetails(item.models),
-                    title = `${date}: ${item.totalTokens.toLocaleString(
-                      "ru-RU",
-                    )} токенов${details ? ` · ${details}` : ""}`;
-                  return (
-                    <div
-                      className="ai-token-day"
-                      key={item.day}
-                      aria-label={title}
-                    >
-                      <div className="ai-token-column">
-                        <div
-                          className={
-                            item.totalTokens
-                              ? "ai-token-stack"
-                              : "ai-token-stack is-empty"
-                          }
-                          style={{ height: `${height}%` }}
-                          title={title}
-                        >
-                          {item.models.map((model) => (
-                            <span
-                              className="ai-token-model-segment"
-                              key={model.model}
-                              style={{
-                                ...modelStyle(model.model),
-                                flex: model.totalTokens || 0.001,
-                              }}
-                              title={`${modelLabel(model.model)} · вход ${model.inputTokens.toLocaleString(
-                                "ru-RU",
-                              )} · выход ${model.outputTokens.toLocaleString(
-                                "ru-RU",
-                              )}`}
-                            >
-                              <i
-                                className="input"
-                                style={{ flex: model.inputTokens || 0.001 }}
-                              />
-                              <i
-                                className="output"
-                                style={{ flex: model.outputTokens || 0.001 }}
-                              />
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      {(index === 0 ||
-                        index === status.usage.history.length - 1 ||
-                        index === 6) && (
-                        <small>
-                          {new Date(`${item.day}T00:00:00Z`).toLocaleDateString(
-                            "ru-RU",
-                            { day: "2-digit", month: "2-digit" },
-                          )}
-                        </small>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <h4>Расход токенов за 14 дней</h4>
+              <AiTokenUsageChart history={status.usage.history} />
             </div>
             {status.usage.recent.length > 0 && (
               <div className="ai-usage-recent">

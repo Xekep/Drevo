@@ -185,7 +185,7 @@ test("активный веер перестраивается при перех
     .not.toBe(before);
 });
 
-test("выход из специальных режимов возвращает опорного человека в центр", async ({
+test("семья и общие предки центрируют человека, а веер сохраняет ракурс", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -217,11 +217,14 @@ test("выход из специальных режимов возвращает
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expectCentered();
 
+  const beforeFan = await distanceFromCenter();
   await page.getByRole("button", { name: "Веер" }).click();
   await expect(page.locator(".fan-chart-svg")).toBeVisible();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
-  await expectCentered();
+  await expect
+    .poll(async () => Math.abs((await distanceFromCenter()) - beforeFan))
+    .toBeLessThan(2);
 });
 
 test("Ctrl+A не выделяет страницу, но работает в полях ввода", async ({
@@ -416,20 +419,13 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   ]);
   await expect(
     page.getByRole("img", {
-      name: "Столбчатая диаграмма расхода токенов за последние 14 дней",
+      name: /Расход токенов за последние 14 дней/,
     }),
   ).toBeVisible();
-  await expect(page.locator(".ai-token-day")).toHaveCount(14);
-  await expect(page.locator(".ai-token-model-segment")).toHaveCount(2);
-  await expect(page.getByLabel("Модели")).toContainText(
-    "yandexgpt-5.1/latest",
-  );
-  await expect(page.getByLabel("Модели")).toContainText(
-    "deepseek-v4-flash/latest",
-  );
-  await expect(
-    page.locator(".ai-token-model-segment").first(),
-  ).toHaveAttribute("title", /вход 1.?200 · выход 300/);
+  const tokenPlot = page.locator(".ai-token-plot");
+  await expect(tokenPlot.locator("canvas")).toBeVisible();
+  await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
+  await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
   await page.getByRole("button", { name: "MCP-токены" }).click();
   const permissions = page.getByLabel("Разрешения");
@@ -584,7 +580,7 @@ test("ИИ-исследователь не перекрывает навигац
     panel.getByRole("heading", { name: "Тестов Иван Петрович" }),
   ).toBeVisible();
   await expect(panel.locator("table")).toBeVisible();
-  const graph = panel.locator(".research-mermaid svg");
+  const graph = panel.locator(".research-visual canvas");
   await expect(graph).toBeVisible();
   await graph.evaluate((node) => {
     (window as typeof window & { drevoGraphNode?: Element }).drevoGraphNode =
