@@ -1,9 +1,9 @@
 [Unit]
-Description=Daily Drevo full backup
+Description=Check persisted Drevo backup schedule
 
 [Timer]
-OnCalendar=*-*-* 02:17:00 UTC
-RandomizedDelaySec=900
+OnCalendar=*-*-* *:0/5:00
+RandomizedDelaySec=30
 Persistent=true
 
 [Install]

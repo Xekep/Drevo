@@ -275,8 +275,10 @@ export function documentsHttp({
             signal: AbortSignal.timeout(120_000),
           },
         );
-        if (size < 8 || Buffer.concat(header).toString("ascii") !== "%PDF-")
+        if (size < 8 || Buffer.concat(header).toString("ascii") !== "%PDF-") {
+          await unlink(temporary);
           return json(res, 415, { error: "Файл не является PDF" });
+        }
         await rename(temporary, target);
         const latest = auth.currentUser(req);
         const latestVisible = new Set(visible(req).ids);

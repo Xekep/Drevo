@@ -1,19 +1,20 @@
 import { useRef, useState } from "react";
 import { FileUp, RotateCcw } from "lucide-react";
-type Preview = {
-  token: string;
-  title: string;
-  people: number;
-  photos: number;
-  files: number;
-  missing: number;
-  currentPeople: number;
-  currentPhotos: number;
-};
-export function BackupRestore({ onRestored }: { onRestored: () => void }) {
+import type { RestorePreview } from "../shared/backup-management";
+export function BackupRestore({
+  onRestored,
+  initialPreview,
+  onCancel,
+}: {
+  onRestored: () => void;
+  initialPreview?: RestorePreview;
+  onCancel?: () => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null),
-    [preview, setPreview] = useState<Preview | null>(null),
+    [preview, setPreview] = useState<RestorePreview | null>(
+      initialPreview || null,
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -67,34 +68,38 @@ export function BackupRestore({ onRestored }: { onRestored: () => void }) {
   return (
     <div className="backup-restore">
       <h2>Восстановить из бэкапа</h2>
-      <p>
-        Выберите базу <b>.sqlite</b> или полный архив <b>.tar.gz</b> с
-        фотографиями. До 12 ГиБ.
-      </p>
-      <label className="restore-file">
-        <FileUp size={22} />
-        <span>{file?.name || "Выбрать резервную копию"}</span>
-        <input
-          type="file"
-          ref={input}
-          accept=".sqlite,.db,.tar.gz,.gz"
-          disabled={busy}
-          onChange={(e) => {
-            setFile(e.target.files?.[0] || null);
-            setPreview(null);
-            setConfirmed(false);
-            setError("");
-            setNotice("");
-          }}
-        />
-      </label>
-      <button
-        type="button"
-        disabled={!file || busy}
-        onClick={() => void send()}
-      >
-        {busy ? "Обрабатываем…" : "Проверить бэкап"}
-      </button>
+      {!initialPreview && (
+        <>
+          <p>
+            Выберите базу <b>.sqlite</b> или полный архив <b>.tar.gz</b> с
+            фотографиями. До 12 ГиБ.
+          </p>
+          <label className="restore-file">
+            <FileUp size={22} />
+            <span>{file?.name || "Выбрать резервную копию"}</span>
+            <input
+              type="file"
+              ref={input}
+              accept=".sqlite,.db,.tar.gz,.gz"
+              disabled={busy}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] || null);
+                setPreview(null);
+                setConfirmed(false);
+                setError("");
+                setNotice("");
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!file || busy}
+            onClick={() => void send()}
+          >
+            {busy ? "Обрабатываем…" : "Проверить бэкап"}
+          </button>
+        </>
+      )}
       {preview && (
         <div className="restore-preview">
           <h3>{preview.title || "Семейный архив"}</h3>
@@ -107,7 +112,8 @@ export function BackupRestore({ onRestored }: { onRestored: () => void }) {
             <b>
               {preview.currentPhotos} → {preview.photos}
             </b>
-            . Файлов снимков в бэкапе: {preview.files}.
+            . Файлов снимков в бэкапе: {preview.files}. Документов:{" "}
+            {preview.documents || 0}.
           </p>
           {preview.missing > 0 && (
             <p className="restore-warning">
@@ -138,6 +144,11 @@ export function BackupRestore({ onRestored }: { onRestored: () => void }) {
             <RotateCcw size={16} />
             Восстановить архив
           </button>
+          {onCancel && (
+            <button type="button" disabled={busy} onClick={onCancel}>
+              Отмена
+            </button>
+          )}
         </div>
       )}
       {error && (

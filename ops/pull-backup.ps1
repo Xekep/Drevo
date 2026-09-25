@@ -18,7 +18,7 @@ print(json.dumps({'name': p.name, 'sha256': Path(str(p)+'.sha256').read_text().s
 $metadataText = $remoteQuery | & ssh -F $SshConfig -o BatchMode=yes -o ConnectTimeout=20 $RemoteHost 'python3 -'
 if ($LASTEXITCODE -ne 0) { throw 'Could not locate a completed server backup' }
 $metadata = $metadataText | ConvertFrom-Json
-if ($metadata.name -notmatch '^full-\d{8}T\d{6}Z\.tar\.gz$' -or $metadata.sha256 -notmatch '^[a-f0-9]{64}$') {
+if ($metadata.name -notmatch '^full-\d{8}T\d{6}Z(?:-[a-f0-9-]{36})?\.tar\.gz$' -or $metadata.sha256 -notmatch '^[a-f0-9]{64}$') {
   throw 'Invalid backup metadata'
 }
 $target = Join-Path $backupRoot $metadata.name
@@ -33,7 +33,7 @@ try {
   "$($metadata.sha256)  $($metadata.name)" | Set-Content -LiteralPath "$target.sha256" -Encoding ASCII
   @{ backup = $metadata.name; checkedAt = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupRoot 'last-success.json') -Encoding UTF8
   Get-ChildItem -LiteralPath $backupRoot -File | Where-Object {
-    $_.Name -match '^full-\d{8}T\d{6}Z\.tar\.gz(\.sha256)?$' -and $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-30) -and !$_.Name.StartsWith($metadata.name)
+    $_.Name -match '^full-\d{8}T\d{6}Z(?:-[a-f0-9-]{36})?\.tar\.gz(\.sha256)?$' -and $_.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-30) -and !$_.Name.StartsWith($metadata.name)
   } | ForEach-Object { Remove-Item -LiteralPath $_.FullName }
   Write-Output "Verified backup: $target"
 } finally {

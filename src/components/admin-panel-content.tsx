@@ -20,7 +20,7 @@ import {
   type TreeAccess,
   type Family,
 } from "../domain";
-import { BackupRestore } from "./backup-restore";
+import { BackupAdmin } from "./backup-admin";
 import { ShareCatalog } from "./share-catalog";
 import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
@@ -47,7 +47,8 @@ const ADMIN_SECTIONS = [
     items: [
       { id: "users", label: "Участники", icon: Users },
       { id: "access", label: "Доступ и древо", icon: ArrowDownUp },
-      { id: "data", label: "Данные и копии", icon: DatabaseBackup },
+      { id: "data", label: "Экспорт и импорт", icon: Download },
+      { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
   {
@@ -71,8 +72,12 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
     description: "Публичный просмотр и направление поколений.",
   },
   data: {
-    title: "Данные и копии",
-    description: "Резервные копии, восстановление и перенос архива.",
+    title: "Экспорт и импорт",
+    description: "Обмен данными и перенос в другие генеалогические программы.",
+  },
+  backups: {
+    title: "Резервные копии",
+    description: "Расписание, хранилище и восстановление семейного архива.",
   },
   ai: {
     title: "Yandex AI",
@@ -572,25 +577,9 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
+        {section === "backups" && <BackupAdmin onRestored={onChanged} />}
         {section === "data" && (
           <section className="admin-card archive-form">
-            <h2>Резервные копии</h2>
-            <p>
-              Скачайте весь архив с фотографиями или только базу. В базу входят
-              карточки, связи, отметки, участники и настройки.
-            </p>
-            <div className="backup-actions">
-              <a className="primary-action" href="/api/backup/full" download>
-                <DatabaseBackup size={18} />
-                Скачать базу и фото
-              </a>
-              <a href="/api/backup" download>
-                Только база SQLite
-              </a>
-            </div>
-            <hr />
-            <BackupRestore onRestored={onChanged} />
-            <hr />
             <GedcomTransfer onImported={onChanged} />
             <hr />
             <h2>Настройки и перенос данных</h2>
@@ -601,6 +590,8 @@ export function AdminPanel({
               Карточки и связи для анализа. Для восстановления используйте
               резервную копию.
             </p>
+            <a href="/api/backup" download><Download size={18} /> Скачать базу SQLite</a>
+            <p>База с участниками, настройками и историей. Без файлов фото и документов.</p>
             <p>Название архива, описание и импорт сохранённого JSON.</p>
             <button onClick={onSettings}>Открыть настройки данных</button>
           </section>

@@ -22,6 +22,8 @@ import { imagePreviews } from "./image-previews.ts";
 import { sharingHttp } from "./sharing-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
+import { backupManager } from "./backup-manager.ts";
+import { backupManagementHttp } from "./backup-management-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -59,6 +61,8 @@ export async function startServer(
   const visibility = settingsStore(archive.db);
   const users = userStore(archive.db);
   const auth = createAuth(users, archive.db, publicOrigin);
+  const backups = backupManager(archive.db, dbPath);
+  const manageBackups = backupManagementHttp({ backups, restores, auth, publicOrigin });
   const sharing = sharingHttp({
     archive,
     auth,
@@ -121,6 +125,7 @@ export async function startServer(
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       path = parsedUrl.pathname;
     if (path.startsWith("/api/")) auth.refreshSession(req, res);
+    if (await manageBackups(req, res, parsedUrl)) return;
     if (await sharing(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
@@ -209,6 +214,7 @@ export async function startServer(
         await new Promise((done) => setTimeout(done, 25));
       if (activeRequests > 0) server.closeAllConnections();
       await closed;
+      await backups.close();
       restores.close();
       gedcom.close();
       geocoding.close();

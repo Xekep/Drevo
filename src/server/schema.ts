@@ -725,6 +725,23 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const backupExtension = "2026-09-managed-backups";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(backupExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec([
+        "CREATE TABLE backup_settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL CHECK(json_valid(data)), next_run INTEGER NOT NULL) STRICT;",
+        "CREATE TABLE backup_catalog (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
+        "CREATE INDEX backup_catalog_date ON backup_catalog(created_at DESC);",
+        "CREATE TABLE backup_job (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, actor_id TEXT NOT NULL, lease_until INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
+      ].join("\n"));
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(backupExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const mediaGrantExtension = "2026-09-media-upload-provenance";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(mediaGrantExtension)
