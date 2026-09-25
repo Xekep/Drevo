@@ -3,6 +3,7 @@ export const archivePaths = {
   list: "/people",
   families: "/families",
   gallery: "/photos",
+  documents: "/documents",
   places: "/places",
   insights: "/insights",
   admin: "/admin",

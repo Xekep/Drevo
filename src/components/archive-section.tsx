@@ -22,6 +22,12 @@ const Gallery = lazy(() =>
     return { default: module.Gallery };
   }, "gallery"),
 );
+const DocumentsCatalog = lazy(() =>
+  loadLazyModule(async () => {
+    const module = await import("./documents-catalog");
+    return { default: module.DocumentsCatalog };
+  }, "documents"),
+);
 const PlacesMap = lazy(() =>
   loadLazyModule(() => import("./places-map"), "places"),
 );
@@ -128,6 +134,8 @@ export function ArchiveSection(props: Props) {
         onClearFilter={props.onClearPhotoFilter}
       />
     );
+  else if (props.view === "documents")
+    content = <DocumentsCatalog mayEdit={props.mayEdit} />;
   else if (props.view === "insights")
     content = (
       <InsightsPage

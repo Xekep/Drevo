@@ -34,6 +34,7 @@ import { adminAiHttp } from "./admin-ai-http.ts";
 import { aiUsageStore } from "./ai-usage.ts";
 import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
+import { documentsHttp } from "./documents-http.ts";
 
 export function sharingHttp({
   archive,
@@ -44,6 +45,7 @@ export function sharingHttp({
   publicOrigin,
   serveStatic,
   aiFetch,
+  uploadsDirectory,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
@@ -53,6 +55,7 @@ export function sharingHttp({
   publicOrigin?: string;
   serveStatic: ReturnType<typeof productionStaticHttp>;
   aiFetch?: typeof fetch;
+  uploadsDirectory: string;
 }) {
   const tokens = mcpTokenStore(archive.db);
   const mcpUsage = mcpUsageStore(archive.db);
@@ -106,6 +109,7 @@ export function sharingHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({ archive, auth, visibility });
+  const documents = documentsHttp({ archive, auth, uploadsDirectory, publicOrigin });
   const places = placesHttp({
     archive,
     auth,
@@ -157,6 +161,7 @@ export function sharingHttp({
     if (await adminAi(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
+    if (await documents(req, res, url)) return true;
     if (await places(req, res, url)) return true;
     if (await adminSharing(req, res, url)) return true;
     if (await restore(req, res, url)) return true;

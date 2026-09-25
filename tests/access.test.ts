@@ -157,6 +157,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal((await request("/api/portraits", "", "POST")).status, 401);
     assert.equal((await request("/api/export.json")).status, 401);
     assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
+    assert.equal((await request("/api/documents")).status, 401);
     const admin = await login("first"),
       reader = await login("second");
     assert.equal(
@@ -189,6 +190,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     );
     assert.equal((await request("/api/users", reader)).status, 403);
     assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
+    assert.equal((await request("/api/documents", reader)).status, 401);
     assert.equal((await request("/api/export.json", reader)).status, 401);
     assert.equal(
       (await request("/api/users/second", admin, "PATCH", { approved: true }))
@@ -196,6 +198,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       200,
     );
     for (const cookie of [admin, reader]) {
+      assert.equal((await request("/api/documents", cookie)).status, 200);
       const exported = await request("/api/export.json", cookie);
       assert.equal(exported.status, 200);
       assert.equal(exported.headers.get("cache-control"), "no-store");

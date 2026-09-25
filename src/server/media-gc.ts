@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mediaPattern } from "./media.ts";
 
 const DEFAULT_GRACE_MS = 24 * 60 * 60 * 1000;
-const fileNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/;
+const fileNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif|pdf)$/;
 
 function referencedMedia(db: DatabaseSync, includeBackups = true) {
   const result = new Set<string>();
@@ -22,6 +22,10 @@ function referencedMedia(db: DatabaseSync, includeBackups = true) {
     const match = mediaPattern.exec(value.url);
     if (match) result.add(match[1]);
   }
+  if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'").get())
+    for (const row of db.prepare("SELECT file_name FROM documents").all())
+      if (typeof row.file_name === "string" && /^[a-f0-9-]{36}\.pdf$/.test(row.file_name))
+        result.add(row.file_name);
   // История является частью поддерживаемой отмены/восстановления. Пока ссылка
   // присутствует хотя бы в одном снимке, оригинал не является бесхозным.
   if (

@@ -335,6 +335,7 @@ export function openArchive(path: string, seed: Family) {
     operation?: string,
     knownPrevious?: Family,
     faceDescriptors?: StoredFaceDescriptor[],
+    afterWrite?: (db: DatabaseSync) => void,
   ) {
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -381,6 +382,7 @@ export function openArchive(path: string, seed: Family) {
             sample.model,
           );
       }
+      afterWrite?.(db);
       finishWrite();
       return { family, revision: expected + 1 };
     } catch (error) {

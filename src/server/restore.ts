@@ -21,6 +21,7 @@ import {
   open as openFile,
   rename,
   rm,
+  stat,
   unlink,
 } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
@@ -216,7 +217,7 @@ async function unpack(source: Readable, directory: string) {
               throw new Error("В бэкапе допустимы только обычные файлы");
             if (
               name !== "drevo.sqlite" &&
-              !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$/.test(name)
+              !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|pdf)$/.test(name)
             )
               throw new Error("Недопустимый путь в бэкапе");
             if (
@@ -248,6 +249,18 @@ type Stage = {
   expires: number;
   files: Map<string, string>;
   faceDescriptors: StoredFaceDescriptor[];
+  documents: StoredDocument[];
+  documentFiles: Map<string, string>;
+};
+
+type StoredDocument = {
+  id: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  uploadedBy: string;
+  createdAt: string;
+  personIds: string[];
 };
 
 function createRestoreStore(
@@ -267,6 +280,8 @@ function createRestoreStore(
       family: Family;
       files: [string, string][];
       faceDescriptors: StoredFaceDescriptor[];
+      documents?: StoredDocument[];
+      documentFiles?: [string, string][];
     };
     return {
       directory: String(row.directory),
@@ -276,6 +291,8 @@ function createRestoreStore(
       expires: Number(row.expires_at),
       files: new Map(data.files),
       faceDescriptors: data.faceDescriptors,
+      documents: data.documents || [],
+      documentFiles: new Map(data.documentFiles || []),
     };
   };
   const discard = (token: string) => {
@@ -335,7 +352,7 @@ function createRestoreStore(
         readOnly: true,
         allowExtension: false,
       });
-      let family: Family, faceDescriptors: StoredFaceDescriptor[] = [];
+      let family: Family, faceDescriptors: StoredFaceDescriptor[] = [], documents: StoredDocument[] = [];
       try {
         source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
         const tables = source
@@ -348,6 +365,40 @@ function createRestoreStore(
         if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
           throw new Error("База повреждена");
         family = validateFamily(readArchive(source).family);
+        if (source.prepare(
+          "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'",
+        ).get()) {
+          const people = new Set(family.people.map((person) => person.id));
+          const rows = source.prepare(
+            "SELECT id,title,file_name,file_size,uploaded_by,created_at FROM documents ORDER BY created_at,id",
+          ).all();
+          const links = source.prepare(
+            "SELECT document_id,person_id FROM document_people",
+          ).all();
+          const byDocument = new Map<string, string[]>();
+          for (const link of links) {
+            const id = String(link.document_id), personId = String(link.person_id);
+            if (!people.has(personId)) throw new Error("Документ ссылается на отсутствующего человека");
+            byDocument.set(id, [...(byDocument.get(id) || []), personId]);
+          }
+          documents = rows.map((row) => {
+            const document: StoredDocument = {
+              id: String(row.id),
+              title: String(row.title),
+              fileName: String(row.file_name),
+              fileSize: Number(row.file_size),
+              uploadedBy: String(row.uploaded_by),
+              createdAt: String(row.created_at),
+              personIds: byDocument.get(String(row.id)) || [],
+            };
+            if (!/^[a-f0-9-]{36}$/.test(document.id) ||
+                !/^[a-f0-9-]{36}\.pdf$/.test(document.fileName) ||
+                !document.title || document.title.length > 160 ||
+                document.fileSize < 1 || document.fileSize > 20 * 1024 * 1024)
+              throw new Error("Некорректный документ в бэкапе");
+            return document;
+          });
+        }
         if (
           source.prepare(
             "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='face_descriptors'",
@@ -426,6 +477,18 @@ function createRestoreStore(
         source.close();
       }
       const files = new Map<string, string>();
+      const documentFiles = new Map<string, string>();
+      for (const document of documents) {
+        const archived = join(directory, "uploads", document.fileName);
+        const current = join(dirname(dbPath), "uploads", document.fileName);
+        const file = existsSync(archived) ? archived : current;
+        if (!existsSync(file)) throw new Error(`Нет файла документа «${document.title}»`);
+        const info = await stat(file);
+        if (!info.isFile() || info.size !== document.fileSize ||
+            (await fileHeader(file)).toString("ascii", 0, 5) !== "%PDF-")
+          throw new Error(`Повреждён PDF-документ «${document.title}»`);
+        documentFiles.set(document.id, file);
+      }
       let missing = 0;
       for (const url of references(family)) {
         const match = mediaPattern.exec(url);
@@ -450,6 +513,8 @@ function createRestoreStore(
         expires: Date.now() + 15 * 60000,
         files,
         faceDescriptors,
+        documents,
+        documentFiles,
       };
       archive.db
         .prepare(
@@ -465,6 +530,8 @@ function createRestoreStore(
             family,
             files: [...files],
             faceDescriptors,
+            documents,
+            documentFiles: [...documentFiles],
           }),
           directory,
         );
@@ -474,6 +541,7 @@ function createRestoreStore(
         title: family.title,
         people: family.people.length,
         photos: family.photos?.length || 0,
+        documents: documents.length,
         files: files.size,
         missing,
         currentPeople: current.family.people.length,
@@ -512,6 +580,7 @@ function createRestoreStore(
       writeDatabaseBackup(archive.db, join(backups, backupName));
       const created: string[] = [],
         urls = new Map<string, string>();
+      const restoredDocuments: StoredDocument[] = [];
       let result: ReturnType<typeof archive.write>;
       try {
         for (const [url, path] of stage.files) {
@@ -520,6 +589,15 @@ function createRestoreStore(
           await copyFile(path, destination, constants.COPYFILE_EXCL);
           created.push(destination);
           urls.set(url, `/media/${name}`);
+        }
+        for (const document of stage.documents) {
+          const source = stage.documentFiles.get(document.id);
+          if (!source) throw new Error("Файл документа отсутствует в бэкапе");
+          const id = randomUUID(), fileName = `${id}.pdf`,
+            destination = join(dirname(dbPath), "uploads", fileName);
+          await copyFile(source, destination, constants.COPYFILE_EXCL);
+          created.push(destination);
+          restoredDocuments.push({ ...document, id, fileName });
         }
         const family = {
           ...stage.family,
@@ -539,6 +617,20 @@ function createRestoreStore(
           "Восстановление из бэкапа",
           undefined,
           stage.faceDescriptors,
+          (db) => {
+            db.exec("DELETE FROM documents");
+            const insert = db.prepare(
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+            );
+            const link = db.prepare(
+              "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+            );
+            for (const document of restoredDocuments) {
+              insert.run(document.id, document.title, document.title.toLocaleLowerCase("ru"), document.fileName,
+                document.fileSize, document.uploadedBy, document.createdAt);
+              for (const personId of document.personIds) link.run(document.id, personId);
+            }
+          },
         );
       } catch (error) {
         await Promise.allSettled(

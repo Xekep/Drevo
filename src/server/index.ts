@@ -67,6 +67,7 @@ export async function startServer(
     visibility,
     publicOrigin,
     aiFetch,
+    uploadsDirectory: resolve(dirname(dbPath), "uploads"),
     serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);

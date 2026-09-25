@@ -3,6 +3,7 @@ import {
   TreeDeciduous,
   Users,
   Image,
+  BookOpenText,
   Heart,
   ShieldCheck,
   Search,
@@ -88,6 +89,7 @@ export function ArchiveNavigation({
             ["list", "Люди", Users],
             ["families", "Семьи", Heart],
             ["gallery", "Фото", Image],
+            ["documents", "Документы", BookOpenText],
             ["places", "Места", MapPin],
             ["insights", "Сводка", ChartNoAxesCombined],
           ] as const
@@ -95,6 +97,8 @@ export function ArchiveNavigation({
           .filter(([id]) =>
             id === "gallery"
               ? readPhotos
+              : id === "documents"
+                ? (user?.approved === true || local)
               : id === "places"
                 ? readTree || readPhotos
                 : readTree,
@@ -122,6 +126,7 @@ export function ArchiveNavigation({
                 ["list", "Люди", Users],
                 ["families", "Семьи", Heart],
                 ["gallery", "Фото", Image],
+                ["documents", "Документы", BookOpenText],
                 ["places", "Места", MapPin],
                 ["insights", "Сводка", ChartNoAxesCombined],
               ] as const
@@ -129,6 +134,8 @@ export function ArchiveNavigation({
               .filter(([id]) =>
                 id === "gallery"
                   ? readPhotos
+                  : id === "documents"
+                    ? (user?.approved === true || local)
                   : id === "places"
                     ? readTree || readPhotos
                     : readTree,

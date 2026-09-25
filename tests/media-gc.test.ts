@@ -19,7 +19,8 @@ test("media GC removes only old unreferenced images", () => {
     old = new Date(now - 48 * 60 * 60 * 1000),
     fresh = new Date(now - 60 * 60 * 1000);
   try {
-    db.exec("CREATE TABLE people(data TEXT); CREATE TABLE photos(data TEXT);");
+    db.exec("CREATE TABLE people(data TEXT); CREATE TABLE photos(data TEXT); CREATE TABLE documents(file_name TEXT);");
+    db.prepare("INSERT INTO documents(file_name) VALUES(?)").run("11111111-1111-4111-8111-111111111111.pdf");
     db.prepare("INSERT INTO people(data) VALUES(?)").run(
       JSON.stringify({ photo: "/media/referenced.jpg" }),
     );
@@ -33,6 +34,8 @@ test("media GC removes only old unreferenced images", () => {
       "old-orphan.webp",
       "fresh-orphan.gif",
       "notes.txt",
+      "11111111-1111-4111-8111-111111111111.pdf",
+      "22222222-2222-4222-8222-222222222222.pdf",
     ])
       writeFileSync(join(dir, name), name);
 
@@ -41,16 +44,22 @@ test("media GC removes only old unreferenced images", () => {
       "gallery.png",
       "old-orphan.webp",
       "notes.txt",
+      "11111111-1111-4111-8111-111111111111.pdf",
+      "22222222-2222-4222-8222-222222222222.pdf",
     ])
       utimesSync(join(dir, name), old, old);
     utimesSync(join(dir, "fresh-orphan.gif"), fresh, fresh);
 
-    assert.deepEqual(pruneOrphanMedia(db, dir, { now }), ["old-orphan.webp"]);
+    assert.deepEqual(pruneOrphanMedia(db, dir, { now }), [
+      "22222222-2222-4222-8222-222222222222.pdf",
+      "old-orphan.webp",
+    ]);
     assert.equal(existsSync(join(dir, "old-orphan.webp")), false);
     assert.equal(existsSync(join(dir, "referenced.jpg")), true);
     assert.equal(existsSync(join(dir, "gallery.png")), true);
     assert.equal(existsSync(join(dir, "fresh-orphan.gif")), true);
     assert.equal(existsSync(join(dir, "notes.txt")), true);
+    assert.equal(existsSync(join(dir, "11111111-1111-4111-8111-111111111111.pdf")), true);
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
