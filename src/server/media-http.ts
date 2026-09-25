@@ -7,6 +7,7 @@ import type { mediaStore } from "./media.ts";
 import type { settingsStore } from "./settings.ts";
 import type { openArchive } from "./database.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { ownsPendingMedia } from "./media-access.ts";
 
 export function mediaHttp({
   auth,
@@ -45,6 +46,7 @@ export function mediaHttp({
     }
     const user = auth.currentUser(req);
     if (!isScopedUser(user) || !url) return true;
+    if (ownsPendingMedia(archive.db, url, user.id)) return true;
     const key = `${archive.meta().revision}:${user.id}:${user.personId || ""}`;
     if (key !== cachedKey) {
       const scoped = projectFamilyForUser(archive.read().family, user);

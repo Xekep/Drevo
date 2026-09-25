@@ -5,6 +5,7 @@ import { MediaTooLargeError, type mediaStore } from "./media.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
+import { registerMediaUpload } from "./media-access.ts";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
 const MAX_MEDIA_FILES = 20_000;
@@ -115,6 +116,7 @@ export function mediaUploadHttp({
     if (archive.meta().revision !== revision) return conflict(res);
 
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
+    let forgetUpload: (() => unknown) | undefined;
     try {
       file = await media.addStream(req, MAX_UPLOAD);
       const afterUpload = await totalUsage();
@@ -129,7 +131,11 @@ export function mediaUploadHttp({
         });
       }
       const actor = auth.currentUser(req);
-      if (!actor || actor.role === "reader")
+      if (
+        !actor?.approved ||
+        actor.role === "reader" ||
+        actor.id !== requester.id
+      )
         throw new ForbiddenError("Editing access is no longer available");
       if (archive.meta().revision !== revision) {
         await file.undo();
@@ -137,6 +143,7 @@ export function mediaUploadHttp({
         return conflict(res);
       }
 
+      forgetUpload = registerMediaUpload(archive.db, file.url, actor.id);
       if (portrait) return json(res, 201, { url: file.url });
 
       const current = archive.read().family,
@@ -170,6 +177,7 @@ export function mediaUploadHttp({
         throw error;
       }
     } catch (error) {
+      forgetUpload?.();
       if (file) await file.undo();
       return json(
         res,

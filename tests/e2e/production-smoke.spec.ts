@@ -1471,15 +1471,11 @@ test("the initial tree grows from roots toward descendants", async ({
     return nearest;
   });
   await expect.poll(labelDistance).toBeLessThan(3);
-  expect(
-    await page
-      .locator(".flow-person-content strong")
-      .first()
-      .evaluate((element) => getComputedStyle(element).userSelect),
-  ).toBe("none");
-  expect(
-    await godparent.evaluate((element) => getComputedStyle(element).userSelect),
-  ).toBe("none");
+  await expect(page.locator(".flow-person-content strong").first()).toHaveCSS(
+    "user-select",
+    "none",
+  );
+  await expect(godparent).toHaveCSS("user-select", "none");
   const nameBox = await page
     .locator(".flow-person-content strong")
     .first()

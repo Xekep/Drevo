@@ -14,6 +14,7 @@ import {
 } from "../src/server/document-upload-quota.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 import type { Family, Person } from "../src/domain/types.ts";
+import { registerMediaUpload } from "../src/server/media-access.ts";
 
 const person = (id: string, birth: string, parents: string[] = []): Person => ({
   id,
@@ -43,6 +44,51 @@ const admin: ArchiveUser = {
   approved: true,
   createdAt: "",
 };
+
+test("scoped media assignments require ownership, retain portrait undo and reject another user's uploads", () => {
+  const seed = family();
+  seed.people[0].photo = "/media/previous.png";
+  seed.people.push({
+    ...person("hidden", "1950"),
+    createdBy: "other",
+    photo: "/media/hidden.png",
+  });
+  const archive = openArchive(":memory:", seed);
+  const user: ArchiveUser = {
+    ...admin,
+    id: "owner",
+    role: "relative",
+    personId: "father",
+    treeAccess: "common_ancestors",
+  };
+  const assign = (url?: string) => {
+    const current = archive.read();
+    current.family.people[0].photo = url;
+    return archive.write(current.family, current.revision, user);
+  };
+  try {
+    assign(undefined);
+    assign("/media/previous.png");
+    assert.throws(() => assign("/media/hidden.png"), /Нет доступа/);
+    const removeOther = registerMediaUpload(
+      archive.db,
+      "/media/new.png",
+      "other",
+    );
+    assert.throws(() => assign("/media/new.png"), /Нет доступа/);
+    removeOther();
+    registerMediaUpload(archive.db, "/media/new.png", user.id);
+    archive.db.exec("UPDATE media_upload_grants SET expires_ms=0");
+    assert.throws(() => assign("/media/new.png"), /Нет доступа/);
+    registerMediaUpload(archive.db, "/media/new.png", user.id);
+    assign("/media/new.png");
+    archive.db.exec("DELETE FROM media_upload_grants");
+    assign("/media/previous.png");
+    assert.equal(archive.read().family.people[0].photo, "/media/previous.png");
+  } finally {
+    archive.close();
+  }
+});
 
 test("public albums do not publish orphan uploads or portraits from a private tree", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-public-media-"));

@@ -1,4 +1,5 @@
 import { authorizeArchive } from "./permissions.ts";
+import { authorizeMediaReferences } from "./media-access.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -349,6 +350,8 @@ export function openArchive(path: string, seed: Family) {
         actor && previous
           ? authorizeArchive(value, previous, actor)
           : validateFamily(value);
+      if (actor && previous)
+        authorizeMediaReferences(db, previous, family, actor);
       if (previous && oldRevision !== null)
         remember(previous, family, oldRevision, actor, operation);
 
@@ -413,6 +416,7 @@ export function openArchive(path: string, seed: Family) {
         actor,
       );
       const photo = family.photos!.find((item) => item.id === value.id)!;
+      authorizeMediaReferences(db, previous, family, actor);
       remember(previous, family, oldRevision, actor);
       db.prepare("INSERT INTO photos(id,data) VALUES(?,?)").run(
         photo.id,

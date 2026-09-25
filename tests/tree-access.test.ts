@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import sharp from "sharp";
 import { openArchive } from "../src/server/database.ts";
 import { startServer } from "../src/server/index.ts";
 import {
@@ -284,6 +285,39 @@ test("привязка аккаунта и область видимости д�
       ["ancestor", "me", "sibling", "niece", "new-branch"],
     );
     assert.equal(own.family.people.at(-1).createdBy, "relative");
+    for (const change of [
+      {
+        collection: "people",
+        id: "new-branch",
+        field: "photo",
+        after: "/media/secret.png",
+      },
+      {
+        collection: "photos",
+        id: "copied-secret",
+        after: {
+          id: "copied-secret",
+          title: "Copy",
+          url: "/media/secret.png",
+          tags: [],
+        },
+      },
+    ]) {
+      const denied = await request(
+        "/api/family/changes",
+        relative,
+        "POST",
+        { changes: [change] },
+        own.revision,
+      );
+      assert.equal(
+        denied.status,
+        403,
+        "assigning a known hidden URL must not grant access",
+      );
+      assert.equal(app.archive.meta().revision, own.revision);
+    }
+    assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal(
       (
         await request(
@@ -328,6 +362,53 @@ test("привязка аккаунта и область видимости д�
       ).status,
       403,
     );
+    const png = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "green" },
+    })
+      .png()
+      .toBuffer();
+    const upload = await fetch(base + "/api/portraits", {
+      method: "POST",
+      headers: {
+        Cookie: relative,
+        Origin: "https://drevo.kiiko.ru",
+        "Content-Type": "image/png",
+        "X-Drevo-Upload": "1",
+        "If-Match": String(own.revision),
+      },
+      body: new Uint8Array(png).buffer,
+    });
+    assert.equal(upload.status, 201);
+    const uploaded = await upload.json();
+    assert.equal(
+      (await request(uploaded.url, relative)).status,
+      200,
+      "own pending portrait is readable before assignment",
+    );
+    assert.equal((await request(uploaded.url)).status, 401);
+    const attached = await request(
+      "/api/family/changes",
+      relative,
+      "POST",
+      {
+        changes: [
+          {
+            collection: "people",
+            id: "new-branch",
+            field: "photo",
+            after: uploaded.url,
+          },
+        ],
+      },
+      own.revision,
+    );
+    assert.equal(attached.status, 200);
+    app.archive.db.prepare("DELETE FROM media_upload_grants").run();
+    assert.equal(
+      (await request(uploaded.url, relative)).status,
+      200,
+      "assigned portrait uses regular scope checks",
+    );
     assert.equal(
       (
         await request("/api/users/relative", admin, "PATCH", {
@@ -341,12 +422,24 @@ test("привязка аккаунта и область видимости д�
         .people.length,
       6,
     );
-    assert.equal((await request("/api/settings", admin, "PUT", {
-      publicTree: true, publicAlbums: false, reverseTimeline: false,
-    })).status, 200);
-    assert.equal((await request("/api/users/relative", admin, "PATCH", {
-      treeAccess: "common_ancestors",
-    })).status, 400);
+    assert.equal(
+      (
+        await request("/api/settings", admin, "PUT", {
+          publicTree: true,
+          publicAlbums: false,
+          reverseTimeline: false,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request("/api/users/relative", admin, "PATCH", {
+          treeAccess: "common_ancestors",
+        })
+      ).status,
+      400,
+    );
   } finally {
     await app?.close();
     for (const [key, value] of Object.entries(original))

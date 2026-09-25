@@ -725,4 +725,25 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const mediaGrantExtension = "2026-09-media-upload-provenance";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(mediaGrantExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TABLE media_upload_grants (
+        url TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        expires_ms INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX media_upload_grants_expiry ON media_upload_grants(expires_ms);`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        mediaGrantExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
