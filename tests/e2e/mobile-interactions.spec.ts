@@ -50,7 +50,7 @@ test("mobile fan starts centered", async ({ page }, testInfo) => {
     .toBeLessThan(2);
 });
 
-test("long press opens relationship selection without expanding its mobile sheet", async ({
+test("long press selects a card without opening a profile or relationship mode", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
@@ -62,12 +62,18 @@ test("long press opens relationship selection without expanding its mobile sheet
     650,
   );
   const dock = page.locator(".inspector-dock");
-  await expect(dock.locator(".comparison-content")).toBeVisible();
-  await expect(dock).not.toHaveClass(/expanded/);
+  await expect(page.getByTestId("rf__node-e2e-child").locator(".flow-person")).toHaveClass(/is-selected/);
+  await expect(dock).toHaveCount(0);
   await expect(page).toHaveURL(/\/tree$/);
-  await expect(dock.getByRole("button", { name: "Развернуть панель" })).toHaveCount(0);
-  await touchGesture(page, dock.locator(".inspector-heading"), -110);
-  await expect(dock).not.toHaveClass(/expanded/);
+  await expect(page.getByRole("button", { name: "Родство", exact: true })).not.toHaveClass(/active/);
+  await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").tap();
+  await expect(dock).toBeVisible();
+  await expect(dock.locator(".comparison-content")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/people\/e2e-child$/);
+  await dock.getByRole("button", { name: "Свернуть панель" }).click();
+  await touchGesture(page, page.getByTestId("rf__node-e2e-child").locator(".flow-person-content"), 0, 650);
+  await expect(dock).toHaveCount(0);
+  await expect(page).toHaveURL(/\/tree$/);
 });
 
 test("downward swipes dismiss mobile photo details and a person's card", async ({

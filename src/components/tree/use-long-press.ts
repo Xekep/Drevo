@@ -8,7 +8,7 @@ type Press = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-export function useLongPressCompare(onLongPress: () => void) {
+export function useLongPress(onLongPress: () => void) {
   const press = useRef<Press | null>(null);
   const suppressClick = useRef(false);
 

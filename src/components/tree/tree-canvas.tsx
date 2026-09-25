@@ -56,7 +56,7 @@ import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
-import { runFanReveal } from "./fan-reveal";
+import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-morph";
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
 
 export type ConnectionDraft = {
@@ -85,6 +85,7 @@ type Props = {
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
+  onSelectOnly: (id: string) => void;
   onEdge: (edge: GraphConnection) => void;
   onConnect: (draft: ConnectionDraft) => void;
   onClear: () => void;
@@ -144,6 +145,7 @@ function Canvas(props: Props) {
     selected,
     reverse,
     onChoose,
+    onSelectOnly,
     onEdge,
     onConnect,
     focus,
@@ -175,6 +177,7 @@ function Canvas(props: Props) {
   const clearReturnTarget = useCallback(() => setReturnTarget(null), []);
   const clearRestoreViewport = useCallback(() => setRestoreViewport(null), []);
   const [fanRevealing, setFanRevealing] = useState(false);
+  const fanMorphSources = useRef<FanMorphSource[]>([]);
   const activeFanAnchor =
     fanAnchor && family.people.some((person) => person.id === fanAnchor)
       ? fanAnchor
@@ -209,12 +212,15 @@ function Canvas(props: Props) {
       return;
     }
     let active = true;
-    void runFanReveal(element).finally(() => {
+    const controller = new AbortController();
+    void runFanMorph(element, fanMorphSources.current, controller.signal).finally(() => {
       if (!active) return;
+      fanMorphSources.current = [];
       setFanRevealing(false);
     });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [activeFanAnchor, fanRevealing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
@@ -533,6 +539,13 @@ function Canvas(props: Props) {
         if (!introCameraFinished) setIntroCameraFinished(true);
         onChoose(id, additive);
       },
+      selectOnly: (id: string) => {
+        setEdgeChoices([]);
+        setManualCameraOverride(true);
+        void flow.setViewport(flow.getViewport(), { duration: 0 });
+        if (!introCameraFinished) setIntroCameraFinished(true);
+        onSelectOnly(id);
+      },
       collapse: toggleBranch,
       expand: toggleBranch,
       reference: (personId: string, occurrenceId: string) => {
@@ -548,6 +561,7 @@ function Canvas(props: Props) {
     }),
     [
       onChoose,
+      onSelectOnly,
       toggleBranch,
       personOccurrences,
       flow,
@@ -721,6 +735,7 @@ function Canvas(props: Props) {
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
+    setFanRevealing(false);
     rememberContext();
     setGrowing(false);
     if (activeFanAnchor) {
@@ -761,13 +776,13 @@ function Canvas(props: Props) {
         <div className="tree-mode-bar">
           <div className="segmented" aria-label="Представление дерева">
             <button
-              aria-pressed={mode === "generations"}
+              aria-pressed={!activeFanAnchor && mode === "generations"}
               onClick={() => switchMode("generations")}
             >
               Древо
             </button>
             <button
-              aria-pressed={mode === "timeline"}
+              aria-pressed={!activeFanAnchor && mode === "timeline"}
               onClick={() => switchMode("timeline")}
             >
               Хронология
@@ -830,6 +845,7 @@ function Canvas(props: Props) {
               }
               mode={familyView.mode}
               onFamily={() => {
+                setFanRevealing(false);
                 props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
@@ -838,6 +854,7 @@ function Canvas(props: Props) {
                 familyView.enter();
               }}
               onCommon={() => {
+                setFanRevealing(false);
                 props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
@@ -846,27 +863,14 @@ function Canvas(props: Props) {
                 familyView.enterCommon();
               }}
               onFan={() => {
-                if (activeFanAnchor) {
-                  const target = selected[0] || activeFanAnchor;
-                  const entry = fanEntry.current;
-                  setFanRevealing(false);
-                  setFanAnchor(null);
-                  if (entry && target === entry.anchorId && mode === entry.mode) {
-                    clearReturnTarget();
-                    restoreToken.current += 1;
-                    setRestoreViewport({
-                      viewport: entry.viewport,
-                      token: restoreToken.current,
-                    });
-                  } else returnToPerson(target);
-                  fanEntry.current = null;
-                  return;
-                }
                 const next = selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
                 const reduced = window.matchMedia(
                   "(prefers-reduced-motion: reduce)",
                 ).matches;
+                fanMorphSources.current = !reduced && container.current
+                  ? captureFanMorphSources(container.current, family, next)
+                  : [];
                 rememberContext();
                 clearReturnTarget();
                 fanEntry.current = {
@@ -883,6 +887,7 @@ function Canvas(props: Props) {
               }}
               fanActive={!!activeFanAnchor}
               onAll={() => {
+                setFanRevealing(false);
                 props.onClearAssistantFilter?.();
                 const target = selected[0] || activeFanAnchor || root;
                 const entry = fanEntry.current;

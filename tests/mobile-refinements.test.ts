@@ -101,13 +101,13 @@ test("mobile kinship picker keeps its title and the two person slots", async () 
   assert.match(css, /inspector-dock:has\(\.comparison-content\.is-picking\)/);
 });
 
-test("long press is touch-only, mobile-only and enters kinship selection", () => {
+test("long press is touch-only, mobile-only and selects without entering kinship", () => {
   const node = readFileSync(
     new URL("src/components/tree/person-node.tsx", root),
     "utf8",
   );
   const gesture = readFileSync(
-    new URL("src/components/tree/use-long-press-compare.ts", root),
+    new URL("src/components/tree/use-long-press.ts", root),
     "utf8",
   );
   const selection = readFileSync(
@@ -116,7 +116,7 @@ test("long press is touch-only, mobile-only and enters kinship selection", () =>
   );
   assert.match(
     node,
-    /useLongPressCompare\(\(\) => choose\(data\.person\.id, true\)\)/,
+    /useLongPress\(\(\) => selectOnly\(data\.person\.id\)\)/,
   );
   assert.match(gesture, /event\.pointerType !== "touch"/);
   assert.match(gesture, /max-width: 899px/);

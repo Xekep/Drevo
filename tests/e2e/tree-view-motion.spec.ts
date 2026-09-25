@@ -164,7 +164,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   const before = await camera();
   await page.getByRole("button", { name: "Веер", exact: true }).click();
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
-  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await page.waitForTimeout(750);
   sameCamera(await camera(), before);
@@ -180,7 +180,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   const familyBefore = await camera();
   await page.getByRole("button", { name: "Веер", exact: true }).click();
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
-  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await page.waitForTimeout(750);
   sameCamera(await camera(), familyBefore);
@@ -190,7 +190,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   const fan = page.locator(".fan-chart");
   await fan.locator(".fan-sector.is-known").nth(1).click();
   await expect(fan.locator(".fan-sector.is-selected")).toHaveCount(1);
-  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
   await page.waitForTimeout(750);
   const afterNavigation = await camera();
   expect(

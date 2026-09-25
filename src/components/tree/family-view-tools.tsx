@@ -68,18 +68,14 @@ export function FamilyViewTools({
             Общие предки
           </button>
         )}
-        {(selected || anchor) && (
+        {!fanActive && (selected || anchor) && (
           <button
             type="button"
             onClick={onFan}
-            aria-pressed={fanActive}
-            title={
-              fanActive
-                ? "Вернуться к прежнему виду древа"
-                : `Веер предков: ${fullName(selected || anchor!)}`
-            }
+            aria-pressed={false}
+            title={`Веер предков: ${fullName(selected || anchor!)}`}
           >
-            {fanActive ? "Закрыть веер" : "Веер"}
+            Веер
           </button>
         )}
         {anchor && <button onClick={onAll}>Всё древо</button>}

@@ -128,7 +128,7 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(withExtras[1].style?.strokeDasharray, "5 5");
   assert.equal(
     (withExtras[1].style as Record<string, unknown>)["--tree-edge-label-delay"],
-    "1160ms",
+    "980ms",
   );
   assert.equal(withExtras[2].type, "smoothstep");
 });

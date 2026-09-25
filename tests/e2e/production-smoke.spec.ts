@@ -87,6 +87,7 @@ test("Ctrl+колесо масштабирует древо и не меняет
     .poll(() => viewport.getAttribute("style"))
     .not.toBe(before);
 
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -95,8 +96,8 @@ test("Ctrl+колесо масштабирует древо и не меняет
   const fan = page.locator(".fan-chart-svg");
   await expect(fan).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Закрыть веер", pressed: true }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Закрыть веер" }),
+  ).toHaveCount(0);
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
   await expect(
     page.locator(
@@ -119,13 +120,13 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await expect(fan).toHaveCSS("animation-name", "none");
 });
 
-test("веер послойно раскрывается без перелёта карточек", async ({
+test("карточки слетаются перед послойным раскрытием веера", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -134,7 +135,7 @@ test("веер послойно раскрывается без перелёта
 
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
   await expect(canvas).toHaveClass(/is-fan-revealing/);
-  await expect(page.locator(".fan-morph-card")).toHaveCount(0);
+  await expect(page.locator(".fan-morph-card").first()).toBeVisible();
   await expect(outerLayer).toHaveCSS("opacity", "0");
   await expect(canvas).not.toHaveClass(/is-fan-revealing/, { timeout: 2_500 });
   await expect(outerLayer).toHaveCSS("opacity", "1");
@@ -145,7 +146,7 @@ test("веер увеличивается на 2K экране", async ({ page }
   await page.setViewportSize({ width: 2560, height: 1440 });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -166,6 +167,7 @@ test("активный веер перестраивается при перех
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
 
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -841,11 +843,12 @@ test("выбор двух людей с Shift не выделяет текст �
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-spouse")
     .locator(".flow-person-content")
@@ -942,6 +945,7 @@ test("награда добавляется под портретом по на�
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
@@ -1004,6 +1008,7 @@ test("привязанный человек видит отметку и пер�
     await route.fulfill({ response, json: data });
   });
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
@@ -1094,6 +1099,7 @@ test("common ancestors view keeps blood relatives and excludes the spouse", asyn
   page,
 }, testInfo) => {
   await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")

@@ -43,7 +43,9 @@ export function PersonFullView({
   onAlbum: (id: string) => void;
 }) {
   const [activeId, setActiveId] = useState(person.id);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const selectActive = (id: string) => {
+    setHighlightedId(null);
     setActiveId(id);
     onUrlPerson?.(id);
   };
@@ -160,8 +162,9 @@ export function PersonFullView({
             canEdit={false}
             busy={false}
             reverse={false}
-            selected={[active.id]}
+            selected={[highlightedId || active.id]}
             onChoose={editing && editable ? noop : selectActive}
+            onSelectOnly={editing && editable ? noop : setHighlightedId}
             onEdge={noop}
             onConnect={noop}
             onClear={noop}

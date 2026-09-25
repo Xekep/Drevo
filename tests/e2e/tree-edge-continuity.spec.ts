@@ -48,11 +48,13 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         await route.fulfill({ response, json: data });
       });
     }
-    await page.addInitScript(() => {
+    await page.addInitScript((scenario) => {
       const state = {
         lost: [] as string[],
         seen: new Set<string>(),
         frames: 0,
+        blocked: 0,
+        unblocked: 0,
         details: [] as unknown[],
       };
       Object.assign(window, { __edgeContinuity: state });
@@ -65,6 +67,18 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         ) {
           started = true;
           state.frames++;
+          // Keep probes inside the animation frame: a slow CI runner can
+          // finish the intro between separate Playwright mouse commands.
+          if (scenario !== "idle" && state.frames % 5 === 0) {
+            const target = canvas.querySelector(".react-flow__pane")!;
+            for (const event of [
+              new WheelEvent("wheel", { ctrlKey: true, deltaY: state.frames % 10 ? -1000 : 1000, bubbles: true, cancelable: true }),
+              ...[0, 1, 2].map((button) => new MouseEvent("mousedown", { button, bubbles: true, cancelable: true })),
+            ]) {
+              if (target.dispatchEvent(event)) state.unblocked++;
+              else state.blocked++;
+            }
+          }
           for (const edge of canvas.querySelectorAll(".tree-grow-edge")) {
             const id = edge.getAttribute("data-id")!;
             const final = edge.querySelector(".tree-edge-final-path");
@@ -107,14 +121,14 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
           requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
-    });
+    }, scenario);
     await page.goto("/tree");
     const canvas = page.locator(".tree-canvas");
     await expect(canvas).toHaveClass(/is-growing/, { timeout: 15000 });
     await expect(canvas).not.toHaveClass(/is-growth-preparing/);
     const viewport = page.locator(".react-flow__viewport");
     const before = await viewport.getAttribute("style");
-    if (scenario !== "idle") {
+    if (scenario === "mouse") {
       const box = (await canvas.boundingBox())!;
       for (const button of ["left", "right", "middle"] as const) {
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -127,11 +141,7 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         await page.mouse.up({ button });
       }
       await page.keyboard.down("Control");
-      await page.mouse.wheel(0, scenario === "large" ? -1000 : -240);
-      if (scenario === "large") {
-        await page.waitForTimeout(450);
-        await page.mouse.wheel(0, 1000);
-      }
+      await page.mouse.wheel(0, -240);
       await page.keyboard.up("Control");
       await expect(viewport).toHaveAttribute("style", before!);
     }
@@ -143,6 +153,8 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
             lost: string[];
             seen: Set<string>;
             frames: number;
+            blocked: number;
+            unblocked: number;
             details: unknown[];
           };
         }
@@ -151,12 +163,18 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         lost: state.lost,
         seen: state.seen.size,
         frames: state.frames,
+        blocked: state.blocked,
+        unblocked: state.unblocked,
         details: state.details,
       };
     });
     expect(result.frames).toBeGreaterThan(10);
     expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
+    if (scenario !== "idle") {
+      expect(result.blocked).toBeGreaterThan(0);
+      expect(result.unblocked).toBe(0);
+    }
     if (scenario === "mouse") {
       // The lock must release after the intro, including its native listeners.
       await page.keyboard.down("Control");

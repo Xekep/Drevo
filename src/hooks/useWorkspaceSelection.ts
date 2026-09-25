@@ -3,6 +3,7 @@ import type { TreeFocus } from "../components/tree/tree-canvas";
 type State = {
   selected: string[];
   compare: boolean;
+  selectionOnly: boolean;
   linkFrom: string | null;
   focus: TreeFocus | null;
   focusSerial: number;
@@ -10,6 +11,7 @@ type State = {
 };
 type Action =
   | { type: "choose"; id: string; additive: boolean }
+  | { type: "selectOnly"; id: string }
   | { type: "reveal"; ids: string[] }
   | { type: "revealFamily"; ids: string[]; groupId: string }
   | { type: "compare" }
@@ -23,6 +25,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         selected: [],
         compare: false,
+        selectionOnly: false,
         linkFrom: null,
         spotlight: [],
         focus: null,
@@ -31,6 +34,7 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         compare: true,
+        selectionOnly: false,
         selected: state.selected.slice(0, 1),
         linkFrom: null,
         spotlight: [],
@@ -41,6 +45,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         linkFrom: state.selected[0] || "",
         compare: false,
+        selectionOnly: false,
         spotlight: [],
         focus: null,
       };
@@ -51,6 +56,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         selected: action.ids.slice(0, 2),
         compare: action.ids.length === 2,
+        selectionOnly: false,
         linkFrom: null,
         spotlight: [],
         focusSerial: state.focusSerial + 1,
@@ -61,6 +67,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         selected: [],
         compare: false,
+        selectionOnly: false,
         linkFrom: null,
         spotlight: action.ids,
         focusSerial: state.focusSerial + 1,
@@ -71,11 +78,22 @@ function reducer(state: State, action: Action): State {
           groupId: action.groupId,
         },
       };
+    case "selectOnly":
+      return {
+        ...state,
+        selected: [action.id],
+        selectionOnly: true,
+        compare: false,
+        linkFrom: null,
+        spotlight: [],
+        focus: null,
+      };
     case "choose": {
       if (state.linkFrom === "")
         return {
           ...state,
           selected: [action.id],
+          selectionOnly: false,
           linkFrom: action.id,
           spotlight: [],
           focus: null,
@@ -92,6 +110,7 @@ function reducer(state: State, action: Action): State {
         ...state,
         selected,
         compare: comparison,
+        selectionOnly: false,
         spotlight: [],
         focus: null,
       };
@@ -102,6 +121,7 @@ export function useWorkspaceSelection() {
   const [state, dispatch] = useReducer(reducer, {
     selected: [],
     compare: false,
+    selectionOnly: false,
     linkFrom: null,
     focus: null,
     focusSerial: 0,

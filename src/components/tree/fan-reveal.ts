@@ -1,9 +1,10 @@
 const frame = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-export async function runFanReveal(container: HTMLElement) {
+export async function runFanReveal(container: HTMLElement, signal: AbortSignal) {
   await frame();
   await frame();
+  if (signal.aborted) return;
 
   const animations: Animation[] = [];
   for (let generation = 0; generation < 5; generation++) {
@@ -44,9 +45,14 @@ export async function runFanReveal(container: HTMLElement) {
       ),
     );
 
+  const cancel = () => animations.forEach((animation) => animation.cancel());
+  signal.addEventListener("abort", cancel, { once: true });
   try {
     await Promise.all(animations.map((animation) => animation.finished));
   } catch {
     // A rapid mode switch can cancel the reveal.
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    if (signal.aborted) cancel();
   }
 }

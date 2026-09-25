@@ -9,15 +9,17 @@ import {
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import { fullName, years } from "../../domain";
 import { Avatar } from "../person-panel";
-import { useLongPressCompare } from "./use-long-press-compare";
+import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
+  selectOnly: (id: string) => void;
   collapse: (id: string, occurrenceId?: string) => void;
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
 }>({
   choose: () => {},
+  selectOnly: () => {},
   collapse: () => {},
   expand: () => {},
   reference: () => {},
@@ -45,8 +47,8 @@ export const PersonNode = memo(function PersonNode({
   selected,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
-  const { choose, collapse, expand, reference } = useContext(TreeActions);
-  const longPress = useLongPressCompare(() => choose(data.person.id, true));
+  const { choose, selectOnly, collapse, expand, reference } = useContext(TreeActions);
+  const longPress = useLongPress(() => selectOnly(data.person.id));
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"

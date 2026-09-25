@@ -124,6 +124,23 @@
   }
 }
 
+.fan-morph-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fan-morph-card {
+  position: absolute;
+  transform-origin: center;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+.fan-morph-card > .flow-person {
+  animation: none;
+  box-shadow: 0 8px 26px #304b2c24;
+}
 .tree-canvas.is-fan-revealing .fan-chart-svg {
   animation: none;
 }

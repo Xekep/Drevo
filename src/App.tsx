@@ -93,6 +93,7 @@ export default function App() {
     {
       selected,
       compare,
+      selectionOnly,
       linkFrom,
       focus,
       spotlight,
@@ -336,7 +337,7 @@ export default function App() {
       if (next !== view && personDraft && !setPersonDraft(null)) return;
       if (next !== view && connectionDraft && !closeConnection()) return;
       const target: ArchiveTarget | undefined =
-        next === "tree" && selected.length === 1 && !compare
+        next === "tree" && selected.length === 1 && !compare && !selectionOnly
           ? { kind: "person", id: selected[0] }
           : undefined;
       lastUrlTarget.current = targetKey(target || null);
@@ -355,6 +356,7 @@ export default function App() {
       closeConnection,
       selected,
       compare,
+      selectionOnly,
       closePhoto,
     ],
   );
@@ -429,6 +431,15 @@ export default function App() {
       compare,
       setView,
     ],
+  );
+  const selectPersonOnly = useCallback(
+    (id: string) => {
+      if (!closeConnection() || !setPersonDraft(null)) return;
+      dispatch({ type: "selectOnly", id });
+      lastUrlTarget.current = "";
+      setView("tree", undefined, true);
+    },
+    [closeConnection, setPersonDraft, dispatch, setView],
   );
   const showPerson = useCallback(
     (id: string) => {
@@ -666,6 +677,7 @@ export default function App() {
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
+                      onSelectOnly={selectPersonOnly}
                       onEdge={selectEdge}
                       onConnect={openConnection}
                       onClear={clear}
@@ -743,7 +755,7 @@ export default function App() {
                           dirty={connectionDirty}
                         />
                       </InspectorDock>
-                    ) : compare || chosen.length > 0 ? (
+                    ) : !selectionOnly && (compare || chosen.length > 0) ? (
                       <InspectorDock
                         key={
                           compare
@@ -906,7 +918,7 @@ export default function App() {
           onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}
           openPersonId={
-            view === "tree" && !compare && !personDraft
+            view === "tree" && !compare && !selectionOnly && !personDraft
               ? chosen[0]?.id
               : undefined
           }

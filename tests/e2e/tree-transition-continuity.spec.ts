@@ -37,17 +37,18 @@ test("family layout keeps the focused card mounted throughout its move", async (
   expect(await samples.evaluate((s) => s.transforms.size)).toBeGreaterThan(3);
 });
 
-test("fan reveals intermediate opacity on every opening", async ({
+test("cards fly before the fan reveals on every opening", async ({
   page,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop");
+}) => {
   await page.goto("/people/e2e-child");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
   await page.waitForTimeout(900);
+  const collapse = page.locator(".inspector-dock").getByRole("button", { name: "Свернуть панель" });
+  if (await collapse.isVisible()) await collapse.click();
   for (let opening = 0; opening < 2; opening++) {
     const samples = await canvas.evaluateHandle((root) => {
-      const state = { intermediate: false, hidden: false, stop: () => {} };
+      const state = { intermediate: false, hidden: false, flights: new Set<string>(), flewBeforeReveal: false, stop: () => {} };
       let frame = 0;
       const tick = () => {
         const sector = root.querySelector('[data-fan-generation="4"]');
@@ -55,6 +56,11 @@ test("fan reveals intermediate opacity on every opening", async ({
           const opacity = Number(getComputedStyle(sector).opacity);
           state.hidden ||= opacity === 0;
           state.intermediate ||= opacity > 0 && opacity < 1;
+          const ghost = root.querySelector(".fan-morph-card");
+          if (ghost && Number(getComputedStyle(ghost).opacity) > 0.1) {
+            state.flights.add(getComputedStyle(ghost).transform);
+            state.flewBeforeReveal ||= opacity === 0;
+          }
         }
         frame = requestAnimationFrame(tick);
       };
@@ -68,6 +74,28 @@ test("fan reveals intermediate opacity on every opening", async ({
       .toBe(true);
     await expect(canvas).not.toHaveClass(/is-fan-revealing/);
     await samples.evaluate((s) => s.stop());
-    await page.getByRole("button", { name: "Закрыть веер" }).click();
+    expect(await samples.evaluate((s) => s.flewBeforeReveal)).toBe(true);
+    expect(await samples.evaluate((s) => s.flights.size)).toBeGreaterThan(3);
+    await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
+    await page.getByRole("button", { name: "Древо", exact: true }).click();
+    await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
+    await page.waitForTimeout(750);
   }
+});
+
+test("leaving during the fan flight removes its copies and cancels the reveal", async ({ page }) => {
+  await page.goto("/people/e2e-child");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-grow/);
+  const collapse = page.locator(".inspector-dock").getByRole("button", { name: "Свернуть панель" });
+  if (await collapse.isVisible()) await collapse.click();
+  await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
+  await page.waitForTimeout(750);
+  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await expect(page.locator(".fan-morph-card").first()).toBeVisible();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
+  await page.waitForTimeout(1300);
+  await expect(page.locator(".fan-chart")).toHaveCount(0);
+  await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
 });

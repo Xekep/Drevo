@@ -17,7 +17,7 @@ type SharedData = {
 export default function SharedTree({ token }: { token: string }) {
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
-  const { selected, compare, choose, reveal, dispatch, focus } =
+  const { selected, compare, selectionOnly, choose, reveal, dispatch, focus } =
     useWorkspaceSelection();
   useEffect(() => {
     const referrer = document.createElement("meta");
@@ -124,6 +124,7 @@ export default function SharedTree({ token }: { token: string }) {
                 reverse={data.reverseTimeline}
                 selected={selected}
                 onChoose={choose}
+                onSelectOnly={(id) => dispatch({ type: "selectOnly", id })}
                 onEdge={(edge) => reveal([edge.from, edge.to])}
                 onConnect={noop}
                 onClear={() => dispatch({ type: "clear" })}
@@ -144,7 +145,7 @@ export default function SharedTree({ token }: { token: string }) {
                   Родство
                 </button>
               </div>
-              {(compare || chosen.length > 0) && (
+              {!selectionOnly && (compare || chosen.length > 0) && (
                 <InspectorDock
                   key={compare ? `comparison:${chosen.length}` : chosen[0]?.id}
                   onClose={() => dispatch({ type: "clear" })}
