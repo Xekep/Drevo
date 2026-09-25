@@ -45,6 +45,8 @@ type TreeCameraStateInput = {
   focus: { ids: string[]; token: number; purpose?: "family" } | null;
   returnPersonId: string | null;
   returnToken: number;
+  restoreViewport: { viewport: Viewport; token: number } | null;
+  onRestoreComplete?: () => void;
   personOccurrences: Map<string, string[]>;
   onReturnComplete?: () => void;
   positions: Map<string, { x: number; y: number }>;
@@ -79,6 +81,8 @@ export function useTreeCameraState({
   focus,
   returnPersonId,
   returnToken,
+  restoreViewport,
+  onRestoreComplete,
   personOccurrences,
   onReturnComplete,
   positions,
@@ -101,6 +105,7 @@ export function useTreeCameraState({
     null,
   );
   const lastReturn = useRef(-1);
+  const lastRestore = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const initialViewSent = useRef(false);
@@ -158,7 +163,16 @@ export function useTreeCameraState({
               .get(returnPersonId)
               ?.find((id) => positions.has(id))
           : undefined;
-        if (returnPersonId && returnToken !== lastReturn.current) {
+        if (restoreViewport && restoreViewport.token !== lastRestore.current) {
+          lastRestore.current = restoreViewport.token;
+          viewportUpdate = flow.setViewport(restoreViewport.viewport, {
+            duration: 0,
+          });
+          void Promise.resolve(viewportUpdate).then(
+            () => onRestoreComplete?.(),
+            () => onRestoreComplete?.(),
+          );
+        } else if (returnPersonId && returnToken !== lastReturn.current) {
           if (!returnOccurrence) return;
           lastReturn.current = returnToken;
           viewportUpdate = flow.fitView({
@@ -285,6 +299,8 @@ export function useTreeCameraState({
     focus,
     returnPersonId,
     returnToken,
+    restoreViewport,
+    onRestoreComplete,
     personOccurrences,
     onReturnComplete,
     positions,

@@ -15,6 +15,7 @@ import {
   Panel,
   useReactFlow,
   type Connection as FlowConnection,
+  type Viewport,
 } from "@xyflow/react";
 import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
 import {
@@ -153,6 +154,17 @@ function Canvas(props: Props) {
   const [mode, setMode] = useState<TreeMode>("generations");
   const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
+  const fanEntry = useRef<{
+    anchorId: string;
+    mode: TreeMode;
+    familyMode: "all" | "family" | "common";
+    viewport: Viewport;
+  } | null>(null);
+  const [restoreViewport, setRestoreViewport] = useState<{
+    viewport: Viewport;
+    token: number;
+  } | null>(null);
+  const restoreToken = useRef(0);
   const [returnTarget, setReturnTarget] = useState<{
     id: string;
     token: number;
@@ -164,6 +176,7 @@ function Canvas(props: Props) {
     setReturnTarget({ id, token: returnToken.current });
   }, []);
   const clearReturnTarget = useCallback(() => setReturnTarget(null), []);
+  const clearRestoreViewport = useCallback(() => setRestoreViewport(null), []);
   const [fanMorphing, setFanMorphing] = useState(false);
   const fanMorphSources = useRef<FanMorphSource[]>([]);
   const activeFanAnchor =
@@ -488,6 +501,8 @@ function Canvas(props: Props) {
       focus: cameraFocus,
       returnPersonId: returnTarget?.id || null,
       returnToken: returnTarget?.token || 0,
+      restoreViewport,
+      onRestoreComplete: clearRestoreViewport,
       personOccurrences,
       onReturnComplete: clearReturnTarget,
       positions,
@@ -707,7 +722,24 @@ function Canvas(props: Props) {
   function switchMode(next: TreeMode) {
     rememberContext();
     setGrowing(false);
-    if (activeFanAnchor) returnToPerson(activeFanAnchor);
+    if (activeFanAnchor) {
+      const target = selected[0] || activeFanAnchor;
+      const entry = fanEntry.current;
+      if (
+        entry &&
+        target === entry.anchorId &&
+        next === entry.mode &&
+        familyView.mode === entry.familyMode
+      ) {
+        clearReturnTarget();
+        restoreToken.current += 1;
+        setRestoreViewport({
+          viewport: entry.viewport,
+          token: restoreToken.current,
+        });
+      } else returnToPerson(target);
+      fanEntry.current = null;
+    }
     setFanAnchor(null);
     setMode(next);
     setEdgeChoices([]);
@@ -800,6 +832,7 @@ function Canvas(props: Props) {
                 props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
+                fanEntry.current = null;
                 setFanAnchor(null);
                 familyView.enter();
               }}
@@ -807,19 +840,29 @@ function Canvas(props: Props) {
                 props.onClearAssistantFilter?.();
                 rememberContext();
                 clearReturnTarget();
+                fanEntry.current = null;
                 setFanAnchor(null);
                 familyView.enterCommon();
               }}
               onFan={() => {
                 if (activeFanAnchor) {
-                  const target = activeFanAnchor;
+                  const target = selected[0] || activeFanAnchor;
+                  const entry = fanEntry.current;
                   fanMorphSources.current = [];
                   setFanMorphing(false);
                   setFanAnchor(null);
-                  returnToPerson(target);
+                  if (entry && target === entry.anchorId && mode === entry.mode) {
+                    clearReturnTarget();
+                    restoreToken.current += 1;
+                    setRestoreViewport({
+                      viewport: entry.viewport,
+                      token: restoreToken.current,
+                    });
+                  } else returnToPerson(target);
+                  fanEntry.current = null;
                   return;
                 }
-                  const next = selected[0] || root || familyView.defaultAnchor;
+                const next = selected[0] || root || familyView.defaultAnchor;
                 if (!next) return;
                 const reduced = window.matchMedia(
                   "(prefers-reduced-motion: reduce)",
@@ -831,6 +874,12 @@ function Canvas(props: Props) {
                     : [];
                 rememberContext();
                 clearReturnTarget();
+                fanEntry.current = {
+                  anchorId: next,
+                  mode,
+                  familyMode: familyView.mode,
+                  viewport: flow.getViewport(),
+                };
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
@@ -841,11 +890,26 @@ function Canvas(props: Props) {
               fanActive={!!activeFanAnchor}
               onAll={() => {
                 props.onClearAssistantFilter?.();
-                const target = activeFanAnchor || root;
-                rememberContext();
+                const target = selected[0] || activeFanAnchor || root;
+                const entry = fanEntry.current;
+                const sameFanPerson =
+                  !!activeFanAnchor &&
+                  !!entry &&
+                  target === entry.anchorId &&
+                  mode === entry.mode &&
+                  entry.familyMode === "all";
+                if (!sameFanPerson) rememberContext();
                 setFanAnchor(null);
                 familyView.showAll();
-                returnToPerson(target);
+                if (sameFanPerson) {
+                  clearReturnTarget();
+                  restoreToken.current += 1;
+                  setRestoreViewport({
+                    viewport: entry.viewport,
+                    token: restoreToken.current,
+                  });
+                } else returnToPerson(target);
+                fanEntry.current = null;
               }}
               onReset={() => {
                 resetContext();

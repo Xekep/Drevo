@@ -107,6 +107,36 @@ test("family insights flag only clearly suspicious date relationships", () => {
   );
 });
 
+test("simultaneous living peak excludes people without a recorded birth", () => {
+  const family: Family = {
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: [
+      person("dated-one", "Анна", "1900", 1, { death: "1950" }),
+      person("dated-two", "Иван", "1910", 2, { death: "1960" }),
+      person("undated-dead", "Мария", "", 3, { death: "1930" }),
+      person("undated-living", "Пётр", "", 4),
+    ],
+  };
+  const fact = analyzeFamilyInsights(family, 2026).facts.find(
+    (item) => item.title === "Больше всего родственников жили одновременно",
+  );
+  assert.equal(fact?.value, "2");
+  assert.match(fact?.detail || "", /1910 год/);
+
+  const withoutBirths = analyzeFamilyInsights(
+    { ...family, people: family.people.filter((item) => !item.birth) },
+    2026,
+  );
+  assert.equal(
+    withoutBirths.facts.some(
+      (item) => item.title === "Больше всего родственников жили одновременно",
+    ),
+    false,
+  );
+});
+
 test("average lifespan by sex counts only known birth and death years", () => {
   const people = [
     person("m1", "Пётр", "1900", 1, { sex: "m", death: "1970" }),

@@ -95,6 +95,73 @@ test("AI launcher moves to the edge when the fan hides camera controls", async (
     .toBeLessThan(12);
 });
 
+test("leaving the fan for the same person preserves the tree camera", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  if (testInfo.project.name === "mobile")
+    await page.getByRole("button", { name: "Свернуть панель" }).click();
+  const viewport = page.locator(".react-flow__viewport");
+  const camera = async () => {
+    const style = await viewport.getAttribute("style");
+    const values =
+      /translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([-\d.]+)\)/.exec(
+        style || "",
+      );
+    if (!values) throw new Error(`Некорректная камера: ${style}`);
+    return values.slice(1).map(Number);
+  };
+  const sameCamera = (actual: number[], expected: number[]) => {
+    expect(Math.abs(actual[0] - expected[0])).toBeLessThan(2);
+    expect(Math.abs(actual[1] - expected[1])).toBeLessThan(2);
+    expect(Math.abs(actual[2] - expected[2])).toBeLessThan(0.002);
+  };
+  const before = await camera();
+  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
+  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
+  await page.waitForTimeout(750);
+  sameCamera(await camera(), before);
+
+  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await page.getByRole("button", { name: "Всё древо" }).click();
+  await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
+  await page.waitForTimeout(750);
+  sameCamera(await camera(), before);
+
+  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await page.waitForTimeout(650);
+  const familyBefore = await camera();
+  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
+  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
+  await page.waitForTimeout(750);
+  sameCamera(await camera(), familyBefore);
+
+  if (testInfo.project.name === "mobile") return;
+  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  const fan = page.locator(".fan-chart");
+  await fan.locator(".fan-sector.is-known").nth(1).click();
+  await expect(fan.locator(".fan-sector.is-selected")).toHaveCount(1);
+  await page.getByRole("button", { name: "Закрыть веер" }).click();
+  await page.waitForTimeout(750);
+  const afterNavigation = await camera();
+  expect(
+    Math.hypot(
+      afterNavigation[0] - familyBefore[0],
+      afterNavigation[1] - familyBefore[1],
+    ),
+  ).toBeGreaterThan(25);
+});
+
 test("AI focuses one person without zooming out", async ({
   page,
 }, testInfo) => {
