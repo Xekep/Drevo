@@ -737,6 +737,7 @@ export default function App() {
                             : chosen[0]?.id
                         }
                         initialExpanded={!compare || chosen.length === 2}
+                        allowExpand={!compare}
                         onClose={clear}
                         suspended={assistantOpen}
                       >

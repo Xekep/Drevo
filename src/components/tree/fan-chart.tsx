@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import "../../styles/fan-chart.css";
 import {
   ancestorFanSlots,
@@ -64,6 +64,19 @@ export function FanChart({
   selected: readonly string[];
   onChoose: (id: string) => void;
 }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const center = () => {
+      if (window.matchMedia("(max-width: 899px)").matches)
+        element.scrollLeft = (element.scrollWidth - element.clientWidth) / 2;
+    };
+    center();
+    const observer = new ResizeObserver(center);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [anchorId]);
   const people = useMemo(
     () => new Map(family.people.map((person) => [person.id, person])),
     [family.people],
@@ -78,7 +91,7 @@ export function FanChart({
   const known = slots.filter((slot) => slot.personId).length;
 
   return (
-    <div className="fan-chart" aria-label={`Веер предков: ${fullName(root)}`}>
+    <div ref={viewport} className="fan-chart" aria-label={`Веер предков: ${fullName(root)}`}>
       <div className="fan-chart-meta">
         <strong>{fullName(root)}</strong>
         <span>

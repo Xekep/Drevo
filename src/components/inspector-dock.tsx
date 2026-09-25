@@ -24,12 +24,14 @@ export function InspectorDock({
   editing = false,
   initialExpanded = true,
   suspended = false,
+  allowExpand = true,
 }: {
   children: ReactNode;
   onClose: () => void;
   editing?: boolean;
   initialExpanded?: boolean;
   suspended?: boolean;
+  allowExpand?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const [mobile, setMobile] = useState(
@@ -42,7 +44,7 @@ export function InspectorDock({
   const ref = useRef<HTMLElement>(null);
   const heading = useRef<HTMLDivElement>(null);
   const expand = useCallback(() => setExpanded(true), []);
-  useDockSwipe(ref, heading, expanded, !editing, onClose, expand, true);
+  useDockSwipe(ref, heading, expanded || !allowExpand, !editing, onClose, expand, true);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 899px)");
     const update = () => setMobile(query.matches);
@@ -114,7 +116,7 @@ export function InspectorDock({
         >
           <span>В СЕМЕЙНОМ АРХИВЕ</span>
           <div className="inspector-actions-slot" ref={setActionsHost} />
-          {!expanded && (
+          {!expanded && allowExpand && (
             <div className="dock-grip">
               <button
                 aria-label="Развернуть панель"

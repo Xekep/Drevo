@@ -909,11 +909,13 @@
   margin-top: 11px;
 }
 .research-suggestion footer button {
-  width: 34px;
+  min-width: 90px;
   height: 34px;
-  padding: 0;
-  display: grid;
-  place-items: center;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 .research-suggestion-result {
   margin-top: 10px !important;

@@ -18,6 +18,7 @@ type SwipeGesture = {
   width: number;
   touch: boolean;
   image: boolean;
+  vertical?: boolean;
 };
 
 type PanGesture = {
@@ -44,12 +45,14 @@ export function usePhotoSwipe({
   locked,
   onNavigate,
   onTap,
+  onDismiss,
 }: {
   previous?: string;
   next?: string;
   locked: boolean;
   onNavigate: (id: string) => void;
   onTap: () => void;
+  onDismiss?: () => void;
 }) {
   const [offset, setOffset] = useState(0);
   const [settling, setSettling] = useState(false);
@@ -291,9 +294,14 @@ export function usePhotoSwipe({
         const dx = e.clientX - start.x;
         const dy = e.clientY - start.y;
         if (Math.abs(dy) > Math.max(10, Math.abs(dx))) {
-          cancelSwipe();
+          if (start.touch && onDismiss && scale.current <= 1.01) {
+            start.vertical = true;
+            suppressed.current = true;
+            setOffset(0);
+          } else cancelSwipe();
           return;
         }
+        if (start.vertical) return;
         if (Math.abs(dx) > 8) suppressed.current = true;
         const available = dx > 0 ? previous : next;
         setOffset(
@@ -345,6 +353,15 @@ export function usePhotoSwipe({
         const dx = e.clientX - start.x;
         const dy = e.clientY - start.y;
         const elapsed = performance.now() - start.time;
+        if (start.vertical) {
+          setOffset(0);
+          if (
+            dy > 0 &&
+            Math.abs(dy) > Math.abs(dx) * 1.4 &&
+            (dy >= 72 || (dy >= 32 && dy / Math.max(elapsed, 1) >= 0.55))
+          ) onDismiss?.();
+          return;
+        }
         if (Math.abs(dx) <= 8 && Math.abs(dy) <= 8 && !suppressed.current) {
           setOffset(0);
           if (start.touch && start.image && elapsed < 500) onTap();

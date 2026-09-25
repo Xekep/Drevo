@@ -38,6 +38,7 @@ export function useLongPressCompare(onLongPress: () => void) {
         )
           return;
         clearPress();
+        suppressClick.current = false;
         const current: Press = {
           pointerId: event.pointerId,
           x: event.clientX,
@@ -64,12 +65,9 @@ export function useLongPressCompare(onLongPress: () => void) {
       onPointerUp(event: PointerEvent<HTMLButtonElement>) {
         const current = press.current;
         if (!current || current.pointerId !== event.pointerId) return;
-        const fired = current.fired;
         clearPress();
-        if (fired)
-          setTimeout(() => {
-            suppressClick.current = false;
-          }, 0);
+        // The synthetic click comes after pointerup. Keep it suppressed until
+        // the button consumes it (or until the next independent press).
       },
       onPointerCancel: clearPress,
       onLostPointerCapture: clearPress,

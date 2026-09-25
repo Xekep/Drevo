@@ -53,7 +53,7 @@ export function bindDockContentSwipe(
       y: touch.clientY,
       time: event.timeStamp,
       atTop,
-      fromHeading: heading.contains(target),
+      fromHeading: heading !== panel && heading.contains(target),
       mode: "pending",
     };
   };

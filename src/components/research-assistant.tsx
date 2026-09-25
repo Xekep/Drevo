@@ -620,7 +620,7 @@ function SuggestionCard({
           title="Принять"
           onClick={() => onReview(suggestion.id, "accept")}
         >
-          <Check size={17} />
+          <Check size={17} aria-hidden="true" /> Принять
         </button>
         <button
           type="button"
@@ -629,7 +629,7 @@ function SuggestionCard({
           title="Отклонить"
           onClick={() => onReview(suggestion.id, "reject")}
         >
-          <X size={17} />
+          <X size={17} aria-hidden="true" /> Отклонить
         </button>
       </footer>
     </div>
@@ -709,6 +709,8 @@ export function ResearchAssistant({
       latest: PanelRect;
     } | null>(null),
     chatSelection = useRef(0),
+    requestSequence = useRef(0),
+    activeRequest = useRef<AbortController | null>(null),
     sendLatest = useRef<
       (text?: string, selectedPersonId?: string) => Promise<void>
     >(() => Promise.resolve());
@@ -717,6 +719,8 @@ export function ResearchAssistant({
     onOpenChange?.(open);
     return () => onOpenChange?.(false);
   }, [onOpenChange, open]);
+
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   useEffect(() => {
     if (!chatMenuOpen) return;
@@ -1074,10 +1078,21 @@ export function ResearchAssistant({
     }
   }
 
+  function stopGeneration() {
+    if (!activeRequest.current) return;
+    requestSequence.current++;
+    activeRequest.current.abort();
+    activeRequest.current = null;
+    setBusy(false);
+    setStreamStatus("");
+    setActivities([]);
+  }
+
   async function openChat(id: string) {
     setChatMenuOpen(false);
     setChatSearch("");
-    if (busy || id === chatId) return;
+    if (id === chatId && !activeRequest.current) return;
+    stopGeneration();
     const selection = ++chatSelection.current;
     if (!id) {
       setChatId("");
@@ -1108,13 +1123,31 @@ export function ResearchAssistant({
   }
 
   async function clearDialog() {
-    if (busy) return;
+    stopGeneration();
+    ++chatSelection.current;
+    setChatLoading(true);
     if (chatId) {
-      const response = await fetch(`/api/ai/chats/${chatId}`, {
-        method: "DELETE",
-      });
+      let response: Response | undefined;
+      try {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          response = await fetch(`/api/ai/chats/${chatId}`, {
+            method: "DELETE",
+          });
+          if (response.status !== 409) break;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      } catch {
+        setError("Не удалось удалить диалог");
+        setChatLoading(false);
+        return;
+      }
+      if (!response) {
+        setChatLoading(false);
+        return;
+      }
       if (!response.ok) {
         setError("Не удалось удалить диалог");
+        setChatLoading(false);
         return;
       }
       setChats((current) => current.filter((item) => item.id !== chatId));
@@ -1126,12 +1159,18 @@ export function ResearchAssistant({
     setStreamStatus("");
     setActivities([]);
     setReviewedSuggestions({});
+    setChatLoading(false);
   }
 
   async function send(text = draft, selectedPersonId?: string) {
     const message = text.trim();
-    if ((!message && !selectedPersonId) || busy || chatLoading) return;
+    if ((!message && !selectedPersonId) || activeRequest.current || chatLoading) return;
     if (selectedPersonId && !chatId) return;
+    const controller = new AbortController();
+    const generation = ++requestSequence.current;
+    const isCurrent = () =>
+      generation === requestSequence.current && !controller.signal.aborted;
+    activeRequest.current = controller;
     if (!selectedPersonId) {
       setMessages((current) => [
         ...current,
@@ -1146,6 +1185,7 @@ export function ResearchAssistant({
     try {
       const response = await fetch("/api/ai/chat/stream", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
@@ -1170,6 +1210,7 @@ export function ResearchAssistant({
       const steps: string[] = [];
 
       const consume = (frame: string) => {
+        if (!isCurrent()) return;
         const parsed = parseSseFrame(frame);
         if (!parsed.data) return;
         const data = JSON.parse(parsed.data) as {
@@ -1259,6 +1300,7 @@ export function ResearchAssistant({
 
       while (true) {
         const { value, done } = await reader.read();
+        if (!isCurrent()) return;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         while (true) {
@@ -1274,13 +1316,16 @@ export function ResearchAssistant({
       if (!finished)
         throw new Error("Поток ответа завершился раньше события done");
 
-      if (canEdit) await loadSuggestions();
+      if (canEdit && isCurrent()) await loadSuggestions();
     } catch (reason) {
-      setError((reason as Error).message);
+      if (isCurrent()) setError((reason as Error).message);
     } finally {
-      setStreamStatus("");
-      setActivities([]);
-      setBusy(false);
+      if (generation === requestSequence.current) {
+        activeRequest.current = null;
+        setStreamStatus("");
+        setActivities([]);
+        setBusy(false);
+      }
     }
   }
 
@@ -1398,11 +1443,19 @@ export function ResearchAssistant({
               </span>
             </div>
             <div className="research-assistant-header-actions">
+              {busy && <button
+                type="button"
+                aria-label="Остановить ответ"
+                title="Остановить ответ"
+                onClick={stopGeneration}
+              >
+                <Minus size={17} />
+              </button>}
               <button
                 type="button"
                 aria-label="Очистить диалог"
                 title="Очистить диалог"
-                disabled={busy || (!messages.length && !draft && !error)}
+                disabled={chatLoading || (!chatId && !messages.length && !draft && !error)}
                 onClick={() => void clearDialog()}
               >
                 <Trash2 size={17} />
@@ -1417,7 +1470,7 @@ export function ResearchAssistant({
               </button>
             </div>
           </header>
-          {chats.length > 0 && (
+          {(chats.length > 0 || busy) && (
             <div className="research-chat-picker" ref={chatPicker}>
               <button
                 ref={chatPickerTrigger}
@@ -1426,7 +1479,7 @@ export function ResearchAssistant({
                 aria-label="Выбрать диалог"
                 aria-expanded={chatMenuOpen}
                 aria-controls="research-chat-menu"
-                disabled={busy}
+                disabled={chatLoading}
                 onClick={() => setChatMenuOpen((value) => !value)}
               >
                 <span>

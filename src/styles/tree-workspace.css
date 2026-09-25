@@ -199,6 +199,11 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+@media (max-width: 899px) {
+  .tree-canvas .flow-person-content {
+    touch-action: none;
+  }
+}
 .tree-canvas.is-growing::after {
   content: "";
   position: absolute;

@@ -1737,6 +1737,8 @@ export function aiResearchHttp({
         signal: controller.signal,
         chatId: chat.id,
       });
+      if (controller.signal.aborted)
+        throw new DOMException("Запрос остановлен", "AbortError");
       chats.append(chat.id, "assistant", result.answer, {
         references: result.references,
         suggestionIds: result.suggestionIds,

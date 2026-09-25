@@ -1,5 +1,50 @@
 import { expect, test } from "@playwright/test";
 
+test("an unfinished answer can be stopped and a new chat stays isolated", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  let releaseFirst: (() => void) | undefined;
+  const first = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let finishFirst: (() => void) | undefined;
+  const firstHandled = new Promise<void>((resolve) => { finishFirst = resolve; });
+  let requests = 0;
+  await page.route("**/api/ai/chat/stream", async (route) => {
+    requests++;
+    const current = requests;
+    if (current === 1) await first;
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream; charset=utf-8",
+        body: `event: chat\ndata: ${JSON.stringify({ chatId: `chat-${current}` })}\n\nevent: done\ndata: ${JSON.stringify({ chatId: `chat-${current}`, answer: `Ответ ${current}`, suggestionIds: [] })}\n\n`,
+      });
+    } catch {
+      // The first request may have been aborted by the browser.
+    } finally {
+      if (current === 1) finishFirst?.();
+    }
+  });
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await panel.locator("textarea").fill("Первый вопрос");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(panel.getByRole("button", { name: "Остановить ответ" })).toBeVisible();
+  await panel.getByRole("button", { name: "Выбрать диалог" }).click();
+  await panel.getByRole("button", { name: "Новый диалог" }).click();
+  await expect(panel.getByRole("button", { name: "Остановить ответ" })).toHaveCount(0);
+  await panel.locator("textarea").fill("Второй вопрос");
+  await panel.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(panel).toContainText("Ответ 2");
+  releaseFirst?.();
+  await firstHandled;
+  await expect(panel).not.toContainText("Ответ 1");
+});
+
 test("choice is invisible to the user and chat picker keeps the original title", async ({
   page,
 }) => {

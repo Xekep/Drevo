@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { fullName, type Family, type Person } from "../domain";
 import { PersonPanel } from "./person-panel";
+import { useDockSwipe } from "../hooks/useDockSwipe";
 
 type Props = {
   person: Person;
@@ -21,6 +22,7 @@ export function PhotoPersonSidebar({
   onBack,
 }: Props) {
   const sidebar = useRef<HTMLElement>(null);
+  useDockSwipe(sidebar, sidebar, true, true, onBack, () => {}, true);
 
   useEffect(() => {
     sidebar.current?.focus({ preventScroll: true });

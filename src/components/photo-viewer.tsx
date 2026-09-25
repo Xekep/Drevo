@@ -23,6 +23,7 @@ import {
 import { photoLabel } from "../domain/photo-metadata";
 import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
+import { useDockSwipe } from "../hooks/useDockSwipe";
 import { mediaPreview } from "../domain/media-preview";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
@@ -92,6 +93,14 @@ function PhotoViewerContent({
   }
   const canEdit = allowedEdit && editing;
   const navigationLocked = canEdit || busy;
+  const photoTools = useRef<HTMLElement>(null);
+  const dismissOverlay = () => {
+    if (viewedPersonId) {
+      setViewedPersonId(null);
+      setHighlightedPerson(null);
+    } else setInfoOpen(false);
+  };
+  useDockSwipe(photoTools, photoTools, true, infoOpen && !canEdit && !viewedPerson, dismissOverlay, () => {}, true);
   useEffect(() => {
     // Only the two adjacent display previews; original files remain on demand.
     for (const neighbor of [previous, next]) {
@@ -109,6 +118,7 @@ function PhotoViewerContent({
     locked: navigationLocked,
     onNavigate,
     onTap: () => setShowTags((value) => !value),
+    onDismiss: (infoOpen || !!viewedPerson) && !canEdit ? dismissOverlay : undefined,
   });
   function navigate(direction: -1 | 1) {
     slide.navigate(direction, imageSpace.current?.clientWidth || 0);
@@ -428,6 +438,7 @@ function PhotoViewerContent({
           </footer>
         </div>
         <aside
+          ref={photoTools}
           className="photo-tools"
           id="photo-information"
           aria-label="Сведения о снимке"
