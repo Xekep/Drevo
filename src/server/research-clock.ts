@@ -5,6 +5,7 @@ export const CURRENT_TIME_TOOL = {
   inputSchema: {
     type: "object",
     properties: {},
+    required: [],
     additionalProperties: false,
   },
 } as const;

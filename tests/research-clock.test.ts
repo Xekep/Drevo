@@ -10,6 +10,7 @@ import {
 import { startServer } from "../src/server/index.ts";
 import { executeResearchTool } from "../src/domain/research-tools.ts";
 import type { Family, Person } from "../src/domain/types.ts";
+import { needsArchiveLookupRetry } from "../src/server/ai-research-support.ts";
 
 const person: Person = {
   id: "born",
@@ -31,6 +32,25 @@ const family: Family = {
   demo: false,
   people: [person],
 };
+
+test("an age answer requires archive evidence; asking today's date alone does not", () => {
+  assert.equal(
+    needsArchiveLookupRetry("сколько мне лет?", "Вам 32 года"),
+    true,
+  );
+  assert.equal(
+    needsArchiveLookupRetry("Какой возраст у Ивана?", "Не помню"),
+    true,
+  );
+  assert.equal(
+    needsArchiveLookupRetry("Когда мой день рождения?", "В июле"),
+    true,
+  );
+  assert.equal(
+    needsArchiveLookupRetry("Какая сегодня дата?", "25 сентября"),
+    false,
+  );
+});
 
 test("person age uses the user's calendar date, handles incomplete dates and never grows after death", () => {
   const age = (date: string, fields: Partial<Person> = {}) =>
@@ -148,6 +168,14 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
             name: "get_current_time",
             arguments: "{}",
           },
+        ],
+      });
+    }
+    if (requests.length === 3)
+      return Response.json({
+        id: "age-tool",
+        status: "completed",
+        output: [
           {
             type: "function_call",
             call_id: "person-call",
@@ -156,11 +184,10 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
           },
         ],
       });
-    }
     return Response.json({
       id: "clock-answer-" + requests.length,
       status: "completed",
-      output_text: "Время уточнено.",
+      output_text: requests.length === 2 ? "Вам 32 года." : "Время уточнено.",
       output: [],
     });
   };
@@ -172,19 +199,23 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
     fake,
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-  const send = (timeZone: unknown, chatId?: string) =>
+  const send = (
+    timeZone: unknown,
+    chatId?: string,
+    message = "Какая сегодня дата?",
+  ) =>
     fetch(base + "/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "Какая сегодня дата?",
+        message,
         chatId,
         context: { timeZone, currentDate: "2024-05-22" },
       }),
     });
   try {
     app.archive.write(family, app.archive.read().revision);
-    const response = await send("Europe/Moscow");
+    const response = await send("Europe/Moscow", undefined, "сколько мне лет?");
     assert.equal(response.status, 200);
     const first = (await response.json()) as { chatId: string };
     assert.match(String(requests[0].instructions), /2026-09-26T00:30:00/);
@@ -201,8 +232,12 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
     const time = JSON.parse(output.output);
     assert.equal(time.localDateTime, "2026-09-26T00:31:00");
     assert.equal(time.clockSource, "server");
+    assert.match(
+      JSON.stringify(requests[2].input),
+      /Предыдущий ответ не был проверен по архиву/,
+    );
     const personOutput = (
-      requests[1].input as Array<{ call_id: string; output: string }>
+      requests[3].input as Array<{ call_id: string; output: string }>
     ).find((item) => item.call_id === "person-call");
     assert.ok(personOutput);
     assert.deepEqual(JSON.parse(personOutput.output).age, {
