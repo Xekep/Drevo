@@ -92,6 +92,17 @@
   border-radius: 16px;
   background: #fbfcf9;
   box-shadow: 0 24px 70px #2638262b;
+  transition: opacity 140ms ease;
+}
+
+body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
+  .research-assistant {
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .research-assistant {
+    transition: none;
+  }
 }
 
 @media (min-width: 900px) {

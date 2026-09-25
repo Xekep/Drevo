@@ -1,5 +1,6 @@
 import { ageLabel, dateBound, fullName, hasRecordedDeath } from "./dates.ts";
 import { analyzeFamilyInsights } from "./family-insights.ts";
+import { lifespanStatistics } from "./lifespan-statistics.ts";
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import { archiveConnections } from "./connections.ts";
@@ -445,6 +446,12 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       offset: { type: "integer", minimum: 0, default: 0 },
       limit: { type: "integer", minimum: 1, maximum: 100, default: 30 },
     }),
+  },
+  {
+    name: "get_lifespan_statistics",
+    description: "Рассчитать среднюю продолжительность завершённых жизней по поколениям с размером выборки, пропусками и точностью дат. По умолчанию включает детские смерти. Возвращает готовый mermaid для диаграммы; вставляй его без изменения чисел в блок ```mermaid. Живые люди не считаются умершими, неполная страница list_people не нужна.",
+    scope: "analysis:read",
+    inputSchema: objectSchema({ adultsOnly: { type: "boolean", default: false } }),
   },
 ];
 
@@ -1277,6 +1284,9 @@ export function executeResearchTool(
             person: cleanPerson(candidate),
             sharedParentIds,
             kind: sharedParentIds.length >= 2 ? "full" : "half_or_unknown",
+            description: sharedParentIds.length >= 2
+              ? "Известны как минимум два общих родителя."
+              : "Известен один общий родитель. Не называй их полнородными без сведений о втором родителе.",
           },
         ];
       });
@@ -1922,12 +1932,19 @@ export function executeResearchTool(
     };
   }
 
+  if (name === "get_lifespan_statistics") {
+    if (args.adultsOnly !== undefined && typeof args.adultsOnly !== "boolean")
+      throw new RangeError("adultsOnly должен быть логическим значением");
+    return lifespanStatistics(family, args.adultsOnly === true);
+  }
+
   if (name === "get_archive_insights") {
     const insights = analyzeFamilyInsights(family);
     return {
       totals: insights.totals,
       completeness: insights.completeness,
       generationDistribution: insights.generations,
+      averageLifespanMethod: "averageLifespan в generationDistribution — историческая метрика только умерших не младше 18 лет, по разнице годов. Для анализа продолжительности жизни используй get_lifespan_statistics с явной выборкой и точностью дат.",
       facts: insights.facts,
       topSurnames: insights.topSurnames,
       topNames: insights.topNames,

@@ -31,6 +31,7 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 import {
   linkResearchReferences,
+  normalizeResearchMarkdown,
   type ResearchAnswerReference,
 } from "../domain/research-answer.ts";
 
@@ -105,7 +106,12 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
         }
         components={components}
       >
-        {linkResearchReferences(message.content, message.references)}
+        {linkResearchReferences(
+          message.role === "assistant"
+            ? normalizeResearchMarkdown(message.content)
+            : message.content,
+          message.references,
+        )}
       </ReactMarkdown>
     </div>
   );
@@ -1082,16 +1088,6 @@ export function ResearchAssistant({
               </span>
             </div>
             <div className="research-assistant-header-actions">
-              {busy && (
-                <button
-                  type="button"
-                  aria-label="Остановить ответ"
-                  title="Остановить ответ"
-                  onClick={stopGeneration}
-                >
-                  <Square size={15} fill="currentColor" />
-                </button>
-              )}
               <button
                 type="button"
                 aria-label={chatId ? "Удалить диалог" : "Очистить диалог"}
@@ -1334,14 +1330,20 @@ export function ResearchAssistant({
                 }
               }}
             />
-            {draft.trim() && (
+            {(busy || draft.trim()) && (
               <button
-                type="submit"
+                type={busy ? "button" : "submit"}
                 className="primary-action"
-                disabled={busy || chatLoading}
-                aria-label="Отправить запрос"
+                disabled={chatLoading}
+                aria-label={busy ? "Остановить ответ" : "Отправить запрос"}
+                title={busy ? "Остановить ответ" : "Отправить запрос"}
+                onClick={busy ? stopGeneration : undefined}
               >
-                <Send size={17} />
+                {busy ? (
+                  <Square size={15} fill="currentColor" />
+                ) : (
+                  <Send size={17} />
+                )}
               </button>
             )}
           </form>

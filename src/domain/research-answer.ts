@@ -46,6 +46,18 @@ export function normalizeResearchMarkdown(
   graphRequested = false,
 ) {
   let result = normalizeExternalResearchLinks(answer)
+    .replace(
+      /```(xychart(?:-beta)?|pie|graph|flowchart)\s*\r?\n([\s\S]*?)```/giu,
+      (_block, kind: string, body: string) => {
+        const source = body.trim();
+        const head = /^(?:xychart(?:-beta)?|pie|graph|flowchart)\b/iu.test(source)
+          ? source
+          : /^(?:graph|flowchart)$/iu.test(kind) && /^(?:TD|TB|LR|RL|BT)\b/iu.test(source)
+            ? `${kind.toLowerCase()} ${source}`
+            : `${kind.toLowerCase()}\n${source}`;
+        return `\x60\x60\x60mermaid\n${head}\n\x60\x60\x60`;
+      },
+    )
     .replace(/```(?:mermaid)?\s*\n\s*```/giu, "")
     .replace(/^\s*Не удалось построить схему\s*$/gimu, "")
     .replace(

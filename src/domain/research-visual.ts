@@ -25,6 +25,7 @@ export type ResearchVisual =
     };
 
 function validNumber(value: string) {
+  if (!value.trim()) return undefined;
   const number = Number(value.replace(",", "."));
   return Number.isFinite(number) && number >= 0 ? number : undefined;
 }
@@ -93,8 +94,10 @@ export function parseResearchMermaid(source: string): ResearchVisual {
       throw new RangeError("Для графика нужны от 1 до 100 числовых значений");
     const labelContent = axis?.match(/\[([^\]]+)\]/)?.[1] || "";
     const labels = [
-      ...labelContent.matchAll(/"([^"]+)"|'([^']+)'|([^,\s]+)/g),
-    ].map((match) => match[1] || match[2] || match[3]);
+      ...labelContent.matchAll(/(?:^|,)\s*(?:"([^"]+)"|'([^']+)'|([^,]+))/g),
+    ].map((match) => (match[1] || match[2] || match[3]).trim());
+    if (labels.length && labels.length !== values.length)
+      throw new RangeError("Число подписей должно совпадать с числом значений графика");
     return {
       kind: "chart",
       title,

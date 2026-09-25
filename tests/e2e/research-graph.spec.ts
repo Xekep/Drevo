@@ -98,6 +98,7 @@ test("ИИ показывает круговую и временную диаг�
   const answers = [
     '```mermaid\npie title Родственные ветви\n"Первая": 3\n"Вторая": 2\n```',
     '```mermaid\nxychart-beta\n  title "Люди по годам"\n  x-axis ["1900", "1950", "2000"]\n  bar [1, 4, 8]\n```',
+    '```xychart\n title "Продолжительность жизни"\n x-axis [1-е поколение, 2-е поколение, 3-е поколение]\n bar [67, 68, 47]\n```',
   ];
   let call = 0;
   await page.route("**/api/ai/status", (route) =>
@@ -125,6 +126,11 @@ test("ИИ показывает круговую и временную диаг�
   await input.fill("Покажи годы");
   await page.getByRole("button", { name: "Отправить запрос" }).click();
   await expect(page.locator(".research-visual canvas")).toHaveCount(2);
+  await input.fill("Покажи продолжительность жизни");
+  await page.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(page.locator(".research-visual canvas")).toHaveCount(3);
+  await expect(page.locator(".research-visual").last().getByRole("img")).toHaveAttribute("aria-label", /1-е поколение.*2-е поколение.*3-е поколение/);
+  await expect(page.locator("code.language-xychart")).toHaveCount(0);
   await expect(page.locator(".research-visual svg")).toHaveCount(0);
 });
 

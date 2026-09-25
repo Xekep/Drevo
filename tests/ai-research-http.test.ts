@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 import { startServer } from "../src/server/index.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
 import type { Family } from "../src/domain/types.ts";
@@ -43,6 +44,41 @@ test("raw photo IDs become a clickable photo instead of a service identifier", (
     linkResearchReferences(answer),
     `Самая большая фотография — это [Фотография](#drevo-photo-${id}).`,
   );
+});
+
+test("internal kinship classification is explained without exposing its code", () => {
+  const text=humanizeResearchAnswer("Тип: `half_or_unknown`.",new Map(),new Map());
+  assert.doesNotMatch(text,/half_or_unknown/);
+  assert.match(text,/один общий известный родитель/);
+});
+
+test("a reader's edit request returns permissions without a model call or data changes", async () => {
+  const dir=mkdtempSync(join(tmpdir(),"drevo-reader-ai-"));
+  const keys=["PUBLIC_ORIGIN","YANDEX_AI_API_KEY","YANDEX_AI_FOLDER_ID","YANDEX_AI_MODEL"];
+  const previous=keys.map(key=>process.env[key]);
+  Object.assign(process.env,{PUBLIC_ORIGIN:"http://localhost",YANDEX_AI_API_KEY:"test-key",YANDEX_AI_FOLDER_ID:"folder-1",YANDEX_AI_MODEL:"yandexgpt/rc"});
+  let calls=0;
+  const app=await startServer(0,join(dir,"archive.sqlite"),true,undefined,async()=>{
+    calls++; throw new Error("Reader mutation should not invoke the model");
+  });
+  try {
+    app.archive.db.prepare("INSERT INTO users(id,name,role,approved) VALUES('reader','Читатель','reader',1)").run();
+    const token=randomBytes(32).toString("hex");
+    app.archive.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").run(createHash("sha256").update(token).digest("hex"),"reader",Date.now()+60000);
+    const before=app.archive.read();
+    const base=`http://127.0.0.1:${(app.server.address() as {port:number}).port}`;
+    const response=await fetch(`${base}/api/ai/chat`,{method:"POST",headers:{"Content-Type":"application/json",Origin:"http://localhost",Cookie:`drevo_session=${token}`},body:JSON.stringify({message:"Измени Анне Тестовой год рождения на 1961"})});
+    assert.equal(response.status,200);
+    const result=await response.json();
+    assert.match(result.answer,/доступ только для чтения/);
+    assert.deepEqual(result.suggestionIds,[]);
+    assert.equal(calls,0);
+    assert.deepEqual(app.archive.read(),before);
+  } finally {
+    await app.close();
+    keys.forEach((key,index)=>{if(previous[index]===undefined) delete process.env[key]; else process.env[key]=previous[index];});
+    rmSync(dir,{recursive:true,force:true});
+  }
 });
 
 test("явные команды перемещают пользователя по древу, обычный вопрос экран не меняет", () => {
@@ -1121,7 +1157,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         },
         false,
       ),
-      /только людей из области общих предков.*Доступ только для чтения/,
+      /только людей из области общих предков.*доступ только для чтения/,
     );
 
     const status = await fetch(base + "/api/ai/status").then((response) =>
