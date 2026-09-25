@@ -457,6 +457,7 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
 type SuggestionValue = string | boolean | undefined;
 type SuggestionBase = {
   id: string;
+  personId: string;
   personName: string;
   reason: string;
   evidence: string[];
@@ -660,19 +661,18 @@ function SuggestionCard({
       <footer aria-label="Подтвердить изменение">
         <button
           type="button"
-          className="primary-action"
+          className="research-suggestion-accept"
           disabled={disabled}
-          aria-label="Принять предложение"
-          title="Принять"
+          aria-label={`Принять изменение: ${suggestion.personName}`}
           onClick={() => onReview(suggestion.id, "accept")}
         >
           <Check size={17} aria-hidden="true" /> Принять
         </button>
         <button
           type="button"
+          className="research-suggestion-reject"
           disabled={disabled}
-          aria-label="Отклонить предложение"
-          title="Отклонить"
+          aria-label={`Отклонить изменение: ${suggestion.personName}`}
           onClick={() => onReview(suggestion.id, "reject")}
         >
           <X size={17} aria-hidden="true" /> Отклонить
@@ -706,7 +706,7 @@ export function ResearchAssistant({
   currentPersonName?: string;
   nudgeToken?: number;
   canEdit: boolean;
-  onChanged: () => void;
+  onChanged: (createdPersonId?: string) => void;
   onPerson: (id: string) => void;
   onPhoto: (id: string) => void;
   onReveal: (ids: string[]) => void;
@@ -730,7 +730,14 @@ export function ResearchAssistant({
     >({}),
     [reviewBusy, setReviewBusy] = useState(""),
     [reviewedSuggestions, setReviewedSuggestions] = useState<
-      Record<string, "accepted" | "rejected">
+      Record<
+        string,
+        {
+          status: "accepted" | "rejected";
+          kind: ResearchSuggestion["kind"];
+          personName: string;
+        }
+      >
     >({}),
     [error, setError] = useState(""),
     [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null),
@@ -1488,14 +1495,35 @@ export function ResearchAssistant({
         data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "Не удалось обработать предложение");
+      if (
+        data.suggestion?.status !==
+        (action === "accept" ? "accepted" : "rejected")
+      )
+        throw new Error(
+          "Сервер не подтвердил изменение. Обновите список предложений.",
+        );
+      const reviewed = suggestions.find((suggestion) => suggestion.id === id);
       setSuggestions((current) =>
         current.filter((suggestion) => suggestion.id !== id),
       );
-      setReviewedSuggestions((current) => ({
-        ...current,
-        [id]: action === "accept" ? "accepted" : "rejected",
-      }));
-      if (action === "accept") onChanged();
+      setReviewedSuggestions((current) =>
+        reviewed
+          ? {
+              ...current,
+              [id]: {
+                status: action === "accept" ? "accepted" : "rejected",
+                kind: reviewed.kind,
+                personName: reviewed.personName,
+              },
+            }
+          : current,
+      );
+      if (action === "accept")
+        onChanged(
+          reviewed?.kind === "person_create"
+            ? data.suggestion.personId
+            : undefined,
+        );
     } catch (reason) {
       setError((reason as Error).message);
     } finally {
@@ -1787,8 +1815,10 @@ export function ResearchAssistant({
                         />
                       ) : reviewedSuggestions[id] ? (
                         <p className="research-suggestion-result" key={id}>
-                          {reviewedSuggestions[id] === "accepted"
-                            ? "✓ Изменение применено"
+                          {reviewedSuggestions[id].status === "accepted"
+                            ? reviewedSuggestions[id].kind === "person_create"
+                              ? `✓ ${reviewedSuggestions[id].personName} добавлен в архив`
+                              : `✓ Изменение для ${reviewedSuggestions[id].personName} сохранено`
                             : "× Предложение отклонено"}
                         </p>
                       ) : null;

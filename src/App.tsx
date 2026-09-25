@@ -135,7 +135,10 @@ export default function App() {
       ids: string[];
       label: string;
       token: number;
-    } | null>(null);
+    } | null>(null),
+    [pendingResearchPersonId, setPendingResearchPersonId] = useState<
+      string | null
+    >(null);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -437,6 +440,19 @@ export default function App() {
     },
     [reveal, closeConnection, setView],
   );
+  useEffect(() => {
+    if (!pendingResearchPersonId || archive.loadingDetails) return;
+    if (!map.has(pendingResearchPersonId)) return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      showPerson(pendingResearchPersonId);
+      setPendingResearchPersonId(null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [pendingResearchPersonId, archive.loadingDetails, map, showPerson]);
   const clear = useCallback(() => {
     if (!personDraft && !connectionDraft) {
       dispatch({ type: "clear" });
@@ -900,7 +916,10 @@ export default function App() {
           }
           nudgeToken={assistantNudgeToken}
           canEdit={allowedEdit}
-          onChanged={archive.reload}
+          onChanged={(personId) => {
+            if (personId) setPendingResearchPersonId(personId);
+            archive.reload();
+          }}
           onPerson={showPerson}
           onPhoto={openPhotoUrl}
           onReveal={(ids) => {

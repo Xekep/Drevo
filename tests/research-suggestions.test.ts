@@ -32,6 +32,7 @@ test("AI person update stays pending until a human accepts it", async () => {
                     arguments: JSON.stringify({
                       personId: "anna-suggestion-test",
                       changes: {
+                        birth: "1920",
                         birthPlace: "Нижнее, Луганская область",
                       },
                       reason:
@@ -105,12 +106,13 @@ test("AI person update stays pending until a human accepts it", async () => {
     assert.equal(chat.status, 200);
     const chatResult = await chat.json();
     assert.equal(chatResult.suggestionIds.length, 1);
-    assert.match(chatResult.answer, /нажмите ✓/);
+    assert.match(chatResult.answer, /Проверьте изменение и выберите действие/);
 
     const before = app.archive
       .read()
       .family.people.find((person) => person.id === "anna-suggestion-test");
     assert.equal(before?.birthPlace, "Нижнее");
+    assert.equal(before?.birth, "1919");
 
     const queueResponse = await fetch(base + "/api/research/suggestions");
     assert.equal(queueResponse.status, 200);
@@ -121,6 +123,7 @@ test("AI person update stays pending until a human accepts it", async () => {
       queue.suggestions[0].payload.changes.birthPlace,
       "Нижнее, Луганская область",
     );
+    assert.equal(queue.suggestions[0].payload.changes.birth, "1920");
 
     const textConfirmation = await fetch(base + "/api/ai/chat", {
       method: "POST",
@@ -144,6 +147,7 @@ test("AI person update stays pending until a human accepts it", async () => {
       .read()
       .family.people.find((person) => person.id === "anna-suggestion-test");
     assert.equal(after?.birthPlace, "Нижнее, Луганская область");
+    assert.equal(after?.birth, "1920");
 
     const emptyQueue = await fetch(base + "/api/research/suggestions").then(
       (response) => response.json(),

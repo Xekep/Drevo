@@ -394,21 +394,108 @@ test("pending AI edits have visible accept and reject actions", async ({
   let reviewed = "";
   await page.route("**/api/research/suggestions/suggest-1/reject", (route) => {
     reviewed = route.request().method();
-    return route.fulfill({ json: { ok: true } });
+    return route.fulfill({ json: { suggestion: { status: "rejected" } } });
   });
   await page.goto("/tree");
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   const panel = page.locator(".research-assistant");
   const suggestion = panel.locator(".research-suggestion");
   await expect(
-    suggestion.getByRole("button", { name: "Принять предложение" }),
+    suggestion.getByRole("button", { name: /Принять изменение/ }),
   ).toBeVisible();
   await expect(
-    suggestion.getByRole("button", { name: "Отклонить предложение" }),
+    suggestion.getByRole("button", { name: /Отклонить изменение/ }),
   ).toBeVisible();
-  await suggestion
-    .getByRole("button", { name: "Отклонить предложение" })
-    .click();
+  const acceptBox = await suggestion
+    .getByRole("button", { name: /Принять изменение/ })
+    .boundingBox();
+  const rejectBox = await suggestion
+    .getByRole("button", { name: /Отклонить изменение/ })
+    .boundingBox();
+  expect(
+    acceptBox && rejectBox && Math.abs(acceptBox.y - rejectBox.y),
+  ).toBeLessThan(2);
+  await suggestion.getByRole("button", { name: /Отклонить изменение/ }).click();
   await expect(suggestion).toHaveCount(0);
   expect(reviewed).toBe("POST");
+});
+
+test("accepted AI person appears in the tree and the camera opens the new card", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const personId = "e2e-ai-created-person";
+  const person = {
+    id: personId,
+    surname: "Пупкин",
+    name: "Василий",
+    patronymic: "",
+    sex: "m",
+    birth: "1991",
+    birthPlace: "",
+    parents: [],
+    spouses: [],
+    generation: 1,
+    column: 0,
+    sources: [],
+  };
+  let accepted = false;
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chats", (route) =>
+    route.fulfill({ json: { chats: [] } }),
+  );
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch({
+      url: new URL("/api/family", route.request().url()).href,
+    });
+    const data = await response.json();
+    if (accepted) data.family.people.push(person);
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/api/research/suggestions", (route) =>
+    route.fulfill({
+      json: {
+        suggestions: accepted
+          ? []
+          : [
+              {
+                id: "suggest-create",
+                kind: "person_create",
+                personId,
+                personName: "Пупкин Василий",
+                reason: "Добавить человека по просьбе пользователя",
+                evidence: [],
+                payload: { person },
+              },
+            ],
+      },
+    }),
+  );
+  await page.route(
+    "**/api/research/suggestions/suggest-create/accept",
+    (route) => {
+      accepted = true;
+      return route.fulfill({
+        json: {
+          suggestion: { status: "accepted", personId },
+          revision: 2,
+        },
+      });
+    },
+  );
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const panel = page.locator(".research-assistant");
+  await panel.locator(".research-suggestion-accept").click();
+  await expect(page).toHaveURL(new RegExp(`/people/${personId}$`));
+  await expect(page.getByTestId(`rf__node-${personId}`)).toHaveClass(
+    /selected/,
+  );
+  await expect(page.locator(".inspector-dock")).toContainText("Пупкин");
+  await expect(panel).toBeVisible();
 });
