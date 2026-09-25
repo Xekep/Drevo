@@ -5,7 +5,12 @@
   overflow: hidden;
   border-radius: 9px;
   color: #9c8b64;
-  background: radial-gradient(circle at 50% 42%, #eee8d7 0, #f8f5eb 64%, transparent 65%);
+  background: radial-gradient(
+    circle at 50% 42%,
+    #eee8d7 0,
+    #f8f5eb 64%,
+    transparent 65%
+  );
   animation: award-loading-breathe 1.25s ease-in-out infinite;
 }
 .award-loading-placeholder > svg {
@@ -31,22 +36,54 @@
 .award-image-ready {
   animation: award-image-reveal 0.18s ease-out both;
 }
+.person-awards .award-visual {
+  animation: award-medal-appear 0.36s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes award-medal-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 @keyframes award-loading-breathe {
-  0%, 100% { opacity: 0.58; transform: scale(0.96); }
-  50% { opacity: 0.9; transform: scale(1); }
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
 }
 @keyframes award-loading-sheen {
-  0% { transform: translateX(-78%); }
-  65%, 100% { transform: translateX(78%); }
+  0% {
+    transform: translateX(-78%);
+  }
+  65%,
+  100% {
+    transform: translateX(78%);
+  }
 }
 @keyframes award-image-reveal {
-  from { opacity: 0; transform: scale(0.94); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .award-loading-placeholder,
   .award-loading-placeholder::after,
-  .award-image-ready {
+  .award-image-ready,
+  .person-awards .award-visual {
     animation: none;
   }
 }

@@ -557,7 +557,11 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
                   if (closing) setHoveredAwardId(null);
                 }}
               >
-                <span className="award-visual" aria-hidden="true">
+                <span
+                  className="award-visual"
+                  aria-hidden="true"
+                  style={{ animationDelay: `${Math.min(index, 6) * 55}ms` }}
+                >
                   <AwardVisual
                     definition={item.definition}
                     degreeId={item.degreeId}

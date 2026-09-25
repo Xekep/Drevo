@@ -46,6 +46,18 @@ app.archive.write(
         generation: 2,
         column: 0,
         sources: [],
+        awards: [
+          {
+            id: "e2e-award-1",
+            name: "За отвагу",
+            awardDefinitionId: "ussr-medal-for-courage",
+          },
+          {
+            id: "e2e-award-2",
+            name: "Ветеран труда",
+            awardDefinitionId: "ussr-medal-veteran-labour",
+          },
+        ],
       },
       {
         id: "e2e-spouse",
