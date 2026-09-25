@@ -593,10 +593,21 @@ test("listing cousins finishes from the kinship tool without a final model call"
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
   let calls = 0;
-  const provider: typeof fetch = async (url) => {
+  let conversations = 0;
+  let followupInput: unknown;
+  const provider: typeof fetch = async (url, init) => {
     if (String(url).endsWith("/conversations"))
-      return Response.json({ id: "conversation-1" });
+      return Response.json({ id: `conversation-${++conversations}` });
     calls++;
+    if (calls > 1) {
+      if (calls === 2) followupInput = JSON.parse(String(init?.body)).input;
+      return Response.json({
+        id: "response-2",
+        status: "completed",
+        output_text: "Продолжение диалога доступно.",
+        output: [],
+      });
+    }
     return Response.json({
       id: "response-1",
       status: "completed",
@@ -662,6 +673,15 @@ test("listing cousins finishes from the kinship tool without a final model call"
     assert.equal(calls, 1);
     assert.match(result.answer, /\[\[person:boris\|Лебедь Борис\]\]/);
     assert.match(result.answer, /двоюродный брат/);
+    const continued = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: result.chatId, message: "Спасибо" }),
+    });
+    assert.equal(continued.status, 200);
+    assert.equal(calls, 2);
+    assert.equal(conversations, 2);
+    assert.match(JSON.stringify(followupInput), /Лебедь Борис/);
   } finally {
     await app.close();
     for (const key of [

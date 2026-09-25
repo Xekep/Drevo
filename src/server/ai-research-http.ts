@@ -879,6 +879,10 @@ export function aiResearchHttp({
           .map((item) => String(item.content || "")),
         message,
       ].join("\n"),
+      simpleAcknowledgement =
+        /^(?:спасибо|благодарю|понятно|ясно|хорошо|окей|ок)[\s.!?]*$/iu.test(
+          message,
+        ),
       system = [
         "Ты исследователь семейного архива Drevo.",
         "Опирайся только на данные инструментов и слова пользователя.",
@@ -1310,6 +1314,7 @@ export function aiResearchHttp({
         }
         if (
           !lookupRetryUsed &&
+          !simpleAcknowledgement &&
           executedTools === 0 &&
           needsArchiveLookupRetry(
             lookupContext,
@@ -1992,6 +1997,9 @@ export function aiResearchHttp({
           }
         }
         if (directAnswer) {
+          // The remote conversation has an unanswered function call. Rebuild it
+          // from the local chat history on the next turn instead of reusing it.
+          chats.setRemote(chatId, null);
           const references: AnswerReference[] = [
             ...[...referencedPeople].slice(0, 250).map((id) => ({
               kind: "person" as const,
