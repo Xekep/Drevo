@@ -100,7 +100,15 @@ function PhotoViewerContent({
       setHighlightedPerson(null);
     } else setInfoOpen(false);
   };
-  useDockSwipe(photoTools, photoTools, true, infoOpen && !canEdit && !viewedPerson, dismissOverlay, () => {}, true);
+  useDockSwipe(
+    photoTools,
+    photoTools,
+    true,
+    infoOpen && !canEdit && !viewedPerson,
+    dismissOverlay,
+    () => {},
+    true,
+  );
   useEffect(() => {
     // Only the two adjacent display previews; original files remain on demand.
     for (const neighbor of [previous, next]) {
@@ -118,7 +126,8 @@ function PhotoViewerContent({
     locked: navigationLocked,
     onNavigate,
     onTap: () => setShowTags((value) => !value),
-    onDismiss: (infoOpen || !!viewedPerson) && !canEdit ? dismissOverlay : undefined,
+    onDismiss:
+      (infoOpen || !!viewedPerson) && !canEdit ? dismissOverlay : undefined,
   });
   function navigate(direction: -1 | 1) {
     slide.navigate(direction, imageSpace.current?.clientWidth || 0);
@@ -154,7 +163,7 @@ function PhotoViewerContent({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useEffect(() => () => scanController.current?.abort(), []);
-  async function scan(enterEditing = false, precise = false) {
+  async function scan(enterEditing = false) {
     if (!(canEdit || (enterEditing && allowedEdit)) || scanning) return;
     scanned.current = true;
     const controller = new AbortController();
@@ -162,17 +171,14 @@ function PhotoViewerContent({
     setScanning(true);
     setScanStatus("Загружаем модель поиска лиц…");
     try {
-      const found = await suggestFaces(
-        photo,
-        controller.signal,
-        setScanStatus,
-        precise,
-      );
+      const found = await suggestFaces(photo, controller.signal, (status) => {
+        if (!controller.signal.aborted) setScanStatus(status);
+      });
       if (!controller.signal.aborted) {
         setSuggestions(found);
         setScanStatus(
           found.length
-            ? `Найдено лиц: ${found.length}. Подтвердите предложенные отметки.`
+            ? `Найдено лиц: ${found.length}. Выберите, кого отметить.`
             : "Новых лиц не найдено. Можно отметить человека вручную.",
         );
       }
@@ -186,10 +192,19 @@ function PhotoViewerContent({
     }
   }
   function selectSuggestion(s: FaceSuggestion) {
+    if (busy) return;
     setRect(s.box);
     setPersonId(s.match?.personId || "");
     setSuggestionId(s.id);
     setTagging(true);
+    setInfoOpen(true);
+    photoTools.current?.scrollTo(0, 0);
+  }
+  function cancelTagging() {
+    setTagging(false);
+    setRect(null);
+    setPersonId("");
+    setSuggestionId(null);
   }
   function point(e: PointerEvent) {
     const b = area.current!.getBoundingClientRect();
@@ -213,18 +228,54 @@ function PhotoViewerContent({
   }
   return (
     <div className="photo-lightbox-content">
-      <CopyArchiveLink
-        className="photo-copy-link"
-        target={{ kind: "photo", id: photo.id }}
-      />
-      <button
-        className="photo-close"
-        onClick={onClose}
-        aria-label="Закрыть просмотр фото"
-        title="Закрыть · Esc"
+      <div
+        className="photo-toolbar"
+        role="group"
+        aria-label="Действия с фотографией"
       >
-        <X size={22} />
-      </button>
+        {allowedEdit && !viewedPerson && (
+          <button
+            className="photo-edit-toggle"
+            aria-pressed={editing}
+            aria-label={editing ? "Завершить редактирование" : "Редактировать"}
+            disabled={busy || slide.settling}
+            onClick={() => {
+              if (editing && !confirmDiscardChanges(dirty)) return;
+              setEditing(!editing);
+              if (editing) {
+                setTakenAt(photo.takenAt || "");
+                setPlace(photo.place || "");
+                setYear(photo.year || "");
+                setEvent(photo.event || "");
+                setDescription(photo.description || "");
+                setConfirm(false);
+                setTagging(false);
+                setRect(null);
+                setPersonId("");
+                setSuggestionId(null);
+                scanController.current?.abort();
+                setScanning(false);
+              } else if (!photo.tags.length && !scanned.current)
+                void scan(true);
+            }}
+          >
+            {editing ? <Check size={16} /> : <Pencil size={16} />}
+            {editing ? "Готово" : "Редактировать"}
+          </button>
+        )}
+        <CopyArchiveLink
+          className="photo-copy-link"
+          target={{ kind: "photo", id: photo.id }}
+        />
+        <button
+          className="photo-close"
+          onClick={onClose}
+          aria-label="Закрыть просмотр фото"
+          title="Закрыть · Esc"
+        >
+          <X size={22} />
+        </button>
+      </div>
       <div
         className={`photo-viewer ${canEdit ? "is-editing" : "is-viewing"} ${showTags ? "show-tags" : ""} ${infoOpen ? "info-open" : ""} ${viewedPerson ? "person-open" : ""}`}
       >
@@ -261,10 +312,11 @@ function PhotoViewerContent({
                   role="group"
                   aria-label="Фотография с отметками людей"
                   onPointerDown={(e) => {
-                    if (!tagging || e.button !== 0) return;
+                    if (!tagging || busy || e.button !== 0) return;
                     e.preventDefault();
                     start.current = point(e);
                     setRect(null);
+                    setSuggestionId(null);
                     e.currentTarget.setPointerCapture(e.pointerId);
                   }}
                   onPointerMove={(e) => {
@@ -327,7 +379,8 @@ function PhotoViewerContent({
                     suggestions.map((s, i) => (
                       <button
                         key={s.id}
-                        className="photo-tag suggested-tag"
+                        className={`photo-tag suggested-tag ${suggestionId === s.id ? "is-selected" : ""}`}
+                        disabled={busy}
                         style={{
                           left: `${s.box.x * 100}%`,
                           top: `${s.box.y * 100}%`,
@@ -460,40 +513,13 @@ function PhotoViewerContent({
               {showTags ? "Скрыть отметки" : "Показать отметки"}
             </button>
           )}
-          {allowedEdit && (
-            <button
-              className="photo-edit-toggle"
-              aria-pressed={editing}
-              disabled={busy || slide.settling}
-              onClick={() => {
-                if (editing && !confirmDiscardChanges(dirty)) return;
-                setEditing(!editing);
-                if (editing) {
-                  setTakenAt(photo.takenAt || "");
-                  setPlace(photo.place || "");
-                  setYear(photo.year || "");
-                  setEvent(photo.event || "");
-                  setDescription(photo.description || "");
-                  setConfirm(false);
-                  setTagging(false);
-                  setRect(null);
-                  scanController.current?.abort();
-                  setScanning(false);
-                } else if (!photo.tags.length && !scanned.current)
-                  void scan(true);
-              }}
-            >
-              {editing ? <Check size={16} /> : <Pencil size={16} />}
-              {editing ? "Завершить редактирование" : "Редактировать"}
-            </button>
-          )}
-          {(canEdit || photo.tags.length > 0) && (
+          {!tagging && (canEdit || photo.tags.length > 0) && (
             <span className="section-label">ЛЮДИ НА ФОТО</span>
           )}
-          {canEdit && photo.tags.length === 0 && (
+          {canEdit && !tagging && photo.tags.length === 0 && (
             <p>На этом снимке пока никто не отмечен.</p>
           )}
-          {taggedPeople.length > 0 && (
+          {!tagging && taggedPeople.length > 0 && (
             <p className="photo-people-names">
               {taggedPeople.map((person, index) => (
                 <span key={person.id}>
@@ -533,95 +559,144 @@ function PhotoViewerContent({
           )}
           {canEdit && (
             <>
-              <p className="field-hint">
-                Выберите рамку и найдите человека по ФИО.
-              </p>
-              <button disabled={scanning} onClick={() => void scan()}>
-                {scanning ? "Ищем лица…" : "Найти лица"}
-              </button>
-              {!scanning && scanStatus && (
-                <button onClick={() => void scan(false, true)}>
-                  Найти лица точнее
-                </button>
-              )}
-              {scanStatus && <p role="status">{scanStatus}</p>}
-              {scanning && (
-                <button
-                  onClick={() => {
-                    scanController.current?.abort();
-                    setScanning(false);
-                    setScanStatus("Поиск остановлен. Можно отметить вручную.");
-                  }}
+              {!tagging && (
+                <section
+                  className="photo-tagging-tools"
+                  aria-label="Отметить людей"
                 >
-                  Остановить поиск
-                </button>
-              )}
-              {suggestions.map((s, i) => (
-                <div key={s.id} className="connection-row">
-                  {s.match &&
-                    family.people.some((p) => p.id === s.match!.personId) && (
-                      <small>
-                        Возможно,{" "}
-                        {fullName(
-                          family.people.find(
-                            (p) => p.id === s.match!.personId,
-                          )!,
-                        )}
-                      </small>
-                    )}
-                  <button onClick={() => selectSuggestion(s)}>
-                    {`Лицо ${i + 1}: выбрать человека`}
-                  </button>
-                  <button
-                    aria-label="Убрать предложение"
-                    onClick={() => {
-                      setSuggestions((list) =>
-                        list.filter((x) => x.id !== s.id),
-                      );
-                      if (suggestionId === s.id) {
-                        setRect(null);
+                  <div className="photo-tagging-actions">
+                    <button
+                      disabled={busy || scanning || imageState !== "ready"}
+                      onClick={() => void scan()}
+                    >
+                      <ScanFace size={16} />
+                      {scanning ? "Ищем лица…" : "Найти лица"}
+                    </button>
+                    <button
+                      disabled={busy || imageState !== "ready"}
+                      onClick={() => {
+                        setTagging(true);
+                        setRect({ x: 0.35, y: 0.2, width: 0.3, height: 0.4 });
+                        setPersonId("");
                         setSuggestionId(null);
-                      }
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              <button
-                className="primary-action"
-                onClick={() => {
-                  setTagging(!tagging);
-                  setRect(null);
-                  setSuggestionId(null);
-                }}
-              >
-                <ScanFace size={16} />
-                {tagging ? "Завершить разметку" : "Отметить человека"}
-              </button>
+                        photoTools.current?.scrollTo(0, 0);
+                      }}
+                    >
+                      <Pencil size={15} /> Отметить вручную
+                    </button>
+                  </div>
+                  {scanStatus && (
+                    <p className="photo-scan-status" role="status">
+                      {scanStatus}
+                    </p>
+                  )}
+                  {scanning && (
+                    <button
+                      className="photo-scan-stop"
+                      onClick={() => {
+                        scanController.current?.abort();
+                        setScanning(false);
+                        setScanStatus(
+                          "Поиск остановлен. Можно отметить вручную.",
+                        );
+                      }}
+                    >
+                      Остановить поиск
+                    </button>
+                  )}
+                  {suggestions.length > 0 && (
+                    <div
+                      className="photo-face-list"
+                      aria-label="Найденные лица"
+                    >
+                      {suggestions.map((s, i) => {
+                        const match = family.people.find(
+                          (p) => p.id === s.match?.personId,
+                        );
+                        return (
+                          <div key={s.id} className="photo-face-row">
+                            <button
+                              disabled={busy}
+                              onClick={() => selectSuggestion(s)}
+                            >
+                              <span className="photo-face-number">{i + 1}</span>
+                              <span>
+                                <b>{`Лицо ${i + 1}`}</b>
+                                <small>
+                                  {match
+                                    ? `Возможно, ${fullName(match)}`
+                                    : "Выбрать человека"}
+                                </small>
+                              </span>
+                              <ChevronRight size={15} />
+                            </button>
+                            <button
+                              disabled={busy}
+                              aria-label={`Убрать предложение: лицо ${i + 1}`}
+                              onClick={() =>
+                                setSuggestions((list) =>
+                                  list.filter((x) => x.id !== s.id),
+                                )
+                              }
+                            >
+                              <X size={15} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              )}
               {tagging && (
-                <div className="archive-form">
-                  <p>
-                    Обведите человека на фото. Или создайте рамку кнопкой и
-                    настройте её ниже.
+                <div className="archive-form photo-tag-editor">
+                  <div className="photo-tag-editor-heading">
+                    <b>{suggestionId ? "Кто на фото?" : "Отметить человека"}</b>
+                    <button
+                      disabled={busy}
+                      onClick={cancelTagging}
+                      aria-label="Отменить отметку"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <p className="field-hint">
+                    {rect
+                      ? "Выберите человека для выделенной рамки."
+                      : "Обведите человека на фото или создайте рамку."}
                   </p>
-                  <button
-                    onClick={() =>
-                      setRect({ x: 0.35, y: 0.2, width: 0.3, height: 0.4 })
-                    }
-                  >
-                    Создать рамку
-                  </button>
+                  {!rect && (
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        setRect({ x: 0.35, y: 0.2, width: 0.3, height: 0.4 })
+                      }
+                    >
+                      Создать рамку
+                    </button>
+                  )}
                   {rect && (
                     <>
+                      <PersonSearch
+                        key={suggestionId || "manual"}
+                        value={personId}
+                        selected={family.people.find((p) => p.id === personId)}
+                        onChange={setPersonId}
+                        disabled={busy}
+                      />
                       <details className="tag-adjustments">
                         <summary>Уточнить рамку</summary>
+                        <p className="field-hint">
+                          Обведите лицо на снимке или сдвиньте границы
+                          ползунками.
+                        </p>
                         {(["x", "y", "width", "height"] as const).map(
                           (key, i) => (
                             <label key={key}>
                               {["Слева", "Сверху", "Ширина", "Высота"][i]}
                               <input
                                 type="range"
+                                disabled={busy}
                                 min={
                                   key === "width" || key === "height" ? 0.02 : 0
                                 }
@@ -647,13 +722,8 @@ function PhotoViewerContent({
                           ),
                         )}
                       </details>
-                      <PersonSearch
-                        value={personId}
-                        selected={family.people.find((p) => p.id === personId)}
-                        onChange={setPersonId}
-                        disabled={busy}
-                      />
                       <button
+                        className="primary-action"
                         disabled={!personId || busy}
                         onClick={async () => {
                           const tagId = crypto.randomUUID();
@@ -703,69 +773,75 @@ function PhotoViewerContent({
                   )}
                 </div>
               )}
-              <details className="photo-description-editor">
-                <summary>Изменить описание фотографии</summary>
-                <form
-                  className="archive-form photo-metadata"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const saved = await update({
-                      ...photo,
-                      takenAt: takenAt.trim() || undefined,
-                      place: place.trim() || undefined,
-                      year: year.trim() || undefined,
-                      event: event.trim() || undefined,
-                      description: description.trim() || undefined,
-                    });
-                    if (saved) {
-                      setTakenAt(takenAt.trim());
-                      setPlace(place.trim());
-                      setYear(year.trim());
-                      setEvent(event.trim());
-                      setDescription(description.trim());
-                    }
-                  }}
-                >
-                  <label>
-                    Год
-                    <input
-                      value={year}
-                      inputMode="numeric"
-                      pattern="[0-9]{4}"
-                      maxLength={4}
-                      placeholder="1965"
-                      onChange={(e) => setYear(e.target.value)}
+              {!tagging && (
+                <details className="photo-description-editor">
+                  <summary>Изменить описание фотографии</summary>
+                  <form
+                    className="archive-form photo-metadata"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const saved = await update({
+                        ...photo,
+                        takenAt: takenAt.trim() || undefined,
+                        place: place.trim() || undefined,
+                        year: year.trim() || undefined,
+                        event: event.trim() || undefined,
+                        description: description.trim() || undefined,
+                      });
+                      if (saved) {
+                        setTakenAt(takenAt.trim());
+                        setPlace(place.trim());
+                        setYear(year.trim());
+                        setEvent(event.trim());
+                        setDescription(description.trim());
+                      }
+                    }}
+                  >
+                    <label>
+                      Год
+                      <input
+                        value={year}
+                        inputMode="numeric"
+                        pattern="[0-9]{4}"
+                        maxLength={4}
+                        placeholder="1965"
+                        onChange={(e) => setYear(e.target.value)}
+                      />
+                    </label>
+                    <PlaceField
+                      label="Место"
+                      value={place}
+                      onChange={setPlace}
                     />
-                  </label>
-                  <PlaceField label="Место" value={place} onChange={setPlace} />
-                  <label>
-                    Событие
-                    <input
-                      value={event}
-                      placeholder="Свадьба, день рождения, семейная встреча"
-                      onChange={(e) => setEvent(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Дата или период (уточнение)
-                    <input
-                      value={takenAt}
-                      placeholder="Например, лето 1965"
-                      onChange={(e) => setTakenAt(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    История снимка
-                    <textarea
-                      rows={3}
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
-                  </label>
-                  <button disabled={busy}>Сохранить описание</button>
-                </form>
-              </details>
-              {canDelete && (
+                    <label>
+                      Событие
+                      <input
+                        value={event}
+                        placeholder="Свадьба, день рождения, семейная встреча"
+                        onChange={(e) => setEvent(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Дата или период (уточнение)
+                      <input
+                        value={takenAt}
+                        placeholder="Например, лето 1965"
+                        onChange={(e) => setTakenAt(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      История снимка
+                      <textarea
+                        rows={3}
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                      />
+                    </label>
+                    <button disabled={busy}>Сохранить описание</button>
+                  </form>
+                </details>
+              )}
+              {!tagging && canDelete && (
                 <button
                   className="danger-action"
                   disabled={busy}
@@ -793,7 +869,7 @@ function PhotoViewerContent({
               )}
             </>
           )}
-          {
+          {!canEdit && (
             <div className="photo-details">
               {[
                 ["Год", photo.year],
@@ -810,7 +886,7 @@ function PhotoViewerContent({
                 ))}
               {photo.description?.trim() && <p>{photo.description}</p>}
             </div>
-          }
+          )}
           {error && (
             <p role="alert" className="form-error">
               {error}

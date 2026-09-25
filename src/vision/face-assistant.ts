@@ -110,9 +110,7 @@ async function detect(
       })
       .filter(
         (f) =>
-          f.box.width > 0 &&
-          f.box.height > 0 &&
-          f.descriptor.length === 1024,
+          f.box.width > 0 && f.box.height > 0 && f.descriptor.length === 1024,
       );
   })().catch((error) => {
     cache.delete(key);
@@ -177,7 +175,7 @@ export async function suggestFaces(
   photo: ArchivePhoto,
   signal: AbortSignal,
   onProgress: (message: string) => void,
-  precise = false,
+  precise = true,
 ): Promise<FaceSuggestion[]> {
   const check = () => {
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");

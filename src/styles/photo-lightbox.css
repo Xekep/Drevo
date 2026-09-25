@@ -64,10 +64,10 @@
   --photo-danger: #a15347;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 76px 24px 28px;
+  padding: 76px 20px 20px;
   background: var(--paper);
   border-left: 1px solid var(--line);
-  gap: 18px;
+  gap: 12px;
   overflow-wrap: anywhere;
   scrollbar-width: thin;
   color: var(--ink);
@@ -124,17 +124,17 @@
   background: #ffffff0d;
   color: #fff;
 }
-.photo-close {
+.photo-toolbar {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
   top: max(14px, env(safe-area-inset-top));
   z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.photo-copy-link {
-  position: absolute;
-  right: calc(max(16px, env(safe-area-inset-right)) + 54px);
-  top: max(14px, env(safe-area-inset-top));
-  z-index: 6;
+.photo-toolbar > button {
+  flex-shrink: 0;
 }
 .photo-lightbox button:hover:not(:disabled),
 .photo-lightbox a:hover {
@@ -201,9 +201,14 @@
   display: none;
 }
 .photo-lightbox .photo-edit-toggle {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 22px;
+  border: 0;
   margin: 0;
   font-size: 12px;
-  color: var(--photo-accent, #d6e2cf);
+  color: #fff;
+  background: #ffffff1c;
 }
 .photo-lightbox .archive-form :is(input, textarea, select),
 .photo-lightbox .person-search-input,
@@ -426,9 +431,12 @@
   cursor: crosshair;
 }
 @media (min-width: 900px) {
-  .photo-lightbox-content :is(.photo-close, .photo-copy-link) {
+  .photo-lightbox .photo-toolbar > button {
     color: #405738;
     background: #e8eedf;
+  }
+  .photo-lightbox .photo-toolbar > button:hover:not(:disabled) {
+    background: #dce6d1;
   }
 }
 @media (max-width: 899px), (hover: none) {
@@ -441,4 +449,136 @@
   .photo-slide-track.is-settling {
     transition: none;
   }
+}
+
+.photo-tagging-tools {
+  display: grid;
+  gap: 10px;
+}
+.photo-tagging-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.photo-tagging-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 12px;
+}
+.photo-scan-stop {
+  justify-self: start;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.photo-face-list {
+  display: grid;
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.photo-face-row {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.photo-face-row > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 4px;
+  text-align: left;
+}
+.photo-face-row > button:last-child {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 36px;
+  color: var(--muted);
+}
+.photo-face-number {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--photo-button-bg);
+  color: var(--photo-accent);
+  font-size: 12px;
+}
+.photo-face-row button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.photo-face-row b,
+.photo-face-row small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+.photo-face-row small {
+  color: var(--muted);
+}
+.photo-tag-editor-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.photo-tag-editor-heading b {
+  font-size: 15px;
+  font-weight: 500;
+}
+.photo-lightbox .photo-tag-editor-heading button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+}
+.photo-tag-editor .person-search {
+  margin: 0;
+}
+.photo-tag-editor .tag-adjustments {
+  padding-block: 8px;
+  font-size: 12px;
+}
+.photo-tag-editor .tag-adjustments label {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.photo-lightbox .tag-adjustments input {
+  padding: 0;
+  min-width: 0;
+  accent-color: var(--photo-accent);
+}
+.photo-description-editor {
+  padding-block: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.photo-description-editor .photo-metadata {
+  border: 0;
+  padding-top: 12px !important;
+}
+.photo-lightbox .suggested-tag.is-selected {
+  border-color: #effa91;
+  background: #effa911a;
+}
+.photo-lightbox .photo-tools > * {
+  flex-shrink: 0;
 }
