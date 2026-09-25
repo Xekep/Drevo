@@ -94,7 +94,9 @@ test("Ctrl+колесо масштабирует древо и не меняет
   await page.getByRole("button", { name: "Веер" }).click();
   const fan = page.locator(".fan-chart-svg");
   await expect(fan).toBeVisible();
-  await expect(page.getByRole("button", { name: "Веер" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Закрыть веер", pressed: true }),
+  ).toBeVisible();
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
   await expect(
     page.locator(
