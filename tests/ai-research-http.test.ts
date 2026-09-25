@@ -61,6 +61,20 @@ test("явные команды перемещают пользователя п
   assert.equal(explicitViewControlRequest("Расскажи об Анне", "tree"), false);
   assert.equal(
     explicitViewControlRequest(
+      "Покажи диаграмму количества людей по годам",
+      "tree",
+    ),
+    false,
+  );
+  assert.equal(
+    explicitViewControlRequest(
+      "Покажи граф родства между мной и Варварой",
+      "tree",
+    ),
+    false,
+  );
+  assert.equal(
+    explicitViewControlRequest(
       "отобрази на древе чепчуговых только и их предков ближайших",
       "tree",
     ),
@@ -310,6 +324,344 @@ test("stream only exposes the checked answer after textual tool calls", async ()
       /\[\[person:person-42\|Иван Петрович\]\]/,
     );
     assert.equal(calls, 2);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a completed reasoning-only response is retried before the chat returns", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-empty-response-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let calls = 0;
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    adaptLegacyAiFake(async () => {
+      const content =
+        ++calls === 1 ? "" : "Здравствуйте! Чем помочь с семейным архивом?";
+      return new Response(
+        `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`,
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    }),
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const response = await fetch(base + "/api/ai/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Привет" }),
+    });
+    const done = (await response.text())
+      .split("\n\n")
+      .find((frame) => frame.startsWith("event: done\n"));
+    assert.ok(done);
+    assert.match(JSON.parse(done.split("\ndata: ")[1]).answer, /Здравствуйте/);
+    assert.equal(calls, 2);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an incomplete provider stream retries once with a non-stream response", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-incomplete-stream-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  const requests: boolean[] = [];
+  const provider: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/conversations"))
+      return Response.json({ id: "conversation-1" });
+    const body = JSON.parse(String(init?.body));
+    requests.push(Boolean(body.stream));
+    return body.stream
+      ? new Response("data: [DONE]\n\n", {
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      : Response.json({
+          id: "response-2",
+          status: "completed",
+          output_text: "Ответ восстановлен",
+          output: [],
+        });
+  };
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    provider,
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const response = await fetch(base + "/api/ai/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Привет" }),
+    });
+    const done = (await response.text())
+      .split("\n\n")
+      .find((frame) => frame.startsWith("event: done\n"));
+    assert.ok(done);
+    assert.match(
+      JSON.parse(done.split("\ndata: ")[1]).answer,
+      /Ответ восстановлен/,
+    );
+    assert.deepEqual(requests, [true, false]);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a read-only photo question does not offer archive mutation tools", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-readonly-question-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let offered: string[] = [];
+  const provider: typeof fetch = async (url, init) => {
+    if (String(url).endsWith("/conversations"))
+      return Response.json({ id: "conversation-1" });
+    const body = JSON.parse(String(init?.body)) as {
+      tools: Array<{ name: string }>;
+    };
+    offered = body.tools.map((tool) => tool.name);
+    return Response.json({
+      id: "response-1",
+      status: "completed",
+      output_text: "Снимки перечислены.",
+      output: [],
+    });
+  };
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    provider,
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Какая фотография с наибольшим числом людей?",
+      }),
+    });
+    assert.equal(response.status, 200);
+    assert.ok(offered.includes("search_photos"));
+    assert.equal(
+      offered.some((name) => name.startsWith("propose_")),
+      false,
+    );
+    assert.equal(offered.includes("create_pdf"), false);
+    assert.equal(offered.includes("control_archive_view"), false);
+    assert.equal(offered.includes("analyze_photo"), false);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("showing a found photo finishes from the verified search without another model round", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-show-photo-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let calls = 0;
+  const provider: typeof fetch = async (url) => {
+    if (String(url).endsWith("/conversations"))
+      return Response.json({ id: "conversation-1" });
+    const call =
+      ++calls === 1
+        ? { name: "search_people", arguments: '{"query":"Анна"}' }
+        : { name: "search_photos", arguments: '{"personId":"anna"}' };
+    return Response.json({
+      id: `response-${calls}`,
+      status: "completed",
+      output: [{ type: "function_call", call_id: `call-${calls}`, ...call }],
+    });
+  };
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    provider,
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read();
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          {
+            id: "anna",
+            surname: "Лебедь",
+            name: "Анна",
+            patronymic: "",
+            sex: "f",
+            birth: "1919",
+            birthPlace: "",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [],
+          },
+        ],
+        photos: [
+          {
+            id: "photo-anna",
+            title: "Анна у дома",
+            url: "/media/photo-anna.jpg",
+            tags: [
+              {
+                id: "tag-anna",
+                personId: "anna",
+                x: 0,
+                y: 0,
+                width: 0.2,
+                height: 0.2,
+              },
+            ],
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Покажи фото Анны" }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(calls, 2);
+    assert.match(result.answer, /\[\[photo:photo-anna\|Анна у дома\]\]/);
+    assert.deepEqual(result.uiActions, [
+      { type: "open_photo", photoId: "photo-anna" },
+    ]);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listing cousins finishes from the kinship tool without a final model call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-cousins-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let calls = 0;
+  const provider: typeof fetch = async (url) => {
+    if (String(url).endsWith("/conversations"))
+      return Response.json({ id: "conversation-1" });
+    calls++;
+    return Response.json({
+      id: "response-1",
+      status: "completed",
+      output: [
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "get_cousins",
+          arguments: '{"personId":"anna","degree":2}',
+        },
+      ],
+    });
+  };
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    provider,
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  const member = (
+    id: string,
+    name: string,
+    birth: string,
+    parents: string[] = [],
+  ) => ({
+    id,
+    surname: "Лебедь",
+    name,
+    patronymic: "",
+    sex: "u" as const,
+    birth,
+    birthPlace: "",
+    parents,
+    spouses: [],
+    generation: 1,
+    column: 0,
+    sources: [],
+  });
+  try {
+    const current = app.archive.read();
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          member("grandmother", "Мария", "1930"),
+          member("mother", "Ирина", "1950", ["grandmother"]),
+          member("uncle", "Иван", "1952", ["grandmother"]),
+          member("anna", "Анна", "1980", ["mother"]),
+          member("boris", "Борис", "1982", ["uncle"]),
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(base + "/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Кто двоюродные братья и сёстры Анны?" }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(calls, 1);
+    assert.match(result.answer, /\[\[person:boris\|Лебедь Борис\]\]/);
+    assert.match(result.answer, /двоюродный брат/);
   } finally {
     await app.close();
     for (const key of [
@@ -609,11 +961,11 @@ test("researcher resolves a short cousin follow-up from conversation history", a
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.match(payload.answer, /Василий/);
-    assert.equal(requests.length, 4);
+    assert.equal(requests.length, 3);
     assert.match(JSON.stringify(requests[2].messages), /а двоюродные/);
     assert.match(JSON.stringify(requests[2].messages), /tatyana-cousins/);
     assert.match(JSON.stringify(requests[2].tools), /get_cousins/);
-    assert.match(JSON.stringify(requests[3].messages), /vasily-cousins/);
+    assert.match(payload.answer, /\[\[person:vasily-cousins\|/);
   } finally {
     await app.close();
     for (const key of [

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanPdfAnswer,
+  hideResearchToolNames,
   linkResearchReferences,
   normalizeExternalResearchLinks,
   normalizeResearchMarkdown,
@@ -9,6 +10,16 @@ import {
   researchPdfFilename,
   verifiedSurnameTable,
 } from "../src/domain/research-answer.ts";
+
+test("служебные имена инструментов скрываются в готовом тексте", () => {
+  assert.equal(
+    hideResearchToolNames(
+      "Данные получены из `get_birth_statistics`; схема остаётся в Mermaid.",
+      new Set(["get_birth_statistics"]),
+    ),
+    "Данные получены из архива; схема остаётся в Mermaid.",
+  );
+});
 
 test("внешние wiki-ссылки с экранированным двоеточием становятся обычным Markdown", () => {
   const source =

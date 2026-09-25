@@ -151,7 +151,7 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "list_people",
     description:
-      "Получить список людей, доступных пользователю в архиве. Используй для просьб перечислить всех людей или продолжений вроде «перечисли их»; для поиска конкретного человека используй search_people.",
+      "Получить одну страницу людей, доступных пользователю в архиве. hasMore=true означает, что страница неполная; для исчерпывающего списка запрашивай следующие страницы. Используй для просьб перечислить людей; для подсчётов по датам используй get_birth_statistics, для конкретного человека — search_people.",
     scope: "tree:read",
     inputSchema: objectSchema({
       offset: { type: "integer", minimum: 0, default: 0 },
@@ -286,11 +286,17 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "search_photos",
     description:
-      "Найти доступные пользователю фотографии архива по названию, месту, году, событию, описанию или отмеченному человеку. Поле documentedRelationships содержит только подтверждённые в древе связи между отмеченными людьми; не выводи другие связи по догадке.",
+      "Найти доступные фотографии по названию, месту, году, событию, описанию или отмеченному человеку. Для снимка с наибольшим числом людей передай sortBy=people_count и limit=1 без query. total и hasMore относятся ко всему совпавшему набору. documentedRelationships содержит только подтверждённые связи; не выводи другие связи по догадке.",
     scope: "sources:read",
     inputSchema: objectSchema({
       query: { type: "string", maxLength: 200 },
       personId: { type: "string", minLength: 1, maxLength: 200 },
+      sortBy: {
+        type: "string",
+        enum: ["archive", "people_count"],
+        default: "archive",
+      },
+      offset: { type: "integer", minimum: 0, default: 0 },
       limit: { type: "integer", minimum: 1, maximum: 50, default: 20 },
     }),
   },
@@ -427,6 +433,18 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
       "Получить рассчитанную статистику полноты, поколений, источников и общие факты по архиву.",
     scope: "analysis:read",
     inputSchema: objectSchema({}),
+  },
+  {
+    name: "get_birth_statistics",
+    description:
+      "Точно посчитать людей по десятилетиям рождения и вывести людей в диапазоне лет. Возвращает totalPeople, knownBirthYear, unknownBirthYear, decades и при fromYear/toYear точное matchedCount плюс страницу people. Для «после 2000» используй fromYear=2001. Для диаграммы используй готовые decades, не пересчитывай список людей вручную.",
+    scope: "analysis:read",
+    inputSchema: objectSchema({
+      fromYear: { type: "integer", minimum: 1000, maximum: 2200 },
+      toYear: { type: "integer", minimum: 1000, maximum: 2200 },
+      offset: { type: "integer", minimum: 0, default: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 30 },
+    }),
   },
 ];
 
@@ -1094,8 +1112,14 @@ export function executeResearchTool(
           item: award,
         })),
     ]);
+    const byKind = { card: 0, event: 0, award: 0 };
+    for (const gap of gaps)
+      if (gap.kind === "card") byKind.card++;
+      else if (gap.kind === "event") byKind.event++;
+      else byKind.award++;
     return {
       total: gaps.length,
+      byKind,
       gaps: gaps.slice(0, limit),
       truncated: gaps.length > limit,
     };
@@ -1159,7 +1183,7 @@ export function executeResearchTool(
           ),
         ),
       limit = numberArg(args, "limit", 20, 1, 50);
-    const matches = searchablePeople
+    const ranked = searchablePeople
       .map(({ person, fields, tokens }) => {
         let score = fields.reduce(
           (value, field, index) =>
@@ -1200,16 +1224,19 @@ export function executeResearchTool(
         (a, b) =>
           b.score - a.score ||
           fullName(a.person).localeCompare(fullName(b.person), "ru"),
-      )
-      .slice(0, limit)
-      .map(({ person }) => ({
-        id: person.id,
-        name: fullName(person),
-        birth: person.birth,
-        death: person.death,
-        birthPlace: person.birthPlace,
-      }));
-    return { people: matches, total: matches.length };
+      );
+    const matches = ranked.slice(0, limit).map(({ person }) => ({
+      id: person.id,
+      name: fullName(person),
+      birth: person.birth,
+      death: person.death,
+      birthPlace: person.birthPlace,
+    }));
+    return {
+      people: matches,
+      total: ranked.length,
+      hasMore: ranked.length > limit,
+    };
   }
 
   if (name === "get_person") {
@@ -1348,6 +1375,20 @@ export function executeResearchTool(
       second = personOrThrow(family, stringArg(args, "secondPersonId")),
       relation = analyzeKinship(first, second, family.people, family.links);
     const people = new Map(family.people.map((person) => [person.id, person]));
+    const pathIds = new Set(relation.path),
+      pathPeople = family.people.filter((person) => pathIds.has(person.id)),
+      edges: Array<{ from: string; to: string; type: string }> = [];
+    for (const person of pathPeople) {
+      for (const parentId of person.parents)
+        if (pathIds.has(parentId))
+          edges.push({ from: parentId, to: person.id, type: "parent" });
+      for (const spouseId of person.spouses)
+        if (pathIds.has(spouseId) && person.id < spouseId)
+          edges.push({ from: person.id, to: spouseId, type: "spouse" });
+    }
+    for (const link of family.links || [])
+      if (pathIds.has(link.from) && pathIds.has(link.to))
+        edges.push({ from: link.from, to: link.to, type: link.type });
     return {
       first: { id: first.id, name: fullName(first) },
       second: { id: second.id, name: fullName(second) },
@@ -1355,6 +1396,17 @@ export function executeResearchTool(
       path: relation.path.flatMap((id) =>
         people.has(id) ? [{ id, name: fullName(people.get(id)!) }] : [],
       ),
+      mermaid: edges.length
+        ? graphMermaid(
+            pathPeople.map((person) => ({
+              id: person.id,
+              name: fullName(person),
+              birth: person.birth,
+              death: person.death,
+            })),
+            edges,
+          )
+        : "",
     };
   }
 
@@ -1386,10 +1438,17 @@ export function executeResearchTool(
   if (name === "search_photos") {
     const query = normalized(stringArg(args, "query", false)),
       personId = stringArg(args, "personId", false),
+      sortBy = enumArg(
+        args,
+        "sortBy",
+        ["archive", "people_count"] as const,
+        "archive",
+      ),
+      offset = numberArg(args, "offset", 0, 0, Number.MAX_SAFE_INTEGER),
       limit = numberArg(args, "limit", 20, 1, 50),
       people = new Map(family.people.map((person) => [person.id, person]));
     if (personId) personOrThrow(family, personId);
-    const photos = (family.photos || [])
+    const matches = (family.photos || [])
       .filter(
         (photo) =>
           !personId || photo.tags.some((tag) => tag.personId === personId),
@@ -1410,10 +1469,25 @@ export function executeResearchTool(
         ];
         const joined = fields.map(normalized).join(" ");
         return query.split(" ").every((token) => joined.includes(token));
-      })
-      .slice(0, limit)
-      .map((photo) => cleanPhoto(family, photo.id));
-    return { photos, total: photos.length };
+      });
+    if (sortBy === "people_count")
+      matches.sort(
+        (left, right) =>
+          new Set(right.tags.map((tag) => tag.personId)).size -
+            new Set(left.tags.map((tag) => tag.personId)).size ||
+          left.id.localeCompare(right.id),
+      );
+    const photos = matches.slice(offset, offset + limit).map((photo) => ({
+      ...cleanPhoto(family, photo.id),
+      peopleCount: new Set(photo.tags.map((tag) => tag.personId)).size,
+    }));
+    return {
+      photos,
+      total: matches.length,
+      offset,
+      limit,
+      hasMore: offset + limit < matches.length,
+    };
   }
 
   if (name === "get_photo")
@@ -1842,6 +1916,60 @@ export function executeResearchTool(
       facts: insights.facts,
       topSurnames: insights.topSurnames,
       topNames: insights.topNames,
+    };
+  }
+
+  if (name === "get_birth_statistics") {
+    const fromYear = numberArg(args, "fromYear", 1000, 1000, 2200),
+      toYear = numberArg(args, "toYear", 2200, 1000, 2200),
+      hasRange = args.fromYear !== undefined || args.toYear !== undefined,
+      offset = numberArg(args, "offset", 0, 0, Number.MAX_SAFE_INTEGER),
+      limit = numberArg(args, "limit", 30, 1, 100);
+    if (fromYear > toYear)
+      throw new RangeError("Начальный год больше конечного");
+    const dated = family.people.flatMap((person) => {
+      const match = /^(\d{4})/.exec(person.birth || "");
+      const year = match ? Number(match[1]) : 0;
+      return year >= 1000 && year <= 2200 ? [{ person, year }] : [];
+    });
+    const decades = new Map<number, number>();
+    for (const { year } of dated) {
+      const decade = Math.floor(year / 10) * 10;
+      decades.set(decade, (decades.get(decade) || 0) + 1);
+    }
+    const matches = hasRange
+      ? dated
+          .filter(({ year }) => year >= fromYear && year <= toYear)
+          .sort(
+            (a, b) =>
+              a.year - b.year ||
+              fullName(a.person).localeCompare(fullName(b.person), "ru"),
+          )
+      : [];
+    return {
+      totalPeople: family.people.length,
+      knownBirthYear: dated.length,
+      unknownBirthYear: family.people.length - dated.length,
+      decades: [...decades]
+        .sort(([a], [b]) => a - b)
+        .map(([startYear, count]) => ({
+          startYear,
+          endYear: startYear + 9,
+          count,
+        })),
+      range: hasRange
+        ? { fromYear, toYear, matchedCount: matches.length }
+        : null,
+      people: (hasRange ? matches.slice(offset, offset + limit) : []).map(
+        ({ person, year }) => ({
+          id: person.id,
+          name: fullName(person),
+          year,
+        }),
+      ),
+      offset,
+      limit,
+      hasMore: hasRange && offset + limit < matches.length,
     };
   }
 

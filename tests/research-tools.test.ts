@@ -152,12 +152,17 @@ test("evidence tools distinguish card sources from unsourced events and awards",
   };
   const gaps = executeResearchTool(archive, "find_evidence_gaps", {
     personId: "a",
-  }) as { gaps: Array<{ kind: string }>; total: number };
+  }) as {
+    gaps: Array<{ kind: string }>;
+    total: number;
+    byKind: { card: number; event: number; award: number };
+  };
   assert.deepEqual(
     gaps.gaps.map((gap) => gap.kind),
     ["card", "event", "award"],
   );
   assert.equal(gaps.total, 3);
+  assert.deepEqual(gaps.byKind, { card: 1, event: 1, award: 1 });
   const coverage = executeResearchTool(archive, "get_evidence_coverage", {
     personId: "a",
   }) as { note: string; records: Array<{ cardSourceCount: number }> };
@@ -183,6 +188,13 @@ test("research tools search people and traverse genealogy", () => {
     search.people.map((person) => person.id),
     ["child"],
   );
+  const firstPage = executeResearchTool(family, "search_people", {
+    query: "Скулко",
+    limit: 1,
+  }) as { people: unknown[]; total: number; hasMore: boolean };
+  assert.equal(firstPage.people.length, 1);
+  assert.equal(firstPage.total, 3);
+  assert.equal(firstPage.hasMore, true);
   const reversedName = executeResearchTool(family, "search_people", {
     query: "Василий Скулко",
   }) as { people: Array<{ id: string }> };
@@ -412,6 +424,7 @@ test("relationship analysis matches the archive kinship calculation", () => {
   }) as {
     relation: { kind: string; title: string; roles?: Array<{ term: string }> };
     path: Array<{ id: string }>;
+    mermaid: string;
   };
   assert.equal(result.relation.kind, "direct");
   assert.match(result.relation.roles?.[0]?.term || "", /дед/);
@@ -419,6 +432,34 @@ test("relationship analysis matches the archive kinship calculation", () => {
     result.path.map((person) => person.id),
     ["father", "child", "grandchild"],
   );
+  assert.match(result.mermaid, /Митрофан<br\/>1910–\?/);
+  assert.equal(result.mermaid.match(/родитель → ребёнок/g)?.length, 2);
+});
+
+test("birth statistics count every accessible person and paginate the requested range", () => {
+  const result = executeResearchTool(family, "get_birth_statistics", {
+    fromYear: 1911,
+    toYear: 1970,
+    limit: 1,
+  }) as {
+    totalPeople: number;
+    knownBirthYear: number;
+    unknownBirthYear: number;
+    decades: Array<{ startYear: number; count: number }>;
+    range: { matchedCount: number };
+    people: Array<{ id: string }>;
+    hasMore: boolean;
+  };
+  assert.equal(result.totalPeople, 4);
+  assert.equal(result.knownBirthYear, 4);
+  assert.equal(result.unknownBirthYear, 0);
+  assert.equal(
+    result.decades.reduce((total, row) => total + row.count, 0),
+    4,
+  );
+  assert.equal(result.range.matchedCount, 3);
+  assert.equal(result.people.length, 1);
+  assert.equal(result.hasMore, true);
 });
 
 test("photo tools expose metadata and tagged people without file paths", () => {
@@ -430,6 +471,39 @@ test("photo tools expose metadata and tagged people without file paths", () => {
     search.photos[0]?.people.map((person) => person.id),
     ["child"],
   );
+
+  const ranked = executeResearchTool(
+    {
+      ...family,
+      photos: [
+        family.photos![0],
+        {
+          ...family.photos![0],
+          id: "crowded",
+          tags: [
+            ...family.photos![0].tags,
+            {
+              ...family.photos![0].tags[0],
+              id: "tag-mother",
+              personId: "mother",
+            },
+          ],
+        },
+      ],
+    },
+    "search_photos",
+    { sortBy: "people_count", limit: 1 },
+  ) as {
+    photos: Array<{ id: string; peopleCount: number }>;
+    total: number;
+    hasMore: boolean;
+  };
+  assert.deepEqual(
+    ranked.photos.map((photo) => [photo.id, photo.peopleCount]),
+    [["crowded", 2]],
+  );
+  assert.equal(ranked.total, 2);
+  assert.equal(ranked.hasMore, true);
 
   const result = executeResearchTool(family, "get_photo", {
     photoId: "family-photo",

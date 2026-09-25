@@ -9,6 +9,17 @@ export type ResearchAnswerReference =
       url?: string;
     };
 
+/** Keep provider tool identifiers out of otherwise valid user-facing prose. */
+export function hideResearchToolNames(
+  answer: string,
+  toolNames: ReadonlySet<string>,
+) {
+  return answer.replace(
+    /`?\b([a-z][a-z0-9]*_[a-z0-9_]+)\b`?/g,
+    (match, name: string) => (toolNames.has(name) ? "архива" : match),
+  );
+}
+
 /** A file is already attached to the chat message; remove model-written duplicates. */
 export function cleanPdfAnswer(answer: string) {
   return answer

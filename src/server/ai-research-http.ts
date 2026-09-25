@@ -33,6 +33,7 @@ import {
 } from "./yandex-responses.ts";
 import {
   cleanPdfAnswer,
+  hideResearchToolNames,
   normalizeResearchMarkdown,
   replaceResearchTable,
   researchPdfFilename,
@@ -295,7 +296,7 @@ function surnameInTreeRequest(message: string) {
 
 export function explicitViewControlRequest(message: string, view = "") {
   const directInterfaceRequest =
-      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|сформир|постро|собер|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк|предк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|сформир|постро|найди|выдел|подсвет|перемест|центрир)/iu.test(
+      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|сформир|постро|собер|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|ветк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|сформир|постро|найди|выдел|подсвет|перемест|центрир)/iu.test(
         message,
       ),
     treeMovementRequest =
@@ -823,6 +824,15 @@ export function aiResearchHttp({
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
+    const proposalRequested =
+      canPropose &&
+      /(?:добав|созд|внес|запиш|сохран|измени|измен|исправ|обнов|предлож|прикреп|поменя|сделай|привяж)/iu.test(
+        message,
+      ) &&
+      /(?:человек|люд|карточ|родств|связ|источ|дат|рожд|мест|отц|мат|родител|супруг|наград|имя|фамил|биограф|архив|древ)/iu.test(
+        message,
+      ) &&
+      !/(?:граф|схем|диаграмм|таблиц|список|pdf|пдф|отч[её]т)/iu.test(message);
 
     const snapshot = archive.read(),
       fullFamily = snapshot.family,
@@ -874,14 +884,17 @@ export function aiResearchHttp({
         "Опирайся только на данные инструментов и слова пользователя.",
         "Не превращай предположение в факт. Явно разделяй подтверждённые сведения, вычисляемые противоречия и гипотезы для дальнейшего поиска.",
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
-        "Для обзора архива используй get_archive_insights; для пробелов, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
+        "Для обзора архива используй get_archive_insights; для пробелов в источниках — find_evidence_gaps и, если нужен приоритет действий, get_research_backlog; для пропущенных полей, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
         `Когда нужен следующий шаг поиска вне Drevo или пользователь просит конкретный сайт, вызови find_research_resources с его словами. Категорию можно не указывать: поиск охватит весь каталог, включая названия и описания ресурсов. Категории каталога: ${researchCatalog.categoryNames().join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Выводи найденные URL обычными Markdown-ссылками [название](https://адрес), включая полезные ссылки из описания. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
         "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Для вопроса о двоюродных, троюродных и более дальних братьях или сёстрах вызови get_cousins. degree=2 означает двоюродных, degree=3 — троюродных, degree=4 — четвероюродных и далее. В коротком продолжении вроде «а двоюродные?» используй человека из предыдущих реплик и не проси уже указанные сведения повторно.",
         "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
         "Учитывай предыдущие реплики: короткие продолжения вроде «перечисли», «покажи их» или «а подробнее?» относятся к последнему предмету разговора. Для перечисления всех доступных людей вызывай list_people, а не search_people.",
-        "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
+        "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков и цепочки, который доступен пользователю в интерфейсе. roles[0] описывает первого человека относительно второго, roles[1] — второго относительно первого. Цепочку пересказывай только по полю path и не придумывай промежуточных ролей. Для схемы между этими двумя людьми используй готовое поле mermaid из get_relationship, не запрашивай широкий get_genealogy_graph.",
+        "Для вопросов о рождении по годам и десятилетиям и диаграмм по ним вызывай get_birth_statistics. Бери из него готовые числа, не вычисляй их по странице list_people. Проверяй, что сумма столбцов равна knownBirthYear, а knownBirthYear + unknownBirthYear = totalPeople. Для «после N года» передай fromYear=N+1; если перечисляешь всех, учитывай hasMore и запрашивай следующие страницы.",
+        "Для анализа записей без источников используй total и byKind результата find_evidence_gaps: gaps — лишь ограниченная выборка, а не полный список. Не называй вид пробела среди главных, если его byKind равен нулю. Если просят три главных, а видов всего два, покажи два вида и третий конкретный пример или скажи, что третьего вида нет; не придумывай неподтверждённые события.",
+        "Для фотографии с максимальным числом отмеченных людей вызови search_photos с sortBy=people_count, limit=1, без query; не повторяй поиск по разным словам. Назови снимок и число peopleCount, дай кликабельный маркер [[photo:photoId|Название]].",
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
         "Если вопрос содержит «этот человек», «эта карточка», «это фото» или подобную отсылку без имени, используй открытую карточку или снимок из контекста интерфейса и проверь факты инструментами. Не подменяй явно названного в вопросе человека открытой карточкой.",
@@ -897,7 +910,7 @@ export function aiResearchHttp({
         selectedPerson
           ? `Пользователь уточнил, что в предыдущем вопросе речь о человеке ${fullName(selectedPerson)} (personId: ${selectedPerson.id}). Используй именно эту карточку для инструментов.`
           : "",
-        canPropose
+        proposalRequested
           ? "Для записи в архив доступны только инструменты предложений: propose_person_create создаёт карточку; propose_person_update меняет дату рождения и другие разрешённые поля; propose_source добавляет документальный источник; propose_relation добавляет связь между существующими людьми. Сначала найди существующих участников через search_people и используй только полученные personId. Если имени недостаточно для однозначного выбора, попроси выбрать человека; если для источника нет названия или ссылки на запись, попроси эти сведения. Это только предложения: архив не меняется, пока человек не нажмёт «Принять» в интерфейсе. Ты не умеешь принимать предложение от имени пользователя. Не утверждай, что изменение применено или ожидает второго подтверждения. Для parent fromPersonId означает родителя, toPersonId — ребёнка. Управление камерой и открытием карточек выполняется отдельно через control_archive_view и не меняет архив."
           : "",
         requesterPromptContext(user, family),
@@ -909,7 +922,7 @@ export function aiResearchHttp({
         "Отвечай по-русски, предметно. Используй Markdown: заголовки, списки и таблицы, когда они делают сложный ответ понятнее.",
         "Сначала выполни действие, затем коротко скажи, что изменилось. Не описывай внутренние проверки, не приписывай интерфейсу состояние, которого не видишь, и не добавляй стандартное «если хотите, могу...» после завершённого действия.",
         "Когда сравнение или распределение подтверждённых чисел будет понятнее на диаграмме, можешь добавить компактный Mermaid pie или xychart рядом с кратким объяснением. Не придумывай значения и не дублируй таблицу графиком без пользы. Для родственных связей показывай схему только по данным get_genealogy_graph.",
-        "Если пользователь просит схему в чате, вызови get_genealogy_graph или get_surname_group и вставь непустое поле mermaid в fenced-блок ```mermaid без изменений. Не выводи пустой блок или текст ошибки рендеринга. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
+        "Если пользователь просит схему в чате, вызови get_relationship для двух названных людей, get_genealogy_graph для ветви вокруг одного человека или get_surname_group для фамильной группы и вставь непустое поле mermaid в fenced-блок ```mermaid без изменений. Не выводи пустой блок или текст ошибки рендеринга. Не добавляй отсутствующие в edges связи. Внутри Mermaid не используй Markdown, ссылки и маркеры [[person:...]].",
         "Если пользователь просит PDF, собери сведения инструментами и вызови create_pdf через tool_calls. Передай подготовленный Markdown с нужными таблицами и Mermaid graph/flowchart, pie или xychart; остальные типы PDF пока не поддерживает. Схема архива занимает один отдельный лист A4. В ответе кратко поясни содержимое файла: не печатай URL, пустую ссылку, «скачать по ссылке» или название файла, ссылка появится в интерфейсе. Не обещай готовый файл до created: true.",
         personIds.length
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
@@ -959,19 +972,16 @@ export function aiResearchHttp({
       executedTools = 0,
       lookupRetryUsed = false,
       internalOutputRetryUsed = false,
-      pdfRetryUsed = false;
+      pdfRetryUsed = false,
+      emptyResponseRetries = 0;
     let verifiedMermaid = "";
     let verifiedSurname = "";
+    let verifiedRelationshipAnswer = "";
+    let verifiedTopPhotoAnswer = "";
+    let verifiedBirthChartAnswer = "";
+    let verifiedSourceGapAnswer = "";
     const uiActions: UiAction[] = [],
       files: ResearchFile[] = [],
-      allowedToolNames = new Set([
-        ...RESEARCH_TOOL_DEFINITIONS.map((tool) => tool.name),
-        ANALYZE_PHOTO_TOOL.name,
-        RESEARCH_RESOURCES_TOOL.name,
-        CONTROL_VIEW_TOOL.name,
-        CREATE_PDF_TOOL.name,
-        ...(canPropose ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name) : []),
-      ]),
       viewControlRequested = explicitViewControlRequest(message, view),
       filterSurnameRequested =
         viewControlRequested &&
@@ -982,6 +992,14 @@ export function aiResearchHttp({
       photoViewRequested =
         /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
           message,
+        ),
+      photoAnalysisRequested =
+        /(?:проанализ|опиш|расскаж|что\s+на|что\s+видно|детал|распозн|изобраз).{0,55}(?:фото|сним|изображ)|(?:фото|сним|изображ).{0,55}(?:проанализ|опиш|расскаж|видно|изобраз)/iu.test(
+          message,
+        ) ||
+        Boolean(
+          openPhoto &&
+          /(?:что\s+видно|что\s+на\s+н[её]м|опиши|проанализ)/iu.test(message),
         ),
       personCardViewRequested =
         /(?:открой|покаж(?:и|ь)?).{0,40}карточ|карточ.{0,40}(?:открой|покаж(?:и|ь)?)/iu.test(
@@ -996,6 +1014,39 @@ export function aiResearchHttp({
         pdfRequested &&
         family.people.length > 0 &&
         /(?:граф|схем|анализ)/iu.test(lookupContext);
+    const sourceGapAnalysisRequested =
+      /(?:пробел|отсутств|нехват|неподтвержд).{0,45}(?:источ|ссылк|подтвержд)|(?:источ|подтвержд).{0,45}(?:пробел|отсутств|нехват)/iu.test(
+        message,
+      ) &&
+      !/(?:фото|сним|родств|древ|дерев|граф|схем|диаграмм)/iu.test(message);
+    const researchDefinitions = sourceGapAnalysisRequested
+      ? RESEARCH_TOOL_DEFINITIONS.filter((tool) =>
+          [
+            "search_people",
+            "get_person",
+            "get_sources",
+            "get_evidence_coverage",
+            "find_evidence_gaps",
+            "find_missing_data",
+            "get_archive_insights",
+            "get_research_backlog",
+          ].includes(tool.name),
+        )
+      : RESEARCH_TOOL_DEFINITIONS;
+    const allowedToolNames = new Set([
+      ...researchDefinitions.map((tool) => tool.name),
+      ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL.name] : []),
+      RESEARCH_RESOURCES_TOOL.name,
+      ...(viewControlRequested ||
+      photoViewRequested ||
+      shortTreeZoomRequest(message, view)
+        ? [CONTROL_VIEW_TOOL.name]
+        : []),
+      ...(pdfRequested ? [CREATE_PDF_TOOL.name] : []),
+      ...(proposalRequested
+        ? RESEARCH_PROPOSAL_TOOLS.map((tool) => tool.name)
+        : []),
+    ]);
 
     if (
       canPropose &&
@@ -1092,34 +1143,61 @@ export function aiResearchHttp({
       metrics.agentIterations++;
       recordModelCall(metrics, runtime.modelUri);
       let completion;
+      const requestOptions = {
+        runtime,
+        conversationId,
+        input: pendingInput,
+        instructions: system,
+        tools: [
+          ...researchDefinitions,
+          ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL] : []),
+          RESEARCH_RESOURCES_TOOL,
+          ...(viewControlRequested ||
+          photoViewRequested ||
+          shortTreeZoomRequest(message, view)
+            ? [CONTROL_VIEW_TOOL]
+            : []),
+          ...(pdfRequested ? [CREATE_PDF_TOOL] : []),
+          ...(proposalRequested ? RESEARCH_PROPOSAL_TOOLS : []),
+        ].map((definition) => ({
+          type: "function" as const,
+          name: definition.name,
+          description: definition.description,
+          parameters: definition.inputSchema,
+        })),
+        compactThreshold: runtime.compactionEnabled
+          ? runtime.compactThresholdTokens
+          : null,
+        automaticTruncation: runtime.automaticTruncation,
+        signal,
+        stream,
+      };
       try {
-        completion = await responses.respond({
-          runtime,
-          conversationId,
-          input: pendingInput,
-          instructions: system,
-          tools: [
-            ...RESEARCH_TOOL_DEFINITIONS,
-            ANALYZE_PHOTO_TOOL,
-            RESEARCH_RESOURCES_TOOL,
-            CONTROL_VIEW_TOOL,
-            CREATE_PDF_TOOL,
-            ...(canPropose ? RESEARCH_PROPOSAL_TOOLS : []),
-          ].map((definition) => ({
-            type: "function" as const,
-            name: definition.name,
-            description: definition.description,
-            parameters: definition.inputSchema,
-          })),
-          compactThreshold: runtime.compactionEnabled
-            ? runtime.compactThresholdTokens
-            : null,
-          automaticTruncation: runtime.automaticTruncation,
-          signal,
-          stream,
-        });
+        completion = await responses.respond(requestOptions);
       } catch (error) {
-        if (round === 0 && missingYandexConversation(error)) {
+        if (
+          stream &&
+          round === 0 &&
+          !signal.aborted &&
+          error instanceof Error &&
+          /Поток Yandex AI Studio завершился без response\.completed/iu.test(
+            error.message,
+          )
+        ) {
+          console.warn(
+            JSON.stringify({
+              event: "ai.incomplete_stream_retry",
+              model: runtime.modelUri,
+            }),
+          );
+          onStatus("Повторяю запрос без потоковой передачи…");
+          recordModelCall(metrics, runtime.modelUri);
+          completion = await responses.respond({
+            ...requestOptions,
+            stream: false,
+            signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+          });
+        } else if (round === 0 && missingYandexConversation(error)) {
           conversationId = await responses.createConversation(runtime);
           chats.setRemote(chatId, conversationId);
           pendingInput.splice(0, pendingInput.length, ...restoreHistory(), {
@@ -1129,8 +1207,9 @@ export function aiResearchHttp({
           });
           round--;
           continue;
+        } else {
+          throw error;
         }
-        throw error;
       }
       const answer: ModelMessage = {
         role: "assistant",
@@ -1177,6 +1256,32 @@ export function aiResearchHttp({
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
+        if (
+          !rawContent.trim() &&
+          !createdSuggestionIds.size &&
+          !files.length &&
+          emptyResponseRetries < 2 &&
+          round < runtime.maxToolIterations
+        ) {
+          emptyResponseRetries++;
+          console.warn(
+            JSON.stringify({
+              event: "ai.empty_response_retry",
+              model: runtime.modelUri,
+              responseId: completion.id,
+              attempt: emptyResponseRetries,
+              toolCallCount: metrics.toolCallCount,
+            }),
+          );
+          pendingInput.push({
+            type: "message",
+            role: "user",
+            content:
+              "Предыдущий шаг завершился без видимого ответа. Заверши исходный запрос сейчас: если фактов достаточно, дай краткий ответ по уже полученным результатам инструментов; если нет — вызови нужный инструмент. Не повторяй вызовы без необходимости.",
+          });
+          onStatus("Завершаю ответ…");
+          continue;
+        }
         if (
           (containsInternalToolText(rawContent, allowedToolNames) ||
             (selectedPerson && containsInternalSelectionText(rawContent))) &&
@@ -1311,9 +1416,27 @@ export function aiResearchHttp({
                 : "Проверьте предложения и выберите действие для каждого."
               : proposalErrors.length
                 ? `Не удалось подготовить предложение: ${[...new Set(proposalErrors)].join("; ")}. Архив не изменён.`
-                : typeof answer.content === "string" && answer.content.trim()
-                  ? answer.content
-                  : "Модель не сформировала текстовый ответ.";
+                : verifiedRelationshipAnswer &&
+                    /(?:кем\s+мне\s+приход|кто\s+мне\s+приход|(?:родств|родствен|граф|схем).{0,50}между\s+мной)/iu.test(
+                      message,
+                    )
+                  ? verifiedRelationshipAnswer
+                  : verifiedBirthChartAnswer &&
+                      /(?:диаграмм|график).{0,80}(?:рожд|десятилет)|(?:рожд|десятилет).{0,80}(?:диаграмм|график)/iu.test(
+                        message,
+                      )
+                    ? verifiedBirthChartAnswer
+                    : verifiedSourceGapAnswer && sourceGapAnalysisRequested
+                      ? verifiedSourceGapAnswer
+                      : verifiedTopPhotoAnswer &&
+                          /(?:наибольш|больше\s+всего|сам.{0,10}(?:мног|жирн)|максимал)/iu.test(
+                            message,
+                          )
+                        ? verifiedTopPhotoAnswer
+                        : typeof answer.content === "string" &&
+                            answer.content.trim()
+                          ? answer.content
+                          : "Не удалось завершить ответ. Повторите вопрос — данные архива не изменились.";
         const preparedAnswer = files.length
           ? cleanPdfAnswer(rawAnswer) || "PDF готов."
           : rawAnswer;
@@ -1333,7 +1456,7 @@ export function aiResearchHttp({
             ? "Не удалось сформулировать ответ по данным архива. Попробуйте уточнить вопрос."
             : humanizeResearchAnswer(
                 repairArchiveMarkers(
-                  formattedAnswer,
+                  hideResearchToolNames(formattedAnswer, allowedToolNames),
                   peopleById,
                   photosById,
                   referencedPeople,
@@ -1410,6 +1533,10 @@ export function aiResearchHttp({
             files.push({ name, url });
             result = { created: true, file: { name, url } };
           } else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
+            if (!photoAnalysisRequested)
+              throw new Error(
+                "Пользователь не просил анализировать изображение",
+              );
             if (analyzedPhotos >= 3)
               throw new Error(
                 "За один ответ можно проанализировать не более трёх фотографий",
@@ -1559,7 +1686,7 @@ export function aiResearchHttp({
             } else
               throw new Error("Запрошенный объект не найден или недоступен");
           } else if (
-            canPropose &&
+            proposalRequested &&
             RESEARCH_PROPOSAL_TOOLS.some(
               (tool) => tool.name === call.function.name,
             )
@@ -1584,6 +1711,7 @@ export function aiResearchHttp({
               ? "Внутренняя ошибка инструмента"
               : detail.slice(0, 300);
           if (
+            proposalRequested &&
             RESEARCH_PROPOSAL_TOOLS.some(
               (tool) => tool.name === call.function.name,
             )
@@ -1597,7 +1725,8 @@ export function aiResearchHttp({
           );
         collectPersonReferences(result, peopleById, referencedPeople);
         if (
-          (call.function.name === "get_genealogy_graph" ||
+          (call.function.name === "get_relationship" ||
+            call.function.name === "get_genealogy_graph" ||
             call.function.name === "get_surname_group") &&
           result &&
           typeof result === "object"
@@ -1606,6 +1735,153 @@ export function aiResearchHttp({
           if (graph.mermaid?.startsWith("graph "))
             verifiedMermaid = graph.mermaid;
           if (graph.surname) verifiedSurname = graph.surname;
+        }
+        if (
+          call.function.name === "get_relationship" &&
+          result &&
+          typeof result === "object" &&
+          user.personId
+        ) {
+          const relationResult = result as {
+            first?: { id: string; name: string };
+            second?: { id: string; name: string };
+            relation?: {
+              roles?: Array<{ term: string }>;
+              common?: string[];
+              distances?: [number, number];
+            };
+          };
+          const firstIsMe = relationResult.first?.id === user.personId;
+          const secondIsMe = relationResult.second?.id === user.personId;
+          const other = firstIsMe
+            ? relationResult.second
+            : secondIsMe
+              ? relationResult.first
+              : null;
+          const role =
+            relationResult.relation?.roles?.[firstIsMe ? 1 : 0]?.term;
+          if (other && role) {
+            const ancestors = (relationResult.relation?.common || [])
+              .map((id) => peopleById.get(id))
+              .filter(Boolean);
+            const distances = relationResult.relation?.distances;
+            const distanceNote = distances
+              ? `До ${ancestors.length > 1 ? "общих предков" : "общего предка"}: от вас — ${distances[firstIsMe ? 0 : 1]} ${plural(distances[firstIsMe ? 0 : 1], "поколение", "поколения", "поколений")}, от ${other.name} — ${distances[firstIsMe ? 1 : 0]} ${plural(distances[firstIsMe ? 1 : 0], "поколение", "поколения", "поколений")}.`
+              : "";
+            verifiedRelationshipAnswer = [
+              `[[person:${other.id}|${other.name}]] — **${role}** по отношению к вам.`,
+              ancestors.length ? `Общие предки: ${ancestors.join(", ")}.` : "",
+              distanceNote,
+            ]
+              .filter(Boolean)
+              .join(" ");
+          }
+        }
+        if (
+          call.function.name === "search_photos" &&
+          toolArgs &&
+          typeof toolArgs === "object" &&
+          (toolArgs as Record<string, unknown>).sortBy === "people_count" &&
+          !(toolArgs as Record<string, unknown>).query &&
+          !(toolArgs as Record<string, unknown>).personId &&
+          result &&
+          typeof result === "object"
+        ) {
+          const ranked = result as {
+            photos?: Array<{ id: string; peopleCount: number }>;
+          };
+          const top = ranked.photos?.[0];
+          if (top && photosById.has(top.id))
+            verifiedTopPhotoAnswer = `Больше всего отмеченных людей — **${top.peopleCount}** — на [[photo:${top.id}|${photosById.get(top.id)?.startsWith("Фотография") ? "Групповой снимок" : photosById.get(top.id)}]].`;
+        }
+        if (
+          call.function.name === "get_birth_statistics" &&
+          result &&
+          typeof result === "object"
+        ) {
+          const statistics = result as {
+            totalPeople?: number;
+            knownBirthYear?: number;
+            unknownBirthYear?: number;
+            decades?: Array<{ startYear: number; count: number }>;
+          };
+          const decades = statistics.decades || [];
+          if (
+            decades.length &&
+            decades.length <= 100 &&
+            decades.every(
+              (item) =>
+                Number.isInteger(item.startYear) &&
+                Number.isInteger(item.count),
+            ) &&
+            decades.reduce((sum, item) => sum + item.count, 0) ===
+              statistics.knownBirthYear &&
+            (statistics.knownBirthYear || 0) +
+              (statistics.unknownBirthYear || 0) ===
+              statistics.totalPeople
+          ) {
+            const labels = decades
+              .map((item) => `"${item.startYear}-е"`)
+              .join(", ");
+            const values = decades.map((item) => item.count).join(", ");
+            const max = Math.max(...decades.map((item) => item.count));
+            verifiedBirthChartAnswer =
+              `Из ${statistics.totalPeople} человек год рождения известен у ${statistics.knownBirthYear}; без года рождения — ${statistics.unknownBirthYear}.\n\n` +
+              `\x60\x60\x60mermaid\nxychart-beta\n  title "Люди по десятилетиям рождения"\n  x-axis [${labels}]\n  y-axis "Число людей" 0 --> ${max + 2}\n  bar [${values}]\n\x60\x60\x60`;
+          }
+        }
+        if (
+          call.function.name === "find_evidence_gaps" &&
+          result &&
+          typeof result === "object"
+        ) {
+          const gapsResult = result as {
+            total?: number;
+            byKind?: { card: number; event: number; award: number };
+            gaps?: Array<{
+              kind?: string;
+              person?: { id: string; name: string };
+            }>;
+          };
+          const counts = gapsResult.byKind;
+          if (
+            counts &&
+            Number.isInteger(gapsResult.total) &&
+            counts.card + counts.event + counts.award === gapsResult.total
+          ) {
+            const categories = [
+              ["Карточки без источников", counts.card],
+              ["События без источников", counts.event],
+              ["Награды без источников", counts.award],
+            ] as const;
+            const found = categories.filter(([, count]) => count > 0);
+            const examples = [
+              ...new Map(
+                (gapsResult.gaps || [])
+                  .filter(
+                    (gap) =>
+                      gap.kind === "card" &&
+                      gap.person &&
+                      peopleById.has(gap.person.id),
+                  )
+                  .map((gap) => [gap.person!.id, gap.person!] as const),
+              ).values(),
+            ].slice(0, 3);
+            verifiedSourceGapAnswer = [
+              `В доступной части архива **${gapsResult.total} записей без прикреплённых источников**.`,
+              ...found.map(([label, count]) => `- **${label}: ${count}**.`),
+              ...(found.length < 3
+                ? [`Других видов таких пробелов в доступных данных нет.`]
+                : []),
+              ...(examples.length
+                ? [
+                    `Примеры карточек для проверки: ${examples
+                      .map((person) => `[[person:${person.id}|${person.name}]]`)
+                      .join(", ")}.`,
+                  ]
+                : []),
+            ].join("\n");
+          }
         }
         collectPersonReferences(result, photosById, referencedPhotos);
         if (
@@ -1619,6 +1895,124 @@ export function aiResearchHttp({
             String((toolArgs as Record<string, unknown>).personId),
             referencedSources,
           );
+        let directAnswer = "";
+        if (
+          call.function.name === "get_cousins" &&
+          /(?:кто|перечисл|назов|сколько|есть|а\s+(?:двоюрод|троюрод))/iu.test(
+            message,
+          ) &&
+          !/(?:почему|как\s+рассчит|схем|граф)/iu.test(message) &&
+          result &&
+          typeof result === "object"
+        ) {
+          const cousins = result as {
+            person?: { id: string; name: string };
+            total?: number;
+            relatives?: Array<{
+              person: { id: string; name: string };
+              term?: string;
+            }>;
+            hasMore?: boolean;
+          };
+          if (cousins.person && typeof cousins.total === "number") {
+            const anchor = `[[person:${cousins.person.id}|${cousins.person.name}]]`;
+            directAnswer = cousins.total
+              ? [
+                  `${anchor} — ${cousins.total} ${plural(cousins.total, "родственник", "родственника", "родственников")} этой степени:`,
+                  ...(cousins.relatives || [])
+                    .slice(0, 30)
+                    .map(
+                      (relative) =>
+                        `- [[person:${relative.person.id}|${relative.person.name}]]${relative.term ? ` — ${relative.term}` : ""}`,
+                    ),
+                  ...(cousins.hasMore || cousins.total > 30
+                    ? ["Показана часть списка."]
+                    : []),
+                ].join("\n")
+              : `Для ${anchor} в доступной части архива не указаны родственники этой степени.`;
+          }
+        }
+        if (
+          verifiedRelationshipAnswer &&
+          call.function.name === "get_relationship" &&
+          /(?:кем\s+мне\s+приход|кто\s+мне\s+приход|(?:родств|родствен|граф|схем).{0,50}между\s+мной)/iu.test(
+            message,
+          )
+        )
+          directAnswer = normalizeResearchMarkdown(
+            verifiedRelationshipAnswer,
+            verifiedMermaid,
+            /(?:схем|граф)/iu.test(message),
+          );
+        if (
+          verifiedTopPhotoAnswer &&
+          call.function.name === "search_photos" &&
+          /(?:наибольш|больше\s+всего|сам.{0,10}(?:мног|жирн)|максимал)/iu.test(
+            message,
+          )
+        )
+          directAnswer = verifiedTopPhotoAnswer;
+        if (
+          verifiedBirthChartAnswer &&
+          call.function.name === "get_birth_statistics" &&
+          /(?:диаграмм|график).{0,80}(?:рожд|десятилет)|(?:рожд|десятилет).{0,80}(?:диаграмм|график)/iu.test(
+            message,
+          )
+        )
+          directAnswer = verifiedBirthChartAnswer;
+        if (
+          verifiedSourceGapAnswer &&
+          sourceGapAnalysisRequested &&
+          call.function.name === "find_evidence_gaps"
+        )
+          directAnswer = verifiedSourceGapAnswer;
+        if (
+          call.function.name === "search_photos" &&
+          photoViewRequested &&
+          !photoAnalysisRequested &&
+          result &&
+          typeof result === "object"
+        ) {
+          const found = result as {
+            photos?: Array<{ id: string }>;
+            total?: number;
+          };
+          const photos = (found.photos || [])
+            .filter((photo) => photosById.has(photo.id))
+            .slice(0, 8);
+          if (photos.length) {
+            uiActions.push({ type: "open_photo", photoId: photos[0].id });
+            directAnswer = [
+              `Открыл первый снимок. Найдено: ${found.total ?? photos.length}.`,
+              ...photos.map(
+                (photo) =>
+                  `- [[photo:${photo.id}|${photosById.get(photo.id)}]]`,
+              ),
+            ].join("\n");
+          }
+        }
+        if (directAnswer) {
+          const references: AnswerReference[] = [
+            ...[...referencedPeople].slice(0, 250).map((id) => ({
+              kind: "person" as const,
+              id,
+              label: peopleById.get(id)!,
+            })),
+            ...[...referencedPhotos].slice(0, 8).map((id) => ({
+              kind: "photo" as const,
+              id,
+              label: photosById.get(id)!,
+            })),
+          ];
+          onDelta(directAnswer);
+          return {
+            answer: directAnswer,
+            references,
+            suggestionIds: [],
+            uiActions,
+            files: [],
+          };
+        }
         pendingInput.push(
           recoveredToolCalls
             ? {
@@ -1951,6 +2345,14 @@ export function aiResearchHttp({
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
       chats.setRemote(chat.id, null);
+      const errorMessage =
+        error instanceof Error &&
+        (error.name === "TimeoutError" ||
+          /aborted due to timeout|timed out/i.test(error.message))
+          ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
+          : error instanceof Error
+            ? error.message
+            : "Не удалось получить ответ ИИ";
       console.warn(
         JSON.stringify({
           event: "ai.turn_failed",
@@ -1975,20 +2377,12 @@ export function aiResearchHttp({
         models: modelUsage(metrics),
       });
       if (stream) {
-        sse(res, "error", {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Не удалось получить ответ ИИ",
-        });
+        sse(res, "error", { error: errorMessage });
         res.end();
         return true;
       }
       return json(res, error instanceof RangeError ? 400 : 502, {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Не удалось получить ответ ИИ",
+        error: errorMessage,
       });
     } finally {
       clearInterval(lockRenewal);
