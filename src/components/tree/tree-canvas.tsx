@@ -402,8 +402,8 @@ function Canvas(props: Props) {
   } = nodeModel;
   useEffect(() => {
     if (problem) {
-      setGrowing(false);
-      return;
+      const timer = window.setTimeout(() => setGrowing(false), 0);
+      return () => window.clearTimeout(timer);
     }
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
