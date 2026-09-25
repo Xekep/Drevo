@@ -522,7 +522,7 @@ body,
 .admin-user-row {
   display: grid;
   grid-template-columns:
-    minmax(130px, 1.2fr) minmax(85px, 0.75fr) minmax(125px, 1.2fr)
+    minmax(185px, 1.2fr) minmax(85px, 0.75fr) minmax(125px, 1.2fr)
     minmax(105px, 1fr) minmax(76px, 0.7fr);
   align-items: center;
   gap: 12px;
@@ -576,6 +576,16 @@ body,
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.admin-user-identity .admin-user-visit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #687768;
+  font-variant-numeric: tabular-nums;
+}
+.admin-user-visit svg {
+  flex: none;
 }
 .admin-user-identity b {
   font-size: 13px;

@@ -59,13 +59,56 @@ test("persistent sessions survive server restart, renew on activity and revoke o
     );
     const stored = app.db.prepare("SELECT * FROM auth_sessions").get()!;
     assert.notEqual(stored.token_hash, token, "only the hash is persisted");
+    const loginVisit = app.users.get("test-user")!.lastVisitAt;
+    assert.ok(loginVisit && Date.now() - Date.parse(loginVisit) < 5000);
     assert.equal(
       (await request("/session", cookie).then((r) => r.json())).user.role,
       "admin",
     );
+    assert.equal(
+      app.users.get("test-user")!.lastVisitAt,
+      loginVisit,
+      "ordinary API requests within a minute do not write a new visit",
+    );
+    const oldVisit = new Date(Date.now() - 120_000).toISOString();
+    app.db
+      .prepare("UPDATE users SET last_visit_at=? WHERE id=?")
+      .run(oldVisit, "test-user");
+    await request("/session", cookie, { "Sec-Fetch-Site": "cross-site" });
+    await request("/session", "drevo_session=" + "0".repeat(64));
+    assert.equal(
+      app.users.get("test-user")!.lastVisitAt,
+      oldVisit,
+      "foreign and invalid requests do not count as visits",
+    );
+    await request("/session", cookie);
+    const activeVisit = app.users.get("test-user")!.lastVisitAt;
+    assert.ok(activeVisit && Date.parse(activeVisit) > Date.parse(oldVisit));
+    assert.equal(app.users.listPage(20).users[0].lastVisitAt, activeVisit);
+    app.users.recordVisit(
+      "test-user",
+      Date.parse(activeVisit!) + 30_000,
+      60_000,
+    );
+    assert.equal(
+      app.users.get("test-user")!.lastVisitAt,
+      activeVisit,
+      "database guard throttles another concurrent session too",
+    );
+    app.users.recordVisit("test-user", Date.parse(oldVisit));
+    assert.equal(
+      app.users.get("test-user")!.lastVisitAt,
+      activeVisit,
+      "an older request cannot move the visit backwards",
+    );
     await close();
     app = open();
     await listen();
+    assert.equal(
+      app.users.get("test-user")!.lastVisitAt,
+      activeVisit,
+      "last visit survives restart",
+    );
     assert.equal(
       (await request("/session", cookie).then((r) => r.json())).user.id,
       "test-user",

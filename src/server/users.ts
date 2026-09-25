@@ -38,6 +38,7 @@ export function userStore(
     name: String(row.name),
     role: row.role as Role,
     createdAt: String(row.created_at),
+    lastVisitAt: row.last_visit_at ? String(row.last_visit_at) : undefined,
     approved: !!row.approved,
     personId: row.person_id ? String(row.person_id) : undefined,
     treeAccess: (row.tree_access || "all") as TreeAccess,
@@ -45,6 +46,13 @@ export function userStore(
   function get(id: string) {
     const row = db.prepare("SELECT * FROM users WHERE id=?").get(id);
     return row ? convert(row) : null;
+  }
+  const updateVisit = db.prepare(
+    "UPDATE users SET last_visit_at=? WHERE id=? AND (last_visit_at IS NULL OR last_visit_at<?)",
+  );
+  function recordVisit(id: string, now = Date.now(), interval = 0) {
+    const at = new Date(now).toISOString();
+    updateVisit.run(at, id, new Date(now - interval).toISOString());
   }
   function register(id: string, name: string) {
     db.exec("BEGIN IMMEDIATE");
@@ -289,6 +297,7 @@ export function userStore(
   }
   return {
     get,
+    recordVisit,
     register,
     setRole,
     setApproved,
