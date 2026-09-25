@@ -161,9 +161,7 @@ export default function App() {
             "submit",
           ].includes(target.type)) ||
         (target instanceof Element &&
-          !!target.closest(
-            '[contenteditable]:not([contenteditable="false"])',
-          ));
+          !!target.closest('[contenteditable]:not([contenteditable="false"])'));
       if (!editable) event.preventDefault();
     };
     window.addEventListener("wheel", preventPageZoom, {
@@ -891,6 +889,12 @@ export default function App() {
           view={view}
           onOpenChange={setAssistantOpen}
           personIds={selected.slice(0, 2)}
+          openPersonId={
+            view === "tree" && !compare && !personDraft
+              ? chosen[0]?.id
+              : undefined
+          }
+          openPhotoId={photoWorkspace.photo?.id}
           currentPersonName={
             user.personId ? map.get(user.personId)?.name : undefined
           }

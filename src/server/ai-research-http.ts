@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
-import { fullName } from "../domain/dates.ts";
+import { fullName, plural } from "../domain/dates.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import {
@@ -18,6 +18,7 @@ import {
 import { AiLimitError, type aiUsageStore } from "./ai-usage.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
+import { archivePaths } from "../domain/archive-routes.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
 import { fetchAiStudioModels } from "./ai-models.ts";
@@ -210,22 +211,41 @@ const ANALYZE_PHOTO_TOOL = {
 const RESEARCH_RESOURCES_TOOL = {
   name: "find_research_resources",
   description:
-    "Подобрать из каталога внешние сайты для генеалогического поиска. Передай название одной категории и тему или местность. Результат содержит не более пяти ссылок; выбери только релевантные. Ссылки не подтверждают факты архива.",
+    "Найти внешние сайты в редактируемом каталоге, в том числе по названию места и тексту описания. Передай поисковый запрос; категория необязательна. Результат содержит не более пяти ссылок. Ссылки не подтверждают факты архива.",
   inputSchema: {
     type: "object",
     properties: {
       category: { type: "string", minLength: 1, maxLength: 100 },
       query: { type: "string", maxLength: 200 },
     },
-    required: ["category"],
+    required: ["query"],
     additionalProperties: false,
   },
 } as const;
 
+function specificResourceRequest(message: string) {
+  return (
+    /(?:дай|покажи|найди|пришли|скинь|где)/iu.test(message) &&
+    /(?:ссылк|сайт|ресурс|цифров.{0,30}кладбищ|онлайн.{0,30}кладбищ|каталог)/iu.test(
+      message,
+    )
+  );
+}
+
+function resourceMarkdown(resource: {
+  name: string;
+  url: string;
+  description: string;
+}) {
+  const name = resource.name.replaceAll("[", "\\[").replaceAll("]", "\\]");
+  const url = resource.url.replaceAll("(", "%28").replaceAll(")", "%29");
+  return `- [${name}](${url}) — ${resource.description.replace(/\s*\n\s*/g, " ")}`;
+}
+
 const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять текущим интерфейсом только по явной просьбе пользователя. action=focus_people перемещает древо к людям; action=filter_surname временно показывает только людей с текущей фамилией или фамилией при рождении и ближайших известных родителей, перестраивая связи. Сначала вызови get_surname_group. zoom_in и zoom_out меняют масштаб; open_person открывает карточку; open_photo открывает фотографию. Не вызывай инструмент лишь из-за упоминания человека.",
+    "Управлять интерфейсом только по явной просьбе пользователя. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из проверенных personIds, собранных другими инструментами по произвольному критерию пользователя. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
   inputSchema: {
     type: "object",
     properties: {
@@ -234,6 +254,7 @@ const CONTROL_VIEW_TOOL = {
         enum: [
           "focus_people",
           "filter_surname",
+          "filter_people",
           "open_person",
           "open_photo",
           "zoom_in",
@@ -244,20 +265,37 @@ const CONTROL_VIEW_TOOL = {
         type: "array",
         items: { type: "string", minLength: 1, maxLength: 200 },
         minItems: 1,
-        maxItems: 20,
+        maxItems: 300,
       },
       personId: { type: "string", minLength: 1, maxLength: 200 },
       photoId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
+      label: { type: "string", minLength: 1, maxLength: 100 },
     },
     required: ["action"],
     additionalProperties: false,
   },
 } as const;
 
+function treeSubsetRequest(message: string) {
+  return /(?:древ|дерев).{0,120}(?:только|остав|сформир|постро|из\s+(?:людей|родственник))|(?:только|остав|сформир|постро).{0,120}(?:древ|дерев)/iu.test(
+    message,
+  );
+}
+
+function surnameInTreeRequest(message: string) {
+  return (
+    /(?:древ[ео]|дерев[ео]|род[ауе]|ветк[еиу]|по)\s+(?:только\s+)?([а-яё-]{4,})/iu.exec(
+      message,
+    )?.[1] ||
+    /только\s+([а-яё-]{4,}).{0,40}(?:древ|дерев)/iu.exec(message)?.[1] ||
+    ""
+  );
+}
+
 export function explicitViewControlRequest(message: string, view = "") {
   const directInterfaceRequest =
-      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк|предк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|найди|выдел|подсвет|перемест|центрир)/iu.test(
+      /(?:покаж(?:и|ь)?|отобраз|остав|убер|скрой|сформир|постро|собер|перейди|открой|приблиз|сфокус|выдел|подсвет|проведи|перемест|перенес|центрир|навед|найди).{0,90}(?:древ|дерев|карточ|фото|сним|люд|человек|цепоч|связ|ветк|предк)|(?:на древе|в дереве|на карте).{0,90}(?:покаж(?:и|ь)?|отобраз|остав|сформир|постро|найди|выдел|подсвет|перемест|центрир)/iu.test(
         message,
       ),
     treeMovementRequest =
@@ -801,7 +839,19 @@ export function aiResearchHttp({
             .filter((id) => family.people.some((person) => person.id === id))
             .slice(0, 2)
         : [],
-      view = typeof context.view === "string" ? context.view : "",
+      view =
+        typeof context.view === "string" &&
+        Object.hasOwn(archivePaths, context.view)
+          ? context.view
+          : "",
+      openPerson =
+        typeof context.openPersonId === "string"
+          ? family.people.find((person) => person.id === context.openPersonId)
+          : undefined,
+      openPhoto =
+        typeof context.openPhotoId === "string"
+          ? family.photos?.find((photo) => photo.id === context.openPhotoId)
+          : undefined,
       history = (chats.messages(chatId, user.id, true) || [])
         .slice(0, -1)
         .slice(-12),
@@ -826,7 +876,7 @@ export function aiResearchHttp({
         "Если для ответа нужны данные архива, вызывай инструменты вместо догадок.",
         "Для обзора архива используй get_archive_insights; для пробелов, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
-        `Когда нужен следующий шаг поиска вне Drevo, вызови find_research_resources. Категории каталога: ${researchCatalog.categoryNames().join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
+        `Когда нужен следующий шаг поиска вне Drevo или пользователь просит конкретный сайт, вызови find_research_resources с его словами. Категорию можно не указывать: поиск охватит весь каталог, включая названия и описания ресурсов. Категории каталога: ${researchCatalog.categoryNames().join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Выводи найденные URL обычными Markdown-ссылками [название](https://адрес), включая полезные ссылки из описания. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
         "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Для вопроса о двоюродных, троюродных и более дальних братьях или сёстрах вызови get_cousins. degree=2 означает двоюродных, degree=3 — троюродных, degree=4 — четвероюродных и далее. В коротком продолжении вроде «а двоюродные?» используй человека из предыдущих реплик и не проси уже указанные сведения повторно.",
         "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
@@ -834,7 +884,8 @@ export function aiResearchHttp({
         "Для вопроса о родстве двух людей обязательно найди их карточки и вызови get_relationship. Этот инструмент возвращает тот же расчёт направлений, общих предков, цепочки и дополнительных связей, который доступен пользователю в интерфейсе.",
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
-        "Если пользователь просит оставить на древе только носителей фамилии (включая фамилию при рождении) и ближайших предков, вызови get_surname_group с фамилией, затем control_archive_view с action=filter_surname и surname. Это временный фильтр с пересчётом дерева. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people: это лишь перемещает камеру. Если просит приблизить или отдалить, используй zoom_in или zoom_out.",
+        "Если вопрос содержит «этот человек», «эта карточка», «это фото» или подобную отсылку без имени, используй открытую карточку или снимок из контекста интерфейса и проверь факты инструментами. Не подменяй явно названного в вопросе человека открытой карточкой.",
+        "Если пользователь просит оставить на древе только носителей фамилии (включая фамилию при рождении) и ближайших предков, вызови get_surname_group с фамилией, затем control_archive_view с action=filter_surname и surname. Если просит составить временное древо по другому критерию, собери точные personIds через инструменты архива и вызови action=filter_people с personIds и короткой label; связи между ними перестроятся. Не добавляй людей, не подтверждённых инструментами. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people: это лишь перемещает камеру. Если просит приблизить или отдалить, используй zoom_in или zoom_out.",
         "Для таблицы по фамилии включая фамилию при рождении вызови get_surname_group. У Markdown-таблицы отдельная строка заголовков с разделителями | между всеми столбцами, затем строка | --- | для каждого столбца. Для проверки источников используй get_evidence_coverage и find_evidence_gaps; источник карточки не подтверждает автоматически каждое поле.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
@@ -864,6 +915,12 @@ export function aiResearchHttp({
           ? `Сейчас в интерфейсе выбраны люди: ${personIds.join(", ")}.`
           : "",
         view ? `Текущий раздел интерфейса: ${view}.` : "",
+        openPerson
+          ? `Сейчас открыта карточка человека ${fullName(openPerson)} (personId: ${openPerson.id}). Это контекст интерфейса, а не тема каждого вопроса.`
+          : "",
+        openPhoto
+          ? `Сейчас открыт снимок «${openPhoto.title || "Без названия"}» (photoId: ${openPhoto.id}). Это контекст интерфейса, а не тема каждого вопроса.`
+          : "",
       ]
         .filter(Boolean)
         .join("\n"),
@@ -921,6 +978,7 @@ export function aiResearchHttp({
         /(?:древ|дерев).{0,95}(?:только|остав|убер|скрой|предк)|(?:только|остав|убер|скрой).{0,95}(?:древ|дерев)/iu.test(
           message,
         ),
+      subsetRequested = viewControlRequested && treeSubsetRequest(message),
       photoViewRequested =
         /(?:покаж(?:и|ь)?|открой).{0,40}(?:фото|сним)|(?:фото|сним).{0,40}(?:покаж(?:и|ь)?|открой)/iu.test(
           message,
@@ -966,6 +1024,53 @@ export function aiResearchHttp({
         uiActions: [{ type: zoom }],
         files: [],
       };
+
+    if (filterSurnameRequested) {
+      const surname = surnameInTreeRequest(message);
+      if (surname) {
+        const group = surnameGroup(family, surname);
+        if (group.people.length) {
+          const action: UiAction = {
+            type: "filter_people",
+            personIds: group.personIds,
+            label: group.surname,
+          };
+          const answer = `Показываю в древе род ${group.surname}: ${group.people.length} ${plural(group.people.length, "человек", "человека", "человек")}. Это временный фильтр; кнопка «Всё древо» вернёт общий вид.`;
+          onDelta(answer);
+          return {
+            answer,
+            references: [],
+            suggestionIds: [],
+            uiActions: [action],
+            files: [],
+          };
+        }
+      }
+    }
+
+    if (specificResourceRequest(message)) {
+      const matches = researchCatalog.searchAny(message).resources;
+      if (matches.length) {
+        const multiple =
+          /(?:список|подборк|несколько|все\s+(?:сайт|ресурс)|какие\s+(?:сайт|ресурс))/iu.test(
+            message,
+          );
+        const answer = normalizeResearchMarkdown(
+          `Нашёл в справочнике:\n\n${matches
+            .slice(0, multiple ? 5 : 1)
+            .map(resourceMarkdown)
+            .join("\n")}`,
+        );
+        onDelta(answer);
+        return {
+          answer,
+          references: [],
+          suggestionIds: [],
+          uiActions: [],
+          files: [],
+        };
+      }
+    }
 
     onStatus("Обрабатываю запрос…");
 
@@ -1263,16 +1368,20 @@ export function aiResearchHttp({
           else if (call.function.name === RESEARCH_RESOURCES_TOOL.name) {
             if (resourceLookups >= 1)
               throw new Error(
-                "За один ответ можно выбрать только одну категорию ресурсов",
+                "За один ответ можно выполнить только один поиск ресурсов",
               );
             const raw = toolArgs as Record<string, unknown>;
-            if (typeof raw.category !== "string" || raw.category.length > 100)
-              throw new Error("Укажите категорию ресурсов");
+            if (typeof raw.category === "string" && raw.category.length > 100)
+              throw new Error("Слишком длинное название категории");
             resourceLookups++;
-            result = researchCatalog.search(
-              raw.category,
-              typeof raw.query === "string" ? raw.query.slice(0, 200) : "",
-            );
+            const query =
+              typeof raw.query === "string" && raw.query.trim()
+                ? raw.query.slice(0, 200)
+                : message.slice(0, 200);
+            result =
+              typeof raw.category === "string" && raw.category.trim()
+                ? researchCatalog.search(raw.category, query)
+                : researchCatalog.searchAny(query);
           } else if (call.function.name === CREATE_PDF_TOOL.name) {
             if (!pdfRequested)
               throw new Error("PDF создаётся только по просьбе пользователя");
@@ -1385,6 +1494,43 @@ export function aiResearchHttp({
                 type: "filter_people",
                 personIds: group.personIds,
                 label: group.surname,
+              };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else if (raw.action === "filter_people") {
+              if (
+                !subsetRequested ||
+                !Array.isArray(raw.personIds) ||
+                raw.personIds.length < 1 ||
+                raw.personIds.length > 300
+              )
+                throw new Error(
+                  "Нужна явная просьба сформировать ограниченное древо",
+                );
+              if (
+                raw.personIds.some(
+                  (id) => typeof id !== "string" || !peopleById.has(id),
+                )
+              )
+                throw new Error(
+                  "В наборе есть недоступные или неизвестные люди",
+                );
+              const label =
+                typeof raw.label === "string" ? raw.label.trim() : "";
+              if (
+                !label ||
+                label.length > 100 ||
+                [...label].some(
+                  (character) =>
+                    character.charCodeAt(0) < 32 ||
+                    character.charCodeAt(0) === 127,
+                )
+              )
+                throw new Error("Укажите короткое название выборки");
+              const action: UiAction = {
+                type: "filter_people",
+                personIds: [...new Set(raw.personIds as string[])],
+                label,
               };
               uiActions.push(action);
               result = { scheduled: true, action };

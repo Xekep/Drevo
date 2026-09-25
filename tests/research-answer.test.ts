@@ -3,11 +3,26 @@ import assert from "node:assert/strict";
 import {
   cleanPdfAnswer,
   linkResearchReferences,
+  normalizeExternalResearchLinks,
   normalizeResearchMarkdown,
   replaceResearchTable,
   researchPdfFilename,
   verifiedSurnameTable,
 } from "../src/domain/research-answer.ts";
+
+test("внешние wiki-ссылки с экранированным двоеточием становятся обычным Markdown", () => {
+  const source =
+    "[[http\\://skorbim.com|Skorbim]] и [[https://example.org/map|Карта]]. `[[http://example.org|код]]`";
+  const expected =
+    "[Skorbim](http://skorbim.com/) и [Карта](https://example.org/map). `[[http://example.org|код]]`";
+  assert.equal(normalizeExternalResearchLinks(source), expected);
+  assert.equal(normalizeResearchMarkdown(source), expected);
+  assert.equal(linkResearchReferences(source), expected);
+  assert.equal(
+    normalizeExternalResearchLinks("[[javascript:alert(1)|Опасно]]"),
+    "[[javascript:alert(1)|Опасно]]",
+  );
+});
 
 test("repairs malformed surname table and empty diagram using verified genealogy", () => {
   const source =
@@ -26,10 +41,28 @@ test("repairs malformed surname table and empty diagram using verified genealogy
 });
 
 test("surname table uses archived fields and clickable people regardless of model formatting", () => {
-  const table = verifiedSurnameTable([{ id: "person-1", name: "Родина Анна", birthSurname: "Чепчугова", birth: "1930", birthPlace: "", death: null }]);
-  const answer = replaceResearchTable("Ветвь:\n\n| Слитый заголовок | |\n| --- | --- |\n| неточно | неточно |\n\nПроверено.", table);
-  assert.match(answer, /\| ФИО \| Фамилия при рождении \| Дата рождения \| Место рождения \| Дата смерти \|/);
-  assert.match(answer, /\[\[person:person-1\|Родина Анна\]\] \| Чепчугова \| 1930 \| — \| —/);
+  const table = verifiedSurnameTable([
+    {
+      id: "person-1",
+      name: "Родина Анна",
+      birthSurname: "Чепчугова",
+      birth: "1930",
+      birthPlace: "",
+      death: null,
+    },
+  ]);
+  const answer = replaceResearchTable(
+    "Ветвь:\n\n| Слитый заголовок | |\n| --- | --- |\n| неточно | неточно |\n\nПроверено.",
+    table,
+  );
+  assert.match(
+    answer,
+    /\| ФИО \| Фамилия при рождении \| Дата рождения \| Место рождения \| Дата смерти \|/,
+  );
+  assert.match(
+    answer,
+    /\[\[person:person-1\|Родина Анна\]\] \| Чепчугова \| 1930 \| — \| —/,
+  );
   assert.doesNotMatch(answer, /неточно|Слитый заголовок/);
 });
 

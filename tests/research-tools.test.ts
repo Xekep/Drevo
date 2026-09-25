@@ -367,6 +367,20 @@ test("genealogy graph includes deterministic Mermaid with exact edge semantics",
     }),
     graphFamily: Family = {
       ...family,
+      links: [
+        {
+          id: "godparent-1",
+          from: "father",
+          to: "grandchild",
+          type: "godparent",
+        },
+        {
+          id: "godparent-2",
+          from: "father",
+          to: "grandchild",
+          type: "godparent",
+        },
+      ],
       people: [
         father,
         mother,
@@ -383,10 +397,12 @@ test("genealogy graph includes deterministic Mermaid with exact edge semantics",
       mermaid: string;
     };
   assert.match(result.mermaid, /^graph TD/m);
-  assert.match(result.mermaid, /n0 --> n2/);
-  assert.match(result.mermaid, /n1 --> n2/);
-  assert.match(result.mermaid, /n2 --- n3/);
-  assert.match(result.mermaid, /n2 --> n4/);
+  assert.match(result.mermaid, /n0 -->\|родитель → ребёнок\| n2/);
+  assert.match(result.mermaid, /n1 -->\|родитель → ребёнок\| n2/);
+  assert.match(result.mermaid, /n2 ---\|супруги\| n3/);
+  assert.match(result.mermaid, /n2 -->\|родитель → ребёнок\| n4/);
+  assert.match(result.mermaid, /Митрофан<br\/>1910–\?/);
+  assert.equal(result.mermaid.match(/крёстный родитель/g)?.length, 1);
 });
 
 test("relationship analysis matches the archive kinship calculation", () => {

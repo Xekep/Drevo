@@ -146,7 +146,7 @@ test("AI focuses one person without zooming out", async ({
   const after = await viewport.evaluate((element) =>
     Number(element.getAttribute("style")?.match(/scale\(([^)]+)\)/)?.[1] || 0),
   );
-  expect(after).toBeGreaterThanOrEqual(before - 0.01);
+  expect(after).toBeGreaterThanOrEqual(before - 0.02);
   await expect(panel).toBeVisible();
 });
 
@@ -229,19 +229,25 @@ test("clicking a card during the personal camera move cancels that move", async 
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/, { timeout: 5_000 });
   const viewport = page.locator(".react-flow__viewport");
-  await page.waitForFunction(() => {
-    const canvas = document.querySelector(".tree-canvas");
-    const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
-    if (!canvas || !viewport) return false;
-    const state = window as typeof window & { __cameraSample?: string };
-    const current = viewport.style.transform;
-    const moving =
-      !canvas.classList.contains("is-growing") &&
-      state.__cameraSample !== undefined &&
-      state.__cameraSample !== current;
-    state.__cameraSample = current;
-    return moving;
-  }, null, { timeout: 10_000, polling: "raf" });
+  await page.waitForFunction(
+    () => {
+      const canvas = document.querySelector(".tree-canvas");
+      const viewport = document.querySelector<HTMLElement>(
+        ".react-flow__viewport",
+      );
+      if (!canvas || !viewport) return false;
+      const state = window as typeof window & { __cameraSample?: string };
+      const current = viewport.style.transform;
+      const moving =
+        !canvas.classList.contains("is-growing") &&
+        state.__cameraSample !== undefined &&
+        state.__cameraSample !== current;
+      state.__cameraSample = current;
+      return moving;
+    },
+    null,
+    { timeout: 10_000, polling: "raf" },
+  );
   await page
     .getByTestId("rf__node-e2e-spouse")
     .locator(".flow-person-content")

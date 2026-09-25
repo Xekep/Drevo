@@ -16,7 +16,7 @@ test("ИИ показывает готовый ответ и раскрывае�
         "event: done\ndata: " +
           JSON.stringify({
             answer:
-              "Схема:\n\n```mermaid\ngraph TD\n  a[Анна] --> c[Ребёнок]\n  b[Иван] --> c\n  a --- b\n  c --> d[Внук]\n```",
+              'Схема:\n\n```mermaid\ngraph TD\n  a["Анна<br/>1900–1980"] -->|родитель → ребёнок| c[Ребёнок]\n  b[Иван] -->|родитель → ребёнок| c\n  a ---|супруги| b\n  c -->|родитель → ребёнок| d[Внук]\n```',
             references: [],
             suggestionIds: [],
             uiActions: [],
@@ -37,9 +37,20 @@ test("ИИ показывает готовый ответ и раскрывае�
   await page.getByRole("button", { name: "Развернуть схему" }).click();
   const dialog = page.getByRole("dialog", { name: "Схема родства" });
   await expect(dialog.locator(".research-mermaid-canvas svg")).toBeVisible();
+  await expect(dialog).toContainText("1900–1980");
+  await expect(dialog).toContainText("родитель → ребёнок");
+  const wheelCanvas = dialog.locator(".research-mermaid-canvas");
+  const wheelBox = await wheelCanvas.boundingBox();
+  expect(wheelBox).not.toBeNull();
+  await page.mouse.move(
+    wheelBox!.x + wheelBox!.width / 2,
+    wheelBox!.y + wheelBox!.height / 2,
+  );
+  await page.mouse.wheel(0, -100);
+  await expect(dialog).toContainText("112%");
   await dialog.getByRole("button", { name: "Увеличить схему" }).click();
-  await expect(dialog).toContainText("125%");
-  for (let index = 0; index < 6; index++)
+  await expect(dialog).toContainText("140%");
+  for (let index = 0; index < 4; index++)
     await dialog.getByRole("button", { name: "Увеличить схему" }).click();
   const canvas = dialog.locator(".research-mermaid-canvas");
   await expect

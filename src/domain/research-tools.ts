@@ -15,24 +15,42 @@ const graphRelationLabels: Record<string, string> = {
 };
 
 function graphMermaid(
-  nodes: Array<{ id: string; name: string }>,
+  nodes: Array<{ id: string; name: string; birth?: string; death?: string }>,
   edges: Array<{ from: string; to: string; type: string }>,
 ) {
   const aliases = new Map(nodes.map((node, index) => [node.id, `n${index}`]));
+  const seen = new Set<string>();
+  const year = (value?: string) => /^\d{4}/.exec(value || "")?.[0] || "?";
   return [
     "graph TD",
-    ...nodes.map(
-      (node, index) =>
-        `  n${index}["${node.name.replaceAll('"', "'").replaceAll("\n", " ")}"]`,
-    ),
+    ...nodes.map((node, index) => {
+      const dates =
+        node.birth || node.death
+          ? `<br/>${year(node.birth)}–${year(node.death)}`
+          : "";
+      const name = node.name
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "'")
+        .replaceAll("\n", " ");
+      return `  n${index}["${name}${dates}"]`;
+    }),
     ...edges.flatMap((edge) => {
       const from = aliases.get(edge.from),
         to = aliases.get(edge.to);
       if (!from || !to) return [];
-      if (edge.type === "parent") return [`  ${from} --> ${to}`];
-      if (edge.type === "spouse") return [`  ${from} --- ${to}`];
+      const key =
+        edge.type === "spouse"
+          ? [edge.type, ...[from, to].sort()].join("\0")
+          : [edge.type, from, to].join("\0");
+      if (seen.has(key)) return [];
+      seen.add(key);
+      if (edge.type === "parent")
+        return [`  ${from} -->|родитель → ребёнок| ${to}`];
+      if (edge.type === "spouse") return [`  ${from} ---|супруги| ${to}`];
       const label = graphRelationLabels[edge.type] || edge.type;
-      return [`  ${from} -. "${label}" .-> ${to}`];
+      return [`  ${from} -.->|${label}| ${to}`];
     }),
   ].join("\n");
 }
@@ -70,7 +88,12 @@ export function surnameGroup(family: Family, surname: string) {
       if (available.has(parent)) ids.add(parent);
   const nodes = family.people
     .filter((person) => ids.has(person.id))
-    .map((person) => ({ id: person.id, name: fullName(person) }));
+    .map((person) => ({
+      id: person.id,
+      name: fullName(person),
+      birth: person.birth,
+      death: person.death,
+    }));
   const edges: Array<{ from: string; to: string; type: string }> = [];
   const spouses = new Set<string>();
   for (const person of family.people.filter((item) => ids.has(item.id))) {

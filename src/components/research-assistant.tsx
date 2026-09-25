@@ -13,9 +13,9 @@ import { createPortal } from "react-dom";
 import {
   Check,
   ChevronDown,
+  LoaderCircle,
   Minus,
   Plus,
-  RotateCcw,
   Send,
   Sparkles,
   Square,
@@ -144,6 +144,15 @@ function MermaidDiagram({ source }: { source: string }) {
     left: number;
     top: number;
   } | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const wheelAnchor = useRef<{
+    x: number;
+    y: number;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [rendered, setRendered] = useState<{
     source: string;
     svg: string;
@@ -180,6 +189,47 @@ function MermaidDiagram({ source }: { source: string }) {
 
   const viewBox = /viewBox="[\d.-]+ [\d.-]+ ([\d.]+) ([\d.]+)"/.exec(svg),
     naturalWidth = viewBox ? Number(viewBox[1]) : 900;
+
+  useLayoutEffect(() => {
+    if (!expanded || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const anchor = wheelAnchor.current;
+    if (anchor) {
+      canvas.scrollLeft =
+        (anchor.left / anchor.width) * canvas.scrollWidth - anchor.x;
+      canvas.scrollTop =
+        (anchor.top / anchor.height) * canvas.scrollHeight - anchor.y;
+      wheelAnchor.current = null;
+    } else {
+      canvas.scrollLeft = (canvas.scrollWidth - canvas.clientWidth) / 2;
+      canvas.scrollTop = (canvas.scrollHeight - canvas.clientHeight) / 2;
+    }
+  }, [expanded, zoom]);
+
+  useEffect(() => {
+    if (!expanded || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const zoomAtPointer = (event: WheelEvent) => {
+      event.preventDefault();
+      const nextZoom = Math.max(
+        0.25,
+        Math.min(4, +(zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12)).toFixed(2)),
+      );
+      if (nextZoom === zoom) return;
+      const rect = canvas.getBoundingClientRect();
+      wheelAnchor.current = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+        left: canvas.scrollLeft + event.clientX - rect.left,
+        top: canvas.scrollTop + event.clientY - rect.top,
+        width: canvas.scrollWidth,
+        height: canvas.scrollHeight,
+      };
+      setZoom(nextZoom);
+    };
+    canvas.addEventListener("wheel", zoomAtPointer, { passive: false });
+    return () => canvas.removeEventListener("wheel", zoomAtPointer);
+  }, [expanded, zoom]);
 
   return error ? (
     <pre className="research-mermaid-error">{error}</pre>
@@ -251,13 +301,6 @@ function MermaidDiagram({ source }: { source: string }) {
                   </button>
                   <button
                     type="button"
-                    aria-label="Сбросить масштаб"
-                    onClick={() => setZoom(1)}
-                  >
-                    <RotateCcw size={17} />
-                  </button>
-                  <button
-                    type="button"
                     aria-label="Закрыть схему"
                     onClick={() => setExpanded(false)}
                   >
@@ -266,6 +309,7 @@ function MermaidDiagram({ source }: { source: string }) {
                 </div>
               </header>
               <div
+                ref={canvasRef}
                 className={`research-mermaid-canvas${panning ? " is-panning" : ""}`}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
@@ -642,6 +686,8 @@ export function ResearchAssistant({
   view,
   onOpenChange,
   personIds,
+  openPersonId,
+  openPhotoId,
   currentPersonName,
   nudgeToken = 0,
   canEdit,
@@ -655,6 +701,8 @@ export function ResearchAssistant({
   view: string;
   onOpenChange?: (open: boolean) => void;
   personIds: string[];
+  openPersonId?: string;
+  openPhotoId?: string;
   currentPersonName?: string;
   nudgeToken?: number;
   canEdit: boolean;
@@ -677,13 +725,13 @@ export function ResearchAssistant({
     [chatSearch, setChatSearch] = useState(""),
     [chatLoading, setChatLoading] = useState(true),
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
-    [busy, setBusy] = useState(false),
+    [workingChats, setWorkingChats] = useState<
+      Record<string, { status: string; activities: string[] }>
+    >({}),
     [reviewBusy, setReviewBusy] = useState(""),
     [reviewedSuggestions, setReviewedSuggestions] = useState<
       Record<string, "accepted" | "rejected">
     >({}),
-    [streamStatus, setStreamStatus] = useState(""),
-    [activities, setActivities] = useState<string[]>([]),
     [error, setError] = useState(""),
     [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null),
     [launcherPosition, setLauncherPosition] = useState<LauncherPosition | null>(
@@ -712,11 +760,18 @@ export function ResearchAssistant({
       latest: PanelRect;
     } | null>(null),
     chatSelection = useRef(0),
-    requestSequence = useRef(0),
-    activeRequest = useRef<AbortController | null>(null),
+    selectedChatKey = useRef("new:initial"),
+    activeRequests = useRef(new Map<string, AbortController>()),
+    chatMessages = useRef(new Map<string, Message[]>()),
+    chatErrors = useRef(new Map<string, string>()),
+    pendingUiActions = useRef(new Map<string, UiAction[]>()),
     sendLatest = useRef<
       (text?: string, selectedPersonId?: string) => Promise<void>
     >(() => Promise.resolve());
+  const currentWork = workingChats[selectedChatKey.current],
+    busy = !!currentWork,
+    streamStatus = currentWork?.status || "",
+    activities = currentWork?.activities || [];
 
   useLayoutEffect(() => {
     const field = composer.current;
@@ -730,7 +785,14 @@ export function ResearchAssistant({
     return () => onOpenChange?.(false);
   }, [onOpenChange, open]);
 
-  useEffect(() => () => activeRequest.current?.abort(), []);
+  useEffect(
+    () => () => {
+      for (const controller of activeRequests.current.values())
+        controller.abort();
+      activeRequests.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!chatMenuOpen) return;
@@ -768,6 +830,8 @@ export function ResearchAssistant({
           if (!response.ok) return;
           const detail = (await response.json()) as { messages: Message[] };
           if (active && selection === chatSelection.current) {
+            selectedChatKey.current = data.chats[0].id;
+            chatMessages.current.set(data.chats[0].id, detail.messages);
             setChatId(data.chats[0].id);
             setMessages(detail.messages);
           }
@@ -1089,22 +1153,38 @@ export function ResearchAssistant({
   }
 
   function stopGeneration() {
-    if (!activeRequest.current) return;
-    requestSequence.current++;
-    activeRequest.current.abort();
-    activeRequest.current = null;
-    setBusy(false);
-    setStreamStatus("");
-    setActivities([]);
+    const key = selectedChatKey.current;
+    const controller = activeRequests.current.get(key);
+    if (!controller) return;
+    controller.abort();
+    activeRequests.current.delete(key);
+    setWorkingChats((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function applyUiActions(actions: UiAction[]) {
+    for (const action of actions) {
+      if (action.type === "focus_people") onReveal(action.personIds);
+      else if (action.type === "filter_people")
+        onFilter(action.personIds, action.label);
+      else if (action.type === "open_person") onPerson(action.personId);
+      else if (action.type === "open_photo") onPhoto(action.photoId);
+      else if (action.type === "zoom_in") onZoom("in");
+      else if (action.type === "zoom_out") onZoom("out");
+    }
   }
 
   async function openChat(id: string) {
     setChatMenuOpen(false);
     setChatSearch("");
-    if (id === chatId && !activeRequest.current) return;
-    stopGeneration();
+    if (id && id === selectedChatKey.current) return;
     const selection = ++chatSelection.current;
     if (!id) {
+      selectedChatKey.current = `new:${crypto.randomUUID()}`;
+      chatMessages.current.set(selectedChatKey.current, []);
       setChatId("");
       setMessages([]);
       setError("");
@@ -1112,19 +1192,35 @@ export function ResearchAssistant({
       return;
     }
     const previousId = chatId;
+    const previousKey = selectedChatKey.current;
     const previousMessages = messages;
+    selectedChatKey.current = id;
     setChatId(id);
     setChatLoading(true);
+    const cached = chatMessages.current.get(id);
+    setMessages(cached || []);
+    setError(chatErrors.current.get(id) || "");
     try {
       const response = await fetch(`/api/ai/chats/${id}`);
       if (!response.ok) throw new Error("Не удалось открыть диалог");
       const data = (await response.json()) as { messages: Message[] };
       if (selection !== chatSelection.current) return;
-      setMessages(data.messages);
-      setError("");
+      // A running response can finish while the history request is in flight.
+      const latest = chatMessages.current.get(id);
+      const next =
+        latest && latest.length > data.messages.length ? latest : data.messages;
+      chatMessages.current.set(id, next);
+      setMessages(next);
+      setError(chatErrors.current.get(id) || "");
+      const actions = pendingUiActions.current.get(id);
+      if (actions) {
+        pendingUiActions.current.delete(id);
+        applyUiActions(actions);
+      }
     } catch {
       if (selection !== chatSelection.current) return;
       setChatId(previousId);
+      selectedChatKey.current = previousKey;
       setMessages(previousMessages);
       setError("Не удалось открыть диалог");
     } finally {
@@ -1163,34 +1259,46 @@ export function ResearchAssistant({
       setChats((current) => current.filter((item) => item.id !== chatId));
     }
     setChatId("");
+    chatMessages.current.delete(selectedChatKey.current);
+    chatErrors.current.delete(selectedChatKey.current);
+    pendingUiActions.current.delete(selectedChatKey.current);
+    selectedChatKey.current = `new:${crypto.randomUUID()}`;
     setMessages([]);
     setDraft("");
     setError("");
-    setStreamStatus("");
-    setActivities([]);
     setReviewedSuggestions({});
     setChatLoading(false);
   }
 
   async function send(text = draft, selectedPersonId?: string) {
     const message = text.trim();
-    if ((!message && !selectedPersonId) || activeRequest.current || chatLoading) return;
+    let jobKey = selectedChatKey.current;
+    if (
+      (!message && !selectedPersonId) ||
+      activeRequests.current.has(jobKey) ||
+      chatLoading
+    )
+      return;
     if (selectedPersonId && !chatId) return;
     const controller = new AbortController();
-    const generation = ++requestSequence.current;
     const isCurrent = () =>
-      generation === requestSequence.current && !controller.signal.aborted;
-    activeRequest.current = controller;
+      activeRequests.current.get(jobKey) === controller &&
+      !controller.signal.aborted;
+    activeRequests.current.set(jobKey, controller);
+    chatErrors.current.delete(jobKey);
     if (!selectedPersonId) {
-      setMessages((current) => [
-        ...current,
-        { role: "user", content: message },
-      ]);
+      const next = [
+        ...(chatMessages.current.get(jobKey) || messages),
+        { role: "user" as const, content: message },
+      ];
+      chatMessages.current.set(jobKey, next);
+      setMessages(next);
       setDraft("");
     }
-    setBusy(true);
-    setStreamStatus("Обрабатываю запрос…");
-    setActivities([]);
+    setWorkingChats((current) => ({
+      ...current,
+      [jobKey]: { status: "Обрабатываю запрос…", activities: [] },
+    }));
     setError("");
     try {
       const response = await fetch("/api/ai/chat/stream", {
@@ -1201,7 +1309,7 @@ export function ResearchAssistant({
           message,
           ...(selectedPersonId ? { selectedPersonId } : {}),
           ...(chatId ? { chatId } : {}),
-          context: { view, personIds },
+          context: { view, personIds, openPersonId, openPhotoId },
         }),
       });
       if (!response.ok) {
@@ -1235,7 +1343,33 @@ export function ResearchAssistant({
           chatId?: string;
         };
         if (parsed.event === "chat" && data.chatId) {
-          setChatId(data.chatId);
+          const id = data.chatId;
+          if (jobKey !== id) {
+            const oldKey = jobKey;
+            activeRequests.current.delete(oldKey);
+            activeRequests.current.set(id, controller);
+            const cached = chatMessages.current.get(oldKey);
+            if (cached) {
+              chatMessages.current.set(id, cached);
+              chatMessages.current.delete(oldKey);
+            }
+            setWorkingChats((current) => {
+              const next = {
+                ...current,
+                [id]: current[oldKey] || {
+                  status: "Обрабатываю запрос…",
+                  activities: [],
+                },
+              };
+              delete next[oldKey];
+              return next;
+            });
+            if (selectedChatKey.current === oldKey) {
+              selectedChatKey.current = id;
+              setChatId(id);
+            }
+            jobKey = id;
+          }
           setChats((current) =>
             current.some((item) => item.id === data.chatId)
               ? current
@@ -1252,11 +1386,13 @@ export function ResearchAssistant({
         }
         if (parsed.event === "status") {
           if (data.message && data.message !== "Соединение установлено") {
-            setStreamStatus(data.message);
             if (!steps.includes(data.message)) {
               steps.push(data.message);
-              setActivities([...steps]);
             }
+            setWorkingChats((current) => ({
+              ...current,
+              [jobKey]: { status: data.message!, activities: [...steps] },
+            }));
           }
           return;
         }
@@ -1266,7 +1402,6 @@ export function ResearchAssistant({
         if (parsed.event === "done") {
           finished = true;
           if (data.chatId) {
-            setChatId(data.chatId);
             setChats((current) => [
               {
                 id: data.chatId!,
@@ -1278,10 +1413,8 @@ export function ResearchAssistant({
               ...current.filter((item) => item.id !== data.chatId),
             ]);
           }
-          setStreamStatus("");
-          setActivities([]);
-          setMessages((current) => [
-            ...current,
+          const next = [
+            ...(chatMessages.current.get(jobKey) || []),
             {
               role: "assistant",
               content: data.answer || "Модель не сформировала текстовый ответ.",
@@ -1292,16 +1425,14 @@ export function ResearchAssistant({
               files: Array.isArray(data.files) ? data.files : [],
               activities: steps,
             },
-          ]);
-          for (const action of data.uiActions || []) {
-            if (action.type === "focus_people") onReveal(action.personIds);
-            else if (action.type === "filter_people")
-              onFilter(action.personIds, action.label);
-            else if (action.type === "open_person") onPerson(action.personId);
-            else if (action.type === "open_photo") onPhoto(action.photoId);
-            else if (action.type === "zoom_in") onZoom("in");
-            else if (action.type === "zoom_out") onZoom("out");
-          }
+          ] as Message[];
+          chatMessages.current.set(jobKey, next);
+          chatErrors.current.delete(jobKey);
+          if (selectedChatKey.current === jobKey) {
+            setMessages(next);
+            applyUiActions(data.uiActions || []);
+          } else if (data.uiActions?.length)
+            pendingUiActions.current.set(jobKey, data.uiActions);
           return;
         }
         if (parsed.event === "error")
@@ -1328,13 +1459,19 @@ export function ResearchAssistant({
 
       if (canEdit && isCurrent()) await loadSuggestions();
     } catch (reason) {
-      if (isCurrent()) setError((reason as Error).message);
+      if (isCurrent()) {
+        const message = (reason as Error).message;
+        chatErrors.current.set(jobKey, message);
+        if (selectedChatKey.current === jobKey) setError(message);
+      }
     } finally {
-      if (generation === requestSequence.current) {
-        activeRequest.current = null;
-        setStreamStatus("");
-        setActivities([]);
-        setBusy(false);
+      if (activeRequests.current.get(jobKey) === controller) {
+        activeRequests.current.delete(jobKey);
+        setWorkingChats((current) => {
+          const next = { ...current };
+          delete next[jobKey];
+          return next;
+        });
       }
     }
   }
@@ -1453,19 +1590,24 @@ export function ResearchAssistant({
               </span>
             </div>
             <div className="research-assistant-header-actions">
-              {busy && <button
-                type="button"
-                aria-label="Остановить ответ"
-                title="Остановить ответ"
-                onClick={stopGeneration}
-              >
-                <Square size={15} fill="currentColor" />
-              </button>}
+              {busy && (
+                <button
+                  type="button"
+                  aria-label="Остановить ответ"
+                  title="Остановить ответ"
+                  onClick={stopGeneration}
+                >
+                  <Square size={15} fill="currentColor" />
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={chatId ? "Удалить диалог" : "Очистить диалог"}
                 title={chatId ? "Удалить диалог" : "Очистить диалог"}
-                disabled={chatLoading || (!chatId && !messages.length && !draft && !error)}
+                disabled={
+                  chatLoading ||
+                  (!chatId && !messages.length && !draft && !error)
+                }
                 onClick={() => void clearDialog()}
               >
                 <Trash2 size={17} />
@@ -1496,6 +1638,13 @@ export function ResearchAssistant({
                   {chats.find((item) => item.id === chatId)?.title ||
                     "Новый диалог"}
                 </span>
+                {busy && (
+                  <LoaderCircle
+                    className="research-chat-working"
+                    size={15}
+                    aria-label="ИИ отвечает"
+                  />
+                )}
                 <ChevronDown size={16} aria-hidden="true" />
               </button>
               {chatMenuOpen && (
@@ -1535,7 +1684,14 @@ export function ResearchAssistant({
                           title={item.title}
                           onClick={() => void openChat(item.id)}
                         >
-                          {item.title}
+                          <span>{item.title}</span>
+                          {workingChats[item.id] && (
+                            <LoaderCircle
+                              className="research-chat-working"
+                              size={15}
+                              aria-label="ИИ отвечает"
+                            />
+                          )}
                         </button>
                       ))}
                   </div>

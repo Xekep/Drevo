@@ -34,10 +34,79 @@ test("research catalog migrates the supplied list once and limits contextual sug
       5,
     );
     assert.equal(catalog.search("Неизвестная категория").resources.length, 0);
+    assert.equal(
+      catalog.searchAny("дай мне цифровое кладбище режевское").resources[0]
+        .name,
+      "Skorbim",
+    );
     initializeArchiveSchema(db);
     assert.equal(researchCatalogStore(db).list().length, 8);
   } finally {
     db.close();
+  }
+});
+
+test("specific resource request returns catalog URLs and links from descriptions as Markdown", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-research-direct-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let providerCalls = 0;
+  const app = await startServer(
+    0,
+    join(dir, "archive.sqlite"),
+    true,
+    undefined,
+    adaptLegacyAiFake(async () => {
+      providerCalls++;
+      throw new Error(
+        "A specific catalog link should not require a model call",
+      );
+    }),
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const catalog = researchCatalogStore(app.archive.db);
+    const category = catalog
+      .list()
+      .find((item) => item.name === "Захоронения")!;
+    catalog.createResource(
+      category.id,
+      {
+        name: "Цифровое кладбище Режа",
+        url: "https://example.org/rezh",
+        description:
+          "Режевского района. Карты: [[https\\://example.org/map|карта захоронений]] и [список](https://example.org/list).",
+      },
+      { id: "admin", name: "Администратор", role: "admin" } as ArchiveUser,
+    );
+    const response = await fetch(`${base}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "дай мне цифровое кладбище режевское" }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(providerCalls, 0);
+    assert.match(
+      data.answer,
+      /\[Цифровое кладбище Режа\]\(https:\/\/example\.org\/rezh\)/,
+    );
+    assert.match(
+      data.answer,
+      /\[карта захоронений\]\(https:\/\/example\.org\/map\)/,
+    );
+    assert.match(data.answer, /\[список\]\(https:\/\/example\.org\/list\)/);
+    assert.doesNotMatch(data.answer, /\[\[http/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

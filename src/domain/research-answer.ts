@@ -34,7 +34,7 @@ export function normalizeResearchMarkdown(
   verifiedMermaid = "",
   graphRequested = false,
 ) {
-  let result = answer
+  let result = normalizeExternalResearchLinks(answer)
     .replace(/```(?:mermaid)?\s*\n\s*```/giu, "")
     .replace(/^\s*Не удалось построить схему\s*$/gimu, "")
     .replace(
@@ -67,11 +67,13 @@ export function verifiedSurnameTable(
 ) {
   const cell = (value: string | null) =>
     (value || "—").replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
-  const heading = "| ФИО | Фамилия при рождении | Дата рождения | Место рождения | Дата смерти |\n| --- | --- | --- | --- | --- |";
+  const heading =
+    "| ФИО | Фамилия при рождении | Дата рождения | Место рождения | Дата смерти |\n| --- | --- | --- | --- | --- |";
   const rows = [...people]
     .sort((a, b) => a.name.localeCompare(b.name, "ru"))
-    .map((person) =>
-      `| [[person:${person.id}|${cell(person.name)}]] | ${cell(person.birthSurname)} | ${cell(person.birth)} | ${cell(person.birthPlace)} | ${cell(person.death)} |`,
+    .map(
+      (person) =>
+        `| [[person:${person.id}|${cell(person.name)}]] | ${cell(person.birthSurname)} | ${cell(person.birth)} | ${cell(person.birthPlace)} | ${cell(person.death)} |`,
     );
   return [heading, ...rows].join("\n");
 }
@@ -105,7 +107,37 @@ function outsideCodeFences(value: string, transform: (part: string) => string) {
 }
 
 function markdownLink(label: string, href: string) {
-  return `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href})`;
+  return `[${label.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${href.replaceAll("(", "%28").replaceAll(")", "%29")})`;
+}
+
+/** Convert model-written wiki-style HTTP links to Markdown, including escaped colons. */
+export function normalizeExternalResearchLinks(content: string) {
+  return content
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((part, index) =>
+      index % 2
+        ? part
+        : part.replace(
+            /\[\[((?:https?:|https?\\:)[^|\]\s]+)\|([^\]\n]+)\]\]/giu,
+            (original, address: string, label: string) => {
+              try {
+                const url = new URL(
+                  address.replaceAll("\\:", ":").replaceAll("\\/", "/"),
+                );
+                if (
+                  !["http:", "https:"].includes(url.protocol) ||
+                  url.username ||
+                  url.password
+                )
+                  return original;
+                return markdownLink(label.trim(), url.href);
+              } catch {
+                return original;
+              }
+            },
+          ),
+    )
+    .join("");
 }
 
 /** Only verified references from the response are eligible for automatic links. */
@@ -120,26 +152,29 @@ export function linkResearchReferences(
     return token;
   };
 
-  let value = outsideCodeFences(content, (part) => {
-    let normalized = part;
-    for (const match of part.matchAll(
-      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
-    ))
-      normalized = normalized.replace(
-        new RegExp(
-          `${escapePattern(match[3])}[ \\t\\u00a0]*\\(${escapePattern(match[0])}\\)`,
-          "gu",
-        ),
-        match[0],
+  let value = outsideCodeFences(
+    normalizeExternalResearchLinks(content),
+    (part) => {
+      let normalized = part;
+      for (const match of part.matchAll(
+        /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\]/g,
+      ))
+        normalized = normalized.replace(
+          new RegExp(
+            `${escapePattern(match[3])}[ \\t\\u00a0]*\\(${escapePattern(match[0])}\\)`,
+            "gu",
+          ),
+          match[0],
+        );
+      return normalized.replace(
+        /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\](?:[ \t\u00a0]+\3)?/g,
+        (_marker, kind: string, id: string, label: string) =>
+          reserve(
+            markdownLink(label, `#drevo-${kind}-${encodeURIComponent(id)}`),
+          ),
       );
-    return normalized.replace(
-      /\[\[(person|choose-person|photo):([^|\]\s]+)\|([^\]]+)\]\](?:[ \t\u00a0]+\3)?/g,
-      (_marker, kind: string, id: string, label: string) =>
-        reserve(
-          markdownLink(label, `#drevo-${kind}-${encodeURIComponent(id)}`),
-        ),
-    );
-  });
+    },
+  );
 
   for (const reference of references) {
     if (reference.kind !== "photo") continue;

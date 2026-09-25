@@ -75,6 +75,93 @@ test("короткая команда приближения действует 
   assert.equal(shortTreeZoomRequest("приблизь Анну", "tree"), null);
 });
 
+test("surname-only tree request builds a verified temporary subset without a model call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-subtree-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let providerCalls = 0;
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    adaptLegacyAiFake(async () => {
+      providerCalls++;
+      throw new Error(
+        "Explicit surname filtering should not require a model call",
+      );
+    }),
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = app.archive.read();
+    const template = {
+      surname: "Чепчугов",
+      name: "Иван",
+      patronymic: "",
+      sex: "m" as const,
+      birth: "1900",
+      birthPlace: "",
+      parents: [],
+      spouses: [],
+      generation: 1,
+      column: 0,
+      sources: [],
+    };
+    app.archive.write(
+      {
+        ...current.family,
+        people: [
+          ...current.family.people,
+          {
+            ...template,
+            id: "chepchugov-father",
+            surname: "Чепчугов",
+            name: "Иван",
+            parents: [],
+            spouses: [],
+          },
+          {
+            ...template,
+            id: "chepchugov-daughter",
+            surname: "Чепчугова",
+            name: "Анна",
+            parents: ["chepchugov-father"],
+            spouses: [],
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(`${base}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "покажи в древе чепчуговых только",
+        context: { view: "tree" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(providerCalls, 0);
+    assert.equal(data.uiActions[0].type, "filter_people");
+    assert.deepEqual(
+      new Set(data.uiActions[0].personIds),
+      new Set(["chepchugov-father", "chepchugov-daughter"]),
+    );
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("textual model tool call is recovered instead of being shown as Arduino code", () => {
   assert.deepEqual(
     recoverTextToolCalls(
@@ -675,10 +762,18 @@ test("web researcher uses Yandex AI Studio function calling through server only"
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "Перемести меня к Анне",
-        context: { view: "tree", personIds: ["anna-ai-test"] },
+        context: {
+          view: "tree",
+          personIds: ["anna-ai-test"],
+          openPersonId: "anna-ai-test",
+        },
       }),
     });
     assert.equal(response.status, 200);
+    assert.match(
+      JSON.stringify(requests[0].body.messages),
+      /Сейчас открыта карточка человека Лебедь Анна Семёновна/,
+    );
     const payload = await response.json();
     assert.equal(payload.answer, "В архиве найдена Анна Лебедь.");
     assert.deepEqual(
@@ -877,6 +972,7 @@ test("web researcher can inspect an authorized archive photo through a bounded p
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "Покажи и проанализируй семейный снимок",
+        context: { view: "gallery", openPhotoId: "photo-ai" },
       }),
     });
     assert.equal(response.status, 200);
@@ -889,6 +985,14 @@ test("web researcher can inspect an authorized archive photo through a bounded p
       { type: "open_photo", photoId: "photo-ai" },
     ]);
     assert.equal(requests.length, 3);
+    assert.match(
+      JSON.stringify(requests[0].messages),
+      /Текущий раздел интерфейса: gallery/,
+    );
+    assert.match(
+      JSON.stringify(requests[0].messages),
+      /Сейчас открыт снимок «Семейный снимок»/,
+    );
     assert.deepEqual(
       payload.references.find(
         (item: { kind: string }) => item.kind === "photo",

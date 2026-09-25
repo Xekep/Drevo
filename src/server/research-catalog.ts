@@ -16,6 +16,51 @@ export type ResearchCategory = {
   resources: ResearchResource[];
 };
 
+const ignoredSearchWords = new Set([
+  "дай",
+  "мне",
+  "покажи",
+  "найди",
+  "пришли",
+  "скинь",
+  "где",
+  "искать",
+  "ссылку",
+  "ссылки",
+  "сайт",
+  "сайты",
+  "ресурс",
+  "ресурсы",
+  "пожалуйста",
+]);
+
+function searchWords(value: string) {
+  return [
+    ...new Set(
+      (
+        value
+          .toLocaleLowerCase("ru-RU")
+          .replaceAll("ё", "е")
+          .match(/[\p{L}\p{N}]{3,}/gu) || []
+      ).filter((word) => !ignoredSearchWords.has(word)),
+    ),
+  ];
+}
+
+function wordsMatch(query: string, candidate: string) {
+  if (query === candidate) return true;
+  const shared = Math.min(query.length, candidate.length);
+  if (shared < 5 || Math.abs(query.length - candidate.length) > 3) return false;
+  return (
+    query.slice(0, Math.max(4, shared - 2)) ===
+    candidate.slice(0, Math.max(4, shared - 2))
+  );
+}
+
+function containsWord(words: string[], query: string) {
+  return words.some((word) => wordsMatch(query, word));
+}
+
 function requiredText(
   value: unknown,
   label: string,
@@ -141,11 +186,21 @@ export function researchCatalogStore(db: DatabaseSync) {
       const scored = category.resources.map((resource, index) => {
         const title = resource.name.toLocaleLowerCase("ru-RU");
         const description = resource.description.toLocaleLowerCase("ru-RU");
+        const titleWords = searchWords(title);
+        const descriptionWords = searchWords(description);
         const score = words.reduce(
           (sum, word) =>
             sum +
-            (title.includes(word) ? 4 : 0) +
-            (description.includes(word) ? 1 : 0),
+            (title.includes(word)
+              ? 4
+              : containsWord(titleWords, word)
+                ? 3
+                : 0) +
+            (description.includes(word)
+              ? 1
+              : containsWord(descriptionWords, word)
+                ? 1
+                : 0),
           0,
         );
         return { resource, index, score };
@@ -154,6 +209,71 @@ export function researchCatalogStore(db: DatabaseSync) {
       return {
         category: category.name,
         resources: scored.slice(0, 5).map(({ resource }) => resource),
+      };
+    },
+    searchAny(query: string, categoryName = "") {
+      const words = searchWords(query);
+      if (!words.length)
+        return {
+          resources: [] as Array<ResearchResource & { category: string }>,
+        };
+      const categories = list().filter(
+        (category) =>
+          !categoryName ||
+          category.name.toLocaleLowerCase("ru-RU") ===
+            categoryName.trim().toLocaleLowerCase("ru-RU"),
+      );
+      const indexed = categories.flatMap((category) =>
+        category.resources.map((resource) => ({
+          ...resource,
+          category: category.name,
+          nameWords: searchWords(resource.name),
+          descriptionWords: searchWords(resource.description),
+          categoryWords: searchWords(category.name),
+        })),
+      );
+      const frequencies = new Map(
+        words.map((word) => [
+          word,
+          indexed.filter(
+            (resource) =>
+              containsWord(resource.nameWords, word) ||
+              containsWord(resource.descriptionWords, word) ||
+              containsWord(resource.categoryWords, word),
+          ).length,
+        ]),
+      );
+      return {
+        resources: indexed
+          .map((resource, index) => ({
+            resource,
+            index,
+            score: words.reduce((sum, word) => {
+              const weight = 1 / Math.max(1, frequencies.get(word) || 1);
+              return (
+                sum +
+                weight *
+                  (containsWord(resource.nameWords, word)
+                    ? 9
+                    : containsWord(resource.descriptionWords, word)
+                      ? 4
+                      : containsWord(resource.categoryWords, word)
+                        ? 1
+                        : 0)
+              );
+            }, 0),
+          }))
+          .filter((item) => item.score > 0)
+          .sort((a, b) => b.score - a.score || a.index - b.index)
+          .slice(0, 5)
+          .map(({ resource }) => ({
+            id: resource.id,
+            categoryId: resource.categoryId,
+            category: resource.category,
+            name: resource.name,
+            url: resource.url,
+            description: resource.description,
+          })),
       };
     },
     createCategory(value: unknown, actor: ArchiveUser) {
