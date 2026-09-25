@@ -156,6 +156,20 @@ export function linkResearchReferences(
   content: string,
   references: ResearchAnswerReference[] = [],
 ) {
+  // Models sometimes escape Markdown delimiters around an otherwise valid
+  // archive link. ReactMarkdown then displays the entire link as plain text.
+  // Repair only Drevo URLs, leaving code samples and external URLs untouched.
+  const normalizedContent = content
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((part, index) =>
+      index % 2
+        ? part
+        : part.replace(
+            /\\?\[([^\]\n]+?)\\?\]\\?\(\\?(#drevo-(?:person|choose-person|photo)-[A-Za-z0-9%._~-]+)\\?\)/g,
+            (_match, label: string, href: string) => markdownLink(label, href),
+          ),
+    )
+    .join("");
   const placeholders: string[] = [];
   const reserve = (markdown: string) => {
     const token = `DREVOREF${placeholders.length}TOKEN`;
@@ -164,7 +178,7 @@ export function linkResearchReferences(
   };
 
   let value = outsideCodeFences(
-    normalizeExternalResearchLinks(content),
+    normalizeExternalResearchLinks(normalizedContent),
     (part) => {
       let normalized = part;
       for (const match of part.matchAll(

@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
 import {
   cleanPdfAnswer,
   hideResearchToolNames,
@@ -10,6 +13,35 @@ import {
   researchPdfFilename,
   verifiedSurnameTable,
 } from "../src/domain/research-answer.ts";
+
+test("photo Markdown links remain clickable when the model escapes their delimiters", () => {
+  const id = "d6688201-4f30-47a2-a99b-39d0bb5ec2cf";
+  const href = `#drevo-photo-${id}`;
+  const link = `[Фотография · 11 человек](${href})`;
+  for (const answer of [
+    `На ${link} изображено **11 человек**.`,
+    String.raw`На \[Фотография · 11 человек\](#drevo-photo-d6688201-4f30-47a2-a99b-39d0bb5ec2cf) изображено **11 человек**.`,
+    String.raw`На \[Фотография · 11 человек\]\(#drevo-photo-d6688201-4f30-47a2-a99b-39d0bb5ec2cf\) изображено **11 человек**.`,
+  ]) {
+    const markdown = linkResearchReferences(answer, [
+      { kind: "photo", id, label: "Фотография · 11 человек" },
+    ]);
+    const html = renderToStaticMarkup(
+      React.createElement(ReactMarkdown, null, markdown),
+    );
+    assert.match(
+      html,
+      new RegExp(`<a href="${href}">Фотография · 11 человек</a>`),
+    );
+    assert.doesNotMatch(html, /\[Фотография · 11 человек\]/);
+  }
+  const escaped = String.raw`\[Фотография · 11 человек\](#drevo-photo-d6688201-4f30-47a2-a99b-39d0bb5ec2cf)`;
+  assert.equal(linkResearchReferences(`\`${escaped}\``), `\`${escaped}\``);
+  assert.equal(
+    linkResearchReferences(`\`\`\`text\n${escaped}\n\`\`\``),
+    `\`\`\`text\n${escaped}\n\`\`\``,
+  );
+});
 
 test("служебные имена инструментов скрываются в готовом тексте", () => {
   assert.equal(

@@ -18,6 +18,7 @@ import {
 import { AiLimitError, type aiUsageStore } from "./ai-usage.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
+import { requesterRelationshipAnswer } from "../domain/research-relationship.ts";
 import { archivePaths } from "../domain/archive-routes.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
@@ -971,6 +972,23 @@ export function aiResearchHttp({
       >(),
       createdSuggestionIds = new Set<string>(),
       proposalErrors: string[] = [];
+    const directRelationship = requesterRelationshipAnswer(
+      family,
+      user.personId,
+      message,
+      history,
+      selectedPerson?.id,
+    );
+    if (directRelationship) {
+      chats.setRemote(chatId, null);
+      onDelta(directRelationship.answer);
+      return {
+        ...directRelationship,
+        suggestionIds: [],
+        uiActions: [],
+        files: [],
+      };
+    }
     let analyzedPhotos = 0,
       resourceLookups = 0,
       executedTools = 0,

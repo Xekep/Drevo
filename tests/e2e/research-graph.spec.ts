@@ -1,5 +1,37 @@
 import { expect, test } from "@playwright/test";
 
+test("экранированная ссылка ИИ на фото становится кнопкой", async ({
+  page,
+}) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({ json: { enabled: true, streaming: true } }),
+  );
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: done\ndata: ${JSON.stringify({
+        answer: String.raw`На \[Фотография · 11 человек\](#drevo-photo-d6688201-4f30-47a2-a99b-39d0bb5ec2cf) изображено **11 человек**.`,
+        references: [],
+        suggestionIds: [],
+        uiActions: [],
+        files: [],
+      })}\n\n`,
+    }),
+  );
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  await page.locator(".research-assistant textarea").fill("Покажи фото");
+  await page.getByRole("button", { name: "Отправить запрос" }).click();
+  await expect(
+    page
+      .locator(".research-assistant article.is-assistant")
+      .getByRole("button", {
+        name: "Фотография · 11 человек",
+      }),
+  ).toBeVisible();
+});
+
 test("ИИ показывает готовый ответ и раскрывает Mermaid-граф с масштабом", async ({
   page,
 }) => {
@@ -36,7 +68,9 @@ test("ИИ показывает готовый ответ и раскрывае�
   ).toHaveCount(1);
   await page.getByRole("button", { name: "Развернуть схему" }).click();
   const dialog = page.getByRole("dialog", { name: "Схема родства" });
-  await expect(dialog.locator(".research-visual-dialog-plot canvas")).toBeVisible();
+  await expect(
+    dialog.locator(".research-visual-dialog-plot canvas"),
+  ).toBeVisible();
   await expect(dialog.getByRole("img")).toHaveAttribute(
     "aria-label",
     /1900–1980.*родитель → ребёнок/,
@@ -51,12 +85,16 @@ test("ИИ показывает готовый ответ и раскрывае�
   await page.mouse.wheel(0, -100);
   await dialog.getByRole("button", { name: "Увеличить схему" }).click();
   await dialog.getByRole("button", { name: "Уменьшить схему" }).click();
-  await expect(dialog.locator(".research-visual-dialog-plot canvas")).toBeVisible();
+  await expect(
+    dialog.locator(".research-visual-dialog-plot canvas"),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "Закрыть схему" }).click();
   await expect(dialog).toHaveCount(0);
 });
 
-test("ИИ показывает круговую и временную диаграммы на Canvas", async ({ page }) => {
+test("ИИ показывает круговую и временную диаграммы на Canvas", async ({
+  page,
+}) => {
   const answers = [
     '```mermaid\npie title Родственные ветви\n"Первая": 3\n"Вторая": 2\n```',
     '```mermaid\nxychart-beta\n  title "Люди по годам"\n  x-axis ["1900", "1950", "2000"]\n  bar [1, 4, 8]\n```',
