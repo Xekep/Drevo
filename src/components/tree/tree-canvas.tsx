@@ -32,7 +32,7 @@ import {
   RelationshipEdge,
   type RelationshipEdgeType,
 } from "./relationship-edge";
-import { EraOverlay } from "./era-overlay";
+import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
 import { useTreeLayout } from "./use-tree-layout";
@@ -151,6 +151,7 @@ function Canvas(props: Props) {
     focus,
   } = props;
   const [mode, setMode] = useState<TreeMode>("generations");
+  const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
   const [returnTarget, setReturnTarget] = useState<{
     id: string;
@@ -279,6 +280,10 @@ function Canvas(props: Props) {
     const allowed = new Set(family.people.map((person) => person.id));
     return new Set(props.assistantFilter.ids.filter((id) => allowed.has(id)));
   }, [family.people, familyView.visible, props.assistantFilter]);
+  const timelinePeople = useMemo(
+    () => family.people.filter((person) => visible.has(person.id)),
+    [family.people, visible],
+  );
   const flow = useReactFlow<
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
@@ -287,10 +292,10 @@ function Canvas(props: Props) {
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}`
     : `${mode}:${familyView.mode}:${root || "all"}`;
-  useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor);
-  useCtrlWheelZoom(container, flow, !activeFanAnchor);
+  useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
+  useCtrlWheelZoom(container, flow, !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
-    useTreeLayout(family, visible, mode, reverse);
+    useTreeLayout(family, visible, layoutMode, reverse);
   useEffect(() => {
     const request = props.zoomRequest;
     if (
@@ -344,7 +349,7 @@ function Canvas(props: Props) {
       buildTreeNodeModel({
         family,
         geometry,
-        mode,
+        mode: layoutMode,
         visible: renderVisible,
         selected,
         collapsed,
@@ -362,7 +367,7 @@ function Canvas(props: Props) {
     [
       family,
       geometry,
-      mode,
+      layoutMode,
       renderVisible,
       selected,
       collapsed,
@@ -476,7 +481,7 @@ function Canvas(props: Props) {
       flow,
       geometry,
       nodeCount: nodes.length,
-      mode,
+      mode: layoutMode,
       reverse,
       ready,
       focusReady: !growing && introCameraFinished,
@@ -539,7 +544,7 @@ function Canvas(props: Props) {
       buildTreeEdges({
         family,
         user,
-        mode,
+        mode: layoutMode,
         geometry,
         connections,
         visible: renderVisible,
@@ -559,7 +564,7 @@ function Canvas(props: Props) {
     [
       family,
       user,
-      mode,
+      layoutMode,
       geometry,
       connections,
       renderVisible,
@@ -701,6 +706,7 @@ function Canvas(props: Props) {
   );
   function switchMode(next: TreeMode) {
     rememberContext();
+    setGrowing(false);
     if (activeFanAnchor) returnToPerson(activeFanAnchor);
     setFanAnchor(null);
     setMode(next);
@@ -1003,9 +1009,15 @@ function Canvas(props: Props) {
           onClose={() => setCreateAt(null)}
         />
         )}
-        {!activeFanAnchor &&
-          mode === "timeline" &&
-          geometry?.mode === "timeline" && <EraOverlay geometry={geometry} />}
+        {!activeFanAnchor && mode === "timeline" && (
+          <HorizontalTimeline
+            people={timelinePeople}
+            reverse={reverse}
+            selected={selected}
+            focus={focus}
+            onChoose={onChoose}
+          />
+        )}
         {!activeFanAnchor && problem && (
           <div className="tree-notice" role="alert">
             {problem}
