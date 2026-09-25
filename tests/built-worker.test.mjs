@@ -51,6 +51,8 @@ test(
       assert.equal(reverse.error, undefined);
       assert.equal(reverse.reverse, true);
       assert.equal(reverse.branches.length, g.branches.length);
+      // Reusing the ELK engine must not retain mode/direction from the last job.
+      assert.deepEqual(await calculate(worker, "generations"), g);
       const broad = [{ id: "root", birth: "1900", parents: [], spouses: [] }];
       for (let i = 0; i < 18; i++) {
         broad.push(
