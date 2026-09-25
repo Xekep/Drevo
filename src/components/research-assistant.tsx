@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Send,
   Sparkles,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -1449,12 +1450,12 @@ export function ResearchAssistant({
                 title="Остановить ответ"
                 onClick={stopGeneration}
               >
-                <Minus size={17} />
+                <Square size={15} fill="currentColor" />
               </button>}
               <button
                 type="button"
-                aria-label="Очистить диалог"
-                title="Очистить диалог"
+                aria-label={chatId ? "Удалить диалог" : "Очистить диалог"}
+                title={chatId ? "Удалить диалог" : "Очистить диалог"}
                 disabled={chatLoading || (!chatId && !messages.length && !draft && !error)}
                 onClick={() => void clearDialog()}
               >
