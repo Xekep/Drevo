@@ -57,6 +57,7 @@ import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
 import { runFanReveal } from "./fan-reveal";
+import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
 
 export type ConnectionDraft = {
   from: string;
@@ -225,8 +226,10 @@ function Canvas(props: Props) {
     () => setInitialCameraReady(true),
     [],
   );
-  const growthPreparing = growing && !narrow && !growthRevealed;
+  const growthPreparing = growing && !narrow && family.people.length > 0 && !growthRevealed;
   const growthActive = growing && !narrow && growthStarted;
+  const growthLocked = growthPreparing || growthActive;
+  useTreeGrowthInputLock(container, growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
@@ -298,8 +301,8 @@ function Canvas(props: Props) {
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}`
     : `${mode}:${familyView.mode}:${root || "all"}`;
-  useTouchZoom(container, flow, !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
-  useCtrlWheelZoom(container, flow, !activeFanAnchor && mode !== "timeline");
+  useTouchZoom(container, flow, !growthLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
+  useCtrlWheelZoom(container, flow, !growthLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
     useTreeLayout(family, visible, layoutMode, reverse);
   useEffect(() => {
@@ -398,6 +401,10 @@ function Canvas(props: Props) {
     maxGrowthDelay,
   } = nodeModel;
   useEffect(() => {
+    if (problem) {
+      setGrowing(false);
+      return;
+    }
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -421,6 +428,7 @@ function Canvas(props: Props) {
     growthDelays,
     narrow,
     growthStarted,
+    problem,
   ]);
   useEffect(() => {
     if (
@@ -990,12 +998,12 @@ function Canvas(props: Props) {
           nodesFocusable={false}
           edgesReconnectable={props.canEdit && !props.busy}
           deleteKeyCode={null}
-          panOnScroll
+          panOnScroll={!growthLocked}
           zoomOnScroll={false}
-          zoomOnPinch
-          zoomOnDoubleClick={!screen.fullscreen}
+          zoomOnPinch={!growthLocked}
+          zoomOnDoubleClick={!growthLocked && !screen.fullscreen}
           selectionOnDrag={false}
-          panOnDrag={growthActive ? false : [0, 1]}
+          panOnDrag={growthLocked ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
           // Culling uses final coordinates, not the CSS-interpolated position.

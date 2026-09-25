@@ -1281,27 +1281,27 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   expect(delays).toEqual([
     "0s",
-    "0.52s",
-    "0.52s",
-    "0.55s",
-    "0.58s",
-    "1.1s",
-    "1.13s",
+    "0.34s",
+    "0.34s",
+    "0.37s",
+    "0.4s",
+    "0.74s",
+    "0.77s",
   ]);
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
     "animation-delay",
-    "0.52s",
+    "0.34s",
   );
   await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCSS(
     "animation-delay",
-    "0.55s",
+    "0.37s",
   );
   await expect(page.getByTestId("rf__node-e2e-sibling")).toHaveCSS(
     "animation-delay",
-    "0.58s",
+    "0.4s",
   );
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
-  await expect(nodes.last()).toHaveCSS("animation-duration", "0.28s");
+  await expect(nodes.last()).toHaveCSS("animation-duration", "0.1s");
   const firstGrowthEdge = page
     .locator(".tree-grow-edge .tree-edge-growth-path")
     .first();
@@ -1314,7 +1314,7 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(firstFinalEdge).not.toHaveAttribute("pathLength", "1");
   await expect(firstFinalEdge).toHaveCSS(
     "animation-name",
-    "tree-edge-final-reveal",
+    "none",
   );
   const edgeDelays = await page
     .locator(".tree-grow-edge .tree-edge-growth-path")
@@ -1324,19 +1324,19 @@ test("the initial tree grows from roots toward descendants", async ({
         .sort((a, b) => Number.parseFloat(a) - Number.parseFloat(b)),
     );
   expect(edgeDelays).toEqual([
-    "0.28s",
-    "0.28s",
-    "0.83s",
-    "0.86s",
-    "0.86s",
-    "1.41s",
+    "0.1s",
+    "0.1s",
+    "0.47s",
+    "0.5s",
+    "0.5s",
+    "0.87s",
   ]);
   const godparent = page.getByRole("button", {
     name: "Связь: Крёстный отец → крестница",
   });
   await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
-  await expect(godparent).toHaveCSS("animation-delay", "1.65s");
+  await expect(godparent).toHaveCSS("animation-delay", "1.11s");
 
   const pane = page.locator(".react-flow__pane");
   const box = await pane.boundingBox();
@@ -1368,7 +1368,7 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   await expect(firstFinalEdge).toHaveCSS(
     "animation-name",
-    "tree-edge-final-reveal",
+    "none",
   );
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
   await expect(page.getByText("Нужна помощь?", { exact: true })).toBeVisible();

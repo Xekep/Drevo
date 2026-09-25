@@ -6,7 +6,7 @@ test("family, common ancestors and branch changes animate their cards and camera
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   const child = page.getByTestId("rf__node-e2e-child");
   await child.locator(".flow-person-content").click();
   // Observe within the browser: sequential Playwright round-trips can miss a
@@ -100,7 +100,7 @@ test("AI launcher moves to the edge when the fan hides camera controls", async (
   );
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -139,7 +139,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
 }, testInfo) => {
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
@@ -218,7 +218,7 @@ test("AI focuses one person without zooming out", async ({
     }),
   );
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
     timeout: 5_000,
   });
   const viewport = page.locator(".react-flow__viewport");
@@ -268,7 +268,7 @@ test("opening another card after personal intro keeps the camera in place", asyn
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   const self = page.getByTestId("rf__node-e2e-memorial-person");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await expect
     .poll(async () => {
       const [a, b] = await Promise.all([
@@ -298,7 +298,7 @@ test("opening a card after a profile link does not restore its old focus", async
   await page.goto("/people/e2e-memorial-person");
   const canvas = page.locator(".tree-canvas");
   const self = page.getByTestId("rf__node-e2e-memorial-person");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
   await expect
     .poll(async () => {
       const [a, b] = await Promise.all([
@@ -381,7 +381,7 @@ test("branches collapse and expand inside an AI-filtered tree", async ({
     }),
   );
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
     timeout: 5_000,
   });
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
@@ -427,7 +427,7 @@ test("manual card selection does not break a later AI navigation", async ({
     });
   });
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
     timeout: 5_000,
   });
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
@@ -472,7 +472,7 @@ test("reduced motion skips the tree and fan transitions", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 3_000 });
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 3_000 });
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
     "animation-name",
     "none",

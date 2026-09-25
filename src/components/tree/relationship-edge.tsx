@@ -1,4 +1,4 @@
-import { memo, type CSSProperties } from "react";
+import { memo, useState, type CSSProperties } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -66,6 +66,7 @@ function sameRelationshipEdgeProps(
 export const RelationshipEdge = memo(function RelationshipEdge(
   props: EdgeProps<RelationshipEdgeType>,
 ) {
+  const [growthComplete, setGrowthComplete] = useState(false);
   const fallback = getBezierPath({
     ...props,
     curvature: 0.35,
@@ -104,7 +105,10 @@ export const RelationshipEdge = memo(function RelationshipEdge(
   } as CSSProperties;
   return (
     <>
-      <g className="tree-grow-edge-visual" style={visualStyle}>
+      <g
+        className={`tree-grow-edge-visual${growthComplete ? " is-growth-complete" : ""}`}
+        style={visualStyle}
+      >
         <BaseEdge
           className="tree-edge-final-path"
           path={renderedPath}
@@ -119,6 +123,10 @@ export const RelationshipEdge = memo(function RelationshipEdge(
           fill="none"
           pathLength={1}
           style={{ ...animatedStyle, strokeDasharray: undefined }}
+          onAnimationEnd={(event) => {
+            if (event.animationName === "tree-edge-draw")
+              setGrowthComplete(true);
+          }}
         />
         {props.data?.junction && (
           <circle

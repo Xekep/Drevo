@@ -5,6 +5,7 @@ import {
   TREE_GROWTH_EDGE_MS,
   TREE_GROWTH_MAX_DELAY_MS,
   TREE_GROWTH_NODE_MS,
+  TREE_GROWTH_REVEAL_MS,
   treeConnectionGrowthStyle,
   treeGrowthCanvasStyle,
   treeGrowthDelays,
@@ -38,6 +39,7 @@ test("tree growth follows birth dates and finishes a generation before its desce
   assert.ok(delays.get("spouse")! < delays.get("younger")!);
   assert.ok(delays.get("younger")! < delays.get("unknown")!);
   assert.equal(delays.nodeMs, TREE_GROWTH_NODE_MS);
+  assert.equal(delays.revealMs, TREE_GROWTH_REVEAL_MS);
   assert.equal(delays.edgeMs, TREE_GROWTH_EDGE_MS);
 
   const rootLine = cssMilliseconds(
@@ -46,7 +48,11 @@ test("tree growth follows birth dates and finishes a generation before its desce
       delays,
     )["--tree-growth-delay"],
   );
-  assert.equal(rootLine, delays.get("root")! + delays.nodeMs);
+  assert.equal(rootLine, delays.get("root")! + delays.revealMs);
+  assert.ok(
+    rootLine < delays.get("root")! + delays.nodeMs,
+    "outgoing arrows start while the card is still settling, with no idle phase",
+  );
   assert.equal(delays.get("older"), rootLine + delays.edgeMs);
 
   const parentGenerationReady =
@@ -55,7 +61,7 @@ test("tree growth follows birth dates and finishes a generation before its desce
       delays.get("spouse")!,
       delays.get("younger")!,
       delays.get("unknown")!,
-    ) + delays.nodeMs;
+    ) + delays.revealMs;
   const grandchildLine = cssMilliseconds(
     treeConnectionGrowthStyle(
       { from: "older", to: "grandchild", type: "parent" },
@@ -87,7 +93,7 @@ test("independent branches share a generation-wide arrow phase", () => {
     )["--tree-growth-delay"],
   );
   assert.equal(lineA, lineB);
-  assert.equal(lineA, delays.get("root-b")! + delays.nodeMs);
+  assert.equal(lineA, delays.get("root-b")! + delays.revealMs);
   assert.equal(delays.get("child-a"), lineA + delays.edgeMs);
   assert.ok(delays.get("child-b")! >= delays.get("child-a")!);
   const grandchildLine = cssMilliseconds(
@@ -96,7 +102,7 @@ test("independent branches share a generation-wide arrow phase", () => {
       delays,
     )["--tree-growth-delay"],
   );
-  assert.equal(grandchildLine, delays.get("child-b")! + delays.nodeMs);
+  assert.equal(grandchildLine, delays.get("child-b")! + delays.revealMs);
   assert.equal(delays.get("grandchild"), grandchildLine + delays.edgeMs);
 });
 
@@ -115,6 +121,7 @@ test("deep archives compress the whole schedule without reversing arrows and car
   assert.ok(delays.edgeMs < TREE_GROWTH_EDGE_MS);
   assert.deepEqual(treeGrowthCanvasStyle(delays), {
     "--tree-growth-node-duration": `${Math.round(delays.nodeMs * 1_000) / 1_000}ms`,
+    "--tree-growth-reveal-duration": `${Math.round(delays.revealMs * 1_000) / 1_000}ms`,
     "--tree-growth-edge-duration": `${Math.round(delays.edgeMs * 1_000) / 1_000}ms`,
   });
 
@@ -160,7 +167,7 @@ test("wide archives schedule every descendant without a fixed family size", () =
         delays,
       )["--tree-growth-delay"],
     );
-    assert.ok(edgeStart >= delays.get("root")! + delays.nodeMs);
+    assert.ok(edgeStart >= delays.get("root")! + delays.revealMs);
     assert.ok(edgeStart + delays.edgeMs <= delays.get(child.id)! + 0.001);
   }
 });

@@ -22,23 +22,22 @@ test("growth draws parent arrows before descendants without squeezing cards", as
             "tree-branch-reveal",
             "tree-card-grow",
             "tree-edge-draw",
-            "tree-edge-final-reveal",
           ].includes(animation.animationName),
       );
     animations.forEach((animation) => animation.pause());
     const nodes = [...element.querySelectorAll<HTMLElement>(".tree-grow-node")];
     const firstDescendant = nodes.find(
-      (node) => getComputedStyle(node).animationDelay === "0.52s",
+      (node) => getComputedStyle(node).animationDelay === "0.34s",
     )!;
     const lastDescendant = nodes.find(
-      (node) => getComputedStyle(node).animationDelay === "1.1s",
+      (node) => getComputedStyle(node).animationDelay === "0.74s",
     )!;
     const card = firstDescendant.querySelector<HTMLElement>(".flow-person")!;
     const parentLine = [
       ...element.querySelectorAll<SVGPathElement>(
         ".relationship-parent .tree-edge-growth-path",
       ),
-    ].find((path) => getComputedStyle(path).animationDelay === "0.28s")!;
+    ].find((path) => getComputedStyle(path).animationDelay === "0.1s")!;
     const parentFinal = parentLine
       .closest(".react-flow__edge")!
       .querySelector<SVGPathElement>(".tree-edge-final-path")!;
@@ -61,10 +60,10 @@ test("growth draws parent arrows before descendants without squeezing cards", as
       };
     };
     return {
-      line: sample(400),
-      child: sample(650),
-      nextArrow: sample(950),
-      nextChild: sample(1_180),
+      line: sample(220),
+      child: sample(450),
+      nextArrow: sample(650),
+      nextChild: sample(800),
     };
   });
   expect(phases.line.childOpacity).toBe(0);

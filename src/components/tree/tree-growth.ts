@@ -6,6 +6,8 @@ import {
 
 export const TREE_GROWTH_EDGE_MS = 240;
 export const TREE_GROWTH_NODE_MS = 280;
+export const TREE_GROWTH_REVEAL_MS = 100;
+const TREE_GROWTH_LABEL_MS = 160;
 export const TREE_GROWTH_ORDER_MS = 30;
 export const TREE_GROWTH_MAX_ORDER_MS = 200;
 export const TREE_GROWTH_MAX_DELAY_MS = 3_500;
@@ -17,10 +19,12 @@ type GrowthStyle = CSSProperties & {
 };
 type GrowthCanvasStyle = CSSProperties & {
   "--tree-growth-node-duration": string;
+  "--tree-growth-reveal-duration": string;
   "--tree-growth-edge-duration": string;
 };
 export type TreeGrowthSchedule = ReadonlyMap<string, number> & {
   readonly nodeMs: number;
+  readonly revealMs: number;
   readonly edgeMs: number;
   readonly parentEdgeStarts: ReadonlyMap<string, number>;
 };
@@ -64,6 +68,7 @@ function timing(delays: ReadonlyMap<string, number>) {
   const schedule = delays as Partial<TreeGrowthSchedule>;
   return {
     nodeMs: schedule.nodeMs ?? TREE_GROWTH_NODE_MS,
+    revealMs: schedule.revealMs ?? TREE_GROWTH_REVEAL_MS,
     edgeMs: schedule.edgeMs ?? TREE_GROWTH_EDGE_MS,
   };
 }
@@ -74,9 +79,10 @@ function milliseconds(value: number) {
 
 /**
  * Поколения появляются волнами, а люди внутри поколения — по дате рождения.
- * Следующее поколение ждёт завершения всех карточек предыдущего. Затем
+ * Следующее поколение ждёт появления всех карточек предыдущего. Затем
  * одновременно рисуются родительские линии, и только после них появляются
- * карточки потомков. Супруги внутри поколения остаются рядом по времени.
+ * карточки потомков. Декоративное движение карточки продолжается во время
+ * роста исходящих линий, без остановки между фазами.
  */
 export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
   const levels = generationLevels(people);
@@ -113,7 +119,9 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
       orderOffset += group.length * step;
     }
     levelEnd =
-      nodeStart + Math.max(0, members.length - 1) * step + TREE_GROWTH_NODE_MS;
+      nodeStart +
+      Math.max(0, members.length - 1) * step +
+      TREE_GROWTH_REVEAL_MS;
   }
   const last = Math.max(0, ...rawDelays.values());
   const scale =
@@ -122,6 +130,7 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
     new Map([...rawDelays].map(([id, delay]) => [id, delay * scale])),
     {
       nodeMs: TREE_GROWTH_NODE_MS * scale,
+      revealMs: TREE_GROWTH_REVEAL_MS * scale,
       edgeMs: TREE_GROWTH_EDGE_MS * scale,
       parentEdgeStarts: new Map(
         [...rawParentEdgeStarts].map(([id, delay]) => [id, delay * scale]),
@@ -137,9 +146,10 @@ export function treeNodeGrowthStyle(delay: number): GrowthStyle {
 export function treeGrowthCanvasStyle(
   delays: ReadonlyMap<string, number>,
 ): GrowthCanvasStyle {
-  const { nodeMs, edgeMs } = timing(delays);
+  const { nodeMs, revealMs, edgeMs } = timing(delays);
   return {
     "--tree-growth-node-duration": milliseconds(nodeMs),
+    "--tree-growth-reveal-duration": milliseconds(revealMs),
     "--tree-growth-edge-duration": milliseconds(edgeMs),
   };
 }
@@ -160,19 +170,19 @@ export function treeConnectionGrowthStyle(
 ) {
   const from = delays.get(connection.from) || 0;
   const to = delays.get(connection.to) || 0;
-  const { nodeMs, edgeMs } = timing(delays);
+  const { revealMs, edgeMs } = timing(delays);
   if (connection.type === "parent") {
     const scheduled = (
       delays as Partial<TreeGrowthSchedule>
     ).parentEdgeStarts?.get(connection.to);
-    const line = Math.max(from + nodeMs, scheduled ?? to - edgeMs);
+    const line = Math.max(from + revealMs, scheduled ?? to - edgeMs);
     return treeEdgeGrowthStyle(line, line + edgeMs);
   }
   if (connection.type === "spouse") {
-    const line = Math.max(from, to) + nodeMs;
+    const line = Math.max(from, to) + revealMs;
     return treeEdgeGrowthStyle(line, line + edgeMs);
   }
-  const line = Math.max(from, to) + nodeMs;
+  const line = Math.max(from, to) + revealMs;
   return treeEdgeGrowthStyle(line, line + edgeMs);
 }
 
@@ -180,6 +190,6 @@ export function treeGrowthDuration(
   maxDelay: number,
   delays?: ReadonlyMap<string, number>,
 ) {
-  const { nodeMs, edgeMs } = timing(delays || new Map());
-  return maxDelay + nodeMs + edgeMs + 200;
+  const { nodeMs, revealMs, edgeMs } = timing(delays || new Map());
+  return maxDelay + Math.max(nodeMs, revealMs + edgeMs + TREE_GROWTH_LABEL_MS);
 }
