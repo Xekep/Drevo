@@ -58,6 +58,12 @@ const targetKey = (target: ArchiveTarget | null) =>
   target ? `${target.kind}:${target.id}` : "";
 
 export default function App() {
+  const [initialPersonLink] = useState(
+    () =>
+      archiveTargetAt(window.location.pathname, window.location.search)?.kind ===
+      "person",
+  );
+  const [treeGrowing, setTreeGrowing] = useState(!initialPersonLink);
   const archive = useArchive(),
     {
       family,
@@ -634,6 +640,8 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      skipInitialGrowth={initialPersonLink}
+                      onGrowthChange={setTreeGrowing}
                       comparisonAction={
                         <div className="workspace-actions">
                           <button
@@ -755,7 +763,9 @@ export default function App() {
                           dirty={connectionDirty}
                         />
                       </InspectorDock>
-                    ) : !selectionOnly && (compare || chosen.length > 0) ? (
+                    ) : !treeGrowing &&
+                      !selectionOnly &&
+                      (compare || chosen.length > 0) ? (
                       <InspectorDock
                         key={
                           compare

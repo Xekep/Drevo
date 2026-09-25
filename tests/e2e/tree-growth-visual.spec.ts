@@ -1,5 +1,46 @@
 import { expect, test } from "@playwright/test";
 
+test("later-born descendants appear exactly when their incoming line finishes", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveClass(/is-growing/);
+  await expect(
+    page.locator(".relationship-parent .tree-edge-growth-path"),
+  ).not.toHaveCount(0);
+  const timing = await canvas.evaluate((element) => {
+    const card = [
+      ...element.querySelectorAll<HTMLElement>(".tree-grow-node"),
+    ].find((node) => getComputedStyle(node).animationDelay === "0.4s")!;
+    const edge = [
+      ...element.querySelectorAll<SVGGElement>(".relationship-parent"),
+    ].find(
+      (edge) =>
+        edge.getAttribute("data-id")?.startsWith("child:") &&
+        edge.getAttribute("data-id")?.includes("e2e-sibling"),
+    )!;
+    const line = edge.querySelector<SVGPathElement>(".tree-edge-growth-path")!;
+    element.getAnimations({ subtree: true }).forEach((animation) => {
+      animation.pause();
+      animation.currentTime = 370;
+    });
+    const style = getComputedStyle(line);
+    return {
+      cardStarts: parseFloat(getComputedStyle(card).animationDelay),
+      lineEnds:
+        parseFloat(style.animationDelay) + parseFloat(style.animationDuration),
+      lineRemaining: parseFloat(style.strokeDashoffset),
+      cardOpacity: Number(getComputedStyle(card).opacity),
+    };
+  });
+  expect(timing.lineEnds).toBeCloseTo(timing.cardStarts, 3);
+  expect(timing.lineRemaining).toBeGreaterThan(0);
+  expect(timing.lineRemaining).toBeLessThan(1);
+  expect(timing.cardOpacity).toBe(0);
+});
+
 test("growth draws parent arrows before descendants without squeezing cards", async ({
   page,
 }, testInfo) => {
@@ -18,11 +59,9 @@ test("growth draws parent arrows before descendants without squeezing cards", as
       .filter(
         (animation) =>
           animation instanceof CSSAnimation &&
-          [
-            "tree-branch-reveal",
-            "tree-card-grow",
-            "tree-edge-draw",
-          ].includes(animation.animationName),
+          ["tree-branch-reveal", "tree-card-grow", "tree-edge-draw"].includes(
+            animation.animationName,
+          ),
       );
     animations.forEach((animation) => animation.pause());
     const nodes = [...element.querySelectorAll<HTMLElement>(".tree-grow-node")];

@@ -106,6 +106,32 @@ test("independent branches share a generation-wide arrow phase", () => {
   assert.equal(delays.get("grandchild"), grandchildLine + delays.edgeMs);
 });
 
+test("birth-order stagger stretches incoming lines without an idle gap before any child", () => {
+  const people = [
+    person("root", "1900"),
+    ...Array.from({ length: 12 }, (_, index) =>
+      person(`child-${index}`, String(1920 + index), ["root"]),
+    ),
+  ];
+  const delays = treeGrowthDelays(people);
+  for (const child of people.slice(1)) {
+    const style = treeConnectionGrowthStyle(
+      { from: "root", to: child.id, type: "parent" },
+      delays,
+    );
+    const start = cssMilliseconds(style["--tree-growth-delay"]);
+    const duration = cssMilliseconds(style["--tree-growth-edge-duration"]!);
+    assert.ok(Math.abs(start + duration - delays.get(child.id)!) < 0.002);
+    assert.ok(
+      Math.abs(
+        cssMilliseconds(style["--tree-edge-label-delay"]!) -
+          delays.get(child.id)!,
+      ) < 0.002,
+    );
+    assert.equal(start, delays.revealMs);
+  }
+});
+
 test("deep archives compress the whole schedule without reversing arrows and cards", () => {
   const people = Array.from({ length: 10_000 }, (_, index) =>
     person(

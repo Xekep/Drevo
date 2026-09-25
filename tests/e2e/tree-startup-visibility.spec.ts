@@ -1,5 +1,83 @@
 import { expect, test } from "@playwright/test";
 
+test("a direct person link skips tree growth and smoothly focuses the requested person", async ({
+  page,
+}) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.user.personId = "e2e-memorial-person";
+    await route.fulfill({ response, json: data });
+  });
+  await page.addInitScript(() => {
+    const samples: Array<{ growing: boolean; transform: string }> = [];
+    Object.assign(window, { __directTreeSamples: samples });
+    const start = performance.now();
+    const tick = () => {
+      const canvas = document.querySelector(".tree-canvas");
+      const viewport = document.querySelector<HTMLElement>(
+        ".react-flow__viewport",
+      );
+      if (canvas && viewport)
+        samples.push({
+          growing: /is-grow/.test(canvas.className),
+          transform: viewport.style.transform,
+        });
+      if (performance.now() - start < 8000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await page.goto("/people/e2e-sibling");
+  await expect(page.locator(".inspector-dock")).toContainText("Мария");
+  const card = page.getByTestId("rf__node-e2e-sibling");
+  await expect(card).toHaveClass(/selected/);
+  await expect
+    .poll(async () =>
+      card.evaluate((element) => {
+        const canvas = element.closest(".react-flow")!.getBoundingClientRect();
+        const rect = element.getBoundingClientRect();
+        return Math.abs(rect.x + rect.width / 2 - canvas.x - canvas.width / 2);
+      }),
+    )
+    .toBeLessThan(3);
+  const samples = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __directTreeSamples: Array<{ growing: boolean; transform: string }>;
+        }
+      ).__directTreeSamples,
+  );
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.some((sample) => sample.growing)).toBe(false);
+  expect(
+    new Set(samples.map((sample) => sample.transform)).size,
+  ).toBeGreaterThan(3);
+  await expect(card.locator(".flow-person")).toHaveCSS("opacity", "1");
+});
+
+test("a person selected during tree growth waits for the animation before opening the side panel", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveClass(/is-growing/);
+  // Navigation from outside the locked canvas (e.g. search/history) still
+  // selects the person, but must not resize the canvas mid-animation.
+  await page.evaluate(() => {
+    window.history.pushState(null, "", "/people/e2e-sibling");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page.getByTestId("rf__node-e2e-sibling")).toHaveClass(
+    /selected/,
+  );
+  await expect(canvas).toHaveClass(/is-growing/);
+  await expect(page.locator(".inspector-dock")).toHaveCount(0);
+  await expect(canvas).not.toHaveClass(/is-grow/);
+  await expect(page.locator(".inspector-dock")).toContainText("Мария");
+});
+
 test("the initial tree remains hidden until branch animation starts", async ({
   page,
 }, testInfo) => {

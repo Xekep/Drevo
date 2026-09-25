@@ -16,6 +16,7 @@ export const TREE_LAYOUT_TRANSITION_MS = 440;
 type GrowthStyle = CSSProperties & {
   "--tree-growth-delay": string;
   "--tree-edge-label-delay"?: string;
+  "--tree-growth-edge-duration"?: string;
 };
 type GrowthCanvasStyle = CSSProperties & {
   "--tree-growth-node-duration": string;
@@ -80,8 +81,9 @@ function milliseconds(value: number) {
 /**
  * Поколения появляются волнами, а люди внутри поколения — по дате рождения.
  * Следующее поколение ждёт появления всех карточек предыдущего. Затем
- * одновременно рисуются родительские линии, и только после них появляются
- * карточки потомков. Декоративное движение карточки продолжается во время
+ * одновременно начинают рисоваться родительские линии. Каждая доходит до
+ * потомка ровно к появлению его карточки, без ожидания после конца линии.
+ * Декоративное движение карточки продолжается во время
  * роста исходящих линий, без остановки между фазами.
  */
 export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
@@ -157,10 +159,14 @@ export function treeGrowthCanvasStyle(
 export function treeEdgeGrowthStyle(
   delay: number,
   labelDelay: number,
+  duration?: number,
 ): GrowthStyle {
   return {
     "--tree-growth-delay": milliseconds(delay),
     "--tree-edge-label-delay": milliseconds(labelDelay),
+    ...(duration === undefined
+      ? {}
+      : { "--tree-growth-edge-duration": milliseconds(duration) }),
   };
 }
 
@@ -176,7 +182,10 @@ export function treeConnectionGrowthStyle(
       delays as Partial<TreeGrowthSchedule>
     ).parentEdgeStarts?.get(connection.to);
     const line = Math.max(from + revealMs, scheduled ?? to - edgeMs);
-    return treeEdgeGrowthStyle(line, line + edgeMs);
+    // Birth order staggers cards within a generation. Keep the line moving
+    // through that stagger instead of ending every line before the first card.
+    const duration = Math.max(edgeMs, to - line);
+    return treeEdgeGrowthStyle(line, line + duration, duration);
   }
   if (connection.type === "spouse") {
     const line = Math.max(from, to) + revealMs;

@@ -101,6 +101,8 @@ type Props = {
   highlighted: string[];
   spotlight?: string[];
   onIntroComplete?: () => void;
+  skipInitialGrowth?: boolean;
+  onGrowthChange?: (active: boolean) => void;
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
@@ -203,7 +205,7 @@ function Canvas(props: Props) {
       active = false;
     };
   }, [activeFanAnchor, family.people, focus]);
-  const [growing, setGrowing] = useState(true);
+  const [growing, setGrowing] = useState(() => !props.skipInitialGrowth);
   useEffect(() => {
     if (!activeFanAnchor || !fanRevealing) return;
     const element = container.current;
@@ -235,6 +237,17 @@ function Canvas(props: Props) {
   const growthPreparing = growing && !narrow && family.people.length > 0 && !growthRevealed;
   const growthActive = growing && !narrow && growthStarted;
   const growthLocked = growthPreparing || growthActive;
+  const onGrowthChange = props.onGrowthChange;
+  useLayoutEffect(() => {
+    if (growthLocked) {
+      onGrowthChange?.(true);
+      return;
+    }
+    // Let React Flow commit the final growth frame before opening an inspector
+    // (and potentially resizing the viewport during the personal camera move).
+    const frame = requestAnimationFrame(() => onGrowthChange?.(false));
+    return () => cancelAnimationFrame(frame);
+  }, [growthLocked, onGrowthChange]);
   useTreeGrowthInputLock(container, growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
@@ -439,7 +452,7 @@ function Canvas(props: Props) {
   useEffect(() => {
     if (
       growing ||
-      (narrow && !initialCameraReady) ||
+      !initialCameraReady ||
       !ready ||
       !nodes.length ||
       introHandled.current
@@ -455,7 +468,8 @@ function Canvas(props: Props) {
     };
     const personId = user?.personId,
       occurrence = personId ? personOccurrences.get(personId)?.[0] : undefined,
-      shouldKeepRequestedFocus = !!focus || selected.length > 0;
+      shouldKeepRequestedFocus =
+        props.skipInitialGrowth || !!focus || selected.length > 0;
     if (
       !occurrence ||
       !positions.has(occurrence) ||
@@ -492,6 +506,7 @@ function Canvas(props: Props) {
     positions,
     focus,
     selected.length,
+    props.skipInitialGrowth,
     familyView.mode,
     flow,
     narrow,
