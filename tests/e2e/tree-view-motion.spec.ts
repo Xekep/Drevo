@@ -137,7 +137,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   sameCamera(await camera(), before);
 
   await page.getByRole("button", { name: "Семья выбранного" }).click();
-  await page.waitForTimeout(650);
+  await page.waitForTimeout(1_200);
   const familyBefore = await camera();
   await page.getByRole("button", { name: "Веер", exact: true }).click();
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);

@@ -849,9 +849,14 @@ test("выбор двух людей с Shift не выделяет текст �
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
-  const people = page.locator(".flow-person-content");
-  await people.first().click();
-  await people.nth(1).click({ modifiers: ["Shift"] });
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page
+    .getByTestId("rf__node-e2e-spouse")
+    .locator(".flow-person-content")
+    .click({ modifiers: ["Shift"] });
   await expect
     .poll(() =>
       page
