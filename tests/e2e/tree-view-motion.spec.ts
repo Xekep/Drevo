@@ -405,5 +405,5 @@ test("reduced motion skips the tree and fan transitions", async ({
   await page.getByRole("button", { name: "Всё древо" }).click();
   await page.getByRole("button", { name: "Веер", exact: true }).click();
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
-  await expect(canvas).not.toHaveClass(/is-fan-morphing/);
+  await expect(canvas).not.toHaveClass(/is-fan-revealing/);
 });

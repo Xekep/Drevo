@@ -56,11 +56,7 @@ import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
-import {
-  captureFanMorphSources,
-  runFanMorph,
-  type FanMorphSource,
-} from "./fan-morph";
+import { runFanReveal } from "./fan-reveal";
 
 export type ConnectionDraft = {
   from: string;
@@ -177,8 +173,7 @@ function Canvas(props: Props) {
   }, []);
   const clearReturnTarget = useCallback(() => setReturnTarget(null), []);
   const clearRestoreViewport = useCallback(() => setRestoreViewport(null), []);
-  const [fanMorphing, setFanMorphing] = useState(false);
-  const fanMorphSources = useRef<FanMorphSource[]>([]);
+  const [fanRevealing, setFanRevealing] = useState(false);
   const activeFanAnchor =
     fanAnchor && family.people.some((person) => person.id === fanAnchor)
       ? fanAnchor
@@ -197,8 +192,7 @@ function Canvas(props: Props) {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      fanMorphSources.current = [];
-      setFanMorphing(false);
+      setFanRevealing(false);
       setFanAnchor(next);
     });
     return () => {
@@ -207,23 +201,21 @@ function Canvas(props: Props) {
   }, [activeFanAnchor, family.people, focus]);
   const [growing, setGrowing] = useState(true);
   useEffect(() => {
-    if (!activeFanAnchor || !fanMorphing) return;
+    if (!activeFanAnchor || !fanRevealing) return;
     const element = container.current;
-    const sources = fanMorphSources.current;
     if (!element) {
-      setFanMorphing(false);
+      setFanRevealing(false);
       return;
     }
     let active = true;
-    void runFanMorph(element, sources).finally(() => {
+    void runFanReveal(element).finally(() => {
       if (!active) return;
-      fanMorphSources.current = [];
-      setFanMorphing(false);
+      setFanRevealing(false);
     });
     return () => {
       active = false;
     };
-  }, [activeFanAnchor, fanMorphing]);
+  }, [activeFanAnchor, fanRevealing]);
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
@@ -748,7 +740,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanMorphing ? "is-fan-morphing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         tabIndex={-1}
         aria-busy={growthPreparing || growthActive}
@@ -848,8 +840,7 @@ function Canvas(props: Props) {
                 if (activeFanAnchor) {
                   const target = selected[0] || activeFanAnchor;
                   const entry = fanEntry.current;
-                  fanMorphSources.current = [];
-                  setFanMorphing(false);
+                  setFanRevealing(false);
                   setFanAnchor(null);
                   if (entry && target === entry.anchorId && mode === entry.mode) {
                     clearReturnTarget();
@@ -867,11 +858,6 @@ function Canvas(props: Props) {
                 const reduced = window.matchMedia(
                   "(prefers-reduced-motion: reduce)",
                 ).matches;
-                const element = container.current;
-                const morph =
-                  !reduced && element
-                    ? captureFanMorphSources(element, family, next)
-                    : [];
                 rememberContext();
                 clearReturnTarget();
                 fanEntry.current = {
@@ -883,8 +869,7 @@ function Canvas(props: Props) {
                 setGrowing(false);
                 setEdgeChoices([]);
                 setCreateAt(null);
-                fanMorphSources.current = morph;
-                setFanMorphing(!reduced);
+                setFanRevealing(!reduced);
                 setFanAnchor(next);
               }}
               fanActive={!!activeFanAnchor}

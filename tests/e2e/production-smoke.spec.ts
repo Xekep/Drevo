@@ -113,13 +113,13 @@ test("Ctrl+колесо масштабирует древо и не меняет
       '[data-fan-generation="2"][data-label-orientation="tangential"]',
     ),
   ).not.toHaveCount(0);
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-fan-morphing/);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-fan-revealing/);
   await expect(page.locator(".fan-morph-card")).toHaveCount(0);
   await expect(outerLayer).toHaveCSS("opacity", "1");
   await expect(fan).toHaveCSS("animation-name", "none");
 });
 
-test("веер послойно раскрывается даже без захваченных карточек", async ({
+test("веер послойно раскрывается без перелёта карточек", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -130,16 +130,13 @@ test("веер послойно раскрывается даже без зах�
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await page.locator(".flow-person").evaluateAll((cards) => {
-    for (const card of cards) card.removeAttribute("data-person-id");
-  });
   await page.getByRole("button", { name: "Веер" }).click();
 
   const outerLayer = page.locator('[data-fan-generation="4"]').first();
-  await expect(canvas).toHaveClass(/is-fan-morphing/);
+  await expect(canvas).toHaveClass(/is-fan-revealing/);
   await expect(page.locator(".fan-morph-card")).toHaveCount(0);
   await expect(outerLayer).toHaveCSS("opacity", "0");
-  await expect(canvas).not.toHaveClass(/is-fan-morphing/, { timeout: 2_500 });
+  await expect(canvas).not.toHaveClass(/is-fan-revealing/, { timeout: 2_500 });
   await expect(outerLayer).toHaveCSS("opacity", "1");
 });
 
@@ -177,7 +174,7 @@ test("активный веер перестраивается при перех
 
   const fan = page.locator(".fan-chart");
   await expect(fan).toBeVisible();
-  await expect(canvas).not.toHaveClass(/is-fan-morphing/, { timeout: 2_500 });
+  await expect(canvas).not.toHaveClass(/is-fan-revealing/, { timeout: 2_500 });
   const before = await fan.getAttribute("aria-label");
 
   await page.locator(".inspector-dock .relatives button").first().click();

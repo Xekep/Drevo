@@ -124,30 +124,10 @@
   }
 }
 
-.fan-morph-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  overflow: hidden;
-  pointer-events: none;
-}
-.fan-morph-card {
-  position: absolute;
-  z-index: 1;
-  transform-origin: center;
-  will-change: transform, opacity;
-  pointer-events: none;
-}
-.fan-morph-card > .flow-person-content {
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  box-shadow: 0 8px 26px #304b2c24;
-}
-.tree-canvas.is-fan-morphing .fan-chart-svg {
+.tree-canvas.is-fan-revealing .fan-chart-svg {
   animation: none;
 }
-.tree-canvas.is-fan-morphing .fan-sector,
-.tree-canvas.is-fan-morphing .fan-chart-meta {
+.tree-canvas.is-fan-revealing .fan-sector,
+.tree-canvas.is-fan-revealing .fan-chart-meta {
   opacity: 0;
 }
