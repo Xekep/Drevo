@@ -66,7 +66,9 @@ async function streamUpload(source: Readable, file: string) {
       const bytes = Buffer.from(chunk);
       size += bytes.length;
       if (size > RESTORE_LIMIT) {
-        callback(new RestoreTooLargeError("Файл слишком большой. Максимум 12 ГиБ."));
+        callback(
+          new RestoreTooLargeError("Файл слишком большой. Максимум 12 ГиБ."),
+        );
         return;
       }
       callback(null, bytes);
@@ -206,7 +208,8 @@ async function unpack(source: Readable, directory: string) {
           name = nextPath || (prefix ? `${prefix}/` : "") + field(0, 100);
           nextPath = undefined;
           pax = type === "x" || type === "g";
-          if (++files > 10000) throw new Error("В бэкапе слишком много файлов");
+          if (++files > 40_010)
+            throw new Error("В бэкапе слишком много файлов");
           if (pax) {
             if (remaining > 65536)
               throw new Error("Слишком большой заголовок TAR");
@@ -217,9 +220,14 @@ async function unpack(source: Readable, directory: string) {
               throw new Error("В бэкапе допустимы только обычные файлы");
             if (
               name !== "drevo.sqlite" &&
+              name !== "drevo.sqlite.secrets.key" &&
               !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|pdf)$/.test(name)
             )
               throw new Error("Недопустимый путь в бэкапе");
+            // Full disaster-recovery backups include the encryption key. The
+            // UI import stages it only; it never replaces live settings/keys.
+            if (name === "drevo.sqlite.secrets.key" && remaining !== 32)
+              throw new Error("Некорректный ключ в бэкапе");
             if (
               remaining >
               (name === "drevo.sqlite" ? SQLITE_LIMIT : 20 * 1024 * 1024)
@@ -327,7 +335,9 @@ function createRestoreStore(
     for (const row of obsolete) discard(String(row.token));
     const active = Number(
       archive.db
-        .prepare("SELECT count(*) AS count FROM workflow_stages WHERE kind='restore'")
+        .prepare(
+          "SELECT count(*) AS count FROM workflow_stages WHERE kind='restore'",
+        )
         .get()!.count,
     );
     if (active >= 3)
@@ -352,7 +362,9 @@ function createRestoreStore(
         readOnly: true,
         allowExtension: false,
       });
-      let family: Family, faceDescriptors: StoredFaceDescriptor[] = [], documents: StoredDocument[] = [];
+      let family: Family,
+        faceDescriptors: StoredFaceDescriptor[] = [],
+        documents: StoredDocument[] = [];
       try {
         source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
         const tables = source
@@ -365,20 +377,28 @@ function createRestoreStore(
         if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
           throw new Error("База повреждена");
         family = validateFamily(readArchive(source).family);
-        if (source.prepare(
-          "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'",
-        ).get()) {
+        if (
+          source
+            .prepare(
+              "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'",
+            )
+            .get()
+        ) {
           const people = new Set(family.people.map((person) => person.id));
-          const rows = source.prepare(
-            "SELECT id,title,file_name,file_size,uploaded_by,created_at FROM documents ORDER BY created_at,id",
-          ).all();
-          const links = source.prepare(
-            "SELECT document_id,person_id FROM document_people",
-          ).all();
+          const rows = source
+            .prepare(
+              "SELECT id,title,file_name,file_size,uploaded_by,created_at FROM documents ORDER BY created_at,id",
+            )
+            .all();
+          const links = source
+            .prepare("SELECT document_id,person_id FROM document_people")
+            .all();
           const byDocument = new Map<string, string[]>();
           for (const link of links) {
-            const id = String(link.document_id), personId = String(link.person_id);
-            if (!people.has(personId)) throw new Error("Документ ссылается на отсутствующего человека");
+            const id = String(link.document_id),
+              personId = String(link.person_id);
+            if (!people.has(personId))
+              throw new Error("Документ ссылается на отсутствующего человека");
             byDocument.set(id, [...(byDocument.get(id) || []), personId]);
           }
           documents = rows.map((row) => {
@@ -391,25 +411,30 @@ function createRestoreStore(
               createdAt: String(row.created_at),
               personIds: byDocument.get(String(row.id)) || [],
             };
-            if (!/^[a-f0-9-]{36}$/.test(document.id) ||
-                !/^[a-f0-9-]{36}\.pdf$/.test(document.fileName) ||
-                !document.title || document.title.length > 160 ||
-                document.fileSize < 1 || document.fileSize > 20 * 1024 * 1024)
+            if (
+              !/^[a-f0-9-]{36}$/.test(document.id) ||
+              !/^[a-f0-9-]{36}\.pdf$/.test(document.fileName) ||
+              !document.title ||
+              document.title.length > 160 ||
+              document.fileSize < 1 ||
+              document.fileSize > 20 * 1024 * 1024
+            )
               throw new Error("Некорректный документ в бэкапе");
             return document;
           });
         }
         if (
-          source.prepare(
-            "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='face_descriptors'",
-          ).get()
+          source
+            .prepare(
+              "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='face_descriptors'",
+            )
+            .get()
         ) {
           const people = new Set(family.people.map((person) => person.id));
-          const photos = new Set((family.photos || []).map((photo) => photo.id));
-          const tags = new Map<
-            string,
-            { photoId: string; personId: string }
-          >();
+          const photos = new Set(
+            (family.photos || []).map((photo) => photo.id),
+          );
+          const tags = new Map<string, { photoId: string; personId: string }>();
           const firstTagByPhotoPerson = new Map<string, string>();
           for (const photo of family.photos || [])
             for (const tag of photo.tags) {
@@ -436,9 +461,7 @@ function createRestoreStore(
                 sourceTagId = row.source_tag_id
                   ? String(row.source_tag_id)
                   : sourcePhotoId
-                    ? firstTagByPhotoPerson.get(
-                        `${sourcePhotoId}\0${personId}`,
-                      )
+                    ? firstTagByPhotoPerson.get(`${sourcePhotoId}\0${personId}`)
                     : undefined,
                 sourceTag = sourceTagId ? tags.get(sourceTagId) : undefined,
                 model = row.model ? String(row.model) : "face-api-1.7.15",
@@ -462,15 +485,19 @@ function createRestoreStore(
                 )
               )
                 return [];
-              return [{
-                id: String(row.id),
-                personId,
-                data: JSON.stringify(descriptor),
-                createdBy: row.created_by ? String(row.created_by) : undefined,
-                sourcePhotoId,
-                sourceTagId,
-                model,
-              }];
+              return [
+                {
+                  id: String(row.id),
+                  personId,
+                  data: JSON.stringify(descriptor),
+                  createdBy: row.created_by
+                    ? String(row.created_by)
+                    : undefined,
+                  sourcePhotoId,
+                  sourceTagId,
+                  model,
+                },
+              ];
             });
         }
       } finally {
@@ -482,10 +509,14 @@ function createRestoreStore(
         const archived = join(directory, "uploads", document.fileName);
         const current = join(dirname(dbPath), "uploads", document.fileName);
         const file = existsSync(archived) ? archived : current;
-        if (!existsSync(file)) throw new Error(`Нет файла документа «${document.title}»`);
+        if (!existsSync(file))
+          throw new Error(`Нет файла документа «${document.title}»`);
         const info = await stat(file);
-        if (!info.isFile() || info.size !== document.fileSize ||
-            (await fileHeader(file)).toString("ascii", 0, 5) !== "%PDF-")
+        if (
+          !info.isFile() ||
+          info.size !== document.fileSize ||
+          (await fileHeader(file)).toString("ascii", 0, 5) !== "%PDF-"
+        )
           throw new Error(`Повреждён PDF-документ «${document.title}»`);
         documentFiles.set(document.id, file);
       }
@@ -593,7 +624,8 @@ function createRestoreStore(
         for (const document of stage.documents) {
           const source = stage.documentFiles.get(document.id);
           if (!source) throw new Error("Файл документа отсутствует в бэкапе");
-          const id = randomUUID(), fileName = `${id}.pdf`,
+          const id = randomUUID(),
+            fileName = `${id}.pdf`,
             destination = join(dirname(dbPath), "uploads", fileName);
           await copyFile(source, destination, constants.COPYFILE_EXCL);
           created.push(destination);
@@ -626,9 +658,17 @@ function createRestoreStore(
               "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
             );
             for (const document of restoredDocuments) {
-              insert.run(document.id, document.title, document.title.toLocaleLowerCase("ru"), document.fileName,
-                document.fileSize, document.uploadedBy, document.createdAt);
-              for (const personId of document.personIds) link.run(document.id, personId);
+              insert.run(
+                document.id,
+                document.title,
+                document.title.toLocaleLowerCase("ru"),
+                document.fileName,
+                document.fileSize,
+                document.uploadedBy,
+                document.createdAt,
+              );
+              for (const personId of document.personIds)
+                link.run(document.id, personId);
             }
           },
         );
@@ -643,7 +683,9 @@ function createRestoreStore(
         discard(token);
       } catch {
         archive.db
-          .prepare("DELETE FROM workflow_stages WHERE kind='restore' AND token=?")
+          .prepare(
+            "DELETE FROM workflow_stages WHERE kind='restore' AND token=?",
+          )
           .run(token);
       }
       return { ...result, backupName };

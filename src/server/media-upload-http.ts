@@ -39,6 +39,23 @@ export function mediaUploadHttp({
   publicOrigin?: string;
 }) {
   const uploads = new Map<string, { since: number; count: number }>();
+  const totalUsage = async () => {
+    const images = await media.usage();
+    const documents = archive.db
+      .prepare(
+        "SELECT count(*) AS files,coalesce(sum(file_size),0) AS bytes FROM documents",
+      )
+      .get()!;
+    const pending = archive.db
+      .prepare(
+        "SELECT count(*) AS files,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0 AND expires_ms>?",
+      )
+      .get(Date.now())!;
+    return {
+      files: images.files + Number(documents.files) + Number(pending.files),
+      bytes: images.bytes + Number(documents.bytes) + Number(pending.bytes),
+    };
+  };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -80,7 +97,7 @@ export function mediaUploadHttp({
         error: "Слишком много загрузок. Повторите позже",
       });
     }
-    const usage = await media.usage();
+    const usage = await totalUsage();
     if (usage.files >= MAX_MEDIA_FILES || usage.bytes >= MAX_MEDIA_BYTES)
       return json(res, 507, {
         error: "Хранилище фотографий достигло установленного лимита",
@@ -100,7 +117,7 @@ export function mediaUploadHttp({
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
     try {
       file = await media.addStream(req, MAX_UPLOAD);
-      const afterUpload = await media.usage();
+      const afterUpload = await totalUsage();
       if (
         afterUpload.files > MAX_MEDIA_FILES ||
         afterUpload.bytes > MAX_MEDIA_BYTES

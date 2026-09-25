@@ -11,9 +11,31 @@ export type ArchivePageHeader = {
 /** Не заставляем React пересобирать весь архив после каждой сетевой страницы. */
 export const archiveProgressBatchSize = 160;
 const archivePageConcurrency = 4;
+class ArchivePageConflict extends Error {}
 
 /** Все страницы относятся к одной ревизии и одному набору разрешений. */
 export async function completeArchive<T extends ArchivePageHeader>(
+  initial: T,
+  request: (url: string) => Promise<Response>,
+  progress: (family: Family) => void,
+): Promise<T> {
+  try {
+    return await completeArchivePages(initial, request, progress);
+  } catch (error) {
+    if (!(error instanceof ArchivePageConflict)) throw error;
+    // A concurrent writer invalidated the page token. One atomic snapshot
+    // avoids both an endless retry loop and mixing revisions/access scopes.
+    const response = await request("/api/family");
+    const data = await response.json();
+    if (!response.ok)
+      throw new Error(data.error || "Не удалось обновить архив");
+    if (data.partial || !data.family || !Number.isInteger(data.revision))
+      throw new Error("Некорректный ответ архива");
+    return data as T;
+  }
+}
+
+async function completeArchivePages<T extends ArchivePageHeader>(
   initial: T,
   request: (url: string) => Promise<Response>,
   progress: (family: Family) => void,
@@ -31,7 +53,9 @@ export async function completeArchive<T extends ArchivePageHeader>(
 
   let family = initial.family;
   const workingPeople = [...initial.family.people],
-    peopleIndex = new Map(workingPeople.map((person, index) => [person.id, index])),
+    peopleIndex = new Map(
+      workingPeople.map((person, index) => [person.id, index]),
+    ),
     workingPhotos = [...(initial.family.photos || [])];
 
   for (const collection of ["people", "photos"] as const) {
@@ -41,7 +65,12 @@ export async function completeArchive<T extends ArchivePageHeader>(
     let unpublished = 0;
     for (let offset = 0; offset < total;) {
       const offsets: number[] = Array.from(
-        { length: Math.min(archivePageConcurrency, Math.ceil((total - offset) / 40)) },
+        {
+          length: Math.min(
+            archivePageConcurrency,
+            Math.ceil((total - offset) / 40),
+          ),
+        },
         (_, index) => offset + index * 40,
       );
       const pages = await Promise.all(
@@ -50,6 +79,7 @@ export async function completeArchive<T extends ArchivePageHeader>(
             `/api/family?projection=page&collection=${collection}&offset=${pageOffset}&token=${encodeURIComponent(initial.pageToken!)}`,
           );
           const data = await response.json();
+          if (response.status === 409) throw new ArchivePageConflict();
           if (!response.ok)
             throw new Error(
               data.error || "Не удалось загрузить следующую часть архива",
@@ -58,43 +88,43 @@ export async function completeArchive<T extends ArchivePageHeader>(
         }),
       );
       for (const { data, pageOffset } of pages) {
-      if (
-        data.pageToken !== initial.pageToken ||
-        !Array.isArray(data.items) ||
-        !data.items.length ||
-        data.total !== total ||
-        pageOffset + data.items.length > total
-      )
-        throw invalid();
-
-      for (const item of data.items) {
         if (
-          !item ||
-          typeof item.id !== "string" ||
-          seen.has(item.id) ||
-          (collection === "people" && !peopleIndex.has(item.id))
+          data.pageToken !== initial.pageToken ||
+          !Array.isArray(data.items) ||
+          !data.items.length ||
+          data.total !== total ||
+          pageOffset + data.items.length > total
         )
           throw invalid();
-        seen.add(item.id);
-        if (collection === "people") {
-          const index = peopleIndex.get(item.id)!;
-          workingPeople[index] = {
-            ...workingPeople[index],
-            ...personDetails(item),
-          };
-        } else workingPhotos.push(item);
-      }
 
-      offset = pageOffset + data.items.length;
-      unpublished += data.items.length;
-      if (unpublished >= archiveProgressBatchSize || offset === total) {
-        family =
-          collection === "people"
-            ? { ...family, people: [...workingPeople] }
-            : { ...family, photos: [...workingPhotos] };
-        progress(family);
-        unpublished = 0;
-      }
+        for (const item of data.items) {
+          if (
+            !item ||
+            typeof item.id !== "string" ||
+            seen.has(item.id) ||
+            (collection === "people" && !peopleIndex.has(item.id))
+          )
+            throw invalid();
+          seen.add(item.id);
+          if (collection === "people") {
+            const index = peopleIndex.get(item.id)!;
+            workingPeople[index] = {
+              ...workingPeople[index],
+              ...personDetails(item),
+            };
+          } else workingPhotos.push(item);
+        }
+
+        offset = pageOffset + data.items.length;
+        unpublished += data.items.length;
+        if (unpublished >= archiveProgressBatchSize || offset === total) {
+          family =
+            collection === "people"
+              ? { ...family, people: [...workingPeople] }
+              : { ...family, photos: [...workingPhotos] };
+          progress(family);
+          unpublished = 0;
+        }
       }
     }
   }

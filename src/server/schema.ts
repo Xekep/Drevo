@@ -512,9 +512,11 @@ function migrate(db: DatabaseSync, target: number) {
     return;
   }
   if (target === 17) {
-    const existingCatalog = db.prepare(
-      "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='research_categories'",
-    ).get();
+    const existingCatalog = db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='research_categories'",
+      )
+      .get();
     db.exec(`
       CREATE TABLE IF NOT EXISTS research_categories (
         id TEXT PRIMARY KEY,
@@ -692,6 +694,31 @@ export function initializeArchiveSchema(db: DatabaseSync) {
         CREATE UNIQUE INDEX users_person_id ON users(person_id) WHERE person_id IS NOT NULL;
       `);
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(identityExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  const storageExtension = "2026-09-upload-reservations-and-media-indexes";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(storageExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+    CREATE TABLE IF NOT EXISTS document_upload_requests (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      started_ms INTEGER NOT NULL,
+      expires_ms INTEGER NOT NULL,
+      reserved_bytes INTEGER NOT NULL CHECK(reserved_bytes>=0)
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS document_upload_requests_user ON document_upload_requests(user_id,started_ms);
+    CREATE INDEX IF NOT EXISTS media_photo_url ON photos(json_extract(data,'$.url'));
+    CREATE INDEX IF NOT EXISTS media_person_photo ON people(json_extract(data,'$.photo'));
+  `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(storageExtension);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

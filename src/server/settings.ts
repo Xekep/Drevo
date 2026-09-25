@@ -9,7 +9,7 @@ export type Visibility = {
 export function settingsStore(db: DatabaseSync) {
   const audit = auditStore(db);
   db.prepare("INSERT OR IGNORE INTO tree_settings VALUES(1,0)").run();
-  const initial = process.env.ARCHIVE_PRIVATE === "1" ? 0 : 1;
+  const initial = process.env.ARCHIVE_PRIVATE === "0" ? 1 : 0;
   db.prepare(
     "INSERT OR IGNORE INTO access_settings(id,public_tree,public_albums) VALUES(1,?,?)",
   ).run(initial, initial);

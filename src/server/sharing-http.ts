@@ -70,7 +70,12 @@ export function sharingHttp({
     usage: mcpUsage,
     publicOrigin,
   });
-  const researchMcp = mcpHttp({ archive, tokens, usage: mcpUsage, publicOrigin });
+  const researchMcp = mcpHttp({
+    archive,
+    tokens,
+    usage: mcpUsage,
+    publicOrigin,
+  });
   const researchAi = aiResearchHttp({
     archive,
     auth,
@@ -109,7 +114,13 @@ export function sharingHttp({
     publicOrigin,
   });
   const archiveQuery = archiveQueryHttp({ archive, auth, visibility });
-  const documents = documentsHttp({ archive, auth, uploadsDirectory, publicOrigin });
+  const documents = documentsHttp({
+    archive,
+    auth,
+    media,
+    uploadsDirectory,
+    publicOrigin,
+  });
   const places = placesHttp({
     archive,
     auth,

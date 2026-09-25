@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   archiveChanges,
+  inverseChanges,
   validateFamily,
   type Family,
 } from "../src/domain/index.ts";
@@ -47,7 +48,7 @@ const seed: Family = {
   photos: [],
 };
 
-test("family change endpoint saves a small delta and rejects stale or unsafe changes", async () => {
+test("family change endpoint saves a small delta, accepts identical retries and rejects conflicting or unsafe changes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-family-changes-"));
   const previousOrigin = process.env.PUBLIC_ORIGIN;
   delete process.env.PUBLIC_ORIGIN;
@@ -91,7 +92,8 @@ test("family change endpoint saves a small delta and rejects stale or unsafe cha
       },
       body: deltaBody,
     });
-    assert.equal(stale.status, 409);
+    assert.equal(stale.status, 200);
+    assert.equal((await stale.json()).revision, saved.revision);
 
     const wrongBefore = await fetch(base + "/api/family/changes", {
       method: "POST",
@@ -150,6 +152,53 @@ test("family change endpoint saves a small delta and rejects stale or unsafe cha
     const final = await finalResponse.json();
     assert.equal(final.revision, saved.revision);
     assert.equal(final.family.people[0].name, next.people[0].name);
+
+    const patch = (revision: number, changes: unknown[]) =>
+      fetch(base + "/api/family/changes", {
+        method: "POST",
+        headers: {
+          Origin: base,
+          "Content-Type": "application/json",
+          "If-Match": String(revision),
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({ changes }),
+      });
+    const first = await patch(final.revision, [
+      {
+        collection: "people",
+        id: "person-a",
+        field: "biography",
+        after: "Первая вкладка",
+      },
+    ]);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("Preference-Applied"), "return=minimal");
+    const firstResult = await first.json();
+    assert.equal(firstResult.family, undefined);
+    const second = await patch(final.revision, [
+      {
+        collection: "people",
+        id: "person-b",
+        field: "biography",
+        after: "Вторая вкладка",
+      },
+    ]);
+    assert.equal(second.status, 200);
+    const secondResult = await second.json();
+    assert.equal(secondResult.family.people[0].biography, "Первая вкладка");
+    assert.equal(secondResult.appliedChanges.length, 1);
+    assert.equal(secondResult.appliedChanges[0].id, "person-b");
+    const undo = await patch(
+      secondResult.revision,
+      inverseChanges(secondResult.appliedChanges),
+    );
+    assert.equal(undo.status, 200);
+    assert.equal(
+      app.archive.read().family.people[0].biography,
+      "Первая вкладка",
+    );
+    assert.equal(app.archive.read().family.people[1].biography, undefined);
   } finally {
     await app.close();
     if (previousOrigin === undefined) delete process.env.PUBLIC_ORIGIN;

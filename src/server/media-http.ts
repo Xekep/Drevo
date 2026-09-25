@@ -25,6 +25,24 @@ export function mediaHttp({
     cachedUrls = new Set<string>();
   const permitted = (req: IncomingMessage, url?: string) => {
     if (!auth.canRead(req) && !visibility.read().publicAlbums) return false;
+    if (!auth.canRead(req)) {
+      // UUID is an identifier, not permission to view an unpublished upload.
+      if (!url) return false;
+      const settings = visibility.read();
+      return (
+        !!archive.db
+          .prepare(
+            "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
+          )
+          .get(url) ||
+        (settings.publicTree &&
+          !!archive.db
+            .prepare(
+              "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
+            )
+            .get(url))
+      );
+    }
     const user = auth.currentUser(req);
     if (!isScopedUser(user) || !url) return true;
     const key = `${archive.meta().revision}:${user.id}:${user.personId || ""}`;

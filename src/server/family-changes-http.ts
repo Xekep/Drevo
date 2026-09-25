@@ -1,5 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { validatedChanges, type Change } from "../domain/changes.ts";
+import {
+  validatedChanges,
+  archiveChanges,
+  type Change,
+} from "../domain/changes.ts";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -107,7 +111,6 @@ export function familyChangesHttp({
       revision < 0
     )
       return json(res, 428, { error: "Не указана версия архива" });
-    if (delta && archive.meta().revision !== revision) return conflict(res);
 
     try {
       const chunks: Buffer[] = [];
@@ -129,12 +132,27 @@ export function familyChangesHttp({
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (full) return json(res, 200, archive.write(body, revision, actor));
 
-      const current = archive.read();
-      if (current.revision !== revision) return conflict(res);
       const changes = parseChanges(body);
+      const patched = archive.patchPeople(changes, revision, actor);
+      if (patched) {
+        if (
+          req.headers.prefer === "return=minimal" &&
+          patched.baseRevision === revision
+        ) {
+          res.setHeader("Preference-Applied", "return=minimal");
+          return json(res, 200, patched);
+        }
+        return json(res, 200, {
+          ...patched,
+          family: projectFamilyForUser(archive.read().family, actor),
+        });
+      }
+      const current = archive.read();
+      if (revision > current.revision) return conflict(res);
       if (!changes.length)
         return json(res, 200, {
           ...current,
+          appliedChanges: [],
           family: projectFamilyForUser(current.family, actor),
         });
 
@@ -142,13 +160,14 @@ export function familyChangesHttp({
       if (merged.conflicts.length) return conflict(res);
       const saved = archive.write(
         merged.family,
-        revision,
+        current.revision,
         actor,
         undefined,
         current.family,
       );
       return json(res, 200, {
         ...saved,
+        appliedChanges: archiveChanges(current.family, saved.family),
         family: projectFamilyForUser(saved.family, actor),
       });
     } catch (error) {

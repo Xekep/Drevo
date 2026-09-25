@@ -5,6 +5,9 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { auditStore } from "./audit.ts";
 import { initializeArchiveSchema } from "./schema.ts";
+import { ConflictError } from "./archive-errors.ts";
+import { patchPeople } from "./person-patches.ts";
+import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
   type Family,
@@ -13,7 +16,7 @@ import {
   type ArchivePhoto,
 } from "../domain/index.ts";
 
-export class ConflictError extends Error {}
+export { ConflictError } from "./archive-errors.ts";
 export type StoredFaceDescriptor = {
   id: string;
   personId: string;
@@ -166,15 +169,14 @@ function syncRelations(
   after: RelationRow[],
 ) {
   const previous = new Map(before.map((row) => [row.id, row])),
+    following = new Map(after.map((row) => [row.id, row])),
     remove = db.prepare("DELETE FROM relations WHERE id=?"),
     insert = db.prepare(
       "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
     ),
-    update = db.prepare(
-      "UPDATE relations SET note=?,created_by=? WHERE id=?",
-    );
+    update = db.prepare("UPDATE relations SET note=?,created_by=? WHERE id=?");
   for (const row of before) {
-    const next = after.find((item) => item.id === row.id);
+    const next = following.get(row.id);
     if (
       !next ||
       next.source !== row.source ||
@@ -305,9 +307,10 @@ export function openArchive(path: string, seed: Family) {
     actor?: ArchiveUser,
     operation?: string,
   ) => {
-    db.prepare(
-      "INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)",
-    ).run(revision, JSON.stringify(previous));
+    db.prepare("INSERT OR REPLACE INTO history(revision,data) VALUES(?,?)").run(
+      revision,
+      JSON.stringify(previous),
+    );
     audit.archive(previous, family, actor, revision + 1);
     if (operation)
       audit.record(
@@ -391,12 +394,15 @@ export function openArchive(path: string, seed: Family) {
     }
   }
 
-  function appendPhoto(value: ArchivePhoto, expected: number, actor: ArchiveUser) {
+  function appendPhoto(
+    value: ArchivePhoto,
+    expected: number,
+    actor: ArchiveUser,
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
       const oldRevision = checkRevision(expected);
-      if (oldRevision === null)
-        throw new ConflictError("Архив ещё не создан");
+      if (oldRevision === null) throw new ConflictError("Архив ещё не создан");
       const previous = read().family;
       const family = authorizeArchive(
         {
@@ -439,6 +445,40 @@ export function openArchive(path: string, seed: Family) {
     peoplePage,
     photoPage,
     write,
+    patchPeople: (
+      changes: Parameters<typeof patchPeople>[1],
+      expected: number,
+      actor: ArchiveUser,
+    ) => patchPeople(db, changes, expected, actor),
+    readRevision(revision: number) {
+      const current = read();
+      if (revision === current.revision) return current.family;
+      if (
+        !Number.isInteger(revision) ||
+        revision < 0 ||
+        revision > current.revision
+      )
+        throw new Error("Некорректная версия архива");
+      let family = current.family,
+        nextRevision = current.revision;
+      for (const row of db
+        .prepare(
+          "SELECT revision,data FROM history WHERE revision>=? ORDER BY revision DESC",
+        )
+        .all(revision)) {
+        if (Number(row.revision) !== nextRevision - 1)
+          throw new Error("Версия больше не хранится в истории");
+        const saved = JSON.parse(String(row.data));
+        family =
+          saved.format === "drevo-person-patches-v1"
+            ? applyArchiveChanges(family, saved.changes, "local").family
+            : saved;
+        nextRevision--;
+      }
+      if (nextRevision !== revision)
+        throw new Error("Версия больше не хранится в истории");
+      return validateFamily(family);
+    },
     appendPhoto,
     close: () => db.close(),
     db,
@@ -495,10 +535,7 @@ function hydrateRelations(db: DatabaseSync, people: Person[]) {
  * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
  * SQLite до передачи строки в Node.
  */
-function readArchiveOverview(
-  db: DatabaseSync,
-  includePortraits = true,
-) {
+function readArchiveOverview(db: DatabaseSync, includePortraits = true) {
   const meta = readArchiveMeta(db);
   const remove = [
     "$.sources",

@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { startServer } from "../src/server/index.ts";
 import { databaseBackupBytes } from "./helpers/database-backup.ts";
@@ -140,15 +140,36 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
         .status,
       403,
     );
+    const originalKey = Buffer.alloc(32, 1);
+    writeFileSync(join(dir, "drevo.sqlite.secrets.key"), originalKey);
+    const withKey = gzipSync(
+      Buffer.concat([
+        gunzipSync(tar("drevo.sqlite", bytes)).subarray(0, -1024),
+        gunzipSync(tar("drevo.sqlite.secrets.key", Buffer.alloc(32, 2))),
+      ]),
+    );
+    const keyPreview = await request("preview", withKey);
+    assert.equal(keyPreview.status, 200);
+    const keyImport = await request("apply", {
+      token: (await keyPreview.json()).token,
+      confirm: true,
+    });
+    assert.equal(keyImport.status, 200);
+    assert.deepEqual(
+      readFileSync(join(dir, "drevo.sqlite.secrets.key")),
+      originalKey,
+    );
+    const restoredRevision = app.archive.meta().revision;
     for (const bad of [
       Buffer.from("not a database"),
       tar("../../escape.sqlite", bytes),
       tar("uploads/link.jpg", Buffer.alloc(0), "2"),
+      tar("drevo.sqlite.secrets.key", Buffer.alloc(33)),
       tar("drevo.sqlite", Buffer.alloc(0), "0", 100 * 1024 * 1024),
       bytes.subarray(0, 200),
     ]) {
       assert.equal((await request("preview", bad)).status, 400);
-      assert.equal(app.archive.read().revision, result.revision);
+      assert.equal(app.archive.read().revision, restoredRevision);
     }
   } finally {
     await app.close();
@@ -162,6 +183,7 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
     writeFileSync(join(dir, "uploads", "original.png"), png);
+    writeFileSync(join(dir, "uploads", ".unfinished.upload"), "unfinished");
     app.archive.write(
       {
         ...family,
@@ -220,7 +242,11 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
       ),
       png,
     );
-    assert.equal(readdirSync(join(dir, "uploads")).length, 2);
+    assert.equal(
+      readdirSync(join(dir, "uploads")).filter((name) => !name.startsWith("."))
+        .length,
+      2,
+    );
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });

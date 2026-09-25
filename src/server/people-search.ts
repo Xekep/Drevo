@@ -1,25 +1,23 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Person } from "../domain/types.ts";
-import { findPeople } from "../domain/people-search.ts";
+import { createPeopleSearch } from "../domain/people-search.ts";
 
 /** Короткие ответы AJAX; записи перечитываются только после изменения архива. */
 export function peopleSearchStore(db: DatabaseSync) {
   let revision = -1,
-    people: Person[] = [];
+    search = createPeopleSearch([]);
   return (query: string, visible?: ReadonlySet<string>) => {
     const current = Number(
       db.prepare("SELECT revision FROM archive WHERE id=1").get()!.revision,
     );
     if (current !== revision) {
-      people = db
+      const people = db
         .prepare("SELECT data FROM people")
         .all()
         .map((row) => JSON.parse(String(row.data)) as Person);
+      search = createPeopleSearch(people);
       revision = current;
     }
-    return findPeople(
-      visible ? people.filter((person) => visible.has(person.id)) : people,
-      query,
-    );
+    return search(query, visible);
   };
 }

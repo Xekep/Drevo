@@ -16,6 +16,8 @@ import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as source, sqlite3.connect(sys.argv[2]) as dest:
     source.backup(dest)
 PY
+  /opt/drevo-node/bin/node "$release/ops/check-migration.mjs" \
+    "$base/shared/backups/$release_id.sqlite" "$release" "$previous"
 fi
 ln -s "$release" "$base/current-next"
 mv -Tf "$base/current-next" "$base/current"

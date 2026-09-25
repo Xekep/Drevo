@@ -9,44 +9,83 @@ test("family, common ancestors and branch changes animate their cards and camera
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
   const child = page.getByTestId("rf__node-e2e-child");
   await child.locator(".flow-person-content").click();
-  const viewport = page.locator(".react-flow__viewport");
+  // Observe within the browser: sequential Playwright round-trips can miss a
+  // short-lived exit node when other browser workers are rendering in parallel.
+  const observe = () =>
+    canvas.evaluateHandle((root) => {
+      const state = {
+        exited: false,
+        entered: false,
+        settling: false,
+        transforms: new Set<string>(),
+        stop: () => {},
+      };
+      let frame = 0;
+      const sample = () => {
+        state.settling ||= root.classList.contains("is-layout-settling");
+        state.exited ||= Array.from(
+          root.querySelectorAll(".tree-exit-node"),
+        ).some(
+          (node) => getComputedStyle(node).animationName === "tree-layout-exit",
+        );
+        state.entered ||= !!root.querySelector(".tree-enter-node");
+        const viewport = root.querySelector(".react-flow__viewport");
+        if (viewport)
+          state.transforms.add(getComputedStyle(viewport).transform);
+      };
+      const observer = new MutationObserver(sample);
+      observer.observe(root, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+      });
+      const tick = () => {
+        sample();
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      state.stop = () => {
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      };
+      return state;
+    });
 
+  const familyMotion = await observe();
   await page.getByRole("button", { name: "Семья выбранного" }).click();
-  await expect(canvas).toHaveClass(/is-layout-settling/);
-  await expect(canvas.locator(".tree-exit-node")).not.toHaveCount(0);
-  await expect(canvas.locator(".tree-exit-node").first()).toHaveCSS(
-    "animation-name",
-    "tree-layout-exit",
-  );
-  const familyStart = await viewport.getAttribute("style");
-  await page.waitForTimeout(150);
-  const familyMiddle = await viewport.getAttribute("style");
-  await page.waitForTimeout(550);
-  const familyEnd = await viewport.getAttribute("style");
-  expect(familyMiddle).not.toBe(familyStart);
-  expect(familyMiddle).not.toBe(familyEnd);
+  await expect
+    .poll(() =>
+      familyMotion.evaluate(
+        (s) => s.exited && s.settling && s.transforms.size >= 3,
+      ),
+    )
+    .toBe(true);
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  await familyMotion.evaluate((s) => s.stop());
 
+  const commonMotion = await observe();
   await page.getByRole("button", { name: "Общие предки" }).click();
-  await expect(canvas).toHaveClass(/is-layout-settling/);
-  await expect(
-    canvas.locator(".tree-exit-node, .tree-enter-node"),
-  ).not.toHaveCount(0);
-  const commonStart = await viewport.getAttribute("style");
-  await page.waitForTimeout(150);
-  const commonMiddle = await viewport.getAttribute("style");
-  await page.waitForTimeout(550);
-  const commonEnd = await viewport.getAttribute("style");
-  expect(commonMiddle).not.toBe(commonStart);
-  expect(commonMiddle).not.toBe(commonEnd);
+  await expect
+    .poll(() =>
+      commonMotion.evaluate(
+        (s) => (s.exited || s.entered) && s.settling && s.transforms.size >= 3,
+      ),
+    )
+    .toBe(true);
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
+  await commonMotion.evaluate((s) => s.stop());
 
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 2_000,
   });
   const collapse = child.getByRole("button", { name: "Свернуть потомков" });
+  const collapseMotion = await observe();
   await collapse.click();
-  await expect(canvas).toHaveClass(/is-layout-settling/);
-  await expect(canvas.locator(".tree-exit-node")).not.toHaveCount(0);
+  await expect
+    .poll(() => collapseMotion.evaluate((s) => s.exited && s.settling))
+    .toBe(true);
+  await collapseMotion.evaluate((s) => s.stop());
 });
 
 test("AI launcher moves to the edge when the fan hides camera controls", async ({

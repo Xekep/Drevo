@@ -10,6 +10,10 @@ import {
   archivePageSize,
 } from "../domain/archive-projection.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import {
+  createRequestLimiter,
+  requestClientKey,
+} from "./request-rate-limit.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -21,6 +25,10 @@ export function archiveQueryHttp({
   visibility: ReturnType<typeof settingsStore>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
+  const publicSearchLimiter = createRequestLimiter({
+    windowMs: 60_000,
+    limit: 60,
+  });
   let scopedCache: {
     key: string;
     family: ReturnType<typeof archive.read>["family"];
@@ -221,6 +229,17 @@ export function archiveQueryHttp({
         return json(res, 405, { error: "Ожидается GET" });
       if (!auth.canRead(req) && !access.publicTree)
         return json(res, 401, { error: "Войдите для поиска людей" });
+      if (
+        !auth.canRead(req) &&
+        !publicSearchLimiter.allow(
+          requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress),
+        )
+      ) {
+        res.setHeader("Retry-After", "60");
+        return json(res, 429, {
+          error: "Слишком много запросов поиска. Попробуйте через минуту.",
+        });
+      }
       const query = (url.searchParams.get("q") || "").trim();
       if (query.length > 100)
         return json(res, 400, { error: "Слишком длинный поисковый запрос" });

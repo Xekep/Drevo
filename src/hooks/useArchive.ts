@@ -11,10 +11,7 @@ import {
   type PhotoMetadata,
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
-import {
-  fetchWithTimeout,
-  RequestTimeoutError,
-} from "../data/request-timeout";
+import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
 
 const WRITE_TIMEOUT_MS = 45000;
 const UPLOAD_TIMEOUT_MS = 90000;
@@ -204,7 +201,13 @@ export function useArchive() {
               url,
               {
                 method: url === "/api/family" ? "PUT" : "POST",
-                headers: { ...headers, "If-Match": String(revision.current) },
+                headers: {
+                  ...headers,
+                  "If-Match": String(revision.current),
+                  ...(url === "/api/family/changes"
+                    ? { Prefer: "return=minimal" }
+                    : {}),
+                },
                 body,
               },
               familyWrite ? WRITE_TIMEOUT_MS : UPLOAD_TIMEOUT_MS,
@@ -281,9 +284,16 @@ export function useArchive() {
           }
           if (!response.ok)
             throw new Error(result.error || "Не удалось сохранить изменения");
-          const data = validateFamily(result.family);
+          const data = validateFamily(
+            result.family ||
+              (base && Array.isArray(result.appliedChanges)
+                ? applyArchiveChanges(base, result.appliedChanges).family
+                : undefined),
+          );
           if (familyWrite && track && base) {
-            const changes = archiveChanges(base, data);
+            const changes = Array.isArray(result.appliedChanges)
+              ? (result.appliedChanges as Change[])
+              : archiveChanges(base, data);
             if (changes.length)
               history.current = [...history.current.slice(-19), changes];
           } else if (!familyWrite) history.current = [];

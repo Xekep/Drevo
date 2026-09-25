@@ -10,9 +10,9 @@ import { writeDatabaseBackup } from "./backup.ts";
 
 function databasePath(db: DatabaseSync) {
   const main = db
-    .prepare("PRAGMA database_list")
-    .all()
-    .find((row) => String(row.name) === "main"),
+      .prepare("PRAGMA database_list")
+      .all()
+      .find((row) => String(row.name) === "main"),
     path = String(main?.file || "");
   if (!path) throw new Error("Полный бэкап доступен только для файловой базы");
   return path;
@@ -34,6 +34,7 @@ export async function fullBackup(
       const process = spawn(
         "tar",
         [
+          "--exclude=uploads/.*",
           "-czf",
           destination,
           "-C",
