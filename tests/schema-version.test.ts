@@ -29,6 +29,32 @@ function tableNames(db: DatabaseSync) {
   );
 }
 
+test("schema v19 adds nullable visits without inventing activity for existing users", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    db.exec(
+      "ALTER TABLE users DROP COLUMN last_visit_at; PRAGMA user_version=18;",
+    );
+    db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
+      "existing",
+      "Участник",
+      "reader",
+    );
+    initializeArchiveSchema(db);
+    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.equal(
+      db.prepare("SELECT last_visit_at FROM users WHERE id='existing'").get()!
+        .last_visit_at,
+      null,
+    );
+    initializeArchiveSchema(db);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM users").get()!.n, 1);
+  } finally {
+    db.close();
+  }
+});
+
 test("fresh SQLite archive gets current schema version", () => {
   const db = new DatabaseSync(":memory:");
   try {

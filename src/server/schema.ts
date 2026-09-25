@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 18;
+export const ARCHIVE_SCHEMA_VERSION = 19;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -576,6 +576,11 @@ function migrate(db: DatabaseSync, target: number) {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS document_people_person ON document_people(person_id,document_id);
     `);
+    return;
+  }
+  if (target === 19) {
+    if (!tableHasColumn(db, "users", "last_visit_at"))
+      db.exec("ALTER TABLE users ADD COLUMN last_visit_at TEXT");
     return;
   }
   throw new Error(`Нет миграции SQLite до версии ${target}`);

@@ -12,6 +12,7 @@ import {
   Link2,
   KeyRound,
   Trash2,
+  Clock3,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -117,6 +118,17 @@ function AdminUserRow({
   onDelete: () => Promise<void>;
 }) {
   const [personId, setPersonId] = useState(user.personId || "");
+  const lastVisit = user.lastVisitAt ? new Date(user.lastVisitAt) : null;
+  const visitText =
+    lastVisit && Number.isFinite(lastVisit.getTime())
+      ? lastVisit.toLocaleString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
   async function commitPerson(nextId: string) {
     const saved = await onPatch({
       personId: nextId || null,
@@ -132,6 +144,26 @@ function AdminUserRow({
         </span>
         <span className="admin-user-identity">
           <b>{user.name}</b>
+          <small
+            className="admin-user-visit"
+            title={
+              visitText
+                ? `Последний визит: ${visitText} (ваш часовой пояс)`
+                : "Последний визит пока не зафиксирован"
+            }
+          >
+            <Clock3 size={11} aria-hidden="true" />
+            {visitText ? (
+              <time
+                dateTime={user.lastVisitAt}
+                aria-label={`Последний визит: ${visitText}`}
+              >
+                {visitText}
+              </time>
+            ) : (
+              <span>Нет данных о визите</span>
+            )}
+          </small>
           {!user.approved && <small>Ожидает одобрения</small>}
         </span>
       </div>

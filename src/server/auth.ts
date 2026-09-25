@@ -5,6 +5,7 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { userStore } from "./users.ts";
 export const SESSION_MAX_AGE = 90 * 24 * 60 * 60;
 const RENEW_INTERVAL = 24 * 60 * 60 * 1000;
+const VISIT_INTERVAL = 60 * 1000;
 export function createAuth(
   users: ReturnType<typeof userStore>,
   db: DatabaseSync,
@@ -85,6 +86,7 @@ export function createAuth(
     db.prepare(
       "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
     ).run(hash(token), user.id, Date.now() + SESSION_MAX_AGE * 1000);
+    users.recordVisit(user.id);
     setCookie(res, token);
   }
   return {
@@ -94,8 +96,18 @@ export function createAuth(
     refreshSession(req: IncomingMessage, res: ServerResponse) {
       if (local || req.headers["sec-fetch-site"] === "cross-site") return;
       const session = sessionFor(req);
-      if (!session || !users.get(session.userId)) return;
-      // Renew at most once per day; ordinary image/API reads do not write to SQLite.
+      if (!session) return;
+      const user = users.get(session.userId);
+      if (!user) return;
+      const now = Date.now();
+      // Persist authenticated activity at most once per minute per account.
+      // Reading a user in the admin list must never count as their visit.
+      if (
+        !user.lastVisitAt ||
+        Date.parse(user.lastVisitAt) <= now - VISIT_INTERVAL
+      )
+        users.recordVisit(user.id, now, VISIT_INTERVAL);
+      // Renew the session cookie at most once per day.
       if (
         session.expires >
         Date.now() + SESSION_MAX_AGE * 1000 - RENEW_INTERVAL

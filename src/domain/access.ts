@@ -5,6 +5,7 @@ export type ArchiveUser = {
   name: string;
   role: Role;
   createdAt: string;
+  lastVisitAt?: string;
   approved?: boolean;
   personId?: string;
   treeAccess?: TreeAccess;
