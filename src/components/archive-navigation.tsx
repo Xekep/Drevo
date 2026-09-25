@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import {
   TreeDeciduous,
   Users,
@@ -21,7 +21,7 @@ import {
   type Person,
   type ArchiveUser,
 } from "../domain";
-import type { ArchiveView } from "../domain/archive-routes";
+import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 export type { ArchiveView } from "../domain/archive-routes";
 export function ArchiveNavigation({
   view,
@@ -41,6 +41,20 @@ export function ArchiveNavigation({
   onHelp: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const navigate = (event: MouseEvent<HTMLAnchorElement>, next: ArchiveView) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    event.preventDefault();
+    if (menu.current) menu.current.open = false;
+    onView(next);
+  };
   useEffect(() => {
     const outside = (e: PointerEvent) => {
       if (menu.current && !menu.current.contains(e.target as Node))
@@ -74,14 +88,15 @@ export function ArchiveNavigation({
   };
   return (
     <nav className="archive-nav" aria-label="Разделы архива">
-      <button
+      <a
         className="nav-brand"
-        onClick={() => onView("tree")}
+        href={archivePaths.tree}
+        onClick={(event) => navigate(event, "tree")}
         aria-label="Древо"
       >
         <TreeDeciduous size={32} strokeWidth={1.5} />
         <span>древо.</span>
-      </button>
+      </a>
       <div className="nav-sections">
         {(
           [
@@ -104,14 +119,15 @@ export function ArchiveNavigation({
                 : readTree,
           )
           .map(([id, label, Icon]) => (
-            <button
+            <a
               key={id}
+              href={archivePaths[id]}
               aria-current={view === id ? "page" : undefined}
-              onClick={() => onView(id)}
+              onClick={(event) => navigate(event, id)}
             >
               <Icon size={22} strokeWidth={1.5} />
               <span>{label}</span>
-            </button>
+            </a>
           ))}
       </div>
       <details ref={menu} className="archive-more" key={view}>
@@ -141,14 +157,15 @@ export function ArchiveNavigation({
                     : readTree,
               )
               .map(([id, label, Icon]) => (
-                <button
+                <a
                   key={id}
+                  href={archivePaths[id]}
                   aria-current={view === id ? "page" : undefined}
-                  onClick={() => onView(id)}
+                  onClick={(event) => navigate(event, id)}
                 >
                   <Icon size={18} />
                   {label}
-                </button>
+                </a>
               ))}
           </div>
           <button
@@ -162,14 +179,15 @@ export function ArchiveNavigation({
             <span>О проекте</span>
           </button>
           {user?.role === "admin" && (
-            <button
+            <a
+              href={archivePaths.admin}
               aria-current={view === "admin" ? "page" : undefined}
-              onClick={() => onView("admin")}
+              onClick={(event) => navigate(event, "admin")}
               title="Админская панель"
             >
               <ShieldCheck size={22} />
               <span>Админка</span>
-            </button>
+            </a>
           )}
           {user && !local && (
             <button title="Выйти" onClick={() => void logout()}>

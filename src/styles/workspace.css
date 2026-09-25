@@ -433,20 +433,20 @@ body,
   color: #637166;
 }
 .admin-content {
-  padding: 32px clamp(24px, 3.5vw, 58px) 56px;
+  padding: 22px clamp(20px, 2.5vw, 40px) 36px;
   flex: 1;
   max-width: 1320px;
   min-width: 0;
 }
 .admin-content h1 {
   margin: 6px 0 5px;
-  font-size: clamp(29px, 3vw, 37px);
+  font-size: clamp(27px, 2.5vw, 32px);
   line-height: 1.17;
   letter-spacing: -0.5px;
 }
 .admin-page-header {
-  margin-bottom: 22px;
-  padding-bottom: 20px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
   border-bottom: 1px solid #e2e8e0;
 }
 .admin-subtitle {
@@ -460,8 +460,39 @@ body,
   background: #fff;
   border: 1px solid #e1e7df;
   border-radius: 11px;
-  padding: 24px 26px;
+  padding: 18px 20px;
   box-shadow: none;
+}
+.admin-card.archive-form {
+  gap: 12px;
+}
+.admin-card.archive-form label {
+  gap: 5px;
+}
+.admin-card.archive-form .setting-toggle {
+  padding: 11px 12px;
+  gap: 12px;
+}
+.admin-card .setting-toggle small {
+  margin-top: 3px;
+}
+.admin-card .timeline-options label {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  padding: 12px;
+  gap: 5px 10px;
+}
+.admin-card .timeline-options input {
+  width: 18px;
+  height: 18px;
+  grid-row: 1 / 4;
+  align-self: center;
+}
+.admin-card .timeline-options :is(span, small) {
+  grid-column: 2;
+}
+.admin-card.archive-form footer {
+  padding-top: 10px;
 }
 .admin-card h2 {
   margin: 0 0 5px;

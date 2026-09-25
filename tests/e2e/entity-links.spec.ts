@@ -127,7 +127,7 @@ test("переход из снимка перестраивает открыты
   const fan = page.locator(".fan-chart");
   await expect(fan).toHaveAttribute("aria-label", /Пётр/);
 
-  await page.locator(".archive-nav .nav-sections").getByRole("button", { name: "Фото" }).click();
+  await page.locator(".archive-nav .nav-sections").getByRole("link", { name: "Фото" }).click();
   await page.locator(".photo-tile").first().click();
   await page.getByRole("button", { name: /Показать сведения:.*Иван/ }).click();
   await page.getByRole("button", { name: "Показать в древе" }).click();

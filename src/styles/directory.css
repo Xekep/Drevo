@@ -251,7 +251,7 @@
 }
 .backup-admin, .backup-settings {
   display: grid;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
 }
 .backup-heading, .backup-settings-footer, .backup-pagination {
@@ -273,7 +273,7 @@
 .backup-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 .backup-fields label { min-width: 0; }
 .backup-admin small { color: #687461; font-size: 12px; line-height: 1.5; }

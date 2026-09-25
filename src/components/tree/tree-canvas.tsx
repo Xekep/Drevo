@@ -998,7 +998,11 @@ function Canvas(props: Props) {
           panOnDrag={growthActive ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
-          onlyRenderVisibleElements={!growing || displayNodes.length > 500}
+          // Culling uses final coordinates, not the CSS-interpolated position.
+          // Keep nodes mounted while they move, even across the viewport edge.
+          onlyRenderVisibleElements={
+            !layoutSettling && (!growing || displayNodes.length > 500)
+          }
           fitView={false}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
           ariaLabelConfig={{

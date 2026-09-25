@@ -659,9 +659,9 @@
 }
 .mcp-token-create {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 130px;
-  gap: 14px;
-  margin: 20px 0 26px;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 230px);
+  gap: 12px;
+  margin: 8px 0 12px;
 }
 .mcp-token-options {
   grid-column: 1 / -1;
@@ -823,7 +823,11 @@
   grid-column: 1 / -1;
 }
 .ai-model-refresh {
-  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 39px;
   padding-inline: 12px;
   white-space: nowrap;
 }
@@ -956,14 +960,14 @@
 }
 .ai-settings-admin {
   display: grid;
-  gap: 20px;
+  gap: 12px;
 }
 .ai-settings-title {
   display: flex;
   justify-content: space-between;
   gap: 18px;
   align-items: center;
-  padding-bottom: 17px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #e8ede6;
 }
 .ai-settings-title > div {
@@ -1009,7 +1013,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
-  padding: 11px 0;
+  padding: 8px 0;
   border-top: 1px solid #e8ede6;
 }
 .ai-config-status b {
@@ -1027,7 +1031,7 @@
 }
 .ai-settings-admin form {
   display: grid;
-  gap: 17px;
+  gap: 12px;
 }
 .ai-settings-admin label > small {
   color: var(--muted);
@@ -1056,13 +1060,13 @@
 .ai-limit-settings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  padding: 17px;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid #e2e8df;
   border-radius: 9px;
 }
 .ai-context-settings {
-  padding: 12px 17px;
+  padding: 10px 12px;
   border: 1px solid #e2e8df;
   border-radius: 9px;
 }
@@ -1287,8 +1291,8 @@
 .ai-credential-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 15px;
-  padding: 17px;
+  gap: 12px;
+  padding: 12px;
   border: 1px solid #e2e8df;
   border-radius: 9px;
 }

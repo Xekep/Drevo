@@ -211,6 +211,8 @@
   z-index: 20;
 }
 .tree-canvas.is-growth-preparing .react-flow__viewport {
+  /* NodeWrapper sets visibility: visible; opacity must hide the whole layer. */
+  opacity: 0;
   visibility: hidden;
 }
 .tree-canvas .react-flow {
@@ -1108,13 +1110,13 @@
   display: contents;
 }
 .archive-nav button,
-.archive-nav .nav-bottom a {
+.archive-nav a {
   display: flex;
   align-items: center;
   gap: 7px;
   white-space: nowrap;
 }
-.archive-nav .nav-bottom a {
+.archive-nav a {
   color: inherit;
   text-decoration: none;
 }
@@ -1142,7 +1144,7 @@
   align-self: stretch;
   gap: 25px;
 }
-.nav-sections button {
+.nav-sections a {
   position: relative;
   font-size: 13px;
   color: #7c877c;
@@ -1152,10 +1154,10 @@
 .nav-sections svg {
   display: none;
 }
-.nav-sections button[aria-current="page"] {
+.nav-sections a[aria-current="page"] {
   color: #3e604a;
 }
-.nav-sections button[aria-current="page"]::after {
+.nav-sections a[aria-current="page"]::after {
   content: "";
   position: absolute;
   left: 0;
@@ -1164,7 +1166,7 @@
   height: 2px;
   background: #75956e;
 }
-.nav-sections button:hover {
+.nav-sections a:hover {
   color: #3e604a;
 }
 .archive-search {
@@ -1423,7 +1425,7 @@
   .archive-nav {
     gap: 8px;
   }
-  .nav-sections button {
+  .nav-sections a {
     padding: 8px;
   }
   .nav-sections svg {

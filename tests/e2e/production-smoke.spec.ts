@@ -233,7 +233,7 @@ test("Ctrl+A не выделяет страницу, но работает в п
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/people");
 
-  await page.getByRole("button", { name: "Люди" }).focus();
+  await page.getByRole("link", { name: "Люди" }).focus();
   await page.keyboard.press("Control+A");
   const pageSelection = await page.evaluate(() => window.getSelection()?.toString() || "");
   expect(pageSelection).toBe("");
@@ -1029,7 +1029,7 @@ test("production build opens the archive and navigates without console errors", 
   await expect(
     page.getByRole("navigation", { name: "Разделы архива" }),
   ).toBeVisible();
-  const people = page.getByRole("button", { name: "Люди", exact: true });
+  const people = page.getByRole("link", { name: "Люди", exact: true });
   if (!(await people.isVisible()))
     await page.locator('summary[aria-label="Меню проекта"]').click();
   await people.click();
