@@ -13,10 +13,12 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     name: /Горизонтальная хронология/,
   });
   await expect(timeline).toBeVisible();
-  await expect(timeline.locator(".timeline-person-row")).toHaveCount(6);
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(1);
   await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
   await expect(timeline.locator(".timeline-band img")).not.toHaveCount(0);
-  await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(6);
+  await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(1);
   const marker = page.locator(".timeline-center-marker output");
   await expect(marker).toBeVisible();
   const yearBefore = Number(await marker.textContent());
@@ -40,7 +42,48 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
-  const portrait = timeline.locator(".timeline-person").first();
+  await timeline.evaluate((element) => {
+    const currentYear = Number(
+      document.querySelector(".timeline-center-marker output")?.textContent,
+    );
+    element.scrollLeft += (1992 - currentYear) * 12;
+  });
+  await expect(marker).toHaveText("1992");
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(6);
+  await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(6);
+  const birth = timeline.locator(
+    '[data-person-id="e2e-grandchild"] .timeline-event.is-birth',
+  );
+  const birthMarker = await birth.locator("summary").boundingBox();
+  if (!birthMarker) throw new Error("Birth marker has no bounds");
+  const clickBirth = () =>
+    page.mouse.click(
+      birthMarker.x + birthMarker.width / 2,
+      birthMarker.y + birthMarker.height / 2,
+    );
+  await clickBirth();
+  await expect(birth.locator(".timeline-event-list")).toBeVisible();
+  await expect(birth.locator(".timeline-event-list")).toContainText("Рождение");
+  await expect(marker).toHaveText("1992");
+  await clickBirth();
+  await expect(marker).toHaveText("1992");
+  await timeline.evaluate((element) => {
+    element.scrollLeft += (2020 - 1992) * 12;
+  });
+  await expect(marker).toHaveText("2020");
+  await expect(timeline.locator(".timeline-event.is-death")).toHaveCount(1);
+  await timeline.evaluate((element) => {
+    element.scrollLeft += 12;
+  });
+  await expect(marker).toHaveText("2021");
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(5);
+  const portrait = timeline
+    .locator(".timeline-person-row:not(.is-exiting) .timeline-person")
+    .first();
   const portraitBox = await portrait.boundingBox();
   expect(portraitBox?.x).toBeGreaterThanOrEqual(area.x - 1);
   expect(portraitBox?.x).toBeLessThan(area.x + 3);
@@ -69,7 +112,9 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
     name: /Горизонтальная хронология/,
   });
   await expect(timeline).toBeVisible();
-  await expect(timeline.locator(".timeline-person-row")).toHaveCount(6);
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(1);
   const marker = page.locator(".timeline-center-marker output");
   await expect(marker).toBeVisible();
   const yearBefore = Number(await marker.textContent());
@@ -106,9 +151,31 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   await expect
     .poll(async () => Number(await marker.textContent()))
     .toBeGreaterThan(yearBefore);
+  await timeline.evaluate((element) => {
+    const currentYear = Number(
+      document.querySelector(".timeline-center-marker output")?.textContent,
+    );
+    element.scrollLeft += (1992 - currentYear) * 12;
+  });
+  await expect
+    .poll(async () => Number(await marker.textContent()))
+    .toBeGreaterThanOrEqual(1992);
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(6);
   await timeline.screenshot({
     path: testInfo.outputPath("timeline-mobile.png"),
   });
+  await page.setViewportSize({ width: 320, height: 640 });
+  const counter = await page
+    .locator(".timeline-center-marker > span")
+    .boundingBox();
+  if (!counter) throw new Error("Year counter has no bounds");
+  expect(counter.x).toBeGreaterThanOrEqual(0);
+  expect(counter.x + counter.width).toBeLessThanOrEqual(320);
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(6);
 });
 
 test("era emblems stay vertically centered while chronology scrolls", async ({
@@ -123,6 +190,17 @@ test("era emblems stay vertically centered while chronology scrolls", async ({
     name: /Горизонтальная хронология/,
   });
   const emblem = timeline.locator(".timeline-band.soviet img");
+  await timeline.evaluate((element) => {
+    const currentYear = Number(
+      document.querySelector(".timeline-center-marker output")?.textContent,
+    );
+    element.scrollLeft += (1992 - currentYear) * 12;
+    element.style.bottom = "auto";
+    element.style.height = "220px";
+  });
+  await expect(
+    timeline.locator(".timeline-person-row:not(.is-exiting)"),
+  ).toHaveCount(6);
   await expect(emblem).toBeVisible();
   const centerY = async () => {
     const bounds = await emblem.boundingBox();
@@ -134,7 +212,10 @@ test("era emblems stay vertically centered while chronology scrolls", async ({
   const before = await centerY();
   expect(Math.abs(before - (viewport.y + viewport.height / 2))).toBeLessThan(8);
   const scrollTop = await timeline.evaluate((element) => {
-    element.scrollTop = Math.min(150, element.scrollHeight - element.clientHeight);
+    element.scrollTop = Math.min(
+      150,
+      element.scrollHeight - element.clientHeight,
+    );
     return element.scrollTop;
   });
   expect(scrollTop).toBeGreaterThan(40);

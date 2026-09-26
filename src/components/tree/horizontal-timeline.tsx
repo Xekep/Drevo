@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
-import { fullName, years, type Person } from "../../domain";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { fullName, type Person } from "../../domain";
+import { counted } from "../../domain/archive-summary";
 import {
   horizontalTimeline,
+  timelineRowsAtYear,
   type TimelineGroup,
   type TimelineItem,
 } from "../../domain/horizontal-timeline";
@@ -13,6 +15,12 @@ const emblems: Record<string, string> = {
   "Советский Союз": "/eras/soviet-union.svg",
   Россия: "/eras/russian-federation.svg",
 };
+
+function scrollBehavior(): ScrollBehavior {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "instant"
+    : "smooth";
+}
 
 function EventText({ item }: { item: TimelineItem }) {
   return (
@@ -29,31 +37,30 @@ function EventText({ item }: { item: TimelineItem }) {
 
 function EventGroup({
   group,
+  current,
   onChoose,
 }: {
   group: TimelineGroup;
+  current: boolean;
   onChoose: () => void;
 }) {
-  const style = { left: group.x, top: 70 + group.lane * 68 };
-  if (group.items.length === 1)
-    return (
-      <button
-        type="button"
-        className={`timeline-event is-${group.items[0].kind}`}
-        style={style}
-        onClick={onChoose}
-        title="Открыть карточку человека"
-      >
-        <EventText item={group.items[0]} />
-      </button>
-    );
+  const kind = group.items.length === 1 ? group.items[0].kind : "group";
   return (
-    <details className="timeline-event timeline-event-group" style={style}>
-      <summary>
-        <strong>
-          {group.year} · событий: {group.items.length}
-        </strong>
-        <small>{group.items.map((item) => item.title).join(", ")}</small>
+    <details
+      className={`timeline-event is-${kind}${current ? " is-current" : ""}`}
+      style={{ left: `calc(var(--timeline-pad) + ${group.x}px)` }}
+    >
+      <summary
+        aria-label={`${group.year}: ${group.items.map((item) => item.title).join(", ")}`}
+        title={`${group.year}: ${group.items.map((item) => item.title).join(", ")}`}
+      >
+        {group.items.length > 1
+          ? group.items.length
+          : kind === "birth"
+            ? "+"
+            : kind === "death"
+              ? "−"
+              : "•"}
       </summary>
       <div className="timeline-event-list">
         {group.items.map((item) => (
@@ -88,44 +95,89 @@ export function HorizontalTimeline({
     active: boolean;
   } | null>(null);
   const initialScrollDone = useRef(false);
+  const lastHorizontalFocusToken = useRef<number | null>(null);
+  const lastFocusedToken = useRef<number | null>(null);
   const model = useMemo(() => horizontalTimeline(people), [people]);
+  const firstYear = model.rows[0]?.birthYear ?? model.start;
+  const [year, setYear] = useState(firstYear);
+  const visibleRows = useMemo(
+    () => timelineRowsAtYear(model.rows, year),
+    [model, year],
+  );
+  const [renderedRows, setRenderedRows] = useState(() =>
+    visibleRows.map((row) => ({ row, exiting: false })),
+  );
   const contentWidth = model.width + model.undatedWidth + 190;
   const focusId = focus?.ids[0];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroll = viewport.current;
-    const firstYear = model.rows.reduce<number | null>(
-      (first, row) =>
-        row.birthYear === null
-          ? first
-          : first === null
-            ? row.birthYear
-            : Math.min(first, row.birthYear),
-      null,
-    );
-    if (!scroll || firstYear === null || initialScrollDone.current) return;
+    if (!scroll) return;
+    const measure = () => {
+      const rail =
+        parseFloat(
+          getComputedStyle(scroll).getPropertyValue("--timeline-person-width"),
+        ) || 226;
+      scroll.style.setProperty(
+        "--timeline-pad",
+        `${Math.max(0, (scroll.clientWidth - rail) / 2)}px`,
+      );
+      scroll.style.setProperty(
+        "--timeline-viewport-height",
+        `${scroll.clientHeight}px`,
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroll);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const ids = new Set(visibleRows.map((row) => row.person.id));
+    const update = window.setTimeout(() => {
+      setRenderedRows((previous) => {
+        const previousIds = new Set(previous.map(({ row }) => row.person.id));
+        return model.rows
+          .filter(
+            (row) => ids.has(row.person.id) || previousIds.has(row.person.id),
+          )
+          .map((row) => ({ row, exiting: !ids.has(row.person.id) }));
+      });
+    }, 0);
+    const remove = window.setTimeout(() => {
+      setRenderedRows((current) => current.filter(({ exiting }) => !exiting));
+    }, 260);
+    return () => {
+      window.clearTimeout(update);
+      window.clearTimeout(remove);
+    };
+  }, [model, visibleRows]);
+
+  useLayoutEffect(() => {
+    const scroll = viewport.current;
+    if (!scroll || !model.rows.length || initialScrollDone.current) return;
     initialScrollDone.current = true;
-    const rail =
-      parseFloat(
-        getComputedStyle(scroll).getPropertyValue("--timeline-person-width"),
-      ) || 226;
-    scroll.scrollLeft = Math.max(
-      0,
-      model.yearX(firstYear) - (scroll.clientWidth - rail) / 2,
-    );
-  }, [model]);
+    scroll.scrollLeft = model.yearX(firstYear);
+    setYear(firstYear);
+  }, [firstYear, model]);
 
   useEffect(() => {
     const scroll = viewport.current;
     const label = yearLabel.current;
     if (!scroll || !label) return;
+    let frame = 0;
     const update = () => {
-      const rail =
-        parseFloat(
-          getComputedStyle(scroll).getPropertyValue("--timeline-person-width"),
-        ) || 226;
-      const x = scroll.scrollLeft + (scroll.clientWidth - rail) / 2;
-      label.textContent = String(model.yearAtX(x));
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const next = model.yearAtX(scroll.scrollLeft);
+        label.textContent = String(next);
+        scroll.style.setProperty(
+          "--timeline-scroll-top",
+          `${scroll.scrollTop}px`,
+        );
+        setYear((current) => (current === next ? current : next));
+      });
     };
     update();
     scroll.addEventListener("scroll", update, { passive: true });
@@ -134,51 +186,64 @@ export function HorizontalTimeline({
     return () => {
       scroll.removeEventListener("scroll", update);
       resize.disconnect();
+      cancelAnimationFrame(frame);
     };
   }, [model]);
 
   useEffect(() => {
     const id = focusId;
-    if (!id) return;
+    if (!id || focus?.token === lastHorizontalFocusToken.current) return;
+    const scroll = viewport.current;
+    const person = people.find((item) => item.id === id);
+    if (!scroll || !person?.birth) return;
+    lastHorizontalFocusToken.current = focus?.token ?? null;
+    scroll.scrollTo({
+      left: model.yearX(Number(person.birth.slice(0, 4))),
+      behavior: scrollBehavior(),
+    });
+  }, [focus?.token, focusId, model, people]);
+
+  useEffect(() => {
+    if (!focusId || focus?.token === lastFocusedToken.current) return;
     const scroll = viewport.current;
     const row = Array.from(
       board.current?.querySelectorAll<HTMLElement>(".timeline-person-row") ||
         [],
-    ).find((element) => element.dataset.personId === id);
-    const person = people.find((item) => item.id === id);
-    if (!scroll || !row || !person) return;
+    ).find((element) => element.dataset.personId === focusId);
+    if (!scroll || !row) return;
+    lastFocusedToken.current = focus?.token ?? null;
     scroll.scrollTo({
       top: Math.max(
         0,
         row.offsetTop - scroll.clientHeight / 2 + row.clientHeight / 2,
       ),
-      left: person.birth
-        ? Math.max(
-            0,
-            model.yearX(Number(person.birth.slice(0, 4))) -
-              (scroll.clientWidth -
-                (parseFloat(
-                  getComputedStyle(scroll).getPropertyValue(
-                    "--timeline-person-width",
-                  ),
-                ) || 226)) /
-                2,
-          )
-        : scroll.scrollLeft,
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "instant"
-        : "smooth",
+      behavior: scrollBehavior(),
     });
-  }, [focus?.token, focusId, model, people]);
+  }, [focus?.token, focusId, renderedRows]);
+
+  const currentEventCount = visibleRows.reduce(
+    (total, row) =>
+      total +
+      (row.groups.find((group) => group.year === year)?.items.length || 0),
+    0,
+  );
 
   /* A scrollable region needs keyboard focus and pointer dragging. */
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
     <>
       <div className="timeline-center-marker">
-        <output ref={yearLabel} aria-label="Год в центре хронологии" aria-live="off">
-          {model.start}
+        <output
+          ref={yearLabel}
+          aria-label="Год в центре хронологии"
+          aria-live="off"
+        >
+          {year}
         </output>
+        <span>
+          {counted(visibleRows.length, ["человек", "человека", "человек"])} ·{" "}
+          {counted(currentEventCount, ["событие", "события", "событий"])}
+        </span>
       </div>
       <div
         ref={viewport}
@@ -190,8 +255,16 @@ export function HorizontalTimeline({
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
             event.preventDefault();
             event.currentTarget.scrollBy({
-              left: event.key === "ArrowRight" ? 180 : -180,
-              behavior: "smooth",
+              left:
+                (event.key === "ArrowRight" ? 1 : -1) *
+                (event.shiftKey ? 120 : 12),
+              behavior: scrollBehavior(),
+            });
+          } else if (event.key === "Home" || event.key === "End") {
+            event.preventDefault();
+            event.currentTarget.scrollTo({
+              left: event.key === "Home" ? 0 : model.width,
+              behavior: scrollBehavior(),
             });
           }
         }}
@@ -239,7 +312,7 @@ export function HorizontalTimeline({
           ref={board}
           className="timeline-board"
           style={{
-            width: `calc(var(--timeline-person-width) + ${contentWidth}px)`,
+            width: `calc(var(--timeline-person-width) + ${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
           }}
         >
           <div className="timeline-background" aria-hidden="true">
@@ -248,7 +321,7 @@ export function HorizontalTimeline({
                 key={era.name}
                 className={`timeline-band ${era.className}`}
                 style={{
-                  left: `calc(var(--timeline-person-width) + ${era.x}px)`,
+                  left: `calc(var(--timeline-person-width) + var(--timeline-pad) + ${era.x}px)`,
                   width: era.width,
                 }}
               >
@@ -267,17 +340,24 @@ export function HorizontalTimeline({
             <span className="timeline-axis-title">Люди и события</span>
             <div
               className="timeline-axis-track"
-              style={{ width: contentWidth }}
+              style={{
+                width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
+              }}
             >
               {model.ticks.map((tick) => (
-                <span key={tick.year} style={{ left: tick.x }}>
+                <span
+                  key={tick.year}
+                  style={{ left: `calc(var(--timeline-pad) + ${tick.x}px)` }}
+                >
                   {tick.year}
                 </span>
               ))}
               {model.undatedWidth > 0 && (
                 <span
                   className="timeline-undated-label"
-                  style={{ left: model.width + 24 }}
+                  style={{
+                    left: `calc(var(--timeline-pad) + ${model.width + 24}px)`,
+                  }}
                 >
                   Без даты
                 </span>
@@ -289,24 +369,30 @@ export function HorizontalTimeline({
               В хронологии пока нет людей с датой рождения.
             </p>
           )}
-          {model.rows.map((row) => {
-            const lifeEnd = row.deathYear ?? model.currentYear;
-            const showLife =
-              row.birthYear !== null &&
-              lifeEnd >= row.birthYear &&
-              (row.deathYear !== null || lifeEnd - row.birthYear <= 110);
-            const lifeLeft = showLife
-              ? Math.min(model.yearX(row.birthYear!), model.yearX(lifeEnd))
-              : 0;
-            const lifeWidth = showLife
-              ? Math.abs(model.yearX(lifeEnd) - model.yearX(row.birthYear!))
-              : 0;
+          {!!model.rows.length &&
+            !visibleRows.length &&
+            !renderedRows.length && (
+              <p className="timeline-empty">
+                В {year} году здесь пока нет людей с известной датой рождения.
+              </p>
+            )}
+          {renderedRows.map(({ row, exiting }) => {
+            const birthYear = row.birthYear ?? year;
+            const lifeEnd = Math.min(year, row.deathYear ?? year);
+            const age = year - birthYear;
+            const status =
+              row.deathYear === year
+                ? "Год смерти"
+                : age > 110 && row.deathYear === null
+                  ? "Нет даты смерти"
+                  : year === birthYear
+                    ? "Год рождения"
+                    : `≈ ${age} лет`;
             return (
               <div
                 key={row.person.id}
-                className={`timeline-person-row${selected.includes(row.person.id) ? " is-selected" : ""}`}
+                className={`timeline-person-row${selected.includes(row.person.id) ? " is-selected" : ""}${exiting ? " is-exiting" : ""}${row.deathYear === null && age > 110 ? " is-uncertain" : ""}`}
                 data-person-id={row.person.id}
-                style={{ height: row.height }}
               >
                 <button
                   type="button"
@@ -317,38 +403,48 @@ export function HorizontalTimeline({
                   <Avatar person={row.person} />
                   <span>
                     <strong>{fullName(row.person)}</strong>
-                    <small>{years(row.person) || "Даты неизвестны"}</small>
-                    <em>{row.status}</em>
+                    <small>{status}</small>
                   </span>
                 </button>
                 <div
                   className="timeline-row-track"
-                  style={{ width: contentWidth }}
+                  style={{
+                    width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
+                  }}
                 >
-                  {showLife && (
-                    <div
-                      className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
-                      style={{ left: lifeLeft, width: Math.max(4, lifeWidth) }}
-                      title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
-                    />
-                  )}
-                  {row.groups.map((group) => (
-                    <EventGroup
-                      key={`${row.person.id}:${group.year}`}
-                      group={group}
-                      onChoose={() => onChoose(row.person.id, false)}
-                    />
-                  ))}
+                  <div
+                    className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
+                    style={{
+                      left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
+                      width: Math.max(
+                        4,
+                        model.yearX(lifeEnd) - model.yearX(birthYear),
+                      ),
+                    }}
+                    title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
+                  />
+                  {row.groups
+                    .filter((group) => group.year <= year)
+                    .map((group) => (
+                      <EventGroup
+                        key={`${row.person.id}:${group.year}`}
+                        group={group}
+                        current={group.year === year}
+                        onChoose={() => onChoose(row.person.id, false)}
+                      />
+                    ))}
                   {!!row.undated.length && (
                     <details
                       className="timeline-event timeline-undated-events"
-                      style={{ left: model.width + 24, top: 70 }}
+                      style={{
+                        left: `calc(var(--timeline-pad) + ${model.width + 24}px)`,
+                      }}
                     >
-                      <summary>
-                        <strong>Без даты · {row.undated.length}</strong>
-                        <small>
-                          {row.undated.map((item) => item.title).join(", ")}
-                        </small>
+                      <summary
+                        aria-label={`Без даты: ${row.undated.length} событий`}
+                        title="События без даты"
+                      >
+                        ?
                       </summary>
                       <div className="timeline-event-list">
                         {row.undated.map((item) => (
@@ -369,17 +465,25 @@ export function HorizontalTimeline({
           })}
           <div className="timeline-era-bar" aria-label="Исторические эпохи">
             <span className="timeline-era-heading">Эпохи</span>
-            <div className="timeline-era-track" style={{ width: contentWidth }}>
+            <div
+              className="timeline-era-track"
+              style={{
+                width: `calc(${contentWidth}px + var(--timeline-pad) + var(--timeline-pad))`,
+              }}
+            >
               {model.eras.map((era) => (
                 <button
                   type="button"
                   key={era.name}
                   className={`timeline-era-segment ${era.className}`}
-                  style={{ left: era.x, width: era.width }}
+                  style={{
+                    left: `calc(var(--timeline-pad) + ${era.x}px)`,
+                    width: era.width,
+                  }}
                   onClick={() =>
                     viewport.current?.scrollTo({
-                      left: Math.max(0, era.x - 50),
-                      behavior: "smooth",
+                      left: era.x + era.width / 2,
+                      behavior: scrollBehavior(),
                     })
                   }
                   title={`${era.name} · ${era.start}–${era.end}`}
