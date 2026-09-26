@@ -14,6 +14,7 @@ import {
   ConnectionMode,
   Panel,
   useReactFlow,
+  useStore,
   type Connection as FlowConnection,
   type Viewport,
 } from "@xyflow/react";
@@ -58,6 +59,7 @@ import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
 import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-morph";
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
+import { TREE_NODE_WIDTH, TREE_NODE_HEIGHT } from "../../domain/tree-layout";
 
 export type ConnectionDraft = {
   from: string;
@@ -228,6 +230,12 @@ function Canvas(props: Props) {
   const [initialCameraReady, setInitialCameraReady] = useState(false);
   const [manualCameraOverride, setManualCameraOverride] = useState(false);
   const [introCameraFinished, setIntroCameraFinished] = useState(false);
+  const introMoving =
+    !growing && initialCameraReady && !introCameraFinished &&
+    !!user?.personId && !props.skipInitialGrowth && !focus &&
+    !selected.length && !manualCameraOverride;
+  const canvasWidth = useStore((state) => state.width);
+  const canvasHeight = useStore((state) => state.height);
   const [growthStarted, setGrowthStarted] = useState(false);
   const [growthRevealed, setGrowthRevealed] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -237,6 +245,7 @@ function Canvas(props: Props) {
   const growthPreparing = growing && !narrow && family.people.length > 0 && !growthRevealed;
   const growthActive = growing && !narrow && growthStarted;
   const growthLocked = growthPreparing || growthActive;
+  const cameraLocked = growthLocked || introMoving;
   const onGrowthChange = props.onGrowthChange;
   useLayoutEffect(() => {
     if (growthLocked) {
@@ -248,7 +257,7 @@ function Canvas(props: Props) {
     const frame = requestAnimationFrame(() => onGrowthChange?.(false));
     return () => cancelAnimationFrame(frame);
   }, [growthLocked, onGrowthChange]);
-  useTreeGrowthInputLock(container, growthLocked);
+  useTreeGrowthInputLock(container, cameraLocked, !growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
@@ -320,8 +329,8 @@ function Canvas(props: Props) {
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}`
     : `${mode}:${familyView.mode}:${root || "all"}`;
-  useTouchZoom(container, flow, !growthLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
-  useCtrlWheelZoom(container, flow, !growthLocked && !activeFanAnchor && mode !== "timeline");
+  useTouchZoom(container, flow, !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
+  useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
     useTreeLayout(
       family,
@@ -457,31 +466,42 @@ function Canvas(props: Props) {
     growthStarted,
     problem,
   ]);
+  const introOccurrence = user?.personId
+    ? personOccurrences.get(user.personId)?.[0]
+    : undefined;
+  const introPosition = introOccurrence
+    ? positions.get(introOccurrence)
+    : undefined;
+  const introX = introPosition?.x;
+  const introY = introPosition?.y;
+  const keepRequestedFocus =
+    props.skipInitialGrowth || !!focus || selected.length > 0;
   useEffect(() => {
     if (
       growing ||
       !initialCameraReady ||
       !ready ||
       !nodes.length ||
+      !canvasWidth ||
+      !canvasHeight ||
       introHandled.current
     )
       return;
-    introHandled.current = true;
     let active = true;
     const done = () => {
       if (active) {
+        // Starting a transition does not mean it has reached its destination.
+        // A resize or a layout update can restart this effect mid-flight.
+        introHandled.current = true;
         setIntroCameraFinished(true);
         introComplete.current?.();
       }
     };
-    const personId = user?.personId,
-      occurrence = personId ? personOccurrences.get(personId)?.[0] : undefined,
-      shouldKeepRequestedFocus =
-        props.skipInitialGrowth || !!focus || selected.length > 0;
     if (
-      !occurrence ||
-      !positions.has(occurrence) ||
-      shouldKeepRequestedFocus ||
+      introX === undefined ||
+      introY === undefined ||
+      keepRequestedFocus ||
+      manualCameraOverride ||
       familyView.mode !== "all"
     ) {
       done();
@@ -489,12 +509,11 @@ function Canvas(props: Props) {
         active = false;
       };
     }
+    // Use worker geometry: fitView depends on React Flow's measured nodes,
+    // which can still be updating as growth and virtualization finish.
     void flow
-      .fitView({
-        nodes: [{ id: occurrence }],
-        minZoom: narrow ? 0.72 : 0.55,
-        maxZoom: narrow ? 0.96 : 1.08,
-        padding: narrow ? 0.75 : 0.9,
+      .setCenter(introX + TREE_NODE_WIDTH / 2, introY + TREE_NODE_HEIGHT / 2, {
+        zoom: narrow ? 0.96 : 1.08,
         duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
           ? 0
           : 620,
@@ -509,12 +528,12 @@ function Canvas(props: Props) {
     initialCameraReady,
     ready,
     nodes.length,
-    user?.personId,
-    personOccurrences,
-    positions,
-    focus,
-    selected.length,
-    props.skipInitialGrowth,
+    introX,
+    introY,
+    keepRequestedFocus,
+    manualCameraOverride,
+    canvasWidth,
+    canvasHeight,
     familyView.mode,
     flow,
     narrow,
@@ -558,6 +577,7 @@ function Canvas(props: Props) {
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
         setManualCameraOverride(true);
+        introHandled.current = true;
         void flow.setViewport(flow.getViewport(), { duration: 0 });
         if (!introCameraFinished) setIntroCameraFinished(true);
         onChoose(id, additive);
@@ -565,6 +585,7 @@ function Canvas(props: Props) {
       selectOnly: (id: string) => {
         setEdgeChoices([]);
         setManualCameraOverride(true);
+        introHandled.current = true;
         void flow.setViewport(flow.getViewport(), { duration: 0 });
         if (!introCameraFinished) setIntroCameraFinished(true);
         onSelectOnly(id);
@@ -1026,12 +1047,12 @@ function Canvas(props: Props) {
           nodesFocusable={false}
           edgesReconnectable={props.canEdit && !props.busy}
           deleteKeyCode={null}
-          panOnScroll={!growthLocked}
+          panOnScroll={!cameraLocked}
           zoomOnScroll={false}
-          zoomOnPinch={!growthLocked}
-          zoomOnDoubleClick={!growthLocked && !screen.fullscreen}
+          zoomOnPinch={!cameraLocked}
+          zoomOnDoubleClick={!cameraLocked && !screen.fullscreen}
           selectionOnDrag={false}
-          panOnDrag={growthLocked ? false : [0, 1]}
+          panOnDrag={cameraLocked ? false : [0, 1]}
           minZoom={0.05}
           maxZoom={1.8}
           // Culling uses final coordinates, not the CSS-interpolated position.
