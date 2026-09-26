@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 19;
+export const ARCHIVE_SCHEMA_VERSION = 18;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -578,11 +578,6 @@ function migrate(db: DatabaseSync, target: number) {
     `);
     return;
   }
-  if (target === 19) {
-    if (!tableHasColumn(db, "users", "last_visit_at"))
-      db.exec("ALTER TABLE users ADD COLUMN last_visit_at TEXT");
-    return;
-  }
   throw new Error(`Нет миграции SQLite до версии ${target}`);
 }
 
@@ -606,6 +601,21 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     try {
       migrate(db, target);
       db.exec(`PRAGMA user_version=${target}; COMMIT;`);
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  // Nullable metadata is compatible with the previous release. Keep the base
+  // schema version so rollback can still open the database after deployment.
+  const visitsExtension = "2026-09-user-last-visit";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(visitsExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!tableHasColumn(db, "users", "last_visit_at"))
+        db.exec("ALTER TABLE users ADD COLUMN last_visit_at TEXT");
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(visitsExtension);
+      db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;

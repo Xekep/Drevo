@@ -29,12 +29,12 @@ function tableNames(db: DatabaseSync) {
   );
 }
 
-test("schema v19 adds nullable visits without inventing activity for existing users", () => {
+test("visit extension preserves v18 rollback compatibility and unknown activity", () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
     db.exec(
-      "ALTER TABLE users DROP COLUMN last_visit_at; PRAGMA user_version=18;",
+      "ALTER TABLE users DROP COLUMN last_visit_at; DELETE FROM migrations WHERE id='2026-09-user-last-visit';",
     );
     db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
       "existing",
@@ -42,14 +42,37 @@ test("schema v19 adds nullable visits without inventing activity for existing us
       "reader",
     );
     initializeArchiveSchema(db);
-    assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
+    assert.equal(
+      userVersion(db),
+      18,
+      "previous deployed code must still open this database",
+    );
     assert.equal(
       db.prepare("SELECT last_visit_at FROM users WHERE id='existing'").get()!
         .last_visit_at,
       null,
     );
+    db.prepare("UPDATE users SET last_visit_at=? WHERE id='existing'").run(
+      "2026-09-26T07:00:00.000Z",
+    );
     initializeArchiveSchema(db);
     assert.equal(db.prepare("SELECT count(*) AS n FROM users").get()!.n, 1);
+    assert.equal(
+      db.prepare("SELECT last_visit_at FROM users WHERE id='existing'").get()!
+        .last_visit_at,
+      "2026-09-26T07:00:00.000Z",
+    );
+    // Inserts made by the preceding release omit this new nullable column.
+    db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
+      "old-code",
+      "Участник",
+      "reader",
+    );
+    assert.equal(
+      db.prepare("SELECT last_visit_at FROM users WHERE id='old-code'").get()!
+        .last_visit_at,
+      null,
+    );
   } finally {
     db.close();
   }
