@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { horizontalTimeline } from "../src/domain/horizontal-timeline.ts";
+import {
+  horizontalTimeline,
+  timelineRowsAtYear,
+} from "../src/domain/horizontal-timeline.ts";
 import type { Person } from "../src/domain/types.ts";
 
 function person(
@@ -103,4 +106,23 @@ test("chronology excludes people without a birth date even when they have dated 
     ["dated"],
   );
   assert.ok(model.yearX(1900) < model.yearX(2026));
+});
+
+test("historical year reveals births and removes people only after a recorded death", () => {
+  const rows = horizontalTimeline(
+    [
+      person("older", "1880"),
+      person("dated", "1900", { death: "1950" }),
+      person("later", "1960"),
+    ],
+    false,
+    2026,
+  ).rows;
+  const ids = (year: number) =>
+    timelineRowsAtYear(rows, year).map((row) => row.person.id);
+  assert.deepEqual(ids(1899), ["older"]);
+  assert.deepEqual(ids(1900), ["older", "dated"]);
+  assert.deepEqual(ids(1950), ["older", "dated"]);
+  assert.deepEqual(ids(1951), ["older"]);
+  assert.deepEqual(ids(1960), ["older", "later"]);
 });

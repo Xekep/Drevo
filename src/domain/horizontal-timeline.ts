@@ -33,6 +33,19 @@ export type TimelineRow = {
   deathYear: number | null;
 };
 
+/** Only a recorded death removes a person from a historical year. */
+export function timelineRowsAtYear(
+  rows: readonly TimelineRow[],
+  year: number,
+): TimelineRow[] {
+  return rows.filter(
+    (row) =>
+      row.birthYear !== null &&
+      row.birthYear <= year &&
+      (row.deathYear === null || row.deathYear >= year),
+  );
+}
+
 function personItems(person: Person): TimelineItem[] {
   const items: TimelineItem[] = [];
   if (person.birth)
