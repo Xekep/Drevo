@@ -4,11 +4,21 @@ import { useEffect, type RefObject } from "react";
 export function useTreeGrowthInputLock(
   container: RefObject<HTMLElement | null>,
   locked: boolean,
+  allowPersonSelection = false,
 ) {
   useEffect(() => {
     const element = container.current;
     if (!element || !locked) return;
     const stop = (event: Event) => {
+      // An explicit selection may cancel the personal camera move; stray
+      // background clicks and wheel gestures must not interrupt it.
+      if (
+        allowPersonSelection &&
+        event.type !== "wheel" &&
+        event.target instanceof Element &&
+        event.target.closest(".flow-person-content")
+      )
+        return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -29,5 +39,5 @@ export function useTreeGrowthInputLock(
       for (const name of events)
         element.removeEventListener(name, stop, options);
     };
-  }, [container, locked]);
+  }, [container, locked, allowPersonSelection]);
 }

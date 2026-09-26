@@ -1,21 +1,22 @@
 import { expect, test } from "@playwright/test";
 
-test("archive sections support native new tabs and in-app left clicks", async ({
-  page,
-  context,
-}, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop");
-  await page.goto("/tree");
-  const sections = page.locator(".nav-sections");
-  for (const [name, path] of [
-    ["Древо", "/tree"],
-    ["Люди", "/people"],
-    ["Семьи", "/families"],
-    ["Фото", "/photos"],
-    ["Документы", "/documents"],
-    ["Места", "/places"],
-    ["Сводка", "/insights"],
-  ]) {
+for (const [name, path] of [
+  ["Древо", "/tree"],
+  ["Люди", "/people"],
+  ["Семьи", "/families"],
+  ["Фото", "/photos"],
+  ["Документы", "/documents"],
+  ["Места", "/places"],
+  ["Сводка", "/insights"],
+]) {
+  test(`middle click opens ${path} in a new tab`, async ({
+    page,
+    context,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop");
+    await page.goto("/tree");
+    await page.bringToFront();
+    const sections = page.locator(".nav-sections");
     const link = sections.getByRole("link", { name, exact: true });
     await expect(link).toHaveAttribute("href", path);
     const opened = context.waitForEvent("page");
@@ -24,7 +25,16 @@ test("archive sections support native new tabs and in-app left clicks", async ({
     await expect(tab).toHaveURL(new RegExp(`${path}$`));
     await expect(page).toHaveURL(/\/tree$/);
     await tab.close();
-  }
+  });
+}
+
+test("modified clicks open a tab and plain clicks retain the application", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  const sections = page.locator(".nav-sections");
   const opened = context.waitForEvent("page");
   await sections
     .getByRole("link", { name: "Люди", exact: true })
@@ -32,6 +42,7 @@ test("archive sections support native new tabs and in-app left clicks", async ({
   const tab = await opened;
   await expect(tab).toHaveURL(/\/people$/);
   await tab.close();
+  await page.bringToFront();
   // A normal click must retain the document and the application's state.
   const documentHandle = await page.evaluateHandle(() => document);
   await sections.getByRole("link", { name: "Люди", exact: true }).click();
