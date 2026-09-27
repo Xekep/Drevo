@@ -2,6 +2,10 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createOAuthStartLimiter, oauthClientKey } from "./oauth-rate-limit.ts";
 import type { DatabaseSync } from "node:sqlite";
+import {
+  sqliteOAuthTransactions,
+  type OAuthTransactions,
+} from "./oauth-transactions.ts";
 type Options = {
   origin?: string;
   clientId?: string;
@@ -12,10 +16,15 @@ type Options = {
     profile: { id: string; name: string },
   ) => void | Promise<void>;
   fetcher?: typeof fetch;
-  db: DatabaseSync;
+  db?: DatabaseSync;
+  transactions?: OAuthTransactions;
 };
 /** Минимальный Authorization Code + PKCE. Токен Яндекса не передаётся браузеру и не сохраняется. */
 export function createYandexOAuth(options: Options) {
+  if (!options.transactions && !options.db)
+    throw new Error("Не задано хранилище OAuth-транзакций");
+  const transactions =
+    options.transactions || sqliteOAuthTransactions(options.db!);
   const enabled = !!(
     options.origin &&
     options.clientId &&
@@ -56,9 +65,7 @@ export function createYandexOAuth(options: Options) {
       }
       if (url.pathname === "/auth/yandex") {
         const now = Date.now();
-        options.db
-          .prepare("DELETE FROM oauth_transactions WHERE expires_at<?")
-          .run(now);
+        await transactions.pruneExpired(now);
         const client = oauthClientKey(
           req.headers["x-real-ip"],
           req.socket.remoteAddress,
@@ -68,28 +75,18 @@ export function createYandexOAuth(options: Options) {
           fail(res, 429, "Слишком много попыток входа. Попробуйте позже.");
           return true;
         }
-        if (
-          Number(
-            options.db
-              .prepare("SELECT count(*) AS n FROM oauth_transactions")
-              .get()!.n,
-          ) >= 1000
-        ) {
+        if ((await transactions.countPending(now)) >= 1000) {
           res.setHeader("Retry-After", "600");
           fail(res, 429, "Слишком много запросов. Попробуйте позже.");
           return true;
         }
         const state = randomBytes(32).toString("base64url"),
           verifier = randomBytes(32).toString("base64url");
-        options.db
-          .prepare(
-            "INSERT INTO oauth_transactions(state_hash,verifier,expires_at) VALUES(?,?,?)",
-          )
-          .run(
-            createHash("sha256").update(state).digest("hex"),
-            verifier,
-            now + 10 * 60 * 1000,
-          );
+        await transactions.create(
+          createHash("sha256").update(state).digest("hex"),
+          verifier,
+          now + 10 * 60 * 1000,
+        );
         res.setHeader(
           "Set-Cookie",
           `drevo_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/auth/yandex; Max-Age=600${secure}`,
@@ -122,22 +119,18 @@ export function createYandexOAuth(options: Options) {
             .find((s) => s.startsWith("drevo_oauth_state="))
             ?.slice(18) || "";
       const stateHash = createHash("sha256").update(state).digest("hex");
-      const transaction = options.db
-        .prepare(
-          "SELECT verifier,expires_at FROM oauth_transactions WHERE state_hash=?",
-        )
-        .get(stateHash);
       res.setHeader(
         "Set-Cookie",
         `drevo_oauth_state=; HttpOnly; SameSite=Lax; Path=/auth/yandex; Max-Age=0${secure}`,
       );
-      if (
+      const invalidState =
         !/^[A-Za-z0-9_-]{43}$/.test(state) ||
         !/^[A-Za-z0-9_-]{43}$/.test(cookie) ||
-        !timingSafeEqual(Buffer.from(state), Buffer.from(cookie)) ||
-        !transaction ||
-        Number(transaction.expires_at) < Date.now()
-      ) {
+        !timingSafeEqual(Buffer.from(state), Buffer.from(cookie));
+      const transaction = invalidState
+        ? null
+        : await transactions.consume(stateHash, Date.now());
+      if (!transaction) {
         fail(
           res,
           400,
@@ -145,9 +138,6 @@ export function createYandexOAuth(options: Options) {
         );
         return true;
       }
-      options.db
-        .prepare("DELETE FROM oauth_transactions WHERE state_hash=?")
-        .run(stateHash);
       const code = url.searchParams.get("code");
       if (url.searchParams.has("error") || !code) {
         fail(res, 400, "Вход через Яндекс отменён. Можно попробовать ещё раз.");
