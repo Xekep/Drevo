@@ -189,6 +189,8 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       403,
     );
     assert.equal((await request("/api/users", reader)).status, 403);
+    assert.equal((await request("/api/tree-preferences")).status, 401);
+    assert.equal((await request("/api/tree-preferences", reader)).status, 403);
     assert.equal((await request("/api/portraits", reader, "POST")).status, 403);
     assert.equal((await request("/api/documents", reader)).status, 401);
     assert.equal((await request("/api/export.json", reader)).status, 401);
@@ -196,6 +198,75 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       (await request("/api/users/second", admin, "PATCH", { approved: true }))
         .status,
       200,
+    );
+    const portraitPreferences = {
+      reverseTimeline: true,
+      cardVariant: "portrait",
+    };
+    assert.deepEqual(
+      await request(
+        "/api/tree-preferences",
+        admin,
+        "PUT",
+        portraitPreferences,
+      ).then((response) => response.json()),
+      portraitPreferences,
+    );
+    assert.deepEqual(
+      await request("/api/tree-preferences", reader).then((response) =>
+        response.json(),
+      ),
+      { reverseTimeline: false, cardVariant: "classic" },
+      "другой участник не наследует выбор администратора",
+    );
+    assert.equal(
+      (
+        await request("/api/tree-preferences", reader, "PUT", {
+          reverseTimeline: false,
+          cardVariant: "portrait",
+        })
+      ).status,
+      200,
+      "читатель вправе менять собственный вид древа",
+    );
+    assert.equal(
+      (
+        await fetch(base + "/api/tree-preferences", {
+          method: "PUT",
+          headers: {
+            Cookie: admin,
+            Origin: "https://other.example",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(portraitPreferences),
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/api/tree-preferences", reader, "PUT", {
+          reverseTimeline: "yes",
+          cardVariant: "portrait",
+        })
+      ).status,
+      400,
+    );
+    assert.deepEqual(
+      (
+        await request("/api/family?projection=overview", admin).then(
+          (response) => response.json(),
+        )
+      ).treePreferences,
+      portraitPreferences,
+    );
+    assert.equal(
+      (
+        await request("/api/family?projection=overview", reader).then(
+          (response) => response.json(),
+        )
+      ).reverseTimeline,
+      false,
     );
     for (const cookie of [admin, reader]) {
       assert.equal((await request("/api/documents", cookie)).status, 200);

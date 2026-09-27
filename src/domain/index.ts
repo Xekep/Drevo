@@ -12,6 +12,7 @@ export * from "./families.ts";
 export * from "./connections.ts";
 export * from "./changes.ts";
 export * from "./tree-layout.ts";
+export * from "./tree-preferences.ts";
 export * from "./name-hints.ts";
 export * from "./family-insights.ts";
 export * from "./archive-quality.ts";

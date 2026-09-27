@@ -34,6 +34,7 @@ import {
   type ArchiveUser,
   type GraphConnection,
   type TreeMode,
+  type TreeCardVariant,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
@@ -93,6 +94,7 @@ type Props = {
   canEdit: boolean;
   busy: boolean;
   reverse: boolean;
+  cardVariant?: TreeCardVariant;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -583,6 +585,11 @@ function Canvas(props: Props) {
   );
   const actions = useMemo(
     () => ({
+      cardVariant: props.cardVariant || "classic",
+      kinshipReference:
+        family.people.find((person) => person.id === user?.personId) || null,
+      kinshipPeople: family.people,
+      kinshipLinks: family.links || [],
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
         setManualCameraOverride(true);
@@ -619,6 +626,10 @@ function Canvas(props: Props) {
       personOccurrences,
       flow,
       introCameraFinished,
+      props.cardVariant,
+      family.people,
+      family.links,
+      user?.personId,
     ],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
@@ -788,6 +799,9 @@ function Canvas(props: Props) {
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
+    setManualCameraOverride(true);
+    void flow.setViewport(flow.getViewport(), { duration: 0 });
+    if (!introCameraFinished) setIntroCameraFinished(true);
     setFanRevealing(false);
     rememberContext();
     setGrowing(false);

@@ -9,6 +9,8 @@ import {
   type Family,
   type ArchiveUser,
   type PhotoMetadata,
+  type TreePreferences,
+  DEFAULT_TREE_PREFERENCES,
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
@@ -17,8 +19,24 @@ const WRITE_TIMEOUT_MS = 45000;
 const UPLOAD_TIMEOUT_MS = 90000;
 const RECONCILE_TIMEOUT_MS = 15000;
 
+function treePreferencesFromResponse(data: {
+  reverseTimeline?: boolean;
+  treePreferences?: Partial<TreePreferences> | null;
+}): TreePreferences {
+  return {
+    reverseTimeline:
+      typeof data.treePreferences?.reverseTimeline === "boolean"
+        ? data.treePreferences.reverseTimeline
+        : data.reverseTimeline === true,
+    cardVariant:
+      data.treePreferences?.cardVariant === "portrait" ? "portrait" : "classic",
+  };
+}
+
 export function useArchive() {
-  const [reverseTimeline, setReverseTimeline] = useState(false);
+  const [treePreferences, setTreePreferences] = useState<TreePreferences>(
+    DEFAULT_TREE_PREFERENCES,
+  );
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
     [canEdit, setCanEdit] = useState(false),
@@ -81,7 +99,7 @@ export function useArchive() {
             snapshot.current = null;
             setReadTree(initial.readTree !== false);
             setReadPhotos(initial.readPhotos !== false);
-            setReverseTimeline(initial.reverseTimeline === true);
+            setTreePreferences(treePreferencesFromResponse(initial));
             setUser(initial.user || null);
             setNeedsLogin(false);
             setError("");
@@ -108,7 +126,7 @@ export function useArchive() {
             setUser(result.user || null);
             setReadTree(result.readTree !== false);
             setReadPhotos(result.readPhotos !== false);
-            setReverseTimeline(result.reverseTimeline === true);
+            setTreePreferences(treePreferencesFromResponse(result));
             setError("");
           }
         } else {
@@ -169,7 +187,7 @@ export function useArchive() {
     setUser(result.user || null);
     setReadTree(result.readTree !== false);
     setReadPhotos(result.readPhotos !== false);
-    setReverseTimeline(result.reverseTimeline === true);
+    setTreePreferences(treePreferencesFromResponse(result));
     setNeedsLogin(false);
     publishHistory();
     return true;
@@ -404,12 +422,27 @@ export function useArchive() {
     history.current.pop();
     publishHistory();
   }, [write, publishHistory]);
+  const saveTreePreferences = useCallback(async (value: TreePreferences) => {
+    const response = await fetch("/api/tree-preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.error || "Не удалось сохранить настройки древа");
+    const saved = treePreferencesFromResponse({ treePreferences: result });
+    setTreePreferences(saved);
+    return saved;
+  }, []);
   return {
     conflict,
     getRevision: () => revision.current,
     undo,
     canUndo: undoCount > 0 && (user?.role === "admin" || !undoRemovesPerson),
-    reverseTimeline,
+    reverseTimeline: treePreferences.reverseTimeline,
+    treePreferences,
+    saveTreePreferences,
     user,
     readTree,
     readPhotos,
