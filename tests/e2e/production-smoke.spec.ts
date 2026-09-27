@@ -89,6 +89,36 @@ test("блоки сводки имеют одинаковую ширину на 
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
 });
 
+test("сводка объясняет предупреждение и фильтрует результаты", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const child = data.family.people.find(
+      (person: { id: string }) => person.id === "e2e-grandchild",
+    );
+    child.parents = ["e2e-child", "e2e-spouse", "e2e-memorial-person"];
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/insights");
+  const warning = page.locator(".insight-warning").filter({
+    hasText: "Больше двух кровных родителей",
+  });
+  await expect(warning).toBeVisible();
+  await expect(warning.getByText(/Почему:/)).toBeVisible();
+  await expect(warning.locator(".insight-warning-people button")).toHaveCount(
+    4,
+  );
+  await page.getByRole("button", { name: /Возможные дубли 0/ }).click();
+  await expect(
+    page.getByText("В этой категории предупреждений нет."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Нужна проверка/ }).click();
+  await expect(warning).toBeVisible();
+});
+
 test("Ctrl+колесо масштабирует древо и не меняет масштаб страницы", async ({
   page,
 }, testInfo) => {
