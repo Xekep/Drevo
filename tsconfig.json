@@ -19,6 +19,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["src", "tests", "vite.config.ts"],
+  "include": ["src", "tests", "ops/postgres", "vite.config.ts"],
   "exclude": ["node_modules"]
 }
