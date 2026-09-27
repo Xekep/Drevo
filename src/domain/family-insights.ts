@@ -1,4 +1,5 @@
 import {
+  dateBound,
   dateYear,
   fullName,
   hasRecordedDeath,
@@ -52,6 +53,45 @@ export type FamilyInsights = {
 
 const yearOf = (value?: string) =>
   value && validDate(value) ? dateYear(value) : null;
+
+function completedLifespans(people: Person[]) {
+  return people.flatMap((person) => {
+    const birth = yearOf(person.birth),
+      death = yearOf(person.death),
+      age = birth !== null && death !== null ? death - birth : null;
+    return age !== null && age >= 0 ? [{ person, age }] : [];
+  });
+}
+
+/** A hint, never evidence of death. Year-only births use the youngest possible age. */
+export function deceasedStatusSuggestion(
+  family: Family,
+  candidate: Pick<Person, "birth" | "death" | "deathPlace" | "deceased">,
+  today = new Date().toISOString().slice(0, 10),
+) {
+  if (
+    hasRecordedDeath(candidate) ||
+    !validDate(candidate.birth) ||
+    !validDate(today) ||
+    today.length !== 10
+  )
+    return null;
+  const ages = completedLifespans(family.people)
+    .filter(({ age }) => age >= 18)
+    .map(({ age }) => age);
+  if (ages.length < 5) return null;
+  const averageYears =
+    Math.round((ages.reduce((sum, age) => sum + age, 0) / ages.length) * 10) /
+    10;
+  const latestBirth = dateBound(candidate.birth, true);
+  const ageAtLeast =
+    Number(today.slice(0, 4)) -
+    Number(candidate.birth.slice(0, 4)) -
+    Number(today.slice(5) < latestBirth.slice(5));
+  return ageAtLeast > averageYears + 10
+    ? { ageAtLeast, averageYears, sampleSize: ages.length }
+    : null;
+}
 
 const normalized = (value: string) =>
   value.trim().toLocaleLowerCase("ru").replaceAll("ё", "е");
@@ -299,12 +339,7 @@ export function analyzeFamilyInsights(
     peopleMap = new Map(people.map((person) => [person.id, person])),
     children = childCounts(people),
     spousePairs = uniqueSpousePairs(people),
-    lifespans = people.flatMap((person) => {
-      const birth = yearOf(person.birth),
-        death = yearOf(person.death),
-        age = birth !== null && death !== null ? death - birth : null;
-      return age !== null && age >= 0 ? [{ person, age }] : [];
-    }),
+    lifespans = completedLifespans(people),
     adultLifespans = lifespans.filter(({ age }) => age >= 18),
     knownBirths = people.flatMap((person) => {
       const year = yearOf(person.birth);

@@ -29,6 +29,21 @@
   font-size: 14px;
   font-weight: 500;
 }
+.person-deceased-status {
+  margin-top: 12px;
+}
+.person-deceased-status.is-suggested {
+  padding: 12px;
+  border: 1px solid #dce5d1;
+  border-radius: 10px;
+  background: #f5f7ee;
+}
+.person-deceased-status p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .archive-loading-details {
   position: fixed;
   left: 50%;
