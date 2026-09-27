@@ -422,6 +422,15 @@ export async function importSqliteSnapshot(
       archiveId,
       ownerUserId,
     );
+    await client.query(
+      readFileSync(
+        join(
+          fileURLToPath(new URL(".", import.meta.url)),
+          "005_archive_owner_uniqueness.sql",
+        ),
+        "utf8",
+      ),
+    );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {
