@@ -19,7 +19,10 @@ test("заставка закрывает архив до завершения �
     "animation-name",
     "entry-sequence-title-in",
   );
-  await entry.getByRole("button", { name: "Пропустить" }).click();
+  await expect(entry.locator(".entry-sequence-title p")).toHaveText(
+    "История начинается с семьи.",
+  );
+  await expect(entry.getByRole("button", { name: "Пропустить" })).toHaveCount(0);
   await expect(entry).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toBeVisible();
 });
@@ -1183,7 +1186,11 @@ test("common ancestors view keeps blood relatives and excludes the spouse", asyn
   const dock = page.getByRole("dialog", { name: "Выбранный объект" });
   if (await dock.isVisible())
     await dock.getByRole("button", { name: "Свернуть панель" }).click();
+  if (testInfo.project.name === "mobile")
+    await page.getByLabel("Область просмотра", { exact: true }).click();
   await page.getByRole("button", { name: "Общие предки" }).click();
+  if (testInfo.project.name === "mobile")
+    await page.getByLabel("Область просмотра", { exact: true }).click();
   await expect(page.locator(".tree-family-count")).toHaveText("5 из 6");
   if (testInfo.project.name === "desktop") {
     const share = page.getByRole("button", { name: "Поделиться" });

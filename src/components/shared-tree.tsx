@@ -117,6 +117,19 @@ export default function SharedTree({ token }: { token: string }) {
             <div className="tree-view">
               <TreeCanvas
                 restricted
+                comparisonAction={
+                  <div className="workspace-actions">
+                    <button
+                      className={compare ? "active" : ""}
+                      title="Родство"
+                      aria-pressed={compare}
+                      onClick={() => dispatch({ type: "compare" })}
+                    >
+                      <ArrowDownUp size={17} />
+                      Родство
+                    </button>
+                  </div>
+                }
                 family={data.family}
                 user={null}
                 canEdit={false}
@@ -136,15 +149,6 @@ export default function SharedTree({ token }: { token: string }) {
                 query=""
                 highlighted={relation?.path || []}
               />
-              <div className="workspace-actions">
-                <button
-                  className={compare ? "active" : ""}
-                  onClick={() => dispatch({ type: "compare" })}
-                >
-                  <ArrowDownUp size={17} />
-                  Родство
-                </button>
-              </div>
               {!selectionOnly && (compare || chosen.length > 0) && (
                 <InspectorDock
                   key={compare ? `comparison:${chosen.length}` : chosen[0]?.id}

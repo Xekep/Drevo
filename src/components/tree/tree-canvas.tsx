@@ -18,7 +18,16 @@ import {
   type Connection as FlowConnection,
   type Viewport,
 } from "@xyflow/react";
-import { Maximize2, Plus, GitBranch, Link2 } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChartNoAxesGantt,
+  Maximize2,
+  Plus,
+  GitBranch,
+  Link2,
+  RotateCcw,
+  TreeDeciduous,
+} from "lucide-react";
 import {
   archiveConnections,
   type Family,
@@ -804,6 +813,7 @@ function Canvas(props: Props) {
     setMode(next);
     setEdgeChoices([]);
   }
+  const timelineActive = !activeFanAnchor && mode === "timeline";
   return (
     <TreeActions.Provider value={actions}>
       <div
@@ -818,48 +828,76 @@ function Canvas(props: Props) {
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
         <div className="tree-mode-bar">
-          <div className="segmented" aria-label="Представление дерева">
+          {narrow ? (
             <button
-              aria-pressed={!activeFanAnchor && mode === "generations"}
-              onClick={() => switchMode("generations")}
+              type="button"
+              className="tree-mode-switch"
+              role="switch"
+              aria-label="Древо / Хронология"
+              aria-checked={timelineActive}
+              title={timelineActive ? "Переключить на древо" : "Переключить на хронологию"}
+              onClick={() => switchMode(timelineActive ? "generations" : "timeline")}
             >
-              Древо
+              {timelineActive ? (
+                <ChartNoAxesGantt size={18} aria-hidden="true" />
+              ) : (
+                <TreeDeciduous size={18} aria-hidden="true" />
+              )}
+              <span>{timelineActive ? "Хронология" : "Древо"}</span>
+              <ArrowLeftRight size={14} aria-hidden="true" />
             </button>
-            <button
-              aria-pressed={!activeFanAnchor && mode === "timeline"}
-              onClick={() => switchMode("timeline")}
-            >
-              Хронология
-            </button>
-          </div>
+          ) : (
+            <div className="segmented" aria-label="Представление дерева">
+              <button
+                aria-pressed={!activeFanAnchor && mode === "generations"}
+                onClick={() => switchMode("generations")}
+              >
+                Древо
+              </button>
+              <button
+                aria-pressed={timelineActive}
+                onClick={() => switchMode("timeline")}
+              >
+                Хронология
+              </button>
+            </div>
+          )}
           {!narrow && (
             <ArchiveSummary people={family.people} busy={layoutBusy} />
           )}
           {!!family.links?.length && (
             <button
               className="tree-extra-toggle"
+              aria-label="Доп. связи"
               aria-pressed={extraVisible}
               onClick={() => setExtraVisible((v) => !v)}
               title="Крёстные, усыновление, опека и другие дополнительные связи"
             >
-              Доп. связи
+              {narrow && <Link2 size={19} aria-hidden="true" />}
+              <span>Доп. связи</span>
             </button>
           )}
           {narrow && props.comparisonAction}
           {props.assistantFilter && (
-            <div className="tree-family-tools" role="status">
+            <div
+              className="tree-family-tools tree-filter-status"
+              role="status"
+              title={`${props.assistantFilter.label}: ${visible.size} из ${family.people.length}`}
+            >
               <span className="tree-family-count">
                 {props.assistantFilter.label}: {visible.size} из{" "}
                 {family.people.length}
               </span>
               <button
                 type="button"
+                aria-label="Всё древо"
+                title="Сбросить фильтр и показать всё древо"
                 onClick={() => {
-                props.onClearAssistantFilter?.();
-                familyView.showAll();
+                  props.onClearAssistantFilter?.();
+                  familyView.showAll();
                 }}
               >
-                Всё древо
+                {narrow ? <RotateCcw size={19} aria-hidden="true" /> : "Всё древо"}
               </button>
             </div>
           )}
@@ -867,6 +905,7 @@ function Canvas(props: Props) {
             !props.restricted &&
             !props.assistantFilter && (
             <FamilyViewTools
+              compact={narrow}
               onShare={
                 root && props.onShare
                   ? () => props.onShare!(root, [...visible])

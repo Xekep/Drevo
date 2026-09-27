@@ -22,7 +22,10 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
-  await page.getByRole("button", { name: "Хронология" }).click();
+  await page
+    .getByRole("button", { name: "Хронология" })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
@@ -121,7 +124,7 @@ test("wheel moves through years, Shift+wheel moves people, and life bars track f
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
-  await page.getByRole("button", { name: "Хронология" }).click();
+  await page.getByRole("switch", { name: "Древо / Хронология" }).click();
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
@@ -201,7 +204,10 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
-  await page.getByRole("button", { name: "Хронология" }).click();
+  await page
+    .getByRole("button", { name: "Хронология" })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });

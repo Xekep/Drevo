@@ -210,6 +210,44 @@
   border-radius: 12px;
   margin: 16px 0;
 }
+
+.genealogy-formats {
+  border: 0;
+  padding: 0;
+  margin: 1rem 0;
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.genealogy-format {
+  display: flex !important;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line, #d7d5d0);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.genealogy-format input,
+.genealogy-xml-media input {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+.genealogy-format span {
+  display: grid;
+  gap: 0.2rem;
+}
+.genealogy-format small {
+  opacity: 0.75;
+}
+.genealogy-format:has(input:checked) {
+  border-color: var(--accent, #657347);
+}
+.genealogy-xml-media {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+}
 .gedcom-preview ul {
   max-height: 220px;
   overflow: auto;
