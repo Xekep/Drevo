@@ -7,6 +7,10 @@ import {
   validDate,
 } from "./dates.ts";
 import { archiveSummary } from "./archive-summary.ts";
+import {
+  analyzeArchiveWarnings,
+  type ArchiveWarning,
+} from "./archive-quality.ts";
 import type { Family, Person } from "./types.ts";
 
 type InsightFact = {
@@ -14,13 +18,6 @@ type InsightFact = {
   value: string;
   detail: string;
   personIds?: string[];
-};
-
-type InsightWarning = {
-  title: string;
-  detail: string;
-  personIds: string[];
-  eventId?: string;
 };
 
 type InsightCompleteness = {
@@ -38,7 +35,7 @@ type InsightGeneration = {
 
 export type FamilyInsights = {
   facts: InsightFact[];
-  warnings: InsightWarning[];
+  warnings: ArchiveWarning[];
   completeness: InsightCompleteness[];
   generations: InsightGeneration[];
   topSurnames: { label: string; count: number }[];
@@ -263,117 +260,6 @@ function generationStats(people: Person[]): InsightGeneration[] {
     });
 }
 
-function warningKey(warning: InsightWarning) {
-  return `${warning.title}:${[...warning.personIds].sort().join(":")}:${warning.eventId || ""}`;
-}
-
-function knownInterval(value?: string) {
-  return value && validDate(value)
-    ? { first: dateBound(value, false), last: dateBound(value, true) }
-    : null;
-}
-
-function completedYears(earlier: string, later: string) {
-  const years = Number(later.slice(0, 4)) - Number(earlier.slice(0, 4));
-  return years - Number(later.slice(5) < earlier.slice(5));
-}
-
-function dataWarnings(people: Person[]) {
-  const peopleMap = new Map(people.map((person) => [person.id, person])),
-    warnings = new Map<string, InsightWarning>();
-  const add = (warning: InsightWarning) =>
-    warnings.set(warningKey(warning), warning);
-
-  for (const person of people) {
-    const birth = knownInterval(person.birth),
-      death = knownInterval(person.death);
-    if (birth && death && death.last < birth.first)
-      add({
-        title: "Дата смерти раньше рождения",
-        detail: `${fullName(person)}: рождение ${person.birth}, смерть ${person.death}. Возможные интервалы не пересекаются.`,
-        personIds: [person.id],
-      });
-
-    for (const event of person.events || []) {
-      const start = knownInterval(event.date),
-        end = knownInterval(event.endDate);
-      if (start && end && end.last < start.first)
-        add({
-          title: "Конец события раньше начала",
-          detail: `${fullName(person)}: ${event.title?.trim() || "событие"} — начало ${event.date}, конец ${event.endDate}. Возможные интервалы не пересекаются.`,
-          personIds: [person.id],
-          eventId: event.id,
-        });
-      if (
-        birth &&
-        event.type === "marriage" &&
-        start &&
-        start.last < birth.first
-      )
-        add({
-          title: "Брак раньше рождения",
-          detail: `${fullName(person)}: рождение ${person.birth}, брак ${event.date}. Возможные интервалы не пересекаются.`,
-          personIds: [person.id],
-          eventId: event.id,
-        });
-    }
-
-    for (const parentId of new Set(person.parents)) {
-      const parent = peopleMap.get(parentId),
-        parentBirth = knownInterval(parent?.birth),
-        parentDeath = knownInterval(parent?.death);
-      if (!parent || !birth) continue;
-      if (parentBirth) {
-        const youngestPossible = completedYears(parentBirth.last, birth.first),
-          oldestPossible = completedYears(parentBirth.first, birth.last);
-        if (oldestPossible < 12)
-          add({
-            title: "Очень маленький возраст родителя",
-            detail: `${fullName(parent)} (${parent.birth}) и ${fullName(person)} (${person.birth}): даже с учётом точности дат родителю меньше 12 лет.`,
-            personIds: [parent.id, person.id],
-          });
-        else if (youngestPossible > 80)
-          add({
-            title: "Необычно большой возраст родителя",
-            detail: `${fullName(parent)} (${parent.birth}) и ${fullName(person)} (${person.birth}): даже с учётом точности дат родителю больше 80 лет.`,
-            personIds: [parent.id, person.id],
-          });
-      }
-      // Allow a posthumous birth and the full uncertainty of a year/month-only date.
-      if (
-        parentDeath &&
-        Date.parse(birth.first) - Date.parse(parentDeath.last) >
-          300 * 24 * 60 * 60 * 1000
-      )
-        add({
-          title: "Ребёнок родился заметно позже смерти родителя",
-          detail: `${fullName(parent)}: смерть ${parent.death}; ${fullName(person)}: рождение ${person.birth}. Даже с учётом точности дат прошло больше 300 дней.`,
-          personIds: [parent.id, person.id],
-        });
-    }
-  }
-
-  const duplicates = new Map<string, Person[]>();
-  for (const person of people) {
-    const birth = yearOf(person.birth),
-      name = normalized(fullName(person));
-    if (!name || birth === null) continue;
-    const key = `${name}:${birth}`,
-      group = duplicates.get(key) || [];
-    group.push(person);
-    duplicates.set(key, group);
-  }
-  for (const group of duplicates.values())
-    if (group.length > 1)
-      add({
-        title: "Возможный дубль",
-        detail: `${fullName(group[0])}, ${yearOf(group[0].birth)}: ${group.length} записи`,
-        personIds: group.map((person) => person.id),
-      });
-
-  return [...warnings.values()].slice(0, 20);
-}
-
 export function analyzeFamilyInsights(
   family: Family,
   currentYear = new Date().getFullYear(),
@@ -523,7 +409,7 @@ export function analyzeFamilyInsights(
 
   return {
     facts,
-    warnings: dataWarnings(people),
+    warnings: analyzeArchiveWarnings(family),
     completeness: [
       {
         label: "Дата рождения",

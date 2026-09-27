@@ -582,6 +582,44 @@ test("tree tools do not leak source scope and source tool stays explicit", () =>
   assert.ok(missing.people[0].missing.includes("место рождения"));
 });
 
+test("quality warnings keep event sources out of ordinary research tools", () => {
+  const withEvent: Family = {
+    ...family,
+    people: family.people.map((record) =>
+      record.id === "mother"
+        ? {
+            ...record,
+            events: [
+              {
+                id: "early-marriage",
+                type: "marriage",
+                date: "1900",
+                sources: [
+                  {
+                    title: "Закрытый источник",
+                    type: "archive",
+                    reference: "1",
+                  },
+                ],
+              },
+            ],
+          }
+        : record,
+    ),
+  };
+  for (const [tool, args] of [
+    ["find_inconsistencies", {}],
+    ["get_branch_insights", { personId: "grandchild", direction: "ancestors" }],
+  ] as const) {
+    const result = executeResearchTool(withEvent, tool, args);
+    assert.match(JSON.stringify(result), /Брак раньше рождения/);
+    assert.doesNotMatch(
+      JSON.stringify(result),
+      /Закрытый источник|sourceTitles/,
+    );
+  }
+});
+
 test("branch insights summarize only the selected ancestry depth", () => {
   const result = executeResearchTool(family, "get_branch_insights", {
     personId: "grandchild",

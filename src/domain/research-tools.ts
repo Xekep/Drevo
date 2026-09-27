@@ -1802,8 +1802,14 @@ export function executeResearchTool(
     const warnings = analyzeFamilyInsights(family).warnings,
       people = new Map(family.people.map((person) => [person.id, person]));
     return {
-      warnings: warnings.map((warning) => ({
-        ...warning,
+      warnings: warnings.slice(0, 20).map((warning) => ({
+        code: warning.code,
+        title: warning.title,
+        detail: warning.detail,
+        rule: warning.rule,
+        level: warning.level,
+        personIds: warning.personIds,
+        eventId: warning.eventId,
         people: warning.personIds.flatMap((id) =>
           people.has(id) ? [{ id, name: fullName(people.get(id)!) }] : [],
         ),
@@ -1850,9 +1856,11 @@ export function executeResearchTool(
             b.missing.length - a.missing.length ||
             fullName(a.person).localeCompare(fullName(b.person), "ru"),
         ),
-      warnings = analyzeFamilyInsights(family).warnings.filter((warning) =>
-        warning.personIds.some((id) => branchIds.has(id)),
-      ),
+      warnings = analyzeFamilyInsights(family)
+        .warnings.filter((warning) =>
+          warning.personIds.some((id) => branchIds.has(id)),
+        )
+        .slice(0, 20),
       people = new Map(family.people.map((person) => [person.id, person])),
       withSources = branchPeople.filter(
         (person) =>
@@ -1881,7 +1889,13 @@ export function executeResearchTool(
         missing: fields,
       })),
       warnings: warnings.map((warning) => ({
-        ...warning,
+        code: warning.code,
+        title: warning.title,
+        detail: warning.detail,
+        rule: warning.rule,
+        level: warning.level,
+        personIds: warning.personIds,
+        eventId: warning.eventId,
         people: warning.personIds.flatMap((id) =>
           people.has(id) ? [{ id, name: fullName(people.get(id)!) }] : [],
         ),
