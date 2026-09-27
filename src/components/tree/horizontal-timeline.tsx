@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
 import { fullName, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
@@ -54,13 +55,15 @@ function EventGroup({
         aria-label={`${group.year}: ${group.items.map((item) => item.title).join(", ")}`}
         title={`${group.year}: ${group.items.map((item) => item.title).join(", ")}`}
       >
-        {group.items.length > 1
-          ? group.items.length
-          : kind === "birth"
-            ? "+"
-            : kind === "death"
-              ? "−"
-              : "•"}
+        {group.items.length > 1 ? (
+          group.items.length
+        ) : kind === "birth" ? (
+          <Sprout size={15} aria-hidden="true" />
+        ) : kind === "death" ? (
+          <Minus size={15} aria-hidden="true" />
+        ) : (
+          "•"
+        )}
       </summary>
       <div className="timeline-event-list">
         {group.items.map((item) => (
@@ -227,12 +230,40 @@ export function HorizontalTimeline({
       (row.groups.find((group) => group.year === year)?.items.length || 0),
     0,
   );
+  const stepYear = (delta: number) => {
+    viewport.current?.scrollTo({
+      left: model.yearX(
+        Math.min(model.end, Math.max(model.start, year + delta)),
+      ),
+      behavior: scrollBehavior(),
+    });
+  };
 
   /* A scrollable region needs keyboard focus and pointer dragging. */
   /* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */
   return (
     <>
       <div className="timeline-center-marker">
+        <div className="timeline-year-controls">
+          <button
+            type="button"
+            onClick={() => stepYear(-10)}
+            disabled={year <= model.start}
+            aria-label="На 10 лет назад"
+            title="На 10 лет назад"
+          >
+            <ChevronLeft size={17} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => stepYear(10)}
+            disabled={year >= model.end}
+            aria-label="На 10 лет вперёд"
+            title="На 10 лет вперёд"
+          >
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+        </div>
         <output
           ref={yearLabel}
           aria-label="Год в центре хронологии"
@@ -337,7 +368,10 @@ export function HorizontalTimeline({
             ))}
           </div>
           <div className="timeline-axis">
-            <span className="timeline-axis-title">Люди и события</span>
+            <span className="timeline-axis-title">
+              <strong>Люди и события</strong>
+              <small>в выбранном году</small>
+            </span>
             <div
               className="timeline-axis-track"
               style={{
@@ -402,7 +436,14 @@ export function HorizontalTimeline({
                 >
                   <Avatar person={row.person} />
                   <span>
-                    <strong>{fullName(row.person)}</strong>
+                    <strong>{row.person.surname || row.person.name}</strong>
+                    <span>
+                      {row.person.surname
+                        ? [row.person.name, row.person.patronymic]
+                            .filter(Boolean)
+                            .join(" ")
+                        : row.person.patronymic}
+                    </span>
                     <small>{status}</small>
                   </span>
                 </button>

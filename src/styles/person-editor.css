@@ -1,0 +1,211 @@
+.person-editor-shell {
+  background: #f7f8f3;
+}
+.person-editor-shell > header {
+  padding: 17px 20px;
+  border-bottom: 1px solid #e0e6db;
+  background: #fcfdf9;
+}
+.person-editor-shell > header h2 {
+  font: 400 23px/1.2 var(--serif);
+  letter-spacing: -0.025em;
+  color: #304c3c;
+}
+.person-editor-shell .person-editor-form {
+  padding: 16px;
+  gap: 10px;
+}
+.person-editor-form .person-editor-primary {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #dce5d6;
+  border-radius: 12px;
+  background: #fffefa;
+}
+.person-editor-form .person-editor-primary.is-existing {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+.person-editor-form .person-editor-basics {
+  gap: 13px;
+}
+.person-editor-form .name-entry input {
+  min-height: 42px;
+  padding: 9px 10px;
+  font-weight: 500;
+  color: #263f30;
+  background: #fff;
+}
+.person-editor-form .name-entry small {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #7b8675;
+}
+.person-editor-form .name-entry .field-error {
+  color: #a04738;
+}
+.person-editor-form .portrait-edit-button {
+  width: 64px;
+  height: 64px;
+  min-height: 64px;
+}
+.person-editor-form .person-editor-primary.is-existing .award-editor-chip,
+.person-editor-form .person-editor-primary.is-existing .award-editor-add {
+  width: 32px;
+  height: 36px;
+  min-height: 36px;
+}
+.person-editor-form .name-sex-hint {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.person-editor-form .name-sex-hint select {
+  width: 100%;
+}
+.person-editor-form > .form-details {
+  padding: 0;
+  border: 1px solid #dfe5da;
+  border-radius: 10px;
+  background: #fff;
+}
+.person-editor-form > .form-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  color: #3e5846;
+  font-weight: 500;
+  line-height: 1.4;
+  list-style: none;
+  border-radius: 10px;
+}
+.person-editor-form > .form-details > summary::-webkit-details-marker {
+  display: none;
+}
+.person-editor-form > .form-details > summary > svg {
+  flex: 0 0 auto;
+  color: #83927a;
+  stroke-width: 1.5;
+}
+.person-editor-form > .form-details > summary::after {
+  content: "";
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-right: 1px solid #86977e;
+  border-bottom: 1px solid #86977e;
+  transform: rotate(-45deg);
+}
+.person-editor-form > .form-details[open] > summary {
+  border-bottom: 1px solid #e8ece3;
+  border-radius: 10px 10px 0 0;
+  background: #fafcf7;
+}
+.person-editor-form > .form-details[open] > summary::after {
+  transform: rotate(45deg);
+}
+.person-editor-form > .form-details > summary:hover {
+  background: #f5f8f0;
+}
+.person-editor-form > .form-details > summary:focus-visible {
+  outline: 2px solid #6b8861;
+  outline-offset: -3px;
+}
+.person-editor-form > .form-details > :not(summary) {
+  margin: 14px;
+}
+.person-editor-form .person-date-group {
+  padding: 0;
+  border: 0;
+}
+.person-editor-form .person-date-group + .person-date-group {
+  padding-top: 14px;
+  border-top: 1px solid #e9ede5;
+}
+.person-editor-form .person-date-group h3 {
+  margin: 0 0 12px;
+  color: #7d8a72;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.person-editor-form .person-date-group .form-grid {
+  gap: 10px;
+}
+.person-editor-form
+  :is(input, select, textarea):where(:not([type="checkbox"], [type="file"])) {
+  border-color: #dce3d7;
+  background-color: #fdfefb;
+}
+.person-editor-form :is(input, select, textarea):focus {
+  outline: none;
+  border-color: #73946d;
+  box-shadow: 0 0 0 3px #6d90621a;
+  background-color: #fff;
+}
+.person-editor-form [aria-invalid="true"] {
+  border-color: #ac5546 !important;
+}
+.person-editor-form textarea {
+  min-height: 140px;
+  resize: vertical;
+  line-height: 1.65;
+}
+.person-editor-form > .person-delete-section {
+  border-color: transparent;
+  background: transparent;
+}
+.person-editor-form > .person-delete-section > summary {
+  color: #8e7167;
+  font-size: 12px;
+  padding-block: 10px;
+}
+.person-editor-form > .person-delete-section > summary > svg {
+  color: #a1897f;
+}
+.person-editor-shell .person-editor-form > footer {
+  display: flex;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  gap: 10px;
+  margin: 2px -16px -16px;
+  padding: 14px 16px;
+  border-top: 1px solid #dfe5d9;
+  background: #f7f8f3f5;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 -5px 18px #36462e05;
+}
+.person-editor-form > footer .primary-action {
+  flex: 1;
+  min-height: 40px;
+  background: #355b43;
+  font-weight: 600;
+}
+.person-editor-form > footer .text-action {
+  min-width: 90px;
+}
+.person-editor-save-state {
+  flex: 0 0 100%;
+  color: #8a774f;
+  font-size: 11px;
+}
+.person-editor-form > .flow-intro {
+  margin: 0 2px 5px;
+  color: #77866f;
+  line-height: 1.6;
+}
+@media (max-width: 899px) {
+  .person-editor-shell > header h2 {
+    font-size: 21px;
+  }
+  .person-editor-form .person-editor-primary.is-existing {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 10px;
+  }
+}

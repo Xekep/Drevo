@@ -11,6 +11,10 @@ import { fullName, years } from "../../domain";
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
+import {
+  TREE_NODE_HEIGHT,
+  TREE_NODE_WIDTH,
+} from "../../domain/tree-layout-constants";
 export const TreeActions = createContext<{
   choose: (id: string, additive: boolean) => void;
   selectOnly: (id: string) => void;
@@ -47,12 +51,13 @@ export const PersonNode = memo(function PersonNode({
   selected,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
-  const { choose, selectOnly, collapse, expand, reference } = useContext(TreeActions);
+  const { choose, selectOnly, collapse, expand, reference } =
+    useContext(TreeActions);
   const longPress = useLongPress(() => selectOnly(data.person.id));
   const detail = useStore((s) =>
     s.transform[2] < 0.18
       ? "distant"
-      : s.transform[2] < 0.4
+      : s.transform[2] < 0.52
         ? "overview"
         : s.transform[2] < 0.75
           ? "compact"
@@ -67,6 +72,7 @@ export const PersonNode = memo(function PersonNode({
       data-person-id={data.person.id}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
+      style={{ width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT }}
     >
       {[
         ["top", Position.Top],
@@ -103,6 +109,7 @@ export const PersonNode = memo(function PersonNode({
           choose(data.person.id, event.shiftKey);
         }}
         aria-label={`${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}`}
+        title={`${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}`}
       >
         {!overview && <Avatar person={data.person} />}
         <span>

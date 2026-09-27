@@ -1,5 +1,19 @@
 import { expect, test } from "@playwright/test";
 
+test("хронология переключает десятилетия без перетаскивания шкалы", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  const year = page.getByLabel("Год в центре хронологии");
+  await expect(year).toHaveText("1940");
+  await page.getByRole("button", { name: "На 10 лет вперёд" }).click();
+  await expect(year).toHaveText("1950");
+  await page.getByRole("button", { name: "На 10 лет назад" }).click();
+  await expect(year).toHaveText("1940");
+});
+
 test("chronology has a horizontal era strip, sticky portraits and draggable dates", async ({
   page,
 }, testInfo) => {
