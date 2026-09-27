@@ -61,7 +61,11 @@ export function geocodingStore(
             "Справочник временно ограничил поиск. Повторите позже.",
           );
         if (Date.now() < (providerPauses.get(providerKey) || 0))
-          throw new Error("Внешний справочник временно перегружен");
+          throw new Error(
+            url.searchParams.has("action")
+              ? "Сервис исторических названий перегружен"
+              : "Внешний справочник временно перегружен",
+          );
         await delay(Math.max(0, interval - (Date.now() - last)));
         if (closed) throw new Error("Поиск остановлен");
         const today = new Date().toISOString().slice(0, 10);
@@ -129,7 +133,7 @@ export function geocodingStore(
       } catch {
         photonFailed = true;
       }
-      let cacheable = true;
+      let cacheable = !photonFailed;
       if (!data.automatic) {
         try {
           const search = new URL(wiki);
@@ -176,13 +180,21 @@ export function geocodingStore(
                 : {}),
             };
           } else if (photonFailed)
-            throw new Error("Оба сервиса поиска мест временно недоступны");
-        } catch {
+            data = {
+              ...data,
+              notice:
+                "Основной поиск мест сейчас недоступен; исторический справочник не нашёл совпадений. Повторите позже или укажите координаты.",
+            };
+        } catch (error) {
           cacheable = false;
+          const reason = error instanceof Error ? error.message : String(error);
+          console.warn("Wikidata place lookup failed:", reason);
           data = {
             ...data,
             notice:
-              "Поиск исторических названий сейчас недоступен. Можно выбрать найденный вариант, указать точку на карте или повторить позже.",
+              reason === "Сервис исторических названий перегружен"
+                ? "Wikidata сейчас перегружена. Можно выбрать найденный вариант, указать координаты или повторить поиск позже."
+                : "Поиск исторических названий сейчас недоступен. Можно выбрать найденный вариант, указать координаты или повторить позже.",
           };
         }
       }

@@ -14,6 +14,38 @@ export const placeKey = (text: string) =>
 export function placeSearch(text: string) {
   return text.trim();
 }
+/** Широта и долгота в десятичных градусах либо в градусах, минутах и секундах. */
+export function parsePlaceCoordinates(text: string) {
+  const parts = text.trim().split(/\s*[,;]\s*/u);
+  if (parts.length !== 2) return null;
+  function component(value: string, axis: "lat" | "lon") {
+    const match = value
+      .trim()
+      .match(
+        /^([+-]?\d{1,3}(?:\.\d+)?)(?:\s*[°º]\s*(\d{1,2})(?:\s*[′'’]\s*(\d{1,2}(?:\.\d+)?)?\s*[″"”]?)?)?\s*([NSEW])?$/iu,
+      );
+    if (!match) return null;
+    const [, degreesText, minutesText, secondsText, directionText] = match;
+    const direction = directionText?.toUpperCase();
+    if (direction && !(axis === "lat" ? /[NS]/u : /[EW]/u).test(direction))
+      return null;
+    const degrees = Number(degreesText);
+    const minutes = Number(minutesText || 0);
+    const seconds = Number(secondsText || 0);
+    if (minutesText && degreesText!.includes(".")) return null;
+    if (minutes >= 60 || seconds >= 60) return null;
+    if (degrees < 0 && direction) return null;
+    const absolute = Math.abs(degrees) + minutes / 60 + seconds / 3600;
+    const limit = axis === "lat" ? 90 : 180;
+    if (absolute > limit) return null;
+    return degrees < 0 || direction === "S" || direction === "W"
+      ? -absolute
+      : absolute;
+  }
+  const lat = component(parts[0]!, "lat");
+  const lon = component(parts[1]!, "lon");
+  return lat === null || lon === null ? null : { lat, lon };
+}
 export function historicalSearchTerm(text: string) {
   return placeSearch(text).split(",")[0]?.trim() || placeSearch(text);
 }

@@ -15,6 +15,7 @@ import {
   historicalCandidates,
   historicalSearchTerm,
   mergeNearbyPlaceCandidates,
+  parsePlaceCoordinates,
   placeCandidateMatchesQuery,
   placeSearch,
 } from "../src/domain/places.ts";
@@ -41,6 +42,30 @@ const family = (p: Person): Family => ({
   description: "",
   demo: false,
   people: [p],
+});
+test("map correction accepts DMS and decimal coordinate pairs", () => {
+  const dms = parsePlaceCoordinates("53°46′10.5″ N, 67°22′16.4″ E");
+  assert.ok(dms);
+  assert.ok(Math.abs(dms.lat - 53.7695833333) < 0.0000001);
+  assert.ok(Math.abs(dms.lon - 67.3712222222) < 0.0000001);
+  assert.deepEqual(parsePlaceCoordinates("53.76958, 67.37122"), {
+    lat: 53.76958,
+    lon: 67.37122,
+  });
+  assert.deepEqual(parsePlaceCoordinates("10°30′ S; 20°15′ W"), {
+    lat: -10.5,
+    lon: -20.25,
+  });
+  for (const invalid of [
+    "91° N, 67° E",
+    "53°60′ N, 67° E",
+    "53°46′60″ N, 67° E",
+    "53° N, 67° N",
+    "-53° N, 67° E",
+    "53° N, 181° E",
+    "53.5°30′ N, 67° E",
+  ])
+    assert.equal(parsePlaceCoordinates(invalid), null, invalid);
 });
 test("local date formats preserve precision and reject impossible dates", () => {
   for (const [input, iso] of [
@@ -446,8 +471,8 @@ test("repeated Wikidata maxlag does not hold every queued Photon lookup", async 
   try {
     const first = await store.locate("Старое имя");
     const second = await store.locate("Другое старое имя");
-    assert.ok(first.notice);
-    assert.ok(second.notice);
+    assert.match(first.notice || "", /Wikidata сейчас перегружена/);
+    assert.match(second.notice || "", /Wikidata сейчас перегружена/);
     assert.equal(photonCalls, 2);
     assert.equal(wikiCalls, 2, "cooldown должен остановить повторный maxlag");
   } finally {
@@ -471,7 +496,7 @@ test("historical directory failure keeps current candidates and manual correctio
   try {
     const result = await store.locate("Старое имя");
     assert.equal(result.candidates.length, 1);
-    assert.match(result.notice || "", /указать точку на карте/);
+    assert.match(result.notice || "", /указать координаты/);
     assert.equal(calls.length, 2);
     assert.equal(
       (
@@ -481,6 +506,30 @@ test("historical directory failure keeps current candidates and manual correctio
       ).count,
       0,
       "частичный ответ не должен кэшироваться на 180 дней",
+    );
+  } finally {
+    store.close();
+    db.close();
+  }
+});
+
+test("Photon failure with an empty Wikidata search is reported as partial lookup, not Wikidata outage", async () => {
+  const db = new DatabaseSync(":memory:");
+  initializeArchiveSchema(db);
+  const fetcher: typeof fetch = async (input) =>
+    new URL(String(input)).hostname === "photon.komoot.io"
+      ? Response.error()
+      : Response.json({ search: [] });
+  const store = geocodingStore(db, fetcher, 0);
+  try {
+    const result = await store.locate("Неизвестное место");
+    assert.deepEqual(result.candidates, []);
+    assert.match(result.notice || "", /Основной поиск мест сейчас недоступен/);
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS count FROM geocode_cache").get() as {
+        count: number;
+      }).count,
+      0,
     );
   } finally {
     store.close();
