@@ -10,12 +10,14 @@ work_dir="$(mktemp -d /var/tmp/drevo-physical-restore.XXXXXX)"
 data_dir="$work_dir/data"
 socket_dir="$work_dir/socket"
 mkdir -m 700 "$socket_dir"
-started=0
 cleanup() {
-  if [[ "$started" == 1 ]]; then
-    /usr/lib/postgresql/18/bin/pg_ctl -D "$data_dir" -m fast -w stop || true
+  if [[ -f "$data_dir/postmaster.pid" ]]; then
+    if ! /usr/lib/postgresql/18/bin/pg_ctl -D "$data_dir" -m fast -w stop; then
+      echo "Isolated PostgreSQL did not stop; retained $work_dir for inspection" >&2
+      return
+    fi
   fi
-  if [[ "$work_dir" =~ ^/var/tmp/drevo-physical-restore\.[a-zA-Z0-9]+$ ]]; then
+  if [[ ! -f "$data_dir/postmaster.pid" && "$work_dir" =~ ^/var/tmp/drevo-physical-restore\.[a-zA-Z0-9]+$ ]]; then
     rm -rf -- "$work_dir"
   fi
 }
@@ -37,8 +39,7 @@ logging_collector = off
 EOF
 printf 'local all all trust\n' > "$work_dir/pg_hba.conf"
 /usr/lib/postgresql/18/bin/pg_ctl -D "$data_dir" -o "-c config_file=$work_dir/postgresql.conf" -l "$work_dir/server.log" -w start
-started=1
-for attempt in {1..30}; do
+for attempt in {1..120}; do
   recovery_state="$(psql -XAtq -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 -d postgres -c 'SELECT pg_is_in_recovery()')"
   [[ "$recovery_state" == f ]] && break
   sleep 1
