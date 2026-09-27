@@ -1,9 +1,14 @@
+import type { ResearchSearchSettings } from "../shared/web-search.ts";
+import {
+  defaultSearchSettings,
+  validateSearchSettings,
+} from "./web-search-sources.ts";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 
-export type ResearchResource = {
+export type ResearchResource = ResearchSearchSettings & {
   id: string;
   categoryId: string;
   name: string;
@@ -111,7 +116,7 @@ export function researchCatalogStore(db: DatabaseSync) {
       .all();
     const resources = db
       .prepare(
-        "SELECT id,category_id,name,url,description FROM research_resources ORDER BY category_id,sort_order,id",
+        "SELECT id,category_id,name,url,description,ai_search FROM research_resources ORDER BY category_id,sort_order,id",
       )
       .all();
     return categories.map((category) => ({
@@ -125,6 +130,14 @@ export function researchCatalogStore(db: DatabaseSync) {
           name: String(item.name),
           url: String(item.url),
           description: String(item.description),
+          ...validateSearchSettings(
+            item.ai_search ? JSON.parse(String(item.ai_search)) : {},
+            defaultSearchSettings(
+              String(item.url),
+              String(category.name),
+              `${item.name} ${item.description}`,
+            ),
+          ),
         })),
     }));
   }
@@ -168,6 +181,7 @@ export function researchCatalogStore(db: DatabaseSync) {
 
   return {
     list,
+    webSearchSources: () => list().flatMap((category) => category.resources),
     categoryNames: () =>
       db
         .prepare("SELECT name FROM research_categories ORDER BY sort_order,id")
@@ -313,7 +327,7 @@ export function researchCatalogStore(db: DatabaseSync) {
       return list();
     },
     createResource(categoryId: string, value: unknown, actor: ArchiveUser) {
-      existing("research_categories", categoryId);
+      const category = existing("research_categories", categoryId);
       const item = value as Record<string, unknown>;
       const name = requiredText(item?.name, "Название", 160);
       const url = resourceUrl(item?.url);
@@ -322,17 +336,36 @@ export function researchCatalogStore(db: DatabaseSync) {
         "Описание",
         500,
         true,
+      );
+      const search = validateSearchSettings(
+        item,
+        defaultSearchSettings(
+          url,
+          String(category.name),
+          `${name} ${description}`,
+        ),
       );
       const id = randomUUID();
       write("Добавлен ресурс поиска", id, name, actor, () => {
         db.prepare(
-          "INSERT INTO research_resources(id,category_id,name,url,description,sort_order) VALUES(?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
-        ).run(id, categoryId, name, url, description, categoryId);
+          "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
+        ).run(
+          id,
+          categoryId,
+          name,
+          url,
+          description,
+          JSON.stringify(search),
+          categoryId,
+        );
       });
       return list();
     },
     updateResource(id: string, value: unknown, actor: ArchiveUser) {
-      existing("research_resources", id);
+      const before = list()
+        .flatMap((category) => category.resources)
+        .find((resource) => resource.id === id);
+      if (!before) throw new RangeError("Запись не найдена");
       const item = value as Record<string, unknown>;
       const name = requiredText(item?.name, "Название", 160);
       const url = resourceUrl(item?.url);
@@ -342,10 +375,11 @@ export function researchCatalogStore(db: DatabaseSync) {
         500,
         true,
       );
+      const search = validateSearchSettings(item, before);
       write("Изменён ресурс поиска", id, name, actor, () => {
         db.prepare(
-          "UPDATE research_resources SET name=?,url=?,description=? WHERE id=?",
-        ).run(name, url, description, id);
+          "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
+        ).run(name, url, description, JSON.stringify(search), id);
       });
       return list();
     },

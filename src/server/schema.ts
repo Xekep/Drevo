@@ -805,4 +805,25 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const webSearchExtension = "2026-09-web-search";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(webSearchExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(
+        "ALTER TABLE research_resources ADD COLUMN ai_search TEXT CHECK(ai_search IS NULL OR json_valid(ai_search))",
+      );
+      db.exec(
+        "ALTER TABLE ai_settings ADD COLUMN web_search_enabled INTEGER CHECK(web_search_enabled IS NULL OR web_search_enabled IN (0,1))",
+      );
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        webSearchExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

@@ -113,6 +113,30 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
           message.references,
         )}
       </ReactMarkdown>
+      {message.references?.some((reference) => reference.kind === "web") && (
+        <details>
+          <summary>Найденные веб-источники</summary>
+          <ul>
+            {message.references
+              .filter((reference) => reference.kind === "web")
+              .map((reference) => (
+                <li key={reference.url}>
+                  <a
+                    href={reference.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {reference.label}
+                  </a>
+                  {" · "}
+                  {reference.sourceName || reference.domain}
+                  {reference.snippet && <p>{reference.snippet}</p>}
+                </li>
+              ))}
+          </ul>
+          <small>Результат поиска требует проверки исходной страницы.</small>
+        </details>
+      )}
     </div>
   );
 });

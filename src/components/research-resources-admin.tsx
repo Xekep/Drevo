@@ -1,8 +1,9 @@
+import type { ResearchSearchSettings } from "../shared/web-search.ts";
 import { useEffect, useState, type FormEvent } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import "../styles/research-resources-admin.css";
 
-type Resource = {
+type Resource = ResearchSearchSettings & {
   id: string;
   categoryId: string;
   name: string;
@@ -10,8 +11,17 @@ type Resource = {
   description: string;
 };
 type Category = { id: string; name: string; resources: Resource[] };
-type ResourceDraft = Pick<Resource, "name" | "url" | "description">;
-const emptyDraft: ResourceDraft = { name: "", url: "", description: "" };
+type ResourceDraft = Pick<Resource, "name" | "url" | "description"> &
+  ResearchSearchSettings;
+const emptyDraft: ResourceDraft = {
+  name: "",
+  url: "",
+  description: "",
+  domain: "",
+  enabledForAiSearch: true,
+  categories: [],
+  priority: 0,
+};
 const endpoint = "/api/admin/research-resources";
 
 export function ResearchResourcesAdmin() {
@@ -115,7 +125,13 @@ export function ResearchResourcesAdmin() {
         ? `/categories/${encodeURIComponent(selected.id)}/resources`
         : `/resources/${encodeURIComponent(editing)}`,
       editing === "new" ? "POST" : "PATCH",
-      draft,
+      {
+        ...draft,
+        categories: draft.categories.map((tag) => tag.trim()).filter(Boolean)
+          .length
+          ? draft.categories.map((tag) => tag.trim()).filter(Boolean)
+          : undefined,
+      },
     );
     if (next) setEditing(null);
   }
@@ -304,6 +320,66 @@ export function ResearchResourcesAdmin() {
                         required
                         disabled={busy}
                         rows={2}
+                      />
+                    </label>
+                    <label>
+                      <span>Разрешить веб-поиск ИИ по этому ресурсу</span>
+                      <input
+                        type="checkbox"
+                        checked={draft.enabledForAiSearch}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            enabledForAiSearch: event.target.checked,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Домен поиска
+                      <input
+                        value={draft.domain}
+                        placeholder="Из ссылки ресурса"
+                        disabled={busy}
+                        onChange={(event) =>
+                          setDraft({ ...draft, domain: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Категории веб-поиска (через запятую)
+                      <input
+                        value={draft.categories.join(",")}
+                        placeholder="military,ww2"
+                        disabled={busy}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            categories: event.target.value.split(","),
+                          })
+                        }
+                      />
+                    </label>
+                    <small>
+                      Например: archives, genealogy, military, ww1, ww2, books,
+                      newspapers, cemeteries, repressions. Пустое поле наследует
+                      категорию каталога. Отключите неиндексируемые ресурсы.
+                    </small>
+                    <label>
+                      Приоритет поиска
+                      <input
+                        type="number"
+                        min={-1000}
+                        max={1000}
+                        value={draft.priority}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            priority: Number(event.target.value),
+                          })
+                        }
                       />
                     </label>
                     <div>

@@ -1,3 +1,6 @@
+import { createWebSearchService } from "./web-search.ts";
+import { yandexWebSearchProvider } from "./yandex-web-search.ts";
+import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
@@ -96,6 +99,25 @@ export function aiResearchHttp({
     fetcher,
     chats,
     pdfFiles,
+    webSearch: (runtime, metrics) =>
+      runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
+        ? createWebSearchService({
+            provider: yandexWebSearchProvider({
+              client: responses,
+              runtime,
+              onCall: () => recordModelCall(metrics, runtime.modelUri),
+              onUsage: (usage) =>
+                recordModelTokens(
+                  metrics,
+                  runtime.modelUri,
+                  usage.inputTokens,
+                  usage.outputTokens,
+                ),
+            }),
+            sources: researchCatalog.webSearchSources,
+            timeoutMs: runtime.webSearchTimeoutMs,
+          })
+        : undefined,
   });
 
   return async (

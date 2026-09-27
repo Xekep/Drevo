@@ -5,6 +5,7 @@ import { decryptAiSecret, encryptAiSecret } from "./ai-secret.ts";
 
 export type AiSettings = {
   enabled: boolean;
+  webSearchEnabled: boolean;
   model: string;
   folderId: string;
   apiKeyStored: boolean;
@@ -19,6 +20,7 @@ export type AiSettings = {
 
 type AiSettingsRow = {
   enabled: unknown;
+  web_search_enabled: unknown;
   model: unknown;
   folder_id: unknown;
   api_key_ciphertext: unknown;
@@ -81,7 +83,7 @@ export function aiSettingsStore(db: DatabaseSync) {
   function row() {
     return db
       .prepare(
-        `SELECT enabled,model,folder_id,api_key_ciphertext,
+        `SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,
                 requests_per_minute,daily_requests,daily_tokens,
                 compaction_enabled,compact_threshold_tokens,
                 automatic_truncation,max_tool_iterations
@@ -94,6 +96,10 @@ export function aiSettingsStore(db: DatabaseSync) {
     const value = row();
     return {
       enabled: !!value.enabled,
+      webSearchEnabled:
+        value.web_search_enabled === null
+          ? process.env.AI_WEB_SEARCH_ENABLED === "true"
+          : !!value.web_search_enabled,
       model: String(value.model || ""),
       folderId: String(value.folder_id || ""),
       apiKeyStored: !!String(value.api_key_ciphertext || ""),
@@ -135,6 +141,11 @@ export function aiSettingsStore(db: DatabaseSync) {
       if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("Некорректные настройки AI Studio");
       const raw = value as Record<string, unknown>;
+      if (
+        raw.webSearchEnabled !== undefined &&
+        typeof raw.webSearchEnabled !== "boolean"
+      )
+        throw new Error("Укажите, включён ли веб-поиск");
       if (typeof raw.enabled !== "boolean")
         throw new Error("Укажите, включён ли ИИ-исследователь");
       if (raw.clearApiKey !== undefined && typeof raw.clearApiKey !== "boolean")
@@ -157,6 +168,10 @@ export function aiSettingsStore(db: DatabaseSync) {
 
       const afterInput = {
         enabled: raw.enabled,
+        webSearchEnabled:
+          raw.webSearchEnabled === undefined
+            ? before.webSearchEnabled
+            : raw.webSearchEnabled === true,
         model: modelValue(raw.model),
         folderId: folderIdValue(raw.folderId),
         requestsPerMinute: integerValue(
@@ -202,13 +217,14 @@ export function aiSettingsStore(db: DatabaseSync) {
 
       db.prepare(
         `UPDATE ai_settings SET
-          enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
+          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
           requests_per_minute=?,daily_requests=?,daily_tokens=?,
           compaction_enabled=?,compact_threshold_tokens=?,
           automatic_truncation=?,max_tool_iterations=?
          WHERE id=1`,
       ).run(
         Number(afterInput.enabled),
+        Number(afterInput.webSearchEnabled),
         afterInput.model,
         afterInput.folderId,
         ciphertext,
@@ -262,6 +278,7 @@ export function aiSettingsStore(db: DatabaseSync) {
           ...(
             [
               ["requestsPerMinute", "Запросов в минуту"],
+              ["webSearchEnabled", "Поиск в интернете"],
               ["dailyRequests", "Запросов в день"],
               ["dailyTokens", "Токенов в день"],
             ] as const
@@ -315,6 +332,13 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
       !!apiKey && !!model && (!!folderId || model.startsWith("gpt://"));
   return {
     enabled: stored.enabled,
+    webSearchEnabled: stored.webSearchEnabled,
+    webSearchProvider: process.env.AI_WEB_SEARCH_PROVIDER || "yandex",
+    webSearchDefaultScope: "trusted" as const,
+    webSearchTimeoutMs: Math.max(
+      1000,
+      Math.min(90000, Number(process.env.AI_WEB_SEARCH_TIMEOUT_MS) || 25000),
+    ),
     active: stored.enabled && configured,
     configured,
     apiKey,
@@ -359,6 +383,9 @@ export function publicAiStatus(settings: ReturnType<typeof aiSettingsStore>) {
   const runtime = aiRuntimeConfig(settings);
   return {
     enabled: runtime.enabled,
+    webSearchEnabled: runtime.webSearchEnabled,
+    webSearchProvider: runtime.webSearchProvider,
+    webSearchDefaultScope: runtime.webSearchDefaultScope,
     active: runtime.active,
     configured: runtime.configured,
     apiKeyConfigured: runtime.apiKeyConfigured,
