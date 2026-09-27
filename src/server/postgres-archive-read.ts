@@ -8,6 +8,20 @@ export async function readPostgresArchive(
 ) {
   await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
   try {
+    const result = await readPostgresArchiveInTransaction(client, archiveId);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
+}
+
+/** Caller owns the transaction and its isolation level. */
+export async function readPostgresArchiveInTransaction(
+  client: pg.Client,
+  archiveId: string,
+) {
     const meta = await client.query(
       "SELECT title,description,demo,revision FROM archives WHERE id=$1",
       [archiveId],
@@ -29,17 +43,11 @@ export async function readPostgresArchive(
       "SELECT photo_id,data FROM photo_tags WHERE archive_id=$1 ORDER BY ordinal",
       [archiveId],
     );
-    const result = hydrateArchive(
+    return hydrateArchive(
       meta.rows[0],
       people.rows,
       relations.rows,
       photos.rows,
       tags.rows,
     );
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  }
 }

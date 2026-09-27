@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { auditStore } from "./audit.ts";
+import { archiveRows, type ArchiveRows, type JsonRow, type RelationRow, type TagRow } from "./archive-rows.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
@@ -27,93 +28,6 @@ export type StoredFaceDescriptor = {
   sourceTagId?: string;
   model: string;
 };
-
-type JsonRow = { id: string; data: string };
-type RelationRow = {
-  id: string;
-  source: string;
-  target: string;
-  type: string;
-  note: string;
-  createdBy: string | null;
-};
-type TagRow = {
-  id: string;
-  photoId: string;
-  personId: string;
-  data: string;
-};
-
-type ArchiveRows = {
-  people: JsonRow[];
-  relations: RelationRow[];
-  photos: JsonRow[];
-  tags: TagRow[];
-};
-
-function archiveRows(family: Family): ArchiveRows {
-  const people = family.people.map((person) => ({
-    id: person.id,
-    data: JSON.stringify({
-      ...person,
-      parents: undefined,
-      spouses: undefined,
-    }),
-  }));
-  const relations: RelationRow[] = [];
-  const spouses = new Set<string>();
-  for (const person of family.people) {
-    for (const parent of person.parents)
-      relations.push({
-        id: `parent:${parent}:${person.id}`,
-        source: parent,
-        target: person.id,
-        type: "parent",
-        note: "",
-        createdBy: null,
-      });
-    for (const spouse of person.spouses) {
-      const pair = [person.id, spouse].sort(),
-        key = JSON.stringify(pair);
-      if (spouses.has(key)) continue;
-      spouses.add(key);
-      relations.push({
-        id: `spouse:${key}`,
-        source: pair[0],
-        target: pair[1],
-        type: "spouse",
-        note: "",
-        createdBy: null,
-      });
-    }
-  }
-  for (const link of family.links || [])
-    relations.push({
-      id: link.id,
-      source: link.from,
-      target: link.to,
-      type: link.type,
-      note: link.note || "",
-      createdBy: link.createdBy || null,
-    });
-
-  const photos: JsonRow[] = [],
-    tags: TagRow[] = [];
-  for (const photo of family.photos || []) {
-    photos.push({
-      id: photo.id,
-      data: JSON.stringify({ ...photo, tags: undefined }),
-    });
-    for (const tag of photo.tags)
-      tags.push({
-        id: `${photo.id}:${tag.id}`,
-        photoId: photo.id,
-        personId: tag.personId,
-        data: JSON.stringify(tag),
-      });
-  }
-  return { people, relations, photos, tags };
-}
 
 function replaceArchiveRows(db: DatabaseSync, rows: ArchiveRows) {
   db.exec(
