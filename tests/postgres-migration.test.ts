@@ -52,6 +52,20 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
       db.prepare(
         "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
       ).run("person-1", "user-1", 1_000, "Воспоминание");
+      db.prepare("INSERT INTO users(id,name,role) VALUES(?,?,?)").run(
+        "user-1",
+        "Участник",
+        "relative",
+      );
+      db.prepare(
+        "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+      ).run("session-hash", "user-1", 1_000);
+      db.prepare(
+        "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+      ).run("chat-1", "user-1", "all");
+      db.prepare(
+        "INSERT INTO ai_chat_messages(chat_id,role,content) VALUES(?,?,?)",
+      ).run("chat-1", "user", "Кто мой предок?");
     } finally {
       db.close();
     }
@@ -62,6 +76,22 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
+    assert.equal(snapshot.services.length, 27);
+    assert.equal(
+      snapshot.services.find((table) => table.name === "users")?.rows[0]?.data
+        .name,
+      "Участник",
+    );
+    assert.equal(
+      snapshot.services.find((table) => table.name === "auth_sessions")?.rows[0]
+        ?.data.token_hash,
+      "session-hash",
+    );
+    assert.equal(
+      snapshot.services.find((table) => table.name === "ai_chat_messages")
+        ?.rows[0]?.data.content,
+      "Кто мой предок?",
+    );
     assert.deepEqual(snapshot.media, { local: 2, external: 0 });
     assert.deepEqual(
       readFileSync(sqlite),
@@ -90,6 +120,16 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
       inspectSqliteSnapshot(sqlite, uploads).rows.get("person_comments"),
       [],
       "копии до появления обсуждений остаются переносимыми",
+    );
+    const futureSchema = new DatabaseSync(sqlite);
+    futureSchema.exec(
+      "CREATE TABLE unexpected_future_data (id TEXT PRIMARY KEY) STRICT",
+    );
+    futureSchema.close();
+    assert.throws(
+      () => inspectSqliteSnapshot(sqlite, uploads),
+      /Неизвестная или отсутствующая таблица SQLite: unexpected_future_data/,
+      "новые таблицы нельзя молча пропускать при миграции",
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
