@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test";
 test("заставка закрывает архив до завершения загрузки после входа", async ({
   page,
 }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() =>
     sessionStorage.setItem("drevo:entry-sequence", String(Date.now())),
   );
@@ -16,14 +15,61 @@ test("заставка закрывает архив до завершения �
   await expect(entry).toBeVisible();
   await expect(entry).not.toHaveClass(/is-ready/);
   await expect(entry).toHaveClass(/is-ready/);
-  await expect(entry).toHaveCSS("animation-name", "entry-sequence-out");
-  await expect(entry.locator(".entry-sequence-title")).toHaveCSS(
+  await expect(entry.locator(".entry-sequence-title strong")).toHaveCSS(
     "animation-name",
     "entry-sequence-title-in",
   );
   await entry.getByRole("button", { name: "Пропустить" }).click();
   await expect(entry).toHaveCount(0);
   await expect(page.locator(".tree-canvas")).toBeVisible();
+});
+
+test("заставка видна при долгой загрузке и учитывает уменьшенную анимацию", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() =>
+    sessionStorage.setItem("drevo:entry-sequence", String(Date.now())),
+  );
+  let releaseOverview!: () => void;
+  const overviewGate = new Promise<void>((resolve) => {
+    releaseOverview = resolve;
+  });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    await overviewGate;
+    await route.continue();
+  });
+  await page.goto("/tree", { waitUntil: "domcontentloaded" });
+  const entry = page.getByRole("dialog", { name: "Открываем семейный архив" });
+  await expect(entry).toBeVisible();
+  await expect(entry.getByRole("status")).toHaveText("Открываем архив…");
+  await expect(entry.locator(".entry-sequence-title strong")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await expect(entry.locator(".entry-sequence-title strong")).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await expect(entry.locator(".entry-sequence-boughs path").first()).toHaveCSS(
+    "stroke-dashoffset",
+    "0px",
+  );
+  await page.keyboard.press("Tab");
+  await expect(entry).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(entry).toBeVisible();
+  await expect(entry.getByRole("button", { name: "Пропустить" })).toHaveCount(
+    0,
+  );
+  releaseOverview();
+  await expect(entry).toHaveCount(0);
+  await expect(page.locator(".tree-canvas")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => sessionStorage.getItem("drevo:entry-sequence")),
+    )
+    .toBeNull();
 });
 
 test("блоки сводки имеют одинаковую ширину на широком экране", async ({
