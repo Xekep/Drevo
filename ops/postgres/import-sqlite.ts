@@ -431,6 +431,15 @@ export async function importSqliteSnapshot(
         "utf8",
       ),
     );
+    await client.query(
+      readFileSync(
+        join(
+          fileURLToPath(new URL(".", import.meta.url)),
+          "006_oauth_transactions.sql",
+        ),
+        "utf8",
+      ),
+    );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {

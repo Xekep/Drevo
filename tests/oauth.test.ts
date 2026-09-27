@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { createYandexOAuth } from "../src/server/yandex-oauth.ts";
+import type { OAuthTransactions } from "../src/server/oauth-transactions.ts";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes the callback once", async () => {
@@ -120,5 +121,70 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));
     db.close();
+  }
+});
+
+test("Yandex OAuth can await an injected asynchronous transaction store", async () => {
+  const pending = new Map<string, { verifier: string; expiresAt: number }>();
+  let issued = 0;
+  const transactions: OAuthTransactions = {
+    async pruneExpired() {},
+    async countPending() {
+      return pending.size;
+    },
+    async create(stateHash, verifier, expiresAt) {
+      pending.set(stateHash, { verifier, expiresAt });
+    },
+    async consume(stateHash, now) {
+      const value = pending.get(stateHash);
+      pending.delete(stateHash);
+      return value && value.expiresAt >= now ? value : null;
+    },
+  };
+  const oauth = createYandexOAuth({
+    origin: "https://mydrevo.org",
+    clientId: "client",
+    clientSecret: "secret",
+    transactions,
+    fetcher: async (input) =>
+      Response.json(
+        String(input).includes("/token")
+          ? { access_token: "private-token" }
+          : { id: "account-1" },
+      ),
+    issueSession: async () => {
+      await new Promise((done) => setTimeout(done, 5));
+      issued++;
+    },
+  });
+  const server = createServer((req, res) => {
+    void oauth.handle(req, res, new URL(req.url!, "http://localhost"));
+  });
+  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const started = await fetch(base + "/auth/yandex", { redirect: "manual" });
+    assert.equal(started.status, 302);
+    const state = new URL(started.headers.get("location")!).searchParams.get(
+      "state",
+    )!;
+    const cookie = started.headers.get("set-cookie")!.split(";")[0];
+    const callback = `${base}/auth/yandex/callback?state=${state}&code=code`;
+    const first = await fetch(callback, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    assert.equal(first.status, 303);
+    assert.equal(issued, 1);
+    assert.equal(pending.size, 0);
+    const replay = await fetch(callback, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    assert.equal(replay.status, 400);
+    assert.equal(issued, 1);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((done) => server.close(() => done()));
   }
 });
