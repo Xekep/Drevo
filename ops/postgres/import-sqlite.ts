@@ -14,6 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { ARCHIVE_SCHEMA_VERSION } from "../../src/server/schema.ts";
 import { backfillArchiveAccessInTransaction } from "./backfill-archive-access.ts";
+import { backfillArchiveAuditInTransaction } from "./backfill-archive-audit.ts";
 
 type Row = Record<string, unknown>;
 type Table = {
@@ -421,11 +422,13 @@ export async function importSqliteSnapshot(
       archiveId,
       ownerUserId,
     );
+    const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {
       archiveId,
       counts,
       access,
+      audit,
       media: snapshot.media,
       sqliteSha256: snapshot.sha256,
     };
