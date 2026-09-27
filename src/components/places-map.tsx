@@ -14,6 +14,7 @@ import {
 } from "../domain";
 import {
   familyPlaces,
+  parsePlaceCoordinates,
   placeKey,
   type PlaceCandidate,
   type PlaceResult,
@@ -230,6 +231,7 @@ export default function PlacesMap({
     lat: "",
     lon: "",
   });
+  const [coordinateText, setCoordinateText] = useState("");
   const request = useRef(0),
     resultRef = useRef(results);
   useEffect(() => {
@@ -312,11 +314,13 @@ export default function PlacesMap({
     setSearching(false);
     setPicked(null);
     setManualCoordinates({ lat: "", lon: "" });
+    setCoordinateText("");
     setPicking(false);
   }
   function setManualCoordinate(field: "lat" | "lon", value: string) {
     setSearchNotice("");
     setError("");
+    setCoordinateText("");
     const next = { ...manualCoordinates, [field]: value };
     setManualCoordinates(next);
     const lat = Number(next.lat),
@@ -337,6 +341,22 @@ export default function PlacesMap({
             name: "",
           }
         : null,
+    );
+  }
+  function setCoordinatePair(value: string) {
+    setCoordinateText(value);
+    setSearchNotice("");
+    setError("");
+    const point = parsePlaceCoordinates(value);
+    setPicked(
+      point
+        ? { ...point, label: "Координаты указаны вручную", name: "" }
+        : null,
+    );
+    setManualCoordinates(
+      point
+        ? { lat: String(point.lat), lon: String(point.lon) }
+        : { lat: "", lon: "" },
     );
   }
   async function find() {
@@ -446,6 +466,7 @@ export default function PlacesMap({
               lat: String(point.lat),
               lon: String(point.lon),
             });
+            setCoordinateText("");
           }}
         />
         <button
@@ -477,8 +498,8 @@ export default function PlacesMap({
             <>
               <p className="places-intro">
                 Места рождения, смерти и съёмки фотографий отмечаются здесь
-                автоматически. Точки показывают населённые пункты и не обозначают
-                маршруты переездов.
+                автоматически. Точки показывают населённые пункты и не
+                обозначают маршруты переездов.
               </p>
               {!places.length && (
                 <p>
@@ -654,11 +675,33 @@ export default function PlacesMap({
                       setError("");
                       setPicked(null);
                       setManualCoordinates({ lat: "", lon: "" });
+                      setCoordinateText("");
                     }}
                   >
                     <MapPin size={16} />
                     {picking ? "Завершить выбор точки" : "Указать на карте"}
                   </button>
+                  <label>
+                    Координаты
+                    <input
+                      type="text"
+                      inputMode="text"
+                      value={coordinateText}
+                      placeholder="53°46′10.5″ N, 67°22′16.4″ E"
+                      aria-describedby="place-coordinate-hint"
+                      aria-invalid={Boolean(
+                        coordinateText.trim() &&
+                        !parsePlaceCoordinates(coordinateText),
+                      )}
+                      onChange={(event) =>
+                        setCoordinatePair(event.target.value)
+                      }
+                    />
+                  </label>
+                  <p id="place-coordinate-hint" className="place-input-notice">
+                    Градусы, минуты и секунды или десятичные градусы через
+                    запятую.
+                  </p>
                   {picking && (
                     <div className="form-grid">
                       <label>

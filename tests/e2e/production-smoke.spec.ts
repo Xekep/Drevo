@@ -1159,6 +1159,19 @@ test("manual map correction stays available when historical lookup is busy", asy
   await expect(
     page.getByRole("button", { name: "Сохранить выбранную точку" }),
   ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Координаты" })
+    .fill("53°46′10.5″ N, 67°22′16.4″ E");
+  await expect
+    .poll(async () =>
+      Number(await page.getByRole("spinbutton", { name: "Широта" }).inputValue()),
+    )
+    .toBeCloseTo(53.7695833333, 7);
+  await expect
+    .poll(async () =>
+      Number(await page.getByRole("spinbutton", { name: "Долгота" }).inputValue()),
+    )
+    .toBeCloseTo(67.3712222222, 7);
 });
 
 test("same-name map candidates show their municipality", async ({
