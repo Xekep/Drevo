@@ -7,6 +7,16 @@ import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { postgresAccessReader } from "../../src/server/postgres-access-read.ts";
 import {
+  issuePostgresSessionInTransaction,
+  recordPostgresVisit,
+  renewPostgresSession,
+  revokePostgresSession,
+} from "../../src/server/postgres-sessions.ts";
+import {
+  sessionTokenHash,
+  SESSION_MAX_AGE,
+} from "../../src/server/session-token.ts";
+import {
   postgresSessionArchives,
   selectPostgresSessionArchive,
 } from "../../src/server/postgres-session-archives.ts";
@@ -70,7 +80,6 @@ export async function verifyAccessRead(
       }
       const probeArchiveId = `probe-${randomUUID()}`;
       const probeAccountId = randomUUID();
-      const probeSessionHash = randomUUID();
       const sharedPersonId = String(
         sqlite.prepare("SELECT id FROM people LIMIT 1").get()?.id ||
           randomUUID(),
@@ -142,10 +151,13 @@ export async function verifyAccessRead(
           WHERE archive_id=$1 AND user_id=$2`,
         [probeArchiveId, probeAccountId, sharedPersonId],
       );
-      await client.query(
-        "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
-        [probeSessionHash, probeAccountId, now + 60_000],
+      const probeSession = await issuePostgresSessionInTransaction(
+        client,
+        probeAccountId,
+        "",
+        now,
       );
+      const probeSessionHash = sessionTokenHash(probeSession.token);
       await client.query(
         "UPDATE archive_tree_settings SET reverse_timeline=true WHERE archive_id=$1",
         [probeArchiveId],
@@ -325,6 +337,50 @@ export async function verifyAccessRead(
         )
           throw new Error("Выбор дерева обошёл допуск или срок сессии");
       }
+      const rotated = await issuePostgresSessionInTransaction(
+        client,
+        probeAccountId,
+        probeSession.token,
+        now + 120_000,
+      );
+      const rotatedHash = sessionTokenHash(rotated.token);
+      if (
+        (
+          await client.query(
+            "SELECT 1 FROM account_sessions WHERE token_hash=$1",
+            [rotated.token],
+          )
+        ).rowCount !== 0 ||
+        (await otherArchive.getSessionUser(probeSessionHash, now)) !== null ||
+        (await otherArchive.getSessionUser(rotatedHash, now + 120_000))?.id !==
+          probeAccountId ||
+        (await recordPostgresVisit(
+          client,
+          probeSession.token,
+          now + 181_000,
+        )) !== false ||
+        (await recordPostgresVisit(client, rotated.token, now + 181_000)) !==
+          true ||
+        (await recordPostgresVisit(client, rotated.token, now + 181_000)) !==
+          false ||
+        (await renewPostgresSession(client, rotated.token, now + 120_000)) !==
+          false ||
+        (await renewPostgresSession(
+          client,
+          rotated.token,
+          now + 120_000 + 24 * 60 * 60 * 1000,
+        )) !== true ||
+        (await renewPostgresSession(
+          client,
+          rotated.token,
+          now + 120_000 + (SESSION_MAX_AGE + 24 * 60 * 60) * 1000 + 1,
+        )) !== false ||
+        (await revokePostgresSession(client, rotated.token)) !== true ||
+        (await otherArchive.getSessionUser(rotatedHash, now)) !== null
+      )
+        throw new Error(
+          "Ротация, продление или отзыв сессии PostgreSQL нарушены",
+        );
       await client.query("ROLLBACK");
       return {
         archiveId,
