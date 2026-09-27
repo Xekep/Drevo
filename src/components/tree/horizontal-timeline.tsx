@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Sprout, Minus } from "lucide-react";
-import { fullName, type Person } from "../../domain";
+import { dateLabel, fullName, type Person } from "../../domain";
 import { counted } from "../../domain/archive-summary";
 import {
   horizontalTimeline,
@@ -28,7 +28,7 @@ function EventText({ item }: { item: TimelineItem }) {
     <>
       <strong>{item.title}</strong>
       <small>
-        {item.date}
+        {dateLabel(item.date)}
         {item.age ? ` · ${item.age}` : ""}
       </small>
       {item.place && <span>{item.place}</span>}
