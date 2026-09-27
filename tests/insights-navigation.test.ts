@@ -19,6 +19,25 @@ test("interesting data is a regular archive section on desktop and mobile", () =
   );
 });
 
+test("quality center has a direct route, desktop and mobile navigation and lazy page", () => {
+  assert.equal(archivePaths.quality, "/quality");
+  assert.equal(archiveViewAt("/quality"), "quality");
+  const navigation = readFileSync(
+    new URL("src/components/archive-navigation.tsx", root),
+    "utf8",
+  );
+  assert.equal(
+    (navigation.match(/\["quality", "Проверка", ClipboardCheck\]/g) || [])
+      .length,
+    2,
+  );
+  const section = readFileSync(
+    new URL("src/components/archive-section.tsx", root),
+    "utf8",
+  );
+  assert.match(section, /import\("\.\/archive-quality-page"\)/);
+});
+
 test("secondary archive sections are code-split away from App", () => {
   const app = readFileSync(new URL("src/App.tsx", root), "utf8"),
     section = readFileSync(
