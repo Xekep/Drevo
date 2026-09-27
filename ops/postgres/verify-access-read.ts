@@ -6,6 +6,10 @@ import { isDeepStrictEqual } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { postgresAccessReader } from "../../src/server/postgres-access-read.ts";
+import {
+  postgresSessionArchives,
+  selectPostgresSessionArchive,
+} from "../../src/server/postgres-session-archives.ts";
 import { provisionPrivateArchiveInTransaction } from "../../src/server/postgres-private-archive.ts";
 import { readPostgresArchiveInTransaction } from "../../src/server/postgres-archive-read.ts";
 import type { ArchiveUser, Role, TreeAccess } from "../../src/domain/access.ts";
@@ -172,6 +176,18 @@ export async function verifyAccessRead(
         probeAccountId
       )
         throw new Error("Сессия второго архива не открыла свой архив");
+      const probeChoices = await postgresSessionArchives(
+        client,
+        probeSessionHash,
+        now,
+      );
+      if (
+        probeChoices.length !== 1 ||
+        probeChoices[0].archiveId !== probeArchiveId ||
+        !probeChoices[0].owned ||
+        probeChoices[0].user.personId !== sharedPersonId
+      )
+        throw new Error("Выбор архива владельца содержит чужое дерево");
       for (const session of sessions) {
         const expected =
           Number(session.expires_at) > now
@@ -263,6 +279,51 @@ export async function verifyAccessRead(
           throw new Error(
             "Права общей учётной записи смешались между архивами",
           );
+        const choices = await postgresSessionArchives(
+          client,
+          sharedSessionHash,
+          now,
+        );
+        if (
+          choices.length !== 2 ||
+          choices.find((choice) => choice.archiveId === archiveId)?.user
+            .role !== sharedAccount.role ||
+          choices.find((choice) => choice.archiveId === probeArchiveId)?.user
+            .role !== otherRole
+        )
+          throw new Error("Список деревьев смешал права участника");
+        const allowedId = sharedAccount.approved ? archiveId : probeArchiveId;
+        const deniedId = sharedAccount.approved ? probeArchiveId : archiveId;
+        if (
+          (
+            await selectPostgresSessionArchive(
+              client,
+              sharedSessionHash,
+              undefined,
+              now,
+            )
+          )?.archiveId !== allowedId ||
+          (await selectPostgresSessionArchive(
+            client,
+            sharedSessionHash,
+            deniedId,
+            now,
+          )) !== null ||
+          (await selectPostgresSessionArchive(
+            client,
+            sharedSessionHash,
+            "missing",
+            now,
+          )) !== null ||
+          (
+            await postgresSessionArchives(
+              client,
+              sharedSessionHash,
+              now + 60_001,
+            )
+          ).length !== 0
+        )
+          throw new Error("Выбор дерева обошёл допуск или срок сессии");
       }
       await client.query("ROLLBACK");
       return {
