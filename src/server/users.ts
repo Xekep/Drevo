@@ -288,6 +288,7 @@ export function userStore(
         },
         actor,
       );
+      db.prepare("DELETE FROM user_tree_preferences WHERE user_id=?").run(id);
       db.prepare("DELETE FROM users WHERE id=?").run(id);
       db.exec("COMMIT");
     } catch (error) {

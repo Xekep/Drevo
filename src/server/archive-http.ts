@@ -36,6 +36,8 @@ import { researchCatalogStore } from "./research-catalog.ts";
 import { adminResearchResourcesHttp } from "./admin-research-resources-http.ts";
 import { documentsHttp } from "./documents-http.ts";
 import { personDiscussionHttp } from "./person-discussion-http.ts";
+import { treePreferencesStore } from "./tree-preferences.ts";
+import { treePreferencesHttp } from "./tree-preferences-http.ts";
 
 export function archiveHttp({
   archive,
@@ -68,6 +70,12 @@ export function archiveHttp({
   const aiSettings = aiSettingsStore(archive.db);
   const aiUsage = aiUsageStore(archive.db);
   const researchCatalog = researchCatalogStore(archive.db);
+  const treePreferences = treePreferencesStore(archive.db);
+  const personalTreeSettings = treePreferencesHttp({
+    auth,
+    preferences: treePreferences,
+    publicOrigin,
+  });
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({
     auth,
@@ -118,7 +126,12 @@ export function archiveHttp({
     visibility,
     publicOrigin,
   });
-  const archiveQuery = archiveQueryHttp({ archive, auth, visibility });
+  const archiveQuery = archiveQueryHttp({
+    archive,
+    auth,
+    visibility,
+    treePreferences,
+  });
   const documents = documentsHttp({
     archive,
     auth,
@@ -126,7 +139,11 @@ export function archiveHttp({
     uploadsDirectory,
     publicOrigin,
   });
-  const personDiscussion = personDiscussionHttp({ archive, auth, publicOrigin });
+  const personDiscussion = personDiscussionHttp({
+    archive,
+    auth,
+    publicOrigin,
+  });
   const places = placesHttp({
     archive,
     auth,
@@ -177,6 +194,7 @@ export function archiveHttp({
     if (await adminMcp(req, res, url)) return true;
     if (await adminAi(req, res, url)) return true;
     if (await adminResearchResources(req, res, url)) return true;
+    if (await personalTreeSettings(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
     if (await documents(req, res, url)) return true;
     if (await personDiscussion(req, res, url)) return true;

@@ -10,13 +10,13 @@ export function useTreeGrowthInputLock(
     const element = container.current;
     if (!element || !locked) return;
     const stop = (event: Event) => {
-      // An explicit selection may cancel the personal camera move; stray
-      // background clicks and wheel gestures must not interrupt it.
+      // An explicit selection or mode change may cancel the personal camera
+      // move; stray background clicks and wheel gestures must not interrupt it.
       if (
         allowPersonSelection &&
         event.type !== "wheel" &&
         event.target instanceof Element &&
-        event.target.closest(".flow-person-content")
+        event.target.closest(".flow-person-content, .tree-mode-bar")
       )
         return;
       event.preventDefault();

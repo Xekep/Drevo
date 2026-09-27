@@ -34,6 +34,9 @@ const PlacesMap = lazy(() =>
 const InsightsPage = lazy(() =>
   loadLazyModule(() => import("./insights-page"), "insights"),
 );
+const ArchiveQualityPage = lazy(() =>
+  loadLazyModule(() => import("./archive-quality-page"), "quality"),
+);
 
 type Props = {
   view: ArchiveView;
@@ -139,6 +142,14 @@ export function ArchiveSection(props: Props) {
   else if (props.view === "insights")
     content = (
       <InsightsPage
+        family={props.family}
+        loadingDetails={props.loadingDetails}
+        onPerson={props.onPerson}
+      />
+    );
+  else if (props.view === "quality")
+    content = (
+      <ArchiveQualityPage
         family={props.family}
         loadingDetails={props.loadingDetails}
         onPerson={props.onPerson}

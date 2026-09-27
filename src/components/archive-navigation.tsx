@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   TreeDeciduous,
   Users,
@@ -12,7 +18,9 @@ import {
   Menu,
   MapPin,
   ChartNoAxesCombined,
+  ClipboardCheck,
   X,
+  Settings2,
 } from "lucide-react";
 import {
   fullName,
@@ -32,6 +40,7 @@ export function ArchiveNavigation({
   readTree,
   readPhotos,
   onHelp,
+  onTreePreferences,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -40,9 +49,13 @@ export function ArchiveNavigation({
   readTree: boolean;
   readPhotos: boolean;
   onHelp: () => void;
+  onTreePreferences: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
-  const navigate = (event: MouseEvent<HTMLAnchorElement>, next: ArchiveView) => {
+  const navigate = (
+    event: MouseEvent<HTMLAnchorElement>,
+    next: ArchiveView,
+  ) => {
     if (
       event.defaultPrevented ||
       event.button !== 0 ||
@@ -109,16 +122,17 @@ export function ArchiveNavigation({
             ["documents", "Документы", BookOpenText],
             ["places", "Места", MapPin],
             ["insights", "Сводка", ChartNoAxesCombined],
+            ["quality", "Проверка", ClipboardCheck],
           ] as const
         )
           .filter(([id]) =>
             id === "gallery"
               ? readPhotos
               : id === "documents"
-                ? (user?.approved === true || local)
-              : id === "places"
-                ? readTree || readPhotos
-                : readTree,
+                ? user?.approved === true || local
+                : id === "places"
+                  ? readTree || readPhotos
+                  : readTree,
           )
           .map(([id, label, Icon]) => (
             <a
@@ -147,16 +161,17 @@ export function ArchiveNavigation({
                 ["documents", "Документы", BookOpenText],
                 ["places", "Места", MapPin],
                 ["insights", "Сводка", ChartNoAxesCombined],
+                ["quality", "Проверка", ClipboardCheck],
               ] as const
             )
               .filter(([id]) =>
                 id === "gallery"
                   ? readPhotos
                   : id === "documents"
-                    ? (user?.approved === true || local)
-                  : id === "places"
-                    ? readTree || readPhotos
-                    : readTree,
+                    ? user?.approved === true || local
+                    : id === "places"
+                      ? readTree || readPhotos
+                      : readTree,
               )
               .map(([id, label, Icon]) => (
                 <a
@@ -170,6 +185,18 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
+          {user?.approved && readTree && (
+            <button
+              onClick={() => {
+                if (menu.current) menu.current.open = false;
+                onTreePreferences();
+              }}
+              title="Моё древо"
+            >
+              <Settings2 size={18} />
+              <span>Моё древо</span>
+            </button>
+          )}
           <button
             onClick={() => {
               if (menu.current) menu.current.open = false;

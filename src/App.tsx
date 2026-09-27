@@ -36,6 +36,7 @@ import { PhotoWorkspaceOverlays } from "./components/photo-workspace-overlays";
 import { LoginDialog } from "./components/login-dialog";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
+import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
@@ -60,8 +61,8 @@ const targetKey = (target: ArchiveTarget | null) =>
 export default function App() {
   const [initialPersonLink] = useState(
     () =>
-      archiveTargetAt(window.location.pathname, window.location.search)?.kind ===
-      "person",
+      archiveTargetAt(window.location.pathname, window.location.search)
+        ?.kind === "person",
   );
   const [treeGrowing, setTreeGrowing] = useState(!initialPersonLink);
   const archive = useArchive(),
@@ -130,6 +131,7 @@ export default function App() {
     [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
+    [treePreferencesOpen, setTreePreferencesOpen] = useState(false),
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
     [assistantOpen, setAssistantOpen] = useState(false),
@@ -560,6 +562,7 @@ export default function App() {
               readTree={readTree}
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
+              onTreePreferences={() => setTreePreferencesOpen(true)}
             />
           }
           people={people}
@@ -684,6 +687,7 @@ export default function App() {
                       canEdit={canEdit}
                       busy={busy}
                       reverse={archive.reverseTimeline}
+                      cardVariant={archive.treePreferences.cardVariant}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
@@ -972,6 +976,14 @@ export default function App() {
           save={save}
           busy={busy}
           onClose={() => setSettings(false)}
+        />
+      )}
+      {treePreferencesOpen && user?.approved && readTree && (
+        <TreePreferencesDialog
+          preferences={archive.treePreferences}
+          linkedPerson={!!user.personId}
+          onChange={archive.saveTreePreferences}
+          onClose={() => setTreePreferencesOpen(false)}
         />
       )}
       {help && <AboutProject onClose={() => setHelp(false)} />}

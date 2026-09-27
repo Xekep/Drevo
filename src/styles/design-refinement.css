@@ -75,6 +75,8 @@
   .insights-more,
   .insights-columns,
   .warnings-card,
+  .quality-results,
+  .quality-empty,
   .insights-loading {
     max-width: 1480px;
   }

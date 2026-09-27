@@ -6,6 +6,7 @@ export const archivePaths = {
   documents: "/documents",
   places: "/places",
   insights: "/insights",
+  quality: "/quality",
   admin: "/admin",
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
