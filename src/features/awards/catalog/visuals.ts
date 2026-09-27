@@ -1,4 +1,5 @@
 import type { AwardDefinition, AwardImage } from "../types.ts";
+import imageSources from "./image-sources.json" with { type: "json" };
 
 type AwardVisualOverride = {
   image?: AwardImage;
@@ -87,9 +88,33 @@ const AWARD_VISUAL_OVERRIDES: Record<string, AwardVisualOverride> = {
   },
 };
 
+const COMMONS_VISUALS = new Map<string, AwardVisualOverride>();
+
+for (const source of imageSources) {
+  const image = localImage(
+    `/awards/${source.path}`,
+    `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(source.commonsFile.replaceAll(" ", "_"))}`,
+    source.license,
+    source.author || undefined,
+  );
+  const visual = COMMONS_VISUALS.get(source.id) ?? {};
+  if ("degreeId" in source && source.degreeId) {
+    visual.degreeImages = { ...visual.degreeImages, [source.degreeId]: image };
+  } else {
+    visual.image = image;
+  }
+  COMMONS_VISUALS.set(source.id, visual);
+}
+
 export function withAwardVisual(definition: AwardDefinition): AwardDefinition {
-  const override = AWARD_VISUAL_OVERRIDES[definition.id];
-  if (!override) return definition;
+  const existing = AWARD_VISUAL_OVERRIDES[definition.id];
+  const sourced = COMMONS_VISUALS.get(definition.id);
+  if (!existing && !sourced) return definition;
+  const override: AwardVisualOverride = {
+    ...existing,
+    ...sourced,
+    degreeImages: { ...existing?.degreeImages, ...sourced?.degreeImages },
+  };
 
   const degrees = definition.degrees?.map((degree) => {
     const image = override.degreeImages?.[degree.id];

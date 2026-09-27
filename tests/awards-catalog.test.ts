@@ -10,6 +10,25 @@ import {
   resolveAwardName,
   searchAwards,
 } from "../src/features/awards/catalog/index.ts";
+import imageSources from "../src/features/awards/catalog/image-sources.json" with { type: "json" };
+
+test("каждый подготовленный снимок привязан к награде, степени и источнику", () => {
+  const paths = new Set<string>();
+  for (const source of imageSources) {
+    const award = getAwardDefinition(source.id);
+    assert.ok(award, `${source.id}: награда отсутствует`);
+    assert.ok(source.license && source.commonsFile, `${source.id}: нет источника или лицензии`);
+    assert.ok(!paths.has(source.path), `${source.path}: повтор пути`);
+    paths.add(source.path);
+    assert.ok(existsSync(join(process.cwd(), "public/awards", source.path)), `${source.path}: нет PNG`);
+    const image = "degreeId" in source
+      ? award.degrees?.find((degree) => degree.id === source.degreeId)?.image
+      : award.image;
+    assert.equal(image?.src, `/awards/${source.path}`, `${source.id}: неверная привязка`);
+    assert.match(image?.sourcePage || "", /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
+    assert.equal(image?.license, source.license);
+  }
+});
 
 test("каталог содержит военные, трудовые, юбилейные и иностранные награды", () => {
   assert.ok(AWARD_CATALOG.length >= 50);

@@ -1,0 +1,496 @@
+[
+  {
+    "id": "cs-war-cross-1939",
+    "path": "cs/war-cross-1939.png",
+    "commonsFile": "Czechoslovak War Cross 1939-1945.PNG",
+    "license": "CC BY-SA 3.0",
+    "author": "Realismadder",
+    "crop": "left-half"
+  },
+  {
+    "id": "ddr-medal-brotherhood-arms",
+    "degreeId": "1",
+    "path": "ddr/medal-brotherhood-arms-gold.png",
+    "commonsFile": "GDR Brotherhood in Arms Medal.jpg",
+    "crop": "third-right",
+    "license": "CC BY-SA 4.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ddr-medal-brotherhood-arms",
+    "degreeId": "2",
+    "path": "ddr/medal-brotherhood-arms-silver.png",
+    "commonsFile": "GDR Brotherhood in Arms Medal.jpg",
+    "crop": "third-center",
+    "license": "CC BY-SA 4.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ddr-medal-brotherhood-arms",
+    "degreeId": "3",
+    "path": "ddr/medal-brotherhood-arms-bronze.png",
+    "commonsFile": "GDR Brotherhood in Arms Medal.jpg",
+    "crop": "third-left",
+    "license": "CC BY-SA 4.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "mn-jubilee-40-khalkhin-gol-victory",
+    "path": "mn/jubilee-40-khalkhin-gol-victory.png",
+    "commonsFile": "Med 40th anniversary of chalkin gol victory.png",
+    "license": "CC BY-SA 4.0",
+    "author": "Mag310"
+  },
+  {
+    "id": "mn-order-red-banner",
+    "path": "mn/order-red-banner.png",
+    "commonsFile": "Order of the Red Banner 1.jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Ygrek at Russian Wikipedia."
+  },
+  {
+    "id": "mn-order-sukhbaatar",
+    "path": "mn/order-sukhbaatar.png",
+    "commonsFile": "MN Order Sukhe Bator.png",
+    "license": "Public domain",
+    "author": "Kei"
+  },
+  {
+    "id": "pl-medal-brotherhood-arms",
+    "path": "pl/badge-brotherhood-arms.png",
+    "commonsFile": "Odznaka Braterstwa Broni awers.JPG",
+    "license": "CC BY-SA 3.0",
+    "author": "Krisgola"
+  },
+  {
+    "id": "pl-medal-oder-neisse-baltic",
+    "path": "pl/medal-oder-neisse-baltic.png",
+    "commonsFile": "Medal za Odrę Nysę Bałtyk awers.JPG",
+    "license": "CC BY-SA 3.0",
+    "author": "Krisgola",
+    "backgroundMin": 115
+  },
+  {
+    "id": "pl-medal-victory-freedom-1945",
+    "path": "pl/medal-victory-freedom-1945.png",
+    "commonsFile": "Medal-zwyciestwa-i-wolnosci Polska.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "No machine-readable author provided. Pibwl assumed (based on copyright claims).",
+    "crop": "left-half"
+  },
+  {
+    "id": "ru-medal-defender-free-russia",
+    "path": "ru/medal-defender-free-russia.png",
+    "commonsFile": "Medal for Defender of Free Russia.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ru-medal-distinction-state-border",
+    "path": "ru/medal-distinction-state-border.png",
+    "commonsFile": "Медаль За отличие в охране государственной границы.JPG",
+    "license": "Public domain",
+    "author": "User:Kei"
+  },
+  {
+    "id": "ru-medal-nesterov",
+    "path": "ru/medal-nesterov.png",
+    "commonsFile": "Medal of Nesterov.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ru-medal-saving-perished",
+    "path": "ru/medal-saving-perished.png",
+    "commonsFile": "Медаль «За спасение погибавших».jpg",
+    "license": "Public domain",
+    "author": "Георгий Долгопский"
+  },
+  {
+    "id": "ru-medal-suvorov",
+    "path": "ru/medal-suvorov.png",
+    "commonsFile": "Medal of Suvorov.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ru-medal-zhukov",
+    "path": "ru/medal-zhukov.png",
+    "commonsFile": "Medal of Zhukov.jpg",
+    "license": "Public domain",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ru-order-courage",
+    "path": "ru/order-courage.png",
+    "commonsFile": "Орден Мужества (РФ).png",
+    "license": "Public domain",
+    "author": "Алексей Лисоченко"
+  },
+  {
+    "id": "ru-order-friendship",
+    "path": "ru/order-friendship.png",
+    "commonsFile": "Order of Friendship 2.jpg",
+    "license": "Public domain",
+    "author": "Жук, Александр Борисович"
+  },
+  {
+    "id": "ru-order-honour",
+    "path": "ru/order-honour.png",
+    "commonsFile": "Order of Honour OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-gold-star",
+    "path": "ussr/gold-star.png",
+    "commonsFile": "RIAN archive 470774 Gold Star medal (cropped).jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Sergey Subbotin / Сергей Субботин"
+  },
+  {
+    "id": "ussr-jubilee-100-lenin",
+    "path": "ussr/jubilee-100-lenin.png",
+    "commonsFile": "100 years Lenin OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-jubilee-20-rkka",
+    "path": "ussr/jubilee-20-rkka.png",
+    "commonsFile": "Medal «20 Years Since the Creation of the Worker's and Peasants' Red Army».jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Александр Ярмак at Russian Wikipedia."
+  },
+  {
+    "id": "ussr-jubilee-20-victory",
+    "path": "ussr/jubilee-20-victory.png",
+    "commonsFile": "20th anniversary of Victory in Patriotic War.JPG",
+    "license": "Public domain",
+    "author": "Anastasiya Lvova"
+  },
+  {
+    "id": "ussr-jubilee-30-army-navy",
+    "path": "ussr/jubilee-30-army-navy.png",
+    "commonsFile": "USSR's medal of 30th anniversary of army and navy-avers.png",
+    "license": "Public domain",
+    "author": "Andrey S. Polyakov"
+  },
+  {
+    "id": "ussr-jubilee-30-victory",
+    "path": "ussr/jubilee-30-victory.png",
+    "commonsFile": "30th anniversary of Victory in Patriotic War.JPG",
+    "license": "Public domain",
+    "author": "Anastasiya Lvova"
+  },
+  {
+    "id": "ussr-jubilee-40-armed-forces",
+    "path": "ussr/jubilee-40-armed-forces.png",
+    "commonsFile": "40 years armed forces of the USSR OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-jubilee-40-victory",
+    "path": "ussr/jubilee-40-victory.png",
+    "commonsFile": "40 Years of Victory in the Great Patriotic War 1941–1945 (2).png",
+    "license": "CC BY-SA 3.0",
+    "author": "User:Lvova"
+  },
+  {
+    "id": "ussr-jubilee-50-armed-forces",
+    "path": "ussr/jubilee-50-armed-forces.png",
+    "commonsFile": "50 years armed forces of the USSR OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-jubilee-60-armed-forces",
+    "path": "ussr/jubilee-60-armed-forces.png",
+    "commonsFile": "60th anniversary Armed Forces of USSR.JPG",
+    "license": "Public domain",
+    "author": "Anastasiya Lvova"
+  },
+  {
+    "id": "ussr-jubilee-70-armed-forces",
+    "path": "ussr/jubilee-70-armed-forces.png",
+    "commonsFile": "70 years armed forces of the USSR OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-1500-kiev",
+    "path": "ussr/medal-1500-kiev.png",
+    "commonsFile": "Kiev1500.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ussr-medal-250-leningrad",
+    "path": "ussr/medal-250-leningrad.png",
+    "commonsFile": "Medal250Leningrad.jpg",
+    "license": "Public domain",
+    "author": "ilich at ru.wikipedia"
+  },
+  {
+    "id": "ussr-medal-800-moscow",
+    "path": "ussr/medal-800-moscow.png",
+    "commonsFile": "800th anniversary of Moscow OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-baikal-amur-mainline",
+    "path": "ussr/medal-baikal-amur-mainline.png",
+    "commonsFile": "MbamA.jpg",
+    "license": "Public domain",
+    "author": "ilich at ru.wikipedia"
+  },
+  {
+    "id": "ussr-medal-capture-budapest",
+    "path": "ussr/medal-capture-budapest.png",
+    "commonsFile": "Capture of Budapest OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-capture-vienna",
+    "path": "ussr/medal-capture-vienna.png",
+    "commonsFile": "Capture of Vienna OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-defense-caucasus",
+    "path": "ussr/medal-defense-caucasus.png",
+    "commonsFile": "Medal defense of Caucasus.jpg",
+    "license": "CC BY-SA 2.5",
+    "author": "The original uploader was Grafikm fr at English Wikipedia."
+  },
+  {
+    "id": "ussr-medal-defense-leningrad",
+    "path": "ussr/medal-defense-leningrad.png",
+    "commonsFile": "Medal Leningrad USSR.jpg",
+    "license": "CC BY-SA 2.5",
+    "author": "Grzegorz Chladek",
+    "crop": "left-half"
+  },
+  {
+    "id": "ussr-medal-defense-moscow",
+    "path": "ussr/medal-defense-moscow.png",
+    "commonsFile": "Defense of Moscow OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-defense-odessa",
+    "path": "ussr/medal-defense-odessa.png",
+    "commonsFile": "Medal For the Defence of Odessa.jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Zac Allan at Russian Wikipedia."
+  },
+  {
+    "id": "ussr-medal-defense-sevastopol",
+    "path": "ussr/medal-defense-sevastopol.png",
+    "commonsFile": "Medal for the defence of Sevastopol, Soviet Union.png",
+    "license": "Public domain",
+    "author": "Medal-Sewastopol_USSR_134372899.jpg: 'Unknown"
+  },
+  {
+    "id": "ussr-medal-defense-soviet-transarctic",
+    "path": "ussr/medal-defense-soviet-transarctic.png",
+    "commonsFile": "Medal For the Defence of the Soviet Transarctic OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-defense-stalingrad",
+    "path": "ussr/medal-defense-stalingrad.png",
+    "commonsFile": "Medal stalingrad USSR.jpg",
+    "license": "CC BY-SA 2.5",
+    "author": "Grzegorz Chladek",
+    "crop": "left-half"
+  },
+  {
+    "id": "ussr-medal-development-west-siberia",
+    "path": "ussr/medal-development-west-siberia.png",
+    "commonsFile": "Medal For Development of the Petrochemical Complex of Western Siberia.jpg",
+    "license": "Public domain",
+    "author": "mondvor.narod.ru"
+  },
+  {
+    "id": "ussr-medal-for-combat-service",
+    "path": "ussr/medal-for-combat-service.png",
+    "commonsFile": "Medal for Combat Service.jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Grafikm fr at English Wikipedia."
+  },
+  {
+    "id": "ussr-medal-labor-distinction",
+    "path": "ussr/medal-labor-distinction.png",
+    "commonsFile": "Medal For Distinguished Labour.jpg",
+    "license": "Public domain",
+    "author": "Boothferry at English Wikipedia"
+  },
+  {
+    "id": "ussr-medal-labor-in-great-patriotic-war",
+    "path": "ussr/medal-labor-in-great-patriotic-war.png",
+    "commonsFile": "Medal For Valiant Labour during the Great Patriotic War 1941-1945 OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-labor-valour",
+    "path": "ussr/medal-labor-valour.png",
+    "commonsFile": "Medal For Labour Valour Current.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ussr-medal-liberation-belgrade",
+    "path": "ussr/medal-liberation-belgrade.png",
+    "commonsFile": "Medal Liberation of Belgrad.jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Grafikm fr at English Wikipedia."
+  },
+  {
+    "id": "ussr-medal-liberation-prague",
+    "path": "ussr/medal-liberation-prague.png",
+    "commonsFile": "Liberation of Prague OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-liberation-warsaw",
+    "path": "ussr/medal-liberation-warsaw.png",
+    "commonsFile": "Medal For The Liberation Of Warsaw.png",
+    "license": "Public domain",
+    "author": "Medal_For_The_Liberation_Of_Warsaw.jpeg: The original uploader was Zac Allan at Russian Wikipedia."
+  },
+  {
+    "id": "ussr-medal-non-black-earth-development",
+    "path": "ussr/medal-non-black-earth-development.png",
+    "commonsFile": "Medal For Development of the Non-Black Earth Regions of the RSFSR front.jpg",
+    "license": "Public domain",
+    "author": "mondvor.narod.ru"
+  },
+  {
+    "id": "ussr-medal-restoration-donbass-coal-mines",
+    "path": "ussr/medal-restoration-donbass-coal-mines.png",
+    "commonsFile": "Medal For Restoration of the Donbass Coal Mines.jpg",
+    "license": "Public domain",
+    "author": "The original uploader was Сдобников Андрей at Russian Wikipedia."
+  },
+  {
+    "id": "ussr-medal-restoration-ferrous-metallurgy",
+    "path": "ussr/medal-restoration-ferrous-metallurgy.png",
+    "commonsFile": "За восстановление предприятий черной металлургии юга.jpg",
+    "license": "Public domain",
+    "author": "Original uploader was Сдобников Андрей at ru.wikipedia"
+  },
+  {
+    "id": "ussr-medal-victory-japan",
+    "path": "ussr/medal-victory-japan.png",
+    "commonsFile": "Victory Against Japan OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-medal-virgin-lands",
+    "path": "ussr/medal-virgin-lands.png",
+    "commonsFile": "Medal For Development of the Virgin Lands.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-order-badge-of-honour",
+    "path": "ussr/order-badge-of-honour.png",
+    "commonsFile": "Order of the Badge of Honour (USSR).jpg",
+    "license": "Public domain",
+    "author": "Mtrk1984"
+  },
+  {
+    "id": "ussr-order-glory",
+    "degreeId": "1",
+    "path": "ussr/order-glory-1.png",
+    "commonsFile": "OrderOfGlory1stClass.png",
+    "license": "Public domain",
+    "author": "OrderofGlory.png: Unknown authorUnknown author derivative work: Dmitry89"
+  },
+  {
+    "id": "ussr-order-glory",
+    "degreeId": "2",
+    "path": "ussr/order-glory-2.png",
+    "commonsFile": "Order of Glory 2nd class.jpg",
+    "license": "Public domain",
+    "author": ""
+  },
+  {
+    "id": "ussr-order-labour-glory",
+    "degreeId": "1",
+    "path": "ussr/order-labour-glory-1.png",
+    "commonsFile": "Order of Labour Glory 1st.jpg",
+    "license": "Public domain",
+    "author": "ilich at Russian Wikipedia"
+  },
+  {
+    "id": "ussr-order-labour-glory",
+    "degreeId": "2",
+    "path": "ussr/order-labour-glory-2.png",
+    "commonsFile": "Order of Labour Glory 2st.jpg",
+    "license": "Public domain",
+    "author": "ilich at ru.wikipedia"
+  },
+  {
+    "id": "ussr-order-labour-glory",
+    "degreeId": "3",
+    "path": "ussr/order-labour-glory-3.png",
+    "commonsFile": "Order of Labour Glory 3rd class USSR.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-order-labour-red-banner",
+    "path": "ussr/order-labour-red-banner.png",
+    "commonsFile": "Order of the Red Banner of Labour OBVERSE.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "Fdutil"
+  },
+  {
+    "id": "ussr-order-lenin",
+    "path": "ussr/order-lenin.png",
+    "commonsFile": "OrderLenin II.jpg",
+    "license": "Public domain",
+    "author": "Ilich"
+  },
+  {
+    "id": "ussr-order-patriotic-war",
+    "degreeId": "1",
+    "path": "ussr/order-patriotic-war-1.png",
+    "commonsFile": "Order of the Patriotic War (1st class).png",
+    "license": "Public domain",
+    "author": "Orden_Ot_voine.jpeg: The original uploader was Лев Хомов at Russian Wikipedia. derivative work: Ahnode (talk)"
+  },
+  {
+    "id": "ussr-order-patriotic-war",
+    "degreeId": "2",
+    "path": "ussr/order-patriotic-war-2.png",
+    "commonsFile": "Order Of The Patriotic War (2nd Class).png",
+    "license": "Public domain",
+    "author": "OPatWar_2nd.jpg: Original uploader was Grafikm fr at ru.wikipedia derivative work: Ahnode (talk)"
+  },
+  {
+    "id": "ussr-order-red-banner",
+    "path": "ussr/order-red-banner.png",
+    "commonsFile": "Орден красного знамени.png",
+    "license": "CC BY-SA 3.0",
+    "author": "Anatoly315"
+  },
+  {
+    "id": "ussr-order-red-star",
+    "path": "ussr/order-red-star.png",
+    "commonsFile": "Орден красной звезды.jpg",
+    "license": "CC BY-SA 3.0",
+    "author": "No machine-readable author provided. Рамиз assumed (based on copyright claims)."
+  }
+]
