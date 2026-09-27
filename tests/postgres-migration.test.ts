@@ -1,0 +1,84 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { inspectSqliteSnapshot } from "../ops/postgres/import-sqlite.ts";
+import { initializeArchiveSchema } from "../src/server/schema.ts";
+
+test("PostgreSQL staging inspects a consistent SQLite copy and every referenced original", () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-pg-stage-"));
+  try {
+    const sqlite = join(dir, "archive-copy.sqlite");
+    const uploads = join(dir, "uploads");
+    mkdirSync(uploads);
+    writeFileSync(join(uploads, "photo.jpg"), "image");
+    writeFileSync(join(uploads, "record.pdf"), "document");
+    const db = new DatabaseSync(sqlite);
+    try {
+      initializeArchiveSchema(db);
+      db.prepare(
+        "INSERT INTO archive(id,title,description,demo,revision) VALUES(1,?,?,0,?)",
+      ).run("Архив", "Описание", 3);
+      db.prepare("INSERT INTO people(id,data) VALUES(?,?)").run(
+        "person-1",
+        JSON.stringify({ id: "person-1", photo: "/media/photo.jpg" }),
+      );
+      db.prepare("INSERT INTO photos(id,data) VALUES(?,?)").run(
+        "photo-1",
+        JSON.stringify({ id: "photo-1", url: "/media/photo.jpg" }),
+      );
+      db.prepare(
+        "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+      ).run(
+        "document-1",
+        "Запись",
+        "запись",
+        "record.pdf",
+        8,
+        "user-1",
+        "2026-09-27T00:00:00Z",
+      );
+      db.prepare(
+        "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+      ).run("document-1", "person-1");
+    } finally {
+      db.close();
+    }
+    const before = readFileSync(sqlite);
+    const snapshot = inspectSqliteSnapshot(sqlite, uploads);
+    assert.equal(snapshot.archive.revision, 3);
+    assert.equal(snapshot.rows.get("people")?.length, 1);
+    assert.equal(snapshot.rows.get("documents")?.length, 1);
+    assert.equal(snapshot.rows.get("document_people")?.length, 1);
+    assert.deepEqual(snapshot.media, { local: 2, external: 0 });
+    assert.deepEqual(
+      readFileSync(sqlite),
+      before,
+      "исходная копия не меняется",
+    );
+    writeFileSync(join(uploads, "record.pdf"), "short");
+    assert.throws(
+      () => inspectSqliteSnapshot(sqlite, uploads),
+      /Размер оригинала документа не совпал/,
+    );
+    rmSync(join(uploads, "record.pdf"));
+    assert.throws(
+      () => inspectSqliteSnapshot(sqlite, uploads),
+      /Не найдены оригиналы файлов: 1/,
+    );
+    assert.throws(
+      () => inspectSqliteSnapshot(join(dir, "drevo.sqlite"), uploads),
+      /согласованную копию SQLite/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
