@@ -805,4 +805,33 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const treePreferencesExtension = "2026-09-user-tree-preferences";
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(treePreferencesExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE user_tree_preferences (
+          user_id TEXT PRIMARY KEY,
+          reverse_timeline INTEGER NOT NULL CHECK(reverse_timeline IN (0,1)),
+          card_variant TEXT NOT NULL CHECK(card_variant IN ('classic','portrait'))
+        ) STRICT;
+        INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant)
+          SELECT u.id,t.reverse_timeline,'classic'
+          FROM users u CROSS JOIN tree_settings t WHERE t.id=1;
+        INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant)
+          SELECT 'local',reverse_timeline,'classic' FROM tree_settings WHERE id=1;
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        treePreferencesExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

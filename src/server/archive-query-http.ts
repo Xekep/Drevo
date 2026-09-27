@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { settingsStore } from "./settings.ts";
+import type { treePreferencesStore } from "./tree-preferences.ts";
 import { peopleSearchStore } from "./people-search.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import {
@@ -19,10 +20,12 @@ export function archiveQueryHttp({
   archive,
   auth,
   visibility,
+  treePreferences,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
   visibility: ReturnType<typeof settingsStore>;
+  treePreferences: ReturnType<typeof treePreferencesStore>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
   const publicSearchLimiter = createRequestLimiter({
@@ -55,6 +58,7 @@ export function archiveQueryHttp({
   const snapshot = (req: IncomingMessage) => {
     const user = auth.currentUser(req),
       settings = visibility.read(),
+      personalPreferences = user ? treePreferences.read(user.id) : null,
       readTree = auth.canRead(req) || settings.publicTree,
       readPhotos = auth.canRead(req) || settings.publicAlbums;
     const data = isScopedUser(user)
@@ -85,7 +89,9 @@ export function archiveQueryHttp({
       user,
       readTree,
       readPhotos,
-      reverseTimeline: settings.reverseTimeline,
+      reverseTimeline:
+        personalPreferences?.reverseTimeline ?? settings.reverseTimeline,
+      treePreferences: personalPreferences,
     };
   };
 
@@ -192,6 +198,9 @@ export function archiveQueryHttp({
             totals: { people: meta.people, photos: meta.photos },
           };
         }
+        const personalPreferences = visitor
+          ? treePreferences.read(visitor.id)
+          : null;
         const pageToken = `${data.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
         return json(res, 200, {
           family: data.family,
@@ -201,7 +210,9 @@ export function archiveQueryHttp({
           user: visitor,
           readTree,
           readPhotos,
-          reverseTimeline: access.reverseTimeline,
+          reverseTimeline:
+            personalPreferences?.reverseTimeline ?? access.reverseTimeline,
+          treePreferences: personalPreferences,
           partial: true,
           pageToken,
           totals: {

@@ -104,6 +104,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "auth_sessions",
       "access_settings",
       "tree_settings",
+      "user_tree_preferences",
       "audit_entries",
       "audit_people",
       "share_links",

@@ -86,7 +86,8 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   },
   resources: {
     title: "Ресурсы поиска",
-    description: "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
+    description:
+      "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
   },
   mcp: {
     title: "MCP-токены",
@@ -544,39 +545,6 @@ export function AdminPanel({
                 }
               />
             </label>
-            <h2>Направление времени</h2>
-            <p>
-              Настройка меняет вертикальное направление древа. В хронологии
-              время всегда идёт слева направо — от прошлого к настоящему.
-            </p>
-            <div className="timeline-options">
-              <label className={!settings.reverseTimeline ? "selected" : ""}>
-                <input
-                  type="radio"
-                  name="timeline"
-                  checked={!settings.reverseTimeline}
-                  onChange={() =>
-                    setSettings({ ...settings, reverseTimeline: false })
-                  }
-                />
-                <b>Предки сверху</b>
-                <span>Империя → СССР → Россия</span>
-                <small>От прошлого к настоящему, сверху вниз</small>
-              </label>
-              <label className={settings.reverseTimeline ? "selected" : ""}>
-                <input
-                  type="radio"
-                  name="timeline"
-                  checked={settings.reverseTimeline}
-                  onChange={() =>
-                    setSettings({ ...settings, reverseTimeline: true })
-                  }
-                />
-                <b>Младшие сверху</b>
-                <span>Россия → СССР → Империя</span>
-                <small>От настоящего к прошлому, сверху вниз</small>
-              </label>
-            </div>
             <footer>
               <button className="primary-action" disabled={busy}>
                 {busy ? "Сохраняем…" : "Сохранить настройки"}
@@ -622,8 +590,13 @@ export function AdminPanel({
               Карточки и связи для анализа. Для восстановления используйте
               резервную копию.
             </p>
-            <a href="/api/backup" download><Download size={18} /> Скачать базу SQLite</a>
-            <p>База с участниками, настройками и историей. Без файлов фото и документов.</p>
+            <a href="/api/backup" download>
+              <Download size={18} /> Скачать базу SQLite
+            </a>
+            <p>
+              База с участниками, настройками и историей. Без файлов фото и
+              документов.
+            </p>
             <p>Название архива, описание и импорт сохранённого JSON.</p>
             <button onClick={onSettings}>Открыть настройки данных</button>
           </section>

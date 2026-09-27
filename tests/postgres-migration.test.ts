@@ -59,6 +59,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
         "relative",
       );
       db.prepare(
+        "INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant) VALUES(?,?,?)",
+      ).run("user-1", 1, "portrait");
+      db.prepare(
         "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
       ).run("session-hash", "user-1", 1_000);
       db.prepare(
@@ -77,7 +80,12 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 27);
+    assert.equal(snapshot.services.length, 28);
+    assert.equal(
+      snapshot.services.find((table) => table.name === "user_tree_preferences")
+        ?.rows[0]?.data.card_variant,
+      "portrait",
+    );
     assert.equal(
       snapshot.services.find((table) => table.name === "users")?.rows[0]?.data
         .name,

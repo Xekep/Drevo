@@ -129,6 +129,7 @@ const serviceTables = [
   "research_suggestions",
   "share_links",
   "tree_settings",
+  "user_tree_preferences",
   "users",
   "workflow_stages",
 ] as const;
