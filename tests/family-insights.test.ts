@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzeFamilyInsights } from "../src/domain/family-insights.ts";
+import {
+  analyzeFamilyInsights,
+  deceasedStatusSuggestion,
+} from "../src/domain/family-insights.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 
 function person(
@@ -26,6 +29,64 @@ function person(
     ...extra,
   };
 }
+
+test("deceased hint uses a conservative age and never changes the recorded status", () => {
+  const family: Family = {
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: Array.from({ length: 5 }, (_, index) =>
+      person(`historic-${index}`, "Анна", "1900", 1, { death: "1980" }),
+    ),
+  };
+  const candidate = person("candidate", "Иван", "1934", 2);
+  assert.deepEqual(deceasedStatusSuggestion(family, candidate, "2026-09-27"), {
+    ageAtLeast: 91,
+    averageYears: 80,
+    sampleSize: 5,
+  });
+  assert.equal(candidate.deceased, undefined);
+  assert.equal(
+    deceasedStatusSuggestion(
+      family,
+      { ...candidate, birth: "1935" },
+      "2026-09-27",
+    ),
+    null,
+  );
+  assert.equal(
+    deceasedStatusSuggestion(
+      family,
+      { ...candidate, birth: "1935-09-26" },
+      "2026-09-27",
+    )?.ageAtLeast,
+    91,
+  );
+  assert.equal(
+    deceasedStatusSuggestion(
+      family,
+      { ...candidate, deceased: true },
+      "2026-09-27",
+    ),
+    null,
+  );
+  assert.equal(
+    deceasedStatusSuggestion(
+      family,
+      { ...candidate, deathPlace: "Москва" },
+      "2026-09-27",
+    ),
+    null,
+  );
+  assert.equal(
+    deceasedStatusSuggestion(
+      { ...family, people: family.people.slice(0, 4) },
+      candidate,
+      "2026-09-27",
+    ),
+    null,
+  );
+});
 
 test("family insights derive peaks, longevity, children and completeness", () => {
   const a = person("a", "Алексей", "1900", 1, {

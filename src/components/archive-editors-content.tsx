@@ -5,6 +5,7 @@ import {
   connectPeople,
   CONNECTION_NAMES,
   fullName,
+  plural,
   splitFullName,
   normalizeDateInput,
   dateInputLabel,
@@ -12,6 +13,7 @@ import {
   editorParentHints,
   siblingHints,
   birthSurnameHints,
+  deceasedStatusSuggestion,
   removePerson,
   type Connection,
   type ConnectionType,
@@ -167,6 +169,10 @@ export function PersonEditor({
         ? [...new Set([...draft.spouses, relativeTo.id])]
         : draft.spouses,
   };
+  const deceasedHint =
+    !person && !deathText.trim()
+      ? deceasedStatusSuggestion(family, hintDraft)
+      : null;
   const suggestions = editorParentHints(
     hintDraft,
     family.people,
@@ -521,6 +527,39 @@ export function PersonEditor({
                   }
                 />
               </div>
+              {kind === "death" &&
+                !deathText.trim() &&
+                !draft.deathPlace?.trim() && (
+                  <div
+                    className={`person-deceased-status${deceasedHint ? " is-suggested" : ""}`}
+                  >
+                    {deceasedHint && (
+                      <p id={`${fieldId}-deceased-hint`}>
+                        По данным архива средняя продолжительность жизни —{" "}
+                        {deceasedHint.averageYears.toLocaleString("ru-RU")} лет
+                        (выборка — {deceasedHint.sampleSize} человек).
+                        Минимальный возможный возраст —{" "}
+                        {deceasedHint.ageAtLeast}{" "}
+                        {plural(deceasedHint.ageAtLeast, "год", "года", "лет")}.
+                        Если известно, что он умер, отметьте это; дата смерти
+                        может остаться неизвестной.
+                      </p>
+                    )}
+                    <label className="check-field">
+                      <input
+                        type="checkbox"
+                        checked={!!draft.deceased}
+                        aria-describedby={
+                          deceasedHint ? `${fieldId}-deceased-hint` : undefined
+                        }
+                        onChange={(event) =>
+                          field("deceased", event.target.checked)
+                        }
+                      />
+                      Известно, что человек умер; дата смерти неизвестна
+                    </label>
+                  </div>
+                )}
             </section>
           ))}
         </details>
