@@ -447,8 +447,6 @@
   padding: 15px;
 }
 .flow-person {
-  width: 220px;
-  height: 96px;
   border: 1px solid #cfdbca;
   border-radius: 12px;
   background: #fff;
@@ -1539,28 +1537,29 @@
 }
 .flow-person-content {
   border-radius: 8px;
-  padding: 7px;
+  padding: 5px 7px;
   gap: 10px;
 }
 .flow-person-content > span:last-child {
   flex: 1;
-  gap: 3px;
+  gap: 2px;
 }
 .flow-person .person-avatar {
   border-radius: 50%;
-  width: 80px;
-  min-width: 80px;
-  height: 80px;
+  width: 56px;
+  min-width: 56px;
+  height: 56px;
   font-family: var(--serif);
 }
 .flow-person-content strong {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
+  line-height: 1.15;
 }
 .flow-person-content > span > span {
-  font-size: 13px;
-  color: #5f6e61;
-  line-height: 1.25;
+  font-size: 14px;
+  color: #51634f;
+  line-height: 1.2;
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1569,6 +1568,7 @@
 .flow-person-content small {
   font-size: 12px;
   color: #61745e;
+  line-height: 1.2;
 }
 .flow-person .react-flow__handle {
   opacity: 0;
@@ -1580,31 +1580,36 @@
   opacity: 1;
 }
 .flow-person.is-compact strong {
-  font-size: 20px;
+  font-size: 23px;
+}
+.flow-person.is-compact .person-avatar {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
 }
 .flow-person.is-compact .flow-person-content > span > span {
-  font-size: 18px;
+  font-size: 20px;
 }
 .flow-person.is-overview .flow-person-content {
-  padding: 9px 12px;
+  padding: 5px 10px;
 }
 .flow-person.is-overview strong {
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1.05;
 }
 .flow-person.is-overview .flow-person-content > span > span {
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1.05;
   display: block;
   white-space: nowrap;
 }
 /* Larger labels compensate for the canvas transform at overview zoom levels. */
 .flow-person.is-distant strong {
-  font-size: 38px;
+  font-size: 34px;
   line-height: 1.05;
 }
 .flow-person.is-distant .flow-person-content > span > span {
-  font-size: 29px;
+  font-size: 27px;
   line-height: 1.05;
 }
 .tree-mode-bar {

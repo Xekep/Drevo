@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
-import { Pencil, UserRound, Trash2, Undo2 } from "lucide-react";
+import {
+  Pencil,
+  UserRound,
+  Trash2,
+  Undo2,
+  CalendarDays,
+  BookOpen,
+  Files,
+  UsersRound,
+  ContactRound,
+} from "lucide-react";
+import "../styles/person-editor.css";
 import {
   availableColumn,
   connectPeople,
@@ -326,6 +337,7 @@ export function PersonEditor({
   ].filter((e) => e.from === draft.id || e.to === draft.id);
   return (
     <EditorDialog
+      className="person-editor-shell"
       inline={inline}
       suspended={suspended}
       title={person ? "Редактировать человека" : "Новый человек"}
@@ -466,7 +478,10 @@ export function PersonEditor({
           </div>
         </div>
         <details className="form-details person-extra" open={!!person}>
-          <summary>Рождение и смерть</summary>
+          <summary>
+            <CalendarDays size={17} aria-hidden="true" />
+            Рождение и смерть
+          </summary>
           {(["birth", "death"] as const).map((kind) => (
             <section className="person-date-group" key={kind}>
               <h3>{kind === "birth" ? "Рождение" : "Смерть"}</h3>
@@ -642,7 +657,10 @@ export function PersonEditor({
           </p>
         )}
         <details className="form-details">
-          <summary>ФИО и фамилия при рождении</summary>
+          <summary>
+            <ContactRound size={17} aria-hidden="true" />
+            ФИО и фамилия при рождении
+          </summary>
           <div className="form-grid">
             {(
               [
@@ -663,7 +681,10 @@ export function PersonEditor({
           </div>
         </details>
         <details className="form-details">
-          <summary>Жизнь и занятия</summary>
+          <summary>
+            <BookOpen size={17} aria-hidden="true" />
+            Жизнь и занятия
+          </summary>
           <label>
             Занятие
             <input
@@ -685,7 +706,10 @@ export function PersonEditor({
           onChange={(events) => field("events", events)}
         />
         <details className="form-details">
-          <summary>Источники</summary>
+          <summary>
+            <Files size={17} aria-hidden="true" />
+            Источники
+          </summary>
           <section>
             <h3>Источники</h3>
             {draft.sources.map((s, i) => (
@@ -744,7 +768,10 @@ export function PersonEditor({
           </section>
         </details>
         <details className="form-details">
-          <summary>Семейные связи</summary>
+          <summary>
+            <UsersRound size={17} aria-hidden="true" />
+            Семейные связи
+          </summary>
           {draft.parents.length > 0 && (
             <>
               <p>
@@ -828,7 +855,10 @@ export function PersonEditor({
         )}
         {person && isAdmin && (
           <details className="form-details person-delete-section">
-            <summary>Удаление карточки</summary>
+            <summary>
+              <Trash2 size={16} aria-hidden="true" />
+              Удаление карточки
+            </summary>
             <p>
               Карточка, связи и отметки этого человека будут удалены. Сами
               фотографии останутся.
@@ -856,6 +886,11 @@ export function PersonEditor({
           </details>
         )}
         <footer>
+          {dirty && (
+            <span className="person-editor-save-state" role="status">
+              Есть несохранённые изменения
+            </span>
+          )}
           <button type="submit" className="primary-action" disabled={busy}>
             {busy ? "Сохраняем…" : "Сохранить"}
           </button>

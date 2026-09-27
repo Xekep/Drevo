@@ -1,5 +1,48 @@
 import { expect, test } from "@playwright/test";
 
+test("подписи карточек остаются читаемыми при отдалении дерева", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tree");
+  const zoom = page.locator(".flow-camera-tools > span");
+  await expect(zoom).toHaveText("100%");
+  for (let i = 0; i < 4; i++) {
+    await page.getByRole("button", { name: "Уменьшить", exact: true }).click();
+  }
+  await expect
+    .poll(async () => parseInt((await zoom.textContent()) || "0", 10))
+    .toBeLessThanOrEqual(50);
+  expect(
+    parseInt((await zoom.textContent()) || "0", 10),
+  ).toBeGreaterThanOrEqual(42);
+  const card = page
+    .locator('.flow-person[data-person-id="e2e-memorial-person"]')
+    .first();
+  await expect(card.locator(".person-avatar")).toHaveCount(0);
+  const geometry = await card.evaluate((element) => {
+    const card = element.getBoundingClientRect();
+    const node = element.closest(".react-flow__node")!.getBoundingClientRect();
+    const surname = element.querySelector("strong")!;
+    const scale = card.width / parseFloat(getComputedStyle(element).width);
+    return {
+      screenFont: parseFloat(getComputedStyle(surname).fontSize) * scale,
+      heightDifference: Math.abs(card.height - node.height),
+      labelTop: surname.getBoundingClientRect().top - card.top,
+      labelBottom: card.bottom - surname.getBoundingClientRect().bottom,
+    };
+  });
+  expect(geometry.screenFont).toBeGreaterThanOrEqual(13);
+  expect(geometry.heightDifference).toBeLessThan(1);
+  expect(geometry.labelTop).toBeGreaterThanOrEqual(0);
+  expect(geometry.labelBottom).toBeGreaterThanOrEqual(0);
+  await card
+    .getByRole("button", { name: /Тестов Иван Петрович, 1940/ })
+    .click();
+  await expect(page.locator(".inspector-dock")).toBeVisible();
+});
+
 test("tree card and assistant fit common viewport widths without hiding each other", async ({
   page,
 }, testInfo) => {

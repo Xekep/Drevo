@@ -8,6 +8,7 @@ import { yearY } from "../src/domain/layout.ts";
 import { dateYear } from "../src/domain/dates.ts";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
 import type { FamilyLink } from "../src/domain/types.ts";
+import { TREE_NODE_HEIGHT } from "../src/domain/tree-layout-constants.ts";
 
 const person = (
   id: string,
@@ -101,7 +102,7 @@ async function verify(
         const a = g.positions[i][1],
           b = g.positions[j][1];
         assert.ok(
-          Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 96,
+          Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= TREE_NODE_HEIGHT,
           "cards do not overlap",
         );
       }
@@ -119,7 +120,7 @@ async function verify(
               left: p.x,
               right: p.x + 220,
               top: p.y,
-              bottom: p.y + 96,
+              bottom: p.y + TREE_NODE_HEIGHT,
             }),
             false,
             `${branch.id} crosses ${id}, reverse=${reverse}`,

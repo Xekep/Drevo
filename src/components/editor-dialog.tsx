@@ -26,7 +26,7 @@ export function EditorDialog({
   }, [inline, suspended]);
   if (inline)
     return (
-      <section className="inline-editor" aria-label={title}>
+      <section className={`inline-editor ${className}`} aria-label={title}>
         <header>
           <h2>{title}</h2>
           <button

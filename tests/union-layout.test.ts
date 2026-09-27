@@ -11,6 +11,7 @@ import { segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { segmentsCross } from "../src/domain/layout-order.ts";
 import type { ElkNode } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
+import { TREE_NODE_HEIGHT } from "../src/domain/tree-layout-constants.ts";
 const unionGeometry = (
   people: LayoutPerson[],
   reverse = false,
@@ -112,13 +113,13 @@ test("many terminal siblings stay below their own parents in compact local rows"
       );
       assert.ok(
         p.y >= siblingGroup.y &&
-          p.y + 96 <= siblingGroup.y + siblingGroup.height,
+          p.y + TREE_NODE_HEIGHT <= siblingGroup.y + siblingGroup.height,
       );
       // Подпись общей группы не закрывает карточки ни в одном направлении.
       assert.ok(
         reverse
           ? p.y >= siblingGroup.y + 24
-          : p.y + 96 <= siblingGroup.y + siblingGroup.height - 24,
+          : p.y + TREE_NODE_HEIGHT <= siblingGroup.y + siblingGroup.height - 24,
       );
     }
     assert.ok(
@@ -199,7 +200,7 @@ function verify(people: LayoutPerson[], g: TreeGeometry) {
       const a = g.positions[i][1],
         b = g.positions[j][1];
       assert.ok(
-        Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 96,
+        Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= TREE_NODE_HEIGHT,
         "overlapping cards",
       );
     }
@@ -215,7 +216,7 @@ function verify(people: LayoutPerson[], g: TreeGeometry) {
             left: p.x,
             top: p.y,
             right: p.x + 220,
-            bottom: p.y + 96,
+            bottom: p.y + TREE_NODE_HEIGHT,
           }),
           false,
           `${b.id} crosses card ${id}`,

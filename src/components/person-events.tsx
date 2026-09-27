@@ -18,6 +18,7 @@ export function EventsEditor({
   return (
     <details className="form-details event-editor">
       <summary>
+        <CalendarDays size={17} aria-hidden="true" />
         События жизни{events.length ? ` · ${events.length}` : ""}
       </summary>
       {events.map((event) => (
