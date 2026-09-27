@@ -8,12 +8,12 @@ import { auditStore } from "./audit.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
+import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
   type Family,
   type Person,
-  type FamilyLink,
   type ArchivePhoto,
 } from "../domain/index.ts";
 
@@ -508,32 +508,6 @@ function readArchiveMeta(db: DatabaseSync) {
   };
 }
 
-function hydrateRelations(db: DatabaseSync, people: Person[]) {
-  const map = new Map(people.map((person) => [person.id, person])),
-    links: FamilyLink[] = [];
-  for (const row of db
-    .prepare("SELECT * FROM relations ORDER BY rowid")
-    .all()) {
-    const from = String(row.source),
-      to = String(row.target),
-      type = String(row.type);
-    if (type === "parent") map.get(to)!.parents.push(from);
-    else if (type === "spouse") {
-      map.get(from)!.spouses.push(to);
-      map.get(to)!.spouses.push(from);
-    } else
-      links.push({
-        id: String(row.id),
-        ...(row.created_by ? { createdBy: String(row.created_by) } : {}),
-        from,
-        to,
-        type: type as FamilyLink["type"],
-        ...(row.note ? { note: String(row.note) } : {}),
-      });
-  }
-  return links;
-}
-
 /**
  * Начальная проекция для ReactFlow: весь родственный граф, но без фотографий,
  * источников, биографий, наград и событий. Тяжёлые JSON-поля отбрасывает сам
@@ -564,7 +538,10 @@ function readArchiveOverview(db: DatabaseSync, includePortraits = true) {
           spouses: [],
         }) as Person,
     );
-  const links = hydrateRelations(db, people);
+  const links = hydrateRelations(
+    db.prepare("SELECT * FROM relations ORDER BY rowid").all(),
+    people,
+  );
   return {
     family: {
       title: meta.title,
@@ -623,38 +600,11 @@ function readPhotoPage(
 
 export function readArchive(db: DatabaseSync) {
   const meta = db.prepare("SELECT * FROM archive WHERE id=1").get()!;
-  const people = db
-    .prepare("SELECT data FROM people ORDER BY rowid")
-    .all()
-    .map(
-      (row) =>
-        ({
-          ...JSON.parse(String(row.data)),
-          parents: [],
-          spouses: [],
-        }) as Person,
-    );
-  const links = hydrateRelations(db, people);
-  const photos = db
-    .prepare("SELECT data FROM photos ORDER BY rowid")
-    .all()
-    .map(
-      (row) => ({ ...JSON.parse(String(row.data)), tags: [] }) as ArchivePhoto,
-    );
-  const photoMap = new Map(photos.map((photo) => [photo.id, photo]));
-  for (const row of db
-    .prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid")
-    .all())
-    photoMap.get(String(row.photo_id))!.tags.push(JSON.parse(String(row.data)));
-  return {
-    family: {
-      title: String(meta.title),
-      description: String(meta.description),
-      demo: !!meta.demo,
-      people,
-      links,
-      photos,
-    } as Family,
-    revision: Number(meta.revision),
-  };
+  return hydrateArchive(
+    meta,
+    db.prepare("SELECT data FROM people ORDER BY rowid").all(),
+    db.prepare("SELECT * FROM relations ORDER BY rowid").all(),
+    db.prepare("SELECT data FROM photos ORDER BY rowid").all(),
+    db.prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid").all(),
+  );
 }
