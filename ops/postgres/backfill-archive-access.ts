@@ -55,7 +55,11 @@ export function planArchiveAccess(users: Row[], explicitOwnerId?: string) {
   return { accounts, memberships, ownerId: owner.user_id };
 }
 
-async function shadowRows(client: pg.Client, archiveId: string, name: string) {
+export async function shadowRows(
+  client: pg.Client,
+  archiveId: string,
+  name: string,
+) {
   const result = await client.query(
     "SELECT data FROM service_snapshot_rows WHERE archive_id=$1 AND table_name=$2 ORDER BY ordinal",
     [archiveId, name],

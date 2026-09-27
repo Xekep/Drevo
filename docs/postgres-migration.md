@@ -40,7 +40,7 @@ PGHOST=/var/run/postgresql PGUSER=site_drevo PGDATABASE=drevo_migration_YYYYMMDD
 
 ## Что ещё блокирует переключение
 
-- Аккаунты, членство, права, сессии и базовые настройки уже имеют типизированные PostgreSQL-таблицы. Аудит, публичные ссылки, AI/MCP-данные, фоновые задания и служебные кэши пока только в теневой копии. Работающие операции над всем этим **по-прежнему только в SQLite**. Нельзя включать регистрацию или объявлять PostgreSQL основным хранилищем до введения `archive_id` на **каждом** маршруте чтения и записи.
+- Аккаунты, членство, права, сессии, базовые настройки и аудит уже имеют типизированные PostgreSQL-таблицы. Публичные ссылки, AI/MCP-данные, фоновые задания и служебные кэши пока только в теневой копии. Работающие операции над всем этим **по-прежнему только в SQLite**. Нельзя включать регистрацию или объявлять PostgreSQL основным хранилищем до введения `archive_id` на **каждом** маршруте чтения и записи.
 - Для Node.js нужен асинхронный слой операций над конкретными сущностями и транзакциями. Текущий `DatabaseSync` и синхронные SQL-запросы нельзя механически заменить `pg`: каждая операция должна сохранять проверки прав, ревизий и конфликтов. Переписать только `database.ts` недостаточно.
 - Хранилище фотографий и документов локально для одного экземпляра. Для нескольких серверов приложения понадобятся общее файловое хранилище, общий контроль квот/очередей и отдельные ограничения доступа к медиа.
 - Действующие SQLite-бэкапы не являются бэкапами PostgreSQL. До переключения нужны base backup + архивирование WAL для PITR, резервирование оригиналов файлов, мониторинг, регулярная проба восстановления и согласованные RPO/RTO.
@@ -51,6 +51,14 @@ PGHOST=/var/run/postgresql PGUSER=site_drevo PGDATABASE=drevo_migration_YYYYMMDD
 ```sh
 PGHOST=/var/run/postgresql PGUSER=site_drevo PGDATABASE=drevo_migration_YYYYMMDD_HHMMSS \
   node --experimental-strip-types ops/postgres/verify-access-read.ts \
+  /path/to/consistent-copy.sqlite legacy-primary
+```
+
+Аудит также перенесён в отдельные таблицы `archive_audit_entries` и `archive_audit_people`. Их исторические ID и ссылки на удалённых людей или участников сохраняются. Полный импорт снимка ревизии 819 в новую пустую базу одной транзакцией сверил 695 записей аудита и 1170 привязок; затем `ops/postgres/verify-audit-read.ts` сравнил с SQLite 164 страницы выдачи, включая фильтры по 2 авторам и 125 людям. Чтение аудита из PostgreSQL пока не подключено к HTTP.
+
+```sh
+PGHOST=/var/run/postgresql PGUSER=site_drevo PGDATABASE=drevo_migration_YYYYMMDD_HHMMSS \
+  node --experimental-strip-types ops/postgres/verify-audit-read.ts \
   /path/to/consistent-copy.sqlite legacy-primary
 ```
 
