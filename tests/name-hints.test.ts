@@ -459,3 +459,85 @@ test("partial dates remain possible while precise dates rule out contradictory p
   const data = [{ ...father, death: undefined }, mother, sibling];
   assert.equal(parentHints({ ...child, parents: [father.id] }, data).length, 0);
 });
+
+test("a pending spouse suggests existing children in either direction without assigning parenthood", () => {
+  const mother = person("mother", {
+    name: "Мария",
+    sex: "f",
+    birth: "1970",
+  });
+  const son = person("son", {
+    name: "Алексей",
+    surname: "Иванов",
+    sex: "m",
+    birth: "2000",
+    parents: [mother.id],
+  });
+  const newHusband = person("new-husband", {
+    name: "Пётр",
+    surname: "Петров",
+    sex: "m",
+    birth: "1968",
+    spouses: [mother.id],
+  });
+  const before = structuredClone([mother, son, newHusband]);
+  const possibleSon = editorParentHints(newHusband, [mother, son], []);
+  assert.deepEqual(
+    possibleSon.map(({ from, to, role }) => ({ from, to, role })),
+    [{ from: newHusband.id, to: son.id, role: "child" }],
+  );
+  assert.match(possibleSon[0].reason, /отчимом или мачехой/);
+  assert.deepEqual([mother, son, newHusband], before);
+
+  const father = person("father", {
+    name: "Иван",
+    sex: "m",
+    birth: "1970",
+  });
+  const daughter = person("daughter", {
+    name: "Анна",
+    surname: "Сидорова",
+    sex: "f",
+    birth: "2000",
+    parents: [father.id],
+  });
+  const newWife = person("new-wife", {
+    name: "Ольга",
+    surname: "Петрова",
+    sex: "f",
+    birth: "1972",
+    spouses: [father.id],
+  });
+  assert.deepEqual(
+    editorParentHints(newWife, [father, daughter], []).map(
+      ({ from, to, role }) => ({ from, to, role }),
+    ),
+    [{ from: newWife.id, to: daughter.id, role: "child" }],
+  );
+  assert.equal(
+    parentHints({ ...newWife, spouses: [] }, [father, daughter]).length,
+    0,
+  );
+  assert.equal(
+    parentHints({ ...newWife, birth: "1990" }, [father, daughter]).length,
+    0,
+  );
+  assert.equal(
+    parentHints(newWife, [father, { ...daughter, parentageComplete: true }])
+      .length,
+    0,
+  );
+  const unspecifiedSpouse = person("unspecified", {
+    name: "Саша",
+    surname: "Другой",
+    sex: "u",
+    birth: "1969",
+    spouses: [mother.id],
+  });
+  assert.deepEqual(
+    parentHints(unspecifiedSpouse, [mother, son]).map(
+      ({ from, to, role, parentSex }) => ({ from, to, role, parentSex }),
+    ),
+    [{ from: unspecifiedSpouse.id, to: son.id, role: "child", parentSex: "u" }],
+  );
+});

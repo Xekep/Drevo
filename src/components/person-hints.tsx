@@ -89,7 +89,9 @@ export function PersonHints({
               ? "Возможный отец"
               : hint.role === "mother"
                 ? "Возможная мать"
-                : "Возможный ребёнок"}
+                : hint.role === "parent"
+                  ? "Возможный родитель"
+                  : "Возможный ребёнок"}
             : <b>{fullName(hint.person)}</b>
           </p>
           <small>{hint.reason}</small>

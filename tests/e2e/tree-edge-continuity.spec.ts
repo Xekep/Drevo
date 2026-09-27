@@ -1,5 +1,53 @@
 import { expect, test } from "@playwright/test";
 
+test("co-parents without marriage keep separate card backgrounds", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.family.people = data.family.people.map(
+      (person: { id: string; spouses: string[]; parents: string[] }) =>
+        person.id === "e2e-child" || person.id === "e2e-spouse"
+          ? { ...person, spouses: [] }
+          : person.id === "e2e-grandchild"
+            ? { ...person, parents: ["e2e-child", "e2e-spouse"] }
+            : person,
+    );
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
+  for (const id of ["e2e-child", "e2e-spouse"]) {
+    const card = page.getByTestId(`rf__node-${id}`).locator(".flow-person");
+    await expect(card).toBeVisible();
+    await expect(card).not.toHaveAttribute("data-household", "true");
+  }
+  await expect(
+    page.locator(".react-flow__edge.relationship-parent"),
+  ).not.toHaveCount(0);
+});
+
+test("adding a spouse offers the current person's child before saving", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
+  await page
+    .getByTestId("rf__node-e2e-sibling")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Добавить родственника" }).click();
+  await page.getByLabel("Кого добавить").selectOption("spouse");
+  await page.getByRole("button", { name: "Новый человек" }).click();
+  await page.getByRole("textbox", { name: /ФИО/ }).fill("Другой Иван");
+  await expect(
+    page.locator(".name-suggestions").getByText(/Возможный ребёнок.*Ольга/),
+  ).toBeVisible();
+});
+
 test("an empty archive does not lock the first-person action", async ({
   page,
 }, testInfo) => {
@@ -73,8 +121,20 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
           if (scenario !== "idle" && state.frames % 5 === 0) {
             const target = canvas.querySelector(".react-flow__pane")!;
             for (const event of [
-              new WheelEvent("wheel", { ctrlKey: true, deltaY: state.frames % 10 ? -1000 : 1000, bubbles: true, cancelable: true }),
-              ...[0, 1, 2].map((button) => new MouseEvent("mousedown", { button, bubbles: true, cancelable: true })),
+              new WheelEvent("wheel", {
+                ctrlKey: true,
+                deltaY: state.frames % 10 ? -1000 : 1000,
+                bubbles: true,
+                cancelable: true,
+              }),
+              ...[0, 1, 2].map(
+                (button) =>
+                  new MouseEvent("mousedown", {
+                    button,
+                    bubbles: true,
+                    cancelable: true,
+                  }),
+              ),
             ]) {
               if (target.dispatchEvent(event)) state.unblocked++;
               else state.blocked++;
@@ -175,7 +235,9 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
     // Correctness must not depend on the CI machine's FPS. Require repeated
     // observations of distinct already-drawn edges, not an arbitrary frame rate.
     expect(result.frames).toBeGreaterThan(1);
-    expect(result.rechecked).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
+    expect(result.rechecked).toBeGreaterThanOrEqual(
+      scenario === "large" ? 10 : 6,
+    );
     expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
     if (scenario !== "idle") {

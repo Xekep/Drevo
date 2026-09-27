@@ -157,8 +157,8 @@ export type ParentHint = {
   from: string;
   to: string;
   person: Person;
-  role: "father" | "mother" | "child";
-  parentSex: "m" | "f";
+  role: "father" | "mother" | "parent" | "child";
+  parentSex: "m" | "f" | "u";
   reason: string;
 };
 export function parentHints(
@@ -195,13 +195,22 @@ export function parentHints(
         .forEach((other) => partners.add(other));
       coparentIds.set(id, partners);
     }
-  function plausible(father: Person, child: Person, sex: "m" | "f") {
+  const spouseIds = new Map<string, Set<string>>();
+  for (const person of all.values())
+    for (const spouse of person.spouses) {
+      if (!all.has(spouse)) continue;
+      if (!spouseIds.has(person.id)) spouseIds.set(person.id, new Set());
+      if (!spouseIds.has(spouse)) spouseIds.set(spouse, new Set());
+      spouseIds.get(person.id)!.add(spouse);
+      spouseIds.get(spouse)!.add(person.id);
+    }
+  function plausible(candidate: Person, child: Person, sex: "m" | "f" | "u") {
     if (
-      father.id === child.id ||
-      resolvedSex(father) !== sex ||
-      child.parents.includes(father.id) ||
-      father.spouses.includes(child.id) ||
-      child.spouses.includes(father.id)
+      candidate.id === child.id ||
+      resolvedSex(candidate) !== sex ||
+      child.parents.includes(candidate.id) ||
+      candidate.spouses.includes(child.id) ||
+      child.spouses.includes(candidate.id)
     )
       return false;
     if (
@@ -209,38 +218,40 @@ export function parentHints(
       child.parents.length >= 2 ||
       child.parents.some((id) => {
         const p = all.get(id);
-        return p && resolvedSex(p) === sex;
+        return sex !== "u" && p && resolvedSex(p) === sex;
       })
     )
       return false;
     const birth = child.birth ? Number(child.birth.slice(0, 4)) : null;
-    const parentBirth = father.birth ? Number(father.birth.slice(0, 4)) : null;
+    const parentBirth = candidate.birth
+      ? Number(candidate.birth.slice(0, 4))
+      : null;
     if (
       birth !== null &&
       parentBirth !== null &&
       (birth - parentBirth < 14 ||
-        birth - parentBirth > (sex === "m" ? 75 : 55))
+        birth - parentBirth > (sex === "f" ? 55 : 75))
     )
       return false;
     if (
       birth !== null &&
-      father.death &&
-      Number(father.death.slice(0, 4)) < birth - (sex === "m" ? 1 : 0)
+      candidate.death &&
+      Number(candidate.death.slice(0, 4)) < birth - (sex === "f" ? 0 : 1)
     )
       return false;
     const later = (date: string, years: number) =>
       `${String(Number(date.slice(0, 4)) + years).padStart(4, "0")}${date.slice(4)}`;
     if (
-      father.death &&
+      candidate.death &&
       child.birth &&
-      later(bound(father.death, true), sex === "m" ? 1 : 0) <
+      later(bound(candidate.death, true), sex === "f" ? 0 : 1) <
         bound(child.birth, false)
     )
       return false;
     if (
-      father.birth &&
+      candidate.birth &&
       (child.birth || child.death) &&
-      later(bound(father.birth, false), 14) >
+      later(bound(candidate.birth, false), 14) >
         bound(child.birth || child.death!, true)
     )
       return false;
@@ -250,12 +261,13 @@ export function parentHints(
       Number(child.death.slice(0, 4)) - parentBirth < 14
     )
       return false;
-    if (father.parents.some((id) => child.parents.includes(id))) return false;
+    if (candidate.parents.some((id) => child.parents.includes(id)))
+      return false;
     const parentAncestors =
-      father.id === draft.id ? draftAncestors : ancestors(father.id);
+      candidate.id === draft.id ? draftAncestors : ancestors(candidate.id);
     const childAncestors =
       child.id === draft.id ? draftAncestors : ancestors(child.id);
-    if (parentAncestors.has(child.id) || childAncestors.has(father.id))
+    if (parentAncestors.has(child.id) || childAncestors.has(candidate.id))
       return false;
     // Уже известная боковая ветвь (например, дядя) — не основание предлагать отца.
     if ([...parentAncestors].some((id) => childAncestors.has(id))) return false;
@@ -294,45 +306,48 @@ export function parentHints(
       });
     }
   }
-  // Общие дети — более сильное основание; брак даёт только вопрос для проверки.
-  const coparents = new Map<string, Map<string, Person>>();
-  for (const sibling of all.values())
-    for (const fatherId of sibling.parents) {
-      const father = all.get(fatherId);
-      if (!father || resolvedSex(father) !== "m") continue;
-      for (const motherId of sibling.parents) {
-        const mother = all.get(motherId);
-        if (!mother || resolvedSex(mother) !== "f") continue;
-        const mothers = coparents.get(fatherId) || new Map<string, Person>();
-        mothers.set(motherId, sibling);
-        coparents.set(fatherId, mothers);
-      }
+  // Брак или другой общий ребёнок — повод спросить о втором родителе,
+  // независимо от пола добавляемого супруга. Родство не создаётся автоматически.
+  const sharedChildren = new Map<string, Person[]>();
+  const pairKey = (a: string, b: string) => JSON.stringify([a, b].sort());
+  for (const child of all.values())
+    if (child.parents.length === 2) {
+      const key = pairKey(child.parents[0], child.parents[1]);
+      sharedChildren.set(key, [...(sharedChildren.get(key) || []), child]);
     }
   for (const child of all.values()) {
-    if (child.id !== draft.id && resolvedSex(draft) !== "f") continue;
-    for (const fatherId of child.parents) {
-      const father = all.get(fatherId);
-      if (!father) continue;
-      if (resolvedSex(father) !== "m") continue;
+    for (const parentId of child.parents) {
+      const parent = all.get(parentId);
+      if (!parent) continue;
       const candidates = new Set([
-        ...(coparents.get(fatherId)?.keys() || []),
-        ...father.spouses,
+        ...(coparentIds.get(parentId) || []),
+        ...(spouseIds.get(parentId) || []),
       ]);
-      for (const motherId of candidates) {
-        const mother = all.get(motherId),
-          sibling = coparents.get(fatherId)?.get(motherId);
-        if (!mother) continue;
-        if (child.id !== draft.id && mother.id !== draft.id) continue;
-        if (!plausible(mother, child, "f")) continue;
+      for (const candidateId of candidates) {
+        const candidate = all.get(candidateId);
+        if (!candidate) continue;
+        if (child.id !== draft.id && candidate.id !== draft.id) continue;
+        const sex = resolvedSex(candidate);
+        if (!plausible(candidate, child, sex)) continue;
+        const sibling = sharedChildren
+          .get(pairKey(parentId, candidateId))
+          ?.find((person) => person.id !== child.id);
         hints.push({
-          from: mother.id,
+          from: candidate.id,
           to: child.id,
-          person: child.id === draft.id ? mother : child,
-          role: child.id === draft.id ? "mother" : "child",
-          parentSex: "f",
+          person: child.id === draft.id ? candidate : child,
+          role:
+            child.id === draft.id
+              ? sex === "m"
+                ? "father"
+                : sex === "f"
+                  ? "mother"
+                  : "parent"
+              : "child",
+          parentSex: sex,
           reason: sibling
-            ? `У ${mother.name} и указанного отца ${father.name} уже записан общий ребёнок: ${sibling.name}. Уточните, одна ли это мать: дети могут быть единокровными.`
-            : `${mother.name} указана супругой отца ${father.name}. Проверьте, мать ли она этому ребёнку: супруга отца может быть мачехой.`,
+            ? `У ${candidate.name} и ${parent.name} уже записан общий ребёнок: ${sibling.name}. Уточните, тот ли это второй родитель: дети могут быть единокровными или единоутробными.`
+            : `Для ${parent.name} и ${candidate.name} указан брак. Проверьте, является ли ${candidate.name} кровным родителем ребёнка: супруг родителя может быть отчимом или мачехой.`,
         });
       }
     }
