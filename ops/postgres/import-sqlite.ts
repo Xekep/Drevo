@@ -13,6 +13,7 @@ import { isDeepStrictEqual } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { ARCHIVE_SCHEMA_VERSION } from "../../src/server/schema.ts";
+import { backfillArchiveAccessInTransaction } from "./backfill-archive-access.ts";
 
 type Row = Record<string, unknown>;
 type Table = {
@@ -319,6 +320,7 @@ export async function importSqliteSnapshot(
   uploads: string,
   archiveId: string,
   client: pg.Client,
+  ownerUserId?: string,
 ) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
     throw new Error("Некорректный archive_id");
@@ -414,10 +416,16 @@ export async function importSqliteSnapshot(
         );
       counts[service.name] = service.rows.length;
     }
+    const access = await backfillArchiveAccessInTransaction(
+      client,
+      archiveId,
+      ownerUserId,
+    );
     await client.query("COMMIT");
     return {
       archiveId,
       counts,
+      access,
       media: snapshot.media,
       sqliteSha256: snapshot.sha256,
     };
@@ -431,17 +439,23 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  const [sqlitePath, uploads, archiveId] = process.argv.slice(2);
+  const [sqlitePath, uploads, archiveId, ownerUserId] = process.argv.slice(2);
   if (!sqlitePath || !uploads || !archiveId)
     throw new Error(
-      "Использование: import-sqlite.ts <копия.sqlite> <uploads/> <archive_id>",
+      "Использование: import-sqlite.ts <копия.sqlite> <uploads/> <archive_id> [owner_user_id]",
     );
   const client = new pg.Client({ connectionTimeoutMillis: 5000 });
   try {
     await client.connect();
     console.log(
       JSON.stringify(
-        await importSqliteSnapshot(sqlitePath, uploads, archiveId, client),
+        await importSqliteSnapshot(
+          sqlitePath,
+          uploads,
+          archiveId,
+          client,
+          ownerUserId,
+        ),
       ),
     );
   } finally {
