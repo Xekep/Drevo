@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectSqliteSnapshot } from "../ops/postgres/import-sqlite.ts";
+import { planArchiveAccess } from "../ops/postgres/backfill-archive-access.ts";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 test("PostgreSQL staging inspects a consistent SQLite copy and every referenced original", () => {
@@ -134,4 +135,51 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("PostgreSQL access plan keeps roles and requires an unambiguous archive owner", () => {
+  const users = [
+    {
+      id: "admin-1",
+      name: "Администратор",
+      role: "admin",
+      approved: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      last_visit_at: null,
+      person_id: null,
+      tree_access: "all",
+    },
+    {
+      id: "reader-1",
+      name: "Читатель",
+      role: "reader",
+      approved: 1,
+      created_at: "2026-01-02T00:00:00Z",
+      last_visit_at: "2026-09-27T00:00:00Z",
+      person_id: "person-1",
+      tree_access: "common_ancestors",
+    },
+  ];
+  const plan = planArchiveAccess(users);
+  assert.equal(plan.ownerId, "admin-1");
+  assert.deepEqual(plan.memberships[1], {
+    user_id: "reader-1",
+    role: "reader",
+    approved: true,
+    person_id: "person-1",
+    tree_access: "common_ancestors",
+  });
+  assert.equal(plan.accounts[1].last_visit_at, "2026-09-27T00:00:00Z");
+  assert.throws(() => planArchiveAccess(users.slice(1)), /ровно один/);
+  assert.throws(() => planArchiveAccess([users[0], users[0]]), /ровно один/);
+  assert.equal(
+    planArchiveAccess([users[0], { ...users[0], id: "admin-2" }], "admin-2")
+      .ownerId,
+    "admin-2",
+  );
+  assert.throws(() => planArchiveAccess(users, "reader-1"), /владелец/);
+  assert.throws(
+    () => planArchiveAccess([{ ...users[0], approved: 2 }]),
+    /Некорректное поле users.approved/,
+  );
 });
