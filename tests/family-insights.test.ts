@@ -168,6 +168,116 @@ test("family insights flag only clearly suspicious date relationships", () => {
   );
 });
 
+test("date checks respect partial-date intervals and explain certain contradictions", () => {
+  const checked = [
+    person("death-before-birth", "Анна", "1950-07", 1, {
+      death: "1950-06-30",
+    }),
+    person("overlapping-life", "Борис", "1950", 1, {
+      death: "1950-01",
+    }),
+    person("events", "Вера", "1920", 1, {
+      events: [
+        { id: "marriage-early", type: "marriage", date: "1919" },
+        { id: "marriage-overlap", type: "marriage", date: "1920-01" },
+        {
+          id: "period-reversed",
+          type: "work",
+          title: "Работа",
+          date: "1951-02",
+          endDate: "1951-01",
+        },
+        {
+          id: "period-overlap",
+          type: "work",
+          title: "Учёба",
+          date: "1951",
+          endDate: "1951-01",
+        },
+      ],
+    }),
+    person("young-parent", "Глеб", "2000", 1),
+    person("young-child", "Даша", "2010", 2, { parents: ["young-parent"] }),
+    person("uncertain-parent", "Егор", "2000", 1),
+    person("uncertain-child", "Женя", "2012", 2, {
+      parents: ["uncertain-parent"],
+    }),
+    person("old-parent", "Зоя", "1900", 1),
+    person("old-child", "Илья", "1982", 2, { parents: ["old-parent"] }),
+    person("posthumous-parent", "Катя", "1990", 1, { death: "2010" }),
+    person("posthumous-child", "Лев", "2011", 2, {
+      parents: ["posthumous-parent"],
+    }),
+    person("late-child", "Маша", "2013", 2, { parents: ["posthumous-parent"] }),
+    person("missing-parent", "Нина", "", 1, { death: "2000" }),
+    person("missing-parent-birth-child", "Олег", "2002", 2, {
+      parents: ["missing-parent"],
+    }),
+  ];
+  const warnings = analyzeFamilyInsights({
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: checked,
+  }).warnings;
+  const forPerson = (id: string) =>
+    warnings.filter((warning) => warning.personIds.includes(id));
+
+  assert.ok(
+    forPerson("death-before-birth").some(
+      (warning) => warning.title === "Дата смерти раньше рождения",
+    ),
+  );
+  assert.equal(forPerson("overlapping-life").length, 0);
+  assert.ok(
+    forPerson("events").some(
+      (warning) =>
+        warning.title === "Брак раньше рождения" &&
+        warning.eventId === "marriage-early",
+    ),
+  );
+  assert.ok(
+    forPerson("events").some(
+      (warning) =>
+        warning.title === "Конец события раньше начала" &&
+        warning.eventId === "period-reversed",
+    ),
+  );
+  assert.equal(
+    forPerson("events").some(
+      (warning) =>
+        warning.eventId === "marriage-overlap" ||
+        warning.eventId === "period-overlap",
+    ),
+    false,
+  );
+  assert.ok(
+    forPerson("young-child").some(
+      (warning) => warning.title === "Очень маленький возраст родителя",
+    ),
+  );
+  assert.equal(forPerson("uncertain-child").length, 0);
+  assert.ok(
+    forPerson("old-child").some(
+      (warning) => warning.title === "Необычно большой возраст родителя",
+    ),
+  );
+  assert.equal(forPerson("posthumous-child").length, 0);
+  assert.ok(
+    forPerson("late-child").some(
+      (warning) =>
+        warning.title === "Ребёнок родился заметно позже смерти родителя",
+    ),
+  );
+  assert.ok(
+    forPerson("missing-parent-birth-child").some(
+      (warning) =>
+        warning.title === "Ребёнок родился заметно позже смерти родителя",
+    ),
+  );
+  assert.ok(warnings.every((warning) => warning.detail.length > 0));
+});
+
 test("simultaneous living peak excludes people without a recorded birth", () => {
   const family: Family = {
     title: "Тест",
