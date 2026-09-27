@@ -87,7 +87,7 @@ PGHOST=/var/run/postgresql PGUSER=postgres \
   bash ops/postgres/verify-restore.sh drevo_migration_20260927_143340
 ```
 
-Это проверка **логического** восстановления тестовой базы. Она сама по себе не является расписанием бэкапов и не защищает от потери всего сервера. Локальное резервирование PostgreSQL настроено отдельно, ниже; оригиналы фото и документов в него не входят.
+Это проверка **логического** восстановления тестовой базы. Она сама по себе не является расписанием бэкапов и не защищает от потери всего сервера. Локальное резервирование PostgreSQL и оригиналов медиа настроено отдельно, ниже.
 
 ## Локальный этап резервирования PostgreSQL
 
@@ -95,16 +95,22 @@ PGHOST=/var/run/postgresql PGUSER=postgres \
 
 На тестовом кластере выполнены две полные копии, `pgbackrest check` и запуск ежедневного и контрольного systemd-сервисов. `ops/postgres/verify-physical-restore.sh` разворачивает последнюю копию в отдельный временный каталог, запускает вторую копию PostgreSQL на приватном Unix-сокете, ждёт завершения recovery, проверяет наличие миграционных баз и удаляет временный экземпляр. Репетиция прошла; рабочий кластер не останавливался. Предыдущая логическая проверка `verify-restore.sh` сверила 17 таблиц и 3448 строк тестовой БД.
 
+Оригиналы фото и PDF из `shared/uploads` копируются отдельным сервисом `drevo-media-backup.service` ежедневно в 04:20 UTC. `ops/postgres/local-media-backup.sh` проверяет запас 8 ГиБ и место для архива, создаёт tar.gz и SHA-256, проверяет читаемость архива и только после успеха оставляет три последние копии. Ежечасный `drevo-media-backup-health.timer` сообщает в journal об отсутствии свежей копии или нехватке места. На сервере создана и распакована тестовая копия: 143 файла совпали с исходными. `ops/postgres/setup-local-media-backup.sh --apply` устанавливает только эти сервисы/таймеры и не перезапускает PostgreSQL. Копия медиа и pgBackRest пока **не образуют атомарный снимок**: при изменении файлов между запусками согласованность связей нужно проверять отдельно. До переключения хранить текущий SQLite-архив как источник истины.
+
 Проверка локального состояния:
 
 ```sh
 sudo -u postgres pgbackrest --stanza=drevo check
 sudo -u postgres pgbackrest --stanza=drevo info
 systemctl status drevo-pgbackrest-backup.timer drevo-pgbackrest-health.timer
+systemctl status drevo-media-backup.timer drevo-media-backup-health.timer
 journalctl -u drevo-pgbackrest-backup.service -u drevo-pgbackrest-health.service --since today
+journalctl -u drevo-media-backup.service --since today
+journalctl -u drevo-media-backup-health.service --since today
 sudo -u postgres bash ops/postgres/verify-physical-restore.sh
+sudo -u site_drevo bash ops/postgres/verify-local-media-backup.sh
 ```
 
-Репозиторий находится в `/var/lib/pgbackrest` **на том же системном диске**, что и PostgreSQL. Это даёт локальный PITR в пределах сохранённых WAL, но не защищает от потери диска/сервера, компрометации хоста и утраты файлов медиа. Уведомления вне сервера пока нет: ошибки видны только в journal. Перед production-переключением нужны вынесенная копия pgBackRest и медиа, проверка восстановления из неё, внешнее оповещение и измерение роста WAL/диска под реальной нагрузкой. Продолжительность восстановления production-архива не измерена.
+Репозитории PostgreSQL и медиа находятся **на том же системном диске**, что и рабочие данные. Это даёт локальный PITR PostgreSQL в пределах сохранённых WAL и локальные копии файлов, но не защищает от потери диска/сервера или компрометации хоста. Уведомления вне сервера пока нет: ошибки видны только в journal. Перед production-переключением нужны вынесенная копия pgBackRest и медиа, проверка восстановления из неё, внешнее оповещение, согласование снимка БД и файлов и измерение роста WAL/диска под реальной нагрузкой. Продолжительность восстановления production-архива не измерена.
 
 Основание для настройки и предостережения о заполнении `pg_wal` при ошибке архивирования: [PostgreSQL 18 — Continuous Archiving](https://www.postgresql.org/docs/18/continuous-archiving.html) и [pgBackRest User Guide](https://pgbackrest.org/user-guide.html).

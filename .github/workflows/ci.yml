@@ -31,6 +31,10 @@ jobs:
       - run: bash -n ops/postgres/setup-local-backup.sh
       - run: bash -n ops/postgres/local-backup.sh
       - run: bash -n ops/postgres/local-backup-health.sh
+      - run: bash -n ops/postgres/local-media-backup.sh
+      - run: bash -n ops/postgres/local-media-backup-health.sh
+      - run: bash -n ops/postgres/verify-local-media-backup.sh
+      - run: bash -n ops/postgres/setup-local-media-backup.sh
       - run: bash -n ops/check-mcp.sh
       - name: Restore prepared award images
         id: award-cache
