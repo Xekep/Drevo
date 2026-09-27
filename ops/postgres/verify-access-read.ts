@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import { postgresAccessReader } from "../../src/server/postgres-access-read.ts";
+import { provisionPrivateArchiveInTransaction } from "../../src/server/postgres-private-archive.ts";
+import { readPostgresArchiveInTransaction } from "../../src/server/postgres-archive-read.ts";
 import type { ArchiveUser, Role, TreeAccess } from "../../src/domain/access.ts";
 
 function sourceUser(row: Record<string, unknown>): ArchiveUser {
@@ -44,6 +47,12 @@ export async function verifyAccessRead(
     const reader = postgresAccessReader(client, archiveId);
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
     try {
+      await client.query(
+        readFileSync(
+          new URL("./005_archive_owner_uniqueness.sql", import.meta.url),
+          "utf8",
+        ),
+      );
       const sourceUsers = sqlite
         .prepare("SELECT * FROM users ORDER BY created_at,id")
         .all()
@@ -55,20 +64,66 @@ export async function verifyAccessRead(
         if (!isDeepStrictEqual(await reader.getUser(user.id), user))
           throw new Error("Права участника PostgreSQL отличаются от SQLite");
       }
-      const probeArchiveId = `${archiveId}-isolation-probe-${randomUUID()}`;
+      const probeArchiveId = `probe-${randomUUID()}`;
       const probeAccountId = randomUUID();
       const probeSessionHash = randomUUID();
       const sharedPersonId = String(
         sqlite.prepare("SELECT id FROM people LIMIT 1").get()?.id ||
           randomUUID(),
       );
-      const inserted = await client.query(
-        `INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
-         SELECT $1,'Проверка изоляции','',false,0,sqlite_schema_version
-           FROM archives WHERE id=$2`,
-        [probeArchiveId, archiveId],
+      await client.query(
+        "INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
+        [probeAccountId, "Проверка изоляции", new Date(now).toISOString()],
       );
-      if (inserted.rowCount !== 1) throw new Error("Исходный архив не найден");
+      const schemaVersion = Number(
+        (
+          await client.query(
+            "SELECT sqlite_schema_version FROM archives WHERE id=$1",
+            [archiveId],
+          )
+        ).rows[0]?.sqlite_schema_version,
+      );
+      const provisioned = await provisionPrivateArchiveInTransaction(
+        client,
+        probeAccountId,
+        probeArchiveId,
+        "Проверка изоляции",
+        schemaVersion,
+      );
+      if (!provisioned.created || provisioned.archiveId !== probeArchiveId)
+        throw new Error("Личный архив не создан");
+      const emptyArchive = await readPostgresArchiveInTransaction(
+        client,
+        probeArchiveId,
+      );
+      if (
+        emptyArchive.revision !== 0 ||
+        emptyArchive.family.people.length !== 0 ||
+        (emptyArchive.family.links?.length || 0) !== 0 ||
+        (emptyArchive.family.photos?.length || 0) !== 0
+      )
+        throw new Error("Новый личный архив не пустой");
+      const privateSettings = await postgresAccessReader(
+        client,
+        probeArchiveId,
+      ).accessSettings();
+      if (
+        !isDeepStrictEqual(privateSettings, {
+          publicTree: false,
+          publicAlbums: false,
+          reverseTimeline: false,
+        })
+      )
+        throw new Error("Личный архив открыт публично");
+      const retry = await provisionPrivateArchiveInTransaction(
+        client,
+        probeAccountId,
+        `${probeArchiveId}-retry`,
+        "Повторный вызов",
+        schemaVersion,
+      );
+      if (retry.created || retry.archiveId !== probeArchiveId)
+        throw new Error("Повторный вызов создал второй личный архив");
       await client.query(
         "INSERT INTO people(archive_id,id,ordinal,data) VALUES($1,$2,1,$3::jsonb)",
         [
@@ -78,13 +133,9 @@ export async function verifyAccessRead(
         ],
       );
       await client.query(
-        "INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",
-        [probeAccountId, "Проверка изоляции", new Date(now).toISOString()],
-      );
-      await client.query(
-        `INSERT INTO archive_memberships
-          (archive_id,user_id,role,approved,person_id,tree_access)
-         VALUES($1,$2,'reader',true,$3,'all')`,
+        `UPDATE archive_memberships
+            SET role='reader',person_id=$3
+          WHERE archive_id=$1 AND user_id=$2`,
         [probeArchiveId, probeAccountId, sharedPersonId],
       );
       await client.query(
@@ -92,11 +143,7 @@ export async function verifyAccessRead(
         [probeSessionHash, probeAccountId, now + 60_000],
       );
       await client.query(
-        "INSERT INTO archive_access_settings(archive_id,public_tree,public_albums) VALUES($1,false,false)",
-        [probeArchiveId],
-      );
-      await client.query(
-        "INSERT INTO archive_tree_settings(archive_id,reverse_timeline) VALUES($1,true)",
+        "UPDATE archive_tree_settings SET reverse_timeline=true WHERE archive_id=$1",
         [probeArchiveId],
       );
       const otherArchive = postgresAccessReader(client, probeArchiveId);
