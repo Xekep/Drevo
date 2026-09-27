@@ -1,9 +1,14 @@
-import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { userStore } from "./users.ts";
-export const SESSION_MAX_AGE = 90 * 24 * 60 * 60;
+import {
+  newSessionToken,
+  sessionTokenHash,
+  validSessionToken,
+  SESSION_MAX_AGE,
+} from "./session-token.ts";
+export { SESSION_MAX_AGE } from "./session-token.ts";
 const RENEW_INTERVAL = 24 * 60 * 60 * 1000;
 const VISIT_INTERVAL = 60 * 1000;
 export function createAuth(
@@ -17,8 +22,6 @@ export function createAuth(
     "DELETE FROM auth_sessions WHERE expires_at <= ?",
   );
   removeExpired.run(Date.now());
-  const hash = (token: string) =>
-    createHash("sha256").update(token).digest("hex");
   const lookup = db.prepare(
     "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash=?",
   );
@@ -31,8 +34,8 @@ export function createAuth(
       ?.slice(14) || "";
   function sessionFor(req: IncomingMessage) {
     const token = cookie(req);
-    if (!/^[a-f0-9]{64}$/.test(token)) return null;
-    const tokenHash = hash(token);
+    if (!validSessionToken(token)) return null;
+    const tokenHash = sessionTokenHash(token);
     const row = lookup.get(tokenHash);
     if (!row) return null;
     if (Number(row.expires_at) <= Date.now()) {
@@ -80,12 +83,16 @@ export function createAuth(
     profile: { id: string; name: string },
   ) {
     const user = users.register(profile.id, profile.name);
-    revoke.run(hash(cookie(req)));
+    revoke.run(sessionTokenHash(cookie(req)));
     removeExpired.run(Date.now());
-    const token = randomBytes(32).toString("hex");
+    const token = newSessionToken();
     db.prepare(
       "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
-    ).run(hash(token), user.id, Date.now() + SESSION_MAX_AGE * 1000);
+    ).run(
+      sessionTokenHash(token),
+      user.id,
+      Date.now() + SESSION_MAX_AGE * 1000,
+    );
     users.recordVisit(user.id);
     setCookie(res, token);
   }
@@ -126,7 +133,7 @@ export function createAuth(
     isAdmin: (req: IncomingMessage) =>
       currentUser(req)?.approved === true && currentUser(req)?.role === "admin",
     logout(req: IncomingMessage, res: ServerResponse) {
-      revoke.run(hash(cookie(req)));
+      revoke.run(sessionTokenHash(cookie(req)));
       setCookie(res, "", 0);
     },
   };
