@@ -10,7 +10,7 @@ type Options = {
     req: IncomingMessage,
     res: ServerResponse,
     profile: { id: string; name: string },
-  ) => void;
+  ) => void | Promise<void>;
   fetcher?: typeof fetch;
   db: DatabaseSync;
 };
@@ -196,7 +196,7 @@ export function createYandexOAuth(options: Options) {
           profile.real_name,
           profile.login,
         ].find((v) => typeof v === "string" && v.trim()) as string | undefined;
-        options.issueSession(req, res, {
+        await options.issueSession(req, res, {
           id: profile.id,
           name: (name || profile.id).slice(0, 200),
         });

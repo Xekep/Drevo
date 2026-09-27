@@ -42,7 +42,9 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     clientId: "client",
     clientSecret: "secret",
     fetcher,
-    issueSession: () => {
+    issueSession: async (_req, _res, profile) => {
+      await new Promise((done) => setTimeout(done, 5));
+      if (profile.id === "failed") throw new Error("test session failure");
       issued++;
     },
     db,
@@ -106,9 +108,17 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     );
     assert.equal(response.status, 400);
     assert.equal(tokenCalls, 2);
+    const fourth = await begin();
+    profileId = "failed";
+    response = await fetch(
+      base + `/auth/yandex/callback?state=${fourth.state}&code=code`,
+      { headers: { Cookie: fourth.cookie }, redirect: "manual" },
+    );
+    assert.equal(response.status, 502);
+    assert.equal(issued, 2);
   } finally {
     server.closeAllConnections();
-  await new Promise<void>((r) => server.close(() => r()));
-  db.close();
+    await new Promise<void>((r) => server.close(() => r()));
+    db.close();
   }
 });
