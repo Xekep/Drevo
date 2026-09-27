@@ -113,6 +113,86 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
 });
 
+test("wheel moves through years, Shift+wheel moves people, and life bars track fractional scroll", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
+    timeout: 5_000,
+  });
+  await page.getByRole("button", { name: "Хронология" }).click();
+  const timeline = page.getByRole("region", {
+    name: /Горизонтальная хронология/,
+  });
+  await timeline.evaluate((element) => {
+    const year = Number(
+      document.querySelector(".timeline-center-marker output")?.textContent,
+    );
+    element.scrollLeft += (1992 - year) * 12;
+    element.style.bottom = "auto";
+    element.style.height = "220px";
+  });
+  const bar = timeline.locator(
+    '[data-person-id="e2e-grandchild"] .timeline-life',
+  );
+  await expect(bar).toBeVisible();
+  await timeline.evaluate((element) => {
+    const life = element.querySelector<HTMLElement>(
+      '[data-person-id="e2e-grandchild"] .timeline-life',
+    );
+    element.scrollLeft = Number(life?.dataset.startX) + 1;
+  });
+  await expect
+    .poll(() =>
+      bar.evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeLessThan(10);
+  const widthBefore = await bar.evaluate(
+    (element) => element.getBoundingClientRect().width,
+  );
+  const layoutWidth = await bar.evaluate((element) => element.style.width);
+  await timeline.evaluate((element) => {
+    element.scrollLeft += 3;
+  });
+  await expect
+    .poll(() =>
+      bar.evaluate((element) => element.getBoundingClientRect().width),
+    )
+    .toBeGreaterThan(widthBefore + 1);
+  expect(await bar.evaluate((element) => element.style.width)).toBe(
+    layoutWidth,
+  );
+
+  const bounds = await timeline.boundingBox();
+  if (!bounds) throw new Error("Timeline has no bounds");
+  await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + 105);
+  const before = await timeline.evaluate((element) => ({
+    left: element.scrollLeft,
+    top: element.scrollTop,
+  }));
+  await page.mouse.wheel(0, 96);
+  await expect
+    .poll(() => timeline.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(before.left);
+  expect(await timeline.evaluate((element) => element.scrollTop)).toBe(
+    before.top,
+  );
+  const beforePeople = await timeline.evaluate((element) => ({
+    left: element.scrollLeft,
+    top: element.scrollTop,
+  }));
+  await page.keyboard.down("Shift");
+  await page.mouse.wheel(0, 96);
+  await page.keyboard.up("Shift");
+  await expect
+    .poll(() => timeline.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(beforePeople.top);
+  expect(await timeline.evaluate((element) => element.scrollLeft)).toBe(
+    beforePeople.left,
+  );
+});
+
 test("chronology keeps portraits and epochs usable on a phone", async ({
   page,
 }, testInfo) => {
