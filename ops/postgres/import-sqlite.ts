@@ -440,6 +440,18 @@ export async function importSqliteSnapshot(
         "utf8",
       ),
     );
+    await client.query(
+      readFileSync(
+        join(
+          fileURLToPath(new URL(".", import.meta.url)),
+          "007_account_identities.sql",
+        ),
+        "utf8",
+      ),
+    );
+    await client.query(
+      "INSERT INTO account_identities(provider,subject,account_id) SELECT 'yandex',id,id FROM accounts",
+    );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {
