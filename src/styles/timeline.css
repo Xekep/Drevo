@@ -313,7 +313,8 @@
   border-radius: 99px;
   background: #6c896c;
   box-shadow: 0 0 0 2px #ffffffa6;
-  transition: width 120ms ease-out;
+  transform: scaleX(0);
+  transform-origin: left center;
 }
 .timeline-life.is-open {
   background: #7c9b73;
@@ -553,8 +554,5 @@
   }
   .timeline-event.is-current summary {
     animation: none;
-  }
-  .timeline-life {
-    transition: none;
   }
 }

@@ -23,6 +23,15 @@ function scrollBehavior(): ScrollBehavior {
     : "smooth";
 }
 
+function revealLifelines(bars: readonly HTMLElement[], scrollLeft: number) {
+  for (const bar of bars) {
+    const start = Number(bar.dataset.startX);
+    const width = Number(bar.dataset.lifeWidth);
+    const visible = Math.min(width, Math.max(0, scrollLeft - start + 4));
+    bar.style.transform = `scaleX(${visible / width})`;
+  }
+}
+
 function EventText({ item }: { item: TimelineItem }) {
   return (
     <>
@@ -89,6 +98,7 @@ export function HorizontalTimeline({
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
+  const lifelines = useRef<HTMLElement[]>([]);
   const yearLabel = useRef<HTMLOutputElement>(null);
   const drag = useRef<{
     x: number;
@@ -107,6 +117,7 @@ export function HorizontalTimeline({
     () => timelineRowsAtYear(model.rows, year),
     [model, year],
   );
+  const visibleRowIds = visibleRows.map((row) => row.person.id).join("\u0000");
   const [renderedRows, setRenderedRows] = useState(() =>
     visibleRows.map((row) => ({ row, exiting: false })),
   );
@@ -137,15 +148,23 @@ export function HorizontalTimeline({
   }, []);
 
   useEffect(() => {
-    const ids = new Set(visibleRows.map((row) => row.person.id));
+    const ids = new Set(visibleRowIds ? visibleRowIds.split("\u0000") : []);
     const update = window.setTimeout(() => {
       setRenderedRows((previous) => {
         const previousIds = new Set(previous.map(({ row }) => row.person.id));
-        return model.rows
+        const next = model.rows
           .filter(
             (row) => ids.has(row.person.id) || previousIds.has(row.person.id),
           )
           .map((row) => ({ row, exiting: !ids.has(row.person.id) }));
+        return previous.length === next.length &&
+          previous.every(
+            (item, index) =>
+              item.row === next[index].row &&
+              item.exiting === next[index].exiting,
+          )
+          ? previous
+          : next;
       });
     }, 0);
     const remove = window.setTimeout(() => {
@@ -155,7 +174,7 @@ export function HorizontalTimeline({
       window.clearTimeout(update);
       window.clearTimeout(remove);
     };
-  }, [model, visibleRows]);
+  }, [model, visibleRowIds]);
 
   useLayoutEffect(() => {
     const scroll = viewport.current;
@@ -165,20 +184,64 @@ export function HorizontalTimeline({
     setYear(firstYear);
   }, [firstYear, model]);
 
+  useLayoutEffect(() => {
+    lifelines.current = Array.from(
+      board.current?.querySelectorAll<HTMLElement>(".timeline-life") || [],
+    );
+    revealLifelines(lifelines.current, viewport.current?.scrollLeft ?? 0);
+  }, [renderedRows, model]);
+
+  useEffect(() => {
+    const scroll = viewport.current;
+    if (!scroll) return;
+    const onWheel = (event: WheelEvent) => {
+      if (
+        event.ctrlKey ||
+        (event.target instanceof Element &&
+          event.target.closest(".timeline-event-list"))
+      )
+        return;
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      if (!delta) return;
+      event.preventDefault();
+      const pixels =
+        delta *
+        (event.deltaMode === 1
+          ? 16
+          : event.deltaMode === 2
+            ? scroll.clientHeight
+            : 1);
+      if (event.shiftKey) scroll.scrollTop += pixels;
+      else scroll.scrollLeft += pixels;
+    };
+    scroll.addEventListener("wheel", onWheel, { passive: false });
+    return () => scroll.removeEventListener("wheel", onWheel);
+  }, []);
+
   useEffect(() => {
     const scroll = viewport.current;
     const label = yearLabel.current;
     if (!scroll || !label) return;
     let frame = 0;
+    let previousTop = Number.NaN;
+    let previousLeft = Number.NaN;
     const update = () => {
-      cancelAnimationFrame(frame);
+      if (frame) return;
       frame = requestAnimationFrame(() => {
+        frame = 0;
         const next = model.yearAtX(scroll.scrollLeft);
         label.textContent = String(next);
-        scroll.style.setProperty(
-          "--timeline-scroll-top",
-          `${scroll.scrollTop}px`,
-        );
+        if (scroll.scrollLeft !== previousLeft) {
+          previousLeft = scroll.scrollLeft;
+          revealLifelines(lifelines.current, previousLeft);
+        }
+        if (scroll.scrollTop !== previousTop) {
+          previousTop = scroll.scrollTop;
+          scroll.style.setProperty("--timeline-scroll-top", `${previousTop}px`);
+        }
         setYear((current) => (current === next ? current : next));
       });
     };
@@ -280,7 +343,7 @@ export function HorizontalTimeline({
         ref={viewport}
         className="horizontal-timeline"
         role="region"
-        aria-label="Горизонтальная хронология людей и событий"
+        aria-label="Горизонтальная хронология людей и событий. Колесо — годы, Shift и колесо — список людей"
         tabIndex={0}
         onKeyDown={(event) => {
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
@@ -412,7 +475,10 @@ export function HorizontalTimeline({
             )}
           {renderedRows.map(({ row, exiting }) => {
             const birthYear = row.birthYear ?? year;
-            const lifeEnd = Math.min(year, row.deathYear ?? year);
+            const lifeWidth = Math.max(
+              4,
+              model.yearX(row.deathYear ?? model.end) - model.yearX(birthYear),
+            );
             const age = year - birthYear;
             const status =
               row.deathYear === year
@@ -455,12 +521,11 @@ export function HorizontalTimeline({
                 >
                   <div
                     className={`timeline-life${row.deathYear === null ? " is-open" : ""}`}
+                    data-start-x={model.yearX(birthYear)}
+                    data-life-width={lifeWidth}
                     style={{
                       left: `calc(var(--timeline-pad) + ${model.yearX(birthYear)}px)`,
-                      width: Math.max(
-                        4,
-                        model.yearX(lifeEnd) - model.yearX(birthYear),
-                      ),
+                      width: lifeWidth,
                     }}
                     title={`${row.person.birth} — ${row.person.death || "дата смерти не указана"}`}
                   />
