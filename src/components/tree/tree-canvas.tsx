@@ -835,8 +835,8 @@ function Canvas(props: Props) {
               role="switch"
               aria-label="Древо / Хронология"
               aria-checked={timelineActive}
-              title={timelineActive ? "Переключить на древо" : "Переключить на хронологию"}
-              onClick={() => switchMode(timelineActive ? "generations" : "timeline")}
+              title={activeFanAnchor || timelineActive ? "Переключить на древо" : "Переключить на хронологию"}
+              onClick={() => switchMode(activeFanAnchor || timelineActive ? "generations" : "timeline")}
             >
               {timelineActive ? (
                 <ChartNoAxesGantt size={18} aria-hidden="true" />

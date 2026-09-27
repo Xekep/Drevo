@@ -47,12 +47,10 @@ test("мобильная панель помещается в один ряд и
     await expect(mode).not.toBeChecked();
   }
   await page.setViewportSize({ width: 320, height: 844 });
-  await page
-    .getByRole("button", {
-      name: "Тестов Пётр Иванович, 1965 — н. в.",
-      exact: true,
-    })
-    .click();
+  await page.goto("/people/e2e-child");
+  await expect(
+    page.getByRole("button", { name: "Свернуть панель" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Свернуть панель" }).click();
   await expectSingleRow(page, 320);
   const menu = page.getByLabel("Область просмотра", { exact: true });
@@ -78,6 +76,9 @@ test("мобильная панель помещается в один ряд и
   await expectSingleRow(page, 320);
   await mode.click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
+  await expect(mode).not.toBeChecked();
+  await expectSingleRow(page, 320);
+  await mode.click();
   await expect(mode).toBeChecked();
   await expectSingleRow(page, 320);
   const extra = page.getByRole("button", { name: "Доп. связи" });

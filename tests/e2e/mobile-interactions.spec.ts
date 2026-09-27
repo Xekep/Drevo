@@ -1,3 +1,4 @@
+import { familyViewAction } from "./tree-toolbar-actions";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function touchGesture(page: Page, target: Locator, dy: number, hold = 0) {
@@ -35,7 +36,8 @@ test("mobile fan starts centered", async ({ page }, testInfo) => {
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await page.getByRole("button", { name: "Веер", exact: true }).evaluate((button: HTMLButtonElement) => button.click());
+  await page.getByRole("button", { name: "Свернуть панель" }).click();
+  await familyViewAction(page, "Веер");
   const fan = page.locator(".fan-chart");
   await expect(fan).toBeVisible();
   await expect

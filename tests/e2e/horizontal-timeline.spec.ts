@@ -5,7 +5,10 @@ test("хронология переключает десятилетия без 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
-  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Хронология", exact: true })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
   const year = page.getByLabel("Год в центре хронологии");
   await expect(year).toHaveText("1940");
   await page.getByRole("button", { name: "На 10 лет вперёд" }).click();
@@ -124,7 +127,10 @@ test("wheel moves through years, Shift+wheel moves people, and life bars track f
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
-  await page.getByRole("switch", { name: "Древо / Хронология" }).click();
+  await page
+    .getByRole("button", { name: "Хронология", exact: true })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
@@ -285,7 +291,10 @@ test("era emblems stay vertically centered while chronology scrolls", async ({
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
-  await page.getByRole("button", { name: "Хронология" }).click();
+  await page
+    .getByRole("button", { name: "Хронология", exact: true })
+    .or(page.getByRole("switch", { name: "Древо / Хронология" }))
+    .click();
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });

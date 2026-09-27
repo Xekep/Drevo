@@ -1,3 +1,4 @@
+import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
 
 test("family, common ancestors and branch changes animate their cards and camera", async ({
@@ -52,7 +53,7 @@ test("family, common ancestors and branch changes animate their cards and camera
     });
 
   const familyMotion = await observe();
-  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await familyViewAction(page, "Семья выбранного");
   await expect
     .poll(() =>
       familyMotion.evaluate(
@@ -64,7 +65,7 @@ test("family, common ancestors and branch changes animate their cards and camera
   await familyMotion.evaluate((s) => s.stop());
 
   const commonMotion = await observe();
-  await page.getByRole("button", { name: "Общие предки" }).click();
+  await familyViewAction(page, "Общие предки");
   await expect
     .poll(() =>
       commonMotion.evaluate(
@@ -75,7 +76,7 @@ test("family, common ancestors and branch changes animate their cards and camera
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
   await commonMotion.evaluate((s) => s.stop());
 
-  await page.getByRole("button", { name: "Всё древо" }).click();
+  await familyViewAction(page, "Всё древо");
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 2_000,
   });
@@ -105,7 +106,7 @@ test("AI launcher moves to the edge when the fan hides camera controls", async (
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Веер");
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   const trigger = page.getByRole("button", {
     name: "Открыть ИИ-исследователя",
@@ -119,7 +120,7 @@ test("AI launcher moves to the edge when the fan hides camera controls", async (
         : Infinity;
     })
     .toBeLessThan(35);
-  await page.getByRole("button", { name: "Всё древо" }).click();
+  await familyViewAction(page, "Всё древо");
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   const tools = canvas.locator(".flow-camera-tools");
   await expect(tools).toBeVisible();
@@ -162,35 +163,35 @@ test("leaving the fan for the same person preserves the tree camera", async ({
     expect(Math.abs(actual[2] - expected[2])).toBeLessThan(0.002);
   };
   const before = await camera();
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Веер");
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
-  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await showTree(page);
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await page.waitForTimeout(750);
   sameCamera(await camera(), before);
 
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
-  await page.getByRole("button", { name: "Всё древо" }).click();
+  await familyViewAction(page, "Веер");
+  await familyViewAction(page, "Всё древо");
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await page.waitForTimeout(750);
   sameCamera(await camera(), before);
 
-  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await familyViewAction(page, "Семья выбранного");
   await page.waitForTimeout(1_200);
   const familyBefore = await camera();
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Веер");
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
-  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await showTree(page);
   await expect(canvas).not.toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await page.waitForTimeout(750);
   sameCamera(await camera(), familyBefore);
 
   if (testInfo.project.name === "mobile") return;
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Веер");
   const fan = page.locator(".fan-chart");
   await fan.locator(".fan-sector.is-known").nth(1).click();
   await expect(fan.locator(".fan-sector.is-selected")).toHaveCount(1);
-  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await showTree(page);
   await page.waitForTimeout(750);
   const afterNavigation = await camera();
   expect(
@@ -481,12 +482,12 @@ test("reduced motion skips the tree and fan transitions", async ({
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await familyViewAction(page, "Семья выбранного");
   const selectedCard = page.getByTestId("rf__node-e2e-child");
   await expect(selectedCard).toHaveCSS("animation-name", "none");
   await expect(selectedCard).toHaveCSS("transition-duration", "0s");
-  await page.getByRole("button", { name: "Всё древо" }).click();
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Всё древо");
+  await familyViewAction(page, "Веер");
   await expect(canvas).toHaveClass(/(?:^|\s)is-fan(?:\s|$)/);
   await expect(canvas).not.toHaveClass(/is-fan-revealing/);
 });
