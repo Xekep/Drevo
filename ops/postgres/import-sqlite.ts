@@ -452,6 +452,20 @@ export async function importSqliteSnapshot(
     await client.query(
       "INSERT INTO account_identities(provider,subject,account_id) SELECT 'yandex',id,id FROM accounts",
     );
+    await client.query(
+      readFileSync(
+        join(
+          fileURLToPath(new URL(".", import.meta.url)),
+          "008_account_tiers.sql",
+        ),
+        "utf8",
+      ),
+    );
+    // The migration must not silently reduce existing participants to the
+    // future registration tier.
+    await client.query(
+      "INSERT INTO account_tiers(account_id,full_access) SELECT id,true FROM accounts",
+    );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {

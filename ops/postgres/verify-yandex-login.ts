@@ -39,6 +39,13 @@ export async function verifyYandexLogin(client: pg.Client, now = Date.now()) {
        SELECT 'yandex',id,id FROM accounts
        ON CONFLICT (provider,subject) DO NOTHING`,
     );
+    await client.query(
+      readFileSync(new URL("./008_account_tiers.sql", import.meta.url), "utf8"),
+    );
+    await client.query(
+      `INSERT INTO account_tiers(account_id,full_access)
+       SELECT id,true FROM accounts ON CONFLICT (account_id) DO NOTHING`,
+    );
     const legacy = (
       await client.query<{ id: string; name: string }>(
         "SELECT id,name FROM accounts ORDER BY id LIMIT 1",
@@ -56,6 +63,15 @@ export async function verifyYandexLogin(client: pg.Client, now = Date.now()) {
     );
     assert.equal(first.accountId, legacy.id);
     assert.equal(first.accountCreated, false);
+    assert.equal(
+      (
+        await client.query<{ full_access: boolean }>(
+          "SELECT full_access FROM account_tiers WHERE account_id=$1",
+          [legacy.id],
+        )
+      ).rows[0].full_access,
+      true,
+    );
     const again = await completePostgresYandexLoginInTransaction(
       client,
       legacy,
@@ -109,6 +125,15 @@ export async function verifyYandexLogin(client: pg.Client, now = Date.now()) {
     assert.equal(created.accountCreated, true);
     assert.equal(created.archiveCreated, true);
     assert.notEqual(created.accountId, subject);
+    assert.equal(
+      (
+        await client.query<{ full_access: boolean }>(
+          "SELECT full_access FROM account_tiers WHERE account_id=$1",
+          [created.accountId],
+        )
+      ).rows[0].full_access,
+      false,
+    );
     const retry = await completePostgresYandexLoginInTransaction(
       client,
       { id: subject, name: "Новое имя" },
