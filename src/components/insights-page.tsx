@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Baby,
   BookOpenCheck,
   CalendarRange,
@@ -10,8 +9,9 @@ import {
   ChartNoAxesCombined,
   UsersRound,
 } from "lucide-react";
-import { analyzeFamilyInsights, fullName, type Family } from "../domain";
+import { analyzeFamilyInsights, type Family } from "../domain";
 import { ArchiveSummary } from "./archive-summary";
+import { ArchiveWarningCards } from "./archive-warning-cards";
 
 export default function InsightsPage({
   family,
@@ -26,7 +26,6 @@ export default function InsightsPage({
   const [warningFilter, setWarningFilter] = useState<
     "all" | "error" | "check" | "duplicate"
   >("all");
-  const [visibleWarnings, setVisibleWarnings] = useState(20);
   const filteredWarnings = insights.warnings.filter((warning) =>
     warningFilter === "all"
       ? true
@@ -34,15 +33,11 @@ export default function InsightsPage({
         ? warning.code === "possible-duplicate"
         : warning.level === warningFilter,
   );
-  const peopleById = useMemo(
-    () => new Map(family.people.map((person) => [person.id, person])),
-    [family.people],
-  );
   const filters = [
     { id: "all", label: "Все", count: insights.warnings.length },
     {
       id: "error",
-      label: "Противоречия",
+      label: "Ошибки и противоречия",
       count: insights.warnings.filter((warning) => warning.level === "error")
         .length,
     },
@@ -236,77 +231,18 @@ export default function InsightsPage({
                   type="button"
                   key={filter.id}
                   aria-pressed={warningFilter === filter.id}
-                  onClick={() => {
-                    setWarningFilter(filter.id);
-                    setVisibleWarnings(20);
-                  }}
+                  onClick={() => setWarningFilter(filter.id)}
                 >
                   {filter.label} <span>{filter.count}</span>
                 </button>
               ))}
             </div>
-            {filteredWarnings.length ? (
-              <>
-                <div className="insight-warnings">
-                  {filteredWarnings
-                    .slice(0, visibleWarnings)
-                    .map((warning, index) => (
-                      <article
-                        className={`insight-warning is-${warning.level}`}
-                        key={`${warning.code}:${warning.personIds.join(":")}:${warning.eventId || index}`}
-                      >
-                        <AlertTriangle size={16} aria-hidden="true" />
-                        <div>
-                          <span className="insight-warning-level">
-                            {warning.level === "error"
-                              ? "Противоречие"
-                              : "Нужна проверка"}
-                          </span>
-                          <h3>{warning.title}</h3>
-                          <p>{warning.detail}</p>
-                          <p className="insight-warning-rule">
-                            Почему: {warning.rule}
-                          </p>
-                          {!!warning.sourceTitles?.length && (
-                            <p className="insight-warning-sources">
-                              Связанные источники: {warning.sourceTitles.join(", ")}
-                            </p>
-                          )}
-                          <div className="insight-warning-people">
-                            {warning.personIds.flatMap((id) => {
-                              const person = peopleById.get(id);
-                              return person
-                                ? [
-                                    <button
-                                      type="button"
-                                      key={id}
-                                      onClick={() => onPerson(id)}
-                                    >
-                                      {fullName(person)} →
-                                    </button>,
-                                  ]
-                                : [];
-                            })}
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                </div>
-                {visibleWarnings < filteredWarnings.length && (
-                  <button
-                    className="insight-warnings-more"
-                    type="button"
-                    onClick={() => setVisibleWarnings((count) => count + 20)}
-                  >
-                    Показать ещё · {filteredWarnings.length - visibleWarnings}
-                  </button>
-                )}
-              </>
-            ) : (
-              <p className="insights-clean">
-                В этой категории предупреждений нет.
-              </p>
-            )}
+            <ArchiveWarningCards
+              key={warningFilter}
+              family={family}
+              warnings={filteredWarnings}
+              onPerson={onPerson}
+            />
           </>
         ) : (
           <p className="insights-clean">

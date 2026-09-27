@@ -12,6 +12,7 @@ import {
   Menu,
   MapPin,
   ChartNoAxesCombined,
+  ClipboardCheck,
   X,
 } from "lucide-react";
 import {
@@ -109,6 +110,7 @@ export function ArchiveNavigation({
             ["documents", "Документы", BookOpenText],
             ["places", "Места", MapPin],
             ["insights", "Сводка", ChartNoAxesCombined],
+            ["quality", "Проверка", ClipboardCheck],
           ] as const
         )
           .filter(([id]) =>
@@ -147,6 +149,7 @@ export function ArchiveNavigation({
                 ["documents", "Документы", BookOpenText],
                 ["places", "Места", MapPin],
                 ["insights", "Сводка", ChartNoAxesCombined],
+                ["quality", "Проверка", ClipboardCheck],
               ] as const
             )
               .filter(([id]) =>
