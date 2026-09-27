@@ -49,6 +49,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
       db.prepare(
         "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
       ).run("document-1", "person-1");
+      db.prepare(
+        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
+      ).run("person-1", "user-1", 1_000, "Воспоминание");
     } finally {
       db.close();
     }
@@ -58,6 +61,7 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("people")?.length, 1);
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
+    assert.equal(snapshot.rows.get("person_comments")?.length, 1);
     assert.deepEqual(snapshot.media, { local: 2, external: 0 });
     assert.deepEqual(
       readFileSync(sqlite),
@@ -77,6 +81,15 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.throws(
       () => inspectSqliteSnapshot(join(dir, "drevo.sqlite"), uploads),
       /согласованную копию SQLite/,
+    );
+    writeFileSync(join(uploads, "record.pdf"), "document");
+    const oldSchema = new DatabaseSync(sqlite);
+    oldSchema.exec("DROP TABLE person_comments");
+    oldSchema.close();
+    assert.deepEqual(
+      inspectSqliteSnapshot(sqlite, uploads).rows.get("person_comments"),
+      [],
+      "копии до появления обсуждений остаются переносимыми",
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -21,6 +21,7 @@ type Table = {
   order: string;
   json?: string[];
   numbers?: string[];
+  optional?: boolean;
 };
 
 // Имена таблиц и столбцов заданы кодом, в SQL из параметров CLI они не попадают.
@@ -88,9 +89,23 @@ const tables: Table[] = [
     json: ["data"],
     numbers: ["revision"],
   },
+  {
+    name: "person_comments",
+    columns: ["id", "person_id", "author_id", "created_ms", "text"],
+    order: "id",
+    numbers: ["id", "created_ms"],
+    optional: true,
+  },
 ];
 
 function sqliteRows(db: DatabaseSync, table: Table): Row[] {
+  if (
+    table.optional &&
+    !db
+      .prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?")
+      .get(table.name)
+  )
+    return [];
   const fields = table.columns.filter((column) => column !== "ordinal");
   return db
     .prepare(

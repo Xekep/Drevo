@@ -27,6 +27,7 @@ import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
+import { PersonDiscussion } from "./person-discussion";
 export function Avatar({
   person,
   large = false,
@@ -100,6 +101,7 @@ export function PersonPanel({
   onCompare,
   suggestions,
   isCurrentUser = false,
+  canDiscuss = false,
   idPrefix = "person",
 }: {
   person: Person;
@@ -109,9 +111,10 @@ export function PersonPanel({
   onCompare?: () => void;
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
+  canDiscuss?: boolean;
   idPrefix?: string;
 }) {
-  const [tab, setTab] = useState<"bio" | "sources">("bio");
+  const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
   const sources = collectPersonSources(person);
   const relatives = people.filter(
     (p) =>
@@ -164,13 +167,40 @@ export function PersonPanel({
       <div
         className="panel-tabs"
         role="tablist"
+        tabIndex={-1}
         aria-label="Сведения о человеке"
+        onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+            return;
+          const tabs = Array.from(
+            event.currentTarget.querySelectorAll<HTMLButtonElement>(
+              '[role="tab"]',
+            ),
+          );
+          const index = tabs.indexOf(
+            document.activeElement as HTMLButtonElement,
+          );
+          if (index < 0) return;
+          event.preventDefault();
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? tabs.length - 1
+                : (index +
+                    (event.key === "ArrowRight" ? 1 : -1) +
+                    tabs.length) %
+                  tabs.length;
+          tabs[next].focus();
+          tabs[next].click();
+        }}
       >
         <button
           role="tab"
           id={`${idPrefix}-bio-tab`}
           aria-controls={`${idPrefix}-tab-content`}
           aria-selected={tab === "bio"}
+          tabIndex={tab === "bio" ? 0 : -1}
           className={tab === "bio" ? "active" : ""}
           onClick={() => setTab("bio")}
         >
@@ -181,11 +211,25 @@ export function PersonPanel({
           id={`${idPrefix}-sources-tab`}
           aria-controls={`${idPrefix}-tab-content`}
           aria-selected={tab === "sources"}
+          tabIndex={tab === "sources" ? 0 : -1}
           className={tab === "sources" ? "active" : ""}
           onClick={() => setTab("sources")}
         >
           Источники <span className="count-badge">{sources.length}</span>
         </button>
+        {canDiscuss && (
+          <button
+            role="tab"
+            id={`${idPrefix}-discussion-tab`}
+            aria-controls={`${idPrefix}-tab-content`}
+            aria-selected={tab === "discussion"}
+            tabIndex={tab === "discussion" ? 0 : -1}
+            className={tab === "discussion" ? "active" : ""}
+            onClick={() => setTab("discussion")}
+          >
+            Обсуждение
+          </button>
+        )}
       </div>
       <div
         className="profile-content"
@@ -263,6 +307,8 @@ export function PersonPanel({
               </button>
             )}
           </>
+        ) : tab === "discussion" && canDiscuss ? (
+          <PersonDiscussion key={person.id} personId={person.id} />
         ) : (
           <>
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>

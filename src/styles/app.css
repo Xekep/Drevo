@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./archive.css";
+@import "./person-discussion.css";
 
 :root {
   --paper: #f7f8f4;
@@ -615,8 +616,10 @@ h1 {
   display: flex;
   border-top: 1px solid #edf0e8;
   border-bottom: 1px solid #e2e7dc;
-  padding: 0 24px;
-  gap: 26px;
+  padding: 0 12px;
+  gap: 12px;
+  justify-content: space-between;
+  overflow-x: auto;
 }
 .panel-tabs > button,
 .panel-tabs > span {
@@ -625,9 +628,14 @@ h1 {
   color: #687269;
   position: relative;
   white-space: nowrap;
+  min-height: 44px;
 }
 .panel-tabs .active {
   color: var(--ink);
+}
+.panel-tabs > button:focus-visible {
+  outline: 2px solid #718767;
+  outline-offset: -3px;
 }
 .panel-tabs .active:after {
   content: "";

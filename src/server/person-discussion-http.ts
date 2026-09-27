@@ -1,0 +1,229 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { openArchive } from "./database.ts";
+import type { createAuth } from "./auth.ts";
+import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+import { isSameOriginRequest } from "./same-origin.ts";
+import { auditStore } from "./audit.ts";
+
+const MAX_TEXT = 2000;
+const PAGE_SIZE = 20;
+type CommentRow = {
+  id: number;
+  person_id: string;
+  author_id: string;
+  author_name: string | null;
+  created_ms: number;
+  text: string;
+};
+
+function json(res: ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "private, no-store",
+  });
+  res.end(JSON.stringify(body));
+  return true;
+}
+
+async function readText(req: IncomingMessage) {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 8192) throw new Error("Слишком длинное сообщение");
+    chunks.push(chunk);
+  }
+  const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  if (!body || typeof body !== "object" || !("text" in body))
+    throw new Error("Введите сообщение");
+  const text = (body as { text: unknown }).text;
+  if (typeof text !== "string") throw new Error("Введите сообщение");
+  const value = text.trim();
+  if (!value || value.length > MAX_TEXT)
+    throw new Error("Сообщение должно содержать от 1 до 2000 символов");
+  return value;
+}
+
+export function personDiscussionHttp({
+  archive,
+  auth,
+  publicOrigin,
+}: {
+  archive: ReturnType<typeof openArchive>;
+  auth: ReturnType<typeof createAuth>;
+  publicOrigin?: string;
+}) {
+  const db = archive.db;
+  const audit = auditStore(db);
+  const comment = db.prepare(
+    `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
+       FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
+      WHERE c.id=? AND c.person_id=?`,
+  );
+  const present = (
+    row: CommentRow,
+    userId: string,
+    userName: string,
+    admin: boolean,
+  ) => ({
+    id: row.id,
+    text: row.text,
+    author:
+      row.author_name ||
+      (row.author_id === userId ? userName : "Участник архива"),
+    createdAt: new Date(row.created_ms).toISOString(),
+    canDelete: admin || row.author_id === userId,
+  });
+
+  return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    const match =
+      /^\/api\/people\/([^/]+)\/discussion(?:\/([1-9][0-9]*))?$/.exec(
+        url.pathname,
+      );
+    if (!match) return false;
+    if (!auth.canRead(req))
+      return json(res, 401, { error: "Войдите, чтобы открыть обсуждение" });
+    let personId: string;
+    try {
+      personId = decodeURIComponent(match[1]);
+    } catch {
+      return json(res, 400, { error: "Некорректный адрес человека" });
+    }
+    const user = auth.currentUser(req)!;
+    const canSee = isScopedUser(user)
+      ? visiblePersonIds(archive.read().family, user).has(personId)
+      : !!db.prepare("SELECT 1 FROM people WHERE id=?").get(personId);
+    if (!canSee) return json(res, 404, { error: "Человек не найден" });
+
+    if (req.method === "GET" && !match[2]) {
+      const rawBefore = url.searchParams.get("before");
+      if (rawBefore && !/^[1-9][0-9]*$/.test(rawBefore))
+        return json(res, 400, { error: "Некорректная страница" });
+      const before = rawBefore ? Number(rawBefore) : Number.MAX_SAFE_INTEGER;
+      if (!Number.isSafeInteger(before))
+        return json(res, 400, { error: "Некорректная страница" });
+      const rows = db
+        .prepare(
+          `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
+             FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
+            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
+        )
+        .all(personId, before, PAGE_SIZE + 1) as CommentRow[];
+      const page = rows.slice(0, PAGE_SIZE);
+      return json(res, 200, {
+        items: page.map((row) =>
+          present(row, user.id, user.name, user.role === "admin"),
+        ),
+        nextBefore: rows.length > PAGE_SIZE ? page.at(-1)!.id : null,
+      });
+    }
+
+    if (req.method !== "POST" && req.method !== "DELETE")
+      return json(res, 405, { error: "Метод не поддерживается" });
+    if (!isSameOriginRequest(req, publicOrigin))
+      return json(res, 403, { error: "Недопустимый источник запроса" });
+
+    if (req.method === "POST" && !match[2]) {
+      let text: string;
+      try {
+        text = await readText(req);
+      } catch {
+        return json(res, 400, { error: "Введите сообщение до 2000 символов" });
+      }
+      const now = Date.now();
+      let id = 0;
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const recent = db
+          .prepare(
+            "SELECT count(*) AS count FROM audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
+          )
+          .get(user.id, new Date(now - 60_000).toISOString()) as {
+          count: number;
+        };
+        if (recent.count >= 5) {
+          db.exec("ROLLBACK");
+          return json(res, 429, {
+            error: "Подождите минуту перед новым сообщением",
+          });
+        }
+        id = Number(
+          db
+            .prepare(
+              "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
+            )
+            .run(personId, user.id, now, text).lastInsertRowid,
+        );
+        audit.record(
+          {
+            action: "Добавлено сообщение в обсуждение",
+            entity: "person_comment",
+            entityId: String(id),
+            label: "Обсуждение человека",
+            personIds: [personId],
+            details: [],
+          },
+          user,
+        );
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return json(res, 201, {
+        item: present(
+          {
+            id,
+            person_id: personId,
+            author_id: user.id,
+            author_name: user.name,
+            created_ms: now,
+            text,
+          },
+          user.id,
+          user.name,
+          user.role === "admin",
+        ),
+      });
+    }
+
+    if (req.method === "DELETE" && match[2]) {
+      const id = Number(match[2]);
+      if (!Number.isSafeInteger(id))
+        return json(res, 400, { error: "Некорректное сообщение" });
+      const row = comment.get(id, personId) as CommentRow | undefined;
+      if (!row) return json(res, 404, { error: "Сообщение не найдено" });
+      if (row.author_id !== user.id && user.role !== "admin")
+        return json(res, 403, {
+          error: "Удалить сообщение может автор или администратор",
+        });
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const deleted = db
+          .prepare("DELETE FROM person_comments WHERE id=? AND person_id=?")
+          .run(id, personId);
+        if (deleted.changes !== 1) {
+          db.exec("ROLLBACK");
+          return json(res, 404, { error: "Сообщение не найдено" });
+        }
+        audit.record(
+          {
+            action: "Удалено сообщение из обсуждения",
+            entity: "person_comment",
+            entityId: String(id),
+            label: "Обсуждение человека",
+            personIds: [personId],
+            details: [],
+          },
+          user,
+        );
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return json(res, 200, { deleted: true });
+    }
+    return json(res, 405, { error: "Метод не поддерживается" });
+  };
+}

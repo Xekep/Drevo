@@ -95,3 +95,15 @@ CREATE TABLE IF NOT EXISTS history (
   data jsonb NOT NULL,
   PRIMARY KEY (archive_id, revision)
 );
+
+CREATE TABLE IF NOT EXISTS person_comments (
+  archive_id text NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
+  id bigint NOT NULL,
+  person_id text NOT NULL,
+  author_id text NOT NULL,
+  created_ms bigint NOT NULL,
+  text text NOT NULL CHECK (char_length(text) BETWEEN 1 AND 2000),
+  PRIMARY KEY (archive_id, id),
+  FOREIGN KEY (archive_id, person_id) REFERENCES people(archive_id, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS person_comments_person ON person_comments(archive_id, person_id, id DESC);
