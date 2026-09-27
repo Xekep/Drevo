@@ -33,6 +33,12 @@ export async function completePostgresYandexLoginInTransaction(
   let accountId = identity.rows[0]?.account_id;
   const accountCreated = !accountId;
   if (accountId) {
+    const tier = await client.query(
+      "SELECT 1 FROM account_tiers WHERE account_id=$1",
+      [accountId],
+    );
+    if (!tier.rowCount)
+      throw new Error("Для аккаунта не задан уровень доступа");
     await client.query("UPDATE accounts SET name=$2 WHERE id=$1", [
       accountId,
       name,
@@ -47,6 +53,9 @@ export async function completePostgresYandexLoginInTransaction(
       "INSERT INTO account_identities(provider,subject,account_id) VALUES('yandex',$1,$2)",
       [subject, accountId],
     );
+    await client.query("INSERT INTO account_tiers(account_id) VALUES($1)", [
+      accountId,
+    ]);
   }
   // Existing invited members should return to their approved tree after the
   // migration. Creating an empty personal tree on every legacy login would
