@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Drevo local PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

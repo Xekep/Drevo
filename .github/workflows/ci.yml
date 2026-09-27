@@ -26,6 +26,11 @@ jobs:
       - run: bash -n ops/deploy.sh
       - run: bash -n ops/backup.sh
       - run: bash -n ops/fetch-award-images.sh
+      - run: bash -n ops/postgres/verify-restore.sh
+      - run: bash -n ops/postgres/verify-physical-restore.sh
+      - run: bash -n ops/postgres/setup-local-backup.sh
+      - run: bash -n ops/postgres/local-backup.sh
+      - run: bash -n ops/postgres/local-backup-health.sh
       - run: bash -n ops/check-mcp.sh
       - name: Restore prepared award images
         id: award-cache
