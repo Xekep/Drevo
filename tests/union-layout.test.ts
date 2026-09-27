@@ -262,6 +262,37 @@ test("a child with one known parent is not assigned to that parent's marriage", 
     { from: "a", to: "child", type: "parent" },
   ]);
 });
+
+test("co-parents keep separate card backgrounds while spouses share one", async () => {
+  const child = person("child", ["a", "b"]);
+  for (const reverse of [false, true]) {
+    const coParents = await unionGeometry(
+      [person("a"), person("b"), child],
+      reverse,
+    );
+    assert.equal(coParents.blocks!.length, 0);
+    const coParentPair = coParents.branches!.find((branch) =>
+      branch.id.startsWith("pair:"),
+    );
+    assert.ok(coParentPair);
+    assert.deepEqual(
+      coParentPair.relations.map((relation) => relation.type),
+      ["parent", "parent"],
+    );
+
+    const married = await unionGeometry(
+      [person("a", [], ["b"]), person("b", [], ["a"]), child],
+      reverse,
+    );
+    assert.equal(married.blocks!.length, 1);
+    assert.deepEqual(married.blocks![0].members, ["a", "b"]);
+    assert.deepEqual(
+      married.branches!.find((branch) => branch.id.startsWith("pair:"))!
+        .relations,
+      [{ from: "a", to: "b", type: "spouse" }],
+    );
+  }
+});
 test("shared parent branch has one route per child and no crossing in a nuclear family", async () => {
   const people = [
     person("a"),

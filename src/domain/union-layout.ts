@@ -287,7 +287,8 @@ async function geometryForSeed(
     unit.members.forEach((id, i) =>
       positions.push([nodeId(unit, id), { x: p.x + i * (W + 32), y: p.y }]),
     );
-    if (unit.members.length > 1)
+    // Общая подложка обозначает брак, а не только общих детей.
+    if (unit.members.length > 1 && unit.married)
       blocks.push({
         id: unit.id,
         members: unit.members.map((id) => nodeId(unit, id)),

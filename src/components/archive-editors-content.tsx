@@ -162,6 +162,10 @@ export function PersonEditor({
       !person && relativeTo && relationship === "child"
         ? [...draft.parents, relativeTo.id]
         : draft.parents,
+    spouses:
+      !person && relativeTo && relationship === "spouse"
+        ? [...new Set([...draft.spouses, relativeTo.id])]
+        : draft.spouses,
   };
   const suggestions = editorParentHints(
     hintDraft,
@@ -565,7 +569,9 @@ export function PersonEditor({
                           ? "Возможный отец"
                           : hint.role === "mother"
                             ? "Возможная мать"
-                            : "Возможный ребёнок"}
+                            : hint.role === "parent"
+                              ? "Возможный родитель"
+                              : "Возможный ребёнок"}
                         : {fullName(hint.person)}
                       </b>
                       <small>{hint.reason}</small>
