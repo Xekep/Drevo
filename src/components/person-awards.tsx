@@ -507,6 +507,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
       degreeId,
       degree,
       url: safeUrl(award.source?.url),
+      visualImage: degree?.image || definition?.image,
     };
   });
 
@@ -593,6 +594,17 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
                 </a>
               )}
             </div>
+          )}
+          {active.visualImage && (
+            <a
+              className="award-image-credit"
+              href={active.visualImage.sourcePage}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Изображение: {active.visualImage.author || "Wikimedia Commons"} · {active.visualImage.license}
+              <ArrowUpRight size={12} aria-hidden="true" />
+            </a>
           )}
         </div>
       )}

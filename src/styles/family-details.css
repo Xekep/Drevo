@@ -163,6 +163,21 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.award-image-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 8px;
+  color: #677265;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.award-image-credit:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 @keyframes award-focus-in {
   from {
     opacity: 0;

@@ -9,7 +9,7 @@
     "dev": "node --experimental-strip-types src/server/index.ts",
     "start": "node --experimental-strip-types src/server/index.ts --production",
     "build": "vite build",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:worker": "node --test tests/built-worker.test.mjs",
     "typecheck": "tsc --noEmit",
