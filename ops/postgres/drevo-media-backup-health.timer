@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly Drevo local original-media backup health check
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -34,6 +34,15 @@ jobs:
       - run: bash -n ops/deploy.sh
       - run: bash -n ops/backup.sh
       - run: bash -n ops/fetch-award-images.sh
+      - run: bash -n ops/postgres/verify-restore.sh
+      - run: bash -n ops/postgres/verify-physical-restore.sh
+      - run: bash -n ops/postgres/setup-local-backup.sh
+      - run: bash -n ops/postgres/local-backup.sh
+      - run: bash -n ops/postgres/local-backup-health.sh
+      - run: bash -n ops/postgres/local-media-backup.sh
+      - run: bash -n ops/postgres/local-media-backup-health.sh
+      - run: bash -n ops/postgres/verify-local-media-backup.sh
+      - run: bash -n ops/postgres/setup-local-media-backup.sh
       - name: Restore prepared award images
         id: award-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

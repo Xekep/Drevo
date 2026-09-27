@@ -1,0 +1,7 @@
+[Unit]
+Description=Check Drevo local original-media backup
+
+[Service]
+Type=oneshot
+User=site_drevo
+ExecStart=/usr/local/sbin/drevo-media-backup-health

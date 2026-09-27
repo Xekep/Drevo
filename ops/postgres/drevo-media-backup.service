@@ -1,0 +1,8 @@
+[Unit]
+Description=Drevo local original-media backup
+
+[Service]
+Type=oneshot
+User=site_drevo
+TimeoutStartSec=0
+ExecStart=/usr/local/sbin/drevo-media-backup
