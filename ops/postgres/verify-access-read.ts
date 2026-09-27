@@ -181,6 +181,42 @@ export async function verifyAccessRead(
         })
       )
         throw new Error("Настройки второго архива смешались с первым");
+      const sharedAccount = sourceUsers[0];
+      if (sharedAccount) {
+        const otherRole =
+          sharedAccount.role === "reader" ? "relative" : "reader";
+        const otherApproval = !sharedAccount.approved;
+        const sharedSessionHash = randomUUID();
+        await client.query(
+          `INSERT INTO archive_memberships
+            (archive_id,user_id,role,approved,person_id,tree_access)
+           VALUES($1,$2,$3,$4,NULL,'all')`,
+          [probeArchiveId, sharedAccount.id, otherRole, otherApproval],
+        );
+        await client.query(
+          "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+          [sharedSessionHash, sharedAccount.id, now + 60_000],
+        );
+        if (
+          !isDeepStrictEqual(
+            await reader.getSessionUser(sharedSessionHash, now),
+            sharedAccount,
+          )
+        )
+          throw new Error("Сессия потеряла права в исходном архиве");
+        const otherIdentity = await otherArchive.getSessionUser(
+          sharedSessionHash,
+          now,
+        );
+        if (
+          otherIdentity?.role !== otherRole ||
+          otherIdentity.approved !== otherApproval ||
+          otherIdentity.personId !== undefined
+        )
+          throw new Error(
+            "Права общей учётной записи смешались между архивами",
+          );
+      }
       await client.query("ROLLBACK");
       return {
         archiveId,
