@@ -126,8 +126,10 @@ export function PersonFullView({
               </div>
               <PersonPanel
                 key={active.id}
+                idPrefix="person-full"
                 person={active}
                 isCurrentUser={user?.personId === active.id}
+                canDiscuss={user?.approved === true}
                 people={family.people}
                 links={family.links}
                 onSelect={selectActive}

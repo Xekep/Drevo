@@ -744,12 +744,14 @@ export function initializeArchiveSchema(db: DatabaseSync) {
   if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(backupExtension)) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      db.exec([
-        "CREATE TABLE backup_settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL CHECK(json_valid(data)), next_run INTEGER NOT NULL) STRICT;",
-        "CREATE TABLE backup_catalog (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
-        "CREATE INDEX backup_catalog_date ON backup_catalog(created_at DESC);",
-        "CREATE TABLE backup_job (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, actor_id TEXT NOT NULL, lease_until INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
-      ].join("\n"));
+      db.exec(
+        [
+          "CREATE TABLE backup_settings (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL CHECK(json_valid(data)), next_run INTEGER NOT NULL) STRICT;",
+          "CREATE TABLE backup_catalog (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
+          "CREATE INDEX backup_catalog_date ON backup_catalog(created_at DESC);",
+          "CREATE TABLE backup_job (id INTEGER PRIMARY KEY CHECK(id=1), owner TEXT NOT NULL, actor_id TEXT NOT NULL, lease_until INTEGER NOT NULL, data TEXT NOT NULL CHECK(json_valid(data))) STRICT;",
+        ].join("\n"),
+      );
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(backupExtension);
       db.exec("COMMIT");
     } catch (error) {
@@ -771,6 +773,31 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       CREATE INDEX media_upload_grants_expiry ON media_upload_grants(expires_ms);`);
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
         mediaGrantExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  const discussionExtension = "2026-09-person-discussions";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(discussionExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE person_comments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          author_id TEXT NOT NULL,
+          created_ms INTEGER NOT NULL,
+          text TEXT NOT NULL CHECK(length(text) BETWEEN 1 AND 2000)
+        ) STRICT;
+        CREATE INDEX person_comments_person ON person_comments(person_id,id DESC);
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        discussionExtension,
       );
       db.exec("COMMIT");
     } catch (error) {

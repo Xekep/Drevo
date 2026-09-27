@@ -230,8 +230,10 @@ export function PersonInspector({
         </div>
       )}
       <PersonPanel
+        idPrefix="person-inspector"
         person={person}
         isCurrentUser={user?.personId === person.id}
+        canDiscuss={user?.approved === true}
         people={family.people}
         links={family.links}
         onSelect={onSelect}
