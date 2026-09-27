@@ -98,6 +98,110 @@ const tables: Table[] = [
   },
 ];
 
+// These tables still need dedicated PostgreSQL repositories before cutover. Keep
+// their complete rows in the shadow database so no account or service state is
+// silently lost while those repositories are built.
+const serviceTables = [
+  "access_settings",
+  "ai_chat_messages",
+  "ai_chats",
+  "ai_settings",
+  "ai_usage",
+  "ai_usage_models",
+  "audit_entries",
+  "audit_people",
+  "auth_sessions",
+  "backup_catalog",
+  "backup_job",
+  "backup_settings",
+  "document_upload_requests",
+  "face_descriptors",
+  "geocode_cache",
+  "mcp_tokens",
+  "mcp_usage",
+  "media_upload_grants",
+  "migrations",
+  "oauth_transactions",
+  "research_categories",
+  "research_resources",
+  "research_suggestions",
+  "share_links",
+  "tree_settings",
+  "users",
+  "workflow_stages",
+] as const;
+
+type ServiceTable = {
+  name: string;
+  columns: string[];
+  rows: Array<{ ordinal: number; data: Row }>;
+};
+
+function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
+  const actual = db
+    .prepare(
+      "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all()
+    .map((row) => String(row.name));
+  const expected = [
+    "archive",
+    ...tables.map((table) => table.name),
+    ...serviceTables,
+  ]
+    .filter((name) => name !== "person_comments" || actual.includes(name))
+    .sort();
+  if (!isDeepStrictEqual(actual, expected))
+    throw new Error(
+      `Неизвестная или отсутствующая таблица SQLite: ${actual
+        .filter((name) => !expected.includes(name))
+        .concat(expected.filter((name) => !actual.includes(name)))
+        .join(", ")}`,
+    );
+  for (const table of tables) {
+    if (table.optional && !actual.includes(table.name)) continue;
+    const columns = db
+      .prepare(`PRAGMA table_info(${table.name})`)
+      .all()
+      .map((row) => String(row.name));
+    const imported = table.columns.filter((column) => column !== "ordinal");
+    if (!isDeepStrictEqual(columns, imported))
+      throw new Error(`Столбцы ${table.name} отличаются от схемы импорта`);
+  }
+  const archiveColumns = db
+    .prepare("PRAGMA table_info(archive)")
+    .all()
+    .map((row) => String(row.name));
+  if (
+    !isDeepStrictEqual(archiveColumns, [
+      "id",
+      "title",
+      "description",
+      "demo",
+      "revision",
+    ])
+  )
+    throw new Error("Столбцы archive отличаются от схемы импорта");
+  return serviceTables.map((name) => {
+    const columns = db
+      .prepare(`PRAGMA table_info(${name})`)
+      .all()
+      .map((row) => String(row.name));
+    if (!columns.length)
+      throw new Error(`Нет столбцов служебной таблицы ${name}`);
+    const rows = db
+      .prepare(`SELECT rowid AS ordinal,* FROM ${name} ORDER BY rowid`)
+      .all()
+      .map((row) => ({
+        ordinal: Number(row.ordinal),
+        data: Object.fromEntries(
+          columns.map((column) => [column, row[column]]),
+        ),
+      }));
+    return { name, columns, rows };
+  });
+}
+
 function sqliteRows(db: DatabaseSync, table: Table): Row[] {
   if (
     table.optional &&
@@ -194,11 +298,13 @@ export function inspectSqliteSnapshot(sqlitePath: string, uploads: string) {
     const rows = new Map(
       tables.map((table) => [table.name, sqliteRows(db, table)]),
     );
+    const services = sqliteServiceTables(db);
     const media = mediaReferences(rows, uploads);
     db.exec("ROLLBACK");
     return {
       archive,
       rows,
+      services,
       media,
       schemaVersion,
       sha256: fileSha256(sqlitePath),
@@ -221,10 +327,18 @@ export async function importSqliteSnapshot(
     join(fileURLToPath(new URL(".", import.meta.url)), "001_archive_core.sql"),
     "utf8",
   );
+  const serviceSchema = readFileSync(
+    join(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "002_service_snapshot.sql",
+    ),
+    "utf8",
+  );
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
     await client.query("SELECT pg_advisory_xact_lock(24050260927)");
     await client.query(schema);
+    await client.query(serviceSchema);
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(
         "Целевая БД уже содержит архив; повторный импорт запрещён",
@@ -269,6 +383,36 @@ export async function importSqliteSnapshot(
         throw new Error(
           `Данные таблицы ${table.name} не совпали после переноса`,
         );
+    }
+    for (const service of snapshot.services) {
+      await client.query(
+        "INSERT INTO service_snapshot_tables(archive_id,name,columns,row_count) VALUES($1,$2,$3,$4)",
+        [
+          archiveId,
+          service.name,
+          JSON.stringify(service.columns),
+          service.rows.length,
+        ],
+      );
+      for (const row of service.rows)
+        await client.query(
+          "INSERT INTO service_snapshot_rows(archive_id,table_name,ordinal,data) VALUES($1,$2,$3,$4)",
+          [archiveId, service.name, row.ordinal, JSON.stringify(row.data)],
+        );
+      const actual = (
+        await client.query(
+          "SELECT ordinal,data FROM service_snapshot_rows WHERE archive_id=$1 AND table_name=$2 ORDER BY ordinal",
+          [archiveId, service.name],
+        )
+      ).rows.map((row: { ordinal: string; data: Row }) => ({
+        ordinal: Number(row.ordinal),
+        data: row.data,
+      }));
+      if (!isDeepStrictEqual(actual, service.rows))
+        throw new Error(
+          `Данные служебной таблицы ${service.name} не совпали после переноса`,
+        );
+      counts[service.name] = service.rows.length;
     }
     await client.query("COMMIT");
     return {
