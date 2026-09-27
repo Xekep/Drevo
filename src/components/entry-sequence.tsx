@@ -42,7 +42,6 @@ export function EntrySequence({
   ready: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const skip = useRef<HTMLButtonElement>(null);
   const startedAt = useRef<number | null>(null);
   const [exiting, setExiting] = useState(false);
 
@@ -58,7 +57,6 @@ export function EntrySequence({
 
   useEffect(() => {
     if (!ready) return;
-    skip.current?.focus();
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -83,7 +81,7 @@ export function EntrySequence({
         if (ready) onFinish();
       } else if (event.key === "Tab") {
         event.preventDefault();
-        (skip.current ?? container.current)?.focus();
+        container.current?.focus();
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -188,23 +186,13 @@ export function EntrySequence({
           <strong>
             древо<span>.</span>
           </strong>
-          <p>История продолжается.</p>
+          <p>История начинается с семьи.</p>
         </div>
       </div>
       <div className="entry-sequence-status" role="status">
         <span aria-hidden="true" />
         {ready ? "Архив готов" : "Открываем архив…"}
       </div>
-      {ready && (
-        <button
-          ref={skip}
-          className="entry-sequence-skip"
-          type="button"
-          onClick={onFinish}
-        >
-          Пропустить
-        </button>
-      )}
     </div>
   );
 }

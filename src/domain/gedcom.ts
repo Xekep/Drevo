@@ -9,8 +9,21 @@ import { EXTRA_LINK_TYPES } from "./types.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import { EVENT_NAMES } from "./person-events.ts";
+import {
+  familyMedia,
+  TRANSFER_TEXT_LIMIT,
+  type GenealogyImport,
+  type GedcomVersion,
+  type TransferMedia,
+} from "./genealogy-transfer.ts";
 
-type Node = { tag: string; value: string; xref?: string; children: Node[] };
+type Node = {
+  tag: string;
+  value: string;
+  xref?: string;
+  pointer?: boolean;
+  children: Node[];
+};
 const child = (n: Node, tag: string) => n.children.find((c) => c.tag === tag);
 const value = (n: Node, tag: string) => child(n, tag)?.value || "";
 const children = (n: Node, tag: string) =>
@@ -43,14 +56,59 @@ const eventTags: Record<string, PersonEvent["type"]> = {
   BURI: "burial",
   EVEN: "other",
   FACT: "other",
+  CENS: "other",
+  NATU: "other",
+  PROB: "other",
+  WILL: "other",
+  RETI: "other",
+  GRAD: "education",
+  CREM: "burial",
+  ORDN: "other",
+  BARM: "other",
+  BASM: "other",
+  BLES: "other",
+  CONF: "other",
+  FCOM: "other",
+  DSCR: "other",
+  RELI: "other",
+  NATI: "other",
+  CAST: "other",
+  PROP: "other",
+  SSN: "other",
+  IDNO: "other",
+  NCHI: "other",
+  NMR: "other",
+  TITL: "other",
+  ANUL: "divorce",
+  DIVF: "divorce",
+  ENGA: "other",
+  MARB: "other",
+  MARC: "other",
+  MARL: "other",
+  MARS: "other",
 };
 function parse(text: string): Node[] {
-  if (text.length > 8 * 1024 * 1024 || text.includes("\0"))
-    throw new Error("GEDCOM должен быть текстовым файлом UTF-8 до 8 МБ");
+  if (
+    new TextEncoder().encode(text).length > TRANSFER_TEXT_LIMIT ||
+    text.includes("\0")
+  )
+    throw new Error("GEDCOM должен быть текстовым файлом до 32 МБ");
   const roots: Node[] = [],
     stack: Node[] = [];
   const lines = text.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/);
-  if (lines.length > 200000) throw new Error("Слишком много строк GEDCOM");
+  const headerEnd = lines.findIndex((line, i) => i > 0 && /^0\s/.test(line));
+  const headerLines = lines.slice(0, headerEnd < 0 ? undefined : headerEnd);
+  const gedcLine = headerLines.findIndex((line) => /^1\s+GEDC\s*$/i.test(line));
+  const versionLine =
+    gedcLine < 0
+      ? ""
+      : headerLines
+          .slice(gedcLine + 1)
+          .find((line) => /^2\s+VERS\s/i.test(line)) || "";
+  const modern = /^2\s+VERS 7\.0(?:\.\d+)?\s*$/i.test(versionLine);
+  const decode = (s: string) =>
+    modern ? s.replace(/^@@/, "@") : s.replace(/@@/g, "@");
+  if (lines.length > 500000) throw new Error("Слишком много строк GEDCOM");
   for (let i = 0; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     const match =
@@ -64,13 +122,18 @@ function parse(text: string): Node[] {
       throw new Error(`Неверная вложенность GEDCOM: строка ${i + 1}`);
     if (tag === "CONT" || tag === "CONC") {
       if (!level) throw new Error("Продолжение строки без родительской записи");
-      stack[level - 1].value += (tag === "CONT" ? "\n" : "") + (match[4] || "");
+      if (modern && tag === "CONC")
+        throw new Error("CONC не допускается в GEDCOM 7");
+      stack[level - 1].value +=
+        (tag === "CONT" ? "\n" : "") + decode(match[4] || "");
+      stack.length = level;
       continue;
     }
     const node: Node = {
       tag,
       xref: match[2],
-      value: match[4] || "",
+      value: decode(match[4] || ""),
+      pointer: /^@[^@\s]+@$/.test(match[4] || ""),
       children: [],
     };
     if (level) stack[level - 1].children.push(node);
@@ -80,6 +143,11 @@ function parse(text: string): Node[] {
   }
   if (roots[0]?.tag !== "HEAD" || roots.at(-1)?.tag !== "TRLR")
     throw new Error("В GEDCOM отсутствует начало HEAD или завершение TRLR");
+  if (
+    roots.filter((n) => n.tag === "HEAD").length !== 1 ||
+    roots.filter((n) => n.tag === "TRLR").length !== 1
+  )
+    throw new Error("В GEDCOM должны быть ровно один HEAD и один TRLR");
   return roots;
 }
 function gedcomDate(text: string): string | undefined {
@@ -97,11 +165,35 @@ function exportDate(date: string) {
   return `${d ? `${Number(d)} ` : ""}${m ? `${months[Number(m) - 1]} ` : ""}${y}`;
 }
 
+function portableDate(
+  raw: string,
+  modern: boolean,
+): { date: string; phrase?: string } {
+  const date = raw.replace(
+    /@#D(GREGORIAN|JULIAN|HEBREW|FRENCH R)@ ?/g,
+    (_all, calendar: string) => `${calendar.replace(" ", "_")} `,
+  );
+  const atom =
+    "(?:(?:GREGORIAN|JULIAN|HEBREW|FRENCH_R) )?(?:(?:[0-9]{1,2} )?[A-Z_]{3,} )?[0-9]{1,4}(?: BCE)?";
+  const valid = new RegExp(
+    `^(?:${atom}|(?:ABT|CAL|EST|BEF|AFT|TO) ${atom}|FROM ${atom}(?: TO ${atom})?|BET ${atom} AND ${atom})$`,
+  ).test(date);
+  if (!valid)
+    return modern
+      ? { date: "", phrase: raw.replace(/^\((.*)\)$/, "$1") }
+      : { date: `(${raw.replace(/^\((.*)\)$/, "$1")})` };
+  return {
+    date: modern
+      ? date
+      : date.replace(
+          /(GREGORIAN|JULIAN|HEBREW|FRENCH_R) /g,
+          (_all, calendar: string) => `@#D${calendar.replace("_", " ")}@ `,
+        ),
+  };
+}
+
 /** Поддерживаемое ядро 5.5.1/7.0. Приблизительные даты сохраняются текстом, медиа не скачиваются. */
-export function importGedcom(
-  text: string,
-  namespace: string,
-): { family: Family; warnings: string[] } {
+export function importGedcom(text: string, namespace: string): GenealogyImport {
   const roots = parse(text),
     header = roots[0],
     warnings = new Set<string>();
@@ -118,6 +210,23 @@ export function importGedcom(
       `Кодировка ${encoding} не поддерживается. Выгрузите файл в UTF-8.`,
     );
   const records = new Map<string, Node>();
+  for (const node of roots)
+    if (
+      ![
+        "HEAD",
+        "TRLR",
+        "INDI",
+        "FAM",
+        "SOUR",
+        "NOTE",
+        "SNOTE",
+        "OBJE",
+        "SUBM",
+      ].includes(node.tag)
+    )
+      warnings.add(
+        `Запись ${node.tag} не перенесена. Сохраните исходный GEDCOM.`,
+      );
   for (const n of roots)
     if (n.xref) {
       if (records.has(n.xref))
@@ -133,24 +242,35 @@ export function importGedcom(
   if (ids.has(undefined))
     throw new Error("У человека отсутствует идентификатор GEDCOM");
   const notes = (n: Node) =>
-    children(n, "NOTE")
-      .map((s) => records.get(s.value)?.value || s.value)
+    n.children
+      .filter((c) => c.tag === "NOTE" || c.tag === "SNOTE")
+      .map((s) => {
+        if (!s.pointer) return s.value;
+        const record = records.get(s.value);
+        if (!record || !["NOTE", "SNOTE"].includes(record.tag))
+          throw new Error(`Не найдена заметка ${s.value}`);
+        return record.value;
+      })
       .filter(Boolean)
-      .join("\n\n")
-      .replace(/@@/g, "@");
+      .join("\n\n");
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
-      const record = records.get(s.value),
+      const record = s.pointer ? records.get(s.value) : undefined,
         url = value(s, "_URL") || (record ? value(record, "WWW") : "");
+      if (s.pointer && record?.tag !== "SOUR")
+        throw new Error(`Не найден источник ${s.value}`);
       return {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
-          : s.value.replace(/@@/g, "@"),
+          : s.value,
         type: value(s, "_TYPE"),
         reference: value(s, "PAGE"),
         note:
           [
             record && notes(record),
+            record && value(record, "TEXT"),
+            record && value(record, "AUTH"),
+            record && value(record, "PUBL"),
             notes(s),
             child(s, "DATA") && value(child(s, "DATA")!, "TEXT"),
           ]
@@ -163,6 +283,7 @@ export function importGedcom(
   function event(n: Node, fallback?: string): PersonEvent {
     const raw = value(n, "DATE"),
       date = gedcomDate(raw);
+    const phrase = child(n, "DATE") ? value(child(n, "DATE")!, "PHRASE") : "";
     const period = /^FROM (.+) TO (.+)$/.exec(raw),
       start = period && gedcomDate(period[1]),
       end = period && gedcomDate(period[2]);
@@ -172,6 +293,7 @@ export function importGedcom(
       );
     return {
       id: `${namespace}-e${++eventId}`,
+      gedcomTag: n.tag,
       type: eventTags[n.tag] || "other",
       title:
         value(n, "TYPE") ||
@@ -179,7 +301,7 @@ export function importGedcom(
         undefined,
       date: date || start || undefined,
       endDate: start && end ? end : undefined,
-      dateText: raw && !date && !(start && end) ? raw : undefined,
+      dateText: raw && !date && !(start && end) ? raw : phrase || undefined,
       place: value(n, "PLAC") || undefined,
       description: notes(n) || undefined,
       sources: sources(n),
@@ -208,7 +330,7 @@ export function importGedcom(
       [birth, "Рождение"],
       [death, "Уход из жизни"],
     ] as const)
-      if (node && value(node, "DATE") && !gedcomDate(value(node, "DATE")))
+      if (node && (child(node, "DATE") || notes(node) || sources(node).length))
         events.push(event(node, label));
     const p: Person = {
       id: ids.get(n.xref)!,
@@ -223,7 +345,16 @@ export function importGedcom(
       deathPlace: death ? value(death, "PLAC") || undefined : undefined,
       biography: notes(n) || undefined,
       occupation: value(n, "OCCU") || undefined,
-      maidenName: value(n, "_MAIDEN") || undefined,
+      maidenName:
+        value(n, "_MAIDEN") ||
+        (() => {
+          const maiden = children(n, "NAME").find(
+            (name) => value(name, "TYPE").toUpperCase() === "MAIDEN",
+          );
+          return maiden
+            ? value(maiden, "SURN") || /\/(.*?)\//.exec(maiden.value)?.[1]
+            : undefined;
+        })(),
       sources: [
         ...sources(n),
         ...(birth ? sources(birth) : []),
@@ -235,6 +366,17 @@ export function importGedcom(
       column: 0,
       events: events.length ? events : undefined,
     };
+    const alternatives = children(n, "NAME")
+      .slice(1)
+      .filter((name) => value(name, "TYPE").toUpperCase() !== "MAIDEN")
+      .map((name) => name.value)
+      .filter(Boolean);
+    if (alternatives.length) {
+      p.biography = [p.biography, `Другие имена: ${alternatives.join("; ")}`]
+        .filter(Boolean)
+        .join("\n\n");
+      warnings.add("Дополнительные имена сохранены в биографии.");
+    }
     const extension = value(n, "_DREVO");
     if (extension) {
       try {
@@ -248,6 +390,8 @@ export function importGedcom(
           "death",
           "birthPlace",
           "deathPlace",
+          "birthLocation",
+          "deathLocation",
           "biography",
           "occupation",
           "sources",
@@ -270,6 +414,7 @@ export function importGedcom(
           "BIRT",
           "DEAT",
           "NOTE",
+          "SNOTE",
           "SOUR",
           "FAMC",
           "FAMS",
@@ -283,6 +428,7 @@ export function importGedcom(
           "_MAIDEN",
           "_DREVO",
           "OBJE",
+          "EXID",
         ].includes(c.tag) &&
         !Object.hasOwn(eventTags, c.tag)
       )
@@ -304,7 +450,12 @@ export function importGedcom(
     type: FamilyLink["type"],
     note?: string,
   ) => {
-    if (!links.some((l) => l.from === from && l.to === to && l.type === type))
+    const existing = links.find(
+      (l) => l.from === from && l.to === to && l.type === type,
+    );
+    if (existing) {
+      if (note) existing.note = note;
+    } else
       links.push({
         id: `${namespace}-l${links.length + 1}`,
         from,
@@ -339,7 +490,9 @@ export function importGedcom(
       ...children(f, "HUSB"),
       ...children(f, "WIFE"),
       ...children(f, "_DREVO_PARENT"),
-    ].map((n) => personRef(n.value));
+    ]
+      .filter((n) => n.value !== "@VOID@")
+      .map((n) => personRef(n.value));
     const uniqueParents = [...new Map(parents.map((p) => [p.id, p])).values()];
     if (uniqueParents.length > 2)
       warnings.add(
@@ -355,7 +508,7 @@ export function importGedcom(
           ]),
         ];
     }
-    for (const c of children(f, "CHIL")) {
+    for (const c of children(f, "CHIL").filter((n) => n.value !== "@VOID@")) {
       const person = personRef(c.value),
         individual = records.get(c.value)!;
       const parentRef = children(individual, "FAMC").find(
@@ -388,6 +541,17 @@ export function importGedcom(
       }
     }
     for (const p of spousePair)
+      if (
+        !value(
+          individuals.find((n) => ids.get(n.xref) === p.id)!,
+          "_DREVO",
+        )
+      ) {
+        p.sources.push(...sources(f));
+        if (notes(f))
+          p.biography = [p.biography, notes(f)].filter(Boolean).join("\n\n");
+      }
+    for (const p of spousePair)
       for (const e of f.children.filter((n) =>
         Object.hasOwn(eventTags, n.tag),
       )) {
@@ -409,7 +573,21 @@ export function importGedcom(
   }
   for (const n of individuals) {
     for (const assoc of children(n, "ASSO")) {
-      const type = value(assoc, "RELA").toLowerCase() as FamilyLink["type"];
+      const role = value(assoc, "ROLE");
+      const type = (
+        value(assoc, "RELA") ||
+        (role === "GODP"
+          ? "godparent"
+          : child(assoc, "ROLE")
+            ? value(child(assoc, "ROLE")!, "PHRASE")
+            : "")
+      ).toLowerCase() as FamilyLink["type"];
+      if (assoc.value === "@VOID@") {
+        warnings.add(
+          "Связь ASSO с неизвестным участником сохранена только в исходном файле.",
+        );
+        continue;
+      }
       if (EXTRA_LINK_TYPES.includes(type))
         addLink(
           personRef(assoc.value).id,
@@ -423,6 +601,10 @@ export function importGedcom(
         );
     }
     for (const ref of [...children(n, "FAMC"), ...children(n, "FAMS")]) {
+      if (ref.value === "@VOID@") {
+        warnings.add("В файле есть ссылки на неизвестную семью @VOID@.");
+        continue;
+      }
       if (records.get(ref.value)?.tag !== "FAM")
         throw new Error(`Не найдена семья ${ref.value}`);
       const f = records.get(ref.value)!;
@@ -440,10 +622,75 @@ export function importGedcom(
         );
     }
   }
-  if (
-    roots.some((n) => n.tag === "OBJE") ||
-    individuals.some((n) => children(n, "OBJE").length)
-  )
+  const media: TransferMedia[] = [];
+  const objects = new Map<Node, TransferMedia[]>();
+  const readObject = (object: Node) => {
+    const existing = objects.get(object);
+    if (existing) return existing;
+    const files = children(object, "FILE").map((file) => {
+      const item: TransferMedia = {
+        id: `${namespace}-m${media.length + 1}`,
+        file: file.value,
+        title: value(file, "TITL") || value(object, "TITL") || "Файл GEDCOM",
+        mime: value(file, "FORM") || value(object, "FORM"),
+        personIds: [],
+        portraitIds: [],
+        photo: { description: notes(object) || undefined, tags: [] },
+      };
+      const extension = value(object, "_DREVO_MEDIA");
+      if (extension) {
+        try {
+          const extra = JSON.parse(extension);
+          item.photo = {
+            description: extra.description,
+            year: extra.year,
+            place: extra.place,
+            event: extra.event,
+            takenAt: extra.takenAt,
+            tags: (extra.tags || []).map((tag: { personId: string }) => ({
+              ...tag,
+              personId: ids.get(tag.personId) || "",
+            })),
+          };
+          item.portraitIds = (extra.portraitIds || [])
+            .map((id: string) => ids.get(id))
+            .filter(Boolean);
+        } catch {
+          throw new Error("Повреждены сведения о медиа Drevo");
+        }
+      }
+      media.push(item);
+      return item;
+    });
+    objects.set(object, files);
+    return files;
+  };
+  for (const object of roots.filter((n) => n.tag === "OBJE"))
+    readObject(object);
+  const attachMedia = (node: Node, personIds: string[]) => {
+    for (const ref of children(node, "OBJE")) {
+      if (ref.value === "@VOID@") continue;
+      const object = ref.pointer ? records.get(ref.value) : ref;
+      if (!object || object.tag !== "OBJE")
+        throw new Error(`Не найдено медиа ${ref.value}`);
+      for (const item of readObject(object)) {
+        item.personIds = [...new Set([...item.personIds, ...personIds])];
+        if (value(ref, "_PRIM") === "Y")
+          item.portraitIds = [...new Set([...item.portraitIds, ...personIds])];
+      }
+    }
+    for (const c of node.children.filter((c) => c.tag !== "OBJE"))
+      attachMedia(c, personIds);
+  };
+  for (const n of individuals) attachMedia(n, [ids.get(n.xref)!]);
+  for (const f of families)
+    attachMedia(
+      f,
+      [...children(f, "HUSB"), ...children(f, "WIFE"), ...children(f, "CHIL")]
+        .filter((n) => n.value !== "@VOID@")
+        .map((n) => personRef(n.value).id),
+    );
+  if (media.length)
     warnings.add(
       "Файлы фотографий и документов не загружаются из GEDCOM. Добавьте оригиналы в галерею отдельно.",
     );
@@ -460,37 +707,105 @@ export function importGedcom(
       photos: [],
     }),
     warnings: [...warnings],
+    media,
+    version,
   };
 }
 
 /** Стандартные записи + расширение _DREVO для точного обратного переноса наших полей. */
-export function exportGedcom(family: Family): string {
+export function exportGedcom(
+  family: Family,
+  options: { version?: GedcomVersion; media?: TransferMedia[] } = {},
+): string {
+  const modern = options.version === "7.0";
+  const media = options.media || familyMedia(family);
   const lines: string[] = [];
-  function emit(level: number, tag: string, text = "") {
+  function emit(level: number, tag: string, text = "", pointer = false) {
+    if (
+      [...text].some((c) => {
+        const code = c.codePointAt(0)!;
+        return (
+          (code < 32 && ![9, 10, 13].includes(code)) ||
+          (code >= 127 && code <= 159) ||
+          (code >= 0xd800 && code <= 0xdfff) ||
+          code === 0xfffe ||
+          code === 0xffff
+        );
+      })
+    )
+      throw new Error("Текст содержит символы, недопустимые в GEDCOM");
     const parts = text.replace(/\r\n?/g, "\n").replace(/\0/g, "").split("\n");
     for (let i = 0; i < parts.length; i++) {
-      const chars = [...parts[i]];
+      let escaped = pointer
+        ? parts[i]
+        : modern
+          ? parts[i].replace(/^@/, "@@")
+          : parts[i].replace(/@/g, "@@");
+      if (!modern && tag === "DATE")
+        escaped = escaped.replace(/@@#D([^@]+)@@/g, "@#D$1@");
+      if (modern) {
+        lines.push(
+          `${i ? level + 1 : level} ${i ? "CONT" : tag}${escaped ? ` ${escaped}` : ""}`,
+        );
+        continue;
+      }
+      const chars = escaped.match(/@@|[\s\S]/gu) || [];
       if (!chars.length)
         lines.push(`${i ? level + 1 : level} ${i ? "CONT" : tag}`);
-      for (let start = 0; start < chars.length; start += 50)
+      for (let start = 0; start < chars.length;) {
+        let end = Math.min(start + 50, chars.length);
+        // GEDCOM 5.5.1 requires CONC to split inside a word, not on a space:
+        // several readers trim the start/end of physical lines.
+        if (end < chars.length) {
+          while (end > start && (chars[end] === " " || chars[end - 1] === " "))
+            end--;
+          if (end === start) {
+            end = Math.min(start + 50, chars.length);
+            while (
+              end < chars.length &&
+              (chars[end] === " " || chars[end - 1] === " ")
+            )
+              end++;
+            if (
+              new TextEncoder().encode(chars.slice(start, end).join(""))
+                .length > 230
+            )
+              throw new Error(
+                "Слишком длинная последовательность пробелов для GEDCOM 5.5.1. Используйте GEDCOM 7.",
+              );
+          }
+        }
         lines.push(
-          `${i || start ? level + 1 : level} ${start ? "CONC" : i ? "CONT" : tag} ${chars.slice(start, start + 50).join("")}`,
+          `${i || start ? level + 1 : level} ${start ? "CONC" : i ? "CONT" : tag} ${chars.slice(start, end).join("")}`,
         );
+        start = end;
+      }
     }
   }
   const ids = new Map(family.people.map((p, i) => [p.id, `@I${i + 1}@`]));
   const groups = new Map<
     string,
-    { id: string; parents: string[]; children: string[]; married: boolean }
+    {
+      id: string;
+      parents: string[];
+      children: string[];
+      married: boolean;
+      pedigree: "birth" | "adopted" | "foster";
+    }
   >();
-  function group(parents: string[], married = false) {
-    const key = JSON.stringify([...parents].sort());
+  function group(
+    parents: string[],
+    married = false,
+    pedigree: "birth" | "adopted" | "foster" = "birth",
+  ) {
+    const key = JSON.stringify([[...parents].sort(), pedigree]);
     if (!groups.has(key))
       groups.set(key, {
         id: `@F${groups.size + 1}@`,
         parents: [...parents],
         children: [],
         married,
+        pedigree,
       });
     const g = groups.get(key)!;
     g.married ||= married;
@@ -500,10 +815,13 @@ export function exportGedcom(family: Family): string {
     if (p.parents.length) group(p.parents).children.push(p.id);
     for (const spouse of p.spouses) group([p.id, spouse], true);
   }
+  for (const link of family.links || [])
+    if (link.type === "adoptive_parent")
+      group([link.from], false, "adopted").children.push(link.to);
   const sourceRecords: Source[] = [];
   function citation(level: number, source: Source) {
     sourceRecords.push(source);
-    emit(level, "SOUR", `@S${sourceRecords.length}@`);
+    emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
     if (source.type) emit(level + 1, "_TYPE", source.type);
     if (source.url) emit(level + 1, "_URL", source.url);
@@ -512,10 +830,28 @@ export function exportGedcom(family: Family): string {
   emit(0, "HEAD");
   emit(1, "SOUR", "DREVO");
   emit(1, "GEDC");
-  emit(2, "VERS", "5.5.1");
-  emit(2, "FORM", "LINEAGE-LINKED");
-  emit(1, "CHAR", "UTF-8");
-  emit(1, "SUBM", "@SUB1@");
+  emit(2, "VERS", modern ? "7.0" : "5.5.1");
+  if (!modern) {
+    emit(2, "FORM", "LINEAGE-LINKED");
+    emit(1, "CHAR", "UTF-8");
+  } else {
+    emit(1, "SCHMA");
+    for (const tag of [
+      "_DREVO",
+      "_DREVO_PARENT",
+      "_DREVO_UNMARRIED",
+      "_DREVO_MEDIA",
+      "_TYPE",
+      "_URL",
+      "_PRIM",
+    ])
+      emit(
+        2,
+        "TAG",
+        `${tag} https://drevo.kiiko.ru/gedcom/extensions/${tag.slice(1).toLowerCase()}`,
+      );
+  }
+  emit(1, "SUBM", "@SUB1@", true);
   emit(0, "@SUB1@ SUBM");
   emit(1, "NAME", "Семейный архив Drevo");
   for (const p of family.people) {
@@ -527,32 +863,105 @@ export function exportGedcom(family: Family): string {
     );
     emit(2, "GIVN", [p.name, p.patronymic].filter(Boolean).join(" "));
     emit(2, "SURN", p.surname);
+    if (p.maidenName) {
+      emit(
+        1,
+        "NAME",
+        `${[p.name, p.patronymic].filter(Boolean).join(" ")} /${p.maidenName.replace(/\//g, " ")}/`,
+      );
+      emit(2, "TYPE", modern ? "MAIDEN" : "maiden");
+      emit(2, "GIVN", [p.name, p.patronymic].filter(Boolean).join(" "));
+      emit(2, "SURN", p.maidenName);
+    }
     if (p.sex !== "u") emit(1, "SEX", p.sex.toUpperCase());
     for (const kind of ["birth", "death"] as const)
-      if (p[kind] || p[`${kind}Place`] || (kind === "death" && p.deceased)) {
+      if (
+        !p.events?.some(
+          (e) => e.gedcomTag === (kind === "birth" ? "BIRT" : "DEAT"),
+        ) &&
+        (p[kind] || p[`${kind}Place`] || (kind === "death" && p.deceased))
+      ) {
         emit(1, kind === "birth" ? "BIRT" : "DEAT", "Y");
         if (p[kind]) emit(2, "DATE", exportDate(p[kind]));
         if (p[`${kind}Place`]) emit(2, "PLAC", p[`${kind}Place`]!);
       }
-    if (p.biography) emit(1, "NOTE", p.biography.replace(/@/g, "@@"));
-    if (p.occupation) emit(1, "OCCU", p.occupation);
+    if (p.biography) emit(1, "NOTE", p.biography);
+    if (
+      p.occupation &&
+      !p.events?.some((e) => e.type === "work" && e.title === p.occupation)
+    )
+      emit(1, "OCCU", p.occupation);
     for (const source of p.sources) citation(1, source);
-    for (const e of p.events || []) {
+    for (const original of p.events || []) {
+      const kind =
+        original.gedcomTag === "BIRT"
+          ? "birth"
+          : original.gedcomTag === "DEAT"
+            ? "death"
+            : undefined;
+      // Editing the canonical birth/death fields must also update the standard
+      // event, even when it originally came from an imported detailed event.
+      const e = kind
+        ? {
+            ...original,
+            date: p[kind] || undefined,
+            endDate: undefined,
+            dateText: p[kind] ? undefined : original.dateText,
+            place: p[`${kind}Place`] || undefined,
+          }
+        : original;
       const tag =
-        (
-          {
-            residence: "RESI",
-            move: "EMIG",
-            education: "EDUC",
-            work: "OCCU",
-            baptism: "CHR",
-            burial: "BURI",
-          } as Record<string, string>
-        )[e.type] || "EVEN";
+        e.gedcomTag &&
+        [
+          "BIRT",
+          "DEAT",
+          ...Object.keys(eventTags).filter(
+            (tag) =>
+              ![
+                "MARR",
+                "DIV",
+                "ANUL",
+                "DIVF",
+                "ENGA",
+                "MARB",
+                "MARC",
+                "MARL",
+                "MARS",
+                "_MILT",
+              ].includes(tag),
+          ),
+        ].includes(e.gedcomTag)
+          ? e.gedcomTag
+          : (
+              {
+                residence: "RESI",
+                move: "EMIG",
+                education: "EDUC",
+                work: "OCCU",
+                baptism: "CHR",
+                burial: "BURI",
+              } as Record<string, string>
+            )[e.type] || "EVEN";
       emit(
         1,
         tag,
-        tag === "OCCU" || tag === "EDUC" ? e.title || EVENT_NAMES[e.type] : "",
+        [
+          "OCCU",
+          "EDUC",
+          "DSCR",
+          "RELI",
+          "NATI",
+          "CAST",
+          "PROP",
+          "SSN",
+          "IDNO",
+          "NCHI",
+          "NMR",
+          "TITL",
+          "FACT",
+        ].includes(tag)
+          ? e.title || EVENT_NAMES[e.type]
+          : "",
       );
       emit(2, "TYPE", e.title || EVENT_NAMES[e.type]);
       if (e.date)
@@ -563,25 +972,37 @@ export function exportGedcom(family: Family): string {
             ? `FROM ${exportDate(e.date)} TO ${exportDate(e.endDate)}`
             : exportDate(e.date),
         );
-      else if (e.dateText) emit(2, "DATE", e.dateText);
-      else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
+      else if (e.dateText) {
+        const date = portableDate(e.dateText, modern);
+        emit(2, "DATE", date.date);
+        if (date.phrase) emit(3, "PHRASE", date.phrase);
+      } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
       if (e.place) emit(2, "PLAC", e.place);
-      if (e.description) emit(2, "NOTE", e.description.replace(/@/g, "@@"));
+      if (e.description) emit(2, "NOTE", e.description);
       for (const source of e.sources || []) citation(2, source);
     }
     for (const g of groups.values()) {
       if (g.children.includes(p.id)) {
-        emit(1, "FAMC", g.id);
-        emit(2, "PEDI", "birth");
+        emit(1, "FAMC", g.id, true);
+        emit(2, "PEDI", modern ? g.pedigree.toUpperCase() : g.pedigree);
       }
-      if (g.parents.includes(p.id)) emit(1, "FAMS", g.id);
+      if (g.parents.includes(p.id)) emit(1, "FAMS", g.id, true);
     }
     for (const l of family.links || [])
       if (l.to === p.id) {
-        emit(1, "ASSO", ids.get(l.from)!);
-        emit(2, "RELA", l.type);
-        if (l.note) emit(2, "NOTE", l.note.replace(/@/g, "@@"));
+        emit(1, "ASSO", ids.get(l.from)!, true);
+        if (modern) {
+          emit(2, "ROLE", l.type === "godparent" ? "GODP" : "OTHER");
+          emit(3, "PHRASE", l.type);
+        } else emit(2, "RELA", l.type);
+        if (l.note) emit(2, "NOTE", l.note);
       }
+    media.forEach((item, i) => {
+      if (item.personIds.includes(p.id) || item.portraitIds.includes(p.id)) {
+        emit(1, "OBJE", `@M${i + 1}@`, true);
+        if (item.portraitIds.includes(p.id)) emit(2, "_PRIM", "Y");
+      }
+    });
     const {
       photo: _photo,
       createdBy: _createdBy,
@@ -590,21 +1011,9 @@ export function exportGedcom(family: Family): string {
       spouses: _spouses,
       generation: _generation,
       column: _column,
-      birthLocation: _birthLocation,
-      deathLocation: _deathLocation,
       ...extra
     } = p;
-    void [
-      _photo,
-      _createdBy,
-      _id,
-      _parents,
-      _spouses,
-      _generation,
-      _column,
-      _birthLocation,
-      _deathLocation,
-    ];
+    void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column];
     emit(1, "_DREVO", JSON.stringify(extra));
   }
   for (const g of groups.values()) {
@@ -625,16 +1034,51 @@ export function exportGedcom(family: Family): string {
           : !usedRoles.has("WIFE")
             ? "WIFE"
             : "_DREVO_PARENT";
-      emit(1, role, ids.get(id)!);
+      emit(1, role, ids.get(id)!, true);
       usedRoles.add(role);
     }
     if (!g.married) emit(1, "_DREVO_UNMARRIED", "Y");
     else emit(1, "MARR", "Y");
-    for (const id of g.children) emit(1, "CHIL", ids.get(id)!);
+    for (const id of g.children) emit(1, "CHIL", ids.get(id)!, true);
   }
   sourceRecords.forEach((s, i) => {
     emit(0, `@S${i + 1}@ SOUR`);
     emit(1, "TITL", s.title);
+  });
+  media.forEach((item, i) => {
+    emit(0, `@M${i + 1}@ OBJE`);
+    const path = item.file.startsWith("/media/")
+      ? item.file.slice(1)
+      : item.file;
+    emit(1, "FILE", path);
+    const extension = path.split(".").at(-1)?.toLowerCase() || "";
+    const mime = item.mime?.includes("/")
+      ? item.mime
+      : (
+          {
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            png: "image/png",
+            gif: "image/gif",
+            webp: "image/webp",
+            pdf: "application/pdf",
+          } as Record<string, string>
+        )[extension] || "application/octet-stream";
+    emit(2, "FORM", modern ? mime : mime.split("/")[1]);
+    emit(2, "TITL", item.title);
+    if (item.photo?.description) emit(1, "NOTE", item.photo.description);
+    emit(
+      1,
+      "_DREVO_MEDIA",
+      JSON.stringify({
+        ...item.photo,
+        tags: item.photo?.tags.map((tag) => ({
+          ...tag,
+          personId: ids.get(tag.personId),
+        })),
+        portraitIds: item.portraitIds.map((id) => ids.get(id)),
+      }),
+    );
   });
   emit(0, "TRLR");
   return lines.join("\r\n") + "\r\n";

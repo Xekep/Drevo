@@ -646,6 +646,8 @@ export default function App() {
                         <div className="workspace-actions">
                           <button
                             className={compare ? "active" : ""}
+                            title="Родство"
+                            aria-pressed={compare}
                             onClick={() => {
                               if (!setPersonDraft(null)) return;
                               if (!closeConnection()) return;

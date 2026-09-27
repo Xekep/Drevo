@@ -1,3 +1,4 @@
+import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
 
 test("family layout keeps the focused card mounted throughout its move", async ({
@@ -29,7 +30,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
     state.stop = () => cancelAnimationFrame(frame);
     return state;
   });
-  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  await familyViewAction(page, "Семья выбранного");
   await page.waitForTimeout(1200);
   await samples.evaluate((s) => s.stop());
   expect(await original.evaluate((node) => node.isConnected)).toBe(true);
@@ -79,7 +80,7 @@ test("cards fly before the fan reveals on every opening", async ({
       state.stop = () => cancelAnimationFrame(frame);
       return state;
     });
-    await page.getByRole("button", { name: "Веер", exact: true }).click();
+    await familyViewAction(page, "Веер");
     await expect
       .poll(() => samples.evaluate((s) => s.hidden && s.intermediate))
       .toBe(true);
@@ -88,7 +89,7 @@ test("cards fly before the fan reveals on every opening", async ({
     expect(await samples.evaluate((s) => s.flewBeforeReveal)).toBe(true);
     expect(await samples.evaluate((s) => s.flights.size)).toBeGreaterThan(3);
     await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
-    await page.getByRole("button", { name: "Древо", exact: true }).click();
+    await showTree(page);
     await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
     await page.waitForTimeout(750);
   }
@@ -109,9 +110,9 @@ test("leaving during the fan flight removes its copies and cancels the reveal", 
   }
   await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
   await page.waitForTimeout(750);
-  await page.getByRole("button", { name: "Веер", exact: true }).click();
+  await familyViewAction(page, "Веер");
   await expect(page.locator(".fan-morph-card").first()).toBeVisible();
-  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await showTree(page);
   await expect(page.locator(".fan-morph-overlay")).toHaveCount(0);
   await page.waitForTimeout(1300);
   await expect(page.locator(".fan-chart")).toHaveCount(0);

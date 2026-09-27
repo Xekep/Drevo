@@ -1,26 +1,80 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import {
+  createReadStream,
+  createWriteStream,
+  mkdirSync,
+  rmSync,
+} from "node:fs";
+import { stat, statfs, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
-import type { openArchive } from "./database.ts";
-import { ConflictError } from "./database.ts";
-import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
+import { ConflictError, type openArchive } from "./database.ts";
+import { exportGedcom } from "../domain/gedcom.ts";
+import { exportAgelongXml } from "../domain/agelong-xml.ts";
+import { TRANSFER_PACKAGE_LIMIT } from "../domain/genealogy-transfer.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { fullName } from "../domain/dates.ts";
 import type { Family } from "../domain/types.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import {
+  exportMedia,
+  prepareGenealogyImport,
+  writeGenealogyPackage,
+  installTransferFiles,
+  type StagedMedia,
+} from "./genealogy-package.ts";
+import {
+  documentUploadQuota,
+  UploadQuotaError,
+} from "./document-upload-quota.ts";
+import { mediaStore } from "./media.ts";
+
 export function gedcomHttp(
   archive: ReturnType<typeof openArchive>,
   auth: ReturnType<typeof createAuth>,
   dbPath: string,
   publicOrigin?: string,
 ) {
-  type Stage = { family: Family; actor: string; revision: number; expires: number };
-  const clean = () =>
+  type Stage = {
+    family: Family;
+    files: StagedMedia[];
+    actor: string;
+    revision: number;
+    expires: number;
+  };
+  const stageRoot = join(dirname(dbPath), "staging", "genealogy"),
+    uploads = join(dirname(dbPath), "uploads");
+  mkdirSync(stageRoot, { recursive: true });
+  mkdirSync(uploads, { recursive: true });
+  const quota = documentUploadQuota(archive.db);
+  const stagePath = (token: string) => {
+    if (!/^[a-f0-9-]{36}$/.test(token))
+      throw new Error("Некорректный токен импорта");
+    return join(stageRoot, token);
+  };
+  const removeStage = (token: string) => {
+    rmSync(stagePath(token), { force: true, recursive: true });
     archive.db
-      .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND expires_at<=?")
-      .run(Date.now());
+      .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?")
+      .run(token);
+  };
+  const clean = () => {
+    for (const row of archive.db
+      .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='gedcom' AND expires_at<=?",
+      )
+      .all(Date.now())) {
+      try {
+        removeStage(String(row.token));
+      } catch {
+        /* Retry on next sweep. */
+      }
+    }
+  };
   const getStage = (token: string): Stage | undefined => {
     const row = archive.db
       .prepare(
@@ -28,8 +82,11 @@ export function gedcomHttp(
       )
       .get(token);
     if (!row) return undefined;
+    const data = JSON.parse(String(row.data));
+    if (data.pending) return undefined;
     return {
-      family: JSON.parse(String(row.data)),
+      family: data.family || data,
+      files: data.files || [],
       actor: String(row.actor_id),
       revision: Number(row.revision),
       expires: Number(row.expires_at),
@@ -48,6 +105,7 @@ export function gedcomHttp(
     ): Promise<boolean> {
       if (!url.pathname.startsWith("/api/gedcom/")) return false;
       const json = (status: number, data: unknown) => {
+        if (res.destroyed) return true;
         res.writeHead(status, {
           "Content-Type": "application/json; charset=utf-8",
           "Cache-Control": "no-store",
@@ -58,128 +116,213 @@ export function gedcomHttp(
       const actor = auth.currentUser(req);
       if (!actor || actor.role !== "admin")
         return json(actor ? 403 : 401, {
-          error: "GEDCOM доступен администратору",
+          error: "Перенос данных доступен администратору",
         });
-      if (url.pathname === "/api/gedcom/export" && req.method === "GET") {
-        res.writeHead(200, {
-          "Content-Type": "text/vnd.familysearch.gedcom; charset=utf-8",
-          "Cache-Control": "no-store",
-          "Content-Disposition": 'attachment; filename="drevo.ged"',
-        });
-        res.end(exportGedcom(archive.read().family));
-        return true;
-      }
-      if (
-        req.method !== "POST" ||
-        !["/api/gedcom/preview", "/api/gedcom/import"].includes(url.pathname)
-      )
-        return json(405, { error: "Метод не поддерживается" });
-      if (!isSameOriginRequest(req, publicOrigin))
-        return json(403, { error: "Недопустимый источник запроса" });
-      if (req.headers["x-drevo-import"] !== "1")
-        return json(400, { error: "Откройте импорт GEDCOM в админке" });
       try {
-        const preview = url.pathname.endsWith("preview"),
-          chunks: Buffer[] = [];
-        let size = 0;
-        for await (const chunk of req) {
-          size += chunk.length;
-          if (size > (preview ? 8 * 1024 * 1024 : 4096))
-            return json(413, { error: "Максимальный размер GEDCOM — 8 МБ" });
-          chunks.push(Buffer.from(chunk));
-        }
-        const currentActor = auth.currentUser(req);
-        if (currentActor?.role !== "admin")
-          return json(403, { error: "Доступ администратора отозван" });
-        clean();
-        const current = archive.read();
-        if (preview) {
-          let text: string;
-          try {
-            text = new TextDecoder("utf-8", { fatal: true }).decode(
-              Buffer.concat(chunks),
-            );
-          } catch {
-            return json(400, { error: "Файл должен быть в кодировке UTF-8" });
-          }
-          const parsed = importGedcom(text, randomUUID());
+        if (url.pathname === "/api/gedcom/export" && req.method === "GET") {
+          const format = url.searchParams.get("format") || "gedzip7";
           if (
-            parsed.family.people.length + current.family.people.length >
-            10000
+            ![
+              "gedcom551",
+              "gedcom7",
+              "gedzip7",
+              "agelongXml",
+              "agelongZip",
+            ].includes(format)
           )
-            return json(400, {
-              error: "После импорта получится больше 10 000 людей",
-            });
-          archive.db
-            .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND actor_id=?")
-            .run(actor.id);
-          const active = Number(
-            archive.db
-              .prepare("SELECT count(*) AS count FROM workflow_stages WHERE kind='gedcom'")
-              .get()!.count,
-          );
-          if (active >= 3)
-            return json(429, {
-              error: "Уже проверяется несколько импортов. Повторите позже.",
-            });
-          const token = randomUUID();
-          archive.db
+            return json(400, { error: "Неизвестный формат экспорта" });
+          const family = archive.read().family,
+            items = exportMedia(archive.db, family);
+          if (format === "gedzip7" || format === "agelongZip") {
+            const directory = await mkdtemp(join(tmpdir(), "drevo-transfer-"));
+            try {
+              const xml = format === "agelongZip",
+                path = join(directory, "export.zip");
+              await writeGenealogyPackage(path, uploads, family, items, xml);
+              if (auth.currentUser(req)?.role !== "admin")
+                return json(403, { error: "Доступ администратора отозван" });
+              res.writeHead(200, {
+                "Content-Type": "application/zip",
+                "Content-Length": String((await stat(path)).size),
+                "Content-Disposition": `attachment; filename="${xml ? "drevo-xml.zip" : "drevo.gdz"}"`,
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+              });
+              await pipeline(createReadStream(path), res);
+              return true;
+            } finally {
+              await rm(directory, { recursive: true, force: true });
+            }
+          }
+          const xml = format === "agelongXml";
+          const text = xml
+            ? exportAgelongXml(family, items)
+            : exportGedcom(family, {
+                version: format === "gedcom551" ? "5.5.1" : "7.0",
+                media: items,
+              });
+          res.writeHead(200, {
+            "Content-Type": xml
+              ? "application/xml; charset=utf-8"
+              : "text/vnd.familysearch.gedcom; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${xml ? "drevo.xml" : format === "gedcom551" ? "drevo-5.5.1.ged" : "drevo-7.ged"}"`,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+          });
+          res.end(text);
+          return true;
+        }
+        if (
+          req.method !== "POST" ||
+          !["/api/gedcom/preview", "/api/gedcom/import"].includes(url.pathname)
+        )
+          return json(405, { error: "Метод не поддерживается" });
+        if (!isSameOriginRequest(req, publicOrigin))
+          return json(403, { error: "Недопустимый источник запроса" });
+        if (req.headers["x-drevo-import"] !== "1")
+          return json(400, { error: "Откройте импорт в админке" });
+        clean();
+        if (url.pathname.endsWith("preview")) {
+          const token = randomUUID(),
+            directory = stagePath(token),
+            current = archive.read();
+          const old = archive.db
             .prepare(
-              `INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data)
-               VALUES(?,'gedcom',?,?,?,?)`,
+              "SELECT token FROM workflow_stages WHERE kind='gedcom' AND actor_id=?",
+            )
+            .all(actor.id);
+          for (const row of old) removeStage(String(row.token));
+          const inserted = archive.db
+            .prepare(
+              "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'gedcom',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='gedcom')<3",
             )
             .run(
               token,
               actor.id,
               current.revision,
               Date.now() + 15 * 60000,
-              JSON.stringify(parsed.family),
+              JSON.stringify({ pending: true }),
             );
-          const existing = new Set(
-            current.family.people.map(
-              (p) => `${fullName(p).toLocaleLowerCase("ru")}|${p.birth}`,
-            ),
-          );
-          const possibleDuplicates = parsed.family.people.filter((p) =>
-            existing.has(`${fullName(p).toLocaleLowerCase("ru")}|${p.birth}`),
-          );
-          return json(200, {
-            token,
-            revision: current.revision,
-            people: parsed.family.people.length,
-            connections:
-              parsed.family.people.reduce(
-                (n, p) => n + p.parents.length + p.spouses.length / 2,
+          if (!inserted.changes)
+            return json(429, {
+              error: "Уже проверяется несколько импортов. Повторите позже.",
+            });
+          mkdirSync(directory, { recursive: true });
+          let success = false;
+          try {
+            const disk = await statfs(directory);
+            if (disk.bavail * disk.bsize < 3 * TRANSFER_PACKAGE_LIMIT)
+              throw new UploadQuotaError(
+                "Недостаточно места для предпросмотра",
+                507,
+              );
+            const input = join(directory, "input");
+            let size = 0;
+            const guard = new Transform({
+              transform(chunk: Buffer, _encoding, callback) {
+                size += chunk.length;
+                if (size > TRANSFER_PACKAGE_LIMIT)
+                  return callback(
+                    new Error("Максимальный размер пакета — 256 МБ"),
+                  );
+                callback(null, chunk);
+              },
+            });
+            await pipeline(
+              req,
+              guard,
+              createWriteStream(input, { flags: "wx" }),
+              { signal: AbortSignal.timeout(120000) },
+            );
+            const parsed = await prepareGenealogyImport(
+              input,
+              directory,
+              randomUUID(),
+            );
+            if (auth.currentUser(req)?.role !== "admin")
+              return json(403, { error: "Доступ администратора отозван" });
+            if (
+              parsed.family.people.length + current.family.people.length >
+              10000
+            )
+              throw new Error("После импорта получится больше 10 000 людей");
+            const updated = archive.db
+              .prepare(
+                "UPDATE workflow_stages SET data=? WHERE kind='gedcom' AND token=? AND expires_at>?",
+              )
+              .run(
+                JSON.stringify({ family: parsed.family, files: parsed.files }),
+                token,
+                Date.now(),
+              );
+            if (!updated.changes)
+              throw new Error(
+                "Предпросмотр заменён или истёк. Проверьте файл заново.",
+              );
+            const existing = new Set(
+              current.family.people.map(
+                (p) => `${fullName(p).toLocaleLowerCase("ru")}|${p.birth}`,
+              ),
+            );
+            const duplicates = parsed.family.people.filter((p) =>
+              existing.has(`${fullName(p).toLocaleLowerCase("ru")}|${p.birth}`),
+            );
+            success = true;
+            return json(200, {
+              token,
+              revision: current.revision,
+              version: parsed.version,
+              people: parsed.family.people.length,
+              connections:
+                parsed.family.people.reduce(
+                  (n, p) => n + p.parents.length + p.spouses.length / 2,
+                  0,
+                ) + (parsed.family.links?.length || 0),
+              events: parsed.family.people.reduce(
+                (n, p) => n + (p.events?.length || 0),
                 0,
-              ) + (parsed.family.links?.length || 0),
-            events: parsed.family.people.reduce(
-              (n, p) => n + (p.events?.length || 0),
-              0,
-            ),
-            warnings: parsed.warnings.slice(0, 100),
-            warningCount: parsed.warnings.length,
-            possibleDuplicates: possibleDuplicates.slice(0, 30).map(fullName),
-            duplicateCount: possibleDuplicates.length,
-            sample: parsed.family.people
-              .slice(0, 20)
-              .map((p) => ({
+              ),
+              photos: parsed.family.photos?.length || 0,
+              documents: parsed.files.filter((f) => f.documentId).length,
+              warnings: parsed.warnings,
+              warningCount: parsed.warnings.length,
+              possibleDuplicates: duplicates.slice(0, 30).map(fullName),
+              duplicateCount: duplicates.length,
+              sample: parsed.family.people.slice(0, 20).map((p) => ({
                 name: fullName(p),
                 birth: p.birth,
                 death: p.death,
               })),
-          });
+            });
+          } finally {
+            if (!success) removeStage(token);
+          }
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 4096)
+            return json(413, { error: "Слишком большой запрос" });
+          chunks.push(Buffer.from(chunk));
         }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const stage =
           typeof body.token === "string" ? getStage(body.token) : undefined;
-        if (body.confirm !== true || !stage || stage.actor !== actor.id)
+        if (
+          body.confirm !== true ||
+          !stage ||
+          stage.actor !== actor.id ||
+          stage.expires <= Date.now()
+        )
           return json(400, {
             error: "Проверьте файл и подтвердите импорт заново",
           });
+        const current = archive.read();
         if (stage.revision !== current.revision)
           return json(409, {
             error:
-              "Архив изменился после предпросмотра. Проверьте GEDCOM заново.",
+              "Архив изменился после предпросмотра. Проверьте файл заново.",
           });
         const directory = join(dirname(dbPath), "backups");
         mkdirSync(directory, { recursive: true });
@@ -187,30 +330,101 @@ export function gedcomHttp(
           archive.db,
           join(directory, `before-gedcom-${Date.now()}-${randomUUID()}.sqlite`),
         );
-        const result = archive.write(
-          {
-            ...current.family,
-            people: [...current.family.people, ...stage.family.people],
-            links: [
-              ...(current.family.links || []),
-              ...(stage.family.links || []),
-            ],
-          },
-          stage.revision,
-          currentActor,
-          "Импорт GEDCOM",
+        let release: (() => unknown) | undefined,
+          undo: (() => Promise<void>) | undefined;
+        try {
+          if (stage.files.length) {
+            const usage = await mediaStore(uploads).usage(),
+              disk = await statfs(uploads);
+            release = quota.acquire(
+              actor.id,
+              stage.files.reduce((n, f) => n + f.size, 0),
+              disk.bavail * disk.bsize,
+              { ...usage, files: usage.files + stage.files.length - 1 },
+            );
+            undo = await installTransferFiles(
+              stagePath(body.token),
+              uploads,
+              stage.files,
+            );
+          }
+          const currentActor = auth.currentUser(req);
+          if (currentActor?.role !== "admin")
+            throw new Error("Доступ администратора отозван");
+          const result = archive.write(
+            {
+              ...current.family,
+              people: [...current.family.people, ...stage.family.people],
+              links: [
+                ...(current.family.links || []),
+                ...(stage.family.links || []),
+              ],
+              photos: [
+                ...(current.family.photos || []),
+                ...(stage.family.photos || []),
+              ],
+            },
+            stage.revision,
+            currentActor,
+            "Импорт GEDCOM / XML",
+            undefined,
+            undefined,
+            (db) => {
+              const consumed = db
+                .prepare(
+                  "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
+                )
+                .run(body.token, actor.id, Date.now());
+              if (!consumed.changes)
+                throw new Error("Предпросмотр уже использован или истёк");
+              for (const file of stage.files.filter((f) => f.documentId)) {
+                db.prepare(
+                  "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+                ).run(
+                  file.documentId!,
+                  file.title,
+                  file.title.toLocaleLowerCase("ru"),
+                  file.name,
+                  file.size,
+                  actor.id,
+                  new Date().toISOString(),
+                );
+                for (const id of file.personIds)
+                  db.prepare(
+                    "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                  ).run(file.documentId!, id);
+              }
+            },
+          );
+          undo = undefined;
+          try {
+            removeStage(body.token);
+          } catch {
+            /* Import has committed. */
+          }
+          return json(200, {
+            revision: result.revision,
+            added: stage.family.people.length,
+            photos: stage.family.photos?.length || 0,
+            documents: stage.files.filter((f) => f.documentId).length,
+          });
+        } finally {
+          await undo?.();
+          release?.();
+        }
+      } catch (error) {
+        if (res.headersSent) {
+          res.destroy(error as Error);
+          return true;
+        }
+        return json(
+          error instanceof ConflictError
+            ? 409
+            : error instanceof UploadQuotaError
+              ? error.status
+              : 400,
+          { error: (error as Error).message },
         );
-        archive.db
-          .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?")
-          .run(body.token);
-        return json(200, {
-          revision: result.revision,
-          added: stage.family.people.length,
-        });
-      } catch (e) {
-        return json(e instanceof ConflictError ? 409 : 400, {
-          error: (e as Error).message,
-        });
       }
     },
   };

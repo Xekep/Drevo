@@ -499,9 +499,14 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     );
     const audit = await (await request("/api/audit", admin)).json();
     assert.ok(
-      audit.items.some((e: { action: string }) => e.action === "Импорт GEDCOM"),
+      audit.items.some(
+        (e: { action: string }) => e.action === "Импорт GEDCOM / XML",
+      ),
     );
-    const exportResponse = await request("/api/gedcom/export", admin);
+    const exportResponse = await request(
+      "/api/gedcom/export?format=gedcom551",
+      admin,
+    );
     assert.equal(exportResponse.status, 200);
     assert.equal(
       importGedcom(await exportResponse.text(), "round-trip").family.people

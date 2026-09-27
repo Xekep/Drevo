@@ -28,6 +28,12 @@ export function validateEvents(events: unknown): void {
     )
       throw new Error("Некорректное событие человека");
     ids.add(e.id);
+    if (
+      e.gedcomTag !== undefined &&
+      (typeof e.gedcomTag !== "string" ||
+        !/^[A-Z_][A-Z_0-9]{0,30}$/.test(e.gedcomTag))
+    )
+      throw new Error("Некорректный тип исходного события");
     for (const key of ["title", "dateText", "place", "description"] as const)
       if (
         e[key] !== undefined &&

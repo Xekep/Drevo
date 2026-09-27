@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Download, Upload } from "lucide-react";
+import {
+  TRANSFER_PACKAGE_LIMIT,
+  type GenealogyExportFormat,
+} from "../domain/genealogy-transfer";
 type Preview = {
   token: string;
+  version: string;
+  photos: number;
+  documents: number;
   people: number;
   connections: number;
   events: number;
@@ -12,6 +19,8 @@ type Preview = {
   sample: { name: string; birth: string; death?: string }[];
 };
 export function GedcomTransfer({ onImported }: { onImported: () => void }) {
+  const [format, setFormat] = useState<GenealogyExportFormat>("gedzip7");
+  const [xmlMedia, setXmlMedia] = useState(true);
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState<Preview | null>(null),
     [error, setError] = useState(""),
@@ -24,8 +33,8 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
     setPreview(null);
     setDone("");
     try {
-      if (file.size > 8 * 1024 * 1024)
-        throw new Error("Максимальный размер — 8 МБ");
+      if (file.size > TRANSFER_PACKAGE_LIMIT)
+        throw new Error("Максимальный размер пакета — 256 МБ");
       const r = await fetch("/api/gedcom/preview", {
         method: "POST",
         headers: {
@@ -55,7 +64,9 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error);
-      setDone(`Добавлено людей: ${data.added}`);
+      setDone(
+        `Добавлено людей: ${data.added}; фотографий: ${data.photos || 0}; документов: ${data.documents || 0}.`,
+      );
       setPreview(null);
       setFile(null);
       onImported();
@@ -67,21 +78,89 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
   }
   return (
     <section className="gedcom-transfer">
-      <h2>Перенос GEDCOM</h2>
+      <h2>Перенос семейного архива</h2>
       <p>
-        Для обмена с генеалогическими программами. Фотографии сохраняйте
-        отдельно в полном бэкапе.
+        Обмен с генеалогическими программами и полная резервная копия Drevo.
       </p>
-      <a className="primary-action" href="/api/gedcom/export" download>
+      <fieldset className="genealogy-formats">
+        <legend>Экспорт</legend>
+        {(
+          [
+            ["gedcom551", "GEDCOM 5.5.1", "Максимальная совместимость"],
+            ["gedcom7", "GEDCOM 7", "Современный стандарт"],
+            ["gedzip7", "GEDZIP 7", "GEDCOM + фотографии + документы"],
+            [
+              "drevoArchive",
+              "Drevo Archive",
+              "Полная резервная копия без потерь",
+            ],
+            [
+              "agelongXml",
+              "XML «Древа Жизни 6»",
+              "Структура XML-экспорта программы",
+            ],
+          ] as const
+        ).map(([value, title, description]) => (
+          <label
+            key={value}
+            htmlFor={`export-${value}`}
+            aria-label={title}
+            className="genealogy-format"
+          >
+            <input
+              id={`export-${value}`}
+              type="radio"
+              name="genealogy-export"
+              value={value}
+              checked={format === value}
+              onChange={() => setFormat(value)}
+            />
+            <span>
+              <strong>{title}</strong>
+              <small>{description}</small>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {format === "agelongXml" && (
+        <>
+          <label className="genealogy-xml-media">
+            <input
+              type="checkbox"
+              checked={xmlMedia}
+              onChange={(e) => setXmlMedia(e.target.checked)}
+            />
+            Включить фото и PDF в ZIP вместе с XML
+          </label>
+          <p>
+            Обратная загрузка XML в «Древо Жизни 6» не документирована. Для
+            переноса в эту программу выберите GEDCOM 5.5.1.
+          </p>
+        </>
+      )}
+      <a
+        className="primary-action"
+        href={
+          format === "drevoArchive"
+            ? "/api/backup/full"
+            : `/api/gedcom/export?format=${format === "agelongXml" && xmlMedia ? "agelongZip" : format}`
+        }
+        download
+      >
         <Download size={16} />
-        Скачать GEDCOM
+        Скачать выбранный формат
       </a>
+      <h3>Импорт</h3>
+      <p>
+        GEDCOM 5.5.1 / 7 — до 32 МБ. GEDZIP или XML с вложениями — до 256 МБ;
+        каждый файл — до 20 МБ. XML с папкой .files упакуйте в один ZIP.
+      </p>
       <label>
-        Импорт .ged · UTF-8 · до 8 МБ
+        Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»
         <input
           disabled={busy}
           type="file"
-          accept=".ged,.gedcom,text/plain"
+          accept=".ged,.gedcom,.gdz,.gedzip,.zip,.xml"
           onChange={(e) => {
             setFile(e.target.files?.[0] || null);
             setPreview(null);
@@ -103,8 +182,10 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
           <h3>Будет добавлено</h3>
           <p>
             {preview.people} человек · {preview.connections} связей ·{" "}
-            {preview.events} событий
+            {preview.events} событий · {preview.photos} фотографий ·{" "}
+            {preview.documents} документов
           </p>
+          <p>Формат: {preview.version}</p>
           <p>
             Существующие карточки и фотографии сохранятся. Перед импортом сервер
             сделает резервную копию базы.
@@ -113,8 +194,8 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
             <details open>
               <summary>Особенности переноса · {preview.warningCount}</summary>
               <ul>
-                {preview.warnings.map((w) => (
-                  <li key={w}>{w}</li>
+                {preview.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
                 ))}
               </ul>
             </details>

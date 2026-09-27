@@ -60,7 +60,7 @@ export function AboutProject({ onClose }: { onClose: () => void }) {
                 <b>Node.js</b> — серверная часть.
               </li>
               <li>
-                <b>SQLite</b> — хранение данных.
+                <b>PostgreSQL</b> — хранение данных.
               </li>
               <li>
                 <b>React Flow и ELK</b> — отображение и автоматическая раскладка

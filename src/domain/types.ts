@@ -17,6 +17,8 @@ export type PersonAward = {
 };
 export type PersonEvent = {
   id: string;
+  /** Стандартный тег исходного события для повторного экспорта GEDCOM. */
+  gedcomTag?: string;
   type:
     | "residence"
     | "move"

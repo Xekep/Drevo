@@ -1746,16 +1746,41 @@
     left: 8px;
     right: 8px;
     max-width: none;
+    gap: 4px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .tree-mode-switch {
+    display: flex;
+    align-items: center;
     gap: 5px;
-    flex-wrap: wrap;
-  }
-  .tree-mode-bar .segmented {
-    flex-shrink: 0;
-  }
-  .tree-mode-bar .segmented button {
-    padding-inline: 7px;
+    flex: 1 1 140px;
+    min-width: 0;
+    max-width: 160px;
+    height: 44px;
+    padding: 0 8px;
+    border: 1px solid #d8e2d1;
+    border-radius: 8px;
+    background: #f5f8ef;
+    color: #355a3f;
     font-size: 12px;
-    min-height: 44px;
+    white-space: nowrap;
+  }
+  .tree-mode-switch > span {
+    flex: 1;
+    text-align: left;
+  }
+  .tree-mode-switch svg {
+    flex: none;
+  }
+  .tree-mode-switch[aria-checked="true"] {
+    background: #eaf0e2;
+    border-color: #a7bd98;
+  }
+  .tree-mode-switch:focus-visible,
+  .tree-family-menu > summary:focus-visible {
+    outline: 2px solid #658751;
+    outline-offset: 2px;
   }
   .tree-mode-bar .workspace-actions {
     position: static;
@@ -1765,13 +1790,51 @@
   }
   .tree-mode-bar .workspace-actions button,
   .tree-mode-bar .tree-extra-toggle {
-    min-height: 44px;
-    padding: 6px;
-    gap: 4px;
-    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+    border: 1px solid #e1e7db;
+    border-radius: 8px;
+    background: #fffffff0;
+  }
+  .tree-mode-bar .tree-extra-toggle[aria-pressed="true"],
+  .tree-mode-bar .workspace-actions button.active {
+    background: #eaf0e2;
+    border-color: #a7bd98;
   }
   .tree-mode-bar .workspace-actions svg {
+    display: block;
+    width: 19px;
+    height: 19px;
+  }
+  .tree-mode-bar .tree-extra-toggle > span {
     display: none;
+  }
+  .tree-filter-status > .tree-family-count {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .tree-mode-bar .tree-filter-status {
+    flex: none;
+    padding: 0;
+  }
+  .tree-filter-status > button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid #e1e7db;
+    border-radius: 8px;
   }
   .tree-mode-bar .archive-summary,
   .tree-canvas .flow-camera-tools,
