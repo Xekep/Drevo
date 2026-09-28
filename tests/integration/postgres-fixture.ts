@@ -111,6 +111,7 @@ export async function fixture(t: TestContext) {
     "004_archive_audit.sql",
     "005_archive_owner_uniqueness.sql",
     "008_account_tiers.sql",
+    "009_person_removals.sql",
   ])
     await first.query(
       readFileSync(
@@ -179,6 +180,10 @@ export async function fingerprint(client: pg.Client, archiveId = "tree-a") {
     "history",
     "archive_audit_entries",
     "archive_audit_people",
+    "person_removals",
+    "documents",
+    "document_people",
+    "person_comments",
   ];
   const rows = [];
   for (const table of tables)
