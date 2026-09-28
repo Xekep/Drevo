@@ -46,6 +46,9 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     "href",
     "/api/gedcom/export?format=gedzip7",
   );
+  await expect(
+    panel.getByRole("link", { name: "Экспорт JSON без фото" }),
+  ).toHaveAttribute("href", "/api/export.json?download=1");
   for (const [label, format] of [
     ["GEDCOM 5.5.1", "gedcom551"],
     ["GEDCOM 7", "gedcom7"],
@@ -59,14 +62,18 @@ test("форматы экспорта и импорт GEDCOM с предпрос
         : `/api/gedcom/export?format=${format}`,
     );
   }
-  await expect(panel.getByRole("radio", { name: "XML «Древа Жизни 6»" })).toHaveCount(0);
+  await expect(
+    panel.getByRole("radio", { name: "XML «Древа Жизни 6»" }),
+  ).toHaveCount(0);
   const text =
     "0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @I1@ INDI\n1 NAME Проверка /Переноса/\n0 TRLR\n";
-  await panel.locator('input[type="file"]').setInputFiles({
-    name: "example.ged",
-    mimeType: "text/plain",
-    buffer: Buffer.from(text),
-  });
+  await panel
+    .getByLabel("Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»")
+    .setInputFiles({
+      name: "example.ged",
+      mimeType: "text/plain",
+      buffer: Buffer.from(text),
+    });
   await panel.getByRole("button", { name: "Проверить файл" }).click();
   await expect(panel.getByText("Формат: 7.0.18")).toBeVisible();
   await expect(
@@ -86,4 +93,27 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     .getByRole("button", { name: "Подтвердить добавление 1 человек" })
     .click();
   await expect(panel.getByRole("status")).toContainText("Добавлено людей: 1");
+  const jsonInput = panel.getByLabel("Выберите экспорт архива");
+  if (testInfo.project.name === "mobile") {
+    await expect(jsonInput).toBeDisabled();
+  } else {
+    await jsonInput.setInputFiles({
+      name: "archive.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          title: "Сохранённый архив",
+          description: "",
+          demo: false,
+          people: [],
+        }),
+      ),
+    });
+    await expect(
+      panel.getByText("«Сохранённый архив»: 0 человек, 0 фотографий."),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("button", { name: "Заменить архив этими данными" }),
+    ).toBeVisible();
+  }
 });

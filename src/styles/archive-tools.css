@@ -242,6 +242,28 @@
 .genealogy-format:has(input:checked) {
   border-color: var(--accent, #657347);
 }
+.json-export {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+}
+.json-export a {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  color: #446d53;
+  font-size: 13px;
+  font-weight: 600;
+}
+.json-export svg {
+  flex: none;
+}
+.gedcom-transfer > hr {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid #e1e7df;
+}
 .gedcom-preview ul {
   max-height: 220px;
   overflow: auto;
