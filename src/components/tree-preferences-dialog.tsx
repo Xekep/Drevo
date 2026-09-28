@@ -72,11 +72,6 @@ export function TreePreferencesDialog({
       className="tree-preferences-dialog"
     >
       <div className="tree-preferences">
-        <p>
-          {localOnly
-            ? "Личные настройки · в этом браузере"
-            : "Личные настройки · сохраняются автоматически"}
-        </p>
         <fieldset disabled={saving || exporting}>
           <legend>Поколения</legend>
           <div className="tree-preference-options">
@@ -223,7 +218,7 @@ export function TreePreferencesDialog({
             : exporting
               ? "Подготавливаем древо…"
               : exported
-                ? "Окно печати открыто."
+                ? "PDF готов."
                 : ""}
         </p>
         {error && (
