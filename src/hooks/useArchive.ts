@@ -80,13 +80,27 @@ export function useArchive() {
           .get("content-type")
           ?.includes("application/json");
         if (response.status === 401) {
+          let signedIn: ArchiveUser | null = null;
+          try {
+            const sessionResponse = await fetch("/api/session", {
+              signal: controller.signal,
+              cache: "no-store",
+            });
+            if (sessionResponse.ok)
+              signedIn = (await sessionResponse.json()).user || null;
+          } catch {
+            // The original archive error remains useful if session lookup fails.
+          }
           if (active) {
             setNeedsLogin(true);
             setCanEdit(false);
             setFamily(null);
+            setUser(signedIn);
           }
           throw new Error(
-            "Это закрытый семейный архив. Нажмите «Войти», чтобы открыть древо.",
+            signedIn
+              ? "Доступ к семейному архиву пока не подтверждён администратором. Профиль доступен в личном кабинете."
+              : "Это закрытый семейный архив. Нажмите «Войти», чтобы открыть древо.",
           );
         }
         if (!response.ok && response.status !== 404)

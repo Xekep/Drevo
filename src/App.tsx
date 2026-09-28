@@ -43,6 +43,7 @@ import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
 import { ResearchAssistant } from "./components/research-assistant";
+import { AccountPage, type AccountSession } from "./components/account-page";
 import {
   clearEntrySequence,
   EntrySequence,
@@ -118,8 +119,8 @@ export default function App() {
     }, []),
   );
   const view =
-    requestedView === "admin"
-      ? "admin"
+    requestedView === "admin" || requestedView === "account"
+      ? requestedView
       : requestedView === "places" && (readTree || readPhotos)
         ? "places"
         : !readTree
@@ -128,6 +129,9 @@ export default function App() {
             ? "tree"
             : requestedView;
   const [query, setQuery] = useState(""),
+    [accountSession, setAccountSession] = useState<AccountSession | null>(null),
+    [accountLoading, setAccountLoading] = useState(true),
+    [accountError, setAccountError] = useState(false),
     [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
@@ -148,6 +152,28 @@ export default function App() {
     [pendingResearchPersonId, setPendingResearchPersonId] = useState<
       string | null
     >(null);
+  useEffect(() => {
+    if (view !== "account") return;
+    const controller = new AbortController();
+    fetch("/api/session", { cache: "no-store", signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить профиль");
+        return response.json();
+      })
+      .then((session: AccountSession) => {
+        setAccountSession(session);
+        setAccountError(false);
+        setAccountLoading(false);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setAccountSession(null);
+          setAccountError(true);
+          setAccountLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [view]);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -557,8 +583,12 @@ export default function App() {
             <ArchiveNavigation
               view={view}
               onView={navigate}
-              user={user}
-              local={archive.local}
+              user={
+                user ||
+                (view === "account" ? accountSession?.user : null) ||
+                null
+              }
+              local={archive.local || accountSession?.local === true}
               readTree={readTree}
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
@@ -571,7 +601,9 @@ export default function App() {
           onSelect={showPerson}
           busy={busy}
           onLogin={() => setLogin(true)}
-          user={user}
+          user={
+            user || (view === "account" ? accountSession?.user : null) || null
+          }
         />
         {addMenu && canEdit && (
           <div className="archive-add-menu">
@@ -607,7 +639,20 @@ export default function App() {
             </button>
           </div>
         )}
-        {family ? (
+        {view === "account" ? (
+          <AccountPage
+            session={accountSession}
+            loading={accountLoading}
+            error={accountError}
+            family={family}
+            readTree={readTree}
+            preferences={archive.treePreferences}
+            onLogin={() => setLogin(true)}
+            onPerson={showPerson}
+            onTreePreferences={() => setTreePreferencesOpen(true)}
+            onAdmin={() => navigate("admin")}
+          />
+        ) : family ? (
           <>
             {view === "admin" ? (
               user?.role === "admin" ? (
@@ -874,9 +919,18 @@ export default function App() {
           <main className="archive-status">
             <h1>Семейный архив</h1>
             <p>{archive.error}</p>
-            <button className="primary-action" onClick={() => setLogin(true)}>
-              Войти через Яндекс
-            </button>
+            {user ? (
+              <button
+                className="primary-action"
+                onClick={() => navigate("account")}
+              >
+                Личный кабинет
+              </button>
+            ) : (
+              <button className="primary-action" onClick={() => setLogin(true)}>
+                Войти через Яндекс
+              </button>
+            )}
           </main>
         ) : archive.error ? (
           <main className="archive-status" role="alert">
@@ -907,6 +961,7 @@ export default function App() {
       {entryPending &&
         !archive.error &&
         !archive.needsLogin &&
+        view !== "account" &&
         (!family || user) && (
           <EntrySequence
             onFinish={finishEntry}
@@ -932,7 +987,7 @@ export default function App() {
           }}
         />
       )}
-      {family && readTree && user && view !== "admin" && (
+      {family && readTree && user && view !== "admin" && view !== "account" && (
         <ResearchAssistant
           view={view}
           onOpenChange={setAssistantOpen}

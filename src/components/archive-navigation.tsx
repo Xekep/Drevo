@@ -21,6 +21,7 @@ import {
   ClipboardCheck,
   X,
   Settings2,
+  UserRound,
 } from "lucide-react";
 import {
   fullName,
@@ -185,6 +186,17 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
+          {user && (
+            <a
+              href={archivePaths.account}
+              aria-current={view === "account" ? "page" : undefined}
+              onClick={(event) => navigate(event, "account")}
+              title="Личный кабинет"
+            >
+              <UserRound size={18} />
+              <span>Личный кабинет</span>
+            </a>
+          )}
           {user?.approved && readTree && (
             <button
               onClick={() => {
