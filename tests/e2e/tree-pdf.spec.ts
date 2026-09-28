@@ -32,7 +32,10 @@ test("PDF respects collapsed branches and cancelling preparation releases the do
     "data-print-requested",
     "true",
   );
-  await expect(frame.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(frame.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)",
+  );
   await expect(frame.locator(".tree-print-canvas")).toHaveCSS(
     "background-color",
     "rgba(0, 0, 0, 0)",
@@ -63,90 +66,105 @@ test("PDF respects collapsed branches and cancelling preparation releases the do
   await expect(page.locator(".tree-canvas")).toBeVisible();
 });
 
-test("a wide tree with 201 people remains one custom page with vector text", async ({
-  page,
-  context,
-  isMobile,
-}, testInfo) => {
-  test.skip(isMobile);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.addInitScript(() => {
-    window.print = () => {
-      document.documentElement.dataset.printRequested = "true";
-    };
-  });
-  await page.route("**/api/family?projection=overview", async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    data.family.people = Array.from({ length: 201 }, (_, index) => ({
-      id: `pdf-${index}`,
-      name: index ? `Потомок${index}` : "Основатель",
-      surname: "Тестовый",
-      sex: "m",
-      birth: index ? "1930-01-01" : "1900-01-01",
-      patronymic: "",
-      birthPlace: "",
-      sources: [],
-      parents: index ? ["pdf-0"] : [],
-      spouses: [],
-      generation: index ? 2 : 1,
-      column: index,
+for (const shape of ["wide", "tall"] as const)
+  test(`a ${shape} tree remains one landscape page with readable vector text`, async ({
+    page,
+    context,
+    isMobile,
+  }, testInfo) => {
+    test.skip(isMobile);
+    const count = shape === "wide" ? 201 : 12;
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => {
+      window.print = () => {
+        document.documentElement.dataset.printRequested = "true";
+      };
+    });
+    await page.route("**/api/family?projection=overview", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.family.people = Array.from({ length: count }, (_, index) => ({
+        id: `pdf-${index}`,
+        name: index ? `Потомок${index}` : "Основатель",
+        surname: "Тестовый",
+        sex: "m",
+        birth: `${shape === "wide" ? (index ? 1930 : 1900) : 1700 + index * 25}-01-01`,
+        patronymic: "",
+        birthPlace: "",
+        sources: [],
+        parents: index ? [`pdf-${shape === "wide" ? 0 : index - 1}`] : [],
+        spouses: [],
+        generation: shape === "wide" ? (index ? 2 : 1) : index + 1,
+        column: index,
+      }));
+      data.family.links = [];
+      data.family.photos = [];
+      data.partial = false;
+      data.user.personId = null;
+      await route.fulfill({ response, json: data });
+    });
+    await page.goto("/tree");
+    await expect(page.locator(".tree-canvas")).not.toHaveClass(
+      /is-grow|is-layout-settling/,
+    );
+    await page.getByRole("button", { name: "Настройки древа" }).click();
+    await page.getByRole("button", { name: "Сохранить древо в PDF" }).click();
+    const frame = page.frameLocator("iframe[data-tree-print]");
+    await expect(frame.locator("html")).toHaveAttribute(
+      "data-print-requested",
+      "true",
+      { timeout: 15_000 },
+    );
+    await expect(frame.locator(".flow-person")).toHaveCount(count);
+    const size = await frame.locator("body").evaluate((node) => ({
+      width: node.clientWidth,
+      height: node.clientHeight,
     }));
-    data.family.links = [];
-    data.family.photos = [];
-    data.partial = false;
-    data.user.personId = null;
-    await route.fulfill({ response, json: data });
+    if (shape === "wide") expect(size.width).toBeGreaterThan(19_000);
+    expect(size.width).toBeGreaterThan(size.height);
+    const html = await frame.locator("html").evaluate((node) => node.outerHTML);
+    const printPage = await context.newPage();
+    await printPage.route("**/__tree_pdf_test", (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html>${html}`,
+      }),
+    );
+    await printPage.goto("/__tree_pdf_test", { waitUntil: "networkidle" });
+    await printPage.evaluate(() => document.fonts.ready);
+    const buffer = await printPage.pdf({
+      path: testInfo.outputPath("large-tree.pdf"),
+      preferCSSPageSize: true,
+      printBackground: true,
+    });
+    await printPage.close();
+    const pdf = await getDocument({ data: new Uint8Array(buffer) }).promise;
+    try {
+      expect(pdf.numPages).toBe(1);
+      const first = await pdf.getPage(1);
+      expect(first.getViewport({ scale: 1 }).width).toBeCloseTo(
+        size.width * 0.75,
+        0,
+      );
+      const textItems = (await first.getTextContent()).items;
+      // At 100% PDF zoom the original 16px names stay at 12pt, including the
+      // last person on a sheet wider than the former artificial page cap.
+      const names = textItems.filter(
+        (item) => "str" in item && /Основатель|Потомок/.test(item.str),
+      );
+      expect(names.length).toBeGreaterThanOrEqual(count);
+      for (const name of names)
+        if ("height" in name) expect(name.height).toBeGreaterThanOrEqual(11.9);
+      const text = textItems
+        .flatMap((item) => ("str" in item ? item.str : []))
+        .join(" ");
+      expect(text).toContain("Основатель");
+      for (let index = 1; index < count; index++)
+        expect(text).toContain(`Потомок${index}`);
+    } finally {
+      await pdf.loadingTask.destroy();
+    }
   });
-  await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  await page.getByRole("button", { name: "Сохранить древо в PDF" }).click();
-  const frame = page.frameLocator("iframe[data-tree-print]");
-  await expect(frame.locator("html")).toHaveAttribute(
-    "data-print-requested",
-    "true",
-    { timeout: 15_000 },
-  );
-  await expect(frame.locator(".flow-person")).toHaveCount(201);
-  const size = await frame.locator("body").evaluate((node) => ({
-    width: node.clientWidth,
-    height: node.clientHeight,
-  }));
-  expect(Math.max(size.width, size.height)).toBe(19_000);
-  const html = await frame.locator("html").evaluate((node) => node.outerHTML);
-  const printPage = await context.newPage();
-  await printPage.route("**/__tree_pdf_test", (route) =>
-    route.fulfill({
-      contentType: "text/html; charset=utf-8",
-      body: `<!doctype html>${html}`,
-    }),
-  );
-  await printPage.goto("/__tree_pdf_test", { waitUntil: "networkidle" });
-  await printPage.evaluate(() => document.fonts.ready);
-  const buffer = await printPage.pdf({
-    path: testInfo.outputPath("large-tree.pdf"),
-    preferCSSPageSize: true,
-    printBackground: true,
-  });
-  await printPage.close();
-  const pdf = await getDocument({ data: new Uint8Array(buffer) }).promise;
-  try {
-    expect(pdf.numPages).toBe(1);
-    const first = await pdf.getPage(1);
-    expect(first.getViewport({ scale: 1 }).width).toBeCloseTo(14_250, 0);
-    const text = (await first.getTextContent()).items
-      .flatMap((item) => ("str" in item ? item.str : []))
-      .join(" ");
-    expect(text).toContain("Основатель");
-    for (let index = 1; index <= 200; index++)
-      expect(text).toContain(`Потомок${index}`);
-  } finally {
-    await pdf.loadingTask.destroy();
-  }
-});
 
 for (const variant of ["portrait", "classic"] as const)
   test(`all expanded ${variant} tree exports as one vector PDF independently of the camera`, async ({
@@ -251,6 +269,7 @@ for (const variant of ["portrait", "classic"] as const)
       width: node.clientWidth,
       height: node.clientHeight,
     }));
+    expect(dimensions.width).toBeGreaterThan(dimensions.height);
     // Print the exact prepared document through the same Chromium print engine.
     const printPage = await context.newPage();
     await printPage.setViewportSize(dimensions);

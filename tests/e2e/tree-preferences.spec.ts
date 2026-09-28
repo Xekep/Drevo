@@ -75,7 +75,9 @@ test("each viewer can switch tree direction, colors and card variant", async ({
 
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  const genealogyFormat = dialog.getByRole("combobox", { name: "Генеалогический формат" });
+  const genealogyFormat = dialog.getByRole("combobox", {
+    name: "Генеалогический формат",
+  });
   await expect(genealogyFormat).toHaveValue("gedzip7");
   await expect(dialog.getByRole("link", { name: "Скачать" })).toHaveAttribute(
     "href",
@@ -157,12 +159,9 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   );
-  const preview = await dialog
-    .locator(".tree-card-preview.stacked-preview")
-    .boundingBox();
-  expect(preview!.width).toBeGreaterThan(100);
-  expect(preview!.height).toBeGreaterThan(60);
-  expect(bounds!.height).toBeLessThan(600);
+  await expect(dialog.getByText("Портрет", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Классика", { exact: true })).toBeVisible();
+  expect(bounds!.height).toBeLessThan(470);
   await dialog.screenshot({
     path: testInfo.outputPath("tree-settings-dialog.png"),
   });

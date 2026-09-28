@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, ContactRound, PanelLeft } from "lucide-react";
 import type { TreePreferences } from "../domain";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import { EditorDialog } from "./editor-dialog";
@@ -7,7 +7,6 @@ import "../styles/tree-preferences.css";
 
 export function TreePreferencesDialog({
   preferences,
-  linkedPerson,
   localOnly = false,
   canExportArchive = false,
   onChange,
@@ -15,7 +14,6 @@ export function TreePreferencesDialog({
   onExportPdf,
 }: {
   preferences: TreePreferences;
-  linkedPerson: boolean;
   localOnly?: boolean;
   canExportArchive?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
@@ -25,7 +23,8 @@ export function TreePreferencesDialog({
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
-  const [genealogyFormat, setGenealogyFormat] = useState<Exclude<GenealogyExportFormat, "drevoArchive">>("gedzip7");
+  const [genealogyFormat, setGenealogyFormat] =
+    useState<Exclude<GenealogyExportFormat, "drevoArchive">>("gedzip7");
   const exportController = useRef<AbortController | null>(null);
   useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
@@ -57,7 +56,8 @@ export function TreePreferencesDialog({
     } catch (reason) {
       if (!controller.signal.aborted)
         setError(
-          reason instanceof Error && reason.message === "Не удалось дождаться построения древа."
+          reason instanceof Error &&
+            reason.message === "Не удалось дождаться построения древа."
             ? reason.message
             : "Не удалось создать PDF. Попробуйте ещё раз.",
         );
@@ -74,8 +74,8 @@ export function TreePreferencesDialog({
       <div className="tree-preferences">
         <p>
           {localOnly
-            ? "Ваш вид · сохраняется в этом браузере"
-            : "Ваш вид · сохраняется в аккаунте"}
+            ? "Личные настройки · в этом браузере"
+            : "Личные настройки · сохраняются автоматически"}
         </p>
         <fieldset disabled={saving || exporting}>
           <legend>Поколения</legend>
@@ -111,10 +111,9 @@ export function TreePreferencesDialog({
               </label>
             ))}
           </div>
-          <small>В хронологии время идёт слева направо.</small>
         </fieldset>
         <fieldset disabled={saving || exporting}>
-          <legend>Фон</legend>
+          <legend>Тема</legend>
           <div className="tree-preference-options color-options">
             {(
               [
@@ -161,16 +160,8 @@ export function TreePreferencesDialog({
                   void choose({ ...draft, cardVariant: "portrait" })
                 }
               />
-              <span
-                className="tree-card-preview stacked-preview"
-                aria-hidden="true"
-              >
-                <i>А</i>
-                <b>Иванова Анна Петровна</b>
-                <small>1988–2024</small>
-                {!localOnly && <small>Двоюродная сестра</small>}
-              </span>
-              <strong>{portraitLabel}</strong>
+              <ContactRound size={17} aria-hidden="true" />
+              <strong>Портрет</strong>
             </label>
             <label
               className={draft.cardVariant === "classic" ? "is-selected" : ""}
@@ -184,23 +175,10 @@ export function TreePreferencesDialog({
                   void choose({ ...draft, cardVariant: "classic" })
                 }
               />
-              <span
-                className="tree-card-preview classic-preview"
-                aria-hidden="true"
-              >
-                <i>А</i>
-                <span>
-                  <b>Иванова</b>
-                  <small>Анна Петровна</small>
-                  <small>1988–2024</small>
-                </span>
-              </span>
-              <strong>Обычная</strong>
+              <PanelLeft size={17} aria-hidden="true" />
+              <strong>Классика</strong>
             </label>
           </div>
-          {!linkedPerson && !localOnly && (
-            <small>Родство появится после привязки аккаунта к человеку.</small>
-          )}
         </fieldset>
         <div className="tree-pdf-export">
           <div className="tree-export-actions">
@@ -218,13 +196,20 @@ export function TreePreferencesDialog({
                 <select
                   aria-label="Генеалогический формат"
                   value={genealogyFormat}
-                  onChange={(event) => setGenealogyFormat(event.target.value as typeof genealogyFormat)}
+                  onChange={(event) =>
+                    setGenealogyFormat(
+                      event.target.value as typeof genealogyFormat,
+                    )
+                  }
                 >
                   <option value="gedzip7">GEDZIP 7 · с файлами</option>
                   <option value="gedcom7">GEDCOM 7</option>
                   <option value="gedcom551">GEDCOM 5.5.1</option>
                 </select>
-                <a href={`/api/gedcom/export?format=${genealogyFormat}`} download>
+                <a
+                  href={`/api/gedcom/export?format=${genealogyFormat}`}
+                  download
+                >
                   <Download size={16} aria-hidden="true" />
                   Скачать
                 </a>

@@ -24,7 +24,6 @@ export type ExportTree = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode };
 const edgeTypes = { relationship: RelationshipEdge };
-const MAX_PAGE_SIDE = 19_000; // Below PDF's 200-inch page limit at 96 CSS px/in.
 
 function Ready({ onReady }: { onReady: () => void }) {
   const initialized = useNodesInitialized();
@@ -115,13 +114,17 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   const padding = 96;
   const contentWidth = right - left;
   const contentHeight = bottom - top;
-  const width = Math.ceil(contentWidth + 2 * padding);
-  const height = Math.ceil(contentHeight + 2 * padding);
+  // Grow the sheet instead of shrinking the cards. A 16px label must remain
+  // 12pt in the PDF even when the tree is much wider than a print-sized page.
+  // Keep tall/narrow projections on a landscape sheet too, centred naturally.
+  const height = Math.max(794, Math.ceil(contentHeight + 2 * padding));
+  const width = Math.max(
+    1123,
+    Math.ceil(contentWidth + 2 * padding),
+    Math.ceil(height * Math.SQRT2),
+  );
   const x = (width - contentWidth) / 2 - left;
   const y = (height - contentHeight) / 2 - top;
-  const scale = Math.min(1, MAX_PAGE_SIDE / width, MAX_PAGE_SIDE / height);
-  const pageWidth = width * scale,
-    pageHeight = height * scale;
   const iframe = document.createElement("iframe");
   iframe.title = "PDF древа";
   iframe.name = "drevo-pdf";
@@ -133,7 +136,7 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   const target = iframe.contentDocument!;
   const printWindow = iframe.contentWindow!;
   // about:blank starts in quirks mode, which ignores the intended body/page
-  // dimensions when a very wide tree needs physical page scaling.
+  // dimensions on custom-sized sheets.
   target.open();
   target.write("<!doctype html><html><head></head><body></body></html>");
   target.close();
@@ -200,12 +203,11 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       if (disposed) return;
       const styles = target.createElement("style");
       styles.textContent = `
-      @page { size: ${pageWidth}px ${pageHeight}px; margin: 0; }
-      html, body { margin: 0 !important; padding: 0 !important; width: ${pageWidth}px !important; height: ${pageHeight}px !important; overflow: hidden !important; background: #fff !important; }
+      @page { size: ${width}px ${height}px; margin: 0; }
+      html, body { margin: 0 !important; padding: 0 !important; width: ${width}px !important; height: ${height}px !important; overflow: hidden !important; background: #fff !important; }
       * { animation: none !important; transition: none !important; print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
       .tree-print-canvas { position: absolute !important; inset: 0 auto auto 0 !important; background: transparent !important; }
       .tree-print-canvas .react-flow { background: transparent !important; }
-      @media print { .tree-print-canvas { zoom: ${scale}; } }
       .react-flow__handle { visibility: hidden !important; }
       .react-flow__panel, .react-flow__attribution { display: none !important; }
     `;
