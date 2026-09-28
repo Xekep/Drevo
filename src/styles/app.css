@@ -620,6 +620,10 @@ h1 {
   gap: 12px;
   justify-content: space-between;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.panel-tabs::-webkit-scrollbar {
+  display: none;
 }
 .panel-tabs > button,
 .panel-tabs > span {
