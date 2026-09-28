@@ -50,23 +50,16 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     ["GEDCOM 5.5.1", "gedcom551"],
     ["GEDCOM 7", "gedcom7"],
     ["Drevo Archive", "drevoArchive"],
-    ["XML «Древа Жизни 6»", "agelongXml"],
   ]) {
     await panel.getByRole("radio", { name: label, exact: true }).check();
     await expect(download).toHaveAttribute(
       "href",
       format === "drevoArchive"
         ? "/api/backup/full"
-        : `/api/gedcom/export?format=${format === "agelongXml" ? "agelongZip" : format}`,
+        : `/api/gedcom/export?format=${format}`,
     );
   }
-  await panel
-    .getByRole("checkbox", { name: "Включить фото и PDF в ZIP вместе с XML" })
-    .uncheck();
-  await expect(download).toHaveAttribute(
-    "href",
-    "/api/gedcom/export?format=agelongXml",
-  );
+  await expect(panel.getByRole("radio", { name: "XML «Древа Жизни 6»" })).toHaveCount(0);
   const text =
     "0 HEAD\n1 GEDC\n2 VERS 7.0.18\n0 @I1@ INDI\n1 NAME Проверка /Переноса/\n0 TRLR\n";
   await panel.locator('input[type="file"]').setInputFiles({

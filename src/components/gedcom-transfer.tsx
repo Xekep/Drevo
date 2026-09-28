@@ -20,7 +20,6 @@ type Preview = {
 };
 export function GedcomTransfer({ onImported }: { onImported: () => void }) {
   const [format, setFormat] = useState<GenealogyExportFormat>("gedzip7");
-  const [xmlMedia, setXmlMedia] = useState(true);
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState<Preview | null>(null),
     [error, setError] = useState(""),
@@ -94,11 +93,6 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
               "Drevo Archive",
               "Полная резервная копия без потерь",
             ],
-            [
-              "agelongXml",
-              "XML «Древа Жизни 6»",
-              "Структура XML-экспорта программы",
-            ],
           ] as const
         ).map(([value, title, description]) => (
           <label
@@ -122,28 +116,12 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
           </label>
         ))}
       </fieldset>
-      {format === "agelongXml" && (
-        <>
-          <label className="genealogy-xml-media">
-            <input
-              type="checkbox"
-              checked={xmlMedia}
-              onChange={(e) => setXmlMedia(e.target.checked)}
-            />
-            Включить фото и PDF в ZIP вместе с XML
-          </label>
-          <p>
-            Обратная загрузка XML в «Древо Жизни 6» не документирована. Для
-            переноса в эту программу выберите GEDCOM 5.5.1.
-          </p>
-        </>
-      )}
       <a
         className="primary-action"
         href={
           format === "drevoArchive"
             ? "/api/backup/full"
-            : `/api/gedcom/export?format=${format === "agelongXml" && xmlMedia ? "agelongZip" : format}`
+            : `/api/gedcom/export?format=${format}`
         }
         download
       >

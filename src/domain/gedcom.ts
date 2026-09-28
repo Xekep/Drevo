@@ -2,6 +2,7 @@ import type {
   Family,
   Person,
   PersonEvent,
+  PlaceLocation,
   Source,
   FamilyLink,
 } from "./types.ts";
@@ -241,7 +242,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   );
   if (ids.has(undefined))
     throw new Error("У человека отсутствует идентификатор GEDCOM");
-  const notes = (n: Node) =>
+  const notes = (n: Node, exclude?: string) =>
     n.children
       .filter((c) => c.tag === "NOTE" || c.tag === "SNOTE")
       .map((s) => {
@@ -251,23 +252,32 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           throw new Error(`Не найдена заметка ${s.value}`);
         return record.value;
       })
-      .filter(Boolean)
+      .filter((text) => text && text !== exclude)
       .join("\n\n");
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
       const record = s.pointer ? records.get(s.value) : undefined,
-        url = value(s, "_URL") || (record ? value(record, "WWW") : "");
+        noteUrl = record
+          ? children(record, "NOTE")
+              .map((note) => /^URL: (https?:\/\/\S+)$/i.exec(note.value)?.[1])
+              .find(Boolean)
+          : undefined,
+        url =
+          value(s, "_URL") ||
+          (record ? value(record, "_URL") || value(record, "WWW") : "") ||
+          noteUrl ||
+          "";
       if (s.pointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
       return {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
           : s.value,
-        type: value(s, "_TYPE"),
+        type: value(s, "_TYPE") || (record ? value(record, "_TYPE") : ""),
         reference: value(s, "PAGE"),
         note:
           [
-            record && notes(record),
+            record && notes(record, url ? `URL: ${url}` : undefined),
             record && value(record, "TEXT"),
             record && value(record, "AUTH"),
             record && value(record, "PUBL"),
@@ -279,6 +289,24 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
     });
+  const placeLocation = (n?: Node): PlaceLocation | undefined => {
+    const place = n && child(n, "PLAC"),
+      map = place && child(place, "MAP");
+    if (!map) return undefined;
+    const latitude = /^([NS])(\d+(?:\.\d+)?)$/.exec(value(map, "LATI")),
+      longitude = /^([EW])(\d+(?:\.\d+)?)$/.exec(value(map, "LONG"));
+    if (!place?.value || !latitude || !longitude) {
+      warnings.add("Координаты места в GEDCOM неполные и не перенесены.");
+      return undefined;
+    }
+    const lat = Number(latitude[2]) * (latitude[1] === "S" ? -1 : 1),
+      lon = Number(longitude[2]) * (longitude[1] === "W" ? -1 : 1);
+    if (lat > 90 || lat < -90 || lon > 180 || lon < -180) {
+      warnings.add("Координаты места в GEDCOM выходят за допустимый диапазон.");
+      return undefined;
+    }
+    return { place: place.value, lat, lon };
+  };
   let eventId = 0;
   function event(n: Node, fallback?: string): PersonEvent {
     const raw = value(n, "DATE"),
@@ -303,6 +331,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       endDate: start && end ? end : undefined,
       dateText: raw && !date && !(start && end) ? raw : phrase || undefined,
       place: value(n, "PLAC") || undefined,
+      location: placeLocation(n),
       description: notes(n) || undefined,
       sources: sources(n),
     };
@@ -343,6 +372,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       deceased: death && death.value !== "N" ? true : undefined,
       birthPlace: birth ? value(birth, "PLAC") : "",
       deathPlace: death ? value(death, "PLAC") || undefined : undefined,
+      birthLocation: placeLocation(birth),
+      deathLocation: placeLocation(death),
       biography: notes(n) || undefined,
       occupation: value(n, "OCCU") || undefined,
       maidenName:
@@ -823,9 +854,26 @@ export function exportGedcom(
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
-    if (source.type) emit(level + 1, "_TYPE", source.type);
-    if (source.url) emit(level + 1, "_URL", source.url);
-    if (source.note) emit(level + 1, "NOTE", source.note);
+  }
+  function emitPlace(
+    level: number,
+    place: string | undefined,
+    location?: PlaceLocation,
+  ) {
+    const name = place || location?.place;
+    if (!name) return;
+    emit(level, "PLAC", name);
+    if (!location) return;
+    const coordinate = (value: number, positive: string, negative: string) => {
+      const degrees = Math.abs(value)
+        .toFixed(12)
+        .replace(/0+$/, "")
+        .replace(/\.$/, "");
+      return `${value < 0 ? negative : positive}${degrees}`;
+    };
+    emit(level + 1, "MAP");
+    emit(level + 2, "LATI", coordinate(location.lat, "N", "S"));
+    emit(level + 2, "LONG", coordinate(location.lon, "E", "W"));
   }
   emit(0, "HEAD");
   emit(1, "SOUR", "DREVO");
@@ -879,11 +927,14 @@ export function exportGedcom(
         !p.events?.some(
           (e) => e.gedcomTag === (kind === "birth" ? "BIRT" : "DEAT"),
         ) &&
-        (p[kind] || p[`${kind}Place`] || (kind === "death" && p.deceased))
+        (p[kind] ||
+          p[`${kind}Place`] ||
+          p[`${kind}Location`] ||
+          (kind === "death" && p.deceased))
       ) {
         emit(1, kind === "birth" ? "BIRT" : "DEAT", "Y");
         if (p[kind]) emit(2, "DATE", exportDate(p[kind]));
-        if (p[`${kind}Place`]) emit(2, "PLAC", p[`${kind}Place`]!);
+        emitPlace(2, p[`${kind}Place`], p[`${kind}Location`]);
       }
     if (p.biography) emit(1, "NOTE", p.biography);
     if (
@@ -908,6 +959,11 @@ export function exportGedcom(
             endDate: undefined,
             dateText: p[kind] ? undefined : original.dateText,
             place: p[`${kind}Place`] || undefined,
+            location:
+              p[`${kind}Location`] ||
+              (original.place === p[`${kind}Place`]
+                ? original.location
+                : undefined),
           }
         : original;
       const tag =
@@ -977,7 +1033,7 @@ export function exportGedcom(
         emit(2, "DATE", date.date);
         if (date.phrase) emit(3, "PHRASE", date.phrase);
       } else if (e.endDate) emit(2, "DATE", `TO ${exportDate(e.endDate)}`);
-      if (e.place) emit(2, "PLAC", e.place);
+      emitPlace(2, e.place, e.location);
       if (e.description) emit(2, "NOTE", e.description);
       for (const source of e.sources || []) citation(2, source);
     }
@@ -1044,6 +1100,14 @@ export function exportGedcom(
   sourceRecords.forEach((s, i) => {
     emit(0, `@S${i + 1}@ SOUR`);
     emit(1, "TITL", s.title);
+    if (s.type) emit(1, "_TYPE", s.type);
+    if (s.url) {
+      emit(1, "_URL", s.url);
+      // SOURCE_RECORD has no standard URL field in either GEDCOM version.
+      // A standard NOTE keeps the link visible in readers ignoring extensions.
+      emit(1, "NOTE", `URL: ${s.url}`);
+    }
+    if (s.note) emit(1, "NOTE", s.note);
   });
   media.forEach((item, i) => {
     emit(0, `@M${i + 1}@ OBJE`);

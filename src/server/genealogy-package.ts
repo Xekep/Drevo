@@ -19,7 +19,7 @@ import { ZipFile } from "yazl";
 import sharp from "sharp";
 import type { DatabaseSync } from "node:sqlite";
 import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
-import { importAgelongXml, exportAgelongXml } from "../domain/agelong-xml.ts";
+import { importAgelongXml } from "../domain/agelong-xml.ts";
 import {
   familyMedia,
   TRANSFER_FILE_LIMIT,
@@ -354,7 +354,6 @@ export async function writeGenealogyPackage(
   uploads: string,
   family: Family,
   media: TransferMedia[],
-  xml = false,
 ) {
   const zip = new ZipFile();
   const output = pipeline(
@@ -379,7 +378,7 @@ export async function writeGenealogyPackage(
         );
       const name = `media/${match[1]}`,
         source = join(uploads, match[1]);
-      item.file = xml ? `drevo.xml.files/${match[1]}` : name;
+      item.file = name;
       if (used.has(item.file)) continue;
       const info = await lstat(source);
       if (!info.isFile() || info.isSymbolicLink())
@@ -395,12 +394,10 @@ export async function writeGenealogyPackage(
       used.add(item.file);
       zip.addFile(source, item.file, { compress: false });
     }
-    const text = xml
-      ? exportAgelongXml(family, exported)
-      : exportGedcom(family, { version: "7.0", media: exported });
+    const text = exportGedcom(family, { version: "7.0", media: exported });
     if (Buffer.byteLength(text) > TRANSFER_TEXT_LIMIT)
       throw new Error("Текст обмена больше 32 МБ");
-    zip.addBuffer(Buffer.from(text), xml ? "drevo.xml" : "gedcom.ged");
+    zip.addBuffer(Buffer.from(text), "gedcom.ged");
     zip.end();
     await output;
   } catch (error) {
