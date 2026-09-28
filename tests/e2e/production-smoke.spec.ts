@@ -1410,8 +1410,10 @@ test("mobile camera moves from the full tree to the linked person", async ({
     })
     .toBeLessThan(12);
   await expect
-    .poll(async () => (await person.boundingBox())?.width || 0)
-    .toBeGreaterThanOrEqual(130);
+    .poll(() => page.locator(".react-flow__viewport").evaluate(
+      (node) => new DOMMatrix(getComputedStyle(node).transform).a,
+    ))
+    .toBeCloseTo(0.55, 2);
 });
 
 test("the initial tree grows from roots toward descendants", async ({
