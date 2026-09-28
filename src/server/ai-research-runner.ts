@@ -47,6 +47,7 @@ import {
 } from "./research-suggestions.ts";
 import {
   missingYandexConversation,
+  YandexResponseError,
   yandexResponsesClient,
   type ResponseItem,
 } from "./yandex-responses.ts";
@@ -142,6 +143,16 @@ export function createResearchRunner({
     let webCitationRetryUsed = false;
     let webSearchFailed = false;
     let webSearchCompleted = false;
+    const webPagesToVerify = (introduction: string) =>
+      [
+        introduction,
+        ...[...webReferences.values()]
+          .slice(0, 5)
+          .map(
+            (source) =>
+              `- [${source.label.replace(/[\\[\]]/g, "") || source.domain}](${source.url})`,
+          ),
+      ].join("\n\n");
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
@@ -588,6 +599,39 @@ export function createResearchRunner({
           round--;
           continue;
         } else {
+          if (
+            !signal.aborted &&
+            webReferences.size &&
+            !createdSuggestionIds.size &&
+            !files.length
+          ) {
+            // Keep successful search results even when the following model call
+            // fails. Reset only the remote context; the local answer is saved.
+            chats.setRemote(chatId, null);
+            console.warn(
+              JSON.stringify({
+                event: "ai.web_answer_fallback",
+                model: runtime.modelUri,
+                sourceCount: webReferences.size,
+                providerStatus:
+                  error instanceof YandexResponseError
+                    ? error.status
+                    : undefined,
+                providerErrorCode:
+                  error instanceof YandexResponseError ? error.code : undefined,
+                errorType: error instanceof Error ? error.name : "unknown",
+              }),
+            );
+            return {
+              answer: webPagesToVerify(
+                "Поиск нашёл страницы, но ИИ не смог завершить анализ результатов. Сохранил ссылки для проверки. Соответствие нужному архиву и шифру пока не подтверждено:",
+              ),
+              references: [...webReferences.values()],
+              suggestionIds: [],
+              uiActions: [],
+              files: [],
+            };
+          }
           throw error;
         }
       }
@@ -659,15 +703,9 @@ export function createResearchRunner({
           continue;
         }
         if (webReferences.size && !hasWebCitation)
-          answer.content = [
+          answer.content = webPagesToVerify(
             "Не удалось подтвердить ответ источниками. Поиск вернул следующие страницы — их ещё нужно сверить с нужным архивом и шифром; это не подтверждение наличия или отсутствия документа:",
-            ...[...webReferences.values()]
-              .slice(0, 5)
-              .map(
-                (source) =>
-                  `- [${source.label.replace(/[\\[\]]/g, "") || source.domain}](${source.url})`,
-              ),
-          ].join("\n\n");
+          );
         if (
           !rawContent.trim() &&
           !createdSuggestionIds.size &&

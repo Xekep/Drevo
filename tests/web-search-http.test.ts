@@ -6,7 +6,13 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 
 for (const streaming of [false, true])
-  for (const citationMode of ["cited", "retry", "fallback"] as const)
+  for (const citationMode of [
+    "cited",
+    "retry",
+    "fallback",
+    "timeout",
+    "provider-error",
+  ] as const)
     test(`web search agent ${streaming ? "SSE" : "HTTP"} ${citationMode} retains citations and isolates credentials`, async () => {
       const dir = mkdtempSync(join(tmpdir(), "drevo-web-search-"));
       const env = {
@@ -69,6 +75,18 @@ for (const streaming of [false, true])
           });
         }
         agentCalls++;
+        if (agentCalls === 2 && citationMode === "timeout")
+          throw new DOMException("Provider timed out", "TimeoutError");
+        if (agentCalls === 2 && citationMode === "provider-error")
+          return Response.json(
+            {
+              error: {
+                code: "upstream_error",
+                message: "Error in input stream",
+              },
+            },
+            { status: 503 },
+          );
         assert.ok(
           body.tools.some(
             (tool: { name: string }) => tool.name === "web_search",
@@ -169,13 +187,29 @@ for (const streaming of [false, true])
           "https://pamyat-naroda.ru/heroes/test-record",
         );
         assert.equal(searchCalls, 1);
-        assert.equal(agentCalls, citationMode === "cited" ? 2 : 3);
+        assert.equal(
+          agentCalls,
+          citationMode === "retry" || citationMode === "fallback" ? 3 : 2,
+        );
         assert.doesNotMatch(
           data.answer,
           /только документы органов госбезопасности/,
         );
         if (citationMode === "fallback")
           assert.match(data.answer, /Не удалось подтвердить ответ источниками/);
+        if (citationMode === "timeout" || citationMode === "provider-error") {
+          assert.match(data.answer, /ИИ не смог завершить анализ результатов/);
+          assert.doesNotMatch(
+            data.answer,
+            /Error in input stream|Provider timed out/,
+          );
+          assert.equal(
+            app.archive.db
+              .prepare("SELECT yandex_conversation_id FROM ai_chats WHERE id=?")
+              .get(data.chatId)?.yandex_conversation_id,
+            null,
+          );
+        }
         if (streaming) assert.match(text, /Поиск по 5 доверенным доменам/);
         const stored = app.archive.db
           .prepare(
