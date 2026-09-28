@@ -62,6 +62,7 @@ export function userStore(
         db.prepare("UPDATE users SET name=? WHERE id=?").run(name, id);
       else {
         const firstAdmin =
+          !id.startsWith("vk:") &&
           adminCount() === 0 &&
           (initialAdminId
             ? id === initialAdminId

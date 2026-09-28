@@ -1,6 +1,6 @@
 # Вход через Яндекс и роли
 
-Единственный способ входа на сервере — Яндекс OAuth. Формы пароля и маршрута `/api/login` больше нет. Исходник: `src/server/yandex-oauth.ts`.
+Яндекс OAuth доступен вместе с [VK ID](vk-oauth.md). Формы пароля и маршрута `/api/login` нет. Провайдер: `src/server/yandex-oauth.ts`, общая защита OAuth: `src/server/oauth-flow.ts`.
 
 ```text
 GET  /auth/yandex

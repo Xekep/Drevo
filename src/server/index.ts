@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { openArchive } from "./database.ts";
 import { removeStarterFamily } from "./demo-cleanup.ts";
 import { validateFamily } from "../domain/index.ts";
+import { createVkOAuth } from "./vk-oauth.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
 import { userStore } from "./users.ts";
 import { createAuth } from "./auth.ts";
@@ -90,6 +91,13 @@ export async function startServer(
     fetcher: oauthFetch,
     db: archive.db,
   });
+  const vk = createVkOAuth({
+    origin: publicOrigin,
+    clientId: process.env.VK_CLIENT_ID,
+    issueSession: auth.issueSession,
+    fetcher: oauthFetch,
+    db: archive.db,
+  });
   const vite = production
     ? null
     : await (
@@ -136,12 +144,14 @@ export async function startServer(
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
+    if (await vk.handle(req, res, parsedUrl)) return;
 
     if (path === "/api/session" && req.method === "GET")
       return json(res, 200, {
         canEdit: auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
+        vk: vk.enabled,
         user: auth.currentUser(req),
       });
 

@@ -21,11 +21,13 @@ import {
 } from "../domain";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import "../styles/account.css";
+import { LoginButtons } from "./login-buttons";
 
 export type AccountSession = {
   user: ArchiveUser | null;
   local: boolean;
   yandex: boolean;
+  vk?: boolean;
 };
 type SessionSummary = { currentExpiresAt: string | null; otherCount: number };
 
@@ -45,7 +47,6 @@ export function AccountPage({
   family,
   readTree,
   preferences,
-  onLogin,
   onPerson,
   onTreePreferences,
   onAdmin,
@@ -56,7 +57,6 @@ export function AccountPage({
   family: Family | null;
   readTree: boolean;
   preferences: TreePreferences;
-  onLogin: () => void;
   onPerson: (id: string) => void;
   onTreePreferences: () => void;
   onAdmin: () => void;
@@ -140,14 +140,12 @@ export function AccountPage({
               Обновить страницу <ArrowRight size={17} />
             </button>
           </div>
-        ) : !session ? (
+        ) : !user ? (
           <div className="account-card account-empty">
             <UserRound aria-hidden="true" />
             <h2>Войдите в Drevo</h2>
             <p>После входа здесь появятся ваш профиль и доступ к архиву.</p>
-            <button className="account-primary" onClick={onLogin}>
-              Войти через Яндекс <ArrowRight size={17} />
-            </button>
+            <LoginButtons />
           </div>
         ) : user ? (
           <>
@@ -159,7 +157,11 @@ export function AccountPage({
                 <span className="account-eyebrow">Участник Drevo</span>
                 <h2 id="account-name">{user.name}</h2>
                 <p>
-                  {local ? "Локальный доступ" : "Вход через Яндекс"}
+                  {local
+                    ? "Локальный доступ"
+                    : user.id.startsWith("vk:")
+                      ? "Вход через VK"
+                      : "Вход через Яндекс"}
                   {date(user.createdAt) ? ` · с ${date(user.createdAt)}` : ""}
                 </p>
               </div>
