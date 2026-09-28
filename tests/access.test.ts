@@ -251,6 +251,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     const portraitPreferences = {
       reverseTimeline: true,
       cardVariant: "portrait",
+      colorScheme: "white",
     };
     assert.deepEqual(
       await request(
@@ -265,8 +266,18 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       await request("/api/tree-preferences", reader).then((response) =>
         response.json(),
       ),
-      { reverseTimeline: false, cardVariant: "classic" },
+      { reverseTimeline: false, cardVariant: "classic", colorScheme: "warm" },
       "другой участник не наследует выбор администратора",
+    );
+    assert.equal(
+      (
+        await request("/api/tree-preferences", reader, "PUT", {
+          reverseTimeline: false,
+          cardVariant: "classic",
+          colorScheme: "white",
+        })
+      ).status,
+      200,
     );
     assert.equal(
       (
@@ -277,6 +288,23 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       ).status,
       200,
       "читатель вправе менять собственный вид древа",
+    );
+    assert.deepEqual(
+      await request("/api/tree-preferences", reader).then((response) =>
+        response.json(),
+      ),
+      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "white" },
+      "старый клиент не сбрасывает выбранную цветовую схему",
+    );
+    assert.equal(
+      (
+        await request("/api/tree-preferences", reader, "PUT", {
+          reverseTimeline: false,
+          cardVariant: "portrait",
+          colorScheme: "invalid",
+        })
+      ).status,
+      400,
     );
     assert.equal(
       (

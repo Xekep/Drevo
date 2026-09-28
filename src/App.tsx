@@ -735,6 +735,7 @@ export default function App() {
                       busy={busy}
                       reverse={archive.reverseTimeline}
                       cardVariant={archive.treePreferences.cardVariant}
+                      colorScheme={archive.treePreferences.colorScheme}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}

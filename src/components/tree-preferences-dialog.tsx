@@ -78,6 +78,40 @@ export function TreePreferencesDialog({
           <small>В хронологии время всегда идёт слева направо.</small>
         </fieldset>
         <fieldset disabled={saving}>
+          <legend>Цветовая схема</legend>
+          <div className="tree-preference-options color-options">
+            {([
+              { scheme: "warm", title: "Тёплая", detail: "Мягкий светлый фон" },
+              { scheme: "white", title: "Белая", detail: "Белый фон древа" },
+            ] as const).map(({ scheme, title, detail }) => (
+              <label
+                key={scheme}
+                className={draft.colorScheme === scheme ? "is-selected" : ""}
+              >
+                <input
+                  type="radio"
+                  name="tree-color-scheme"
+                  aria-label={title}
+                  checked={draft.colorScheme === scheme}
+                  onChange={() => void choose({ ...draft, colorScheme: scheme })}
+                />
+                <span
+                  className={`tree-color-preview ${scheme}-preview`}
+                  aria-hidden="true"
+                >
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>
+                  <strong>{title}</strong>
+                  <small>{detail}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset disabled={saving}>
           <legend>Вид карточки</legend>
           <div className="tree-preference-options card-options">
             <label

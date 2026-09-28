@@ -834,6 +834,24 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const treeColorExtension = "2026-09-user-tree-color-scheme";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(treeColorExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(
+        "ALTER TABLE user_tree_preferences ADD COLUMN color_scheme TEXT NOT NULL DEFAULT 'warm' CHECK(color_scheme IN ('warm','white'))",
+      );
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        treeColorExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const webSearchExtension = "2026-09-web-search";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(webSearchExtension)
