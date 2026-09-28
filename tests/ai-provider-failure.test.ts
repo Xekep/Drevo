@@ -98,10 +98,7 @@ for (const failStream of [false, true])
                 },
               ]
             : [],
-        output_text:
-          calls === 1
-            ? ""
-            : "Поиск не завершён. Наличие записи пока не проверено.",
+        output_text: calls === 1 ? "" : "В архиве точно нет такого документа.",
       };
       return new Response(
         `data: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
@@ -169,7 +166,8 @@ for (const failStream of [false, true])
         );
       } else {
         assert.match(text, /event: done/);
-        assert.match(text, /Наличие записи пока не проверено/);
+        assert.match(text, /наличие записи пока не проверено/);
+        assert.doesNotMatch(text, /В архиве точно нет такого документа/);
         assert.equal(detail.messages.length, 2);
       }
     } finally {

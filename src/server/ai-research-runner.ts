@@ -140,6 +140,8 @@ export function createResearchRunner({
       Extract<AnswerReference, { kind: "web" }>
     >();
     let webCitationRetryUsed = false;
+    let webSearchFailed = false;
+    let webSearchCompleted = false;
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
@@ -634,6 +636,9 @@ export function createResearchRunner({
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
+        if (webSearchFailed && !webSearchCompleted)
+          answer.content =
+            "Не удалось завершить поиск во внешних архивах. Это не означает, что документа нет: наличие записи пока не проверено. Попробуйте повторить запрос.";
         const hasWebCitation = [...webReferences.keys()].some((url) =>
           rawContent.includes(`](${url})`),
         );
@@ -909,6 +914,7 @@ export function createResearchRunner({
           else if (call.function.name === "web_search") {
             if (!search) throw new WebSearchError("WEB_SEARCH_DISABLED");
             const found = await search.search(toolArgs, signal, onStatus);
+            webSearchCompleted = true;
             for (const source of found.results)
               webReferences.set(source.url, {
                 kind: "web",
@@ -1135,6 +1141,7 @@ export function createResearchRunner({
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
           if (signal.aborted) throw error;
+          if (error instanceof WebSearchError) webSearchFailed = true;
           const detail =
             error instanceof Error ? error.message : "Ошибка инструмента";
           const safeDetail =

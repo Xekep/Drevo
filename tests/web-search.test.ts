@@ -121,6 +121,22 @@ test("URL normalization rejects whitelist tricks, wrappers and duplicates", asyn
   );
 });
 
+test("explicit global search ignores leftover trusted categories and pagination", async () => {
+  const fixture = service([source("example.com", ["archives"])]);
+  await fixture.service.search(
+    {
+      query: "ГАСО Свердловской области Ф.6 Оп.13 Д.104",
+      scope: "global",
+      categories: ["archives"],
+      sourcePage: 1,
+    },
+    signal(),
+  );
+  assert.equal(fixture.calls.length, 1);
+  assert.equal(fixture.calls[0].scope, "global");
+  assert.equal(fixture.calls[0].allowedDomains, undefined);
+});
+
 test("five-domain batches cover every catalogue resource only on explicit calls", async () => {
   const sources = Array.from({ length: 7 }, (_, i) => ({
     ...source(`source${i}.example`),
