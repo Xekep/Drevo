@@ -19,14 +19,20 @@ test("interesting data is a regular archive section on desktop and mobile", () =
   );
 });
 
-test("quality center stays available from the summary without a primary navigation item", () => {
+test("resource directory replaces quality navigation while its direct route is retained", () => {
   assert.equal(archivePaths.quality, "/quality");
   assert.equal(archiveViewAt("/quality"), "quality");
+  assert.equal(archivePaths.resources, "/resources");
+  assert.equal(archiveViewAt("/resources"), "resources");
   const navigation = readFileSync(
     new URL("src/components/archive-navigation.tsx", root),
     "utf8",
   );
-  assert.doesNotMatch(navigation, /\["quality", "Проверка", ClipboardCheck\]/);
+  assert.equal(
+    (navigation.match(/\["resources", "Ресурсы", LibraryBig\]/g) || []).length,
+    2,
+  );
+  assert.doesNotMatch(navigation, /\["quality",/);
   const insights = readFileSync(
     new URL("src/components/insights-page.tsx", root),
     "utf8",
@@ -37,6 +43,7 @@ test("quality center stays available from the summary without a primary navigati
     "utf8",
   );
   assert.match(section, /import\("\.\/archive-quality-page"\)/);
+  assert.match(section, /import\("\.\/research-resources-page"\)/);
 });
 
 test("secondary archive sections are code-split away from App", () => {

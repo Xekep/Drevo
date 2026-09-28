@@ -26,6 +26,7 @@ import {
   GitBranch,
   Link2,
   RotateCcw,
+  Settings,
   TreeDeciduous,
 } from "lucide-react";
 import {
@@ -88,6 +89,7 @@ export type TreeFocus = {
   groupId?: string;
 };
 type Props = {
+  onPreferences?: () => void;
   comparisonAction?: ReactNode;
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
@@ -867,6 +869,19 @@ function Canvas(props: Props) {
     setEdgeChoices([]);
   }
   const timelineActive = !activeFanAnchor && mode === "timeline";
+  const preferencesAction = props.onPreferences && (
+    <button
+      type="button"
+      className="tree-preferences-trigger"
+      aria-label="Настройки древа"
+      title="Настройки древа"
+      aria-haspopup="dialog"
+      disabled={growthLocked}
+      onClick={props.onPreferences}
+    >
+      <Settings size={19} aria-hidden="true" />
+    </button>
+  );
   return (
     <TreeActions.Provider value={actions}>
       <div
@@ -1054,8 +1069,14 @@ function Canvas(props: Props) {
               }}
             />
           )}
+          {narrow && preferencesAction}
         </div>
-        {!narrow && props.comparisonAction}
+        {!narrow && (props.comparisonAction || preferencesAction) && (
+          <div className="tree-display-actions">
+            {props.comparisonAction}
+            {preferencesAction}
+          </div>
+        )}
         {activeFanAnchor ? (
           <FanChart
             family={family}

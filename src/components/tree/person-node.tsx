@@ -117,7 +117,8 @@ export const PersonNode = memo(function PersonNode({
     kinshipPeople,
     kinshipLinks,
   ]);
-  const cardLabel = `${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
+  const lifespan = years(data.person);
+  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ${portraitCard ? "ветвь" : "потомков"}`;
   return (
@@ -171,6 +172,9 @@ export const PersonNode = memo(function PersonNode({
             <Avatar person={data.person} />
             <span className="portrait-card-info">
               <strong>{fullName(data.person)}</strong>
+              {lifespan && (
+                <span className="portrait-card-years">{lifespan}</span>
+              )}
               <small>{relationLabel}</small>
             </span>
           </>
@@ -182,9 +186,7 @@ export const PersonNode = memo(function PersonNode({
               <span>
                 {data.person.name} {!compact && data.person.patronymic}
               </span>
-              {!compact && years(data.person) && (
-                <small>{years(data.person)}</small>
-              )}
+              {!compact && lifespan && <small>{lifespan}</small>}
             </span>
           </>
         )}

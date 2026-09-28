@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 export function EditorDialog({
   title,
@@ -18,10 +18,13 @@ export function EditorDialog({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const dialog = ref.current;
     if (!inline) {
-      if (suspended) ref.current?.close();
-      else ref.current?.showModal();
+      if (suspended) dialog?.close();
+      else dialog?.showModal();
+      // Native close restores focus to the opener before the dialog is removed.
+      return () => dialog?.close();
     }
   }, [inline, suspended]);
   if (inline)

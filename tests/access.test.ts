@@ -154,6 +154,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       401,
     );
     assert.equal((await request("/api/people/search?q=Человек")).status, 401);
+    assert.equal((await request("/api/research-resources")).status, 401);
     assert.equal((await request("/api/portraits", "", "POST")).status, 401);
     assert.equal((await request("/api/export.json")).status, 401);
     assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
@@ -244,6 +245,10 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal((await request("/api/documents", reader)).status, 401);
     assert.equal((await request("/api/export.json", reader)).status, 401);
     assert.equal(
+      (await request("/api/research-resources", reader)).status,
+      401,
+    );
+    assert.equal(
       (await request("/api/users/second", admin, "PATCH", { approved: true }))
         .status,
       200,
@@ -253,6 +258,18 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       cardVariant: "portrait",
       colorScheme: "white",
     };
+    assert.equal(
+      (await request("/api/research-resources", reader)).status,
+      200,
+    );
+    assert.equal(
+      (await request("/api/research-resources", reader, "POST", {})).status,
+      405,
+    );
+    assert.equal(
+      (await request("/api/admin/research-resources", reader)).status,
+      403,
+    );
     assert.deepEqual(
       await request(
         "/api/tree-preferences",
@@ -615,6 +632,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.ok(publicData.family.people.length);
     assert.equal(publicData.family.photos.length, 0);
     assert.equal((await request("/api/people/search?q=Человек")).status, 200);
+    assert.equal((await request("/api/research-resources")).status, 200);
     const publicOverview = await request(
       "/api/family?projection=overview",
     ).then((r) => r.json());
@@ -660,6 +678,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       "старый формат обновления видимости не сбрасывает направление времени",
     );
     assert.equal(publicData.family.people.length, 0);
+    assert.equal((await request("/api/research-resources")).status, 401);
     assert.equal((await request("/api/people/search?q=Человек")).status, 401);
     const oldPublicPage = `/api/family?projection=page&collection=people&offset=0&token=${encodeURIComponent(publicOverview.pageToken)}`;
     assert.equal(

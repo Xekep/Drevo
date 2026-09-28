@@ -8,6 +8,7 @@ for (const [name, path] of [
   ["Документы", "/documents"],
   ["Места", "/places"],
   ["Сводка", "/insights"],
+  ["Ресурсы", "/resources"],
 ]) {
   test(`middle click opens ${path} in a new tab`, async ({
     page,
@@ -45,7 +46,9 @@ test("data checks stay accessible from the summary without a menu item", async (
   await expect(link).toHaveAttribute("href", "/quality");
   await link.click();
   await expect(page).toHaveURL(/\/quality$/);
-  await expect(page.getByRole("heading", { name: "Проверка данных" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Проверка данных" }),
+  ).toBeVisible();
 });
 
 test("modified clicks open a tab and plain clicks retain the application", async ({

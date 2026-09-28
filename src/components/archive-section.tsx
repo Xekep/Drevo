@@ -37,6 +37,9 @@ const InsightsPage = lazy(() =>
 const ArchiveQualityPage = lazy(() =>
   loadLazyModule(() => import("./archive-quality-page"), "quality"),
 );
+const ResearchResourcesPage = lazy(() =>
+  loadLazyModule(() => import("./research-resources-page"), "resources"),
+);
 
 type Props = {
   view: ArchiveView;
@@ -156,6 +159,7 @@ export function ArchiveSection(props: Props) {
         onQuality={props.onQuality}
       />
     );
+  else if (props.view === "resources") content = <ResearchResourcesPage />;
   else if (props.view === "quality")
     content = (
       <ArchiveQualityPage

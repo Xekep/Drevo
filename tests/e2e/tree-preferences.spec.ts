@@ -29,6 +29,16 @@ test("each viewer can switch tree direction, colors and card variant", async ({
     colorScheme: "warm",
   };
   let referenceId: string | undefined = "e2e-memorial-person";
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "drevo:guest-tree-preferences:v1",
+      JSON.stringify({
+        reverseTimeline: true,
+        cardVariant: "classic",
+        colorScheme: "white",
+      }),
+    ),
+  );
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -56,15 +66,15 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   await expect(self).toBeVisible();
   await expect(child).toBeVisible();
   await expect(self).toHaveClass(/is-portrait-card/);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/theme-white/);
   const initialOrder = await Promise.all([
     self.boundingBox(),
     child.boundingBox(),
   ]);
   expect(initialOrder[0]!.y).toBeLessThan(initialOrder[1]!.y);
 
-  await page.locator(".archive-more > summary").click();
-  await page.getByRole("button", { name: "Моё древо" }).click();
-  const dialog = page.getByRole("dialog", { name: "Моё древо" });
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await dialog.getByRole("radio", { name: "Белая" }).check();
   await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
   await expect(page.locator(".tree-canvas")).toHaveCSS(
@@ -98,6 +108,10 @@ test("each viewer can switch tree direction, colors and card variant", async ({
     .toBeLessThan(2);
   await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
   await expect(child.locator(".portrait-card-info small")).toHaveText("Сын");
+  await expect(self.locator(".portrait-card-years")).toHaveText("1940 — 2020");
+  await expect(child.locator(".portrait-card-years")).toHaveText(
+    "1965 — н. в.",
+  );
   await dialog.getByRole("radio", { name: "Обычная", exact: true }).check();
   await expect(self).not.toHaveClass(/is-portrait-card/);
   await expect
@@ -130,8 +144,9 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   const preview = await dialog
     .locator(".tree-card-preview.stacked-preview")
     .boundingBox();
-  expect(preview!.width).toBeGreaterThan(150);
+  expect(preview!.width).toBeGreaterThan(100);
   expect(preview!.height).toBeGreaterThan(60);
+  expect(bounds!.height).toBeLessThan(600);
   await dialog.screenshot({
     path: testInfo.outputPath("tree-settings-dialog.png"),
   });
