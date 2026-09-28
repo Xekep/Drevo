@@ -69,6 +69,7 @@ import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
 import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-morph";
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
+import { useEdgePan } from "./use-edge-pan";
 import { TREE_NODE_WIDTH, TREE_NODE_HEIGHT } from "../../domain/tree-layout";
 
 export type ConnectionDraft = {
@@ -336,6 +337,10 @@ function Canvas(props: Props) {
     PersonNodeType | HouseholdNodeType,
     RelationshipEdgeType
   >();
+  const edgePan = useEdgePan(
+    flow,
+    !cameraLocked && !activeFanAnchor && mode !== "timeline",
+  );
   const lastAssistantZoom = useRef(0);
   const context = props.assistantFilter
     ? `${mode}:research:${props.assistantFilter.token}`
@@ -834,6 +839,8 @@ function Canvas(props: Props) {
         ref={container}
         className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
+        onPointerDownCapture={edgePan.onPointerDownCapture}
+        onClickCapture={edgePan.onClickCapture}
         tabIndex={-1}
         aria-busy={growthPreparing || growthActive}
         onContextMenu={(event) => {
