@@ -126,6 +126,26 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   }
 
   await dialog.getByRole("button", { name: "Закрыть" }).click();
+  const collapse = self.getByRole("button", { name: "Свернуть ветвь" });
+  await expect(collapse).toBeVisible();
+  await collapse.click();
+  await expect(child).toHaveCount(0);
+  await expect(self).toBeVisible();
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-layout-settling|is-growing/,
+  );
+  await self.getByRole("button", { name: "Развернуть ветвь" }).click();
+  await expect(child).toBeVisible();
+  const household = page
+    .locator(".flow-household:not(.flow-household--siblings)")
+    .first();
+  await expect(household).toBeVisible();
+  expect(
+    await household.evaluate((node) => {
+      const band = Number.parseFloat(getComputedStyle(node, "::before").height);
+      return band < node.clientHeight;
+    }),
+  ).toBe(true);
   await self.screenshot({ path: testInfo.outputPath("portrait-card.png") });
   await page.screenshot({ path: testInfo.outputPath("tree-preferences.png") });
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
@@ -171,6 +191,18 @@ test("each viewer can switch tree direction, colors and card variant", async ({
       )
       .first(),
   ).toHaveText("Нет привязки к древу");
+  await expect(self).toHaveClass(/is-compact/);
+  await expect(
+    self.getByRole("button", { name: "Свернуть ветвь" }),
+  ).toBeVisible();
+  await self.getByRole("button", { name: "Свернуть ветвь" }).click();
+  await expect(
+    self.getByRole("button", { name: "Развернуть ветвь" }),
+  ).toBeVisible();
+  await self.getByRole("button", { name: "Развернуть ветвь" }).click();
+  await expect(
+    self.getByRole("button", { name: "Свернуть ветвь" }),
+  ).toBeVisible();
 });
 
 test("white scheme also colors the fan", async ({ page }, testInfo) => {
