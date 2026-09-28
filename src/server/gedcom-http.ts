@@ -14,7 +14,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
-import { exportAgelongXml } from "../domain/agelong-xml.ts";
 import { TRANSFER_PACKAGE_LIMIT } from "../domain/genealogy-transfer.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { fullName } from "../domain/dates.ts";
@@ -126,25 +125,22 @@ export function gedcomHttp(
               "gedcom551",
               "gedcom7",
               "gedzip7",
-              "agelongXml",
-              "agelongZip",
             ].includes(format)
           )
             return json(400, { error: "Неизвестный формат экспорта" });
           const family = archive.read().family,
             items = exportMedia(archive.db, family);
-          if (format === "gedzip7" || format === "agelongZip") {
+          if (format === "gedzip7") {
             const directory = await mkdtemp(join(tmpdir(), "drevo-transfer-"));
             try {
-              const xml = format === "agelongZip",
-                path = join(directory, "export.zip");
-              await writeGenealogyPackage(path, uploads, family, items, xml);
+              const path = join(directory, "export.gdz");
+              await writeGenealogyPackage(path, uploads, family, items);
               if (auth.currentUser(req)?.role !== "admin")
                 return json(403, { error: "Доступ администратора отозван" });
               res.writeHead(200, {
                 "Content-Type": "application/zip",
                 "Content-Length": String((await stat(path)).size),
-                "Content-Disposition": `attachment; filename="${xml ? "drevo-xml.zip" : "drevo.gdz"}"`,
+                "Content-Disposition": 'attachment; filename="drevo.gdz"',
                 "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff",
               });
@@ -154,18 +150,13 @@ export function gedcomHttp(
               await rm(directory, { recursive: true, force: true });
             }
           }
-          const xml = format === "agelongXml";
-          const text = xml
-            ? exportAgelongXml(family, items)
-            : exportGedcom(family, {
-                version: format === "gedcom551" ? "5.5.1" : "7.0",
-                media: items,
-              });
+          const text = exportGedcom(family, {
+            version: format === "gedcom551" ? "5.5.1" : "7.0",
+            media: items,
+          });
           res.writeHead(200, {
-            "Content-Type": xml
-              ? "application/xml; charset=utf-8"
-              : "text/vnd.familysearch.gedcom; charset=utf-8",
-            "Content-Disposition": `attachment; filename="${xml ? "drevo.xml" : format === "gedcom551" ? "drevo-5.5.1.ged" : "drevo-7.ged"}"`,
+            "Content-Type": "text/vnd.familysearch.gedcom; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${format === "gedcom551" ? "drevo-5.5.1.ged" : "drevo-7.ged"}"`,
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
           });

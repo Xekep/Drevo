@@ -228,8 +228,7 @@
   border-radius: 10px;
   cursor: pointer;
 }
-.genealogy-format input,
-.genealogy-xml-media input {
+.genealogy-format input {
   width: auto !important;
   flex: 0 0 auto;
 }
@@ -242,11 +241,6 @@
 }
 .genealogy-format:has(input:checked) {
   border-color: var(--accent, #657347);
-}
-.genealogy-xml-media {
-  display: flex !important;
-  align-items: center;
-  gap: 0.5rem;
 }
 .gedcom-preview ul {
   max-height: 220px;
