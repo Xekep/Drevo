@@ -80,7 +80,9 @@ test("close, blood and branch views animate their cards and camera", async ({
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 2_000,
   });
-  const collapse = child.getByRole("button", { name: "Свернуть потомков" });
+  const collapse = child.getByRole("button", {
+    name: /Свернуть (потомков|ветвь)/,
+  });
   const collapseMotion = await observe();
   await collapse.click();
   await expect
@@ -397,12 +399,16 @@ test("branches collapse and expand inside an AI-filtered tree", async ({
   const parent = page.getByTestId("rf__node-e2e-child");
   const descendant = page.getByTestId("rf__node-e2e-grandchild");
   await expect(descendant).toBeVisible();
-  await parent.getByRole("button", { name: "Свернуть потомков" }).click();
+  await parent
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ })
+    .click();
   await expect(descendant).toHaveCount(0);
   await expect(page.locator(".tree-family-tools")).toContainText(
     "Выбранная ветвь: 2",
   );
-  await parent.getByRole("button", { name: "Развернуть потомков" }).click();
+  await parent
+    .getByRole("button", { name: /Развернуть (потомков|ветвь)/ })
+    .click();
   await expect(descendant).toBeVisible();
   await expect(page.locator(".tree-family-tools")).toContainText(
     "Выбранная ветвь: 3",
