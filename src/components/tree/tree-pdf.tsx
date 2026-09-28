@@ -112,9 +112,13 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       right = Math.max(right, point.x);
       bottom = Math.max(bottom, point.y);
     }
-  const padding = 48;
-  const width = Math.ceil(right - left + 2 * padding);
-  const height = Math.ceil(bottom - top + 2 * padding);
+  const padding = 96;
+  const contentWidth = right - left;
+  const contentHeight = bottom - top;
+  const width = Math.ceil(contentWidth + 2 * padding);
+  const height = Math.ceil(contentHeight + 2 * padding);
+  const x = (width - contentWidth) / 2 - left;
+  const y = (height - contentHeight) / 2 - top;
   const scale = Math.min(1, MAX_PAGE_SIDE / width, MAX_PAGE_SIDE / height);
   const pageWidth = width * scale,
     pageHeight = height * scale;
@@ -197,9 +201,10 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       const styles = target.createElement("style");
       styles.textContent = `
       @page { size: ${pageWidth}px ${pageHeight}px; margin: 0; }
-      html, body { margin: 0 !important; padding: 0 !important; width: ${pageWidth}px !important; height: ${pageHeight}px !important; overflow: hidden !important; }
+      html, body { margin: 0 !important; padding: 0 !important; width: ${pageWidth}px !important; height: ${pageHeight}px !important; overflow: hidden !important; background: #fff !important; }
       * { animation: none !important; transition: none !important; print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
-      .tree-print-canvas { position: absolute !important; inset: 0 auto auto 0 !important; background: ${tree.white ? "#fff" : "#f8f7f2"}; }
+      .tree-print-canvas { position: absolute !important; inset: 0 auto auto 0 !important; background: transparent !important; }
+      .tree-print-canvas .react-flow { background: transparent !important; }
       @media print { .tree-print-canvas { zoom: ${scale}; } }
       .react-flow__handle { visibility: hidden !important; }
       .react-flow__panel, .react-flow__attribution { display: none !important; }
@@ -212,8 +217,8 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
               {...tree}
               width={width}
               height={height}
-              x={padding - left}
-              y={padding - top}
+              x={x}
+              y={y}
               onReady={resolve}
             />
           </TreeActions.Provider>,

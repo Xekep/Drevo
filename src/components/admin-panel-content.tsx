@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
-  ArrowDownUp,
   Bot,
   BookOpen,
   DatabaseBackup,
@@ -47,7 +46,6 @@ const ADMIN_SECTIONS = [
     label: "Архив",
     items: [
       { id: "users", label: "Участники", icon: Users },
-      { id: "access", label: "Доступ и древо", icon: ArrowDownUp },
       { id: "data", label: "Экспорт и импорт", icon: Download },
       { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
@@ -58,7 +56,7 @@ const ADMIN_SECTIONS = [
       { id: "ai", label: "Yandex AI", icon: Bot },
       { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
-      { id: "shares", label: "Временные ссылки", icon: Link2 },
+      { id: "shares", label: "Общий доступ", icon: Link2 },
       { id: "audit", label: "Журнал правок", icon: History },
     ],
   },
@@ -67,10 +65,6 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
-  },
-  access: {
-    title: "Доступ и древо",
-    description: "Публичный просмотр, название и описание архива.",
   },
   data: {
     title: "Экспорт и импорт",
@@ -94,8 +88,8 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
     description: "Доступ внешних клиентов к инструментам архива.",
   },
   shares: {
-    title: "Временные ссылки",
-    description: "Выданные гостям ссылки на семейные ветви.",
+    title: "Общий доступ",
+    description: "Публичный просмотр и временные ссылки на семейные ветви.",
   },
   audit: {
     title: "Журнал правок",
@@ -397,7 +391,7 @@ export function AdminPanel({
             {(settings.publicTree || settings.publicAlbums) && (
               <p role="note" className="form-error">
                 Для доступа по общим предкам сначала закройте публичное древо и
-                альбомы в разделе «Доступ и древо».
+                альбомы в разделе «Общий доступ».
               </p>
             )}
             {!usersLoading && usersTotal === 0 && (
@@ -502,7 +496,7 @@ export function AdminPanel({
             )}
           </section>
         )}
-        {settings && section === "access" && (
+        {settings && section === "shares" && (
           <form
             className="admin-card archive-form"
             onSubmit={async (e) => {
@@ -556,7 +550,7 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {section === "access" && (
+        {section === "data" && (
           <section className="admin-card archive-form">
             <h2>Название и описание</h2>
             <p>Эти сведения показываются участникам семейного архива.</p>

@@ -622,6 +622,10 @@ h1 {
   overflow-x: auto;
   scrollbar-width: none;
 }
+.shared-app .panel-tabs {
+  justify-content: flex-start;
+  gap: 24px;
+}
 .panel-tabs::-webkit-scrollbar {
   display: none;
 }
