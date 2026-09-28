@@ -309,7 +309,22 @@ test("близкие и кровные центрируют человека, а
   await expectCentered();
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
 
-  const beforeFan = await distanceFromCenter();
+  const camera = () =>
+    page.locator(".react-flow__viewport").evaluate((viewport) => {
+      const matrix = new DOMMatrix(getComputedStyle(viewport).transform);
+      return [matrix.a, matrix.e, matrix.f];
+    });
+  // The previous view can still be finishing its camera animation when the
+  // layout transition ends. Compare the actual viewport after it settles.
+  await expect
+    .poll(async () => {
+      const first = await camera();
+      await page.waitForTimeout(120);
+      const second = await camera();
+      return Math.max(...first.map((value, index) => Math.abs(value - second[index])));
+    })
+    .toBeLessThan(0.1);
+  const beforeFan = await camera();
   const fanButton = page.getByRole("button", { name: "Веер" });
   await expect(fanButton).toHaveAttribute(
     "title",
@@ -320,8 +335,11 @@ test("близкие и кровные центрируют человека, а
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
   await expect
-    .poll(async () => Math.abs((await distanceFromCenter()) - beforeFan))
-    .toBeLessThan(2);
+    .poll(async () => {
+      const after = await camera();
+      return Math.max(...after.map((value, index) => Math.abs(value - beforeFan[index])));
+    })
+    .toBeLessThan(0.5);
 });
 
 test("Ctrl+A не выделяет страницу, но работает в полях ввода", async ({
