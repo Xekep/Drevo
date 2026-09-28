@@ -481,7 +481,13 @@ export function aiResearchHttp({
               /aborted due to timeout|timed out/i.test(error.message))
           ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
           : error instanceof YandexResponseError
-            ? "Сервис ИИ не смог завершить ответ. Попробуйте повторить запрос."
+            ? error.status === 401 || error.status === 403
+              ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
+              : error.status === 429
+                ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
+                : error.code === "provider_timeout"
+                  ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
+                  : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
             : error instanceof Error
               ? error.message
               : "Не удалось получить ответ ИИ";
@@ -500,6 +506,9 @@ export function aiResearchHttp({
             error instanceof YandexResponseError ? error.code : undefined,
           providerStatus:
             error instanceof YandexResponseError ? error.status : undefined,
+          providerEndpoint:
+            error instanceof YandexResponseError ? error.endpoint : undefined,
+          errorType: error instanceof Error ? error.name : "unknown",
           latencyMs: Date.now() - usageRun.started,
         }),
       );
