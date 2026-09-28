@@ -47,6 +47,7 @@ import {
 } from "./research-suggestions.ts";
 import {
   missingYandexConversation,
+  retryableYandexResponse,
   YandexResponseError,
   yandexResponsesClient,
   type ResponseItem,
@@ -143,6 +144,7 @@ export function createResearchRunner({
     let webCitationRetryUsed = false;
     let webSearchFailed = false;
     let webSearchCompleted = false;
+    let webSearchAttempts = 0;
     const webPagesToVerify = (introduction: string) =>
       [
         introduction,
@@ -213,9 +215,8 @@ export function createResearchRunner({
         typeof context.openPhotoId === "string"
           ? family.photos?.find((photo) => photo.id === context.openPhotoId)
           : undefined,
-      history = (chats.messages(chatId, user.id, true) || [])
-        .slice(0, -1)
-        .slice(-12),
+      savedHistory = (chats.messages(chatId, user.id, true) || []).slice(0, -1),
+      history = savedHistory.slice(-12),
       activePersonIds = (
         chats.read(chatId, user.id)?.sessionState.activePersonIds || []
       ).filter((id) => family.people.some((person) => person.id === id)),
@@ -239,7 +240,7 @@ export function createResearchRunner({
         ...(searchTool
           ? [
               searchTool.description,
-              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global, если доверенных источников недостаточно или пользователь просит более широкий поиск. Trusted проверяет только перечисленные searchedDomains, а не все архивы: если сайт нужного архива не проверен или результаты относятся к другому региону, выполни global с полным названием архива, регионом и шифром. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
+              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Если назван конкретный государственный архив, используй global с полным названием архива, регионом и шифром из предыдущих сообщений: общие trusted-каталоги могут не включать этот архив. Иначе начинай с trusted; если searchedDomains не включают нужный архив или результаты относятся к другому региону, переходи к global. Не повторяй поиск по тем же доменам с незначительно изменённым запросом. За один ответ доступно не более трёх поисков. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
             ]
           : []),
         "Опирайся только на данные инструментов и слова пользователя.",
@@ -510,7 +511,12 @@ export function createResearchRunner({
 
     let conversationId = chats.read(chatId, user.id)?.yandexConversationId;
     const restoreHistory = () =>
-      history.slice(-10).map((item) => ({
+      // Repeated "are you there?" messages after failures must not erase the
+      // original question when rebuilding a lost provider conversation.
+      (savedHistory.length > 12
+        ? [...savedHistory.slice(0, 2), ...savedHistory.slice(-10)]
+        : savedHistory
+      ).map((item) => ({
         type: "message" as const,
         role: item.role,
         content:
@@ -526,6 +532,7 @@ export function createResearchRunner({
     }
     pendingInput.push({ type: "message", role: "user", content: message });
 
+    let contextRecovered = false;
     for (let round = 0; round <= runtime.maxToolIterations; round++) {
       metrics.agentIterations++;
       recordModelCall(metrics, runtime.modelUri);
@@ -542,7 +549,7 @@ export function createResearchRunner({
           ...researchDefinitions,
           ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL] : []),
           RESEARCH_RESOURCES_TOOL,
-          ...(searchTool ? [searchTool] : []),
+          ...(searchTool && webSearchAttempts < 3 ? [searchTool] : []),
           ...(viewControlRequested ||
           photoViewRequested ||
           shortTreeZoomRequest(message, view)
@@ -560,35 +567,60 @@ export function createResearchRunner({
           ? runtime.compactThresholdTokens
           : null,
         automaticTruncation: runtime.automaticTruncation,
-        signal,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
         stream,
       };
       try {
         completion = await responses.respond(requestOptions);
       } catch (error) {
         if (
-          stream &&
           round === 0 &&
           !signal.aborted &&
-          error instanceof Error &&
-          /Поток Yandex AI Studio завершился без response\.completed/iu.test(
-            error.message,
-          )
+          !contextRecovered &&
+          retryableYandexResponse(error)
         ) {
           console.warn(
             JSON.stringify({
-              event: "ai.incomplete_stream_retry",
+              event: "ai.response_recovery",
               model: runtime.modelUri,
+              providerErrorCode:
+                error instanceof YandexResponseError
+                  ? error.code
+                  : "provider_timeout",
+              responseId:
+                error instanceof YandexResponseError ? error.responseId : "",
             }),
           );
-          onStatus("Повторяю запрос без потоковой передачи…");
+          contextRecovered = true;
+          onStatus("Сервис ИИ прервал ответ. Восстанавливаю запрос…");
+          // No local tools have run yet. Use a fresh remote conversation so a
+          // timed-out request cannot leave dangling calls or duplicate input.
+          const recoverySignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(25_000),
+          ]);
+          conversationId = await responses.createConversation(
+            runtime,
+            recoverySignal,
+          );
+          chats.setRemote(chatId, conversationId);
           recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
             ...requestOptions,
+            conversationId,
+            input: [
+              ...restoreHistory(),
+              { type: "message", role: "user", content: message },
+            ],
             stream: false,
-            signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+            signal: recoverySignal,
           });
-        } else if (round === 0 && missingYandexConversation(error)) {
+        } else if (
+          round === 0 &&
+          !contextRecovered &&
+          missingYandexConversation(error)
+        ) {
+          contextRecovered = true;
           conversationId = await responses.createConversation(runtime, signal);
           chats.setRemote(chatId, conversationId);
           pendingInput.splice(0, pendingInput.length, ...restoreHistory(), {
@@ -951,6 +983,11 @@ export function createResearchRunner({
             );
           else if (call.function.name === "web_search") {
             if (!search) throw new WebSearchError("WEB_SEARCH_DISABLED");
+            if (webSearchAttempts >= 3)
+              throw new Error(
+                "Поиск на этот ответ завершён. Ответь по уже полученным источникам и укажи, что осталось непроверенным.",
+              );
+            webSearchAttempts++;
             const found = await search.search(toolArgs, signal, onStatus);
             webSearchCompleted = true;
             for (const source of found.results)
