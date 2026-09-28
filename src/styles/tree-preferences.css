@@ -6,7 +6,7 @@
 }
 .tree-preferences {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   padding: 14px 16px 8px;
 }
 .tree-preferences > p {
@@ -158,4 +158,32 @@
 }
 .tree-preferences fieldset:disabled label {
   cursor: wait;
+}
+.tree-pdf-export {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #dce3d6;
+  padding-top: 12px;
+}
+.tree-pdf-export button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid #dce3d6;
+  border-radius: 8px;
+  background: #f1f7ed;
+  color: #365b40;
+  cursor: pointer;
+  font-size: 12px;
+}
+.tree-pdf-export button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.tree-pdf-export small {
+  color: #687565;
+  font-size: 11px;
+  line-height: 1.4;
 }

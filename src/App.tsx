@@ -25,6 +25,7 @@ import {
 import {
   TreeCanvas,
   type ConnectionDraft,
+  type TreeCanvasHandle,
 } from "./components/tree/tree-canvas";
 import { InspectorDock } from "./components/inspector-dock";
 import { PersonInspector } from "./components/person-inspector";
@@ -111,6 +112,7 @@ export default function App() {
       dispatch,
     } = selection;
   const navigationDirty = useRef(false);
+  const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -690,6 +692,7 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      ref={treeCanvas}
                       onPreferences={() => setTreePreferencesOpen(true)}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
@@ -1044,6 +1047,7 @@ export default function App() {
       )}
       {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
+          onExport={(signal) => treeCanvas.current!.exportPdf(signal)}
           preferences={archive.treePreferences}
           linkedPerson={!!user?.personId}
           localOnly={!user?.approved}

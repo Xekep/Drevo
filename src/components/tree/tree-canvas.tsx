@@ -1,12 +1,15 @@
 import {
   memo,
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
+  type Ref,
 } from "react";
 import {
   ReactFlow,
@@ -88,6 +91,9 @@ export type TreeFocus = {
   purpose?: "family";
   groupId?: string;
 };
+export type TreeCanvasHandle = {
+  exportPdf: (signal?: AbortSignal) => Promise<void>;
+};
 type Props = {
   onPreferences?: () => void;
   comparisonAction?: ReactNode;
@@ -124,7 +130,10 @@ type Props = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
-function Canvas(props: Props) {
+const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
+  props,
+  exportRef,
+) {
   const narrow = useNarrowScreen();
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -790,6 +799,34 @@ function Canvas(props: Props) {
         : displayEdges,
     [displayEdges, layoutTransition],
   );
+  useImperativeHandle(
+    exportRef,
+    () => ({
+      async exportPdf(signal) {
+        if (!ready || layoutBusy) throw new Error("Дождитесь построения древа.");
+        const { exportTreePdf } = await import("./tree-pdf");
+        await exportTreePdf(
+          {
+            nodes: displayNodes,
+            edges: displayEdges,
+            actions,
+            title: family.title,
+            white: props.colorScheme === "white",
+          },
+          signal,
+        );
+      },
+    }),
+    [
+      ready,
+      layoutBusy,
+      displayNodes,
+      displayEdges,
+      actions,
+      family.title,
+      props.colorScheme,
+    ],
+  );
   useEffect(() => {
     if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
       return;
@@ -1265,11 +1302,14 @@ function Canvas(props: Props) {
       </div>
     </TreeActions.Provider>
   );
-}
-export const TreeCanvas = memo(function TreeCanvas(props: Props) {
+});
+export const TreeCanvas = memo(function TreeCanvas({
+  ref,
+  ...props
+}: Props & { ref?: Ref<TreeCanvasHandle> }) {
   return (
     <ReactFlowProvider>
-      <Canvas {...props} />
+      <Canvas {...props} ref={ref} />
     </ReactFlowProvider>
   );
 });
