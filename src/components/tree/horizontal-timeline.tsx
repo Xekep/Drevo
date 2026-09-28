@@ -226,7 +226,6 @@ export function HorizontalTimeline({
     const label = yearLabel.current;
     if (!scroll || !label) return;
     let frame = 0;
-    let previousTop = Number.NaN;
     let previousLeft = Number.NaN;
     const update = () => {
       if (frame) return;
@@ -237,10 +236,6 @@ export function HorizontalTimeline({
         if (scroll.scrollLeft !== previousLeft) {
           previousLeft = scroll.scrollLeft;
           revealLifelines(lifelines.current, previousLeft);
-        }
-        if (scroll.scrollTop !== previousTop) {
-          previousTop = scroll.scrollTop;
-          scroll.style.setProperty("--timeline-scroll-top", `${previousTop}px`);
         }
         setYear((current) => (current === next ? current : next));
       });
@@ -420,12 +415,14 @@ export function HorizontalTimeline({
                 }}
               >
                 {emblems[era.name] && era.width > 180 && (
-                  <img
-                    src={emblems[era.name]}
-                    alt=""
-                    loading="lazy"
-                    draggable={false}
-                  />
+                  <div className="timeline-emblem">
+                    <img
+                      src={emblems[era.name]}
+                      alt=""
+                      loading="lazy"
+                      draggable={false}
+                    />
+                  </div>
                 )}
               </div>
             ))}

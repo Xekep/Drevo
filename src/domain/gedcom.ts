@@ -337,7 +337,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     };
   }
   const people: Person[] = individuals.map((n) => {
-    const nameNode = child(n, "NAME"),
+    const names = children(n, "NAME");
+    const nameSurname = (name: Node) =>
+      (value(name, "SURN") || /\/(.*?)\//.exec(name.value)?.[1] || "").trim();
+    // BIRTH is explicit birth information; MAIDEN is a legacy fallback and
+    // can differ from the birth surname after adoption or another name change.
+    const birthName = ["BIRTH", "MAIDEN"].flatMap((type) =>
+      names.filter((name) => value(name, "TYPE").trim().toUpperCase() === type),
+    ).find((name) => nameSurname(name));
+    const nameNode = names[0],
       nameText = nameNode?.value || "",
       slash = /^(.*?)\/(.*?)\/(.*)$/.exec(nameText);
     const given =
@@ -377,15 +385,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       biography: notes(n) || undefined,
       occupation: value(n, "OCCU") || undefined,
       maidenName:
-        value(n, "_MAIDEN") ||
-        (() => {
-          const maiden = children(n, "NAME").find(
-            (name) => value(name, "TYPE").toUpperCase() === "MAIDEN",
-          );
-          return maiden
-            ? value(maiden, "SURN") || /\/(.*?)\//.exec(maiden.value)?.[1]
-            : undefined;
-        })(),
+        (birthName && nameSurname(birthName)) || value(n, "_MAIDEN") || undefined,
       sources: [
         ...sources(n),
         ...(birth ? sources(birth) : []),
@@ -397,9 +397,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       column: 0,
       events: events.length ? events : undefined,
     };
-    const alternatives = children(n, "NAME")
+    const alternatives = names
       .slice(1)
-      .filter((name) => value(name, "TYPE").toUpperCase() !== "MAIDEN")
+      .filter((name) => name !== birthName)
       .map((name) => name.value)
       .filter(Boolean);
     if (alternatives.length) {
@@ -917,7 +917,7 @@ export function exportGedcom(
         "NAME",
         `${[p.name, p.patronymic].filter(Boolean).join(" ")} /${p.maidenName.replace(/\//g, " ")}/`,
       );
-      emit(2, "TYPE", modern ? "MAIDEN" : "maiden");
+      emit(2, "TYPE", modern ? "BIRTH" : "birth");
       emit(2, "GIVN", [p.name, p.patronymic].filter(Boolean).join(" "));
       emit(2, "SURN", p.maidenName);
     }
