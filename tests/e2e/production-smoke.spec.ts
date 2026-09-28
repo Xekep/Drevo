@@ -1691,6 +1691,7 @@ test("collapsing descendants animates the remaining cards smoothly", async ({
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
 
   const child = page.getByTestId("rf__node-e2e-child");
+  const sibling = page.getByTestId("rf__node-e2e-sibling");
   await canvas.evaluate((element) => {
     const observed = window as typeof window & {
       treeLayoutSettled?: boolean;
@@ -1727,6 +1728,10 @@ test("collapsing descendants animates the remaining cards smoothly", async ({
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 1_000,
   });
+  // The camera keeps the clicked card in place, so screen coordinates may
+  // return to their starting values after the nodes have animated.
+  await expect(child).toBeVisible();
+  await expect(sibling).toBeVisible();
 });
 
 test("mobile person card stays below the project menu and starts the memorial flight", async ({

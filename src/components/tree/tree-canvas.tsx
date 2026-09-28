@@ -1192,7 +1192,7 @@ function Canvas(props: Props) {
               </button>
             </Panel>
           ) : (
-            <TreeCameraTools selected={selected} />
+            <TreeCameraTools selected={selected} disabled={cameraLocked} />
           )}
         </ReactFlow>
         )}
