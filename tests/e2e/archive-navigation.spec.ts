@@ -8,7 +8,7 @@ for (const [name, path] of [
   ["Документы", "/documents"],
   ["Места", "/places"],
   ["Сводка", "/insights"],
-  ["Проверка", "/quality"],
+  ["Ресурсы", "/resources"],
 ]) {
   test(`middle click opens ${path} in a new tab`, async ({
     page,

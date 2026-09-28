@@ -17,7 +17,7 @@ import {
   Menu,
   MapPin,
   ChartNoAxesCombined,
-  ClipboardCheck,
+  LibraryBig,
   Settings2,
 } from "lucide-react";
 import { safeUrl, type Person, type ArchiveUser } from "../domain";
@@ -121,7 +121,7 @@ export function ArchiveNavigation({
             ["documents", "Документы", BookOpenText],
             ["places", "Места", MapPin],
             ["insights", "Сводка", ChartNoAxesCombined],
-            ["quality", "Проверка", ClipboardCheck],
+            ["resources", "Ресурсы", LibraryBig],
           ] as const
         )
           .filter(([id]) =>
@@ -182,7 +182,7 @@ export function ArchiveNavigation({
                 ["documents", "Документы", BookOpenText],
                 ["places", "Места", MapPin],
                 ["insights", "Сводка", ChartNoAxesCombined],
-                ["quality", "Проверка", ClipboardCheck],
+                ["resources", "Ресурсы", LibraryBig],
               ] as const
             )
               .filter(([id]) =>

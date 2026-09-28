@@ -131,6 +131,7 @@ export function archiveHttp({
     auth,
     visibility,
     treePreferences,
+    researchCatalog,
   });
   const documents = documentsHttp({
     archive,

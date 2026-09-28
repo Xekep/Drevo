@@ -1,16 +1,12 @@
 import type { ResearchSearchSettings } from "../shared/web-search.ts";
+import type {
+  ResearchCategory as Category,
+  ResearchResource as Resource,
+} from "../shared/research-catalog.ts";
 import { useEffect, useState, type FormEvent } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import "../styles/research-resources-admin.css";
 
-type Resource = ResearchSearchSettings & {
-  id: string;
-  categoryId: string;
-  name: string;
-  url: string;
-  description: string;
-};
-type Category = { id: string; name: string; resources: Resource[] };
 type ResourceDraft = Pick<Resource, "name" | "url" | "description"> &
   ResearchSearchSettings;
 const emptyDraft: ResourceDraft = {
