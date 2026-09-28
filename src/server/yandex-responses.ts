@@ -183,11 +183,14 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       );
       return response.json();
     },
-    async createConversation(runtime: {
-      baseUrl: string;
-      apiKey: string;
-      folderId: string;
-    }) {
+    async createConversation(
+      runtime: {
+        baseUrl: string;
+        apiKey: string;
+        folderId: string;
+      },
+      signal?: AbortSignal,
+    ) {
       const response = await request(
         runtime.baseUrl,
         "/conversations",
@@ -195,6 +198,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
         runtime.apiKey,
         runtime.folderId,
         {},
+        signal,
       );
       const data = (await response.json()) as { id?: string };
       if (!data.id)
