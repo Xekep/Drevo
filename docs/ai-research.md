@@ -189,3 +189,137 @@ CI подтверждает wire-совместимость с официаль�
 Репозиторий содержит `ops/check-mcp.sh`. С реальным MCP-токеном он проверяет публичный HTTPS endpoint через modern `server/discover`, затем `tools/list` и `tools/call search_people`. Это отделяет ошибки приложения от проблем reverse proxy/TLS до подключения Yandex AI Studio MCP Hub.
 
 Production Nginx имеет отдельный `location = /mcp`: Authorization передаётся явно, buffering отключён, тайм-аут увеличен для Streamable HTTP.
+
+## Yandex Web Search
+
+Внешние сведения ищутся через `web_search` в существующем agent loop:
+
+```text
+createResearchRunner → web_search → WebSearchService → WebSearchProvider
+                                                        └─ YandexWebSearchProvider
+                                                           └─ yandexResponsesClient
+```
+
+В коде приняты фабрики `createWebSearchService` и `yandexWebSearchProvider`.
+HTTP composition root (`ai-research-http.ts`) передаёт сервис агенту; tool не импортирует Yandex.
+Новые SDK и зависимости не нужны. Основная LLM и существующие инструменты сохраняются.
+
+### Включение
+
+В админке AI включите «Поиск в интернете». По умолчанию выключен, чтобы обновление само не добавляло платные запросы.
+Провайдер — Yandex, начальный scope всегда `trusted`.
+Используются существующие серверные `YANDEX_AI_API_KEY`, `YANDEX_AI_FOLDER_ID`,
+`YANDEX_AI_MODEL`, опционально `YANDEX_AI_BASE_URL` (по умолчанию `https://ai.api.cloud.yandex.net/v1`).
+Зашифрованные credentials и модель из настроек Drevo имеют прежний приоритет над env.
+Отдельный ключ поиска не требуется; сервисному аккаунту нужны права на AI Studio и поиск.
+Поддержку web search выбранной моделью и квоты нужно проверить в своём облаке.
+
+Дополнительные серверные переменные (пример — `.env.example`):
+
+- `AI_WEB_SEARCH_ENABLED=false`: начальное значение переключателя; сохранённая настройка админки важнее.
+- `AI_WEB_SEARCH_PROVIDER=yandex`: выбор реализации; неизвестное значение не включает tool.
+- `AI_WEB_SEARCH_TIMEOUT_MS=25000`: общий срок одного поиска, от 1000 до 90000 мс.
+
+Ключ не передаётся клиенту, в tool output или диагностику. Не используйте `VITE_` для credentials.
+
+### Каталог и режимы
+
+Единственный реестр — существующий каталог **«Ресурсы поиска»**, таблица `research_resources`.
+Все существующие ресурсы с корректным HTTP(S) доменом доступны для trusted search.
+Адаптер `web-search-sources.ts` получает домен из URL и начальные категории из категории каталога;
+он не содержит самостоятельного списка сайтов. Настройки конкретной записи хранятся в `ai_search`.
+
+Для добавления источника добавьте запись в админке ресурсов. Укажите ссылку, при необходимости
+переопределите домен, назначьте категории через запятую (`archives,genealogy`, `military,ww2`,
+`books,newspapers` и т. п.) и приоритет (большее число раньше). Допустимы новые английские идентификаторы
+категорий: они автоматически попадают в schema tool. Выключите «Разрешить веб-поиск ИИ» для закрытых,
+неиндексируемых ресурсов. Это не удаляет ресурс из справочника.
+
+`trusted` — значение по умолчанию. Категории объединяются по OR; источники с большим числом совпавших
+категорий идут раньше, далее учитывается приоритет и порядок каталога. Whitelist формирует сервер,
+передавая Yandex `filters.allowed_domains`. Произвольный `allowedDomains` в tool input отклоняется.
+
+Yandex допускает **до пяти доменов** в одном вызове. Drevo выбирает одну группу и возвращает
+`searchedDomains`, `remainingDomains`, `nextSourcePage`. Следующую группу агент запрашивает явно
+параметром `sourcePage`, поэтому ни один ресурс не исключён навсегда и нет скрытого веера платных запросов.
+Если категории не заданы, группы идут по приоритету всего каталога.
+`global` передаётся явно; whitelist отсутствует. Автоматического global fallback и повторов при ошибке нет.
+Агенту предписано сначала искать и уточнять запрос в trusted, расширять поиск только при недостатке сведений
+или явном запросе пользователя. Каждый поиск учитывается в существующей статистике вызовов и токенов;
+стоимость Search API отдельно не вычисляется.
+
+### Источники и ограничения API
+
+Формат проверен по официальной документации 28 сентября 2026:
+[Web Search](https://aistudio.yandex.ru/ru/docs/ai-studio/concepts/agents/tools/websearch),
+[пример Responses API](https://aistudio.yandex.ru/en/docs/ai-studio/operations/agents/create-websearch-text-agent).
+Используется `/responses` с `tools: [{ type: "web_search", filters: { allowed_domains: [...] } }]`.
+Yandex самостоятельно решает, выполнять ли встроенный поиск. Пустые citations дают `WEB_SEARCH_NO_RESULTS`.
+
+Документированный `url_citation` гарантирует URL, но **title может быть пустым, позиции фрагмента — нулевыми**.
+Поэтому нельзя честно восстановить поисковый snippet из этого API. Результат всегда содержит поля
+`title`, `url`, `domain`, `snippet`; отсутствующий заголовок заменяется названием ресурса/доменом,
+а отсутствующий фрагмент остаётся пустым с `snippetKind: "unavailable"`. Синтезированный текст находится
+отдельно в `summary` и явно обозначен как ответ поисковой модели, а не цитата страницы.
+Для настоящих выдержек в будущем нужен backend с документированными snippets или отдельное безопасное чтение страниц.
+`maxResults` ограничивает только выдачу Drevo (1–10); это не параметр Yandex и не обещание числа результатов.
+Фильтры языка и диапазона дат не заявлены для используемого API, не входят в schema и отклоняются.
+
+Ссылки сохраняются в существующих references сообщения, показываются в раскрывающемся списке чата
+и доступны для Markdown-цитирования. Найденная страница и совпадение имени не доказывают идентичность человека
+или исторический факт: агент должен сообщать неопределённость и необходимость сверки первичного документа.
+
+Нормализуются hostname, IDN и `www`; допускаются только совпадающий домен и его поддомены.
+Удаляются URL-дубли, fragment и известные tracking-параметры; HTTP/HTTPS учитываются как один ключ.
+Объявленные страницей canonical URL не загружаются и не принимаются на веру.
+Отбрасываются credentials в URL, нестандартные порты, очевидные redirect wrappers и чужие домены.
+При отбрасывании citations по whitelist общее резюме также убирается, поскольку его факты нельзя безопасно
+связать с оставшимися источниками. Drevo не переходит по найденным страницам или их редиректам;
+при последующем открытии страницы пользователем её перенаправления и содержание могут измениться.
+Доменный фильтр не ограничивает путь: например, ресурс `yandex.ru/archive` разрешает домен `yandex.ru`.
+
+Внешний текст всегда считается недоверенными данными. В system/tool instructions запрещено выполнять
+инструкции из выдачи. Передаётся только запрос поиска, без истории архива, в отдельный запрос Responses.
+По документации Yandex поиск использует индекс Яндекса и работает вне контура, аттестованного по ФЗ-152;
+учитывайте это при включении функции и выборе данных для внешнего запроса.
+
+Ошибки возвращаются контролируемыми кодами `WEB_SEARCH_UNAVAILABLE`, `WEB_SEARCH_TIMEOUT`,
+`WEB_SEARCH_RATE_LIMITED`, `WEB_SEARCH_INVALID_CREDENTIALS`, `WEB_SEARCH_MALFORMED_RESPONSE`,
+`WEB_SEARCH_UNSUPPORTED_FILTER`, `WEB_SEARCH_INVALID_INPUT`, `WEB_SEARCH_INVALID_CATEGORY`,
+`WEB_SEARCH_CANCELLED`; пустая выдача — `WEB_SEARCH_NO_RESULTS`.
+Отмена запроса пользователя прерывает поиск. Логи содержат только provider, scope, проверенные категории,
+число доменов/результатов, длительность и тип ошибки, без запросов, тела ответа и ключей.
+
+### Другой backend
+
+Реализуйте `WebSearchProvider` из `src/server/web-search.ts`: `name`, `maxDomains` и `search(request)`.
+Адаптер получает сформированный сервером whitelist и AbortSignal, возвращает нормализованные результаты
+и при необходимости отдельное резюме. Он обязан применять доменный фильтр на backend;
+сервис повторно проверяет URL на выходе. Зарегистрируйте фабрику в `ai-research-http.ts` при сборке зависимости.
+Tool, каталог, citations и UI менять не требуется. Соблюдайте ограничения backend, учёт использования,
+контролируемые ошибки и не переносите поля конкретного API в общий контракт.
+
+Проверки: `tests/web-search.test.ts` и `tests/web-search-http.test.ts` используют mock Yandex,
+временные/памятные SQLite-базы и локальный HTTP. Реальные платные запросы в unit/integration tests отсутствуют.
+
+### Файлы реализации веб-поиска
+
+Новые файлы:
+
+- `src/shared/web-search.ts` — общие контракты.
+- `src/server/web-search.ts` — интерфейс провайдера, schema tool, серверная политика поиска.
+- `src/server/web-search-sources.ts` — адаптер каталога, нормализация доменов и URL.
+- `src/server/yandex-web-search.ts` — Yandex-адаптер, citations и контролируемые ошибки.
+- `.env.example` — пример конфигурации без credentials.
+- `tests/web-search.test.ts`, `tests/web-search-http.test.ts` — unit и HTTP/SSE integration tests.
+
+Изменённые файлы:
+
+- `src/server/yandex-responses.ts` — дополнительная операция существующего клиента.
+- `src/server/ai-research-http.ts`, `src/server/ai-research-runner.ts`, `src/server/ai-research-support.ts` — сборка зависимости, регистрация, выполнение tool и статусы.
+- `src/server/research-catalog.ts`, `src/server/schema.ts`, `src/server/ai-settings.ts` — каталог, миграция, настройки.
+- `src/domain/research-answer.ts` — тип веб-ссылки в существующем механизме references.
+- `src/components/research-resources-admin.tsx`, `src/components/ai-settings-admin.tsx`, `src/components/research-assistant.tsx` — существующий UI.
+- `tests/e2e/research-resources.spec.ts` — проверка поисковых настроек ресурса в desktop/mobile.
+- `.gitignore` — разрешение отслеживать `.env.example`.
+- `docs/ai-research.md` — эта документация.

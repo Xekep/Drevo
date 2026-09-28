@@ -27,6 +27,10 @@ test("администратор редактирует каталог ресу�
   await editor
     .getByLabel("Описание")
     .fill("Метрические книги\nи архивные описи");
+  await editor
+    .getByLabel("Категории веб-поиска (через запятую)")
+    .fill("archives,education");
+  await editor.getByLabel("Приоритет поиска").fill("25");
   await editor.getByRole("button", { name: "Сохранить ресурс" }).click();
   await expect(page.locator(".research-resources-list")).toContainText(
     "Городской архив",
@@ -40,6 +44,12 @@ test("администратор редактирует каталог ресу�
     .filter({ hasText: "Городской архив" })
     .getByRole("button", { name: "Изменить" })
     .click();
+  await expect(editor.getByLabel("Домен поиска")).toHaveValue("example.org");
+  await expect(
+    editor.getByLabel("Категории веб-поиска (через запятую)"),
+  ).toHaveValue("archives,education");
+  await expect(editor.getByLabel("Приоритет поиска")).toHaveValue("25");
+  await editor.getByLabel("Разрешить веб-поиск ИИ по этому ресурсу").uncheck();
   await editor.getByLabel("Название").fill("Исторический архив");
   await editor.getByRole("button", { name: "Сохранить ресурс" }).click();
   await expect(page.locator(".research-resources-list")).toContainText(
@@ -49,6 +59,14 @@ test("администратор редактирует каталог ресу�
     "Городской архив",
   );
 
+  const catalogue = await page.request
+    .get("/api/admin/research-resources")
+    .then((response) => response.json());
+  const saved = catalogue.categories.find(
+    (category: { name: string }) => category.name === categoryName,
+  ).resources[0];
+  expect(saved.enabledForAiSearch).toBe(false);
+  expect(saved.categories).toEqual(["archives", "education"]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,

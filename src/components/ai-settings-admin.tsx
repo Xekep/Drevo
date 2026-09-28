@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -16,6 +11,9 @@ import { AiTokenUsageChart } from "./charts/ai-token-usage-chart";
 
 type AiAdminStatus = {
   enabled: boolean;
+  webSearchEnabled: boolean;
+  webSearchProvider: string;
+  webSearchDefaultScope: string;
   active: boolean;
   configured: boolean;
   apiKeyConfigured: boolean;
@@ -93,6 +91,7 @@ type AiAdminStatus = {
 export function AiSettingsAdmin() {
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
+    [webSearchEnabled, setWebSearchEnabled] = useState(false),
     [apiKey, setApiKey] = useState(""),
     [clearApiKey, setClearApiKey] = useState(false),
     [folderId, setFolderId] = useState(""),
@@ -113,6 +112,7 @@ export function AiSettingsAdmin() {
   const applyStatus = useCallback((next: AiAdminStatus) => {
     setStatus(next);
     setEnabled(next.enabled);
+    setWebSearchEnabled(next.webSearchEnabled);
     setFolderId(next.folderIdOverride || next.folderId || "");
     const selectedModel = next.modelOverride || next.model || "";
     setModel(selectedModel || next.models[0]?.id || "");
@@ -159,6 +159,7 @@ export function AiSettingsAdmin() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             enabled,
+            webSearchEnabled,
             model,
             folderId,
             ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
@@ -314,6 +315,29 @@ export function AiSettingsAdmin() {
           </div>
 
           <form onSubmit={save}>
+            <label
+              className="setting-toggle"
+              htmlFor="ai-web-search-enabled"
+              aria-label="Поиск в интернете"
+            >
+              <span>
+                <b>Поиск в интернете</b>
+                <small>
+                  Провайдер:{" "}
+                  {status.webSearchProvider === "yandex"
+                    ? "Yandex"
+                    : status.webSearchProvider}
+                  . По умолчанию: доверенные ресурсы каталога.
+                </small>
+              </span>
+              <input
+                id="ai-web-search-enabled"
+                type="checkbox"
+                checked={webSearchEnabled}
+                disabled={busy}
+                onChange={(event) => setWebSearchEnabled(event.target.checked)}
+              />
+            </label>
             <label
               className="setting-toggle"
               htmlFor="ai-research-enabled"

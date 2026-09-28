@@ -387,6 +387,7 @@ export function researchToolStatus(name: string) {
     search_people: "Ищу людей в архиве…",
     list_people: "Составляю список людей…",
     get_sources: "Изучаю указанные источники…",
+    web_search: "Поиск в интернете…",
     find_research_resources: "Подбираю подходящие сайты для поиска…",
     analyze_photo: "Изучаю фотографию…",
     create_pdf: "Готовлю PDF и приложения…",
@@ -412,9 +413,14 @@ export function humanizeResearchAnswer(
         "",
       );
       text = text.replace(/\b(?:personId|photoId)\s*[:=]\s*[^\s,;]+/giu, "");
-      text = text.replace(/\s*\((?:код|тип)\s+[`«"']?half_or_unknown[`»"']?\)/giu, "");
-      text = text.replace(/`?\bhalf_or_unknown\b`?/gu,
-        "один общий известный родитель; полнота родства не установлена");
+      text = text.replace(
+        /\s*\((?:код|тип)\s+[`«"']?half_or_unknown[`»"']?\)/giu,
+        "",
+      );
+      text = text.replace(
+        /`?\bhalf_or_unknown\b`?/gu,
+        "один общий известный родитель; полнота родства не установлена",
+      );
       text = text.replace(
         /(?:фотографи[яюи]|снимок)\s+с\s+идентификатором\s+/giu,
         "",
