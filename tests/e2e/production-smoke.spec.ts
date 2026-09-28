@@ -1294,17 +1294,26 @@ test("manual map correction stays available when historical lookup is busy", asy
   ).toBeVisible();
   await page
     .getByRole("textbox", { name: "Координаты" })
-    .fill("53°46′10.5″ N, 67°22′16.4″ E");
+    .fill("56°52'45.5\"N 60°24'20.0\"E");
   await expect
     .poll(async () =>
       Number(await page.getByRole("spinbutton", { name: "Широта" }).inputValue()),
     )
-    .toBeCloseTo(53.7695833333, 7);
+    .toBeCloseTo(56.8793055556, 7);
   await expect
     .poll(async () =>
       Number(await page.getByRole("spinbutton", { name: "Долгота" }).inputValue()),
     )
-    .toBeCloseTo(67.3712222222, 7);
+    .toBeCloseTo(60.4055555556, 7);
+  await page
+    .getByRole("textbox", { name: "Координаты" })
+    .fill("56.879306, 60.405560");
+  await expect(page.getByRole("spinbutton", { name: "Широта" })).toHaveValue(
+    "56.879306",
+  );
+  await expect(page.getByRole("spinbutton", { name: "Долгота" })).toHaveValue(
+    "60.40556",
+  );
 });
 
 test("same-name map candidates show their municipality", async ({
