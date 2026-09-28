@@ -410,6 +410,9 @@ export function ResearchAssistant({
     [chatMenuOpen, setChatMenuOpen] = useState(false),
     [chatSearch, setChatSearch] = useState(""),
     [chatLoading, setChatLoading] = useState(true),
+    [serverBusyChats, setServerBusyChats] = useState<Record<string, boolean>>(
+      {},
+    ),
     [suggestions, setSuggestions] = useState<ResearchSuggestion[]>([]),
     [workingChats, setWorkingChats] = useState<
       Record<string, { status: string; activities: string[] }>
@@ -456,8 +459,12 @@ export function ResearchAssistant({
     resizeWithKeyboard,
   } = useResearchPanel(open);
   const currentWork = workingChats[selectedChatKey.current],
-    busy = !!currentWork,
-    streamStatus = currentWork?.status || "",
+    busy = !!currentWork || !!serverBusyChats[chatId],
+    streamStatus =
+      currentWork?.status ||
+      (serverBusyChats[chatId]
+        ? "Ответ ещё выполняется на сервере. Его можно остановить."
+        : ""),
     activities = currentWork?.activities || [];
 
   useLayoutEffect(() => {
@@ -535,6 +542,65 @@ export function ResearchAssistant({
       active = false;
     };
   }, [enabled]);
+
+  useEffect(() => {
+    if (!open || !chatId) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let wasBusy = false;
+    const refresh = async () => {
+      try {
+        if (!activeRequests.current.has(chatId)) {
+          const response = await fetch(`/api/ai/chats/${chatId}`, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const data = (await response.json()) as {
+              chat: { busy?: boolean };
+              messages: Message[];
+            };
+            if (
+              controller.signal.aborted ||
+              selectedChatKey.current !== chatId ||
+              activeRequests.current.has(chatId)
+            )
+              return;
+            const running = data.chat?.busy === true;
+            setServerBusyChats((current) =>
+              current[chatId] === running
+                ? current
+                : { ...current, [chatId]: running },
+            );
+            if (
+              running ||
+              wasBusy ||
+              data.messages.length >
+                (chatMessages.current.get(chatId)?.length || 0)
+            ) {
+              chatMessages.current.set(chatId, data.messages);
+              setMessages(data.messages);
+            }
+            if (!running && wasBusy) {
+              chatErrors.current.delete(chatId);
+              setError("");
+            }
+            wasBusy = running;
+          }
+        }
+      } catch {
+        /* Keep the last known state during a temporary disconnect. */
+      } finally {
+        if (!controller.signal.aborted)
+          timer = setTimeout(() => void refresh(), 2000);
+      }
+    };
+    void refresh();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [open, chatId]);
 
   useEffect(() => {
     if (view !== "tree") return;
@@ -652,17 +718,32 @@ export function ResearchAssistant({
     }
   }
 
-  function stopGeneration() {
+  async function stopGeneration() {
     const key = selectedChatKey.current;
     const controller = activeRequests.current.get(key);
-    if (!controller) return;
-    controller.abort();
+    controller?.abort();
     activeRequests.current.delete(key);
     setWorkingChats((current) => {
       const next = { ...current };
       delete next[key];
       return next;
     });
+    if (key.startsWith("new:")) return;
+    try {
+      const response = await fetch(`/api/ai/chats/${key}/stop`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error || "Не удалось остановить ответ");
+      setServerBusyChats((current) => ({
+        ...current,
+        [key]: data.busy === true,
+      }));
+      if (selectedChatKey.current === key) setError("");
+    } catch (reason) {
+      if (selectedChatKey.current === key) setError((reason as Error).message);
+    }
   }
 
   function applyUiActions(actions: UiAction[]) {
@@ -729,7 +810,9 @@ export function ResearchAssistant({
   }
 
   async function clearDialog() {
-    stopGeneration();
+    const deletingId = chatId;
+    const deletingKey = selectedChatKey.current;
+    activeRequests.current.get(deletingKey)?.abort();
     ++chatSelection.current;
     setChatLoading(true);
     if (chatId) {
@@ -751,13 +834,25 @@ export function ResearchAssistant({
         setChatLoading(false);
         return;
       }
-      if (!response.ok) {
-        setError("Не удалось удалить диалог");
+      if (!response.ok && response.status !== 404) {
+        const data = await response.json().catch(() => ({}));
+        setError(
+          typeof data.error === "string"
+            ? data.error
+            : "Не удалось удалить диалог",
+        );
         setChatLoading(false);
         return;
       }
       setChats((current) => current.filter((item) => item.id !== chatId));
     }
+    setServerBusyChats((current) => ({ ...current, [deletingId]: false }));
+    activeRequests.current.delete(deletingKey);
+    setWorkingChats((current) => {
+      const next = { ...current };
+      delete next[deletingKey];
+      return next;
+    });
     setChatId("");
     chatMessages.current.delete(selectedChatKey.current);
     chatErrors.current.delete(selectedChatKey.current);
@@ -776,6 +871,7 @@ export function ResearchAssistant({
     if (
       (!message && !selectedPersonId) ||
       activeRequests.current.has(jobKey) ||
+      serverBusyChats[chatId] ||
       chatLoading
     )
       return;
@@ -819,6 +915,8 @@ export function ResearchAssistant({
         }),
       });
       if (!response.ok) {
+        if (response.status === 409 && chatId)
+          setServerBusyChats((current) => ({ ...current, [chatId]: true }));
         const data = await response.json().catch(() => ({}));
         throw new Error(
           (data as { error?: string }).error || "ИИ-исследователь не ответил",
@@ -1361,7 +1459,7 @@ export function ResearchAssistant({
                 disabled={chatLoading}
                 aria-label={busy ? "Остановить ответ" : "Отправить запрос"}
                 title={busy ? "Остановить ответ" : "Отправить запрос"}
-                onClick={busy ? stopGeneration : undefined}
+                onClick={busy ? () => void stopGeneration() : undefined}
               >
                 {busy ? (
                   <Square size={15} fill="currentColor" />

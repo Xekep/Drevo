@@ -62,6 +62,28 @@ export function aiResearchHttp({
   fetcher?: typeof fetch;
 }) {
   const chats = aiChatStore(archive.db);
+  const activeRuns = new Map<
+    string,
+    { controller: AbortController; done: Promise<void> }
+  >();
+  async function stopChat(id: string) {
+    const run = activeRuns.get(id);
+    if (!run) return;
+    run.controller.abort();
+    // Keep the lease until the runner exits: a stopped turn must not write
+    // after deletion or overlap a new turn.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        run.done,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, 2000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   const responses = yandexResponsesClient(fetcher);
   const accessScope = (user: ArchiveUser) => {
     const identity = [user.role, user.treeAccess || "all", user.personId || ""];
@@ -180,10 +202,22 @@ export function aiResearchHttp({
       return json(res, 200, { chats: chats.list(user.id, accessScope(user)) });
     }
     if (path.startsWith("/api/ai/chats/")) {
-      const id = path.slice("/api/ai/chats/".length);
+      const stopRequested = path.endsWith("/stop");
+      const id = path.slice("/api/ai/chats/".length).replace(/\/stop$/, "");
       const user = auth.currentUser(req)!;
       if (!/^[a-f0-9-]{36}$/i.test(id))
         return json(res, 404, { error: "Диалог не найден" });
+      if (stopRequested) {
+        if (req.method !== "POST")
+          return json(res, 405, { error: "Ожидается POST" });
+        if (!isSameOriginRequest(req, publicOrigin))
+          return json(res, 403, { error: "Invalid origin" });
+        const chat = chats.read(id, user.id);
+        if (!chat || chat.accessScope !== accessScope(user))
+          return json(res, 404, { error: "Диалог не найден" });
+        await stopChat(id);
+        return json(res, 200, { busy: !!chats.isBusy(id) });
+      }
       if (req.method === "GET") {
         const chat = chats.read(id, user.id);
         if (!chat || chat.accessScope !== accessScope(user))
@@ -193,6 +227,7 @@ export function aiResearchHttp({
             id: chat.id,
             createdAt: chat.createdAt,
             updatedAt: chat.updatedAt,
+            busy: !!chats.isBusy(id),
           },
           messages: chats.messages(id, user.id),
         });
@@ -203,18 +238,18 @@ export function aiResearchHttp({
         const existing = chats.read(id, user.id);
         if (!existing || existing.accessScope !== accessScope(user))
           return json(res, 404, { error: "Диалог не найден" });
+        await stopChat(id);
         if (chats.isBusy(id))
           return json(res, 409, {
             error: "Дождитесь завершения ответа перед удалением диалога",
           });
         const chat = chats.delete(id, user.id);
         if (!chat) return json(res, 404, { error: "Диалог не найден" });
-        if (chat.yandexConversationId) {
+        const remoteId =
+          chat.yandexConversationId || existing.yandexConversationId;
+        if (remoteId) {
           void responses
-            .deleteConversation(
-              aiRuntimeConfig(aiSettings),
-              chat.yandexConversationId,
-            )
+            .deleteConversation(aiRuntimeConfig(aiSettings), remoteId)
             .catch((error) =>
               console.warn(
                 JSON.stringify({
@@ -332,10 +367,13 @@ export function aiResearchHttp({
         models: new Map(),
       },
       controller = new AbortController();
-    if (stream)
-      res.on("close", () => {
-        if (!res.writableEnded) controller.abort();
-      });
+    let finishRun: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      finishRun = resolve;
+    });
+    activeRuns.set(chat.id, { controller, done });
+    // The turn belongs to the saved chat, not to this browser connection.
+    // Reload/disconnect detaches delivery; explicit stop/delete cancels work.
 
     if (stream) {
       res.writeHead(200, {
@@ -433,10 +471,11 @@ export function aiResearchHttp({
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
       chats.setRemote(chat.id, null);
-      const errorMessage =
-        error instanceof Error &&
-        (error.name === "TimeoutError" ||
-          /aborted due to timeout|timed out/i.test(error.message))
+      const errorMessage = controller.signal.aborted
+        ? "Ответ остановлен"
+        : error instanceof Error &&
+            (error.name === "TimeoutError" ||
+              /aborted due to timeout|timed out/i.test(error.message))
           ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
           : error instanceof Error
             ? error.message
@@ -475,6 +514,9 @@ export function aiResearchHttp({
     } finally {
       clearInterval(lockRenewal);
       chats.release(chat.id, lockToken);
+      if (activeRuns.get(chat.id)?.controller === controller)
+        activeRuns.delete(chat.id);
+      finishRun();
     }
   };
 }
