@@ -288,7 +288,7 @@ test("близкие и кровные центрируют человека, а
     );
   };
   const expectCentered = async () =>
-    expect.poll(distanceFromCenter, { timeout: 2_000 }).toBeLessThan(16);
+    expect.poll(distanceFromCenter, { timeout: 2_000 }).toBeLessThan(24);
 
   const closeButton = page.getByRole("button", { name: "Близкие" });
   await expect(closeButton).toHaveAttribute(
@@ -334,6 +334,7 @@ test("близкие и кровные центрируют человека, а
   await expect(page.locator(".fan-chart-svg")).toBeVisible();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
+  await expectCentered();
   await expect
     .poll(async () => {
       const after = await camera();

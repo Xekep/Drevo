@@ -110,7 +110,7 @@ export default function App() {
       dispatch,
     } = selection;
   const navigationDirty = useRef(false);
-  const [requestedView, setView] = useArchiveView(
+  const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
       if (leave) navigationDirty.current = false;
@@ -860,6 +860,10 @@ export default function App() {
                   onPhoto={openPhotoUrl}
                   onAddPhoto={() => photoWorkspace.openUpload()}
                   onDropPhoto={(file) => photoWorkspace.openUpload(file)}
+                  documentPersonFilter={new URL(
+                    currentPath,
+                    window.location.origin,
+                  ).searchParams.get("personId")}
                   personFilter={photoWorkspace.personFilter}
                   onClearPhotoFilter={photoWorkspace.clearFilter}
                 />

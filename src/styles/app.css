@@ -1598,6 +1598,22 @@ h1 {
   color: #8c9780;
   line-height: 1.7;
 }
+.person-documents-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #dce8d7;
+  border-radius: 10px;
+  background: #f5f9f2;
+  color: #456c4d;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.person-documents-link:hover { border-color: #aac6a6; background: #edf5e9; }
+.person-documents-link svg:last-child { margin-left: auto; }
 .source-card {
   padding: 19px 0;
   border-bottom: 1px solid #e8edde;

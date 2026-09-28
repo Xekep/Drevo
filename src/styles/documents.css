@@ -24,6 +24,7 @@
   line-height: 1.1;
 }
 .documents-heading p { margin: 0; color: #71806e; }
+.documents-clear-filter { display: inline-block; margin-top: 10px; color: #456c4d; font-size: 13px; font-weight: 650; text-underline-offset: 3px; }
 .documents-heading-actions { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
 .documents-count { color: #667864; font-size: 13px; white-space: nowrap; }
 .documents-add, .documents-upload-submit, .documents-more {
