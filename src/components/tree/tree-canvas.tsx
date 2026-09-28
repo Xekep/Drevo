@@ -1,12 +1,15 @@
 import {
   memo,
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
+  type Ref,
 } from "react";
 import {
   ReactFlow,
@@ -26,6 +29,7 @@ import {
   GitBranch,
   Link2,
   RotateCcw,
+  Settings,
   TreeDeciduous,
 } from "lucide-react";
 import {
@@ -35,6 +39,7 @@ import {
   type GraphConnection,
   type TreeMode,
   type TreeCardVariant,
+  type TreeColorScheme,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
@@ -86,7 +91,12 @@ export type TreeFocus = {
   purpose?: "family";
   groupId?: string;
 };
+export type TreeCanvasHandle = {
+  exportPdf: (signal?: AbortSignal) => Promise<void>;
+  exportSvg: (signal?: AbortSignal) => Promise<void>;
+};
 type Props = {
+  onPreferences?: () => void;
   comparisonAction?: ReactNode;
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
@@ -96,6 +106,7 @@ type Props = {
   busy: boolean;
   reverse: boolean;
   cardVariant?: TreeCardVariant;
+  colorScheme?: TreeColorScheme;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -120,7 +131,10 @@ type Props = {
 };
 const nodeTypes = { person: PersonNode, household: HouseholdNode },
   edgeTypes = { relationship: RelationshipEdge };
-function Canvas(props: Props) {
+const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
+  props,
+  exportRef,
+) {
   const narrow = useNarrowScreen();
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -180,6 +194,15 @@ function Canvas(props: Props) {
     token: number;
   } | null>(null);
   const restoreToken = useRef(0);
+  const branchToken = useRef(0);
+  const [branchAnchor, setBranchAnchor] = useState<{
+    personId: string;
+    occurrenceId: string | null;
+    position: { x: number; y: number };
+    viewport: Viewport;
+    layoutKey: string;
+    token: number;
+  } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{
     id: string;
     token: number;
@@ -585,13 +608,31 @@ function Canvas(props: Props) {
       manualCameraOverride,
       expanded: familyView.expanded,
       collapsed,
+      layoutKey,
+      branchAnchor,
     });
   const toggleBranch = useCallback(
-    (id: string) => {
+    (id: string, occurrenceId?: string) => {
+      const occurrence =
+        occurrenceId && positions.has(occurrenceId)
+          ? occurrenceId
+          : personOccurrences.get(id)?.find((candidate) => positions.has(candidate));
+      const position = occurrence ? positions.get(occurrence) : undefined;
+      if (position) {
+        branchToken.current += 1;
+        setBranchAnchor({
+          personId: id,
+          occurrenceId: occurrence || null,
+          position,
+          viewport: flow.getViewport(),
+          layoutKey,
+          token: branchToken.current,
+        });
+      }
       setGrowing(false);
       toggleView(id);
     },
-    [toggleView],
+    [flow, layoutKey, personOccurrences, positions, toggleView],
   );
   const actions = useMemo(
     () => ({
@@ -759,6 +800,57 @@ function Canvas(props: Props) {
         : displayEdges,
     [displayEdges, layoutTransition],
   );
+  const exportSnapshot = useRef({
+    ready,
+    layoutBusy,
+    tree: {
+      nodes: displayNodes,
+      edges: displayEdges,
+      actions,
+      title: family.title,
+      white: props.colorScheme === "white",
+    },
+  });
+  useLayoutEffect(() => {
+    exportSnapshot.current = {
+      ready,
+      layoutBusy,
+      tree: {
+        nodes: displayNodes,
+        edges: displayEdges,
+        actions,
+        title: family.title,
+        white: props.colorScheme === "white",
+      },
+    };
+  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family.title, props.colorScheme]);
+  useImperativeHandle(
+    exportRef,
+    () => {
+      const preparedTree = async (signal?: AbortSignal) => {
+        for (let attempt = 0; attempt < 300; attempt++) {
+          signal?.throwIfAborted();
+          const current = exportSnapshot.current;
+          if (current.ready && !current.layoutBusy) return current.tree;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error("Не удалось дождаться построения древа.");
+      };
+      return {
+        async exportPdf(signal) {
+          const tree = await preparedTree(signal);
+          const { exportTreePdf } = await import("./tree-pdf");
+          await exportTreePdf(tree, signal);
+        },
+        async exportSvg(signal) {
+          const tree = await preparedTree(signal);
+          const { exportTreeSvg } = await import("./tree-svg");
+          await exportTreeSvg(tree, signal);
+        },
+      };
+    },
+    [],
+  );
   useEffect(() => {
     if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
       return;
@@ -838,11 +930,24 @@ function Canvas(props: Props) {
     setEdgeChoices([]);
   }
   const timelineActive = !activeFanAnchor && mode === "timeline";
+  const preferencesAction = props.onPreferences && (
+    <button
+      type="button"
+      className="tree-preferences-trigger"
+      aria-label="Настройки древа"
+      title="Настройки древа"
+      aria-haspopup="dialog"
+      disabled={growthLocked || layoutBusy}
+      onClick={props.onPreferences}
+    >
+      <Settings size={19} aria-hidden="true" />
+    </button>
+  );
   return (
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} ${props.cardVariant === "portrait" ? "has-portrait-cards" : ""} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         onPointerDownCapture={edgePan.onPointerDownCapture}
         onClickCapture={edgePan.onClickCapture}
@@ -1025,8 +1130,14 @@ function Canvas(props: Props) {
               }}
             />
           )}
+          {narrow && preferencesAction}
         </div>
-        {!narrow && props.comparisonAction}
+        {!narrow && (props.comparisonAction || preferencesAction) && (
+          <div className="tree-display-actions">
+            {props.comparisonAction}
+            {preferencesAction}
+          </div>
+        )}
         {activeFanAnchor ? (
           <FanChart
             family={family}
@@ -1116,6 +1227,7 @@ function Canvas(props: Props) {
           zoomOnScroll={false}
           zoomOnPinch={!cameraLocked}
           zoomOnDoubleClick={!cameraLocked && !screen.fullscreen}
+          selectionKeyCode={null}
           selectionOnDrag={false}
           panOnDrag={cameraLocked ? false : [0, 1]}
           minZoom={0.05}
@@ -1162,7 +1274,7 @@ function Canvas(props: Props) {
               </button>
             </Panel>
           ) : (
-            <TreeCameraTools selected={selected} />
+            <TreeCameraTools selected={selected} disabled={cameraLocked} />
           )}
         </ReactFlow>
         )}
@@ -1214,11 +1326,14 @@ function Canvas(props: Props) {
       </div>
     </TreeActions.Provider>
   );
-}
-export const TreeCanvas = memo(function TreeCanvas(props: Props) {
+});
+export const TreeCanvas = memo(function TreeCanvas({
+  ref,
+  ...props
+}: Props & { ref?: Ref<TreeCanvasHandle> }) {
   return (
     <ReactFlowProvider>
-      <Canvas {...props} />
+      <Canvas {...props} ref={ref} />
     </ReactFlowProvider>
   );
 });

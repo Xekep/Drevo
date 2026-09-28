@@ -75,11 +75,15 @@ test("selection does not recalculate and reopening a branch reuses complete geom
     .locator(".inspector-dock")
     .getByRole("button", { name: "Свернуть панель" });
   if (await collapsePanel.isVisible()) await collapsePanel.click();
-  await child.getByRole("button", { name: "Свернуть потомков" }).click();
+  await child
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ })
+    .click();
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
   await ready(page);
   expect(await requests(page)).toBe(2);
-  await child.getByRole("button", { name: "Развернуть потомков" }).click();
+  await child
+    .getByRole("button", { name: /Развернуть (потомков|ветвь)/ })
+    .click();
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toBeAttached();
   await ready(page);
   expect(await requests(page)).toBe(2);

@@ -5,6 +5,12 @@ test("подписи карточек остаются читаемыми при
 }, info) => {
   test.skip(info.project.name !== "desktop");
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.treePreferences.cardVariant = "classic";
+    await route.fulfill({ response, json: data });
+  });
   await page.goto("/tree");
   const zoom = page.locator(".flow-camera-tools > span");
   await expect(zoom).toHaveText("100%");

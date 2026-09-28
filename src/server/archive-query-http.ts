@@ -3,6 +3,8 @@ import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { settingsStore } from "./settings.ts";
 import type { treePreferencesStore } from "./tree-preferences.ts";
+import type { researchCatalogStore } from "./research-catalog.ts";
+import type { ResearchDirectoryCategory } from "../shared/research-catalog.ts";
 import { peopleSearchStore } from "./people-search.ts";
 import { analysisExport } from "../domain/analysis-export.ts";
 import {
@@ -21,11 +23,13 @@ export function archiveQueryHttp({
   auth,
   visibility,
   treePreferences,
+  researchCatalog,
 }: {
   archive: ReturnType<typeof openArchive>;
   auth: ReturnType<typeof createAuth>;
   visibility: ReturnType<typeof settingsStore>;
   treePreferences: ReturnType<typeof treePreferencesStore>;
+  researchCatalog: ReturnType<typeof researchCatalogStore>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
   const publicSearchLimiter = createRequestLimiter({
@@ -103,6 +107,7 @@ export function archiveQueryHttp({
     const path = url.pathname;
     if (
       path !== "/api/people/search" &&
+      path !== "/api/research-resources" &&
       path !== "/api/export.json" &&
       path !== "/api/family" &&
       path !== "/api/export"
@@ -111,6 +116,31 @@ export function archiveQueryHttp({
 
     const visitor = auth.currentUser(req),
       access = visibility.read();
+
+    if (path === "/api/research-resources") {
+      if (!auth.canRead(req) && !access.publicTree)
+        return json(res, 401, { error: "Войдите, чтобы открыть справочник" });
+      if (req.method !== "GET")
+        return json(res, 405, {
+          error: "Справочник доступен только для чтения",
+        });
+      const categories: ResearchDirectoryCategory[] = researchCatalog
+        .list()
+        .map(({ id, name, resources }) => ({
+          id,
+          name,
+          resources: resources.map(
+            ({ id, categoryId, name, url, description }) => ({
+              id,
+              categoryId,
+              name,
+              url,
+              description,
+            }),
+          ),
+        }));
+      return json(res, 200, { categories });
+    }
 
     if (path === "/api/family") {
       if (req.method !== "GET") return false;

@@ -19,23 +19,31 @@ test("interesting data is a regular archive section on desktop and mobile", () =
   );
 });
 
-test("quality center has a direct route, desktop and mobile navigation and lazy page", () => {
+test("resource directory replaces quality navigation while its direct route is retained", () => {
   assert.equal(archivePaths.quality, "/quality");
   assert.equal(archiveViewAt("/quality"), "quality");
+  assert.equal(archivePaths.resources, "/resources");
+  assert.equal(archiveViewAt("/resources"), "resources");
   const navigation = readFileSync(
     new URL("src/components/archive-navigation.tsx", root),
     "utf8",
   );
   assert.equal(
-    (navigation.match(/\["quality", "Проверка", ClipboardCheck\]/g) || [])
-      .length,
+    (navigation.match(/\["resources", "Ресурсы", LibraryBig\]/g) || []).length,
     2,
   );
+  assert.doesNotMatch(navigation, /\["quality",/);
+  const insights = readFileSync(
+    new URL("src/components/insights-page.tsx", root),
+    "utf8",
+  );
+  assert.match(insights, /href="\/quality"/);
   const section = readFileSync(
     new URL("src/components/archive-section.tsx", root),
     "utf8",
   );
   assert.match(section, /import\("\.\/archive-quality-page"\)/);
+  assert.match(section, /import\("\.\/research-resources-page"\)/);
 });
 
 test("secondary archive sections are code-split away from App", () => {

@@ -506,7 +506,7 @@ export function createResearchRunner({
             : ""),
       }));
     if (!conversationId) {
-      conversationId = await responses.createConversation(runtime);
+      conversationId = await responses.createConversation(runtime, signal);
       chats.setRemote(chatId, conversationId);
       pendingInput.push(...restoreHistory());
     }
@@ -575,7 +575,7 @@ export function createResearchRunner({
             signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
           });
         } else if (round === 0 && missingYandexConversation(error)) {
-          conversationId = await responses.createConversation(runtime);
+          conversationId = await responses.createConversation(runtime, signal);
           chats.setRemote(chatId, conversationId);
           pendingInput.splice(0, pendingInput.length, ...restoreHistory(), {
             type: "message",
@@ -855,6 +855,7 @@ export function createResearchRunner({
       }
 
       for (const call of calls) {
+        signal.throwIfAborted();
         // Reading the clock is not evidence of an archive lookup.
         if (call.function.name !== CURRENT_TIME_TOOL.name) executedTools++;
         metrics.toolCallCount++;

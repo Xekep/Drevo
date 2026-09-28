@@ -1,10 +1,44 @@
 import { test, expect } from "@playwright/test";
+import { familyViewAction } from "./tree-toolbar-actions";
 
-test("each viewer can switch tree direction and a photo/name/kinship card", async ({
+test("new accounts see portrait cards with ancestors above descendants", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  const parent = page
+    .locator('.flow-person[data-person-id="e2e-memorial-person"]')
+    .first();
+  const child = page
+    .locator('.flow-person[data-person-id="e2e-child"]')
+    .first();
+  await expect(parent).toHaveClass(/is-portrait-card/);
+  await expect(child).toHaveClass(/is-portrait-card/);
+  const [parentBounds, childBounds] = await Promise.all([
+    parent.boundingBox(),
+    child.boundingBox(),
+  ]);
+  expect(parentBounds!.y).toBeLessThan(childBounds!.y);
+});
+
+test("each viewer can switch tree direction, colors and card variant", async ({
   page,
 }, testInfo) => {
-  let preferences = { reverseTimeline: false, cardVariant: "classic" };
+  let preferences = {
+    reverseTimeline: false,
+    cardVariant: "portrait",
+    colorScheme: "warm",
+  };
   let referenceId: string | undefined = "e2e-memorial-person";
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "drevo:guest-tree-preferences:v1",
+      JSON.stringify({
+        reverseTimeline: true,
+        cardVariant: "classic",
+        colorScheme: "white",
+      }),
+    ),
+  );
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -31,15 +65,25 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
     .first();
   await expect(self).toBeVisible();
   await expect(child).toBeVisible();
+  await expect(self).toHaveClass(/is-portrait-card/);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/theme-white/);
   const initialOrder = await Promise.all([
     self.boundingBox(),
     child.boundingBox(),
   ]);
   expect(initialOrder[0]!.y).toBeLessThan(initialOrder[1]!.y);
 
-  await page.locator(".archive-more > summary").click();
-  await page.getByRole("button", { name: "Моё древо" }).click();
-  const dialog = page.getByRole("dialog", { name: "Моё древо" });
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await dialog.getByRole("radio", { name: "Белая" }).check();
+  await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
+  await expect(page.locator(".tree-canvas")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)",
+  );
+  await dialog.getByRole("radio", { name: "Тёплая" }).check();
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/theme-white/);
+  await dialog.getByRole("radio", { name: "Белая" }).check();
   await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
   await expect(self).toHaveClass(/is-portrait-card/);
   await expect
@@ -64,6 +108,10 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
     .toBeLessThan(2);
   await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
   await expect(child.locator(".portrait-card-info small")).toHaveText("Сын");
+  await expect(self.locator(".portrait-card-years")).toHaveText("1940 — 2020");
+  await expect(child.locator(".portrait-card-years")).toHaveText(
+    "1965 — н. в.",
+  );
   await dialog.getByRole("radio", { name: "Обычная", exact: true }).check();
   await expect(self).not.toHaveClass(/is-portrait-card/);
   await expect
@@ -86,6 +134,7 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
   expect(preferences).toEqual({
     reverseTimeline: true,
     cardVariant: "portrait",
+    colorScheme: "white",
   });
   const bounds = await dialog.boundingBox();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -95,8 +144,9 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
   const preview = await dialog
     .locator(".tree-card-preview.stacked-preview")
     .boundingBox();
-  expect(preview!.width).toBeGreaterThan(150);
+  expect(preview!.width).toBeGreaterThan(100);
   expect(preview!.height).toBeGreaterThan(60);
+  expect(bounds!.height).toBeLessThan(600);
   await dialog.screenshot({
     path: testInfo.outputPath("tree-settings-dialog.png"),
   });
@@ -111,6 +161,26 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
   }
 
   await dialog.getByRole("button", { name: "Закрыть" }).click();
+  const collapse = self.getByRole("button", { name: "Свернуть ветвь" });
+  await expect(collapse).toBeVisible();
+  await collapse.click();
+  await expect(child).toHaveCount(0);
+  await expect(self).toBeVisible();
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-layout-settling|is-growing/,
+  );
+  await self.getByRole("button", { name: "Развернуть ветвь" }).click();
+  await expect(child).toBeVisible();
+  const household = page
+    .locator(".flow-household:not(.flow-household--siblings)")
+    .first();
+  await expect(household).toBeVisible();
+  expect(
+    await household.evaluate((node) => {
+      const band = Number.parseFloat(getComputedStyle(node, "::before").height);
+      return band < node.clientHeight;
+    }),
+  ).toBe(true);
   await self.screenshot({ path: testInfo.outputPath("portrait-card.png") });
   await page.screenshot({ path: testInfo.outputPath("tree-preferences.png") });
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
@@ -143,6 +213,7 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
     )
     .toBeGreaterThan(year);
   await page.reload();
+  await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
   await expect(
     page.locator('.flow-person[data-person-id="e2e-child"]').first(),
   ).toHaveClass(/is-portrait-card/);
@@ -155,4 +226,46 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
       )
       .first(),
   ).toHaveText("Нет привязки к древу");
+  await expect(self).toHaveClass(/is-compact/);
+  await expect(
+    self.getByRole("button", { name: "Свернуть ветвь" }),
+  ).toBeVisible();
+  await self.getByRole("button", { name: "Свернуть ветвь" }).click();
+  await expect(
+    self.getByRole("button", { name: "Развернуть ветвь" }),
+  ).toBeVisible();
+  await self.getByRole("button", { name: "Развернуть ветвь" }).click();
+  await expect(
+    self.getByRole("button", { name: "Свернуть ветвь" }),
+  ).toBeVisible();
+});
+
+test("white scheme also colors the fan", async ({ page }, testInfo) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.treePreferences = {
+      reverseTimeline: false,
+      cardVariant: "classic",
+      colorScheme: "white",
+    };
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await expect(
+    page.getByTestId("rf__node-e2e-child").locator(".flow-person"),
+  ).toHaveCSS("border-top-width", "2px");
+  if (testInfo.project.name === "mobile")
+    await page.getByRole("button", { name: "Свернуть панель" }).click();
+  await familyViewAction(page, "Веер");
+  await expect(page.locator(".fan-chart")).toBeVisible();
+  await expect(page.locator(".fan-chart")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)",
+  );
 });

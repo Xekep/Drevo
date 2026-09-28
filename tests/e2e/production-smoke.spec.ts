@@ -81,14 +81,17 @@ test("блоки сводки имеют одинаковую ширину на 
   test.skip(testInfo.project.name !== "desktop");
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/insights");
-  await expect(page.locator(".warnings-card")).toBeVisible();
+  await expect(page.locator(".insights-columns")).toBeVisible();
   const widths = await page
     .locator(
-      ".insight-facts:not(.secondary-facts), .insights-more, .insights-columns, .warnings-card",
+      ".insight-facts:not(.secondary-facts), .insights-more, .insights-columns",
     )
     .evaluateAll((elements) =>
       elements.map((element) => element.getBoundingClientRect().width),
     );
+  await page.goto("/quality");
+  await expect(page.locator(".quality-results")).toBeVisible();
+  widths.push(await page.locator(".quality-results").evaluate((element) => element.getBoundingClientRect().width));
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
 });
 
@@ -105,7 +108,7 @@ test("сводка объясняет предупреждение и фильт
     child.parents = ["e2e-child", "e2e-spouse", "e2e-memorial-person"];
     await route.fulfill({ response, json: data });
   });
-  await page.goto("/insights");
+  await page.goto("/quality");
   const warning = page.locator(".insight-warning").filter({
     hasText: "Больше двух кровных родителей",
   });
@@ -114,11 +117,11 @@ test("сводка объясняет предупреждение и фильт
   await expect(warning.locator(".insight-warning-people button")).toHaveCount(
     4,
   );
-  await page.getByRole("button", { name: /Возможные дубли 0/ }).click();
+  await page.getByRole("button", { name: /Вероятные дубли 0/ }).click();
   await expect(
     page.getByText("В этой категории предупреждений нет."),
   ).toBeVisible();
-  await page.getByRole("button", { name: /Нужна проверка/ }).click();
+  await page.getByRole("button", { name: /Возможные ошибки 1/ }).click();
   await expect(warning).toBeVisible();
 });
 
@@ -952,7 +955,7 @@ test("семья на древе подсвечивается без режим�
   await expect(page.locator(".comparison-content")).toHaveCount(0);
 });
 
-test("выбор двух людей с Shift не выделяет текст на древе", async ({
+test("Shift выбирает второго человека с первого клика при движении мыши", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -963,10 +966,20 @@ test("выбор двух людей с Shift не выделяет текст �
     .locator(".flow-person-content")
     .click();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
-  await page
+  await page.keyboard.down("Shift");
+  await expect(page.locator(".react-flow__pane")).not.toHaveClass(/selection/);
+  const second = page
     .getByTestId("rf__node-e2e-spouse")
-    .locator(".flow-person-content")
-    .click({ modifiers: ["Shift"] });
+    .locator(".flow-person-content");
+  const box = (await second.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  // A real mouse rarely stays perfectly still between down and up.
+  await page.mouse.move(x + 2, y + 1);
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
   await expect
     .poll(() =>
       page
@@ -1127,7 +1140,9 @@ test("привязанный человек видит отметку и пер�
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
-  await expect(page.getByText("Это вы", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".inspector-dock").getByText("Это вы", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await expect(
     page.getByText("Здравствуйте, Иван!", { exact: true }),
@@ -1339,7 +1354,7 @@ test("mobile tree appears fully without branch drawing", async ({
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(page.locator(".flow-person")).toHaveCount(7);
+  await expect(page.locator(".flow-person")).toHaveCount(6);
   await expect(canvas).not.toHaveClass(/is-growing/);
   await expect(canvas).toHaveAttribute("aria-busy", "false");
   await expect(
@@ -1409,7 +1424,7 @@ test("the initial tree grows from roots toward descendants", async ({
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
-  await expect(nodes).toHaveCount(7);
+  await expect(nodes).toHaveCount(6);
   await expect(page.locator(".tree-grow-edge")).toHaveCount(6);
   const delays = await nodes.evaluateAll((items) =>
     items
@@ -1418,7 +1433,6 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   expect(delays).toEqual([
     "0s",
-    "0.34s",
     "0.34s",
     "0.37s",
     "0.4s",
@@ -1562,6 +1576,10 @@ test("the initial tree grows from roots toward descendants", async ({
   const toolsAfterCard = await cameraTools.boundingBox();
   expect(toolsAfterCard).not.toBeNull();
   expect(Math.abs(toolsAfterCard!.x - toolsBeforeCard!.x)).toBeGreaterThan(10);
+  // After focusing a person, offscreen edges may be unmounted by React Flow.
+  await page
+    .getByRole("button", { name: "Вписать видимую часть дерева" })
+    .click();
   const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
   await expect(finalPaths).toHaveCount(6);
   expect(
@@ -1672,7 +1690,7 @@ test("переход к выбранному человеку остаётся �
   expect(after).not.toBe(before);
 });
 
-test("collapsing descendants moves the remaining cards smoothly", async ({
+test("collapsing descendants animates the remaining cards smoothly", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -1682,10 +1700,6 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
 
   const child = page.getByTestId("rf__node-e2e-child");
   const sibling = page.getByTestId("rf__node-e2e-sibling");
-  const before = await Promise.all([
-    child.boundingBox(),
-    sibling.boundingBox(),
-  ]);
   await canvas.evaluate((element) => {
     const observed = window as typeof window & {
       treeLayoutSettled?: boolean;
@@ -1708,7 +1722,7 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
       ) observed.treeCardMoved = true;
     });
   });
-  await child.getByRole("button", { name: "Свернуть потомков" }).click();
+  await child.getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
 
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
@@ -1722,15 +1736,10 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 1_000,
   });
-  const after = await Promise.all([child.boundingBox(), sibling.boundingBox()]);
-  expect(
-    after.some(
-      (box, index) =>
-        !!box &&
-        !!before[index] &&
-        Math.hypot(box.x - before[index]!.x, box.y - before[index]!.y) > 1,
-    ),
-  ).toBe(true);
+  // The camera keeps the clicked card in place, so screen coordinates may
+  // return to their starting values after the nodes have animated.
+  await expect(child).toBeVisible();
+  await expect(sibling).toBeVisible();
 });
 
 test("mobile person card stays below the project menu and starts the memorial flight", async ({

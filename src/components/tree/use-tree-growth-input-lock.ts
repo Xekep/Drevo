@@ -16,7 +16,9 @@ export function useTreeGrowthInputLock(
         allowPersonSelection &&
         event.type !== "wheel" &&
         event.target instanceof Element &&
-        event.target.closest(".flow-person-content, .tree-mode-bar")
+        event.target.closest(
+          ".flow-person-content, .tree-mode-bar, .tree-display-actions",
+        )
       )
         return;
       event.preventDefault();

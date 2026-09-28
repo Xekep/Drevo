@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Download } from "lucide-react";
 import type { TreePreferences } from "../domain";
 import { EditorDialog } from "./editor-dialog";
 import "../styles/tree-preferences.css";
@@ -6,15 +7,23 @@ import "../styles/tree-preferences.css";
 export function TreePreferencesDialog({
   preferences,
   linkedPerson,
+  localOnly = false,
   onChange,
   onClose,
+  onExport,
 }: {
   preferences: TreePreferences;
   linkedPerson: boolean;
+  localOnly?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
+  onExport: (format: "pdf" | "svg", signal: AbortSignal) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState<"pdf" | "svg" | null>(null);
+  const exportController = useRef<AbortController | null>(null);
+  useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState(preferences);
   const choose = async (value: TreePreferences) => {
@@ -30,29 +39,52 @@ export function TreePreferencesDialog({
       setSaving(false);
     }
   };
+  const exportTree = async (format: "pdf" | "svg") => {
+    exportController.current?.abort();
+    const controller = new AbortController();
+    exportController.current = controller;
+    setExporting(true);
+    setExported(null);
+    setError("");
+    try {
+      await onExport(format, controller.signal);
+      if (!controller.signal.aborted) setExported(format);
+    } catch (reason) {
+      if (!controller.signal.aborted)
+        setError(
+          reason instanceof Error && reason.message === "Не удалось дождаться построения древа."
+            ? reason.message
+            : `Не удалось создать ${format.toUpperCase()}. Попробуйте ещё раз.`,
+        );
+    } finally {
+      if (!controller.signal.aborted) setExporting(false);
+    }
+  };
   return (
     <EditorDialog
-      title="Моё древо"
+      title="Вид древа"
       onClose={onClose}
       className="tree-preferences-dialog"
     >
       <div className="tree-preferences">
-        <p>Эти настройки меняют только ваш просмотр древа.</p>
-        <fieldset disabled={saving}>
-          <legend>Направление времени</legend>
+        <p>
+          {localOnly
+            ? "Ваш вид · сохраняется в этом браузере"
+            : "Ваш вид · сохраняется в аккаунте"}
+        </p>
+        <fieldset disabled={saving || exporting}>
+          <legend>Поколения</legend>
           <div className="tree-preference-options">
             {[
               {
                 reverse: false,
                 title: "Предки сверху",
-                detail: "От прошлого к настоящему",
               },
               {
                 reverse: true,
                 title: "Младшие сверху",
-                detail: "От настоящего к прошлому",
               },
-            ].map(({ reverse, title, detail }) => (
+            ].map(({ reverse, title }) => (
               <label
                 key={title}
                 className={
@@ -70,22 +102,78 @@ export function TreePreferencesDialog({
                 />
                 <span>
                   <strong>{title}</strong>
-                  <small>{detail}</small>
                 </span>
               </label>
             ))}
           </div>
-          <small>В хронологии время всегда идёт слева направо.</small>
+          <small>В хронологии время идёт слева направо.</small>
         </fieldset>
-        <fieldset disabled={saving}>
-          <legend>Вид карточки</legend>
+        <fieldset disabled={saving || exporting}>
+          <legend>Фон</legend>
+          <div className="tree-preference-options color-options">
+            {(
+              [
+                { scheme: "warm", title: "Тёплая" },
+                { scheme: "white", title: "Белая" },
+              ] as const
+            ).map(({ scheme, title }) => (
+              <label
+                key={scheme}
+                className={draft.colorScheme === scheme ? "is-selected" : ""}
+              >
+                <input
+                  type="radio"
+                  name="tree-color-scheme"
+                  aria-label={title}
+                  checked={draft.colorScheme === scheme}
+                  onChange={() =>
+                    void choose({ ...draft, colorScheme: scheme })
+                  }
+                />
+                <span
+                  className={`tree-color-preview ${scheme}-preview`}
+                  aria-hidden="true"
+                />
+                <span>
+                  <strong>{title}</strong>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset disabled={saving || exporting}>
+          <legend>Карточки</legend>
           <div className="tree-preference-options card-options">
+            <label
+              className={draft.cardVariant === "portrait" ? "is-selected" : ""}
+            >
+              <input
+                type="radio"
+                name="tree-card"
+                aria-label="Фото · ФИО · Родство"
+                checked={draft.cardVariant === "portrait"}
+                onChange={() =>
+                  void choose({ ...draft, cardVariant: "portrait" })
+                }
+              />
+              <span
+                className="tree-card-preview stacked-preview"
+                aria-hidden="true"
+              >
+                <i>А</i>
+                <b>Иванова Анна Петровна</b>
+                <small>1988–2024</small>
+                <small>Двоюродная сестра</small>
+              </span>
+              <strong>Фото · ФИО · Родство</strong>
+            </label>
             <label
               className={draft.cardVariant === "classic" ? "is-selected" : ""}
             >
               <input
                 type="radio"
                 name="tree-card"
+                aria-label="Обычная"
                 checked={draft.cardVariant === "classic"}
                 onChange={() =>
                   void choose({ ...draft, cardVariant: "classic" })
@@ -104,36 +192,41 @@ export function TreePreferencesDialog({
               </span>
               <strong>Обычная</strong>
             </label>
-            <label
-              className={draft.cardVariant === "portrait" ? "is-selected" : ""}
-            >
-              <input
-                type="radio"
-                name="tree-card"
-                checked={draft.cardVariant === "portrait"}
-                onChange={() =>
-                  void choose({ ...draft, cardVariant: "portrait" })
-                }
-              />
-              <span
-                className="tree-card-preview stacked-preview"
-                aria-hidden="true"
-              >
-                <i>А</i>
-                <b>Иванова Анна Петровна</b>
-                <small>Двоюродная сестра</small>
-              </span>
-              <strong>Фото · ФИО · Родство</strong>
-            </label>
           </div>
           {!linkedPerson && (
-            <small>
-              Для подписи родства аккаунт должен быть привязан к человеку в
-              древе.
-            </small>
+            <small>Родство появится после привязки аккаунта к человеку.</small>
           )}
         </fieldset>
-        {saving && <p role="status">Сохраняем…</p>}
+        <div className="tree-pdf-export">
+          <div className="tree-export-actions">
+            {(["pdf", "svg"] as const).map((format) => (
+              <button
+                key={format}
+                type="button"
+                aria-label={`Сохранить древо в ${format.toUpperCase()}`}
+                disabled={saving || exporting}
+                onClick={() => void exportTree(format)}
+              >
+                <Download size={16} aria-hidden="true" />
+                Скачать {format.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <small>
+            Все раскрытые ветви. PDF — через окно печати; SVG — отдельный векторный файл.
+          </small>
+        </div>
+        <p className="tree-preferences-status" role="status">
+          {saving
+            ? "Сохраняем…"
+            : exporting
+              ? "Подготавливаем древо…"
+              : exported === "pdf"
+                ? "Окно печати открыто."
+                : exported === "svg"
+                  ? "Скачивание SVG началось."
+                : ""}
+        </p>
         {error && (
           <p className="form-error" role="alert">
             {error}

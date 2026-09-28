@@ -25,6 +25,7 @@ import {
 import {
   TreeCanvas,
   type ConnectionDraft,
+  type TreeCanvasHandle,
 } from "./components/tree/tree-canvas";
 import { InspectorDock } from "./components/inspector-dock";
 import { PersonInspector } from "./components/person-inspector";
@@ -111,6 +112,7 @@ export default function App() {
       dispatch,
     } = selection;
   const navigationDirty = useRef(false);
+  const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -571,6 +573,11 @@ export default function App() {
       />
     </div>
   );
+  const navigationUser =
+    user || (view === "account" ? accountSession?.user : null) || null;
+  const accountPerson = navigationUser?.personId
+    ? family?.people.find((person) => person.id === navigationUser.personId)
+    : undefined;
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -582,11 +589,8 @@ export default function App() {
             <ArchiveNavigation
               view={view}
               onView={navigate}
-              user={
-                user ||
-                (view === "account" ? accountSession?.user : null) ||
-                null
-              }
+              user={navigationUser}
+              accountPerson={accountPerson}
               local={archive.local || accountSession?.local === true}
               readTree={readTree}
               readPhotos={readPhotos}
@@ -656,6 +660,8 @@ export default function App() {
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}
+                  save={save}
+                  canEdit={canEdit}
                 />
               ) : (
                 <div className="archive-status">
@@ -675,6 +681,8 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      ref={treeCanvas}
+                      onPreferences={() => setTreePreferencesOpen(true)}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
@@ -720,6 +728,7 @@ export default function App() {
                       busy={busy}
                       reverse={archive.reverseTimeline}
                       cardVariant={archive.treePreferences.cardVariant}
+                      colorScheme={archive.treePreferences.colorScheme}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
@@ -884,6 +893,7 @@ export default function App() {
                   loadingDetails={archive.loadingDetails}
                   save={save}
                   onPerson={showPerson}
+                  onQuality={() => navigate("quality")}
                   onReveal={(ids, groupId) => {
                     lastUrlTarget.current = "";
                     setView("tree", undefined, true);
@@ -1021,10 +1031,16 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {treePreferencesOpen && user?.approved && readTree && (
+      {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
+          onExport={(format, signal) =>
+            format === "pdf"
+              ? treeCanvas.current!.exportPdf(signal)
+              : treeCanvas.current!.exportSvg(signal)
+          }
           preferences={archive.treePreferences}
-          linkedPerson={!!user.personId}
+          linkedPerson={!!user?.personId}
+          localOnly={!user?.approved}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
         />

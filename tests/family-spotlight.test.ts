@@ -2,6 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { familySpotlight } from "../src/components/tree/family-spotlight.ts";
 import type { TreeGeometry } from "../src/domain/tree-layout.ts";
+import ELK from "elkjs/lib/elk.bundled.js";
+import { unionGeometry } from "../src/domain/union-layout.ts";
+
+test("подсветка одного брака в общем блоке не включает другого супруга и его детей", async () => {
+  const person = (
+    id: string,
+    parents: string[] = [],
+    spouses: string[] = [],
+  ) => ({ id, birth: "", parents, spouses });
+  const geometry = await unionGeometry(
+    [
+      person("a", [], ["b", "c"]),
+      person("b"),
+      person("c"),
+      person("ab", ["a", "b"]),
+      person("ac", ["a", "c"]),
+    ],
+    (graph) => new ELK().layout(graph),
+  );
+  assert.equal(
+    geometry.occurrences!.filter((o) => o.personId === "a").length,
+    1,
+  );
+  assert.deepEqual(
+    new Set(familySpotlight(geometry, '["a","b"]', ["a", "b", "ab"])),
+    new Set(["a", "b", "ab"]),
+  );
+});
 
 test("подсветка семейной группы выбирает её карточки, а не копии из других союзов", () => {
   const groupId = '["parent-a","parent-b"]';

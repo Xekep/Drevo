@@ -1,5 +1,6 @@
 import { familyPositions } from "./family-layout.ts";
 import { householdLevels } from "./household-levels.ts";
+import type { GenerationBand } from "./generation-bands.ts";
 import { arrangeHouseholds } from "./family-arrangement.ts";
 import { routeRelationships, type EdgeRoute } from "./edge-routing.ts";
 import type { Person, Family, FamilyLink } from "./types.ts";
@@ -30,6 +31,7 @@ export type TreeGeometry = {
   occurrences?: UnionOccurrence[];
   blocks?: UnionBlock[];
   siblingGroups?: UnionBlock[];
+  generationBands?: GenerationBand[];
   branches?: UnionBranch[];
   coveredRelations?: string[];
 };

@@ -53,8 +53,15 @@ test(
     try {
       const g = await calculate(worker, "generations");
       assert.equal(g.error, undefined);
-      assert.equal(g.blocks.length, 2);
-      assert.equal(g.occurrences.length, 6);
+      assert.equal(g.blocks.length, 0);
+      assert.equal(g.occurrences.length, 5);
+      const couplePositions = new Map(g.positions);
+      const commonX = couplePositions.get("a").x;
+      assert.ok(
+        (couplePositions.get("b").x - commonX) *
+          (couplePositions.get("c").x - commonX) <
+          0,
+      );
       assert.equal(g.branches.length, 4);
       const portrait = await calculate(
         worker,
@@ -64,11 +71,11 @@ test(
         "portrait",
       );
       assert.equal(portrait.error, undefined);
-      assert.deepEqual(portrait.nodeSize, { width: 220, height: 240 });
+      assert.deepEqual(portrait.nodeSize, { width: 220, height: 264 });
       assert.equal(portrait.branches.length, g.branches.length);
       for (const [index, [, a]] of portrait.positions.entries())
         for (const [, b] of portrait.positions.slice(0, index))
-          assert.ok(Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 240);
+          assert.ok(Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 264);
       const timeline = await calculate(worker, "timeline");
       assert.equal(timeline.error, undefined);
       assert.equal(timeline.positions.length, g.positions.length);
@@ -124,11 +131,13 @@ test(
               (reversed ? 2035 - Number(p.birth) : Number(p.birth) - 1830) * 8,
           );
       }
-      assert.ok(
-        new Set(
-          Array.from({ length: 18 }, (_, i) => positions.get(`child-${i}`).y),
-        ).size > 1,
-      );
+      assert.equal(packed.generationBands.length, 3);
+      for (const band of packed.generationBands) {
+        for (const id of band.members) {
+          const y = positions.get(id).y;
+          assert.ok(y >= band.minY && y <= band.maxY);
+        }
+      }
       const focusedIds = new Set([
         "child-0",
         "spouse-0",

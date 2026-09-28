@@ -155,6 +155,8 @@ test("короткая команда приближает само древо",
   await page.goto("/tree");
   const zoomLabel = page.locator(".flow-camera-tools span");
   await expect(zoomLabel).toBeVisible();
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/);
+  await page.waitForTimeout(700);
   await expect
     .poll(async () => Number((await zoomLabel.textContent())?.replace("%", "")))
     .toBeGreaterThan(0);

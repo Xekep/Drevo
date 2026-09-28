@@ -37,6 +37,9 @@ const InsightsPage = lazy(() =>
 const ArchiveQualityPage = lazy(() =>
   loadLazyModule(() => import("./archive-quality-page"), "quality"),
 );
+const ResearchResourcesPage = lazy(() =>
+  loadLazyModule(() => import("./research-resources-page"), "resources"),
+);
 
 type Props = {
   view: ArchiveView;
@@ -50,6 +53,7 @@ type Props = {
   loadingDetails: boolean;
   save: (family: Family) => Promise<Family>;
   onPerson: (id: string) => void;
+  onQuality: () => void;
   onReveal: (ids: string[], groupId: string) => void;
   onPhoto: (id: string, photoIds?: string[]) => void;
   onAddPhoto: () => void;
@@ -152,8 +156,10 @@ export function ArchiveSection(props: Props) {
         family={props.family}
         loadingDetails={props.loadingDetails}
         onPerson={props.onPerson}
+        onQuality={props.onQuality}
       />
     );
+  else if (props.view === "resources") content = <ResearchResourcesPage />;
   else if (props.view === "quality")
     content = (
       <ArchiveQualityPage

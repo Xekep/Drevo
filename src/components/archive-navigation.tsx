@@ -12,31 +12,25 @@ import {
   BookOpenText,
   Heart,
   ShieldCheck,
-  Search,
   LogOut,
   CircleHelp,
   Menu,
   MapPin,
   ChartNoAxesCombined,
-  ClipboardCheck,
-  X,
+  LibraryBig,
   Settings2,
-  UserRound,
 } from "lucide-react";
-import {
-  fullName,
-  years,
-  matchesPerson,
-  type Person,
-  type ArchiveUser,
-} from "../domain";
+import { safeUrl, type Person, type ArchiveUser } from "../domain";
+import { mediaPreview } from "../domain/media-preview";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { clearLayoutStorage } from "./tree/layout-storage";
+import { TreeSearch } from "./tree-search";
 export type { ArchiveView } from "../domain/archive-routes";
 export function ArchiveNavigation({
   view,
   onView,
   user,
+  accountPerson,
   local,
   readTree,
   readPhotos,
@@ -46,6 +40,7 @@ export function ArchiveNavigation({
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
   user: ArchiveUser | null;
+  accountPerson?: Person;
   local: boolean;
   readTree: boolean;
   readPhotos: boolean;
@@ -53,6 +48,9 @@ export function ArchiveNavigation({
   onTreePreferences: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const [failedPortrait, setFailedPortrait] = useState<string>();
+  const portrait = mediaPreview(safeUrl(accountPerson?.photo));
+  const initial = user?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
     event: MouseEvent<HTMLAnchorElement>,
     next: ArchiveView,
@@ -123,7 +121,7 @@ export function ArchiveNavigation({
             ["documents", "Документы", BookOpenText],
             ["places", "Места", MapPin],
             ["insights", "Сводка", ChartNoAxesCombined],
-            ["quality", "Проверка", ClipboardCheck],
+            ["resources", "Ресурсы", LibraryBig],
           ] as const
         )
           .filter(([id]) =>
@@ -147,6 +145,28 @@ export function ArchiveNavigation({
             </a>
           ))}
       </div>
+      {user && (
+        <a
+          className="nav-account"
+          href={archivePaths.account}
+          aria-label={`Личный кабинет: ${user.name}`}
+          aria-current={view === "account" ? "page" : undefined}
+          onClick={(event) => navigate(event, "account")}
+          title="Личный кабинет"
+        >
+          <span className="nav-account-avatar" aria-hidden="true">
+            {portrait && portrait !== failedPortrait ? (
+              <img
+                src={portrait}
+                alt=""
+                onError={() => setFailedPortrait(portrait)}
+              />
+            ) : (
+              initial
+            )}
+          </span>
+        </a>
+      )}
       <details ref={menu} className="archive-more" key={view}>
         <summary aria-label="Меню проекта">
           <Menu size={20} />
@@ -162,7 +182,7 @@ export function ArchiveNavigation({
                 ["documents", "Документы", BookOpenText],
                 ["places", "Места", MapPin],
                 ["insights", "Сводка", ChartNoAxesCombined],
-                ["quality", "Проверка", ClipboardCheck],
+                ["resources", "Ресурсы", LibraryBig],
               ] as const
             )
               .filter(([id]) =>
@@ -186,17 +206,6 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
-          {user && (
-            <a
-              href={archivePaths.account}
-              aria-current={view === "account" ? "page" : undefined}
-              onClick={(event) => navigate(event, "account")}
-              title="Личный кабинет"
-            >
-              <UserRound size={18} />
-              <span>Личный кабинет</span>
-            </a>
-          )}
           {user?.approved && readTree && (
             <button
               onClick={() => {
@@ -256,143 +265,15 @@ export function ArchiveHeader({
   busy: boolean;
   navigation: ReactNode;
 }) {
-  const [open, setOpen] = useState(false),
-    [active, setActive] = useState(0),
-    ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (
-        e.key === "Escape" &&
-        !e.defaultPrevented &&
-        !(e.target as HTMLElement).closest("[role=dialog], dialog") &&
-        (e.target === ref.current ||
-          !(e.target as HTMLElement).closest(
-            "input,textarea,select,[contenteditable]",
-          ))
-      ) {
-        onQuery("");
-        setOpen(false);
-      }
-      if (
-        e.key === "/" &&
-        !(e.target as HTMLElement).closest(
-          "input,textarea,select,[contenteditable]",
-        )
-      ) {
-        e.preventDefault();
-        ref.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [onQuery]);
-  const matches = query.trim()
-    ? people.filter((p) => matchesPerson(p, query)).slice(0, 8)
-    : [];
-  const clearQuery = () => {
-    onQuery("");
-    setOpen(false);
-    ref.current?.focus();
-  };
   return (
     <header className="archive-header">
       {navigation}
-      <div
-        className="archive-search"
-        onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
-        }}
-      >
-        <Search size={19} aria-hidden="true" />
-        <input
-          ref={ref}
-          value={query}
-          onFocus={() => setOpen(true)}
-          onChange={(e) => {
-            onQuery(e.target.value);
-            setActive(0);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              setOpen(true);
-              setActive((index) =>
-                matches.length
-                  ? (index + (e.key === "ArrowDown" ? 1 : matches.length - 1)) %
-                    matches.length
-                  : 0,
-              );
-            }
-            if (e.key === "Enter" && matches[active]) {
-              e.preventDefault();
-              onSelect(matches[active].id);
-              setOpen(false);
-            }
-            if (e.key === "Escape") {
-              e.stopPropagation();
-              onQuery("");
-              setOpen(false);
-            }
-          }}
-          placeholder="Найти человека…"
-          aria-label="Найти человека"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={open && !!query.trim()}
-          aria-controls={
-            open && query.trim() ? "archive-search-options" : undefined
-          }
-          aria-activedescendant={
-            open && matches[active]
-              ? `archive-search-option-${active}`
-              : undefined
-          }
-        />
-        <kbd>/</kbd>
-        {query && (
-          <button
-            type="button"
-            className="archive-search-clear"
-            aria-label="Очистить поиск"
-            title="Очистить поиск"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={clearQuery}
-          >
-            <X size={17} aria-hidden="true" />
-          </button>
-        )}
-        {open && query.trim() && (
-          <div
-            className="archive-search-results"
-            id="archive-search-options"
-            role="listbox"
-            aria-label="Найденные люди"
-          >
-            {matches.length ? (
-              matches.map((p, index) => (
-                <button
-                  key={p.id}
-                  id={`archive-search-option-${index}`}
-                  role="option"
-                  aria-selected={active === index}
-                  tabIndex={-1}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    onSelect(p.id);
-                    setOpen(false);
-                  }}
-                >
-                  <b>{fullName(p)}</b>
-                  {years(p) && <small>{years(p)}</small>}
-                </button>
-              ))
-            ) : (
-              <p>Никого не нашли</p>
-            )}
-          </div>
-        )}
-      </div>
+      <TreeSearch
+        people={people}
+        query={query}
+        onQuery={onQuery}
+        onSelect={onSelect}
+      />
       <div className="archive-header-actions">
         {busy && <span role="status">Сохраняем…</span>}
       </div>

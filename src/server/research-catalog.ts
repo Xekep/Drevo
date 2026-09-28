@@ -1,4 +1,11 @@
-import type { ResearchSearchSettings } from "../shared/web-search.ts";
+import type {
+  ResearchCategory,
+  ResearchResource,
+} from "../shared/research-catalog.ts";
+export type {
+  ResearchCategory,
+  ResearchResource,
+} from "../shared/research-catalog.ts";
 import {
   defaultSearchSettings,
   validateSearchSettings,
@@ -7,19 +14,6 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
-
-export type ResearchResource = ResearchSearchSettings & {
-  id: string;
-  categoryId: string;
-  name: string;
-  url: string;
-  description: string;
-};
-export type ResearchCategory = {
-  id: string;
-  name: string;
-  resources: ResearchResource[];
-};
 
 const ignoredSearchWords = new Set([
   "дай",

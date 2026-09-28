@@ -79,6 +79,10 @@
   box-shadow: 0 16px 40px #2b42291a;
   z-index: 40;
 }
+.archive-search-results {
+  max-height: min(420px, 50dvh);
+  overflow-y: auto;
+}
 .archive-search-results button {
   width: 100%;
   text-align: left;
@@ -1188,9 +1192,48 @@
   background: #59735a;
 }
 .archive-more {
-  order: 4;
+  order: 5;
   position: relative;
-  margin-left: 3px;
+  margin-left: 0;
+}
+.archive-nav .nav-account {
+  order: 4;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 3px;
+  justify-content: center;
+  border: 1px solid #dce6d8;
+  border-radius: 50%;
+  background: #f7faf3;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.nav-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #dfe9d8, #c6d9c3);
+  color: #375845;
+  font: 600 19px/1 var(--serif);
+}
+.nav-account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.archive-nav .nav-account:hover,
+.archive-nav .nav-account:focus-visible,
+.archive-nav .nav-account[aria-current="page"] {
+  border-color: #799b78;
+  box-shadow: 0 0 0 3px #a8c29a45;
+}
+@media (max-width: 600px) {
+  .archive-header:has(.nav-account) .nav-brand span {
+    display: none;
+  }
 }
 .archive-more > summary {
   display: flex;
@@ -1888,6 +1931,7 @@
 }
 .tree-canvas.is-fullscreen .tree-mode-bar,
 .tree-canvas.is-fullscreen .workspace-actions,
+.tree-canvas.is-fullscreen .tree-display-actions,
 .tree-canvas.is-fullscreen .react-flow__panel,
 .tree-canvas.is-fullscreen .timeline-period-menu,
 .tree-canvas.is-fullscreen .timeline-quick-centuries,
@@ -1959,7 +2003,7 @@
   -webkit-line-clamp: 3;
   overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 18px;
 }
 .flow-person.is-portrait-card .portrait-card-info small {
@@ -1968,23 +2012,143 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   white-space: normal;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
+}
+.flow-person.is-portrait-card .portrait-card-years {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-info strong {
   -webkit-line-clamp: 2;
-  font-size: 21px;
+  font-size: 22px;
   line-height: 23px;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-info small {
   -webkit-line-clamp: 1;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 20px;
 }
+.flow-person.is-portrait-card.is-overview .portrait-card-years {
+  font-size: 15px;
+  line-height: 18px;
+}
+.flow-person.is-portrait-card.is-distant .portrait-card-years,
 .flow-person.is-portrait-card.is-distant .portrait-card-info small {
   display: none;
 }
 .flow-person.is-portrait-card.is-distant .portrait-card-info strong {
-  font-size: 28px;
+  font-size: 29px;
   line-height: 30px;
+}
+/* A personal white canvas keeps cards and routes legible without the warm tint. */
+.tree-canvas.theme-white {
+  background: #fff;
+}
+.tree-canvas.theme-white .flow-person:not(.is-portrait-card):not(.is-spotlit) {
+  background: #fff;
+}
+.tree-canvas.theme-white
+  .flow-person:not(.is-portrait-card):not(.is-selected):not(.is-spotlit):not(
+    :hover
+  ) {
+  border-color: #cbd8d2;
+  box-shadow: 0 3px 13px #24473717;
+}
+.tree-canvas.theme-white
+  .flow-person[data-household="true"]:not(.is-selected):not(.is-spotlit):not(
+    :hover
+  ) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.tree-canvas.theme-white .flow-edge-label.is-inline {
+  background: #fff;
+}
+.tree-canvas.theme-white .flow-person.is-portrait-card .portrait-card-info {
+  text-shadow: 0 1px 3px #fff;
+}
+.tree-canvas.theme-white .fan-chart {
+  background: #fff;
+}
+.tree-canvas.theme-white .fan-sector.is-empty path {
+  fill: #fff;
+}
+.flow-person.is-portrait-card .flow-collapse {
+  top: 116px;
+  right: 22px;
+  bottom: auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid #cbdcc4;
+  border-radius: 999px;
+  background: #fffefa;
+  color: #42654a;
+  box-shadow: 0 3px 10px #293e3426;
+}
+.flow-person.is-portrait-card .flow-collapse:hover,
+.flow-person.is-portrait-card .flow-collapse:focus-visible {
+  border-color: #72986e;
+  background: #f1f7eb;
+}
+/* The shared wash hugs the photos; the names remain on the open canvas. */
+.tree-canvas.has-portrait-cards
+  .flow-household:not(.flow-household--siblings)::before {
+  inset: 4px 32px auto;
+  height: 144px;
+}
+
+.tree-display-actions {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tree-display-actions .workspace-actions {
+  position: static;
+}
+.tree-preferences-trigger {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid #e1e7db;
+  border-radius: 8px;
+  color: #42654a;
+  background: #fffffff0;
+}
+.tree-preferences-trigger:hover {
+  background: #eaf0e2;
+}
+.tree-preferences-trigger:focus-visible {
+  outline: 2px solid #658751;
+  outline-offset: 2px;
+}
+@media (min-width: 900px) {
+  .tree-canvas:has(.tree-preferences-trigger) .tree-mode-bar {
+    max-width: calc(100% - 210px);
+  }
+  .tree-canvas.mode-timeline:has(.tree-preferences-trigger) .tree-mode-bar {
+    max-width: calc(100% - var(--timeline-rail) - 210px);
+  }
+}
+@media (max-width: 899px) {
+  .tree-mode-bar .tree-preferences-trigger {
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+  }
+  .tree-mode-switch > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
