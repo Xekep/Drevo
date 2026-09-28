@@ -97,6 +97,7 @@ export function documentsHttp({
     if (list && req.method === "GET") {
       const offset = Number(url.searchParams.get("offset") || 0),
         limit = Number(url.searchParams.get("limit") || 30),
+        personId = url.searchParams.get("personId"),
         query = (url.searchParams.get("q") || "")
           .trim()
           .toLocaleLowerCase("ru");
@@ -106,12 +107,21 @@ export function documentsHttp({
         !Number.isInteger(limit) ||
         limit < 1 ||
         limit > 100 ||
+        (personId !== null && (!personId || personId.length > 200)) ||
         query.length > 100
       )
         return json(res, 400, { error: "Некорректная страница" });
       const access = visible(req);
+      if (personId !== null && access.scoped && !access.ids.includes(personId))
+        return json(res, 200, { total: 0, items: [] });
       const conditions: string[] = [];
       const args: string[] = [];
+      if (personId !== null) {
+        conditions.push(
+          "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id=?)",
+        );
+        args.push(personId);
+      }
       if (access.scoped) {
         conditions.push(
           "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?)))",

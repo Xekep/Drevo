@@ -312,6 +312,14 @@ export function PersonPanel({
         ) : (
           <>
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>
+            <a
+              className="person-documents-link"
+              href={`/documents?personId=${encodeURIComponent(person.id)}`}
+            >
+              <FileText size={16} aria-hidden="true" />
+              PDF-документы этого человека
+              <ArrowUpRight size={14} aria-hidden="true" />
+            </a>
             {sources.length ? (
               sources.map((s, i) => (
                 <div

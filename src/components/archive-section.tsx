@@ -54,6 +54,7 @@ type Props = {
   onPhoto: (id: string, photoIds?: string[]) => void;
   onAddPhoto: () => void;
   onDropPhoto: (file: File) => void;
+  documentPersonFilter: string | null;
   personFilter: string | null;
   onClearPhotoFilter: () => void;
 };
@@ -138,7 +139,13 @@ export function ArchiveSection(props: Props) {
       />
     );
   else if (props.view === "documents")
-    content = <DocumentsCatalog mayEdit={props.mayEdit} />;
+    content = (
+      <DocumentsCatalog
+        mayEdit={props.mayEdit}
+        personFilter={props.documentPersonFilter}
+        people={props.people}
+      />
+    );
   else if (props.view === "insights")
     content = (
       <InsightsPage

@@ -53,6 +53,20 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
         column: 0,
         generation: 1,
       },
+      {
+        id: "boris",
+        name: "Борис",
+        surname: "Тестов",
+        patronymic: "",
+        sex: "m",
+        birth: "1952",
+        birthPlace: "",
+        parents: [],
+        spouses: [],
+        sources: [],
+        column: 1,
+        generation: 1,
+      },
     ],
   };
   const metadata = encodeURIComponent(
@@ -155,6 +169,37 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       Buffer.from(await (await fetch(base + after.items[0].url)).arrayBuffer()),
       pdf,
     );
+    const other = await upload(pdf, {
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title: "Запись Бориса", personIds: ["boris"] }),
+      ),
+    });
+    assert.equal(other.status, 201);
+    const annaDocuments = (await (
+      await fetch(`${base}/api/documents?personId=anna`)
+    ).json()) as { total: number; items: Array<{ title: string }> };
+    const borisDocuments = (await (
+      await fetch(`${base}/api/documents?personId=boris`)
+    ).json()) as { total: number; items: Array<{ title: string }> };
+    assert.deepEqual(
+      annaDocuments.items.map((item) => item.title),
+      ["Семейная запись"],
+    );
+    assert.deepEqual(
+      borisDocuments.items.map((item) => item.title),
+      ["Запись Бориса"],
+    );
+    assert.equal(annaDocuments.total, 1);
+    assert.equal(borisDocuments.total, 1);
+    assert.equal(
+      (
+        (await (
+          await fetch(`${base}/api/documents?personId=unknown`)
+        ).json()) as { total: number }
+      ).total,
+      0,
+    );
+    assert.equal((await fetch(`${base}/api/documents?personId=`)).status, 400);
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });
@@ -262,6 +307,10 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     db.prepare(
       "UPDATE users SET person_id='hidden',tree_access='common_ancestors' WHERE id='owner'",
     ).run();
+    const hiddenFilter = (await (
+      await request("/api/documents?personId=anna", "owner")
+    ).json()) as { total: number };
+    assert.equal(hiddenFilter.total, 0);
     assert.equal((await request(path, "owner", "DELETE")).status, 404);
     db.prepare("UPDATE users SET tree_access='all' WHERE id='owner'").run();
     db.exec(

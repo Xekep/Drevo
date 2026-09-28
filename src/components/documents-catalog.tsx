@@ -8,6 +8,7 @@ import {
 } from "react";
 import { BookOpenText, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { PdfBookReader } from "./pdf-book-reader";
+import { fullName, type Person } from "../domain";
 import "../styles/documents.css";
 
 export type ListedDocument = {
@@ -25,7 +26,15 @@ const PAGE_SIZE = 30;
 
 type PersonOption = { id: string; label: string; detail: string };
 
-export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
+export function DocumentsCatalog({
+  mayEdit,
+  personFilter,
+  people,
+}: {
+  mayEdit: boolean;
+  personFilter: string | null;
+  people: Person[];
+}) {
   const [documents, setDocuments] = useState<ListedDocument[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
@@ -43,6 +52,7 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
   const [personQuery, setPersonQuery] = useState("");
   const [personResults, setPersonResults] = useState<PersonOption[]>([]);
   const [selectedPeople, setSelectedPeople] = useState<PersonOption[]>([]);
+  const filteredPerson = people.find((person) => person.id === personFilter);
 
   const load = useCallback(
     async (offset: number) => {
@@ -57,7 +67,7 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
       setError("");
       try {
         const response = await fetch(
-          `/api/documents?offset=${offset}&limit=${PAGE_SIZE}&q=${encodeURIComponent(query.trim())}`,
+          `/api/documents?offset=${offset}&limit=${PAGE_SIZE}&q=${encodeURIComponent(query.trim())}${personFilter !== null ? `&personId=${encodeURIComponent(personFilter)}` : ""}`,
           { signal: request.signal },
         );
         if (!response.ok) throw new Error("Не удалось загрузить документы");
@@ -78,7 +88,7 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         if (!request.signal.aborted) setLoading(false);
       }
     },
-    [query],
+    [query, personFilter],
   );
 
   useEffect(() => {
@@ -157,6 +167,18 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
       { name: string; items: ListedDocument[] }
     >();
     for (const document of documents) {
+      if (personFilter !== null) {
+        const person = document.people.find((item) => item.id === personFilter);
+        if (person) {
+          const group = grouped.get(person.id) || {
+            name: person.name,
+            items: [],
+          };
+          group.items.push(document);
+          grouped.set(person.id, group);
+        }
+        continue;
+      }
       if (!document.people.length) {
         const group = grouped.get("") || { name: "Без привязки", items: [] };
         group.items.push(document);
@@ -174,7 +196,7 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
     return [...grouped.entries()].sort((a, b) =>
       a[1].name.localeCompare(b[1].name, "ru"),
     );
-  }, [documents]);
+  }, [documents, personFilter]);
 
   const remove = async (entry: ListedDocument) => {
     if (
@@ -214,8 +236,15 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
           <span className="documents-eyebrow">Семейный архив</span>
           <h1>Документы</h1>
           <p>
-            Загруженные участниками PDF-документы, связанные с людьми в архиве.
+            {personFilter !== null
+              ? `PDF-документы, связанные с ${filteredPerson ? fullName(filteredPerson) : "выбранным человеком"}.`
+              : "Загруженные участниками PDF-документы, связанные с людьми в архиве."}
           </p>
+          {personFilter !== null && (
+            <a className="documents-clear-filter" href="/documents">
+              Показать все документы
+            </a>
+          )}
         </div>
         <div className="documents-heading-actions">
           {total > 0 && (
@@ -225,7 +254,17 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
             <button
               type="button"
               className="documents-add"
-              onClick={() => setUploadOpen((open) => !open)}
+              onClick={() => {
+                if (!uploadOpen && filteredPerson && !selectedPeople.length)
+                  setSelectedPeople([
+                    {
+                      id: filteredPerson.id,
+                      label: fullName(filteredPerson),
+                      detail: "",
+                    },
+                  ]);
+                setUploadOpen((open) => !open);
+              }}
               aria-expanded={uploadOpen}
             >
               <Plus size={18} /> Добавить PDF
@@ -381,7 +420,11 @@ export function DocumentsCatalog({ mayEdit }: { mayEdit: boolean }) {
         <div className="documents-state documents-empty">
           <BookOpenText size={38} strokeWidth={1.4} aria-hidden="true" />
           <h2>Документов пока нет</h2>
-          <p>Загруженные PDF-файлы появятся здесь после привязки к людям.</p>
+          <p>
+            {personFilter !== null
+              ? "К этому человеку пока не привязан ни один PDF-документ."
+              : "Загруженные PDF-файлы появятся здесь после привязки к людям."}
+          </p>
         </div>
       )}
       {!error && !loading && !documents.length && !!query && (

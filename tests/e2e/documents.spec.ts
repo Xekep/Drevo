@@ -31,6 +31,60 @@ async function samplePdf(count = 3, landscape = false) {
   return done;
 }
 
+test("из карточки человека открываются только его PDF-документы", async ({
+  page,
+}, testInfo) => {
+  const title = `Документ ребёнка ${testInfo.project.name}`;
+  const otherTitle = `Документ супруга ${testInfo.project.name}`;
+  for (const [name, personId] of [
+    [title, "e2e-child"],
+    [otherTitle, "e2e-spouse"],
+  ]) {
+    const response = await page.request.post("/api/documents", {
+      headers: {
+        "Content-Type": "application/pdf",
+        "X-Document-Metadata": encodeURIComponent(
+          JSON.stringify({ title: name, personIds: [personId] }),
+        ),
+      },
+      data: await samplePdf(1),
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto("/people/e2e-child");
+  const panel = page.locator(".inspector-dock");
+  await panel.getByRole("tab", { name: /Источники/ }).click();
+  await panel
+    .getByRole("link", { name: "PDF-документы этого человека" })
+    .click();
+  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
+  await expect(
+    page.locator(".document-item").filter({ hasText: title }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".document-item").filter({ hasText: otherTitle }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "Показать все документы" }).click();
+  await expect(
+    page.locator(".document-item").filter({ hasText: otherTitle }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.locator(".document-item").filter({ hasText: otherTitle }),
+  ).toHaveCount(0);
+  if (testInfo.project.name === "mobile")
+    await page.getByLabel("Меню проекта").click();
+  await page
+    .locator(
+      testInfo.project.name === "mobile" ? ".mobile-sections" : ".nav-sections",
+    )
+    .getByRole("link", { name: "Документы" })
+    .click();
+  await expect(
+    page.locator(".document-item").filter({ hasText: otherTitle }),
+  ).toBeVisible();
+});
+
 test("участник загружает PDF и листает его как книгу", async ({
   page,
 }, testInfo) => {

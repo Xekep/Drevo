@@ -11,6 +11,9 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
   const [view, update] = useState<ArchiveView>(
     () => archiveViewAt(window.location.pathname) || "tree",
   );
+  const [currentPath, updatePath] = useState(
+    () => window.location.pathname + window.location.search,
+  );
   const navigate = useCallback(
     (next: ArchiveView, target?: ArchiveTarget, replace = false) => {
       const path = target ? archiveTargetPath(target) : archivePaths[next];
@@ -22,6 +25,7 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
           path,
         );
       currentUrl.current = path;
+      updatePath(path);
       update(next);
     },
     [],
@@ -33,10 +37,11 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
         return;
       }
       currentUrl.current = window.location.pathname + window.location.search;
+      updatePath(currentUrl.current);
       update(archiveViewAt(window.location.pathname) || "tree");
     };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, [canLeave]);
-  return [view, navigate] as const;
+  return [view, navigate, currentPath] as const;
 }
