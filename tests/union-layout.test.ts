@@ -32,10 +32,11 @@ const person = (
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
-test("the final family routes decide between compact layouts", async () => {
+test("the final family routes decide between layouts within the same bands", async () => {
   const people = [
-    person("a"),
-    person("b"),
+    person("root"),
+    person("a", ["root"]),
+    person("b", ["root"]),
     person("ca", ["a"]),
     person("cb", ["b"]),
   ];
@@ -44,11 +45,11 @@ test("the final family routes decide between compact layouts", async () => {
     const seed = graph.layoutOptions?.["elk.randomSeed"] || "";
     seeds.push(seed);
     const crossed = seed === "1";
-    return {
-      ...graph,
-      children: graph.children?.map((node) => ({
-        ...node,
-        x: node.id.includes('"a"')
+    const children = graph.children!.map((node) => ({
+      ...node,
+      x: node.id.includes('"root"')
+        ? 200
+        : node.id.includes('"a"')
           ? 0
           : node.id.includes('"b"')
             ? 400
@@ -59,25 +60,31 @@ test("the final family routes decide between compact layouts", async () => {
               : crossed
                 ? 0
                 : 400,
-        y: node.id.startsWith("person:") ? 300 : 0,
-      })),
-      edges: graph.edges?.map((edge) => {
-        const childA = edge.targets?.[0]?.includes('"ca"');
-        const sourceX = childA ? 110 : 510,
-          targetX = crossed ? (childA ? 510 : 110) : sourceX;
+      y: Number(node.layoutOptions!["elk.partitioning.partition"]) * 300,
+    }));
+    const ports = new Map(
+      children.flatMap((n) =>
+        n.ports!.map((p) => [p.id, { x: n.x + p.x!, y: n.y + p.y! }]),
+      ),
+    );
+    return {
+      ...graph,
+      children,
+      edges: graph.edges!.map((edge, i) => {
+        const startPoint = ports.get(edge.sources[0])!,
+          endPoint = ports.get(edge.targets[0])!;
+        const y = startPoint.y + 40 + i * 12;
         return {
           ...edge,
           sections: [
             {
               id: `${edge.id}:section`,
-              startPoint: { x: sourceX, y: 120 },
-              bendPoints: crossed
-                ? [
-                    { x: sourceX, y: childA ? 210 : 230 },
-                    { x: targetX, y: childA ? 210 : 230 },
-                  ]
-                : [],
-              endPoint: { x: targetX, y: 300 },
+              startPoint: { ...startPoint },
+              endPoint: { ...endPoint },
+              bendPoints: [
+                { x: startPoint.x, y },
+                { x: endPoint.x, y },
+              ],
             },
           ],
         };
@@ -85,11 +92,12 @@ test("the final family routes decide between compact layouts", async () => {
     };
   });
   assert.deepEqual(seeds, ["1", "15"]);
-  assert.equal(new Map(geometry.positions).get("ca")?.x, 0);
+  const p = new Map(geometry.positions);
+  assert.equal(p.get("ca")!.x, p.get("a")!.x);
   verify(people, geometry);
 });
 
-test("many terminal siblings stay below their own parents in compact local rows", async () => {
+test("terminal siblings share one generation band without folding into lower generations", async () => {
   const children = Array.from({ length: 12 }, (_, i) => ({
     ...person(`child-${i}`, ["a", "b"]),
     birth: String(1950 + i),
@@ -101,54 +109,27 @@ test("many terminal siblings stay below their own parents in compact local rows"
     verify(people, g);
     const positions = new Map(g.positions),
       parent = positions.get("a")!;
-    const childRows = new Set(children.map((p) => positions.get(p.id)!.y));
-    assert.equal(g.siblingGroups!.length, 1);
-    const siblingGroup = g.siblingGroups![0];
+    assert.equal(g.siblingGroups!.length, 0);
+    assert.equal(g.generationBands!.length, 2);
+    const band = g.generationBands![1];
     assert.deepEqual(
-      [...siblingGroup.members].sort(),
+      [...band.members].sort(),
       children.map((c) => c.id).sort(),
     );
     for (const child of children) {
-      const p = positions.get(child.id)!;
-      assert.ok(
-        p.x >= siblingGroup.x &&
-          p.x + 220 <= siblingGroup.x + siblingGroup.width,
-      );
-      assert.ok(
-        p.y >= siblingGroup.y &&
-          p.y + TREE_NODE_HEIGHT <= siblingGroup.y + siblingGroup.height,
-      );
-      // Подпись общей группы не закрывает карточки ни в одном направлении.
-      assert.ok(
-        reverse
-          ? p.y >= siblingGroup.y + 24
-          : p.y + TREE_NODE_HEIGHT <= siblingGroup.y + siblingGroup.height - 24,
-      );
+      const y = positions.get(child.id)!.y;
+      assert.ok(Math.abs(y - parent.y) >= 150);
+      assert.ok(reverse ? y < parent.y : y > parent.y);
     }
     assert.ok(
-      childRows.size > 1,
-      "a large sibling group must not be forced onto one line",
-    );
-    assert.ok(
-      Math.max(...g.positions.map(([, p]) => p.x + 220)) -
-        Math.min(...g.positions.map(([, p]) => p.x)) <
-        1100,
-    );
-    for (const child of children)
-      assert.ok(
-        reverse
-          ? positions.get(child.id)!.y < parent.y
-          : positions.get(child.id)!.y > parent.y,
-      );
-    assert.ok(
       positions.get("child-0")!.x < positions.get("child-1")!.x,
-      "known birth dates order the children",
+      "known birth dates order terminal siblings",
     );
   }
   assert.deepEqual(people, before);
 });
 
-test("broad descendant families use different heights while preserving every card and relation", async () => {
+test("122 people preserve three readable generation bands and compact vertical spacing", async () => {
   const people = [person("a", [], ["b"]), person("b", [], ["a"])];
   for (let i = 0; i < 24; i++) {
     people.push(
@@ -161,15 +142,12 @@ test("broad descendant families use different heights while preserving every car
   const g = await unionGeometry(people);
   verify(people, g);
   const positions = new Map(g.positions);
+  assert.equal(g.generationBands!.length, 3);
   assert.ok(
-    new Set(Array.from({ length: 24 }, (_, i) => positions.get(`c${i}`)!.y))
-      .size > 1,
-  );
-  assert.ok(
-    Math.max(...g.positions.map(([, p]) => p.x + 220)) -
-      Math.min(...g.positions.map(([, p]) => p.x)) <
-      9000,
-    "avoid the former 20,000px strip",
+    Math.max(...g.positions.map(([, p]) => p.y)) -
+      Math.min(...g.positions.map(([, p]) => p.y)) +
+      TREE_NODE_HEIGHT <=
+      500,
   );
   for (let i = 0; i < 24; i++) {
     assert.equal(positions.get(`c${i}`)!.y, positions.get(`s${i}`)!.y);
@@ -199,6 +177,25 @@ function verify(people: LayoutPerson[], g: TreeGeometry) {
     ]),
   );
   assert.deepEqual(actual, expected);
+  const bands = new Map(
+    g.generationBands!.flatMap((band) =>
+      band.members.map((id) => [id, band] as const),
+    ),
+  );
+  assert.equal(bands.size, g.positions.length);
+  for (const [id, p] of g.positions) {
+    const band = bands.get(id)!;
+    assert.ok(
+      p.y >= band.minY && p.y <= band.maxY,
+      `${id} left its generation band`,
+    );
+    assert.equal(band.maxY - band.minY, 60);
+  }
+  for (const branch of g.branches!.filter((b) => b.id.startsWith("child:")))
+    assert.ok(
+      bands.get(branch.source)!.level < bands.get(branch.target)!.level,
+      "parents precede children semantically in either direction",
+    );
   for (let i = 0; i < g.positions.length; i++)
     for (let j = 0; j < i; j++) {
       const a = g.positions[i][1],
@@ -486,4 +483,52 @@ test("portrait cards reserve their full height for siblings, spouses and routed 
     }
   }
   assert.deepEqual(people, before);
+});
+
+test("families can shift inside one band while couples remain aligned", async () => {
+  const people = [
+    person("a"),
+    person("leaf", ["a"]),
+    person("b", ["a"], ["spouse"]),
+    person("spouse"),
+    person("c", ["b", "spouse"]),
+    person("d", ["b", "spouse"]),
+  ];
+  for (const reverse of [false, true]) {
+    const g = await unionGeometry(people, reverse);
+    verify(people, g);
+    const positions = new Map(g.positions);
+    assert.notEqual(positions.get("leaf")!.y, positions.get("b")!.y);
+    assert.equal(positions.get("b")!.y, positions.get("spouse")!.y);
+    assert.deepEqual(
+      new Set(g.generationBands![1].members),
+      new Set(["leaf", "b", "spouse"]),
+    );
+  }
+});
+
+test("disconnected families, repeated marriages and isolates keep common generation bands", async () => {
+  const people = [
+    person("a0"),
+    person("a", ["a0"], ["b", "c"]),
+    person("b"),
+    person("c"),
+    person("ab", ["a", "b"]),
+    person("ac", ["a", "c"]),
+    person("other"),
+    person("other-child", ["other"]),
+    person("alone"),
+  ];
+  const g = await unionGeometry(people);
+  verify(people, g);
+  const bands = new Map(
+    g.generationBands!.flatMap((b) => b.members.map((id) => [id, b.level])),
+  );
+  for (const o of g.occurrences!.filter((o) =>
+    ["a", "b", "c", "other-child"].includes(o.personId),
+  ))
+    assert.equal(bands.get(o.id), 1);
+  assert.equal(bands.get("ab"), 2);
+  assert.equal(bands.get("ac"), 2);
+  assert.equal(bands.get("alone"), 0);
 });

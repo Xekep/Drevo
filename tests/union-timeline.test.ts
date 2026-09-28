@@ -16,6 +16,24 @@ const person = (
   parents: string[] = [],
   spouses: string[] = [],
 ): LayoutPerson => ({ id, birth, parents, spouses });
+
+test("soft tree offsets do not create extra undated rows in chronology", async () => {
+  const people = [
+    person("a"),
+    person("leaf", "", ["a"]),
+    person("b", "", ["a"]),
+    person("c", "", ["b"]),
+  ];
+  const base = await unionGeometry(people, (g) => new ELK().layout(g));
+  const tree = new Map(base.positions);
+  assert.notEqual(tree.get("leaf")!.y, tree.get("b")!.y);
+  for (const reverse of [false, true]) {
+    const chronology = unionTimeline(people, base, reverse);
+    const positions = new Map(chronology.positions);
+    assert.equal(positions.get("leaf")!.y, positions.get("b")!.y);
+    assert.equal(new Set(chronology.positions.map(([, p]) => p.y)).size, 3);
+  }
+});
 async function verify(
   people: LayoutPerson[],
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],

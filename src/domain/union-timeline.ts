@@ -32,7 +32,13 @@ export function unionTimeline(
       .map((p) => Math.floor(dateYear(p.birth) / 10) * 10),
   );
   const undated = occurrences.filter((o) => !known.get(o.personId)!.birth);
-  const rows = [...new Set(undated.map((o) => initial.get(o.id)!.y))].sort(
+  const generations = new Map(
+    base.generationBands?.flatMap((band) =>
+      band.members.map((id) => [id, band.level] as const),
+    ),
+  );
+  const row = (id: string) => generations.get(id) ?? initial.get(id)!.y;
+  const rows = [...new Set(undated.map((o) => row(o.id)))].sort(
     (a, b) => a - b,
   );
   const rowY = new Map(
@@ -47,7 +53,7 @@ export function unionTimeline(
         x: initial.get(o.id)!.x,
         y: birth
           ? offset + yearY(dateYear(birth), start, reverse)
-          : rowY.get(initial.get(o.id)!.y)!,
+          : rowY.get(row(o.id))!,
       };
     })
     .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));

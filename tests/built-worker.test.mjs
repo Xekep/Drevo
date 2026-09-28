@@ -124,11 +124,13 @@ test(
               (reversed ? 2035 - Number(p.birth) : Number(p.birth) - 1830) * 8,
           );
       }
-      assert.ok(
-        new Set(
-          Array.from({ length: 18 }, (_, i) => positions.get(`child-${i}`).y),
-        ).size > 1,
-      );
+      assert.equal(packed.generationBands.length, 3);
+      for (const band of packed.generationBands) {
+        for (const id of band.members) {
+          const y = positions.get(id).y;
+          assert.ok(y >= band.minY && y <= band.maxY);
+        }
+      }
       const focusedIds = new Set([
         "child-0",
         "spouse-0",
