@@ -110,6 +110,7 @@ try {
       errors: Record<string, number> = {};
     let next = 0,
       succeeded = 0;
+    let unexpectedError: unknown;
     const cpu = process.cpuUsage(),
       started = performance.now();
     await Promise.all(
@@ -121,11 +122,23 @@ try {
             await work(index);
             succeeded++;
           } catch (error) {
-            const code =
-              error && typeof error === "object" && "code" in error
+            const queueTimeout =
+              error instanceof Error &&
+              error.message === "timeout exceeded when trying to connect";
+            const code = queueTimeout
+              ? "connection_queue_timeout"
+              : error && typeof error === "object" && "code" in error
                 ? String(error.code)
                 : "error";
             errors[code] = (errors[code] || 0) + 1;
+            // This intentionally excessive read burst measures capacity. A known
+            // queue timeout is a result, never a swallowed write/validation failure.
+            if (!(
+              queueTimeout &&
+              concurrency === 100 &&
+              ["full_archive_read", "tree_overview"].includes(operation)
+            ))
+              unexpectedError ??= error;
           } finally {
             durations.push(performance.now() - began);
           }
@@ -144,6 +157,7 @@ try {
         samples,
         succeeded,
         errors,
+        overloaded: !!errors.connection_queue_timeout,
         p50Ms: percentile(0.5),
         p95Ms: percentile(0.95),
         p99Ms: percentile(0.99),
@@ -153,7 +167,8 @@ try {
         nodeLifetimePeakRssKiB: process.resourceUsage().maxRSS,
       }),
     );
-    assert.equal(succeeded, samples, `${operation}: see error counters above`);
+    if (unexpectedError) throw unexpectedError;
+    assert.ok(succeeded > 0, `${operation}: no successful requests`);
   }
   // Warm connections and queries; record small closed-loop batches, not user capacity.
   for (const archive of archives) {

@@ -52,6 +52,7 @@ jobs:
           PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_runtime_ci node --experimental-strip-types tests/integration/postgres-runtime.ts
       - name: Measure concurrent runtime on synthetic archives
         run: |
+          set -euo pipefail
           node --input-type=module <<'NODE'
           import pg from 'pg';
           const client = new pg.Client();
