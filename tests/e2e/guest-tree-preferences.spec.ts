@@ -48,6 +48,8 @@ for (const mode of ["shared", "public"] as const)
     await page.goto(mode === "shared" ? `/s/${token}` : "/tree");
     const canvas = page.locator(".tree-canvas");
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+    await expect(page.locator(".flow-person").first()).toBeVisible();
+    await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
     const gear = page.getByRole("button", { name: "Настройки древа" });
     await expect(gear).toBeVisible();
     const gearBox = (await gear.boundingBox())!;
@@ -88,6 +90,8 @@ for (const mode of ["shared", "public"] as const)
     await page.reload();
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
+    await expect(page.locator(".flow-person").first()).toBeVisible();
+    await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
     await gear.click();
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
