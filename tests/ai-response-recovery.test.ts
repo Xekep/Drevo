@@ -166,7 +166,7 @@ for (const failure of [
       if (failure === "timeout") {
         const chats = aiChatStore(app.archive.db);
         for (let index = 0; index < 12; index++)
-          chats.append(first.chatId, "user", "ку");
+          await chats.append(first.chatId, "user", "ку");
       }
       const response = await fetch(base + "/api/ai/chat/stream", {
         method: "POST",

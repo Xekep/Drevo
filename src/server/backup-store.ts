@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type {
   BackupRecord,
@@ -57,34 +57,41 @@ export function validateBackupSettings(value: unknown): BackupSettings {
   };
 }
 
-export function backupStore(db: DatabaseSync, now = Date.now) {
+export async function backupStore(db: StoreDatabase, now = Date.now) {
   const audit = auditStore(db);
-  db.prepare("INSERT OR IGNORE INTO backup_settings VALUES(1,?,?)").run(
-    JSON.stringify(defaults),
-    now() + 24 * hour,
-  );
-  function settings() {
-    const row = db
-      .prepare("SELECT data,next_run FROM backup_settings WHERE id=1")
-      .get()!;
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO backup_settings VALUES(1,?,?)",
+      "INSERT INTO backup_settings(id,data,next_run) VALUES(1,?,?) ON CONFLICT DO NOTHING",
+    )
+    .run(JSON.stringify(defaults), now() + 24 * hour);
+  async function settings() {
+    const row = (await db
+      .prepare(
+        "SELECT data,next_run FROM backup_settings WHERE id=1",
+        "SELECT data,next_run FROM backup_settings WHERE id=1",
+      )
+      .get())!;
     return {
       value: JSON.parse(String(row.data)) as BackupSettings,
       next: Number(row.next_run),
     };
   }
-  function save(value: unknown, actor: ArchiveUser) {
+  async function save(value: unknown, actor: ArchiveUser) {
     const checked = validateBackupSettings(value),
-      old = settings();
+      old = await settings();
     const next =
       checked.enabled !== old.value.enabled ||
       checked.intervalHours !== old.value.intervalHours
         ? now() + checked.intervalHours * hour
         : old.next;
-    db.prepare("UPDATE backup_settings SET data=?,next_run=? WHERE id=1").run(
-      JSON.stringify(checked),
-      next,
-    );
-    audit.record(
+    await db
+      .prepare(
+        "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
+        "UPDATE backup_settings SET data=?,next_run=? WHERE id=1",
+      )
+      .run(JSON.stringify(checked), next);
+    await audit.record(
       {
         action: "Настроены резервные копии",
         entity: "settings",
@@ -103,9 +110,12 @@ export function backupStore(db: DatabaseSync, now = Date.now) {
     );
     return checked;
   }
-  function record(id: string): BackupRecord {
-    const row = db
-      .prepare("SELECT data FROM backup_catalog WHERE id=?")
+  async function record(id: string): Promise<BackupRecord> {
+    const row = await db
+      .prepare(
+        "SELECT data FROM backup_catalog WHERE id=?",
+        "SELECT data FROM backup_catalog WHERE id=?",
+      )
       .get(id);
     if (!row)
       throw new BackupInputError(
@@ -115,20 +125,23 @@ export function backupStore(db: DatabaseSync, now = Date.now) {
     return r;
   }
 
-  function add(item: BackupRecord) {
-    db.prepare("INSERT OR IGNORE INTO backup_catalog VALUES(?,?,?,?)").run(
-      item.id,
-      item.name,
-      item.createdAt,
-      JSON.stringify(item),
-    );
-  }
-  function excess(config: BackupSettings) {
-    return db
+  async function add(item: BackupRecord) {
+    await db
       .prepare(
-        "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC",
+        "INSERT OR IGNORE INTO backup_catalog VALUES(?,?,?,?)",
+        "INSERT INTO backup_catalog(id,name,created_at,data) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
       )
-      .all()
+      .run(item.id, item.name, item.createdAt, JSON.stringify(item));
+  }
+  async function excess(config: BackupSettings) {
+    return (
+      await db
+        .prepare(
+          "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC",
+          "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC",
+        )
+        .all()
+    )
       .map((row) => JSON.parse(String(row.data)) as BackupRecord)
       .filter(
         (item) =>
@@ -145,29 +158,49 @@ export function backupStore(db: DatabaseSync, now = Date.now) {
     record,
     add,
     excess,
-    list(offset: number) {
+    async list(offset: number) {
       return {
-        records: db
-          .prepare(
-            "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?",
-          )
-          .all(offset)
-          .map((row) => JSON.parse(String(row.data)) as BackupRecord),
+        records: (
+          await db
+            .prepare(
+              "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?",
+              "SELECT data FROM backup_catalog ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?",
+            )
+            .all(offset)
+        ).map((row) => JSON.parse(String(row.data)) as BackupRecord),
         total: Number(
-          db.prepare("SELECT count(*) AS n FROM backup_catalog").get()!.n,
+          (await db
+            .prepare(
+              "SELECT count(*) AS n FROM backup_catalog",
+              "SELECT count(*) AS n FROM backup_catalog",
+            )
+            .get())!.n,
         ),
       };
     },
-    forget(id: string) {
-      db.prepare("DELETE FROM backup_catalog WHERE id=?").run(id);
+    async forget(id: string) {
+      await db
+        .prepare(
+          "DELETE FROM backup_catalog WHERE id=?",
+          "DELETE FROM backup_catalog WHERE id=?",
+        )
+        .run(id);
     },
-    schedule(next: number) {
-      db.prepare("UPDATE backup_settings SET next_run=? WHERE id=1").run(next);
+    async schedule(next: number) {
+      await db
+        .prepare(
+          "UPDATE backup_settings SET next_run=? WHERE id=1",
+          "UPDATE backup_settings SET next_run=? WHERE id=1",
+        )
+        .run(next);
     },
-    retryBy(next: number) {
-      db.prepare(
-        "UPDATE backup_settings SET next_run=min(next_run,?) WHERE id=1",
-      ).run(next);
+    async retryBy(next: number) {
+      await db
+        .prepare(
+          "UPDATE backup_settings SET next_run=min(next_run,?) WHERE id=1",
+          "UPDATE backup_settings SET next_run=min(next_run,?) WHERE id=1",
+        )
+        .run(next);
     },
   };
 }

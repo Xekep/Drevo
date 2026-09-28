@@ -71,31 +71,31 @@ const seed = (): Family => ({
   photos: [],
 });
 
-test("share membership is fixed, excludes outside edges and metadata, token is hashed and survives reopen", () => {
+test("share membership is fixed, excludes outside edges and metadata, token is hashed and survives reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-share-")),
     path = join(directory, "archive.sqlite");
-  let archive = openArchive(path, seed());
+  let archive = await openArchive(path, seed());
   try {
     const shares = sharesStore(archive.db),
       now = Date.now();
-    const result = shares.create(
+    const result = await shares.create(
       {
         title: "Семья",
         anchorId: "child",
         personIds: ["child", "mother"],
         durationHours: 1,
       },
-      archive.read().family,
+      (await archive.read()).family,
       actor,
       now,
     );
     assert.equal(result.token.length, 43);
     assert.ok(
       !JSON.stringify(
-        archive.db.prepare("SELECT * FROM share_links").all(),
+        await archive.db.prepare("SELECT * FROM share_links").all(),
       ).includes(result.token),
     );
-    const family = archive.read().family;
+    const family = (await archive.read()).family;
     family.people.push(person("new"));
     const projection = sharedFamily(family, result.share, result.token);
     assert.deepEqual(
@@ -108,45 +108,46 @@ test("share membership is fixed, excludes outside edges and metadata, token is h
     assert.equal(projection.description, "");
     assert.deepEqual(projection.photos, []);
     assert.deepEqual(projection.links, []);
-    assert.equal(shares.get(result.token, now + 3600000), null);
-    archive.close();
-    archive = openArchive(path, seed());
+    assert.equal(await shares.get(result.token, now + 3600000), null);
+    await archive.close();
+    archive = await openArchive(path, seed());
     const reopened = sharesStore(archive.db);
-    assert.equal(reopened.get(result.token)?.createdName, actor.name);
-    reopened.revoke(result.share.id, actor);
-    assert.equal(reopened.get(result.token), null);
-    assert.throws(() =>
-      reopened.create(
-        {
-          title: "Семья",
-          anchorId: "child",
-          personIds: ["child"],
-          durationHours: 1,
-        },
-        family,
-        { ...actor, role: "relative" },
-      ),
+    assert.equal((await reopened.get(result.token))?.createdName, actor.name);
+    await reopened.revoke(result.share.id, actor);
+    assert.equal(await reopened.get(result.token), null);
+    await assert.rejects(
+      async () =>
+        await reopened.create(
+          {
+            title: "Семья",
+            anchorId: "child",
+            personIds: ["child"],
+            durationHours: 1,
+          },
+          family,
+          { ...actor, role: "relative" },
+        ),
     );
   } finally {
-    archive.close();
+    await archive.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("audit keeps field values and relationship participants, remains atomic, no invented old author", () => {
-  const archive = openArchive(":memory:", seed()),
+test("audit keeps field values and relationship participants, remains atomic, no invented old author", async () => {
+  const archive = await openArchive(":memory:", seed()),
     audit = auditStore(archive.db);
   try {
-    assert.equal(audit.list().items.length, 0);
-    const current = archive.read(),
+    assert.equal((await audit.list()).items.length, 0);
+    const current = await archive.read(),
       updated = structuredClone(current.family);
     updated.people[2].biography = "Уточнённая история";
     updated.people[2].events = [
       { id: "event", type: "residence", date: "2000", place: "Казань" },
     ];
     updated.people[2].parents = ["father"];
-    archive.write(updated, current.revision, actor);
-    const item = audit.list({ personId: "child" }).items[0];
+    await archive.write(updated, current.revision, actor);
+    const item = (await audit.list({ personId: "child" })).items[0];
     assert.equal(item.actorName, actor.name);
     assert.ok(Date.parse(item.at));
     assert.ok(
@@ -159,7 +160,10 @@ test("audit keeps field values and relationship participants, remains atomic, no
         (d) => d.field === "События жизни" && d.after.includes("Казань"),
       ),
     );
-    assert.equal(audit.list({ personId: "mother" }).items[0].id, item.id);
+    assert.equal(
+      (await audit.list({ personId: "mother" })).items[0].id,
+      item.id,
+    );
     assert.equal(archiveOverview(updated).people[2].events, undefined);
     assert.deepEqual(
       personDetails(updated.people[2]).events,
@@ -170,20 +174,20 @@ test("audit keeps field values and relationship participants, remains atomic, no
         .kind,
       "event",
     );
-    const committed = archive.read();
-    archive.db.exec(
+    const committed = await archive.read();
+    await archive.db.exec(
       "CREATE TRIGGER reject_audit BEFORE INSERT ON audit_entries BEGIN SELECT RAISE(ABORT,'audit unavailable'); END",
     );
     const changed = structuredClone(committed.family);
     changed.people[2].name = "Другое имя";
-    assert.throws(
-      () => archive.write(changed, committed.revision, actor),
+    await assert.rejects(
+      async () => await archive.write(changed, committed.revision, actor),
       /audit unavailable/,
     );
-    assert.deepEqual(archive.read(), committed);
-    assert.equal(audit.list().items.length, 1);
+    assert.deepEqual(await archive.read(), committed);
+    assert.equal((await audit.list()).items.length, 1);
   } finally {
-    archive.close();
+    await archive.close();
   }
 });
 
@@ -385,18 +389,18 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
       method: "POST",
       headers: {
         "X-Drevo-Upload": "1",
-        "If-Match": String(app.archive.read().revision),
+        "If-Match": String((await app.archive.read()).revision),
       },
       body: image,
     });
     family.people[2].photo = (await uploaded.json()).url;
-    app.archive.write(family, app.archive.read().revision);
-    const issue = () =>
+    await app.archive.write(family, (await app.archive.read()).revision);
+    const issue = async () =>
       request("/api/shares", admin, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "If-Match": String(app.archive.read().revision),
+          "If-Match": String((await app.archive.read()).revision),
         },
         body: JSON.stringify({
           title: "Часть семьи",
@@ -457,7 +461,7 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     assert.equal((await request(`/api/shared/${token}`)).status, 410);
     assert.equal((await request(portrait)).status, 410);
     const expired = await (await issue()).json();
-    app.archive.db
+    await app.archive.db
       .prepare("UPDATE share_links SET expires_at=? WHERE id=?")
       .run("2000-01-01T00:00:00.000Z", expired.share.id);
     assert.equal(
@@ -486,9 +490,9 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
       });
     assert.equal((await apply(reader)).status, 403);
     assert.equal((await apply(admin)).status, 200);
-    assert.equal(app.archive.read().family.people.length, 6);
+    assert.equal((await app.archive.read()).family.people.length, 6);
     assert.equal(
-      app.archive.read().family.people[2].photo,
+      (await app.archive.read()).family.people[2].photo,
       family.people[2].photo,
     );
     assert.equal((await apply(admin)).status, 400);

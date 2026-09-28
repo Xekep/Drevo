@@ -13,9 +13,9 @@ export function placesHttp({
   geocoding,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
-  visibility: ReturnType<typeof settingsStore>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
+  visibility: Awaited<ReturnType<typeof settingsStore>>;
   geocoding: GeocodingStore;
   publicOrigin?: string;
 }) {
@@ -36,8 +36,12 @@ export function placesHttp({
     if (url.pathname !== "/api/places/locate") return false;
     if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });
 
-    const access = visibility.read();
-    if (!auth.canRead(req) && !access.publicTree && !access.publicAlbums)
+    const access = await visibility.read();
+    if (
+      !(await auth.canRead(req)) &&
+      !access.publicTree &&
+      !access.publicAlbums
+    )
       return json(res, 401, { error: "Войдите для просмотра мест семьи" });
     if (
       req.headers["x-drevo-map"] !== "1" ||
@@ -46,25 +50,28 @@ export function placesHttp({
       return json(res, 403, { error: "Откройте карту в архиве" });
 
     const query = (url.searchParams.get("q") || "").trim();
-    const permittedQuery = () => {
-      if (auth.canEdit(req)) return true;
-      const settings = visibility.read(),
-        { family } = archive.read(),
-        people = auth.canRead(req) || settings.publicTree ? family.people : [],
+    const permittedQuery = async () => {
+      if (await auth.canEdit(req)) return true;
+      const settings = await visibility.read(),
+        { family } = await archive.read(),
+        people =
+          (await auth.canRead(req)) || settings.publicTree ? family.people : [],
         photos =
-          auth.canRead(req) || settings.publicAlbums ? family.photos : [];
+          (await auth.canRead(req)) || settings.publicAlbums
+            ? family.photos
+            : [];
       return familyPlaces(people, photos).some(
         (place) => place.key === placeKey(query),
       );
     };
 
-    if (!permittedQuery())
+    if (!(await permittedQuery()))
       return json(res, 403, {
         error: "Можно искать только места из доступного архива",
       });
     try {
       const result = await geocoding.locate(query);
-      if (!permittedQuery())
+      if (!(await permittedQuery()))
         return json(res, 403, { error: "Доступ к этому месту закрыт" });
       return json(res, 200, result);
     } catch (error) {

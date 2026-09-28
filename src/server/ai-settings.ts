@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 import { decryptAiSecret, encryptAiSecret } from "./ai-secret.ts";
@@ -71,29 +71,33 @@ function integerValue(value: unknown, label: string, min: number, max: number) {
   return value;
 }
 
-export function aiSettingsStore(db: DatabaseSync) {
+export async function aiSettingsStore(db: StoreDatabase) {
   const audit = auditStore(db);
-  db.prepare(
-    `INSERT OR IGNORE INTO ai_settings(
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO ai_settings(
       id,enabled,model,folder_id,api_key_ciphertext,
       requests_per_minute,daily_requests,daily_tokens
     ) VALUES(1,1,'','','',6,100,250000)`,
-  ).run();
+      "INSERT INTO ai_settings(\n      id,enabled,model,folder_id,api_key_ciphertext,\n      requests_per_minute,daily_requests,daily_tokens\n    ) VALUES(1,1,'','','',6,100,250000) ON CONFLICT DO NOTHING",
+    )
+    .run();
 
-  function row() {
-    return db
+  async function row() {
+    return (await db
       .prepare(
         `SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,
                 requests_per_minute,daily_requests,daily_tokens,
                 compaction_enabled,compact_threshold_tokens,
                 automatic_truncation,max_tool_iterations
          FROM ai_settings WHERE id=1`,
+        "SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations\n         FROM ai_settings WHERE id=1",
       )
-      .get() as AiSettingsRow;
+      .get()) as AiSettingsRow;
   }
 
-  function read(): AiSettings {
-    const value = row();
+  async function read(): Promise<AiSettings> {
+    const value = await row();
     return {
       enabled: !!value.enabled,
       webSearchEnabled:
@@ -113,8 +117,8 @@ export function aiSettingsStore(db: DatabaseSync) {
     };
   }
 
-  function savedApiKey() {
-    const ciphertext = String(row().api_key_ciphertext || "");
+  async function savedApiKey() {
+    const ciphertext = String((await row()).api_key_ciphertext || "");
     if (!ciphertext) return { value: "", stored: false, error: "" };
     try {
       return {
@@ -137,7 +141,7 @@ export function aiSettingsStore(db: DatabaseSync) {
   return {
     read,
     savedApiKey,
-    write(value: unknown, actor: ArchiveUser) {
+    async write(value: unknown, actor: ArchiveUser) {
       if (!value || typeof value !== "object" || Array.isArray(value))
         throw new Error("Некорректные настройки AI Studio");
       const raw = value as Record<string, unknown>;
@@ -158,8 +162,8 @@ export function aiSettingsStore(db: DatabaseSync) {
       )
         throw new Error("Некорректные настройки контекста AI Studio");
 
-      const before = read(),
-        current = row(),
+      const before = await read(),
+        current = await row(),
         newApiKey = raw.apiKey === undefined ? "" : apiKeyValue(raw.apiKey),
         clearApiKey = raw.clearApiKey === true;
       let ciphertext = String(current.api_key_ciphertext || "");
@@ -215,29 +219,32 @@ export function aiSettingsStore(db: DatabaseSync) {
             : integerValue(raw.maxToolIterations, "Шагов инструментов", 1, 20),
       };
 
-      db.prepare(
-        `UPDATE ai_settings SET
+      await db
+        .prepare(
+          `UPDATE ai_settings SET
           enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
           requests_per_minute=?,daily_requests=?,daily_tokens=?,
           compaction_enabled=?,compact_threshold_tokens=?,
           automatic_truncation=?,max_tool_iterations=?
          WHERE id=1`,
-      ).run(
-        Number(afterInput.enabled),
-        Number(afterInput.webSearchEnabled),
-        afterInput.model,
-        afterInput.folderId,
-        ciphertext,
-        afterInput.requestsPerMinute,
-        afterInput.dailyRequests,
-        afterInput.dailyTokens,
-        Number(afterInput.compactionEnabled),
-        afterInput.compactThresholdTokens,
-        Number(afterInput.automaticTruncation),
-        afterInput.maxToolIterations,
-      );
+          "UPDATE ai_settings SET\n          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?\n         WHERE id=1",
+        )
+        .run(
+          Number(afterInput.enabled),
+          Number(afterInput.webSearchEnabled),
+          afterInput.model,
+          afterInput.folderId,
+          ciphertext,
+          afterInput.requestsPerMinute,
+          afterInput.dailyRequests,
+          afterInput.dailyTokens,
+          Number(afterInput.compactionEnabled),
+          afterInput.compactThresholdTokens,
+          Number(afterInput.automaticTruncation),
+          afterInput.maxToolIterations,
+        );
 
-      const after = read(),
+      const after = await read(),
         details = [
           ...(before.enabled !== after.enabled
             ? [
@@ -295,7 +302,7 @@ export function aiSettingsStore(db: DatabaseSync) {
           ),
         ];
       if (details.length)
-        audit.record(
+        await audit.record(
           {
             action: "Изменены настройки ИИ",
             entity: "settings",
@@ -311,9 +318,11 @@ export function aiSettingsStore(db: DatabaseSync) {
   };
 }
 
-export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
-  const stored = settings.read(),
-    savedSecret = settings.savedApiKey(),
+export async function aiRuntimeConfig(
+  settings: Awaited<ReturnType<typeof aiSettingsStore>>,
+) {
+  const stored = await settings.read(),
+    savedSecret = await settings.savedApiKey(),
     envApiKey = process.env.YANDEX_AI_API_KEY?.trim() || "",
     envFolderId = process.env.YANDEX_AI_FOLDER_ID?.trim() || "",
     envModel = process.env.YANDEX_AI_MODEL?.trim() || "",
@@ -379,8 +388,10 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
   };
 }
 
-export function publicAiStatus(settings: ReturnType<typeof aiSettingsStore>) {
-  const runtime = aiRuntimeConfig(settings);
+export async function publicAiStatus(
+  settings: Awaited<ReturnType<typeof aiSettingsStore>>,
+) {
+  const runtime = await aiRuntimeConfig(settings);
   return {
     enabled: runtime.enabled,
     webSearchEnabled: runtime.webSearchEnabled,

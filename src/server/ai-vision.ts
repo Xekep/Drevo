@@ -9,7 +9,9 @@ import {
 export function aiVision(fetcher: typeof fetch) {
   let visionModelCache:
     { key: string; modelUri: string; expiresAt: number } | undefined;
-  function providerHeaders(runtime: ReturnType<typeof aiRuntimeConfig>) {
+  function providerHeaders(
+    runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
+  ) {
     return {
       Authorization: `Api-Key ${runtime.apiKey}`,
       "Content-Type": "application/json",
@@ -17,7 +19,9 @@ export function aiVision(fetcher: typeof fetch) {
     };
   }
 
-  async function visionModelUri(runtime: ReturnType<typeof aiRuntimeConfig>) {
+  async function visionModelUri(
+    runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
+  ) {
     const folderId =
         runtime.folderId ||
         /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
@@ -53,7 +57,7 @@ export function aiVision(fetcher: typeof fetch) {
   async function analyzeImage(
     question: string,
     dataUrl: string,
-    runtime: ReturnType<typeof aiRuntimeConfig>,
+    runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
     modelUri: string,
     signal: AbortSignal,
   ) {

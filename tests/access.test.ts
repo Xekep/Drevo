@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -15,45 +16,45 @@ import {
   type Family,
 } from "../src/domain/index.ts";
 
-test("first Yandex account becomes admin once; roles persist and last admin is protected", () => {
+test("first Yandex account becomes admin once; roles persist and last admin is protected", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-users-")),
     path = join(dir, "users.sqlite");
   let db = new DatabaseSync(path);
   try {
     initializeArchiveSchema(db);
-    let store = userStore(db);
-    const a = store.register("a", "Первый"),
-      b = store.register("b", "Второй");
+    let store = await userStore(storeDatabase(db));
+    const a = await store.register("a", "Первый"),
+      b = await store.register("b", "Второй");
     assert.equal(a.role, "admin");
     assert.equal(b.role, "reader");
-    assert.throws(() => store.setRole(a, a.id, "reader"));
-    assert.throws(() => store.setRole(b, b.id, "admin"));
-    store.setRole(a, b.id, "admin");
-    store.setRole(a, a.id, "relative");
-    assert.equal(store.register(a.id, "Новое имя").role, "relative");
+    await assert.rejects(async () => await store.setRole(a, a.id, "reader"));
+    await assert.rejects(async () => await store.setRole(b, b.id, "admin"));
+    await store.setRole(a, b.id, "admin");
+    await store.setRole(a, a.id, "relative");
+    assert.equal((await store.register(a.id, "Новое имя")).role, "relative");
     db.close();
     db = new DatabaseSync(path);
-    store = userStore(db);
-    assert.equal(store.register("c", "Третий").role, "reader");
-    assert.equal(store.get(b.id)!.role, "admin");
+    store = await userStore(storeDatabase(db));
+    assert.equal((await store.register("c", "Третий")).role, "reader");
+    assert.equal((await store.get(b.id))!.role, "admin");
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("participants paginate by stable cursor and deleting a member revokes sessions", () => {
+test("participants paginate by stable cursor and deleting a member revokes sessions", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-user-pages-"));
   const db = new DatabaseSync(join(dir, "users.sqlite"));
   try {
     initializeArchiveSchema(db);
-    const store = userStore(db);
-    const admin = store.register("admin", "Администратор");
+    const store = await userStore(storeDatabase(db));
+    const admin = await store.register("admin", "Администратор");
     for (let index = 0; index < 45; index++)
-      store.register(`member-${index}`, `Участник ${index}`);
-    const first = store.listPage(20);
-    const second = store.listPage(20, first.next!);
-    const third = store.listPage(20, second.next!);
+      await store.register(`member-${index}`, `Участник ${index}`);
+    const first = await store.listPage(20);
+    const second = await store.listPage(20, first.next!);
+    const third = await store.listPage(20, second.next!);
     assert.deepEqual(
       [first.users.length, second.users.length, third.users.length],
       [20, 20, 6],
@@ -67,16 +68,19 @@ test("participants paginate by stable cursor and deleting a member revokes sessi
       ).size,
       46,
     );
-    assert.throws(
-      () => store.listPage(20, "bad cursor"),
+    await assert.rejects(
+      async () => await store.listPage(20, "bad cursor"),
       /Некорректная страница/,
     );
-    assert.throws(() => store.remove(admin, admin.id), /собственный аккаунт/);
+    await assert.rejects(
+      async () => await store.remove(admin, admin.id),
+      /собственный аккаунт/,
+    );
     db.prepare(
       "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
     ).run("test-token", "member-1", Date.now() + 10000);
-    store.remove(admin, "member-1");
-    assert.equal(store.get("member-1"), null);
+    await store.remove(admin, "member-1");
+    assert.equal(await store.get("member-1"), null);
     assert.equal(
       db
         .prepare(
@@ -85,9 +89,12 @@ test("participants paginate by stable cursor and deleting a member revokes sessi
         .get()!.n,
       0,
     );
-    assert.equal(store.listPage(20).total, 45);
-    assert.equal(store.register("member-1", "Вернулся").approved, false);
-    assert.equal(store.listPage(20).total, 46);
+    assert.equal((await store.listPage(20)).total, 45);
+    assert.equal(
+      (await store.register("member-1", "Вернулся")).approved,
+      false,
+    );
+    assert.equal((await store.listPage(20)).total, 46);
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -672,7 +679,9 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       publicAlbums: true,
     });
     publicData = await request("/api/family").then((r) => r.json());
-    const archiveSettings = await request("/api/settings", admin).then((r) => r.json());
+    const archiveSettings = await request("/api/settings", admin).then((r) =>
+      r.json(),
+    );
     assert.equal(
       archiveSettings.reverseTimeline,
       true,

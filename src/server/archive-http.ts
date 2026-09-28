@@ -39,7 +39,7 @@ import { personDiscussionHttp } from "./person-discussion-http.ts";
 import { treePreferencesStore } from "./tree-preferences.ts";
 import { treePreferencesHttp } from "./tree-preferences-http.ts";
 
-export function archiveHttp({
+export async function archiveHttp({
   archive,
   auth,
   media,
@@ -52,11 +52,11 @@ export function archiveHttp({
   geocoding,
   restores,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
-  visibility: ReturnType<typeof settingsStore>;
+  visibility: Awaited<ReturnType<typeof settingsStore>>;
   publicOrigin?: string;
   serveStatic: ReturnType<typeof productionStaticHttp>;
   aiFetch?: typeof fetch;
@@ -67,7 +67,7 @@ export function archiveHttp({
   const tokens = mcpTokenStore(archive.db);
   const mcpUsage = mcpUsageStore(archive.db);
   const suggestions = researchSuggestionStore(archive.db);
-  const aiSettings = aiSettingsStore(archive.db);
+  const aiSettings = await aiSettingsStore(archive.db);
   const aiUsage = aiUsageStore(archive.db);
   const researchCatalog = researchCatalogStore(archive.db);
   const treePreferences = treePreferencesStore(archive.db);
@@ -122,7 +122,7 @@ export function archiveHttp({
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
     auth,
-    users: userStore(archive.db),
+    users: await userStore(archive.db),
     visibility,
     publicOrigin,
   });
@@ -183,7 +183,7 @@ export function archiveHttp({
     archive,
   });
 
-  return async (
+  const handle = async (
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
@@ -211,4 +211,5 @@ export function archiveHttp({
     if (await publicSharing(req, res, url)) return true;
     return await serveStatic(req, res, url);
   };
+  return Object.assign(handle, { close: researchAi.close });
 }

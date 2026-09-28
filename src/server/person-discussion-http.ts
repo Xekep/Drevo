@@ -49,8 +49,8 @@ export function personDiscussionHttp({
   auth,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
   const db = archive.db;
@@ -59,6 +59,7 @@ export function personDiscussionHttp({
     `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
        FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
       WHERE c.id=? AND c.person_id=?`,
+    "SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text\n       FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
   );
   const present = (
     row: CommentRow,
@@ -81,7 +82,7 @@ export function personDiscussionHttp({
         url.pathname,
       );
     if (!match) return false;
-    if (!auth.canRead(req))
+    if (!(await auth.canRead(req)))
       return json(res, 401, { error: "Войдите, чтобы открыть обсуждение" });
     let personId: string;
     try {
@@ -89,10 +90,15 @@ export function personDiscussionHttp({
     } catch {
       return json(res, 400, { error: "Некорректный адрес человека" });
     }
-    const user = auth.currentUser(req)!;
+    const user = (await auth.currentUser(req))!;
     const canSee = isScopedUser(user)
-      ? visiblePersonIds(archive.read().family, user).has(personId)
-      : !!db.prepare("SELECT 1 FROM people WHERE id=?").get(personId);
+      ? visiblePersonIds((await archive.read()).family, user).has(personId)
+      : !!(await db
+          .prepare(
+            "SELECT 1 FROM people WHERE id=?",
+            "SELECT 1 FROM people WHERE id=?",
+          )
+          .get(personId));
     if (!canSee) return json(res, 404, { error: "Человек не найден" });
 
     if (req.method === "GET" && !match[2]) {
@@ -102,13 +108,14 @@ export function personDiscussionHttp({
       const before = rawBefore ? Number(rawBefore) : Number.MAX_SAFE_INTEGER;
       if (!Number.isSafeInteger(before))
         return json(res, 400, { error: "Некорректная страница" });
-      const rows = db
+      const rows = (await db
         .prepare(
           `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
              FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
             WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
+          "SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text\n             FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
         )
-        .all(personId, before, PAGE_SIZE + 1) as CommentRow[];
+        .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
       return json(res, 200, {
         items: page.map((row) =>
@@ -132,29 +139,29 @@ export function personDiscussionHttp({
       }
       const now = Date.now();
       let id = 0;
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        const recent = db
+      const changed = await db.transaction(async () => {
+        const recent = (await db
           .prepare(
             "SELECT count(*) AS count FROM audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
+            "SELECT count(*) AS count FROM archive_audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
           )
-          .get(user.id, new Date(now - 60_000).toISOString()) as {
+          .get(user.id, new Date(now - 60_000).toISOString())) as {
           count: number;
         };
         if (recent.count >= 5) {
-          db.exec("ROLLBACK");
-          return json(res, 429, {
-            error: "Подождите минуту перед новым сообщением",
-          });
+          return false;
         }
         id = Number(
-          db
-            .prepare(
-              "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
-            )
-            .run(personId, user.id, now, text).lastInsertRowid,
+          (
+            await db
+              .prepare(
+                "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
+                "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?) RETURNING id",
+              )
+              .run(personId, user.id, now, text)
+          ).lastInsertRowid,
         );
-        audit.record(
+        await audit.record(
           {
             action: "Добавлено сообщение в обсуждение",
             entity: "person_comment",
@@ -165,11 +172,13 @@ export function personDiscussionHttp({
           },
           user,
         );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+
+        return true;
+      });
+      if (!changed)
+        return json(res, 429, {
+          error: "Подождите минуту перед новым сообщением",
+        });
       return json(res, 201, {
         item: present(
           {
@@ -191,22 +200,23 @@ export function personDiscussionHttp({
       const id = Number(match[2]);
       if (!Number.isSafeInteger(id))
         return json(res, 400, { error: "Некорректное сообщение" });
-      const row = comment.get(id, personId) as CommentRow | undefined;
+      const row = (await comment.get(id, personId)) as CommentRow | undefined;
       if (!row) return json(res, 404, { error: "Сообщение не найдено" });
       if (row.author_id !== user.id && user.role !== "admin")
         return json(res, 403, {
           error: "Удалить сообщение может автор или администратор",
         });
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        const deleted = db
-          .prepare("DELETE FROM person_comments WHERE id=? AND person_id=?")
+      const changed = await db.transaction(async () => {
+        const deleted = await db
+          .prepare(
+            "DELETE FROM person_comments WHERE id=? AND person_id=?",
+            "DELETE FROM person_comments WHERE id=? AND person_id=?",
+          )
           .run(id, personId);
         if (deleted.changes !== 1) {
-          db.exec("ROLLBACK");
-          return json(res, 404, { error: "Сообщение не найдено" });
+          return false;
         }
-        audit.record(
+        await audit.record(
           {
             action: "Удалено сообщение из обсуждения",
             entity: "person_comment",
@@ -217,11 +227,10 @@ export function personDiscussionHttp({
           },
           user,
         );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+
+        return true;
+      });
+      if (!changed) return json(res, 404, { error: "Сообщение не найдено" });
       return json(res, 200, { deleted: true });
     }
     return json(res, 405, { error: "Метод не поддерживается" });

@@ -65,8 +65,8 @@ export function familyChangesHttp({
   auth,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -97,8 +97,8 @@ export function familyChangesHttp({
       return json(res, 403, {
         error: "Сохранение разрешено только со страницы архива",
       });
-    if (!auth.canEdit(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.canEdit(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "You do not have editing access",
       });
     if (!req.headers["content-type"]?.startsWith("application/json"))
@@ -121,7 +121,7 @@ export function familyChangesHttp({
           return json(res, 413, { error: "Максимальный размер — 8 МБ" });
         chunks.push(Buffer.from(chunk));
       }
-      const actor = auth.currentUser(req);
+      const actor = await auth.currentUser(req);
       if (!actor || actor.role === "reader")
         throw new ForbiddenError("Editing access is no longer available");
       if (full && isScopedUser(actor))
@@ -130,10 +130,11 @@ export function familyChangesHttp({
         );
 
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (full) return json(res, 200, archive.write(body, revision, actor));
+      if (full)
+        return json(res, 200, await archive.write(body, revision, actor));
 
       const changes = parseChanges(body);
-      const patched = archive.patchPeople(changes, revision, actor);
+      const patched = await archive.patchPeople(changes, revision, actor);
       if (patched) {
         if (
           req.headers.prefer === "return=minimal" &&
@@ -144,10 +145,10 @@ export function familyChangesHttp({
         }
         return json(res, 200, {
           ...patched,
-          family: projectFamilyForUser(archive.read().family, actor),
+          family: projectFamilyForUser((await archive.read()).family, actor),
         });
       }
-      const current = archive.read();
+      const current = await archive.read();
       if (revision > current.revision) return conflict(res);
       if (!changes.length)
         return json(res, 200, {
@@ -158,7 +159,7 @@ export function familyChangesHttp({
 
       const merged = validatedChanges(current.family, changes);
       if (merged.conflicts.length) return conflict(res);
-      const saved = archive.write(
+      const saved = await archive.write(
         merged.family,
         current.revision,
         actor,

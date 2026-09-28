@@ -23,9 +23,9 @@ export function adminAccessHttp({
   visibility,
   publicOrigin,
 }: {
-  auth: ReturnType<typeof createAuth>;
-  users: ReturnType<typeof userStore>;
-  visibility: ReturnType<typeof settingsStore>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
+  users: Awaited<ReturnType<typeof userStore>>;
+  visibility: Awaited<ReturnType<typeof settingsStore>>;
   publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -50,8 +50,8 @@ export function adminAccessHttp({
     )
       return false;
 
-    if (!auth.isAdmin(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error:
           path === "/api/settings"
             ? "Only administrators can change visibility"
@@ -70,7 +70,7 @@ export function adminAccessHttp({
           (cursor && cursor.length > 512)
         )
           throw new Error("Некорректный размер страницы участников");
-        return json(res, 200, users.listPage(limit, cursor));
+        return json(res, 200, await users.listPage(limit, cursor));
       } catch (error) {
         return json(res, 400, { error: (error as Error).message });
       }
@@ -95,14 +95,22 @@ export function adminAccessHttp({
         )
           throw new Error("Изменяйте допуск, роль или привязку отдельно");
         if (typeof body.approved === "boolean")
-          users.setApproved(auth.currentUser(req)!, id, body.approved);
+          await users.setApproved(
+            (await auth.currentUser(req))!,
+            id,
+            body.approved,
+          );
         if (body.role !== undefined)
-          users.setRole(auth.currentUser(req)!, id, body.role as Role);
+          await users.setRole(
+            (await auth.currentUser(req))!,
+            id,
+            body.role as Role,
+          );
         if (identity) {
-          const target = users.get(id);
+          const target = await users.get(id);
           if (!target) throw new Error("Пользователь не найден");
-          users.setIdentity(
-            auth.currentUser(req)!,
+          await users.setIdentity(
+            (await auth.currentUser(req))!,
             id,
             body.personId === undefined
               ? target.personId || null
@@ -112,7 +120,7 @@ export function adminAccessHttp({
               : (body.treeAccess as TreeAccess),
           );
         }
-        return json(res, 200, { user: users.get(id) });
+        return json(res, 200, { user: await users.get(id) });
       } catch (error) {
         if (error instanceof RangeError)
           return json(res, 413, { error: error.message });
@@ -126,8 +134,8 @@ export function adminAccessHttp({
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });
       try {
-        users.remove(
-          auth.currentUser(req)!,
+        await users.remove(
+          (await auth.currentUser(req))!,
           decodeURIComponent(path.slice("/api/users/".length)),
         );
         return json(res, 200, { deleted: true });
@@ -139,7 +147,7 @@ export function adminAccessHttp({
     }
 
     if (path === "/api/settings" && req.method === "GET")
-      return json(res, 200, visibility.read());
+      return json(res, 200, await visibility.read());
 
     if (path === "/api/settings" && req.method === "PUT") {
       if (!isSameOriginRequest(req, publicOrigin))
@@ -148,9 +156,13 @@ export function adminAccessHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = await readJson(req);
-        if (!auth.isAdmin(req))
+        if (!(await auth.isAdmin(req)))
           return json(res, 403, { error: "Access revoked" });
-        return json(res, 200, visibility.write(body, auth.currentUser(req)!));
+        return json(
+          res,
+          200,
+          await visibility.write(body, (await auth.currentUser(req))!),
+        );
       } catch (error) {
         if (error instanceof RangeError)
           return json(res, 413, { error: error.message });

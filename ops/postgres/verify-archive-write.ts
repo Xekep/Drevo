@@ -84,12 +84,12 @@ export async function verifyArchiveWrite(
     );
   const directory = mkdtempSync(join(tmpdir(), "drevo-pg-write-"));
   const copy = join(directory, "rehearsal.sqlite");
-  let sqlite: ReturnType<typeof openArchive> | undefined;
+  let sqlite: Awaited<ReturnType<typeof openArchive>> | undefined;
   let dependentDb: DatabaseSync | undefined;
   let transaction = false;
   try {
     copyFileSync(sqlitePath, copy);
-    sqlite = openArchive(copy, {
+    sqlite = await openArchive(copy, {
       title: "",
       description: "",
       demo: false,
@@ -101,7 +101,7 @@ export async function verifyArchiveWrite(
     dependentDb.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     await client.query("BEGIN");
     transaction = true;
-    const source = sqlite.read();
+    const source = await sqlite.read();
     assert.deepStrictEqual(
       await readPostgresArchiveInTransaction(client, archiveId),
       source,
@@ -154,7 +154,7 @@ export async function verifyArchiveWrite(
       generation: 1,
     };
     draft.people.push(newPerson);
-    const first = sqlite.write(draft, source.revision);
+    const first = await sqlite.write(draft, source.revision);
     const postgresFirst = await writeArchiveRevisionForParity(
       client,
       archiveId,
@@ -164,7 +164,7 @@ export async function verifyArchiveWrite(
     assert.deepStrictEqual(postgresFirst, first);
     assert.deepStrictEqual(
       await readPostgresArchiveInTransaction(client, archiveId),
-      sqlite.read(),
+      await sqlite.read(),
     );
     assert.deepStrictEqual(
       await dependentCounts(dependentDb, client, archiveId, marker),
@@ -262,7 +262,7 @@ export async function verifyArchiveWrite(
     updated.links = updated.links?.filter((link) => link.id !== relationId);
     for (const photo of updated.photos || [])
       photo.tags = photo.tags.filter((tag) => tag.id !== tagId);
-    const second = sqlite.write(updated, first.revision);
+    const second = await sqlite.write(updated, first.revision);
     const postgresSecond = await writeArchiveRevisionForParity(
       client,
       archiveId,
@@ -272,7 +272,7 @@ export async function verifyArchiveWrite(
     assert.deepStrictEqual(postgresSecond, second);
     assert.deepStrictEqual(
       await readPostgresArchiveInTransaction(client, archiveId),
-      sqlite.read(),
+      await sqlite.read(),
     );
     assert.deepStrictEqual(
       await dependentCounts(dependentDb, client, archiveId, marker),
@@ -297,7 +297,7 @@ export async function verifyArchiveWrite(
       people: [...second.family.people, ...transfer.family.people],
       links: [...(second.family.links || []), ...(transfer.family.links || [])],
     };
-    const third = sqlite.write(imported, second.revision);
+    const third = await sqlite.write(imported, second.revision);
     const postgresThird = await writeArchiveRevisionForParity(
       client,
       archiveId,
@@ -307,14 +307,17 @@ export async function verifyArchiveWrite(
     assert.deepStrictEqual(postgresThird, third);
     assert.deepStrictEqual(
       await readPostgresArchiveInTransaction(client, archiveId),
-      sqlite.read(),
+      await sqlite.read(),
     );
     assert.equal(
       exportGedcom(postgresThird.family),
       exportGedcom(third.family),
     );
 
-    assert.throws(() => sqlite!.write(updated, first.revision), ConflictError);
+    assert.throws(
+      async () => await sqlite!.write(updated, first.revision),
+      ConflictError,
+    );
     await assert.rejects(
       writeArchiveRevisionForParity(client, archiveId, updated, first.revision),
       ConflictError,

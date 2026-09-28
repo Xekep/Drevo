@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -82,16 +83,18 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
         : JSON.stringify(body),
     });
   try {
-    app.archive.write(family, app.archive.read().revision);
-    const bytes = databaseBackupBytes(app.archive.db);
+    await app.archive.write(family, (await app.archive.read()).revision);
+    const bytes = await databaseBackupBytes(app.archive.db);
     const changed = {
       ...family,
       title: "После бэкапа",
       people: [{ ...p, name: "Мария" }],
     };
-    app.archive.write(changed, app.archive.read().revision);
-    userStore(app.archive.db).register("owner", "Владелец");
-    settingsStore(app.archive.db).write({
+    await app.archive.write(changed, (await app.archive.read()).revision);
+    await (await userStore(app.archive.db)).register("owner", "Владелец");
+    await (
+      await settingsStore(app.archive.db)
+    ).write({
       publicTree: false,
       publicAlbums: false,
       reverseTimeline: true,
@@ -100,14 +103,14 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
     assert.equal(response.status, 200);
     let preview = await response.json();
     assert.equal(preview.people, 1);
-    assert.equal(app.archive.read().family.people[0].name, "Мария");
+    assert.equal((await app.archive.read()).family.people[0].name, "Мария");
     assert.equal(
       (await request("apply", { token: preview.token })).status,
       400,
     );
-    app.archive.write(
+    await app.archive.write(
       { ...changed, description: "Поздняя правка" },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
     assert.equal(
       (await request("apply", { token: preview.token, confirm: true })).status,
@@ -115,7 +118,7 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
     );
     response = await request("preview", bytes);
     preview = await response.json();
-    const before = app.archive.read(),
+    const before = await app.archive.read(),
       imported = await request("apply", {
         token: preview.token,
         confirm: true,
@@ -124,12 +127,21 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
     const result = await imported.json();
     assert.equal(result.revision, before.revision + 1);
     assert.equal(result.family.people[0].name, "Анна");
-    assert.equal(userStore(app.archive.db).get("owner")!.role, "admin");
-    assert.equal(settingsStore(app.archive.db).read().publicTree, false);
+    assert.equal(
+      (await (await userStore(app.archive.db)).get("owner"))!.role,
+      "admin",
+    );
+    assert.equal(
+      (await (await settingsStore(app.archive.db)).read()).publicTree,
+      false,
+    );
     const old = new DatabaseSync(join(dir, "backups", result.backupName), {
       readOnly: true,
     });
-    assert.equal(readArchive(old).family.description, "Поздняя правка");
+    assert.equal(
+      (await readArchive(storeDatabase(old))).family.description,
+      "Поздняя правка",
+    );
     old.close();
     assert.equal(
       (await request("apply", { token: preview.token, confirm: true })).status,
@@ -159,7 +171,7 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
       readFileSync(join(dir, "drevo.sqlite.secrets.key")),
       originalKey,
     );
-    const restoredRevision = app.archive.meta().revision;
+    const restoredRevision = (await app.archive.meta()).revision;
     for (const bad of [
       Buffer.from("not a database"),
       tar("../../escape.sqlite", bytes),
@@ -169,7 +181,7 @@ test("backup preview is read-only; confirmed SQLite import preserves access, sna
       bytes.subarray(0, 200),
     ]) {
       assert.equal((await request("preview", bad)).status, 400);
-      assert.equal(app.archive.read().revision, restoredRevision);
+      assert.equal((await app.archive.read()).revision, restoredRevision);
     }
   } finally {
     await app.close();
@@ -184,7 +196,7 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
   try {
     writeFileSync(join(dir, "uploads", "original.png"), png);
     writeFileSync(join(dir, "uploads", ".unfinished.upload"), "unfinished");
-    app.archive.write(
+    await app.archive.write(
       {
         ...family,
         people: [{ ...p, photo: "/media/original.png" }],
@@ -206,12 +218,15 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
           },
         ],
       },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
     const full = Buffer.from(
       await (await fetch(base + "/api/backup/full")).arrayBuffer(),
     );
-    app.archive.write({ ...family, people: [] }, app.archive.read().revision);
+    await app.archive.write(
+      { ...family, people: [] },
+      (await app.archive.read()).revision,
+    );
     const previewResponse = await fetch(base + "/api/restore/preview", {
       method: "POST",
       headers: { "X-Drevo-Restore": "1" },

@@ -71,8 +71,7 @@ function parseDescriptor(value: unknown): FaceDescriptor {
     personId,
     descriptor,
     sourcePhotoId,
-    sourceTagId:
-      typeof sourceTagId === "string" ? sourceTagId : undefined,
+    sourceTagId: typeof sourceTagId === "string" ? sourceTagId : undefined,
     model: modelName,
   };
 }
@@ -171,8 +170,8 @@ export function faceDescriptorsHttp({
   auth,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -182,8 +181,8 @@ export function faceDescriptorsHttp({
       url.pathname,
     );
     if (!saving && !matching && !deleting) return false;
-    if (!auth.canEdit(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.canEdit(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "You do not have editing access",
       });
     if (deleting && req.method !== "DELETE")
@@ -197,38 +196,46 @@ export function faceDescriptorsHttp({
     try {
       if (deleting) {
         const id = decodeURIComponent(url.pathname.split("/").at(-1)!);
-        const row = archive.db
+        const row = await archive.db
           .prepare(
+            "SELECT created_by,person_id FROM face_descriptors WHERE id=?",
             "SELECT created_by,person_id FROM face_descriptors WHERE id=?",
           )
           .get(id);
         if (!row) return json(res, 404, { error: "Образец не найден" });
-        const actor = auth.currentUser(req)!;
+        const actor = (await auth.currentUser(req))!;
         if (
           isScopedUser(actor) &&
-          !visiblePersonIds(archive.read().family, actor).has(
+          !visiblePersonIds((await archive.read()).family, actor).has(
             String(row.person_id),
           )
         )
           return json(res, 403, { error: "Нет доступа к человеку" });
         if (actor.role !== "admin" && row.created_by !== actor.id)
           return json(res, 403, { error: "Нет доступа к образцу" });
-        archive.db.prepare("DELETE FROM face_descriptors WHERE id=?").run(id);
+        await archive.db
+          .prepare(
+            "DELETE FROM face_descriptors WHERE id=?",
+            "DELETE FROM face_descriptors WHERE id=?",
+          )
+          .run(id);
         return json(res, 200, { ok: true });
       }
       const body = await readJson(req);
       if (matching) {
         const { descriptor, model } = parseMatchDescriptor(body);
-        const actor = auth.currentUser(req)!;
+        const actor = (await auth.currentUser(req))!;
         const visible = isScopedUser(actor)
-          ? visiblePersonIds(archive.read().family, actor)
+          ? visiblePersonIds((await archive.read()).family, actor)
           : null;
-        const rows = archive.db
-          .prepare(
-            "SELECT person_id,data FROM face_descriptors WHERE model=? ORDER BY rowid LIMIT 20001",
-          )
-          .all(model)
-          .filter((row) => !visible || visible.has(String(row.person_id)));
+        const rows = (
+          await archive.db
+            .prepare(
+              "SELECT person_id,data FROM face_descriptors WHERE model=? ORDER BY rowid LIMIT 20001",
+              "SELECT person_id,data FROM face_descriptors WHERE model=? ORDER BY ordinal LIMIT 20001",
+            )
+            .all(model)
+        ).filter((row) => !visible || visible.has(String(row.person_id)));
         if (rows.length > 20000)
           return json(res, 503, {
             error: "Слишком много образцов для интерактивного сравнения",
@@ -236,21 +243,26 @@ export function faceDescriptorsHttp({
         return json(res, 200, { match: closestMatch(descriptor, rows, model) });
       }
       const sample = parseDescriptor(body);
-      const actor = auth.currentUser(req)!;
+      const actor = (await auth.currentUser(req))!;
       if (
         isScopedUser(actor) &&
-        !visiblePersonIds(archive.read().family, actor).has(sample.personId)
+        !visiblePersonIds((await archive.read()).family, actor).has(
+          sample.personId,
+        )
       )
         return json(res, 403, { error: "Нет доступа к человеку" });
-      const person = archive.db
-        .prepare("SELECT 1 FROM people WHERE id=?")
+      const person = await archive.db
+        .prepare(
+          "SELECT 1 FROM people WHERE id=?",
+          "SELECT 1 FROM people WHERE id=?",
+        )
         .get(sample.personId);
       if (!person)
         return json(res, 400, { error: "Человек не найден в архиве" });
       const requestedTagRowId = sample.sourceTagId
         ? `${sample.sourcePhotoId}:${sample.sourceTagId}`
         : null;
-      const source = archive.db
+      const source = await archive.db
         .prepare(
           `SELECT photo_tags.id AS tag_id, photos.data AS photo
              FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id
@@ -259,6 +271,7 @@ export function faceDescriptorsHttp({
               AND (? IS NULL OR photo_tags.id=?)
             ORDER BY photo_tags.rowid DESC
             LIMIT 1`,
+          "SELECT photo_tags.id AS tag_id, photos.data AS photo\n             FROM photos JOIN photo_tags ON photo_tags.photo_id=photos.id\n            WHERE photos.id=?\n              AND photo_tags.person_id=?\n              AND (? IS NULL OR photo_tags.id=?)\n            ORDER BY photo_tags.ordinal DESC\n            LIMIT 1",
         )
         .get(
           sample.sourcePhotoId,
@@ -275,32 +288,34 @@ export function faceDescriptorsHttp({
       if (actor.role !== "admin" && photo.createdBy !== actor.id)
         return json(res, 403, { error: "Нет доступа к исходной фотографии" });
       const count = Number(
-        archive.db
+        (await archive.db
           .prepare(
             `SELECT count(*) AS n
                FROM face_descriptors
               WHERE person_id=?
                 AND model=?
                 AND (source_tag_id IS NULL OR source_tag_id<>?)`,
+            "SELECT count(*) AS n\n               FROM face_descriptors\n              WHERE person_id=?\n                AND model=?\n                AND (source_tag_id IS NULL OR source_tag_id<>?)",
           )
-          .get(sample.personId, sample.model, sourceTagRowId)!.n,
+          .get(sample.personId, sample.model, sourceTagRowId))!.n,
       );
       if (count >= 20)
         return json(res, 409, {
           error: "Для этого человека уже сохранено максимальное число образцов",
         });
-      archive.db.exec("BEGIN IMMEDIATE");
-      try {
-        archive.db
+      await archive.db.transaction(async () => {
+        await archive.db
           .prepare(
+            "DELETE FROM face_descriptors WHERE source_tag_id=? AND model=?",
             "DELETE FROM face_descriptors WHERE source_tag_id=? AND model=?",
           )
           .run(sourceTagRowId, sample.model);
-        archive.db
+        await archive.db
           .prepare(
             `INSERT INTO face_descriptors
                (id,person_id,data,created_by,source_photo_id,source_tag_id,model)
              VALUES(?,?,?,?,?,?,?)`,
+            "INSERT INTO face_descriptors\n               (id,person_id,data,created_by,source_photo_id,source_tag_id,model)\n             VALUES(?,?,?,?,?,?,?)",
           )
           .run(
             sample.id,
@@ -311,11 +326,7 @@ export function faceDescriptorsHttp({
             sourceTagRowId,
             sample.model,
           );
-        archive.db.exec("COMMIT");
-      } catch (error) {
-        archive.db.exec("ROLLBACK");
-        throw error;
-      }
+      });
       return json(res, 201, { ok: true });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;

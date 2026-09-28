@@ -87,7 +87,7 @@ test("привязка аккаунта и область видимости д�
   process.env.ARCHIVE_PRIVATE = "1";
   let app: Awaited<ReturnType<typeof startServer>> | undefined;
   try {
-    openArchive(path, family).close();
+    await (await openArchive(path, family)).close();
     mkdirSync(join(dir, "uploads"));
     writeFileSync(
       join(dir, "uploads", "secret.png"),
@@ -230,7 +230,7 @@ test("привязка аккаунта и область видимости д�
     );
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal((await request("/media/secret.png", admin)).status, 200);
-    app.archive.db
+    await app.archive.db
       .prepare(
         "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
       )
@@ -315,7 +315,7 @@ test("привязка аккаунта и область видимости д�
         403,
         "assigning a known hidden URL must not grant access",
       );
-      assert.equal(app.archive.meta().revision, own.revision);
+      assert.equal((await app.archive.meta()).revision, own.revision);
     }
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal(
@@ -403,7 +403,7 @@ test("привязка аккаунта и область видимости д�
       own.revision,
     );
     assert.equal(attached.status, 200);
-    app.archive.db.prepare("DELETE FROM media_upload_grants").run();
+    await app.archive.db.prepare("DELETE FROM media_upload_grants").run();
     assert.equal(
       (await request(uploaded.url, relative)).status,
       200,

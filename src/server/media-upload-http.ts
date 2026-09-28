@@ -34,24 +34,26 @@ export function mediaUploadHttp({
   media,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   publicOrigin?: string;
 }) {
   const uploads = new Map<string, { since: number; count: number }>();
   const totalUsage = async () => {
     const images = await media.usage();
-    const documents = archive.db
+    const documents = (await archive.db
       .prepare(
         "SELECT count(*) AS files,coalesce(sum(file_size),0) AS bytes FROM documents",
+        "SELECT count(*) AS files,coalesce(sum(file_size),0) AS bytes FROM documents",
       )
-      .get()!;
-    const pending = archive.db
+      .get())!;
+    const pending = (await archive.db
       .prepare(
         "SELECT count(*) AS files,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0 AND expires_ms>?",
+        "SELECT count(*) AS files,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0 AND expires_ms>?",
       )
-      .get(Date.now())!;
+      .get(Date.now()))!;
     return {
       files: images.files + Number(documents.files) + Number(pending.files),
       bytes: images.bytes + Number(documents.bytes) + Number(pending.bytes),
@@ -83,11 +85,11 @@ export function mediaUploadHttp({
       return json(res, 403, {
         error: "Сохранение разрешено только со страницы архива",
       });
-    if (!auth.canEdit(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.canEdit(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "You do not have editing access",
       });
-    const requester = auth.currentUser(req)!;
+    const requester = (await auth.currentUser(req))!;
     const now = Date.now(),
       window = uploads.get(requester.id);
     if (!window || now - window.since >= 60 * 60 * 1000)
@@ -113,7 +115,7 @@ export function mediaUploadHttp({
       revision < 0
     )
       return json(res, 428, { error: "Не указана версия архива" });
-    if (archive.meta().revision !== revision) return conflict(res);
+    if ((await archive.meta()).revision !== revision) return conflict(res);
 
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
     let forgetUpload: (() => unknown) | undefined;
@@ -130,26 +132,26 @@ export function mediaUploadHttp({
           error: "Загрузка превысит установленный лимит хранилища",
         });
       }
-      const actor = auth.currentUser(req);
+      const actor = await auth.currentUser(req);
       if (
         !actor?.approved ||
         actor.role === "reader" ||
         actor.id !== requester.id
       )
         throw new ForbiddenError("Editing access is no longer available");
-      if (archive.meta().revision !== revision) {
+      if ((await archive.meta()).revision !== revision) {
         await file.undo();
         file = undefined;
         return conflict(res);
       }
 
-      forgetUpload = registerMediaUpload(archive.db, file.url, actor.id);
+      forgetUpload = await registerMediaUpload(archive.db, file.url, actor.id);
       if (portrait) return json(res, 201, { url: file.url });
 
-      const current = archive.read().family,
+      const current = (await archive.read()).family,
         fields = photoFields(req);
       try {
-        const result = archive.write(
+        const result = await archive.write(
           {
             ...current,
             photos: [

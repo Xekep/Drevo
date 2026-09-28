@@ -1,17 +1,18 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 import { aiUsageStore } from "../src/server/ai-usage.ts";
 
-test("AI usage keeps input/output tokens split by actual model", () => {
+test("AI usage keeps input/output tokens split by actual model", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
-    const usage = aiUsageStore(db),
-      run = usage.begin("user-1", "gpt://folder/main-model/latest");
+    const usage = aiUsageStore(storeDatabase(db)),
+      run = await usage.begin("user-1", "gpt://folder/main-model/latest");
 
-    usage.finish(run.id, run.started, {
+    await usage.finish(run.id, run.started, {
       status: "ok",
       providerCalls: 3,
       inputTokens: 180,
@@ -34,7 +35,7 @@ test("AI usage keeps input/output tokens split by actual model", () => {
       ],
     });
 
-    const summary = usage.summary(),
+    const summary = await usage.summary(),
       today = summary.today.models;
     assert.equal(summary.today.providerCalls, 3);
     assert.equal(summary.today.inputTokens, 180);
@@ -94,10 +95,12 @@ test("schema v15 backfills old AI usage into its recorded model", () => {
 
     assert.deepEqual(
       {
-        ...db.prepare(
-          `SELECT model,provider_calls,input_tokens,output_tokens,total_tokens
+        ...db
+          .prepare(
+            `SELECT model,provider_calls,input_tokens,output_tokens,total_tokens
            FROM ai_usage_models`,
-        ).get(),
+          )
+          .get(),
       },
       {
         model: "legacy-model/latest",

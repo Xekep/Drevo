@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family, FamilyLink, Person } from "../domain/types.ts";
 import {
@@ -9,7 +9,7 @@ import {
 } from "../domain/changes.ts";
 import { validateFamily } from "../domain/validation.ts";
 import { ConflictError } from "./archive-errors.ts";
-import { ForbiddenError } from "./users.ts";
+import { ForbiddenError, assertCurrentArchiveActor } from "./users.ts";
 import { auditStore } from "./audit.ts";
 
 const fields = new Set([
@@ -37,8 +37,8 @@ const fields = new Set([
 ]);
 
 /** Existing card fields only. Structural changes retain whole-graph validation. */
-export function patchPeople(
-  db: DatabaseSync,
+export async function patchPeople(
+  db: StoreDatabase,
   changes: Change[],
   expected: number,
   actor: ArchiveUser,
@@ -58,18 +58,24 @@ export function patchPeople(
   if (ids.length > 500) return null;
   if (actor.role === "reader" || !actor.approved)
     throw new ForbiddenError("Доступен только просмотр архива");
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  return await db.transaction(async () => {
+    await assertCurrentArchiveActor(db, actor);
     const revision = Number(
-      db.prepare("SELECT revision FROM archive WHERE id=1").get()!.revision,
+      (await db
+        .prepare(
+          "SELECT revision FROM archive WHERE id=1",
+          "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id', true)",
+        )
+        .get())!.revision,
     );
     if (expected > revision)
       throw new ConflictError("Некорректная версия архива");
     const selected = new Set(ids),
       related = new Set(ids);
     const placeholders = ids.map(() => "?").join(",");
-    const relations = db
+    const relations = await db
       .prepare(
+        `SELECT * FROM relations WHERE source IN (${placeholders}) OR target IN (${placeholders})`,
         `SELECT * FROM relations WHERE source IN (${placeholders}) OR target IN (${placeholders})`,
       )
       .all(...ids, ...ids);
@@ -77,15 +83,22 @@ export function patchPeople(
       related.add(String(row.source));
       related.add(String(row.target));
     }
-    const people = [...related].map((id) => {
-      const row = db.prepare("SELECT data FROM people WHERE id=?").get(id);
-      if (!row) throw new ConflictError("Карточка удалена другим участником");
-      return {
-        ...JSON.parse(String(row.data)),
-        parents: [],
-        spouses: [],
-      } as Person;
-    });
+    const people = await Promise.all(
+      [...related].map(async (id) => {
+        const row = await db
+          .prepare(
+            "SELECT data FROM people WHERE id=?",
+            "SELECT data FROM people WHERE id=?",
+          )
+          .get(id);
+        if (!row) throw new ConflictError("Карточка удалена другим участником");
+        return {
+          ...JSON.parse(String(row.data)),
+          parents: [],
+          spouses: [],
+        } as Person;
+      }),
+    );
     const map = new Map(people.map((p) => [p.id, p]));
     for (const id of ids)
       if (actor.role !== "admin" && map.get(id)!.createdBy !== actor.id)
@@ -122,35 +135,46 @@ export function patchPeople(
     const after = validateFamily(merged.family);
     const appliedChanges = archiveChanges(before, after);
     if (appliedChanges.length) {
-      const update = db.prepare("UPDATE people SET data=? WHERE id=?");
+      const update = db.prepare(
+        "UPDATE people SET data=? WHERE id=?",
+        "UPDATE people SET data=? WHERE id=?",
+      );
       for (const person of after.people) {
         if (!selected.has(person.id)) continue;
-        update.run(
+        await update.run(
           JSON.stringify({ ...person, parents: undefined, spouses: undefined }),
           person.id,
         );
       }
-      db.prepare("INSERT INTO history(revision,data) VALUES(?,?)").run(
-        revision,
-        JSON.stringify({
-          format: "drevo-person-patches-v1",
-          changes: inverseChanges(appliedChanges),
-        }),
-      );
-      auditStore(db).archive(before, after, actor, revision + 1);
-      db.prepare("UPDATE archive SET revision=? WHERE id=1").run(revision + 1);
-      db.exec(
+      await db
+        .prepare(
+          "INSERT INTO history(revision,data) VALUES(?,?)",
+          "INSERT INTO history(revision,data) VALUES(?,?)",
+        )
+        .run(
+          revision,
+          JSON.stringify({
+            format: "drevo-person-patches-v1",
+            changes: inverseChanges(appliedChanges),
+          }),
+        );
+      await auditStore(db).archive(before, after, actor, revision + 1);
+      await db
+        .prepare(
+          "UPDATE archive SET revision=? WHERE id=1",
+          "UPDATE archives SET revision=? WHERE id=current_setting('drevo.archive_id', true)",
+        )
+        .run(revision + 1);
+      await db.exec(
+        "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50)",
         "DELETE FROM history WHERE revision NOT IN (SELECT revision FROM history ORDER BY revision DESC LIMIT 50)",
       );
     }
-    db.exec("COMMIT");
+
     return {
       revision: revision + Number(appliedChanges.length > 0),
       baseRevision: revision,
       appliedChanges,
     };
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
 }

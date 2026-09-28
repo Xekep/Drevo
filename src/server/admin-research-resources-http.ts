@@ -19,7 +19,7 @@ export function adminResearchResourcesHttp({
   catalog,
   publicOrigin,
 }: {
-  auth: ReturnType<typeof createAuth>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   catalog: ReturnType<typeof researchCatalogStore>;
   publicOrigin?: string;
 }) {
@@ -36,13 +36,13 @@ export function adminResearchResourcesHttp({
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`))
       return false;
-    const actor = auth.currentUser(req);
-    if (!actor || !auth.isAdmin(req))
+    const actor = await auth.currentUser(req);
+    if (!actor || !(await auth.isAdmin(req)))
       return json(res, actor ? 403 : 401, {
         error: "Только администратор может управлять ресурсами",
       });
     if (url.pathname === prefix && req.method === "GET")
-      return json(res, 200, { categories: catalog.list() });
+      return json(res, 200, { categories: await catalog.list() });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     if (
@@ -63,13 +63,13 @@ export function adminResearchResourcesHttp({
         parts[0] === "categories" &&
         req.method === "POST"
       )
-        categories = catalog.createCategory(body, actor);
+        categories = await catalog.createCategory(body, actor);
       else if (
         parts.length === 2 &&
         parts[0] === "categories" &&
         req.method === "PATCH"
       )
-        categories = catalog.updateCategory(
+        categories = await catalog.updateCategory(
           decodeURIComponent(parts[1]),
           body,
           actor,
@@ -79,7 +79,7 @@ export function adminResearchResourcesHttp({
         parts[0] === "categories" &&
         req.method === "DELETE"
       )
-        categories = catalog.deleteCategory(
+        categories = await catalog.deleteCategory(
           decodeURIComponent(parts[1]),
           actor,
         );
@@ -89,7 +89,7 @@ export function adminResearchResourcesHttp({
         parts[2] === "resources" &&
         req.method === "POST"
       )
-        categories = catalog.createResource(
+        categories = await catalog.createResource(
           decodeURIComponent(parts[1]),
           body,
           actor,
@@ -99,7 +99,7 @@ export function adminResearchResourcesHttp({
         parts[0] === "resources" &&
         req.method === "PATCH"
       )
-        categories = catalog.updateResource(
+        categories = await catalog.updateResource(
           decodeURIComponent(parts[1]),
           body,
           actor,
@@ -109,7 +109,7 @@ export function adminResearchResourcesHttp({
         parts[0] === "resources" &&
         req.method === "DELETE"
       )
-        categories = catalog.deleteResource(
+        categories = await catalog.deleteResource(
           decodeURIComponent(parts[1]),
           actor,
         );

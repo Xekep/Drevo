@@ -178,19 +178,36 @@ for (const version of ["5.5.1", "7.0"] as const) {
     for (const sex of ["f", "m", "u"] as const) {
       const family = seed();
       const person = family.people[0];
-      Object.assign(person, { name: "Александра", surname: "Петрова", maidenName: "Иванова", sex });
+      Object.assign(person, {
+        name: "Александра",
+        surname: "Петрова",
+        maidenName: "Иванова",
+        sex,
+      });
       const text = exportGedcom(family, { version });
-      assert.match(text, version === "7.0" ? /2 TYPE BIRTH\r\n/ : /2 TYPE birth\r\n/);
+      assert.match(
+        text,
+        version === "7.0" ? /2 TYPE BIRTH\r\n/ : /2 TYPE birth\r\n/,
+      );
       assert.doesNotMatch(text, /2 TYPE (?:MAIDEN|maiden)\r\n/);
-      const standard = text.replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+      const standard = text.replace(
+        /^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm,
+        "",
+      );
       for (const type of ["BIRTH", "birth", "MAIDEN", "maiden"]) {
-        const imported = importGedcom(standard.replace(/2 TYPE (?:BIRTH|birth)\r\n/, `2 TYPE ${type}\r\n`), "surname").family.people[0];
+        const imported = importGedcom(
+          standard.replace(/2 TYPE (?:BIRTH|birth)\r\n/, `2 TYPE ${type}\r\n`),
+          "surname",
+        ).family.people[0];
         assert.equal(imported.surname, "Петрова");
         assert.equal(imported.maidenName, "Иванова");
         assert.doesNotMatch(imported.biography || "", /Другие имена/);
       }
       delete person.maidenName;
-      assert.doesNotMatch(exportGedcom(family, { version }), /2 TYPE (?:BIRTH|birth)\r\n/);
+      assert.doesNotMatch(
+        exportGedcom(family, { version }),
+        /2 TYPE (?:BIRTH|birth)\r\n/,
+      );
     }
   });
 
@@ -201,7 +218,13 @@ for (const version of ["5.5.1", "7.0"] as const) {
     assert.equal(imported.maidenName, "Иванова");
     assert.match(imported.biography || "", /Сидорова/);
     assert.doesNotMatch(imported.biography || "", /Иванова/);
-    const legacy = importGedcom(text.replace(/1 NAME Анна \/(?:Сидорова|Иванова)\/\n2 TYPE (?:MAIDEN|BIRTH)\n/g, ""), "legacy").family.people[0];
+    const legacy = importGedcom(
+      text.replace(
+        /1 NAME Анна \/(?:Сидорова|Иванова)\/\n2 TYPE (?:MAIDEN|BIRTH)\n/g,
+        "",
+      ),
+      "legacy",
+    ).family.people[0];
     assert.equal(legacy.maidenName, "Старое значение");
   });
 }
@@ -212,25 +235,39 @@ for (const version of ["5.5.1", "7.0"] as const)
     const person = family.people[0];
     person.birth = "1900-01-01";
     person.birthPlace = "Мурзинка";
-    person.birthLocation = { place: "Мурзинка", lat: 53.769583333333, lon: 67.371222222222 };
+    person.birthLocation = {
+      place: "Мурзинка",
+      lat: 53.769583333333,
+      lon: 67.371222222222,
+    };
     person.death = "1980-01-01";
     person.deathLocation = { place: "Казань", lat: -12.5, lon: -44.25 };
-    person.events = [{
-      id: "residence",
-      type: "residence",
-      place: "Самара",
-      location: { place: "Самара", lat: 0, lon: 10.25 },
-    }];
-    person.sources = [{
-      title: "Метрическая книга",
-      type: "Архив",
-      reference: "лист 7",
-      url: "https://example.org/archive/7",
-      note: "Комментарий архивиста\nВторая строка",
-    }];
+    person.events = [
+      {
+        id: "residence",
+        type: "residence",
+        place: "Самара",
+        location: { place: "Самара", lat: 0, lon: 10.25 },
+      },
+    ];
+    person.sources = [
+      {
+        title: "Метрическая книга",
+        type: "Архив",
+        reference: "лист 7",
+        url: "https://example.org/archive/7",
+        note: "Комментарий архивиста\nВторая строка",
+      },
+    ];
     const text = exportGedcom(family, { version });
-    assert.match(text, /2 PLAC Мурзинка\r\n3 MAP\r\n4 LATI N53\.769583333333\r\n4 LONG E67\.371222222222/);
-    assert.match(text, /2 PLAC Казань\r\n3 MAP\r\n4 LATI S12\.5\r\n4 LONG W44\.25/);
+    assert.match(
+      text,
+      /2 PLAC Мурзинка\r\n3 MAP\r\n4 LATI N53\.769583333333\r\n4 LONG E67\.371222222222/,
+    );
+    assert.match(
+      text,
+      /2 PLAC Казань\r\n3 MAP\r\n4 LATI S12\.5\r\n4 LONG W44\.25/,
+    );
     assert.match(text, /2 PLAC Самара\r\n3 MAP\r\n4 LATI N0\r\n4 LONG E10\.25/);
     const source = text.split("0 @S1@ SOUR\r\n")[1].split("\r\n0 ")[0];
     assert.match(source, /1 TITL Метрическая книга/);
@@ -247,7 +284,10 @@ for (const version of ["5.5.1", "7.0"] as const)
     assert.equal(imported.sources[0].note, person.sources[0].note);
     assert.deepEqual(imported.birthLocation, person.birthLocation);
     assert.deepEqual(imported.deathLocation, person.deathLocation);
-    assert.deepEqual(imported.events?.find((event) => event.type === "residence")?.location, person.events[0].location);
+    assert.deepEqual(
+      imported.events?.find((event) => event.type === "residence")?.location,
+      person.events[0].location,
+    );
   });
 
 const xml = `<?xml version="1.0" encoding="utf-8"?>
@@ -317,14 +357,20 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     family.people[0].maidenName = "Иванова";
     family.people[0].birth = "1900-01-01";
     family.people[0].birthPlace = "Мурзинка";
-    family.people[0].birthLocation = { place: "Мурзинка", lat: 53.75, lon: 67.375 };
-    family.people[0].sources = [{
-      title: "Метрическая книга",
-      type: "Архив",
-      reference: "лист 7",
-      url: "https://example.org/archive/7",
-      note: "Комментарий архивиста",
-    }];
+    family.people[0].birthLocation = {
+      place: "Мурзинка",
+      lat: 53.75,
+      lon: 67.375,
+    };
+    family.people[0].sources = [
+      {
+        title: "Метрическая книга",
+        type: "Архив",
+        reference: "лист 7",
+        url: "https://example.org/archive/7",
+        note: "Комментарий архивиста",
+      },
+    ];
     family.photos = [
       {
         id: "photo",
@@ -374,21 +420,39 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
       "media/photo.png",
     ]);
     assert.match(gedcom, /2 TYPE BIRTH\r\n/);
-    const standard = gedcom.replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+    const standard = gedcom.replace(
+      /^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm,
+      "",
+    );
     const standardPerson = importGedcom(standard, "gdz-birth").family.people[0];
     assert.equal(standardPerson.surname, family.people[0].surname);
     assert.equal(standardPerson.maidenName, "Иванова");
-    assert.match(gedcom, /2 PLAC Мурзинка\r\n3 MAP\r\n4 LATI N53\.75\r\n4 LONG E67\.375/);
-    assert.match(gedcom, /0 @S1@ SOUR\r\n1 TITL Метрическая книга\r\n1 _TYPE Архив\r\n1 _URL https:\/\/example\.org\/archive\/7\r\n1 NOTE URL: https:\/\/example\.org\/archive\/7\r\n1 NOTE Комментарий архивиста/);
+    assert.match(
+      gedcom,
+      /2 PLAC Мурзинка\r\n3 MAP\r\n4 LATI N53\.75\r\n4 LONG E67\.375/,
+    );
+    assert.match(
+      gedcom,
+      /0 @S1@ SOUR\r\n1 TITL Метрическая книга\r\n1 _TYPE Архив\r\n1 _URL https:\/\/example\.org\/archive\/7\r\n1 NOTE URL: https:\/\/example\.org\/archive\/7\r\n1 NOTE Комментарий архивиста/,
+    );
     const stage = join(dir, "stage");
     await mkdir(stage);
     const parsed = await prepareGenealogyImport(path, stage, "back");
     assert.equal(parsed.family.photos?.length, 1);
     assert.equal(parsed.files.length, 2);
     assert.equal(parsed.family.people[0].photo, parsed.family.photos![0].url);
-    assert.deepEqual(parsed.family.people[0].birthLocation, family.people[0].birthLocation);
-    assert.equal(parsed.family.people[0].sources[0].url, family.people[0].sources[0].url);
-    assert.equal(parsed.family.people[0].sources[0].note, family.people[0].sources[0].note);
+    assert.deepEqual(
+      parsed.family.people[0].birthLocation,
+      family.people[0].birthLocation,
+    );
+    assert.equal(
+      parsed.family.people[0].sources[0].url,
+      family.people[0].sources[0].url,
+    );
+    assert.equal(
+      parsed.family.people[0].sources[0].note,
+      family.people[0].sources[0].note,
+    );
     assert.deepEqual(parsed.family.photos![0].tags[0], {
       id: "tag",
       personId: "back-p1",
@@ -517,19 +581,23 @@ test("legacy UTF-16 decodes, version 7 rejects non-UTF8 and unsupported encoding
 test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time revision-bound token", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-transfer-http-")),
     dbPath = join(dir, "archive.sqlite");
-  const archive = openArchive(dbPath, seed());
+  const archive = await openArchive(dbPath, seed());
   let actor: ArchiveUser | null = {
     id: "admin",
     name: "Тест",
     role: "admin",
     createdAt: "",
   };
-  const auth = { currentUser: () => actor } as unknown as ReturnType<
-    typeof createAuth
+  const auth = { currentUser: () => actor } as unknown as Awaited<
+    ReturnType<typeof createAuth>
   >;
   let route = gedcomHttp(archive, auth, dbPath, "https://test.invalid");
-  const server = createServer((req, res) => {
-    void route.handle(req, res, new URL(req.url!, "https://test.invalid"));
+  const server = createServer(async (req, res) => {
+    void (await route.handle(
+      req,
+      res,
+      new URL(req.url!, "https://test.invalid"),
+    ));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -568,7 +636,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     assert.equal(preview.documents, 1);
     route.close();
     route = gedcomHttp(archive, auth, dbPath, "https://test.invalid");
-    archive.db.exec(
+    await archive.db.exec(
       "CREATE TRIGGER reject_document BEFORE INSERT ON documents BEGIN SELECT RAISE(ABORT,'reject'); END",
     );
     const failed = await request("/api/gedcom/import", {
@@ -576,21 +644,24 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       confirm: true,
     });
     assert.equal(failed.status, 400);
-    assert.equal(archive.read().family.people.length, 3);
+    assert.equal((await archive.read()).family.people.length, 3);
     assert.equal((await readdir(join(dir, "uploads"))).length, 0);
-    archive.db.exec("DROP TRIGGER reject_document");
+    await archive.db.exec("DROP TRIGGER reject_document");
     const applied = await request("/api/gedcom/import", {
       token: preview.token,
       confirm: true,
     });
     assert.equal(applied.status, 200, await applied.text());
-    assert.equal(archive.read().family.people.length, 5);
+    assert.equal((await archive.read()).family.people.length, 5);
     assert.equal(
-      archive.db.prepare("SELECT count(*) AS n FROM documents").get()!.n,
+      (await archive.db.prepare("SELECT count(*) AS n FROM documents").get())!
+        .n,
       1,
     );
     assert.equal(
-      archive.db.prepare("SELECT count(*) AS n FROM document_people").get()!.n,
+      (await archive.db
+        .prepare("SELECT count(*) AS n FROM document_people")
+        .get())!.n,
       1,
     );
     assert.equal(
@@ -612,10 +683,19 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       const plain = await request(`/api/gedcom/export?format=${format}`);
       assert.equal(plain.status, 200);
       assert.match(plain.headers.get("content-disposition")!, /\.ged"/);
-      assert.match(await plain.text(), new RegExp(`2 VERS ${version.replaceAll(".", "\\.")}`));
+      assert.match(
+        await plain.text(),
+        new RegExp(`2 VERS ${version.replaceAll(".", "\\.")}`),
+      );
     }
-    assert.equal((await request("/api/gedcom/export?format=agelongXml")).status, 400);
-    assert.equal((await request("/api/gedcom/export?format=agelongZip")).status, 400);
+    assert.equal(
+      (await request("/api/gedcom/export?format=agelongXml")).status,
+      400,
+    );
+    assert.equal(
+      (await request("/api/gedcom/export?format=agelongZip")).status,
+      400,
+    );
     const round = await request(
       "/api/gedcom/preview",
       Buffer.from(await exported.arrayBuffer()),
@@ -624,8 +704,8 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     const second = await round.json();
     assert.equal(second.documents, 1);
     assert.equal(second.photos, 1);
-    const current = archive.read();
-    archive.write(current.family, current.revision);
+    const current = await archive.read();
+    await archive.write(current.family, current.revision);
     assert.equal(
       (
         await request("/api/gedcom/import", {
@@ -642,7 +722,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     route.close();
-    archive.close();
+    await archive.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

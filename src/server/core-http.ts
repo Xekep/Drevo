@@ -8,8 +8,8 @@ export function coreHttp({
   auth,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -28,13 +28,16 @@ export function coreHttp({
   ): Promise<boolean> => {
     const path = url.pathname;
     if (path === "/api/health" && req.method === "GET")
-      return json(res, 200, { ok: true, revision: archive.meta().revision });
+      return json(res, 200, {
+        ok: true,
+        revision: (await archive.meta()).revision,
+      });
 
     if (path === "/api/login")
       return json(res, 404, { error: "Password sign-in has been removed" });
 
     if (path === "/api/account/sessions" && req.method === "GET") {
-      const sessions = auth.sessionSummary(req);
+      const sessions = await auth.sessionSummary(req);
       return sessions
         ? json(res, 200, sessions)
         : json(res, 401, { error: "Требуется вход" });
@@ -46,7 +49,7 @@ export function coreHttp({
     ) {
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });
-      const revoked = auth.revokeOtherSessions(req);
+      const revoked = await auth.revokeOtherSessions(req);
       return revoked === null
         ? json(res, 401, { error: "Требуется вход" })
         : json(res, 200, { revoked });
@@ -55,7 +58,7 @@ export function coreHttp({
     if (path === "/auth/logout" && req.method === "POST") {
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });
-      auth.logout(req, res);
+      await auth.logout(req, res);
       return json(res, 200, { ok: true });
     }
 

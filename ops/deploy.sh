@@ -10,7 +10,10 @@ exec 9>"$base/deploy.lock"
 flock -w 120 9
 previous=$(readlink -f "$base/current" || true)
 # sqlite3.backup creates a consistent copy even when the running database uses WAL.
-if test -f "$base/shared/drevo.sqlite"; then
+if test -f "$base/shared/postgres.active"; then
+  test -n "$previous"
+  sudo /usr/local/sbin/drevo-postgres-maintenance preflight "$release_id" "$(basename "$previous")"
+elif test -f "$base/shared/drevo.sqlite"; then
   python3 - "$base/shared/drevo.sqlite" "$base/shared/backups/$release_id.sqlite" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as source, sqlite3.connect(sys.argv[2]) as dest:
@@ -48,7 +51,11 @@ fi
 # Старые незавершённые загрузки портретов не должны жить вечно. GC запускаем
 # только после успешного health-check и не считаем его ошибку причиной отката.
 # Внутри есть 24-часовой grace period, поэтому свежий staging/restore не трогаем.
-if test -f "$base/shared/drevo.sqlite"; then
+if test -f "$base/shared/postgres.active"; then
+  if ! sudo /usr/local/sbin/drevo-postgres-maintenance gc "$release_id"; then
+    echo "PostgreSQL media GC failed; deployment remains active." >&2
+  fi
+elif test -f "$base/shared/drevo.sqlite"; then
   if ! /opt/drevo-node/bin/node --experimental-strip-types \
     "$release/src/server/media-gc.ts" \
     "$base/shared/drevo.sqlite" \
@@ -64,7 +71,7 @@ import os, re, shutil, sys
 
 base = Path(sys.argv[1])
 release_re = re.compile(r"^[0-9a-f]{40}-[0-9]+$")
-backup_re = re.compile(r"^[0-9a-f]{40}-[0-9]+\.sqlite$")
+backup_re = re.compile(r"^[0-9a-f]{40}-[0-9]+\.(?:sqlite|pgdump)$")
 current = Path(os.path.realpath(base / "current"))
 
 releases = sorted(

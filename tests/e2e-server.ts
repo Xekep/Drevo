@@ -5,8 +5,8 @@ import { startServer } from "../src/server/index.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "drevo-e2e-"));
 const app = await startServer(4173, join(directory, "drevo.sqlite"), true);
-const current = app.archive.read();
-app.archive.write(
+const current = await app.archive.read();
+await app.archive.write(
   {
     ...current.family,
     links: [

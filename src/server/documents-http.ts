@@ -35,8 +35,8 @@ export function documentsHttp({
   uploadsDirectory,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   uploadsDirectory: string;
   publicOrigin?: string;
@@ -53,26 +53,29 @@ export function documentsHttp({
     res.end(JSON.stringify(value));
     return true;
   };
-  const visible = (req: IncomingMessage) => {
-    const user = auth.currentUser(req);
+  const visible = async (req: IncomingMessage) => {
+    const user = await auth.currentUser(req);
     const family = isScopedUser(user)
-      ? projectFamilyForUser(archive.read().family, user)
-      : archive.read().family;
+      ? projectFamilyForUser((await archive.read()).family, user)
+      : (await archive.read()).family;
     return {
       scoped: isScopedUser(user),
       people: family.people,
       ids: family.people.map((person) => person.id),
     };
   };
-  const associations = (ids: string[]) => {
+  const associations = async (ids: string[]) => {
     if (!ids.length) return new Map<string, string[]>();
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT document_id,person_id FROM document_people
        WHERE document_id IN (${ids.map(() => "?").join(",")})
        ORDER BY person_id`,
+        `SELECT document_id,person_id FROM document_people
+       WHERE document_id IN (${ids.map(() => "?").join(",")})
+       ORDER BY person_id`,
       )
-      .all(...ids) as Array<{ document_id: string; person_id: string }>;
+      .all(...ids)) as Array<{ document_id: string; person_id: string }>;
     const result = new Map<string, string[]>();
     for (const row of rows)
       result.set(row.document_id, [
@@ -91,7 +94,7 @@ export function documentsHttp({
     const file = /^\/api\/documents\/([a-f0-9-]{36})\/file$/.exec(url.pathname);
     const item = /^\/api\/documents\/([a-f0-9-]{36})$/.exec(url.pathname);
     if (!list && !file && !item) return false;
-    if (!auth.canRead(req))
+    if (!(await auth.canRead(req)))
       return json(res, 401, { error: "Войдите, чтобы открыть документы" });
 
     if (list && req.method === "GET") {
@@ -111,7 +114,7 @@ export function documentsHttp({
         query.length > 100
       )
         return json(res, 400, { error: "Некорректная страница" });
-      const access = visible(req);
+      const access = await visible(req);
       if (personId !== null && access.scoped && !access.ids.includes(personId))
         return json(res, 200, { total: 0, items: [] });
       const conditions: string[] = [];
@@ -124,7 +127,9 @@ export function documentsHttp({
       }
       if (access.scoped) {
         conditions.push(
-          "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?)))",
+          db.kind === "postgres"
+            ? "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))"
+            : "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?)))",
         );
         args.push(JSON.stringify(access.ids));
       }
@@ -135,7 +140,9 @@ export function documentsHttp({
           )
           .map((person) => person.id);
         conditions.push(
-          "(instr(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?))))",
+          db.kind === "postgres"
+            ? "(strpos(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))))"
+            : "(instr(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?))))",
         );
         args.push(query, JSON.stringify(peopleIds));
       }
@@ -144,22 +151,26 @@ export function documentsHttp({
         : "";
       const total = Number(
         (
-          db
-            .prepare(`SELECT count(*) AS count FROM documents d${where}`)
-            .get(...args) as { count: number }
+          (await db
+            .prepare(
+              `SELECT count(*) AS count FROM documents d${where}`,
+              `SELECT count(*) AS count FROM documents d${where}`,
+            )
+            .get(...args)) as { count: number }
         ).count,
       );
-      const rows = db
+      const rows = (await db
         .prepare(
           `SELECT d.* FROM documents d${where} ORDER BY d.created_at DESC,d.id DESC LIMIT ? OFFSET ?`,
+          `SELECT d.* FROM documents d${where} ORDER BY d.created_at DESC,d.id DESC LIMIT ? OFFSET ?`,
         )
-        .all(...args, limit, offset) as Row[];
-      const links = associations(rows.map((row) => row.id));
+        .all(...args, limit, offset)) as Row[];
+      const links = await associations(rows.map((row) => row.id));
       const people = new Map(
         access.people.map((person) => [person.id, fullName(person)]),
       );
-      const actor = auth.currentUser(req),
-        mayEdit = auth.canEdit(req);
+      const actor = await auth.currentUser(req),
+        mayEdit = await auth.canEdit(req);
       return json(res, 200, {
         total,
         items: rows.map((row) => ({
@@ -177,29 +188,38 @@ export function documentsHttp({
     }
 
     if (item && req.method === "DELETE") {
-      if (!auth.canEdit(req))
+      if (!(await auth.canEdit(req)))
         return json(res, 403, { error: "Нет прав на удаление документа" });
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
-      const row = db
-        .prepare("SELECT * FROM documents WHERE id=?")
-        .get(item[1]) as Row | undefined;
-      const access = visible(req);
-      const personIds = row ? associations([row.id]).get(row.id) || [] : [];
+      const row = (await db
+        .prepare(
+          "SELECT * FROM documents WHERE id=?",
+          "SELECT * FROM documents WHERE id=?",
+        )
+        .get(item[1])) as Row | undefined;
+      const access = await visible(req);
+      const personIds = row
+        ? (await associations([row.id])).get(row.id) || []
+        : [];
       if (
         !row ||
         (access.scoped && !personIds.some((id) => access.ids.includes(id)))
       )
         return json(res, 404, { error: "Документ не найден" });
-      const actor = auth.currentUser(req);
+      const actor = await auth.currentUser(req);
       if (!owns(actor, { createdBy: row.uploaded_by }))
         return json(res, 403, {
           error: "Удалить документ может его автор или администратор",
         });
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        db.prepare("DELETE FROM documents WHERE id=?").run(row.id);
-        audit.record(
+      await db.transaction(async () => {
+        await db
+          .prepare(
+            "DELETE FROM documents WHERE id=?",
+            "DELETE FROM documents WHERE id=?",
+          )
+          .run(row.id);
+        await audit.record(
           {
             action: "Удалён документ",
             entity: "document",
@@ -210,11 +230,7 @@ export function documentsHttp({
           },
           actor!,
         );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+      });
       // The committed catalogue removal revokes access first. A filesystem
       // cleanup failure must not expose the file again or report a false rollback.
       if (/^[a-f0-9-]{36}\.pdf$/.test(row.file_name)) {
@@ -232,20 +248,24 @@ export function documentsHttp({
     }
 
     if (file && req.method === "GET") {
-      const row = db
-        .prepare("SELECT * FROM documents WHERE id=?")
-        .get(file[1]) as Row | undefined;
+      const row = (await db
+        .prepare(
+          "SELECT * FROM documents WHERE id=?",
+          "SELECT * FROM documents WHERE id=?",
+        )
+        .get(file[1])) as Row | undefined;
       if (!row) return json(res, 404, { error: "Документ не найден" });
       if (!/^[a-f0-9-]{36}\.pdf$/.test(row.file_name))
         return json(res, 404, { error: "Файл документа не найден" });
-      const access = visible(req);
+      const access = await visible(req);
       if (
         access.scoped &&
-        !db
+        !(await db
           .prepare(
             "SELECT 1 FROM document_people WHERE document_id=? AND person_id IN (SELECT value FROM json_each(?)) LIMIT 1",
+            "SELECT 1 FROM document_people WHERE document_id=? AND person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)) LIMIT 1",
           )
-          .get(row.id, JSON.stringify(access.ids))
+          .get(row.id, JSON.stringify(access.ids)))
       )
         return json(res, 404, { error: "Документ не найден" });
       const path = join(uploadsDirectory, row.file_name);
@@ -270,7 +290,7 @@ export function documentsHttp({
     }
 
     if (list && req.method === "POST") {
-      if (!auth.canEdit(req))
+      if (!(await auth.canEdit(req)))
         return json(res, 403, { error: "Нет прав на загрузку" });
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -301,7 +321,7 @@ export function documentsHttp({
         new Set(ids).size !== ids.length
       )
         return json(res, 400, { error: "Укажите название и связанных людей" });
-      const access = visible(req),
+      const access = await visible(req),
         allowed = new Set(access.ids);
       if (ids.some((id) => !allowed.has(id)))
         return json(res, 403, { error: "Нет доступа к выбранному человеку" });
@@ -317,10 +337,10 @@ export function documentsHttp({
       try {
         const images = await media.usage();
         const disk = await statfs(uploadsDirectory);
-        const uploader = auth.currentUser(req);
-        if (!uploader?.approved || !auth.canEdit(req))
+        const uploader = await auth.currentUser(req);
+        if (!uploader?.approved || !(await auth.canEdit(req)))
           return json(res, 403, { error: "Право загрузки отозвано" });
-        release = quota.acquire(
+        release = await quota.acquire(
           uploader.id,
           MAX_PDF_BYTES,
           disk.bavail * disk.bsize,
@@ -352,39 +372,38 @@ export function documentsHttp({
           return json(res, 415, { error: "Файл не является PDF" });
         }
         await rename(temporary, target);
-        const latest = auth.currentUser(req);
-        const latestVisible = new Set(visible(req).ids);
+        const latest = await auth.currentUser(req);
+        const latestVisible = new Set((await visible(req)).ids);
         if (
           !latest?.approved ||
-          !auth.canEdit(req) ||
+          !(await auth.canEdit(req)) ||
           latest.id !== uploader.id ||
           ids.some((personId) => !latestVisible.has(personId as string))
         )
           return json(res, 403, {
             error: "Доступ к выбранным людям изменился",
           });
-        db.exec("BEGIN IMMEDIATE");
-        try {
-          db.prepare(
-            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
-          ).run(
-            id,
-            title,
-            title.toLocaleLowerCase("ru"),
-            name,
-            size,
-            uploader.id,
-            new Date().toISOString(),
-          );
+        await db.transaction(async () => {
+          await db
+            .prepare(
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+            )
+            .run(
+              id,
+              title,
+              title.toLocaleLowerCase("ru"),
+              name,
+              size,
+              uploader.id,
+              new Date().toISOString(),
+            );
           const link = db.prepare(
             "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+            "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
           );
-          for (const personId of ids as string[]) link.run(id, personId);
-          db.exec("COMMIT");
-        } catch (error) {
-          db.exec("ROLLBACK");
-          throw error;
-        }
+          for (const personId of ids as string[]) await link.run(id, personId);
+        });
         return json(res, 201, { id });
       } catch (error) {
         if (res.destroyed) return true;
@@ -399,7 +418,14 @@ export function documentsHttp({
       } finally {
         release?.();
         await unlink(temporary).catch(() => {});
-        if (!db.prepare("SELECT 1 FROM documents WHERE id=?").get(id))
+        if (
+          !(await db
+            .prepare(
+              "SELECT 1 FROM documents WHERE id=?",
+              "SELECT 1 FROM documents WHERE id=?",
+            )
+            .get(id))
+        )
           await unlink(target).catch(() => {});
       }
     }

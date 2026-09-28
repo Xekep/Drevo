@@ -355,7 +355,7 @@ test("HTTP revision conflict can be merged and endpoint replacement is committed
   try {
     const origin = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
     const initial = family(person("a"), person("b", ["a"]), person("c"));
-    app.archive.write(initial, app.archive.read().revision);
+    await app.archive.write(initial, (await app.archive.read()).revision);
     const first = await (await fetch(origin + "/api/family")).json();
     const draft = replaceConnection(
       first.family,
@@ -364,7 +364,7 @@ test("HTTP revision conflict can be merged and endpoint replacement is committed
     );
     const concurrent = structuredClone(first.family);
     concurrent.people[0].biography = "Чужая правка";
-    app.archive.write(concurrent, first.revision);
+    await app.archive.write(concurrent, first.revision);
     const put = (body: Family, revision: number) =>
       fetch(origin + "/api/family", {
         method: "PUT",

@@ -15,8 +15,8 @@ export function researchSuggestionsHttp({
   suggestions,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
   publicOrigin?: string;
 }) {
@@ -40,21 +40,21 @@ export function researchSuggestionsHttp({
     )
       return false;
 
-    const actor = auth.currentUser(req);
-    if (!actor || !auth.canEdit(req))
+    const actor = await auth.currentUser(req);
+    if (!actor || !(await auth.canEdit(req)))
       return json(res, actor ? 403 : 401, {
         error: "Предложения доступны пользователям с правом редактирования",
       });
 
-    if (
-      url.pathname === "/api/research/suggestions" &&
-      req.method === "GET"
-    ) {
+    if (url.pathname === "/api/research/suggestions" && req.method === "GET") {
       const people = new Map(
-        archive.read().family.people.map((person) => [person.id, person]),
+        (await archive.read()).family.people.map((person) => [
+          person.id,
+          person,
+        ]),
       );
       return json(res, 200, {
-        suggestions: suggestions.list(actor).map((suggestion) => ({
+        suggestions: (await suggestions.list(actor)).map((suggestion) => ({
           ...suggestion,
           personName:
             suggestion.kind === "person_create"
@@ -91,25 +91,25 @@ export function researchSuggestionsHttp({
       const id = decodeURIComponent(match[1]);
       if (match[2] === "reject")
         return json(res, 200, {
-          suggestion: suggestions.mark(actor, id, "rejected"),
+          suggestion: await suggestions.mark(actor, id, "rejected"),
         });
 
-      const suggestion = suggestions.get(actor, id);
+      const suggestion = await suggestions.get(actor, id);
       if (!suggestion) throw new Error("Предложение не найдено");
       if (suggestion.status !== "pending")
         throw new Error("Предложение уже обработано");
-      const current = archive.read(),
+      const current = await archive.read(),
         next = applyResearchSuggestion(current.family, suggestion),
-        saved = archive.write(
+        saved = await archive.write(
           next,
           current.revision,
           actor,
           "research_suggestion_accept",
           current.family,
         );
-      suggestions.mark(actor, id, "accepted");
+      await suggestions.mark(actor, id, "accepted");
       return json(res, 200, {
-        suggestion: suggestions.get(actor, id),
+        suggestion: await suggestions.get(actor, id),
         revision: saved.revision,
       });
     } catch (error) {

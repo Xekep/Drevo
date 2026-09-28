@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { mediaPattern } from "./media.ts";
+import { configuredDatabaseBackend } from "./store-database.ts";
 
 const DEFAULT_GRACE_MS = 24 * 60 * 60 * 1000;
 const fileNamePattern = /^[a-zA-Z0-9-]+\.(jpg|png|webp|gif|pdf)$/;
@@ -22,14 +23,27 @@ function referencedMedia(db: DatabaseSync, includeBackups = true) {
     const match = mediaPattern.exec(value.url);
     if (match) result.add(match[1]);
   }
-  if (db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'").get())
+  if (
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='documents'",
+      )
+      .get()
+  )
     for (const row of db.prepare("SELECT file_name FROM documents").all())
-      if (typeof row.file_name === "string" && /^[a-f0-9-]{36}\.pdf$/.test(row.file_name))
+      if (
+        typeof row.file_name === "string" &&
+        /^[a-f0-9-]{36}\.pdf$/.test(row.file_name)
+      )
         result.add(row.file_name);
   // История является частью поддерживаемой отмены/восстановления. Пока ссылка
   // присутствует хотя бы в одном снимке, оригинал не является бесхозным.
   if (
-    db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='history'").get()
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_schema WHERE type='table' AND name='history'",
+      )
+      .get()
   )
     for (const row of db.prepare("SELECT data FROM history").all()) {
       const matches = String(row.data).matchAll(
@@ -39,8 +53,10 @@ function referencedMedia(db: DatabaseSync, includeBackups = true) {
     }
   if (includeBackups) {
     const file = String(
-      db.prepare("PRAGMA database_list").all().find((row) => row.name === "main")
-        ?.file || "",
+      db
+        .prepare("PRAGMA database_list")
+        .all()
+        .find((row) => row.name === "main")?.file || "",
     );
     if (file) {
       const backups = join(dirname(file), "backups");
@@ -108,6 +124,13 @@ if (
   if (!databasePath || !uploads) {
     console.error("Usage: media-gc.ts <database.sqlite> <uploads-directory>");
     process.exitCode = 2;
+  } else if (configuredDatabaseBackend(databasePath) === "postgres") {
+    // Native PostgreSQL backups and multiple archives share the upload directory.
+    // A single archive's RLS-filtered references cannot prove a file is unused.
+    // Retain originals until GC can account for every archive and backup.
+    console.log(
+      "Media GC: PostgreSQL originals retained (cross-archive/backup retention)",
+    );
   } else {
     const db = new DatabaseSync(databasePath, { readOnly: true });
     try {

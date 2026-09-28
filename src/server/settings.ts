@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 export type Visibility = {
@@ -6,26 +6,42 @@ export type Visibility = {
   publicAlbums: boolean;
   reverseTimeline: boolean;
 };
-export function settingsStore(db: DatabaseSync) {
+export async function settingsStore(db: StoreDatabase) {
   const audit = auditStore(db);
-  db.prepare("INSERT OR IGNORE INTO tree_settings VALUES(1,0)").run();
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO tree_settings VALUES(1,0)",
+      "INSERT INTO archive_tree_settings(archive_id,reverse_timeline) VALUES(current_setting('drevo.archive_id', true),false) ON CONFLICT DO NOTHING",
+    )
+    .run();
   const initial = process.env.ARCHIVE_PRIVATE === "0" ? 1 : 0;
-  db.prepare(
-    "INSERT OR IGNORE INTO access_settings(id,public_tree,public_albums) VALUES(1,?,?)",
-  ).run(initial, initial);
-  function read(): Visibility {
-    const row = db.prepare("SELECT * FROM access_settings WHERE id=1").get()!;
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO access_settings(id,public_tree,public_albums) VALUES(1,?,?)",
+      "INSERT INTO archive_access_settings(archive_id,public_tree,public_albums) VALUES(current_setting('drevo.archive_id', true),?::integer<>0,?::integer<>0) ON CONFLICT DO NOTHING",
+    )
+    .run(initial, initial);
+  async function read(): Promise<Visibility> {
+    const row = (await db
+      .prepare(
+        "SELECT * FROM access_settings WHERE id=1",
+        "SELECT * FROM runtime_access_settings WHERE id=1",
+      )
+      .get())!;
     return {
       publicTree: !!row.public_tree,
       publicAlbums: !!row.public_albums,
-      reverseTimeline: !!db
-        .prepare("SELECT reverse_timeline FROM tree_settings WHERE id=1")
-        .get()!.reverse_timeline,
+      reverseTimeline: !!(await db
+        .prepare(
+          "SELECT reverse_timeline FROM tree_settings WHERE id=1",
+          "SELECT reverse_timeline FROM runtime_tree_settings WHERE id=1",
+        )
+        .get())!.reverse_timeline,
     };
   }
   return {
     read,
-    write(value: unknown, actor?: ArchiveUser) {
+    async write(value: unknown, actor?: ArchiveUser) {
       const v = value as Visibility;
       if (
         !v ||
@@ -35,28 +51,34 @@ export function settingsStore(db: DatabaseSync) {
           typeof v.reverseTimeline !== "boolean")
       )
         throw new Error("Укажите видимость древа и альбомов");
-      const reverse = v.reverseTimeline ?? read().reverseTimeline;
-      const before = read();
-      db.exec("BEGIN IMMEDIATE");
-      try {
+      const reverse = v.reverseTimeline ?? (await read()).reverseTimeline;
+      const before = await read();
+      await db.transaction(async () => {
         if (
           (v.publicTree || v.publicAlbums) &&
-          db
+          (await db
             .prepare(
               "SELECT 1 FROM users WHERE tree_access='common_ancestors' LIMIT 1",
+              "SELECT 1 FROM runtime_users WHERE tree_access='common_ancestors' LIMIT 1",
             )
-            .get()
+            .get())
         )
           throw new Error(
             "Публичный просмотр недоступен, пока у участников есть ограниченный доступ",
           );
-        db.prepare(
-          "UPDATE access_settings SET public_tree=?,public_albums=? WHERE id=1",
-        ).run(Number(v.publicTree), Number(v.publicAlbums));
-        db.prepare(
-          "UPDATE tree_settings SET reverse_timeline=? WHERE id=1",
-        ).run(Number(reverse));
-        const after = read(),
+        await db
+          .prepare(
+            "UPDATE access_settings SET public_tree=?,public_albums=? WHERE id=1",
+            "UPDATE archive_access_settings SET public_tree=(?::integer<>0),public_albums=(?::integer<>0)",
+          )
+          .run(Number(v.publicTree), Number(v.publicAlbums));
+        await db
+          .prepare(
+            "UPDATE tree_settings SET reverse_timeline=? WHERE id=1",
+            "UPDATE archive_tree_settings SET reverse_timeline=(?::integer<>0)",
+          )
+          .run(Number(reverse));
+        const after = await read(),
           labels = {
             publicTree: "Публичное древо",
             publicAlbums: "Публичные альбомы",
@@ -70,7 +92,7 @@ export function settingsStore(db: DatabaseSync) {
             after: after[key] ? "Да" : "Нет",
           }));
         if (details.length)
-          audit.record(
+          await audit.record(
             {
               action: "Изменены настройки",
               entity: "settings",
@@ -81,12 +103,8 @@ export function settingsStore(db: DatabaseSync) {
             },
             actor,
           );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
-      return read();
+      });
+      return await read();
     },
   };
 }

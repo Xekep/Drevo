@@ -1,14 +1,21 @@
-// Isolated SQLite snapshot: VACUUM / integrity checks must not block HTTP requests.
+// Isolate snapshot creation and validation from the HTTP event loop.
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync } from "node:fs";
+import { writeDatabaseBackup } from "./backup.ts";
+import {
+  storeDatabase,
+  openPostgresDatabase,
+  configuredDatabaseBackend,
+} from "./store-database.ts";
 const [source, destination] = process.argv.slice(2);
-const db = new DatabaseSync(source, { readOnly: true });
+if (!source || !destination) throw new Error("Missing backup paths");
+const db =
+  configuredDatabaseBackend(source) === "postgres"
+    ? await openPostgresDatabase(process.env.ARCHIVE_ID || "", source)
+    : storeDatabase(new DatabaseSync(source, { readOnly: true }));
 try {
-  db.exec("PRAGMA busy_timeout=10000");
-  db.prepare("VACUUM INTO ?").run(destination);
-  chmodSync(destination, 0o600);
+  await writeDatabaseBackup(db, destination);
 } finally {
-  db.close();
+  await db.close();
 }
 const copy = new DatabaseSync(destination, { readOnly: true });
 try {

@@ -2,11 +2,20 @@ import type { openArchive } from "./database.ts";
 import { DEMO_IDENTITIES, DEMO_TITLE } from "./demo-ids.ts";
 
 /** Однократное удаление стартового примера, с сохранением добавленных данных. */
-export function removeStarterFamily(archive: ReturnType<typeof openArchive>) {
+export async function removeStarterFamily(
+  archive: Awaited<ReturnType<typeof openArchive>>,
+) {
   const migration = "remove-starter-family-2026-09-v2";
-  if (archive.db.prepare("SELECT id FROM migrations WHERE id=?").get(migration))
+  if (
+    await archive.db
+      .prepare(
+        "SELECT id FROM migrations WHERE id=?",
+        "SELECT id FROM migrations WHERE id=?",
+      )
+      .get(migration)
+  )
     return;
-  const { family, revision } = archive.read();
+  const { family, revision } = await archive.read();
   const ids = new Set(
     family.people
       .filter(
@@ -18,7 +27,7 @@ export function removeStarterFamily(archive: ReturnType<typeof openArchive>) {
       .map((p) => p.id),
   );
   if (family.demo || ids.size) {
-    archive.write(
+    await archive.write(
       {
         ...family,
         demo: false,
@@ -44,7 +53,10 @@ export function removeStarterFamily(archive: ReturnType<typeof openArchive>) {
       revision,
     );
   }
-  archive.db
-    .prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)")
+  await archive.db
+    .prepare(
+      "INSERT OR IGNORE INTO migrations(id) VALUES(?)",
+      "INSERT INTO migrations(id) VALUES(?) ON CONFLICT DO NOTHING",
+    )
     .run(migration);
 }

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createOAuthStartLimiter, oauthClientKey } from "./oauth-rate-limit.ts";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import {
   sqliteOAuthTransactions,
   type OAuthTransactions,
@@ -16,7 +16,7 @@ export type OAuthOptions = {
     profile: { id: string; name: string },
   ) => void | Promise<void>;
   fetcher?: typeof fetch;
-  db?: DatabaseSync;
+  db?: StoreDatabase;
   transactions?: OAuthTransactions;
 };
 type OAuthProvider = {

@@ -33,8 +33,8 @@ import {
 import { mediaStore } from "./media.ts";
 
 export function gedcomHttp(
-  archive: ReturnType<typeof openArchive>,
-  auth: ReturnType<typeof createAuth>,
+  archive: Awaited<ReturnType<typeof openArchive>>,
+  auth: Awaited<ReturnType<typeof createAuth>>,
   dbPath: string,
   publicOrigin?: string,
 ) {
@@ -55,28 +55,33 @@ export function gedcomHttp(
       throw new Error("Некорректный токен импорта");
     return join(stageRoot, token);
   };
-  const removeStage = (token: string) => {
+  const removeStage = async (token: string) => {
     rmSync(stagePath(token), { force: true, recursive: true });
-    archive.db
-      .prepare("DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?")
+    await archive.db
+      .prepare(
+        "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?",
+        "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=?",
+      )
       .run(token);
   };
-  const clean = () => {
-    for (const row of archive.db
+  const clean = async () => {
+    for (const row of await archive.db
       .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='gedcom' AND expires_at<=?",
         "SELECT token FROM workflow_stages WHERE kind='gedcom' AND expires_at<=?",
       )
       .all(Date.now())) {
       try {
-        removeStage(String(row.token));
+        await removeStage(String(row.token));
       } catch {
         /* Retry on next sweep. */
       }
     }
   };
-  const getStage = (token: string): Stage | undefined => {
-    const row = archive.db
+  const getStage = async (token: string): Promise<Stage | undefined> => {
+    const row = await archive.db
       .prepare(
+        "SELECT actor_id,revision,expires_at,data FROM workflow_stages WHERE kind='gedcom' AND token=?",
         "SELECT actor_id,revision,expires_at,data FROM workflow_stages WHERE kind='gedcom' AND token=?",
       )
       .get(token);
@@ -91,11 +96,22 @@ export function gedcomHttp(
       expires: Number(row.expires_at),
     };
   };
-  const timer = setInterval(clean, 60000);
+  let cleaning: Promise<void> | undefined;
+  const timer = setInterval(() => {
+    if (cleaning) return;
+    cleaning = clean()
+      .catch(() => {
+        console.warn("gedcom_stage_cleanup_failed");
+      })
+      .finally(() => {
+        cleaning = undefined;
+      });
+  }, 60000);
   timer.unref();
   return {
-    close() {
+    async close() {
       clearInterval(timer);
+      await cleaning;
     },
     async handle(
       req: IncomingMessage,
@@ -112,7 +128,7 @@ export function gedcomHttp(
         res.end(JSON.stringify(data));
         return true;
       };
-      const actor = auth.currentUser(req);
+      const actor = await auth.currentUser(req);
       if (!actor || actor.role !== "admin")
         return json(actor ? 403 : 401, {
           error: "Перенос данных доступен администратору",
@@ -120,22 +136,16 @@ export function gedcomHttp(
       try {
         if (url.pathname === "/api/gedcom/export" && req.method === "GET") {
           const format = url.searchParams.get("format") || "gedzip7";
-          if (
-            ![
-              "gedcom551",
-              "gedcom7",
-              "gedzip7",
-            ].includes(format)
-          )
+          if (!["gedcom551", "gedcom7", "gedzip7"].includes(format))
             return json(400, { error: "Неизвестный формат экспорта" });
-          const family = archive.read().family,
-            items = exportMedia(archive.db, family);
+          const family = (await archive.read()).family,
+            items = await exportMedia(archive.db, family);
           if (format === "gedzip7") {
             const directory = await mkdtemp(join(tmpdir(), "drevo-transfer-"));
             try {
               const path = join(directory, "export.gdz");
               await writeGenealogyPackage(path, uploads, family, items);
-              if (auth.currentUser(req)?.role !== "admin")
+              if ((await auth.currentUser(req))?.role !== "admin")
                 return json(403, { error: "Доступ администратора отозван" });
               res.writeHead(200, {
                 "Content-Type": "application/zip",
@@ -172,19 +182,21 @@ export function gedcomHttp(
           return json(403, { error: "Недопустимый источник запроса" });
         if (req.headers["x-drevo-import"] !== "1")
           return json(400, { error: "Откройте импорт в админке" });
-        clean();
+        await clean();
         if (url.pathname.endsWith("preview")) {
           const token = randomUUID(),
             directory = stagePath(token),
-            current = archive.read();
-          const old = archive.db
+            current = await archive.read();
+          const old = await archive.db
             .prepare(
+              "SELECT token FROM workflow_stages WHERE kind='gedcom' AND actor_id=?",
               "SELECT token FROM workflow_stages WHERE kind='gedcom' AND actor_id=?",
             )
             .all(actor.id);
-          for (const row of old) removeStage(String(row.token));
-          const inserted = archive.db
+          for (const row of old) await removeStage(String(row.token));
+          const inserted = await archive.db
             .prepare(
+              "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'gedcom',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='gedcom')<3",
               "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'gedcom',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='gedcom')<3",
             )
             .run(
@@ -230,15 +242,16 @@ export function gedcomHttp(
               directory,
               randomUUID(),
             );
-            if (auth.currentUser(req)?.role !== "admin")
+            if ((await auth.currentUser(req))?.role !== "admin")
               return json(403, { error: "Доступ администратора отозван" });
             if (
               parsed.family.people.length + current.family.people.length >
               10000
             )
               throw new Error("После импорта получится больше 10 000 людей");
-            const updated = archive.db
+            const updated = await archive.db
               .prepare(
+                "UPDATE workflow_stages SET data=? WHERE kind='gedcom' AND token=? AND expires_at>?",
                 "UPDATE workflow_stages SET data=? WHERE kind='gedcom' AND token=? AND expires_at>?",
               )
               .run(
@@ -286,7 +299,7 @@ export function gedcomHttp(
               })),
             });
           } finally {
-            if (!success) removeStage(token);
+            if (!success) await removeStage(token);
           }
         }
         const chunks: Buffer[] = [];
@@ -299,7 +312,9 @@ export function gedcomHttp(
         }
         const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
         const stage =
-          typeof body.token === "string" ? getStage(body.token) : undefined;
+          typeof body.token === "string"
+            ? await getStage(body.token)
+            : undefined;
         if (
           body.confirm !== true ||
           !stage ||
@@ -309,7 +324,7 @@ export function gedcomHttp(
           return json(400, {
             error: "Проверьте файл и подтвердите импорт заново",
           });
-        const current = archive.read();
+        const current = await archive.read();
         if (stage.revision !== current.revision)
           return json(409, {
             error:
@@ -317,7 +332,7 @@ export function gedcomHttp(
           });
         const directory = join(dirname(dbPath), "backups");
         mkdirSync(directory, { recursive: true });
-        writeDatabaseBackup(
+        await writeDatabaseBackup(
           archive.db,
           join(directory, `before-gedcom-${Date.now()}-${randomUUID()}.sqlite`),
         );
@@ -327,7 +342,7 @@ export function gedcomHttp(
           if (stage.files.length) {
             const usage = await mediaStore(uploads).usage(),
               disk = await statfs(uploads);
-            release = quota.acquire(
+            release = await quota.acquire(
               actor.id,
               stage.files.reduce((n, f) => n + f.size, 0),
               disk.bavail * disk.bsize,
@@ -339,10 +354,10 @@ export function gedcomHttp(
               stage.files,
             );
           }
-          const currentActor = auth.currentUser(req);
+          const currentActor = await auth.currentUser(req);
           if (currentActor?.role !== "admin")
             throw new Error("Доступ администратора отозван");
-          const result = archive.write(
+          const result = await archive.write(
             {
               ...current.family,
               people: [...current.family.people, ...stage.family.people],
@@ -360,36 +375,43 @@ export function gedcomHttp(
             "Импорт GEDCOM / XML",
             undefined,
             undefined,
-            (db) => {
-              const consumed = db
+            async (db) => {
+              const consumed = await db
                 .prepare(
+                  "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
                   "DELETE FROM workflow_stages WHERE kind='gedcom' AND token=? AND actor_id=? AND expires_at>?",
                 )
                 .run(body.token, actor.id, Date.now());
               if (!consumed.changes)
                 throw new Error("Предпросмотр уже использован или истёк");
               for (const file of stage.files.filter((f) => f.documentId)) {
-                db.prepare(
-                  "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
-                ).run(
-                  file.documentId!,
-                  file.title,
-                  file.title.toLocaleLowerCase("ru"),
-                  file.name,
-                  file.size,
-                  actor.id,
-                  new Date().toISOString(),
-                );
+                await db
+                  .prepare(
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+                  )
+                  .run(
+                    file.documentId!,
+                    file.title,
+                    file.title.toLocaleLowerCase("ru"),
+                    file.name,
+                    file.size,
+                    actor.id,
+                    new Date().toISOString(),
+                  );
                 for (const id of file.personIds)
-                  db.prepare(
-                    "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
-                  ).run(file.documentId!, id);
+                  await db
+                    .prepare(
+                      "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                      "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+                    )
+                    .run(file.documentId!, id);
               }
             },
           );
           undo = undefined;
           try {
-            removeStage(body.token);
+            await removeStage(body.token);
           } catch {
             /* Import has committed. */
           }

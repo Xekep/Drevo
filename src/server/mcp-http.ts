@@ -1,10 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { mcpTokenStore } from "./mcp-tokens.ts";
-import {
-  McpRateLimitError,
-  type mcpUsageStore,
-} from "./mcp-usage.ts";
+import { McpRateLimitError, type mcpUsageStore } from "./mcp-usage.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -62,10 +59,7 @@ function requestProtocolVersion(request: JsonRpcRequest, req: IncomingMessage) {
     : requestMetaProtocolVersion(request);
 }
 
-function modernResult(
-  value: Record<string, unknown>,
-  cacheable = false,
-) {
+function modernResult(value: Record<string, unknown>, cacheable = false) {
   const meta =
     value._meta && typeof value._meta === "object"
       ? (value._meta as Record<string, unknown>)
@@ -95,7 +89,7 @@ export function mcpHttp({
   usage,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
   tokens: ReturnType<typeof mcpTokenStore>;
   usage: ReturnType<typeof mcpUsageStore>;
   publicOrigin?: string;
@@ -121,7 +115,7 @@ export function mcpHttp({
         error: "Invalid origin",
       });
 
-    const grant = tokens.authenticate(req.headers.authorization);
+    const grant = await tokens.authenticate(req.headers.authorization);
     if (!grant) {
       res.setHeader("WWW-Authenticate", 'Bearer realm="Drevo MCP"');
       return json(res, 401, { error: "Недействительный MCP-токен" });
@@ -192,7 +186,7 @@ export function mcpHttp({
           ? auditParams.name.slice(0, 200)
           : undefined;
     try {
-      usage.check(grant.id, grant.rateLimitPerMinute);
+      await usage.check(grant.id, grant.rateLimitPerMinute);
     } catch (reason) {
       if (reason instanceof McpRateLimitError) {
         if (reason.retryAfterSeconds)
@@ -207,10 +201,10 @@ export function mcpHttp({
       }
       throw reason;
     }
-    const auditRun = usage.begin(grant.id, request.method, toolName);
+    const auditRun = await usage.begin(grant.id, request.method, toolName);
     let auditError = false;
-    res.once("finish", () => {
-      usage.finish(
+    res.once("finish", async () => {
+      await usage.finish(
         auditRun.id,
         auditRun.started,
         auditError || res.statusCode >= 400 ? "error" : "ok",
@@ -339,7 +333,7 @@ export function mcpHttp({
         );
       }
       try {
-        const sourceFamily = archive.read().family,
+        const sourceFamily = (await archive.read()).family,
           family = grant.boundUser
             ? projectFamilyForUser(sourceFamily, grant.boundUser)
             : sourceFamily,
@@ -402,10 +396,6 @@ export function mcpHttp({
     }
 
     auditError = true;
-    return json(
-      res,
-      modern ? 404 : 200,
-      error(id, -32601, "Method not found"),
-    );
+    return json(res, modern ? 404 : 200, error(id, -32601, "Method not found"));
   };
 }

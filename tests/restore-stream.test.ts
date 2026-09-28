@@ -39,13 +39,43 @@ const admin: ArchiveUser = {
   createdAt: "2026-01-01T00:00:00.000Z",
 };
 
+test("restore preview awaits an asynchronous access recheck before parsing or staging data", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-restore-revoked-"));
+  const databasePath = join(directory, "drevo.sqlite");
+  const archive = await openArchive(databasePath, family);
+  const restores = restoreStore(archive, databasePath);
+  try {
+    const bytes = await databaseBackupBytes(archive.db);
+    await assert.rejects(
+      restores.previewStream(Readable.from([bytes]), admin, async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        throw new Error("Access revoked while uploading");
+      }),
+      /Access revoked/,
+    );
+    assert.equal(
+      (
+        await archive.db
+          .prepare("SELECT count(*) AS n FROM workflow_stages")
+          .get()
+      )?.n,
+      0,
+    );
+    assert.equal((await archive.read()).family.title, family.title);
+  } finally {
+    await restores.close();
+    await archive.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("restore preview accepts a SQLite backup split into tiny stream chunks", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-restore-stream-test-")),
     databasePath = join(directory, "drevo.sqlite"),
-    archive = openArchive(databasePath, family),
+    archive = await openArchive(databasePath, family),
     restores = restoreStore(archive, databasePath);
   try {
-    const bytes = databaseBackupBytes(archive.db);
+    const bytes = await databaseBackupBytes(archive.db);
     async function* tinyChunks() {
       for (let offset = 0; offset < bytes.length; offset += 7)
         yield bytes.subarray(offset, offset + 7);
@@ -60,7 +90,7 @@ test("restore preview accepts a SQLite backup split into tiny stream chunks", as
     assert.equal(typeof preview.token, "string");
   } finally {
     restores.close();
-    archive.close();
+    await archive.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
@@ -68,13 +98,13 @@ test("restore preview accepts a SQLite backup split into tiny stream chunks", as
 test("restore stage survives store restart and can be applied by another instance", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-restore-restart-test-")),
     databasePath = join(directory, "drevo.sqlite"),
-    archive = openArchive(databasePath, family);
+    archive = await openArchive(databasePath, family);
   let restores = restoreStore(archive, databasePath);
   try {
-    const bytes = databaseBackupBytes(archive.db);
-    archive.write(
+    const bytes = await databaseBackupBytes(archive.db);
+    await archive.write(
       { ...family, title: "Изменённый архив" },
-      archive.read().revision,
+      (await archive.read()).revision,
     );
     const preview = await restores.preview(bytes, admin);
     restores.close();
@@ -83,7 +113,7 @@ test("restore stage survives store restart and can be applied by another instanc
     assert.equal(result.family.title, family.title);
   } finally {
     restores.close();
-    archive.close();
+    await archive.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

@@ -21,7 +21,7 @@ export function adminMcpHttp({
   usage,
   publicOrigin,
 }: {
-  auth: ReturnType<typeof createAuth>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   tokens: ReturnType<typeof mcpTokenStore>;
   usage: ReturnType<typeof mcpUsageStore>;
   publicOrigin?: string;
@@ -43,20 +43,22 @@ export function adminMcpHttp({
     const path = url.pathname;
     if (path !== "/api/mcp/tokens" && !path.startsWith("/api/mcp/tokens/"))
       return false;
-    if (!auth.isAdmin(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять MCP-токенами",
       });
 
     if (path === "/api/mcp/tokens" && req.method === "GET") {
-      const items = tokens.list().map((token) => ({
-        ...token,
-        usage: usage.tokenSummary(token.id),
-      }));
+      const items = await Promise.all(
+        (await tokens.list()).map(async (token) => ({
+          ...token,
+          usage: await usage.tokenSummary(token.id),
+        })),
+      );
       return json(res, 200, {
         tokens: items,
-        bindings: tokens.bindingOptions(),
-        recentUsage: usage.recent(),
+        bindings: await tokens.bindingOptions(),
+        recentUsage: await usage.recent(),
       });
     }
 
@@ -70,7 +72,10 @@ export function adminMcpHttp({
         return json(
           res,
           201,
-          tokens.issue(auth.currentUser(req)!, await readJson(req)),
+          await tokens.issue(
+            (await auth.currentUser(req))!,
+            await readJson(req),
+          ),
         );
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
@@ -81,7 +86,7 @@ export function adminMcpHttp({
 
     if (path.startsWith("/api/mcp/tokens/") && req.method === "DELETE") {
       try {
-        tokens.revoke(
+        await tokens.revoke(
           decodeURIComponent(path.slice("/api/mcp/tokens/".length)),
         );
         return json(res, 200, { revoked: true });

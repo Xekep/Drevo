@@ -45,7 +45,7 @@ const admin: ArchiveUser = {
   createdAt: "",
 };
 
-test("scoped media assignments require ownership, retain portrait undo and reject another user's uploads", () => {
+test("scoped media assignments require ownership, retain portrait undo and reject another user's uploads", async () => {
   const seed = family();
   seed.people[0].photo = "/media/previous.png";
   seed.people.push({
@@ -53,7 +53,7 @@ test("scoped media assignments require ownership, retain portrait undo and rejec
     createdBy: "other",
     photo: "/media/hidden.png",
   });
-  const archive = openArchive(":memory:", seed);
+  const archive = await openArchive(":memory:", seed);
   const user: ArchiveUser = {
     ...admin,
     id: "owner",
@@ -61,32 +61,44 @@ test("scoped media assignments require ownership, retain portrait undo and rejec
     personId: "father",
     treeAccess: "common_ancestors",
   };
-  const assign = (url?: string) => {
-    const current = archive.read();
+  const assign = async (url?: string) => {
+    const current = await archive.read();
     current.family.people[0].photo = url;
-    return archive.write(current.family, current.revision, user);
+    return await archive.write(current.family, current.revision, user);
   };
   try {
-    assign(undefined);
-    assign("/media/previous.png");
-    assert.throws(() => assign("/media/hidden.png"), /Нет доступа/);
-    const removeOther = registerMediaUpload(
+    await assign(undefined);
+    await assign("/media/previous.png");
+    await assert.rejects(
+      async () => await assign("/media/hidden.png"),
+      /Нет доступа/,
+    );
+    const removeOther = await registerMediaUpload(
       archive.db,
       "/media/new.png",
       "other",
     );
-    assert.throws(() => assign("/media/new.png"), /Нет доступа/);
-    removeOther();
-    registerMediaUpload(archive.db, "/media/new.png", user.id);
-    archive.db.exec("UPDATE media_upload_grants SET expires_ms=0");
-    assert.throws(() => assign("/media/new.png"), /Нет доступа/);
-    registerMediaUpload(archive.db, "/media/new.png", user.id);
-    assign("/media/new.png");
-    archive.db.exec("DELETE FROM media_upload_grants");
-    assign("/media/previous.png");
-    assert.equal(archive.read().family.people[0].photo, "/media/previous.png");
+    await assert.rejects(
+      async () => await assign("/media/new.png"),
+      /Нет доступа/,
+    );
+    await removeOther();
+    await registerMediaUpload(archive.db, "/media/new.png", user.id);
+    await archive.db.exec("UPDATE media_upload_grants SET expires_ms=0");
+    await assert.rejects(
+      async () => await assign("/media/new.png"),
+      /Нет доступа/,
+    );
+    await registerMediaUpload(archive.db, "/media/new.png", user.id);
+    await assign("/media/new.png");
+    await archive.db.exec("DELETE FROM media_upload_grants");
+    await assign("/media/previous.png");
+    assert.equal(
+      (await archive.read()).family.people[0].photo,
+      "/media/previous.png",
+    );
   } finally {
-    archive.close();
+    await archive.close();
   }
 });
 
@@ -99,16 +111,16 @@ test("public albums do not publish orphan uploads or portraits from a private tr
   const app = await startServer(0, join(dir, "archive.sqlite"), true);
   try {
     const url = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-    const settings = settingsStore(app.archive.db);
-    assert.equal(settings.read().publicTree, false);
-    assert.equal(settings.read().publicAlbums, false);
+    const settings = await settingsStore(app.archive.db);
+    assert.equal((await settings.read()).publicTree, false);
+    assert.equal((await settings.read()).publicAlbums, false);
     assert.equal((await fetch(url + "/api/family")).status, 401);
     const data = family();
     data.people[0].photo = "/media/portrait.png";
     data.photos = [
       { id: "album", title: "Снимок", url: "/media/album.png", tags: [] },
     ];
-    app.archive.write(data, app.archive.meta().revision);
+    await app.archive.write(data, (await app.archive.meta()).revision);
     const png = await sharp({
       create: { width: 2, height: 2, channels: 3, background: "green" },
     })
@@ -116,7 +128,7 @@ test("public albums do not publish orphan uploads or portraits from a private tr
       .toBuffer();
     for (const name of ["portrait", "album", "orphan"])
       writeFileSync(join(dir, "uploads", name + ".png"), png);
-    settings.write({ publicTree: false, publicAlbums: true });
+    await settings.write({ publicTree: false, publicAlbums: true });
     assert.equal((await fetch(url + "/media/album.png")).status, 200);
     for (const name of ["portrait", "orphan"])
       for (const suffix of ["", "?variant=thumb"])
@@ -124,7 +136,7 @@ test("public albums do not publish orphan uploads or portraits from a private tr
           (await fetch(url + `/media/${name}.png${suffix}`)).status,
           401,
         );
-    settings.write({ publicTree: true, publicAlbums: true });
+    await settings.write({ publicTree: true, publicAlbums: true });
     assert.equal(
       (await fetch(url + "/media/portrait.png?variant=thumb")).status,
       200,
@@ -134,7 +146,7 @@ test("public albums do not publish orphan uploads or portraits from a private tr
       assert.equal((await fetch(url + "/api/people/search?q=те")).status, 200);
     assert.equal((await fetch(url + "/api/people/search?q=те")).status, 429);
     data.photos = [];
-    app.archive.write(data, app.archive.meta().revision);
+    await app.archive.write(data, (await app.archive.meta()).revision);
     assert.equal(
       (await fetch(url + "/media/album.png")).status,
       401,
@@ -150,11 +162,11 @@ test("public albums do not publish orphan uploads or portraits from a private tr
   }
 });
 
-test("card patches merge independent edits, reject conflicting dates/ownership and retain recoverable history", () => {
-  const db = openArchive(":memory:", family());
+test("card patches merge independent edits, reject conflicting dates/ownership and retain recoverable history", async () => {
+  const db = await openArchive(":memory:", family());
   try {
-    const initial = db.read();
-    db.db.exec(
+    const initial = await db.read();
+    await db.db.exec(
       "CREATE TABLE changed(id TEXT); CREATE TRIGGER changed_person AFTER UPDATE ON people BEGIN INSERT INTO changed VALUES(NEW.id); END;",
     );
     const name = {
@@ -164,22 +176,19 @@ test("card patches merge independent edits, reject conflicting dates/ownership a
       before: "father",
       after: "Отец",
     };
-    const first = db.patchPeople([name], initial.revision, admin)!;
+    const first = (await db.patchPeople([name], initial.revision, admin))!;
     assert.deepEqual(
-      db.db
-        .prepare("SELECT id FROM changed")
-        .all()
-        .map((r) => r.id),
+      (await db.db.prepare("SELECT id FROM changed").all()).map((r) => r.id),
       ["father"],
     );
     assert.ok(
       String(
-        db.db
+        (await db.db
           .prepare("SELECT data FROM history WHERE revision=?")
-          .get(initial.revision)!.data,
+          .get(initial.revision))!.data,
       ).length < 500,
     );
-    const second = db.patchPeople(
+    const second = (await db.patchPeople(
       [
         {
           collection: "people",
@@ -191,21 +200,25 @@ test("card patches merge independent edits, reject conflicting dates/ownership a
       ],
       initial.revision,
       admin,
-    )!;
+    ))!;
     assert.equal(second.baseRevision, first.revision);
     assert.equal(
-      db.patchPeople([name], initial.revision, admin)!.revision,
+      (await db.patchPeople([name], initial.revision, admin))!.revision,
       second.revision,
       "retry is idempotent",
     );
-    assert.throws(
-      () =>
-        db.patchPeople([{ ...name, after: "Другой" }], initial.revision, admin),
+    await assert.rejects(
+      async () =>
+        await db.patchPeople(
+          [{ ...name, after: "Другой" }],
+          initial.revision,
+          admin,
+        ),
       ConflictError,
     );
-    assert.throws(
-      () =>
-        db.patchPeople(
+    await assert.rejects(
+      async () =>
+        await db.patchPeople(
           [
             {
               collection: "people",
@@ -220,42 +233,45 @@ test("card patches merge independent edits, reject conflicting dates/ownership a
         ),
       /раньше ребёнка/,
     );
-    assert.equal(db.meta().revision, second.revision);
+    assert.equal((await db.meta()).revision, second.revision);
     assert.deepEqual(
-      db.readRevision(initial.revision).people,
+      (await db.readRevision(initial.revision)).people,
       initial.family.people,
     );
-    assert.throws(
-      () =>
-        db.patchPeople(
+    await assert.rejects(
+      async () =>
+        await db.patchPeople(
           [{ ...name, before: "Отец", after: "Чужой" }],
           second.revision,
           { ...admin, id: "outsider", role: "relative" },
         ),
       /свои карточки/,
     );
-    assert.throws(
-      () =>
-        db.patchPeople([name], second.revision, { ...admin, role: "reader" }),
+    await assert.rejects(
+      async () =>
+        await db.patchPeople([name], second.revision, {
+          ...admin,
+          role: "reader",
+        }),
       /просмотр/,
     );
-    const structure = db.read();
+    const structure = await db.read();
     structure.family.people.push(person("third", "2000"));
-    db.write(structure.family, structure.revision);
+    await db.write(structure.family, structure.revision);
     assert.deepEqual(
-      db.readRevision(initial.revision).people,
+      (await db.readRevision(initial.revision)).people,
       initial.family.people,
       "mixed snapshots and patches restore exactly",
     );
   } finally {
-    db.close();
+    await db.close();
   }
 });
 
-test("PDF reservations enforce disk headroom, total quota, concurrency and hourly limit across connections", () => {
+test("PDF reservations enforce disk headroom, total quota, concurrency and hourly limit across connections", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-quota-"));
-  const first = openArchive(join(dir, "db.sqlite"), family());
-  const second = openArchive(join(dir, "db.sqlite"), family());
+  const first = await openArchive(join(dir, "db.sqlite"), family());
+  const second = await openArchive(join(dir, "db.sqlite"), family());
   let now = 1_000_000;
   try {
     const options = {
@@ -267,55 +283,59 @@ test("PDF reservations enforce disk headroom, total quota, concurrency and hourl
     };
     const a = documentUploadQuota(first.db, options),
       b = documentUploadQuota(second.db, options);
-    assert.throws(
-      () => a.acquire("u", 20, 1000, { files: 1, bytes: 90 }),
+    await assert.rejects(
+      async () => await a.acquire("u", 20, 1000, { files: 1, bytes: 90 }),
       (e) => e instanceof UploadQuotaError && e.status === 507,
     );
-    assert.throws(
-      () => a.acquire("u", 60, 65),
+    await assert.rejects(
+      async () => await a.acquire("u", 60, 65),
       (e) => e instanceof UploadQuotaError && e.status === 507,
     );
-    const release = a.acquire("u", 60, 1000);
-    assert.throws(
-      () => b.acquire("v", 60, 1000),
+    const release = await a.acquire("u", 60, 1000);
+    await assert.rejects(
+      async () => await b.acquire("v", 60, 1000),
       (e) => e instanceof UploadQuotaError && e.status === 507,
     );
-    release();
-    b.acquire("u", 60, 1000)();
-    assert.throws(
-      () => a.acquire("u", 1, 1000),
+    await release();
+    await (
+      await b.acquire("u", 60, 1000)
+    )();
+    await assert.rejects(
+      async () => await a.acquire("u", 1, 1000),
       (e) => e instanceof UploadQuotaError && e.status === 429,
     );
     now += 3600_001;
-    a.acquire("u", 60, 1000)();
-    const firstPending = a.acquire("one", 1, 1000);
-    const secondPending = b.acquire("two", 1, 1000);
-    assert.throws(
-      () => a.acquire("three", 1, 1000),
+    await (
+      await a.acquire("u", 60, 1000)
+    )();
+    const firstPending = await a.acquire("one", 1, 1000);
+    const secondPending = await b.acquire("two", 1, 1000);
+    await assert.rejects(
+      async () => await a.acquire("three", 1, 1000),
       (e) => e instanceof UploadQuotaError && e.status === 429,
     );
-    firstPending();
-    secondPending();
-    first.db
+    await firstPending();
+    await secondPending();
+    await first.db
       .prepare("INSERT INTO documents VALUES(?,?,?,?,?,?,?)")
       .run("existing", "Doc", "doc", "file.pdf", 90, "u", "2026-09-25");
-    assert.throws(
-      () => b.acquire("v", 20, 1000),
+    await assert.rejects(
+      async () => await b.acquire("v", 20, 1000),
       (e) => e instanceof UploadQuotaError && e.status === 507,
     );
   } finally {
-    first.close();
-    second.close();
+    await first.close();
+    await second.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("deployment preflight rejects an incompatible previous release without modifying the backup", () => {
+test("deployment preflight rejects an incompatible previous release without modifying the backup", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-migration-"));
   const path = join(dir, "backup.sqlite");
-  const db = openArchive(path, family());
-  const revision = db.meta().revision;
-  db.close();
+  const db = await openArchive(path, family());
+  const revision = (await db.meta()).revision;
+  await db.close();
   try {
     mkdirSync(join(dir, "old", "src", "server"), { recursive: true });
     writeFileSync(
@@ -329,11 +349,11 @@ test("deployment preflight rejects an incompatible previous release without modi
     );
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Incompatible schema/);
-    const after = openArchive(path, family());
+    const after = await openArchive(path, family());
     try {
-      assert.equal(after.meta().revision, revision);
+      assert.equal((await after.meta()).revision, revision);
     } finally {
-      after.close();
+      await after.close();
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });

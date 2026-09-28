@@ -83,7 +83,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       body: new Uint8Array(body).buffer,
     });
   try {
-    app.archive.write(family, app.archive.read().revision);
+    await app.archive.write(family, (await app.archive.read()).revision);
     assert.equal((await fetch(`${base}/api/documents`)).status, 200);
     assert.equal((await upload(Buffer.from("not a pdf"))).status, 415);
     assert.deepEqual(readdirSync(join(dir, "uploads")), []);
@@ -214,7 +214,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
   try {
     app = await startServer(0, join(directory, "archive.sqlite"), true);
     const db = app.archive.db;
-    app.archive.write(
+    await app.archive.write(
       {
         title: "Test",
         description: "",
@@ -234,7 +234,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
           generation: 1,
         })),
       },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
     const cookies = new Map<string, string>();
@@ -244,17 +244,19 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       ["other", "relative"],
       ["reader", "reader"],
     ].entries()) {
-      db.prepare(
-        "INSERT INTO users(id,name,role,approved) VALUES(?,?,?,1)",
-      ).run(id, id, role);
+      await db
+        .prepare("INSERT INTO users(id,name,role,approved) VALUES(?,?,?,1)")
+        .run(id, id, role);
       const token = String(index + 1).repeat(64);
-      db.prepare(
-        "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
-      ).run(
-        createHash("sha256").update(token).digest("hex"),
-        id,
-        Date.now() + 60_000,
-      );
+      await db
+        .prepare(
+          "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+        )
+        .run(
+          createHash("sha256").update(token).digest("hex"),
+          id,
+          Date.now() + 60_000,
+        );
       cookies.set(id, `drevo_session=${token}`);
     }
     const request = (
@@ -304,22 +306,26 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       (await request(path, "owner", "DELETE", "https://evil.test")).status,
       403,
     );
-    db.prepare(
-      "UPDATE users SET person_id='hidden',tree_access='common_ancestors' WHERE id='owner'",
-    ).run();
+    await db
+      .prepare(
+        "UPDATE users SET person_id='hidden',tree_access='common_ancestors' WHERE id='owner'",
+      )
+      .run();
     const hiddenFilter = (await (
       await request("/api/documents?personId=anna", "owner")
     ).json()) as { total: number };
     assert.equal(hiddenFilter.total, 0);
     assert.equal((await request(path, "owner", "DELETE")).status, 404);
-    db.prepare("UPDATE users SET tree_access='all' WHERE id='owner'").run();
-    db.exec(
+    await db
+      .prepare("UPDATE users SET tree_access='all' WHERE id='owner'")
+      .run();
+    await db.exec(
       "CREATE TRIGGER reject_document_audit BEFORE INSERT ON audit_entries WHEN NEW.entity='document' BEGIN SELECT RAISE(ABORT, 'test audit failure'); END",
     );
     assert.equal((await request(path, "owner", "DELETE")).status, 500);
-    assert.ok(db.prepare("SELECT 1 FROM documents WHERE id=?").get(id));
+    assert.ok(await db.prepare("SELECT 1 FROM documents WHERE id=?").get(id));
     assert.ok(existsSync(join(directory, "uploads", `${id}.pdf`)));
-    db.exec("DROP TRIGGER reject_document_audit");
+    await db.exec("DROP TRIGGER reject_document_audit");
     const results = await Promise.all([
       request(path, "owner", "DELETE"),
       request(path, "owner", "DELETE"),
@@ -330,19 +336,19 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     );
     assert.equal(existsSync(join(directory, "uploads", `${id}.pdf`)), false);
     assert.equal(
-      db
+      (await db
         .prepare(
           "SELECT count(*) AS n FROM document_people WHERE document_id=?",
         )
-        .get(id)!.n,
+        .get(id))!.n,
       0,
     );
     assert.equal(
-      db
+      (await db
         .prepare(
           "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
         )
-        .get(id)!.n,
+        .get(id))!.n,
       1,
     );
     assert.equal((await request(path + "/file", "owner")).status, 404);

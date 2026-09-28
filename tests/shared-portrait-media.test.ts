@@ -69,15 +69,18 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
   const app = await startServer(0, join(directory, "archive.sqlite"), true),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    app.archive.write(family("/media/shared.png"), app.archive.meta().revision);
-    const issued = sharesStore(app.archive.db).create(
+    await app.archive.write(
+      family("/media/shared.png"),
+      (await app.archive.meta()).revision,
+    );
+    const issued = await sharesStore(app.archive.db).create(
       {
         title: "Часть семьи",
         anchorId: "person",
         personIds: ["person"],
         durationHours: 1,
       },
-      app.archive.read().family,
+      (await app.archive.read()).family,
       actor,
     );
     const portrait = `/api/shared/${issued.token}/portrait/person`;
@@ -91,10 +94,10 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
     assert.ok((metadata.width || 0) <= 400);
     assert.ok((metadata.height || 0) <= 400);
 
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       withGif = structuredClone(current.family);
     withGif.people[0].photo = "/media/shared.gif";
-    app.archive.write(withGif, current.revision);
+    await app.archive.write(withGif, current.revision);
 
     const gifResponse = await fetch(base + portrait);
     assert.equal(gifResponse.status, 200);

@@ -43,7 +43,7 @@ export async function startServer(
     databasePath ||
     process.env.DATABASE_PATH ||
     resolve(root, "data/drevo.sqlite");
-  const archive = openArchive(
+  const archive = await openArchive(
     dbPath,
     validateFamily(
       JSON.parse(
@@ -51,7 +51,7 @@ export async function startServer(
       ),
     ),
   );
-  removeStarterFamily(archive);
+  await removeStarterFamily(archive);
 
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
   const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
@@ -59,17 +59,17 @@ export async function startServer(
   const geocoding = geocodingStore(archive.db);
   const publicOrigin = process.env.PUBLIC_ORIGIN;
   const serveStatic = productionStaticHttp(resolve(root, "dist"), production);
-  const visibility = settingsStore(archive.db);
-  const users = userStore(archive.db);
-  const auth = createAuth(users, archive.db, publicOrigin);
-  const backups = backupCoordinator(archive.db, dbPath);
+  const visibility = await settingsStore(archive.db);
+  const users = await userStore(archive.db);
+  const auth = await createAuth(users, archive.db, publicOrigin);
+  const backups = await backupCoordinator(archive.db, dbPath);
   const manageBackups = backupManagementHttp({
     backups,
     restores,
     auth,
     publicOrigin,
   });
-  const handleArchive = archiveHttp({
+  const handleArchive = await archiveHttp({
     geocoding,
     restores,
     archive,
@@ -139,7 +139,7 @@ export async function startServer(
 
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       path = parsedUrl.pathname;
-    if (path.startsWith("/api/")) auth.refreshSession(req, res);
+    if (path.startsWith("/api/")) await auth.refreshSession(req, res);
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
@@ -148,11 +148,11 @@ export async function startServer(
 
     if (path === "/api/session" && req.method === "GET")
       return json(res, 200, {
-        canEdit: auth.canEdit(req),
+        canEdit: await auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
         vk: vk.enabled,
-        user: auth.currentUser(req),
+        user: await auth.currentUser(req),
       });
 
     if (!path.startsWith("/api/")) {
@@ -219,7 +219,7 @@ export async function startServer(
     });
   });
   console.log(
-    `Древо: http://127.0.0.1:${(server.address() as { port: number }).port}/ · SQLite: ${dbPath}`,
+    `Древо: http://127.0.0.1:${(server.address() as { port: number }).port}/ · ${archive.db.kind === "postgres" ? "PostgreSQL: " + archive.db.archiveId : "SQLite: " + dbPath}`,
   );
   return {
     server,
@@ -228,16 +228,17 @@ export async function startServer(
       await vite?.close();
       const closed = new Promise<void>((done) => server.close(() => done()));
       server.closeIdleConnections();
+      await handleArchive.close();
       const deadline = Date.now() + 15000;
       while (activeRequests > 0 && Date.now() < deadline)
         await new Promise((done) => setTimeout(done, 25));
       if (activeRequests > 0) server.closeAllConnections();
       await closed;
       await backups.close();
-      restores.close();
-      gedcom.close();
+      await restores.close();
+      await gedcom.close();
       geocoding.close();
-      archive.close();
+      await archive.close();
     },
   };
 }

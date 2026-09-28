@@ -17,7 +17,7 @@ import { Transform, type Readable } from "node:stream";
 import { openPromise } from "yauzl";
 import { ZipFile } from "yazl";
 import sharp from "sharp";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import { importGedcom, exportGedcom } from "../domain/gedcom.ts";
 import { importAgelongXml } from "../domain/agelong-xml.ts";
 import {
@@ -327,10 +327,16 @@ export async function prepareGenealogyImport(
   return result;
 }
 
-export function exportMedia(db: DatabaseSync, family: Family): TransferMedia[] {
+export async function exportMedia(
+  db: StoreDatabase,
+  family: Family,
+): Promise<TransferMedia[]> {
   const media = familyMedia(family);
-  const rows = db
-    .prepare("SELECT id,title,file_name FROM documents ORDER BY id")
+  const rows = await db
+    .prepare(
+      "SELECT id,title,file_name FROM documents ORDER BY id",
+      "SELECT id,title,file_name FROM documents ORDER BY id",
+    )
     .all();
   for (const row of rows)
     media.push({
@@ -338,12 +344,14 @@ export function exportMedia(db: DatabaseSync, family: Family): TransferMedia[] {
       file: `documents/${row.file_name}`,
       title: String(row.title),
       mime: "application/pdf",
-      personIds: db
-        .prepare(
-          "SELECT person_id FROM document_people WHERE document_id=? ORDER BY person_id",
-        )
-        .all(row.id)
-        .map((link) => String(link.person_id)),
+      personIds: (
+        await db
+          .prepare(
+            "SELECT person_id FROM document_people WHERE document_id=? ORDER BY person_id",
+            "SELECT person_id FROM document_people WHERE document_id=? ORDER BY person_id",
+          )
+          .all(String(row.id))
+      ).map((link) => String(link.person_id)),
       portraitIds: [],
     });
   return media;

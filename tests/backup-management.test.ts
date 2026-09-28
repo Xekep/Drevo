@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import { validateBackupSettings } from "../src/server/backup-store.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -41,13 +42,13 @@ const seed = {
   photos: [],
   links: [],
 };
-function fixture(remote?: BackupRemote) {
+async function fixture(remote?: BackupRemote) {
   const directory = mkdtempSync(join(tmpdir(), "drevo-managed-backup-")),
     path = join(directory, "drevo.sqlite");
   mkdirSync(join(directory, "uploads"));
-  const archive = openArchive(path, seed);
+  const archive = await openArchive(path, seed);
   let clock = Date.now();
-  const manager = backupCoordinator(archive.db, path, {
+  const manager = await backupCoordinator(archive.db, path, {
     schedule: false,
     now: () => clock,
     remote,
@@ -62,14 +63,14 @@ function fixture(remote?: BackupRemote) {
     },
     async close() {
       await manager.close();
-      archive.close();
+      await archive.close();
       rmSync(directory, { recursive: true, force: true });
     },
   };
 }
 
 test("full managed copy includes database, files and encryption key; count retention keeps safety snapshots", async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
     writeFileSync(f.path + ".secrets.key", Buffer.alloc(32, 42));
     writeFileSync(
@@ -86,22 +87,25 @@ test("full managed copy includes database, files and encryption key; count reten
       "before-import-sentinel.sqlite",
     );
     writeFileSync(untouched, "keep");
-    f.manager.save(
-      { ...f.manager.status(actor.id).settings, keepCount: 2 },
+    await f.manager.save(
+      { ...(await f.manager.status(actor.id)).settings, keepCount: 2 },
       actor,
     );
     for (let i = 0; i < 3; i++) {
-      assert.equal(f.manager.startCreate(actor)?.state, "running");
-      assert.throws(() => f.manager.startCreate(actor), BackupBusyError);
+      assert.equal((await f.manager.startCreate(actor))?.state, "running");
+      await assert.rejects(
+        async () => await f.manager.startCreate(actor),
+        BackupBusyError,
+      );
       await f.manager.idle();
       assert.equal(
-        f.manager.status(actor.id).job?.state,
+        (await f.manager.status(actor.id)).job?.state,
         "succeeded",
-        f.manager.status(actor.id).job?.error,
+        (await f.manager.status(actor.id)).job?.error,
       );
       f.advance(1);
     }
-    const status = f.manager.status(actor.id);
+    const status = await f.manager.status(actor.id);
     assert.equal(status.records.length, 2);
     assert.equal(
       readdirSync(join(f.directory, "backups")).filter((n) =>
@@ -133,32 +137,37 @@ test("full managed copy includes database, files and encryption key; count reten
 });
 
 test("schedule and lease survive another instance; disabled schedule never creates a copy", async () => {
-  const f = fixture();
+  const f = await fixture();
   const connection = new DatabaseSync(f.path);
-  const other = backupCoordinator(connection, f.path, { schedule: false });
+  const other = await backupCoordinator(storeDatabase(connection), f.path, {
+    schedule: false,
+  });
   try {
-    f.manager.save(
-      { ...f.manager.status(actor.id).settings, intervalHours: 1 },
+    await f.manager.save(
+      { ...(await f.manager.status(actor.id)).settings, intervalHours: 1 },
       actor,
     );
     f.advance(1);
-    f.manager.tick();
-    assert.throws(() => other.startCreate(actor), BackupBusyError);
+    await f.manager.tick();
+    await assert.rejects(
+      async () => await other.startCreate(actor),
+      BackupBusyError,
+    );
     await f.manager.idle();
-    const id = f.manager.status(actor.id).job!.id;
-    f.manager.tick();
+    const id = (await f.manager.status(actor.id)).job!.id;
+    await f.manager.tick();
     await f.manager.idle();
-    assert.equal(f.manager.status(actor.id).job!.id, id);
-    assert.equal(other.status(actor.id).records.length, 1);
-    f.manager.save(
-      { ...f.manager.status(actor.id).settings, enabled: false },
+    assert.equal((await f.manager.status(actor.id)).job!.id, id);
+    assert.equal((await other.status(actor.id)).records.length, 1);
+    await f.manager.save(
+      { ...(await f.manager.status(actor.id)).settings, enabled: false },
       actor,
     );
     f.advance(48);
-    f.manager.tick();
+    await f.manager.tick();
     await f.manager.idle();
-    assert.equal(f.manager.status(actor.id).job!.id, id);
-    assert.equal(f.manager.status(actor.id).nextRunAt, null);
+    assert.equal((await f.manager.status(actor.id)).job!.id, id);
+    assert.equal((await f.manager.status(actor.id)).nextRunAt, null);
   } finally {
     await other.close();
     connection.close();
@@ -190,11 +199,11 @@ test("remote copies restore from original destination after settings change; fai
       rmSync(join(vault, record.name));
     },
   };
-  const f = fixture(remote);
+  const f = await fixture(remote);
   try {
-    f.manager.save(
+    await f.manager.save(
       {
-        ...f.manager.status(actor.id).settings,
+        ...(await f.manager.status(actor.id)).settings,
         storage: "remote",
         remoteHost: "vault-one",
         remoteDirectory: "/srv/backups/drevo",
@@ -202,26 +211,26 @@ test("remote copies restore from original destination after settings change; fai
       },
       actor,
     );
-    f.manager.startCreate(actor);
+    await f.manager.startCreate(actor);
     await f.manager.idle();
-    const first = f.manager.status(actor.id).records[0];
+    const first = (await f.manager.status(actor.id)).records[0];
     assert.ok(first);
     assert.equal(existsSync(join(f.directory, "backups", first.name)), false);
     fail = true;
-    f.manager.startCreate(actor);
+    await f.manager.startCreate(actor);
     await f.manager.idle();
-    assert.equal(f.manager.status(actor.id).job?.state, "failed");
+    assert.equal((await f.manager.status(actor.id)).job?.state, "failed");
     assert.equal(removed, 0);
     assert.ok(existsSync(join(vault, first.name)));
     fail = false;
     f.advance(1);
-    f.manager.startCreate(actor);
+    await f.manager.startCreate(actor);
     await f.manager.idle();
     assert.equal(removed, 1);
-    const second = f.manager.status(actor.id).records[0];
-    f.manager.save(
+    const second = (await f.manager.status(actor.id)).records[0];
+    await f.manager.save(
       {
-        ...f.manager.status(actor.id).settings,
+        ...(await f.manager.status(actor.id)).settings,
         storage: "local",
         remoteHost: "vault-two",
       },
@@ -266,19 +275,19 @@ test("settings reject shell options, paths outside storage and unbounded schedul
 });
 
 test("retention cannot remove the bytes of a backup being downloaded", async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
-    f.manager.save(
-      { ...f.manager.status(actor.id).settings, keepCount: 1 },
+    await f.manager.save(
+      { ...(await f.manager.status(actor.id)).settings, keepCount: 1 },
       actor,
     );
-    f.manager.startCreate(actor);
+    await f.manager.startCreate(actor);
     await f.manager.idle();
-    const copy = f.manager.status(actor.id).records[0];
+    const copy = (await f.manager.status(actor.id)).records[0];
     await f.manager.withFile(copy.id, async (file) => {
       const expected = readFileSync(file);
       f.advance(1);
-      f.manager.startCreate(actor);
+      await f.manager.startCreate(actor);
       await f.manager.idle();
       assert.equal(existsSync(join(f.directory, "backups", copy.name)), false);
       assert.deepEqual(readFileSync(file), expected);
@@ -295,12 +304,12 @@ test("retention cannot remove the bytes of a backup being downloaded", async () 
 });
 
 test("restart exposes interrupted job and does not disclose another administrator's restore token", async () => {
-  const f = fixture();
+  const f = await fixture();
   try {
-    f.manager.startCreate(actor);
+    await f.manager.startCreate(actor);
     await f.manager.idle();
-    const copy = f.manager.status(actor.id).records[0];
-    f.manager.preview(copy.id, actor, async () => ({
+    const copy = (await f.manager.status(actor.id)).records[0];
+    await f.manager.preview(copy.id, actor, async () => ({
       token: "private-token",
       title: "Preview",
       people: 0,
@@ -312,11 +321,14 @@ test("restart exposes interrupted job and does not disclose another administrato
     }));
     await f.manager.idle();
     assert.equal(
-      f.manager.status(actor.id).job?.preview?.token,
+      (await f.manager.status(actor.id)).job?.preview?.token,
       "private-token",
     );
-    assert.equal(f.manager.status("other-admin").job?.preview, undefined);
-    f.archive.db
+    assert.equal(
+      (await f.manager.status("other-admin")).job?.preview,
+      undefined,
+    );
+    await f.archive.db
       .prepare("UPDATE backup_job SET data=?,lease_until=? WHERE id=1")
       .run(
         JSON.stringify({
@@ -327,10 +339,10 @@ test("restart exposes interrupted job and does not disclose another administrato
         }),
         0,
       );
-    assert.equal(f.manager.status(actor.id).job?.state, "failed");
-    f.manager.startCreate(actor);
+    assert.equal((await f.manager.status(actor.id)).job?.state, "failed");
+    await f.manager.startCreate(actor);
     await f.manager.idle();
-    assert.equal(f.manager.status(actor.id).job?.state, "succeeded");
+    assert.equal((await f.manager.status(actor.id)).job?.state, "succeeded");
   } finally {
     await f.close();
   }
@@ -344,7 +356,7 @@ test("all backup management endpoints reject guests, readers, relatives and unap
   const base =
     "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
   try {
-    const users = userStore(app.archive.db);
+    const users = await userStore(app.archive.db);
     for (const [index, role, approved] of [
       [0, "reader", 1],
       [1, "relative", 1],
@@ -352,12 +364,12 @@ test("all backup management endpoints reject guests, readers, relatives and unap
       [3, "admin", 1],
     ] as const) {
       const id = "backup-user-" + index;
-      users.register(id, id);
-      app.archive.db
+      await users.register(id, id);
+      await app.archive.db
         .prepare("UPDATE users SET role=?,approved=? WHERE id=?")
         .run(role, approved, id);
       const token = String(index).repeat(64);
-      app.archive.db
+      await app.archive.db
         .prepare("INSERT INTO auth_sessions VALUES(?,?,?)")
         .run(
           createHash("sha256").update(token).digest("hex"),
@@ -439,7 +451,7 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
     assert.fail("Backup timed out");
   }
   try {
-    app.archive.write(seed, app.archive.read().revision);
+    await app.archive.write(seed, (await app.archive.read()).revision);
     assert.equal(
       (await fetch(base + "/api/backups/create", { method: "POST" })).status,
       403,
@@ -457,18 +469,20 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
     const saved = await done();
     assert.equal(saved.job.state, "succeeded", saved.job.error);
     const copy = saved.records[0];
-    app.archive.write(
+    await app.archive.write(
       { ...seed, title: "После изменения" },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
-    userStore(app.archive.db).register("still-here", "Новый участник");
+    await (
+      await userStore(app.archive.db)
+    ).register("still-here", "Новый участник");
     assert.equal(
       (await post("/api/backups/" + copy.id + "/preview")).status,
       202,
     );
     const staged = await done();
     assert.equal(staged.job.state, "succeeded", staged.job.error);
-    assert.equal(app.archive.read().family.title, "После изменения");
+    assert.equal((await app.archive.read()).family.title, "После изменения");
     assert.equal(
       (
         await post("/api/restore/apply", {
@@ -478,9 +492,9 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
       ).status,
       400,
     );
-    app.archive.write(
+    await app.archive.write(
       { ...seed, title: "Конкурентная правка" },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
     assert.equal(
       (
@@ -502,8 +516,8 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
       ).status,
       200,
     );
-    assert.equal(app.archive.read().family.title, seed.title);
-    assert.ok(userStore(app.archive.db).get("still-here"));
+    assert.equal((await app.archive.read()).family.title, seed.title);
+    assert.ok(await (await userStore(app.archive.db)).get("still-here"));
     assert.ok(
       readdirSync(join(directory, "backups")).some((n) =>
         n.startsWith("before-import-"),

@@ -42,6 +42,7 @@ export function backupFiles(
   databasePath: string,
   suppliedRemote?: BackupRemote,
   now = Date.now,
+  databaseBytes = async () => (await stat(databasePath)).size,
 ) {
   const root = dirname(databasePath),
     directory = join(root, "backups");
@@ -101,7 +102,7 @@ export function backupFiles(
         )
           await rm(abandoned, { recursive: true, force: true });
       }
-      let needed = (await stat(databasePath)).size * 2;
+      let needed = (await databaseBytes()) * 2;
       for (const entry of await readdir(join(root, "uploads"), {
         withFileTypes: true,
       })) {
@@ -116,6 +117,7 @@ export function backupFiles(
       await backupProcess(
         process.execPath,
         [
+          "--experimental-strip-types",
           fileURLToPath(new URL("./backup-worker.mjs", import.meta.url)),
           databasePath,
           join(stage, "drevo.sqlite"),

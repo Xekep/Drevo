@@ -3,11 +3,7 @@ import assert from "node:assert/strict";
 import { openArchive } from "../src/server/database.ts";
 import type { Family, Person } from "../src/domain/index.ts";
 
-const person = (
-  id: string,
-  birth: string,
-  parents: string[] = [],
-): Person => ({
+const person = (id: string, birth: string, parents: string[] = []): Person => ({
   id,
   name: id,
   surname: "Тест",
@@ -48,8 +44,8 @@ function seed(): Family {
   };
 }
 
-function observeWrites(store: ReturnType<typeof openArchive>) {
-  store.db.exec(`
+async function observeWrites(store: Awaited<ReturnType<typeof openArchive>>) {
+  await store.db.exec(`
     CREATE TABLE write_events(table_name TEXT NOT NULL, action TEXT NOT NULL);
     CREATE TRIGGER people_insert AFTER INSERT ON people BEGIN INSERT INTO write_events VALUES('people','insert'); END;
     CREATE TRIGGER people_update AFTER UPDATE ON people BEGIN INSERT INTO write_events VALUES('people','update'); END;
@@ -66,55 +62,62 @@ function observeWrites(store: ReturnType<typeof openArchive>) {
   `);
 }
 
-test("single-person edit updates only that row and preserves untouched rowids", () => {
-  const store = openArchive(":memory:", seed());
+test("single-person edit updates only that row and preserves untouched rowids", async () => {
+  const store = await openArchive(":memory:", seed());
   try {
-    observeWrites(store);
+    await observeWrites(store);
     const beforeChild = Number(
-      store.db.prepare("SELECT rowid FROM people WHERE id='child'").get()!.rowid,
+      (await store.db
+        .prepare("SELECT rowid FROM people WHERE id='child'")
+        .get())!.rowid,
     );
-    const current = store.read();
+    const current = await store.read();
     const next = structuredClone(current.family);
     next.people[0].name = "Изменённый отец";
 
-    store.write(next, current.revision);
+    await store.write(next, current.revision);
 
-    const events = store.db
-      .prepare(
-        "SELECT table_name,action,count(*) AS n FROM write_events GROUP BY table_name,action ORDER BY table_name,action",
-      )
-      .all()
-      .map((row) => ({
-        table: String(row.table_name),
-        action: String(row.action),
-        count: Number(row.n),
-      }));
+    const events = (
+      await store.db
+        .prepare(
+          "SELECT table_name,action,count(*) AS n FROM write_events GROUP BY table_name,action ORDER BY table_name,action",
+        )
+        .all()
+    ).map((row) => ({
+      table: String(row.table_name),
+      action: String(row.action),
+      count: Number(row.n),
+    }));
     assert.deepEqual(events, [{ table: "people", action: "update", count: 1 }]);
     assert.equal(
-      Number(store.db.prepare("SELECT rowid FROM people WHERE id='child'").get()!.rowid),
+      Number(
+        (await store.db
+          .prepare("SELECT rowid FROM people WHERE id='child'")
+          .get())!.rowid,
+      ),
       beforeChild,
     );
-    assert.equal(store.read().family.people[0].name, "Изменённый отец");
+    assert.equal((await store.read()).family.people[0].name, "Изменённый отец");
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
-test("explicit people reorder falls back to a rewrite and preserves requested order", () => {
-  const store = openArchive(":memory:", seed());
+test("explicit people reorder falls back to a rewrite and preserves requested order", async () => {
+  const store = await openArchive(":memory:", seed());
   try {
-    const current = store.read();
+    const current = await store.read();
     const next = structuredClone(current.family);
     next.people.reverse();
     const expected = next.people.map((person) => person.id);
 
-    store.write(next, current.revision);
+    await store.write(next, current.revision);
 
     assert.deepEqual(
-      store.read().family.people.map((person) => person.id),
+      (await store.read()).family.people.map((person) => person.id),
       expected,
     );
   } finally {
-    store.close();
+    await store.close();
   }
 });

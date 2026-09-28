@@ -204,14 +204,18 @@ for (const streaming of [false, true])
             /Error in input stream|Provider timed out/,
           );
           assert.equal(
-            app.archive.db
-              .prepare("SELECT yandex_conversation_id FROM ai_chats WHERE id=?")
-              .get(data.chatId)?.yandex_conversation_id,
+            (
+              await app.archive.db
+                .prepare(
+                  "SELECT yandex_conversation_id FROM ai_chats WHERE id=?",
+                )
+                .get(data.chatId)
+            )?.yandex_conversation_id,
             null,
           );
         }
         if (streaming) assert.match(text, /Поиск по 5 доверенным доменам/);
-        const stored = app.archive.db
+        const stored = await app.archive.db
           .prepare(
             "SELECT data FROM ai_chat_messages WHERE role='assistant' ORDER BY id DESC LIMIT 1",
           )

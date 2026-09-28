@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -376,13 +377,13 @@ test("Yandex controlled errors never leak error bodies or credentials", async ()
   assert.ok(!JSON.stringify(redacted).includes(runtime.apiKey));
 });
 
-test("existing catalogue is sole registry; settings persist and migrations are idempotent", () => {
+test("existing catalogue is sole registry; settings persist and migrations are idempotent", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
     initializeArchiveSchema(db);
-    const catalog = researchCatalogStore(db);
-    const original = catalog.webSearchSources();
+    const catalog = researchCatalogStore(storeDatabase(db));
+    const original = await catalog.webSearchSources();
     assert.ok(original.length > 40);
     assert.ok(original.every((s) => s.enabledForAiSearch));
     const military = original.filter((s) => s.categories.includes("military"));
@@ -402,8 +403,8 @@ test("existing catalogue is sole registry; settings persist and migrations are i
       role: "admin" as const,
       createdAt: "2026-09-28T00:00:00Z",
     };
-    const group = catalog.list()[0];
-    catalog.createResource(
+    const group = (await catalog.list())[0];
+    await catalog.createResource(
       group.id,
       {
         name: "Новый архив",
@@ -414,25 +415,28 @@ test("existing catalogue is sole registry; settings persist and migrations are i
       },
       actor,
     );
-    const added = catalog
-      .webSearchSources()
-      .find((s) => s.domain === "new-archive.example")!;
+    const added = (await catalog.webSearchSources()).find(
+      (s) => s.domain === "new-archive.example",
+    )!;
     assert.ok(added.enabledForAiSearch);
     assert.deepEqual(added.categories, ["archives", "education"]);
-    catalog.updateResource(
+    await catalog.updateResource(
       added.id,
       { ...added, enabledForAiSearch: false },
       actor,
     );
     initializeArchiveSchema(db);
     assert.equal(
-      catalog.webSearchSources().find((s) => s.id === added.id)
+      (await catalog.webSearchSources()).find((s) => s.id === added.id)
         ?.enabledForAiSearch,
       false,
     );
-    const settings = aiSettingsStore(db);
-    settings.write({ ...settings.read(), webSearchEnabled: true }, actor);
-    const status = publicAiStatus(settings);
+    const settings = await aiSettingsStore(storeDatabase(db));
+    await settings.write(
+      { ...(await settings.read()), webSearchEnabled: true },
+      actor,
+    );
+    const status = await publicAiStatus(settings);
     assert.equal(status.webSearchEnabled, true);
     assert.equal(status.webSearchDefaultScope, "trusted");
     assert.ok(!Object.hasOwn(status, "apiKey"));
