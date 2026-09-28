@@ -2035,9 +2035,19 @@
   background: #fff;
 }
 .tree-canvas.theme-white
-  .flow-person:not(.is-portrait-card):not(.is-selected):not(.is-spotlit):not(:hover) {
+  .flow-person:not(.is-portrait-card):not(.is-selected):not(.is-spotlit):not(
+    :hover
+  ) {
   border-color: #cbd8d2;
   box-shadow: 0 3px 13px #24473717;
+}
+.tree-canvas.theme-white
+  .flow-person[data-household="true"]:not(.is-selected):not(.is-spotlit):not(
+    :hover
+  ) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 .tree-canvas.theme-white .flow-edge-label.is-inline {
   background: #fff;
@@ -2068,26 +2078,9 @@
   border-color: #72986e;
   background: #f1f7eb;
 }
-.tree-canvas.has-portrait-cards .flow-household:not(.flow-household--siblings) {
-  position: relative;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
+/* The shared wash hugs the photos; the names remain on the open canvas. */
 .tree-canvas.has-portrait-cards
   .flow-household:not(.flow-household--siblings)::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 150px;
-  border: 1px solid #d8e5d3;
-  border-radius: 84px;
-  background: linear-gradient(110deg, #edf4e9d9, #f5f2e9d9);
-  box-shadow:
-    inset 0 1px #ffffffc9,
-    0 5px 18px #38583b13;
-}
-.tree-canvas.theme-white.has-portrait-cards
-  .flow-household:not(.flow-household--siblings)::before {
-  background: linear-gradient(110deg, #f1f7f2, #f8faf8);
+  inset: 4px 32px auto;
+  height: 144px;
 }
