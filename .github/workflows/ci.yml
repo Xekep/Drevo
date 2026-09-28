@@ -10,7 +10,7 @@ concurrency:
 jobs:
   postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:18
@@ -50,6 +50,26 @@ jobs:
           await client.end();
           NODE
           PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_runtime_ci node --experimental-strip-types tests/integration/postgres-runtime.ts
+      - name: Measure concurrent runtime on synthetic archives
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client();
+          await client.connect();
+          for (const size of [1000, 10000]) {
+            await client.query(`CREATE DATABASE drevo_migration_bench_ci${size} OWNER drevo_runtime`);
+          }
+          await client.end();
+          NODE
+          for size in 1000 10000; do
+            PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_bench_ci$size \
+              node --experimental-strip-types ops/postgres/benchmark-runtime.ts "$size" | tee "benchmark-$size.jsonl"
+            echo "### PostgreSQL: $size synthetic people" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "benchmark-$size.jsonl" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
