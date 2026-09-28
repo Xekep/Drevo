@@ -9,6 +9,8 @@ type AdminPanelProps = {
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;
+  save: (family: Family) => Promise<Family>;
+  canEdit: boolean;
 };
 
 const AdminPanelContent = lazy(() =>

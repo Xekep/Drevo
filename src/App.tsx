@@ -662,6 +662,8 @@ export default function App() {
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}
+                  save={save}
+                  canEdit={canEdit}
                 />
               ) : (
                 <div className="archive-status">

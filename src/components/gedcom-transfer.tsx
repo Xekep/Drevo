@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Download, Upload } from "lucide-react";
+import type { Family } from "../domain";
+import { JsonArchiveImport } from "./json-archive-import";
 import {
   TRANSFER_PACKAGE_LIMIT,
   type GenealogyExportFormat,
@@ -18,7 +20,15 @@ type Preview = {
   duplicateCount: number;
   sample: { name: string; birth: string; death?: string }[];
 };
-export function GedcomTransfer({ onImported }: { onImported: () => void }) {
+export function GedcomTransfer({
+  onImported,
+  save,
+  canEdit,
+}: {
+  onImported: () => void;
+  save: (family: Family) => Promise<Family>;
+  canEdit: boolean;
+}) {
   const [format, setFormat] = useState<GenealogyExportFormat>("gedzip7");
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState<Preview | null>(null),
@@ -77,12 +87,11 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
   }
   return (
     <section className="gedcom-transfer">
-      <h2>Перенос семейного архива</h2>
+      <h2>Экспорт</h2>
       <p>
         Обмен с генеалогическими программами и полная резервная копия Drevo.
       </p>
-      <fieldset className="genealogy-formats">
-        <legend>Экспорт</legend>
+      <fieldset className="genealogy-formats" aria-label="Формат экспорта">
         {(
           [
             ["gedcom551", "GEDCOM 5.5.1", "Максимальная совместимость"],
@@ -128,7 +137,14 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
         <Download size={16} />
         Скачать выбранный формат
       </a>
-      <h3>Импорт</h3>
+      <div className="json-export">
+        <a href="/api/export.json?download=1" download="drevo-family.json">
+          <Download size={16} /> Экспорт JSON без фото
+        </a>
+        <p>Карточки и связи для анализа; файлы фотографий не включены.</p>
+      </div>
+      <hr />
+      <h2>Импорт</h2>
       <p>
         GEDCOM 5.5.1 / 7 — до 32 МБ. GEDZIP или XML с вложениями — до 256 МБ;
         каждый файл — до 20 МБ. XML с папкой .files упакуйте в один ZIP.
@@ -220,6 +236,8 @@ export function GedcomTransfer({ onImported }: { onImported: () => void }) {
         </p>
       )}
       {done && <p role="status">{done}</p>}
+      <hr />
+      <JsonArchiveImport save={save} canEdit={canEdit} />
     </section>
   );
 }
