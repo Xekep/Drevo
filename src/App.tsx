@@ -33,7 +33,7 @@ import { ComparisonPanel } from "./components/comparison-panel";
 import { PersonEditor } from "./components/archive-editors";
 import { ArchiveSection } from "./components/archive-section";
 import { PhotoWorkspaceOverlays } from "./components/photo-workspace-overlays";
-import { LoginDialog } from "./components/login-dialog";
+import { LoginButtons } from "./components/login-buttons";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
@@ -132,7 +132,6 @@ export default function App() {
     [accountSession, setAccountSession] = useState<AccountSession | null>(null),
     [accountLoading, setAccountLoading] = useState(true),
     [accountError, setAccountError] = useState(false),
-    [login, setLogin] = useState(false),
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
     [treePreferencesOpen, setTreePreferencesOpen] = useState(false),
@@ -600,10 +599,6 @@ export default function App() {
           onQuery={setQuery}
           onSelect={showPerson}
           busy={busy}
-          onLogin={() => setLogin(true)}
-          user={
-            user || (view === "account" ? accountSession?.user : null) || null
-          }
         />
         {addMenu && canEdit && (
           <div className="archive-add-menu">
@@ -647,7 +642,6 @@ export default function App() {
             family={family}
             readTree={readTree}
             preferences={archive.treePreferences}
-            onLogin={() => setLogin(true)}
             onPerson={showPerson}
             onTreePreferences={() => setTreePreferencesOpen(true)}
             onAdmin={() => navigate("admin")}
@@ -667,14 +661,7 @@ export default function App() {
                 <div className="archive-status">
                   <h1>Управление архивом</h1>
                   <p>Панель доступна администратору.</p>
-                  {!user && (
-                    <button
-                      className="primary-action"
-                      onClick={() => setLogin(true)}
-                    >
-                      Войти
-                    </button>
-                  )}
+                  {!user && <LoginButtons />}
                 </div>
               )
             ) : (
@@ -927,9 +914,7 @@ export default function App() {
                 Личный кабинет
               </button>
             ) : (
-              <button className="primary-action" onClick={() => setLogin(true)}>
-                Войти через Яндекс
-              </button>
+              <LoginButtons />
             )}
           </main>
         ) : archive.error ? (
@@ -968,7 +953,6 @@ export default function App() {
             ready={!!family && !!user && !archive.loadingDetails}
           />
         )}
-      {login && <LoginDialog onClose={() => setLogin(false)} />}
       {family && (
         <PhotoWorkspaceOverlays
           family={family}

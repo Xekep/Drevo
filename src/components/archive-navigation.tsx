@@ -247,8 +247,6 @@ export function ArchiveHeader({
   onQuery,
   onSelect,
   busy,
-  onLogin,
-  user,
   navigation,
 }: {
   people: Person[];
@@ -256,8 +254,6 @@ export function ArchiveHeader({
   onQuery: (query: string) => void;
   onSelect: (id: string) => void;
   busy: boolean;
-  onLogin: () => void;
-  user: ArchiveUser | null;
   navigation: ReactNode;
 }) {
   const [open, setOpen] = useState(false),
@@ -399,11 +395,6 @@ export function ArchiveHeader({
       </div>
       <div className="archive-header-actions">
         {busy && <span role="status">Сохраняем…</span>}
-        {!user && (
-          <button className="login-action" onClick={onLogin}>
-            Войти
-          </button>
-        )}
       </div>
     </header>
   );

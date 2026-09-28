@@ -1,0 +1,64 @@
+.login-providers {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.login-provider-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.login-providers .login-provider {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  box-shadow: 0 3px 10px #293e3412;
+  transition:
+    box-shadow 150ms,
+    transform 150ms;
+}
+.login-providers .login-provider-vk {
+  background: #0077ff;
+  color: white;
+}
+.login-providers .login-provider-yandex {
+  background: white;
+  color: #fc3f1d;
+  border-color: #e4e7df;
+}
+.login-provider svg {
+  width: 44px;
+  height: 44px;
+}
+.login-provider-yandex svg {
+  width: 30px;
+  height: 30px;
+}
+.login-providers .login-provider:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 14px #293e3429;
+}
+.login-providers .login-provider:focus-visible {
+  outline: 3px solid #446d53;
+  outline-offset: 4px;
+}
+.login-providers .login-provider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.login-providers > p {
+  margin: 0;
+  color: #687565;
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-providers .login-provider {
+    transition: none;
+  }
+}
