@@ -83,22 +83,24 @@ export async function patchPeople(
       related.add(String(row.source));
       related.add(String(row.target));
     }
-    const people = await Promise.all(
-      [...related].map(async (id) => {
-        const row = await db
-          .prepare(
-            "SELECT data FROM people WHERE id=?",
-            "SELECT data FROM people WHERE id=?",
-          )
-          .get(id);
-        if (!row) throw new ConflictError("Карточка удалена другим участником");
-        return {
-          ...JSON.parse(String(row.data)),
-          parents: [],
-          spouses: [],
-        } as Person;
-      }),
-    );
+    // One indexed set lookup instead of one network round trip per relative.
+    // A JSON parameter avoids a growing SQL statement / binding-count limit.
+    const rows = await db
+      .prepare(
+        "SELECT id,data FROM people WHERE id IN (SELECT value FROM json_each(?))",
+        "SELECT id,data FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
+      )
+      .all(JSON.stringify([...related]));
+    const byId = new Map(rows.map((row) => [String(row.id), row]));
+    const people = [...related].map((id) => {
+      const row = byId.get(id);
+      if (!row) throw new ConflictError("Карточка удалена другим участником");
+      return {
+        ...JSON.parse(String(row.data)),
+        parents: [],
+        spouses: [],
+      } as Person;
+    });
     const map = new Map(people.map((p) => [p.id, p]));
     for (const id of ids)
       if (actor.role !== "admin" && map.get(id)!.createdBy !== actor.id)
