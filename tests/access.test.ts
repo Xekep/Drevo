@@ -628,7 +628,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       200,
     );
     let publicData = await request("/api/family").then((r) => r.json());
-    assert.equal(publicData.reverseTimeline, true);
+    assert.equal(publicData.reverseTimeline, false);
     assert.ok(publicData.family.people.length);
     assert.equal(publicData.family.photos.length, 0);
     assert.equal((await request("/api/people/search?q=Человек")).status, 200);
@@ -672,11 +672,13 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       publicAlbums: true,
     });
     publicData = await request("/api/family").then((r) => r.json());
+    const archiveSettings = await request("/api/settings", admin).then((r) => r.json());
     assert.equal(
-      publicData.reverseTimeline,
+      archiveSettings.reverseTimeline,
       true,
       "старый формат обновления видимости не сбрасывает направление времени",
     );
+    assert.equal(publicData.reverseTimeline, false);
     assert.equal(publicData.family.people.length, 0);
     assert.equal((await request("/api/research-resources")).status, 401);
     assert.equal((await request("/api/people/search?q=Человек")).status, 401);

@@ -25,14 +25,13 @@ const RECONCILE_TIMEOUT_MS = 15000;
 
 function treePreferencesFromResponse(data: {
   user?: Pick<ArchiveUser, "approved"> | null;
-  reverseTimeline?: boolean;
   treePreferences?: Partial<TreePreferences> | null;
 }): TreePreferences {
   const preferences: TreePreferences = {
     reverseTimeline:
       typeof data.treePreferences?.reverseTimeline === "boolean"
         ? data.treePreferences.reverseTimeline
-        : data.reverseTimeline === true,
+        : DEFAULT_TREE_PREFERENCES.reverseTimeline,
     cardVariant:
       data.treePreferences?.cardVariant === "classic" ? "classic" : "portrait",
     colorScheme:

@@ -59,6 +59,11 @@ test("shared search selects only shared people and disappears after revocation",
   await search.press("Enter");
   await expect(results).toHaveCount(0);
   await expect(page.locator(".inspector-dock")).toContainText("Пётр");
+  const tabs = page.locator(".inspector-dock .panel-tabs [role=tab]");
+  await expect(tabs).toHaveCount(2);
+  const firstTab = (await tabs.nth(0).boundingBox())!;
+  const secondTab = (await tabs.nth(1).boundingBox())!;
+  expect(secondTab.x - (firstTab.x + firstTab.width)).toBeLessThan(32);
   const selected = page.getByTestId("rf__node-e2e-child");
   await expect(selected.locator(".flow-person")).toHaveClass(/is-selected/);
   await expect(selected).toBeInViewport();

@@ -13,6 +13,7 @@ import {
   archivePageSize,
 } from "../domain/archive-projection.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
 import {
   createRequestLimiter,
   requestClientKey,
@@ -94,7 +95,8 @@ export function archiveQueryHttp({
       readTree,
       readPhotos,
       reverseTimeline:
-        personalPreferences?.reverseTimeline ?? settings.reverseTimeline,
+        personalPreferences?.reverseTimeline ??
+        DEFAULT_TREE_PREFERENCES.reverseTimeline,
       treePreferences: personalPreferences,
     };
   };
@@ -241,7 +243,8 @@ export function archiveQueryHttp({
           readTree,
           readPhotos,
           reverseTimeline:
-            personalPreferences?.reverseTimeline ?? access.reverseTimeline,
+            personalPreferences?.reverseTimeline ??
+            DEFAULT_TREE_PREFERENCES.reverseTimeline,
           treePreferences: personalPreferences,
           partial: true,
           pageToken,

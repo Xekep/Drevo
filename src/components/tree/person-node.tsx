@@ -29,6 +29,7 @@ export const TreeActions = createContext<{
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
   cardVariant: TreeCardVariant;
+  showRelationLabel: boolean;
   kinshipReference: Person | null;
   kinshipPeople: Person[];
   kinshipLinks: FamilyLink[];
@@ -39,6 +40,7 @@ export const TreeActions = createContext<{
   expand: () => {},
   reference: () => {},
   cardVariant: "classic",
+  showRelationLabel: true,
   kinshipReference: null,
   kinshipPeople: [],
   kinshipLinks: [],
@@ -77,6 +79,7 @@ export const PersonNode = memo(function PersonNode({
     expand,
     reference,
     cardVariant,
+    showRelationLabel,
     kinshipReference,
     kinshipPeople,
     kinshipLinks,
@@ -95,7 +98,7 @@ export const PersonNode = memo(function PersonNode({
   const overview = detail === "overview" || detail === "distant";
   const portraitCard = cardVariant === "portrait";
   const relationLabel = useMemo(() => {
-    if (!portraitCard) return "";
+    if (!portraitCard || !showRelationLabel) return "";
     return personRelationLabel(
       data.person,
       kinshipReference,
@@ -104,13 +107,14 @@ export const PersonNode = memo(function PersonNode({
     );
   }, [
     portraitCard,
+    showRelationLabel,
     data.person,
     kinshipReference,
     kinshipPeople,
     kinshipLinks,
   ]);
   const lifespan = years(data.person);
-  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
+  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ${portraitCard ? "ветвь" : "потомков"}`;
   return (
@@ -172,7 +176,7 @@ export const PersonNode = memo(function PersonNode({
               {lifespan && (
                 <span className="portrait-card-years">{lifespan}</span>
               )}
-              <small>{relationLabel}</small>
+              {relationLabel && <small>{relationLabel}</small>}
             </span>
           </>
         ) : (

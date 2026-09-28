@@ -4,21 +4,19 @@ import { pipeline } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
-import type { settingsStore } from "./settings.ts";
 import type { sharesStore } from "./shares.ts";
 import { sharedFamily } from "../domain/shared-family.ts";
+import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
 
 export function publicSharingHttp({
   archive,
   media,
   previewImage,
-  visibility,
   shares,
 }: {
   archive: ReturnType<typeof openArchive>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
-  visibility: ReturnType<typeof settingsStore>;
   shares: ReturnType<typeof sharesStore>;
 }) {
   return async (
@@ -114,7 +112,7 @@ export function publicSharingHttp({
       family: sharedFamily(family, share, shared![1]),
       expiresAt: share.expiresAt,
       serverTime: new Date().toISOString(),
-      reverseTimeline: visibility.read().reverseTimeline,
+      reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline,
     });
   };
 }

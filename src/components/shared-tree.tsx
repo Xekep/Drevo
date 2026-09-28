@@ -22,7 +22,6 @@ type SharedData = {
   family: Family;
   expiresAt: string;
   serverTime: string;
-  reverseTimeline: boolean;
 };
 export default function SharedTree({ token }: { token: string }) {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
@@ -71,7 +70,7 @@ export default function SharedTree({ token }: { token: string }) {
             current ??
             readGuestTreePreferences({
               ...DEFAULT_TREE_PREFERENCES,
-              reverseTimeline: result.reverseTimeline === true,
+              reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline,
             }),
         );
         setError("");
@@ -167,7 +166,7 @@ export default function SharedTree({ token }: { token: string }) {
                 user={null}
                 canEdit={false}
                 busy={false}
-                reverse={preferences?.reverseTimeline ?? data.reverseTimeline}
+                reverse={preferences?.reverseTimeline ?? DEFAULT_TREE_PREFERENCES.reverseTimeline}
                 cardVariant={preferences?.cardVariant}
                 colorScheme={preferences?.colorScheme}
                 selected={selected}
@@ -229,11 +228,7 @@ export default function SharedTree({ token }: { token: string }) {
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
-          onExport={(format, signal) =>
-            format === "pdf"
-              ? treeCanvas.current!.exportPdf(signal)
-              : treeCanvas.current!.exportSvg(signal)
-          }
+          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
           preferences={preferences}
           linkedPerson={false}
           localOnly
