@@ -447,16 +447,16 @@ for (const sameField of [false, true])
       second,
       tokens.admin,
       "tree-a",
-      change("birth", "1950", "1951"),
+      change("birth", "1980", "1981", "child"),
       0,
     );
     const two = patch(
       third,
-      tokens.admin,
+      tokens.relative,
       "tree-a",
       sameField
-        ? change("birth", "1950", "1952")
-        : change("biography", undefined, "Воспоминания"),
+        ? change("birth", "1980", "1982", "child")
+        : change("biography", undefined, "Воспоминания", "child"),
       0,
     );
     const results = Promise.allSettled([one, two]);
@@ -470,15 +470,24 @@ for (const sameField of [false, true])
     );
     const saved = await readPostgresArchive(first, "tree-a");
     assert.equal(saved.revision, sameField ? 1 : 2);
+    const child = saved.family.people.find((person) => person.id === "child")!;
     if (sameField) {
       const failed = settled.find(
         (result) => result.status === "rejected",
       ) as PromiseRejectedResult;
       assert.ok(failed.reason instanceof ConflictError);
-      assert.ok(["1951", "1952"].includes(saved.family.people[0].birth));
+      assert.ok(["1981", "1982"].includes(child.birth));
     } else {
-      assert.equal(saved.family.people[0].birth, "1951");
-      assert.equal(saved.family.people[0].biography, "Воспоминания");
+      assert.equal(child.birth, "1981");
+      assert.equal(child.biography, "Воспоминания");
+      assert.deepEqual(
+        new Set(
+          (await postgresAuditReader(first, "tree-a").list()).items.map(
+            (item) => item.actorId,
+          ),
+        ),
+        new Set(["admin", "relative"]),
+      );
     }
     assert.equal(
       (await postgresAuditReader(first, "tree-a").list()).items.length,
