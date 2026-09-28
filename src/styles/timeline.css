@@ -11,7 +11,6 @@
 }
 .horizontal-timeline {
   --timeline-pad: 0px;
-  --timeline-scroll-top: 0px;
   --timeline-viewport-height: 100vh;
   position: absolute;
   inset: 68px 0 0;
@@ -138,17 +137,20 @@
 .timeline-band.russia {
   background: #edf3ea;
 }
+.timeline-emblem {
+  position: sticky;
+  top: 0;
+  height: var(--timeline-viewport-height);
+  display: grid;
+  place-items: center;
+}
 .timeline-band img {
-  position: absolute;
-  top: calc(var(--timeline-scroll-top) + var(--timeline-viewport-height) / 2);
-  left: 50%;
   display: block;
   width: min(190px, 80%);
-  max-height: 250px;
+  max-height: min(250px, calc(var(--timeline-viewport-height) - 20px));
   object-fit: contain;
   opacity: 0.055;
   filter: grayscale(1);
-  transform: translate(-50%, -50%);
 }
 .timeline-axis,
 .timeline-era-bar {

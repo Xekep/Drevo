@@ -320,6 +320,21 @@ test("era emblems stay vertically centered while chronology scrolls", async ({
   if (!viewport) throw new Error("Timeline has no bounds");
   const before = await centerY();
   expect(Math.abs(before - (viewport.y + viewport.height / 2))).toBeLessThan(8);
+  // The emblem must stay in place in the same layout, before a scroll handler
+  // or requestAnimationFrame can compensate. End-position polling hid jitter.
+  const immediateCenters = await timeline.evaluate((element) => {
+    const image = element.querySelector(".timeline-band.soviet img")!;
+    const centers: number[] = [];
+    const maximum = element.scrollHeight - element.clientHeight;
+    for (const progress of [0, 0.1, 0.4, 0.8, 1, 0.5, 0]) {
+      element.scrollTop = maximum * progress;
+      const rect = image.getBoundingClientRect();
+      centers.push(rect.y + rect.height / 2);
+    }
+    return centers;
+  });
+  for (const center of immediateCenters)
+    expect(Math.abs(center - before)).toBeLessThan(2);
   const scrollTop = await timeline.evaluate((element) => {
     element.scrollTop = Math.min(
       150,

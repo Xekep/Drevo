@@ -173,6 +173,39 @@ for (const version of ["5.5.1", "7.0"] as const)
     assert.equal(imported.family.links?.[0].type, "godparent");
   });
 
+for (const version of ["5.5.1", "7.0"] as const) {
+  test(`GEDCOM ${version}: birth surnames use BIRTH for any sex without replacing the current surname`, () => {
+    for (const sex of ["f", "m", "u"] as const) {
+      const family = seed();
+      const person = family.people[0];
+      Object.assign(person, { name: "Александра", surname: "Петрова", maidenName: "Иванова", sex });
+      const text = exportGedcom(family, { version });
+      assert.match(text, version === "7.0" ? /2 TYPE BIRTH\r\n/ : /2 TYPE birth\r\n/);
+      assert.doesNotMatch(text, /2 TYPE (?:MAIDEN|maiden)\r\n/);
+      const standard = text.replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+      for (const type of ["BIRTH", "birth", "MAIDEN", "maiden"]) {
+        const imported = importGedcom(standard.replace(/2 TYPE (?:BIRTH|birth)\r\n/, `2 TYPE ${type}\r\n`), "surname").family.people[0];
+        assert.equal(imported.surname, "Петрова");
+        assert.equal(imported.maidenName, "Иванова");
+        assert.doesNotMatch(imported.biography || "", /Другие имена/);
+      }
+      delete person.maidenName;
+      assert.doesNotMatch(exportGedcom(family, { version }), /2 TYPE (?:BIRTH|birth)\r\n/);
+    }
+  });
+
+  test(`GEDCOM ${version}: explicit birth name wins over maiden name and legacy fallback`, () => {
+    const text = `0 HEAD\n1 GEDC\n2 VERS ${version}\n0 @I1@ INDI\n1 NAME Анна /Петрова/\n1 NAME Анна /Сидорова/\n2 TYPE MAIDEN\n1 NAME Анна /Иванова/\n2 TYPE BIRTH\n1 _MAIDEN Старое значение\n0 TRLR\n`;
+    const imported = importGedcom(text, "birth-first").family.people[0];
+    assert.equal(imported.surname, "Петрова");
+    assert.equal(imported.maidenName, "Иванова");
+    assert.match(imported.biography || "", /Сидорова/);
+    assert.doesNotMatch(imported.biography || "", /Иванова/);
+    const legacy = importGedcom(text.replace(/1 NAME Анна \/(?:Сидорова|Иванова)\/\n2 TYPE (?:MAIDEN|BIRTH)\n/g, ""), "legacy").family.people[0];
+    assert.equal(legacy.maidenName, "Старое значение");
+  });
+}
+
 for (const version of ["5.5.1", "7.0"] as const)
   test(`GEDCOM ${version}: source details and place coordinates survive without Drevo metadata`, () => {
     const family = seed();
@@ -281,6 +314,7 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     await writeFile(join(uploads, "file.pdf"), pdf);
     const family = seed();
     family.people[0].photo = "/media/photo.png";
+    family.people[0].maidenName = "Иванова";
     family.people[0].birth = "1900-01-01";
     family.people[0].birthPlace = "Мурзинка";
     family.people[0].birthLocation = { place: "Мурзинка", lat: 53.75, lon: 67.375 };
@@ -339,6 +373,11 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
       "media/file.pdf",
       "media/photo.png",
     ]);
+    assert.match(gedcom, /2 TYPE BIRTH\r\n/);
+    const standard = gedcom.replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+    const standardPerson = importGedcom(standard, "gdz-birth").family.people[0];
+    assert.equal(standardPerson.surname, family.people[0].surname);
+    assert.equal(standardPerson.maidenName, "Иванова");
     assert.match(gedcom, /2 PLAC Мурзинка\r\n3 MAP\r\n4 LATI N53\.75\r\n4 LONG E67\.375/);
     assert.match(gedcom, /0 @S1@ SOUR\r\n1 TITL Метрическая книга\r\n1 _TYPE Архив\r\n1 _URL https:\/\/example\.org\/archive\/7\r\n1 NOTE URL: https:\/\/example\.org\/archive\/7\r\n1 NOTE Комментарий архивиста/);
     const stage = join(dir, "stage");
