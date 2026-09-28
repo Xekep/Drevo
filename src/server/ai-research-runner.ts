@@ -139,6 +139,7 @@ export function createResearchRunner({
       string,
       Extract<AnswerReference, { kind: "web" }>
     >();
+    let webCitationRetryUsed = false;
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
@@ -225,7 +226,7 @@ export function createResearchRunner({
         ...(searchTool
           ? [
               searchTool.description,
-              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global только явно, если доверенных источников недостаточно или пользователь просит более широкий поиск. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой.",
+              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global, если доверенных источников недостаточно или пользователь просит более широкий поиск. Trusted проверяет только перечисленные searchedDomains, а не все архивы: если сайт нужного архива не проверен или результаты относятся к другому региону, выполни global с полным названием архива, регионом и шифром. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
             ]
           : []),
         "Опирайся только на данные инструментов и слова пользователя.",
@@ -633,6 +634,35 @@ export function createResearchRunner({
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
+        const hasWebCitation = [...webReferences.keys()].some((url) =>
+          rawContent.includes(`](${url})`),
+        );
+        if (
+          webReferences.size &&
+          !hasWebCitation &&
+          !webCitationRetryUsed &&
+          round < runtime.maxToolIterations
+        ) {
+          webCitationRetryUsed = true;
+          pendingInput.push({
+            type: "message",
+            role: "user",
+            content:
+              "В ответе нет ссылок на проверенные поиском источники. Не повторяй неподтверждённые утверждения о фондах и содержимом дел. Если выдача не относится к нужному архиву и региону, выполни web_search со scope global, полным названием архива, регионом и шифром. Затем дай краткий ответ с Markdown-ссылками на конкретные страницы из результатов. Если точное совпадение не подтверждено, прямо скажи это; не утверждай, что документ отсутствует в архиве.",
+          });
+          onStatus("Проверяю ссылки и соответствие источников запросу…");
+          continue;
+        }
+        if (webReferences.size && !hasWebCitation)
+          answer.content = [
+            "Не удалось подтвердить ответ источниками. Поиск вернул следующие страницы — их ещё нужно сверить с нужным архивом и шифром; это не подтверждение наличия или отсутствия документа:",
+            ...[...webReferences.values()]
+              .slice(0, 5)
+              .map(
+                (source) =>
+                  `- [${source.label.replace(/[\\[\]]/g, "") || source.domain}](${source.url})`,
+              ),
+          ].join("\n\n");
         if (
           !rawContent.trim() &&
           !createdSuggestionIds.size &&
