@@ -161,6 +161,18 @@ test("chronology retains exact years and separate remarriages with undated spous
     person("ac", "1940", ["a", "c"]),
   ]);
 });
+
+test("chronology keeps exact dates and routes for three partners sharing one card", async () => {
+  await verify([
+    person("parent", "1900", [], ["a", "b", "c"]),
+    person("a", "1905"),
+    person("b", "1898"),
+    person("c"),
+    person("first", "1930", ["parent", "a"]),
+    person("second", "1935", ["parent", "b"]),
+    person("third", "1940", ["parent", "c"]),
+  ]);
+});
 test("chronology groups undated families and never invents a second parent", async () => {
   await verify([
     person("a", "", [], ["b"]),

@@ -1419,7 +1419,7 @@ test("the initial tree grows from roots toward descendants", async ({
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
-  await expect(nodes).toHaveCount(7);
+  await expect(nodes).toHaveCount(6);
   await expect(page.locator(".tree-grow-edge")).toHaveCount(6);
   const delays = await nodes.evaluateAll((items) =>
     items
@@ -1428,7 +1428,6 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   expect(delays).toEqual([
     "0s",
-    "0.34s",
     "0.34s",
     "0.37s",
     "0.4s",
@@ -1572,6 +1571,10 @@ test("the initial tree grows from roots toward descendants", async ({
   const toolsAfterCard = await cameraTools.boundingBox();
   expect(toolsAfterCard).not.toBeNull();
   expect(Math.abs(toolsAfterCard!.x - toolsBeforeCard!.x)).toBeGreaterThan(10);
+  // After focusing a person, offscreen edges may be unmounted by React Flow.
+  await page
+    .getByRole("button", { name: "Вписать видимую часть дерева" })
+    .click();
   const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
   await expect(finalPaths).toHaveCount(6);
   expect(

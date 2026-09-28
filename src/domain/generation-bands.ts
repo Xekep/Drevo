@@ -54,6 +54,7 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
   );
   const level = (n: ElkNode) =>
     Number(n.layoutOptions!["elk.partitioning.partition"]);
+  const heights = new Map(nodes.map((n) => [level(n), n.height!]));
   const groups = new Map<string, ElkNode[]>();
   for (const node of nodes) {
     const key = find(node.id),
@@ -83,7 +84,7 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
       const ordered = [...rows].sort((a, b) => a[0] - b[0]);
       const corridors = ordered.slice(1).map(([to, end], i) => {
         const [from, y] = ordered[i];
-        const start = y + size.height + 2 * GENERATION_DEVIATION;
+        const start = y + heights.get(from)!;
         const lanes = [
           start,
           ...new Set(
@@ -130,7 +131,7 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
       const list = constraints.get(to) || [];
       list.push({
         from,
-        distance: size.height + 2 * GENERATION_DEVIATION + gap,
+        distance: heights.get(from)! + gap,
       });
       constraints.set(to, list);
     }
@@ -144,7 +145,10 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
     let targetY = previous
       ? previous.targetY +
         Math.max(
-          (rank - previous.level) * pitch,
+          Math.max(
+            (rank - previous.level) * pitch,
+            heights.get(previous.level)! + 36,
+          ),
           Math.max(150, size.height + 60) + previousMaxOffset - minOffset,
         )
       : 12 + GENERATION_DEVIATION;
@@ -186,7 +190,7 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
       rightByLevel.set(rank, x + right - left);
     const knots = component.rows.flatMap(([rank, oldY]) => {
       const newY = targets.get(rank)! - GENERATION_DEVIATION;
-      const height = size.height + 2 * GENERATION_DEVIATION;
+      const height = heights.get(rank)!;
       return [
         { from: oldY, to: newY },
         { from: oldY + height, to: newY + height },
@@ -194,7 +198,9 @@ export function alignGenerationBands(input: ElkNode, size: TreeNodeSize) {
     });
     for (const corridor of component.corridors) {
       const start =
-        targets.get(corridor.from)! + size.height + GENERATION_DEVIATION;
+        targets.get(corridor.from)! -
+        GENERATION_DEVIATION +
+        heights.get(corridor.from)!;
       const gap = targets.get(corridor.to)! - GENERATION_DEVIATION - start;
       let walked = 0;
       for (let i = 1; i < corridor.lanes.length - 1; i++) {

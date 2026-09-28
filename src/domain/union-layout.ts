@@ -15,6 +15,12 @@ import {
   alignGenerationBands,
   GENERATION_DEVIATION,
 } from "./generation-bands.ts";
+import {
+  groupFamilyUnions,
+  localUnionRoutes,
+  type FamilyUnion,
+  type UnionGroup,
+} from "./union-groups.ts";
 
 export type UnionOccurrence = { id: string; personId: string; block: string };
 export type UnionBranch = {
@@ -33,18 +39,13 @@ export type UnionBlock = {
   width: number;
   height: number;
 };
-type Unit = {
-  id: string;
-  members: string[];
-  children: string[];
-  married: boolean;
-};
+type Unit = UnionGroup;
 const unionId = (ids: string[]) => `union:${JSON.stringify([...ids].sort())}`;
 
 /** Один союз — одна точная пара. Общий супруг не объединяет разные союзы. */
 export function familyUnions(people: LayoutPerson[]) {
   const known = new Set(people.map((p) => p.id));
-  const units = new Map<string, Unit>();
+  const units = new Map<string, FamilyUnion>();
   const ensure = (members: string[]) => {
     const ids = [...new Set(members.filter((id) => known.has(id)))].sort();
     if (!ids.length) return undefined;
@@ -74,11 +75,11 @@ async function geometryForSeed(
   size: TreeNodeSize,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
-  const units = familyUnions(people);
+  const families = familyUnions(people);
   const byId = new Map(people.map((p) => [p.id, p]));
-  const origins = new Map<string, Unit>();
-  for (const unit of units)
-    for (const child of unit.children) origins.set(child, unit);
+  const origins = new Map<string, FamilyUnion>();
+  for (const family of families)
+    for (const child of family.children) origins.set(child, family);
   const adoptedBy = new Map<string, string[]>();
   for (const link of links)
     if (link.type === "adoptive_parent" && !origins.has(link.to)) {
@@ -89,6 +90,10 @@ async function geometryForSeed(
   const levels = householdLevels(
     people.map((p) => ({ ...p, parents: adoptedBy.get(p.id) || p.parents })),
   );
+  const units = groupFamilyUnions(families, levels);
+  const familyGroups = new Map(
+    units.flatMap((u) => u.families.map((f) => [f.id, u] as const)),
+  );
   const primary = new Map<string, Unit>();
   for (const unit of units)
     for (const id of unit.members) if (!primary.has(id)) primary.set(id, unit);
@@ -97,16 +102,25 @@ async function geometryForSeed(
     const unit = {
       id: `person:${JSON.stringify(p.id)}`,
       members: [p.id],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(unit);
     primary.set(p.id, unit);
   }
-  type Attachment = { from: Unit; to: Unit; child: string };
+  type Attachment = {
+    from: Unit;
+    to: Unit;
+    child: string;
+    family: FamilyUnion;
+  };
   const attachments: Attachment[] = [];
-  for (const [child, from] of origins)
-    attachments.push({ from, to: primary.get(child)!, child });
+  for (const [child, family] of origins)
+    attachments.push({
+      from: familyGroups.get(family.id)!,
+      to: primary.get(child)!,
+      child,
+      family,
+    });
 
   // Циклы возникают в проекции союзов даже при корректном DAG происхождения.
   // Разрываем только визуальную зависимость: ребёнок получает карточку-ссылку.
@@ -137,8 +151,7 @@ async function geometryForSeed(
     const leaf = {
       id: `reference:${JSON.stringify([edge.from.id, edge.child])}`,
       members: [edge.child],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(leaf);
     edge.to = leaf;
@@ -176,8 +189,7 @@ async function geometryForSeed(
     const leaf = {
       id: `continuation:${JSON.stringify([a.from.id, a.child])}`,
       members: [a.child],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(leaf);
     depth.set(leaf.id, depth.get(a.to.id)!);
@@ -203,6 +215,26 @@ async function geometryForSeed(
     units.map((u) => [u.id, u.members.map((id) => nodeId(u, id))]),
   );
   const width = (u: Unit) => u.members.length * (W + 32) - 32;
+  const localRoutes = new Map(
+    units.map((u) => [u.id, localUnionRoutes(u, size)]),
+  );
+  const familyRoutes = new Map(
+    [...localRoutes.values()].flatMap((r) =>
+      r.families.map((f) => [f.family.id, f] as const),
+    ),
+  );
+  const layerHeights = new Map<number, number>();
+  for (const unit of units) {
+    const level = depth.get(unit.id)!;
+    layerHeights.set(
+      level,
+      Math.max(
+        layerHeights.get(level) || 0,
+        H + 2 * GENERATION_DEVIATION + localRoutes.get(unit.id)!.bottom,
+      ),
+    );
+  }
+  const outPort = (family: FamilyUnion) => JSON.stringify([family.id, "out"]);
   const portId = (u: Unit, person: string) =>
     JSON.stringify([u.id, person, "in"]);
   const nodes: ElkNode[] = [...units]
@@ -215,20 +247,28 @@ async function geometryForSeed(
     .map((u) => ({
       id: u.id,
       width: width(u),
-      height: H + 2 * GENERATION_DEVIATION,
+      height: layerHeights.get(depth.get(u.id)!),
       layoutOptions: {
         "elk.portConstraints": "FIXED_POS",
         "elk.partitioning.partition": String(depth.get(u.id)),
       },
       ports: [
         {
-          id: `${u.id}:out`,
+          id: `${u.id}:adoption`,
           x: width(u) / 2,
-          y: H + 2 * GENERATION_DEVIATION,
+          y: layerHeights.get(depth.get(u.id)!),
           width: 0,
           height: 0,
           layoutOptions: { "elk.port.side": "SOUTH" },
         },
+        ...localRoutes.get(u.id)!.families.map((f) => ({
+          id: outPort(f.family),
+          x: f.joint.x,
+          y: layerHeights.get(depth.get(u.id)!),
+          width: 0,
+          height: 0,
+          layoutOptions: { "elk.port.side": "SOUTH" },
+        })),
         ...u.members.map((id, i) => ({
           id: portId(u, id),
           x: i * (W + 32) + W / 2,
@@ -241,7 +281,7 @@ async function geometryForSeed(
     }));
   const elkEdges: ElkExtendedEdge[] = attachments.map((a, i) => ({
     id: `branch:${i}`,
-    sources: [`${a.from.id}:out`],
+    sources: [outPort(a.family)],
     targets: [portId(a.to, a.child)],
   }));
   // Усыновление влияет на расположение одиночной карточки, но не на состав союза.
@@ -256,7 +296,7 @@ async function geometryForSeed(
   for (const [i, a] of adoptions.entries())
     elkEdges.push({
       id: `adoption:${i}`,
-      sources: [`${primary.get(a.from)!.id}:out`],
+      sources: [`${primary.get(a.from)!.id}:adoption`],
       targets: [portId(primary.get(a.to)!, a.to)],
     });
   const laidOut = await layout({
@@ -290,13 +330,26 @@ async function geometryForSeed(
   );
   const positions: TreeGeometry["positions"] = [];
   const blocks: UnionBlock[] = [];
+  const partners = new Map<string, Set<string>>();
+  for (const f of families.filter((f) => f.married))
+    for (const id of f.members) {
+      const list = partners.get(id) || new Set<string>();
+      f.members
+        .filter((other) => other !== id)
+        .forEach((other) => list.add(other));
+      partners.set(id, list);
+    }
   for (const unit of units) {
     const p = placed.get(unit.id)!;
     unit.members.forEach((id, i) =>
       positions.push([nodeId(unit, id), { x: p.x + i * (W + 32), y: p.y }]),
     );
     // Общая подложка обозначает брак, а не только общих детей.
-    if (unit.members.length > 1 && unit.married)
+    if (
+      unit.members.length === 2 &&
+      unit.families.some((f) => f.married) &&
+      unit.members.every((id) => partners.get(id)!.size === 1)
+    )
       blocks.push({
         id: unit.id,
         members: unit.members.map((id) => nodeId(unit, id)),
@@ -306,28 +359,29 @@ async function geometryForSeed(
       });
   }
   let branches: UnionBranch[] = [];
-  for (const unit of units) {
-    if (unit.members.length !== 2) continue;
+  for (const family of families) {
+    const unit = familyGroups.get(family.id)!;
+    const local = familyRoutes.get(family.id)!;
+    if (!local.pair) continue;
     const p = placed.get(unit.id)!;
-    const [a, b] = unit.members;
-    const relations: UnionBranch["relations"] = unit.married
+    const [a, b] = family.members;
+    const relations: UnionBranch["relations"] = family.married
       ? [{ from: a, to: b, type: "spouse" }]
-      : unit.children.flatMap((to) =>
-          unit.members.map((from) => ({ from, to, type: "parent" as const })),
+      : family.children.flatMap((to) =>
+          family.members.map((from) => ({ from, to, type: "parent" as const })),
         );
     branches.push({
-      id: `pair:${unit.id}`,
+      id: `pair:${family.id}`,
       source: nodeId(unit, a),
       target: nodeId(unit, b),
-      union: unit.id,
+      union: family.id,
       relations,
       route: {
-        sourceHandle: "right",
-        targetHandle: "left",
-        points: [
-          { x: p.x + W, y: p.y + H / 2 },
-          { x: p.x + W + 32, y: p.y + H / 2 },
-        ],
+        ...local.pair,
+        points: local.pair.points.map((point) => ({
+          x: p.x + point.x,
+          y: p.y + point.y,
+        })),
       },
     });
   }
@@ -335,10 +389,8 @@ async function geometryForSeed(
   for (const [i, a] of attachments.entries()) {
     const route = laidEdges.get(`branch:${i}`)?.sections?.[0];
     const p = placed.get(a.from.id)!;
-    const joint = {
-      x: p.x + width(a.from) / 2,
-      y: p.y + (a.from.members.length > 1 ? H / 2 : H),
-    };
+    const localJoint = familyRoutes.get(a.family.id)!.joint;
+    const joint = { x: p.x + localJoint.x, y: p.y + localJoint.y };
     const target = placed.get(a.to.id)!;
     const points = [
       joint,
@@ -349,10 +401,10 @@ async function geometryForSeed(
     ];
     branches.push({
       id: `child:${JSON.stringify(a.child)}`,
-      source: nodeId(a.from, a.from.members[0]),
+      source: nodeId(a.from, a.family.members[0]),
       target: nodeId(a.to, a.child),
-      union: a.from.id,
-      relations: a.from.members.map((from) => ({
+      union: a.family.id,
+      relations: a.family.members.map((from) => ({
         from,
         to: a.child,
         type: "parent",
@@ -376,8 +428,10 @@ async function geometryForSeed(
     }
     for (const b of branches) {
       for (const p of b.route.points) p.y = maxY + H - p.y;
-      if (b.route.sourceHandle === "bottom") b.route.sourceHandle = "top";
-      if (b.route.targetHandle === "top") b.route.targetHandle = "bottom";
+      const mirror = (handle: EdgeRoute["sourceHandle"]) =>
+        handle === "bottom" ? "top" : handle === "top" ? "bottom" : handle;
+      b.route.sourceHandle = mirror(b.route.sourceHandle);
+      b.route.targetHandle = mirror(b.route.targetHandle);
     }
   }
   // Дополнительные отношения обходят все отображаемые карточки, включая повторы.

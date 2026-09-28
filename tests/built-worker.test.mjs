@@ -53,8 +53,15 @@ test(
     try {
       const g = await calculate(worker, "generations");
       assert.equal(g.error, undefined);
-      assert.equal(g.blocks.length, 2);
-      assert.equal(g.occurrences.length, 6);
+      assert.equal(g.blocks.length, 0);
+      assert.equal(g.occurrences.length, 5);
+      const couplePositions = new Map(g.positions);
+      const commonX = couplePositions.get("a").x;
+      assert.ok(
+        (couplePositions.get("b").x - commonX) *
+          (couplePositions.get("c").x - commonX) <
+          0,
+      );
       assert.equal(g.branches.length, 4);
       const portrait = await calculate(
         worker,

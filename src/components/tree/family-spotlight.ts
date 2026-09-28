@@ -24,6 +24,16 @@ export function familySpotlight(
       chosen.set(occurrence.personId, occurrence.id);
 
   for (const branch of geometry.branches || []) {
+    if (branch.union !== union) continue;
+    // Несколько союзов могут делить один блок размещения. Выбираем родителей
+    // по концам связи конкретного союза, не подсвечивая остальных партнёров.
+    for (const id of branch.id.startsWith("pair:")
+      ? [branch.source, branch.target]
+      : [branch.source]) {
+      const personId = peopleByOccurrence.get(id);
+      if (personId && members.has(personId) && available.has(id))
+        chosen.set(personId, id);
+    }
     const child = peopleByOccurrence.get(branch.target);
     if (
       branch.union === union &&
