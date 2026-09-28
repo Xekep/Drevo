@@ -279,95 +279,115 @@ test("a timeout after a tool result does not replay the turn", async () => {
   }
 });
 
-test("a model cannot exceed three external searches in one turn", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-search-budget-"));
-  const env = {
-    YANDEX_AI_API_KEY: "test-key",
-    YANDEX_AI_FOLDER_ID: "folder",
-    YANDEX_AI_MODEL: "model",
-    AI_WEB_SEARCH_ENABLED: "true",
-    AI_WEB_SEARCH_PROVIDER: "yandex",
-  };
-  const previous = Object.fromEntries(
-    Object.keys(env).map((key) => [key, process.env[key]]),
-  );
-  Object.assign(process.env, env);
-  let agentCalls = 0,
-    searchCalls = 0;
-  const fake: typeof fetch = async (url, init) => {
-    if (String(url).endsWith("/conversations"))
-      return Response.json({ id: "conv" });
-    const body = JSON.parse(String(init?.body));
-    if (
-      body.tools.some((tool: { type: string }) => tool.type === "web_search")
-    ) {
-      searchCalls++;
-      return Response.json({
-        status: "completed",
-        output: [
-          {
-            type: "message",
-            content: [
-              { type: "output_text", text: "Не найдено", annotations: [] },
-            ],
-          },
-        ],
-      });
-    }
-    agentCalls++;
-    if (agentCalls >= 4)
-      assert.equal(
-        body.tools.some((tool: { name: string }) => tool.name === "web_search"),
-        false,
-      );
-    return Response.json({
-      id: `round-${agentCalls}`,
-      status: "completed",
-      ...(agentCalls <= 4
-        ? {
-            output: [
-              {
-                type: "function_call",
-                call_id: `search-${agentCalls}`,
-                name: "web_search",
-                arguments: JSON.stringify({
-                  query: `ГАСО дело ${agentCalls}`,
-                  scope: "global",
-                }),
-              },
-            ],
-          }
-        : { output_text: "Точная запись пока не подтверждена." }),
-    });
-  };
-  const app = await startServer(
-    0,
-    join(dir, "drevo.sqlite"),
-    true,
-    undefined,
-    fake,
-  );
-  try {
-    const response = await fetch(
-      `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/ai/chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "Ищи в ГАСО дело 104" }),
-      },
+for (const exhausted of [false, true])
+  test(`external search budget retains sources (agent exhausted: ${exhausted})`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drevo-ai-search-budget-"));
+    const env = {
+      YANDEX_AI_API_KEY: "test-key",
+      YANDEX_AI_FOLDER_ID: "folder",
+      YANDEX_AI_MODEL: "model",
+      AI_WEB_SEARCH_ENABLED: "true",
+      AI_WEB_SEARCH_PROVIDER: "yandex",
+    };
+    const previous = Object.fromEntries(
+      Object.keys(env).map((key) => [key, process.env[key]]),
     );
-    assert.equal(response.status, 200);
-    assert.equal(searchCalls, 3);
-    assert.equal(agentCalls, 5);
-  } finally {
-    await app.close();
-    for (const key of Object.keys(env)) {
-      if (previous[key] === undefined) delete process.env[key];
-      else process.env[key] = previous[key];
+    Object.assign(process.env, env);
+    let agentCalls = 0,
+      searchCalls = 0;
+    const fake: typeof fetch = async (url, init) => {
+      if (String(url).endsWith("/conversations"))
+        return Response.json({ id: "conv" });
+      const body = JSON.parse(String(init?.body));
+      if (
+        body.tools.some((tool: { type: string }) => tool.type === "web_search")
+      ) {
+        searchCalls++;
+        return Response.json({
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              content: [
+                {
+                  type: "output_text",
+                  text: "Найден каталог; дело не проверено",
+                  annotations: [
+                    {
+                      type: "url_citation",
+                      url: "https://archive.example.org/catalog",
+                      title: "Каталог",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        });
+      }
+      agentCalls++;
+      if (agentCalls >= 4)
+        assert.equal(
+          body.tools.some(
+            (tool: { name: string }) => tool.name === "web_search",
+          ),
+          false,
+        );
+      return Response.json({
+        id: `round-${agentCalls}`,
+        status: "completed",
+        ...(exhausted || agentCalls <= 4
+          ? {
+              output: [
+                {
+                  type: "function_call",
+                  call_id: `search-${agentCalls}`,
+                  name: "web_search",
+                  arguments: JSON.stringify({
+                    query: `ГАСО дело ${agentCalls}`,
+                    scope: "global",
+                  }),
+                },
+              ],
+            }
+          : {
+              output_text:
+                "[Каталог](https://archive.example.org/catalog). Точная запись пока не подтверждена.",
+            }),
+      });
+    };
+    const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      fake,
+    );
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/ai/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Ищи в ГАСО дело 104" }),
+        },
+      );
+      assert.equal(response.status, 200);
+      assert.equal(searchCalls, 3);
+      assert.equal(agentCalls, exhausted ? 9 : 5);
+      const result = await response.json();
+      assert.match(result.answer, /https:\/\/archive\.example\.org\/catalog/);
+      if (exhausted)
+        assert.match(result.answer, /точный ответ пока не подтверждён/);
+    } finally {
+      await app.close();
+      for (const key of Object.keys(env)) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+      rmSync(dir, { recursive: true, force: true });
     }
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  });
 
 test("only the Qwen search summarizer disables reasoning; other models retain provider defaults", async () => {
   const requests: Array<Record<string, unknown>> = [];

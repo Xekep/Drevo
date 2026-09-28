@@ -707,8 +707,21 @@ export function createResearchRunner({
       }
 
       const calls = answer.tool_calls || [];
-      if (calls.length && round === runtime.maxToolIterations)
+      if (calls.length && round === runtime.maxToolIterations) {
+        if (webReferences.size && !createdSuggestionIds.size && !files.length) {
+          chats.setRemote(chatId, null);
+          return {
+            answer: webPagesToVerify(
+              "Поиск завершён, но точный ответ пока не подтверждён. Найденные страницы нужно сверить с нужным архивом и шифром:",
+            ),
+            references: [...webReferences.values()],
+            suggestionIds: [],
+            uiActions: [],
+            files: [],
+          };
+        }
         throw new Error("ИИ превысил допустимое число вызовов инструментов");
+      }
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
