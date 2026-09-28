@@ -33,6 +33,25 @@ export function coreHttp({
     if (path === "/api/login")
       return json(res, 404, { error: "Password sign-in has been removed" });
 
+    if (path === "/api/account/sessions" && req.method === "GET") {
+      const sessions = auth.sessionSummary(req);
+      return sessions
+        ? json(res, 200, sessions)
+        : json(res, 401, { error: "Требуется вход" });
+    }
+
+    if (
+      path === "/api/account/sessions/revoke-others" &&
+      req.method === "POST"
+    ) {
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Invalid origin" });
+      const revoked = auth.revokeOtherSessions(req);
+      return revoked === null
+        ? json(res, 401, { error: "Требуется вход" })
+        : json(res, 200, { revoked });
+    }
+
     if (path === "/auth/logout" && req.method === "POST") {
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });

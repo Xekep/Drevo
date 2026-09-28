@@ -26,6 +26,12 @@ export function createAuth(
     "SELECT user_id, expires_at FROM auth_sessions WHERE token_hash=?",
   );
   const revoke = db.prepare("DELETE FROM auth_sessions WHERE token_hash=?");
+  const otherSessions = db.prepare(
+    "SELECT count(*) AS count FROM auth_sessions WHERE user_id=? AND token_hash<>? AND expires_at>?",
+  );
+  const revokeOthers = db.prepare(
+    "DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?",
+  );
   const cookie = (req: IncomingMessage) =>
     req.headers.cookie
       ?.split(";")
@@ -100,6 +106,26 @@ export function createAuth(
     local,
     currentUser,
     issueSession,
+    sessionSummary(req: IncomingMessage) {
+      if (local) return { currentExpiresAt: null, otherCount: 0 };
+      const session = sessionFor(req);
+      if (!session || !users.get(session.userId)) return null;
+      return {
+        currentExpiresAt: new Date(session.expires).toISOString(),
+        otherCount: Number(
+          otherSessions.get(session.userId, session.tokenHash, Date.now())
+            ?.count || 0,
+        ),
+      };
+    },
+    revokeOtherSessions(req: IncomingMessage) {
+      if (local) return 0;
+      const session = sessionFor(req);
+      if (!session || !users.get(session.userId)) return null;
+      return Number(
+        revokeOthers.run(session.userId, session.tokenHash).changes,
+      );
+    },
     refreshSession(req: IncomingMessage, res: ServerResponse) {
       if (local || req.headers["sec-fetch-site"] === "cross-site") return;
       const session = sessionFor(req);

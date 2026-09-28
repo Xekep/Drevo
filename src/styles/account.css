@@ -1,0 +1,242 @@
+.account-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 84% 8%, #e8eee4 0, transparent 36%), #f7f8f4;
+  color: #293d35;
+}
+.account-shell {
+  width: min(1080px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 52px 0 88px;
+}
+.account-heading {
+  margin-bottom: 28px;
+}
+.account-eyebrow {
+  display: block;
+  color: #71866e;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.account-heading h1 {
+  margin: 8px 0 8px;
+  font: 400 clamp(32px, 4.5vw, 49px)/1.12 var(--serif);
+  letter-spacing: -0.04em;
+}
+.account-heading p,
+.account-card-copy {
+  color: #6e7d74;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.account-hero {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 30px 34px;
+  margin-bottom: 18px;
+  border-radius: 22px;
+  color: #f8faf5;
+  background: linear-gradient(116deg, #304b3d, #4f7055 70%, #718a65);
+  box-shadow: 0 16px 36px #35533b1c;
+}
+.account-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  border: 1px solid #f4f7e850;
+  border-radius: 24px;
+  background: #ffffff22;
+  font: 400 39px var(--serif);
+}
+.account-hero .account-eyebrow {
+  color: #c8d8be;
+}
+.account-identity {
+  min-width: 0;
+}
+.account-identity h2 {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+  font: 400 clamp(25px, 3vw, 35px)/1.15 var(--serif);
+}
+.account-identity p {
+  margin: 0;
+  color: #e0e9db;
+  font-size: 13px;
+}
+.account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 8px 12px;
+  border: 1px solid #ffffff4a;
+  border-radius: 999px;
+  color: #fff2d1;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.account-status.is-active {
+  color: #e9f8df;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.account-card {
+  min-width: 0;
+  padding: 28px 30px;
+  border: 1px solid #e5e9e1;
+  border-radius: 20px;
+  background: #fffefa;
+  box-shadow: 0 8px 26px #40503b0a;
+}
+.account-card-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 25px;
+}
+.account-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: 13px;
+  background: #eef3e8;
+  color: #5c785a;
+}
+.account-card-title h2 {
+  margin: 3px 0 0;
+  font: 400 23px/1.2 var(--serif);
+}
+.account-card-copy {
+  margin: -7px 0 19px;
+}
+.account-facts {
+  border-top: 1px solid #ecede7;
+}
+.account-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ecede7;
+  font-size: 13px;
+}
+.account-facts span {
+  color: #79877c;
+}
+.account-facts strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 58%;
+  text-align: right;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-row-action,
+.account-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 0;
+  color: #496f50;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.account-row-action:hover,
+.account-signout:hover {
+  color: #284e32;
+  text-decoration: underline;
+}
+.account-row-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.account-signout {
+  display: flex;
+  color: #8a5e52;
+}
+.account-note,
+.account-error {
+  margin: 15px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.account-note {
+  color: #8a6b38;
+}
+.account-error {
+  color: #a44539;
+}
+.account-empty {
+  max-width: 500px;
+  padding: 48px;
+}
+.account-empty > svg {
+  width: 30px;
+  height: 30px;
+  color: #6c8a6e;
+}
+.account-empty h2 {
+  margin: 18px 0 5px;
+  font: 400 29px var(--serif);
+}
+.account-empty p {
+  color: #6e7d74;
+  line-height: 1.6;
+}
+.account-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 17px;
+  border-radius: 9px;
+  background: #54745a;
+  color: white;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .account-shell {
+    width: min(100% - 28px, 540px);
+    padding: 30px 0 70px;
+  }
+  .account-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .account-hero {
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 22px;
+    border-radius: 17px;
+  }
+  .account-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 18px;
+    font-size: 31px;
+  }
+  .account-status {
+    width: fit-content;
+    margin: 0;
+  }
+  .account-card {
+    padding: 23px;
+    border-radius: 17px;
+  }
+}

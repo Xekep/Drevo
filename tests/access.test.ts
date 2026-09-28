@@ -168,6 +168,55 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       (await request("/api/session", reader).then((r) => r.json())).user.role,
       "reader",
     );
+    assert.equal((await request("/api/account/sessions")).status, 401);
+    assert.equal(
+      (await request("/api/account/sessions/revoke-others", "", "POST")).status,
+      401,
+    );
+    const secondAdminSession = await login("first");
+    const ownSessions = await request("/api/account/sessions", admin).then(
+      (response) => response.json(),
+    );
+    assert.equal(ownSessions.otherCount, 1);
+    assert.ok(Date.parse(ownSessions.currentExpiresAt) > Date.now());
+    assert.equal(
+      (await request("/api/account/sessions", reader).then((r) => r.json()))
+        .otherCount,
+      0,
+      "another account's sessions are never counted",
+    );
+    assert.equal(
+      (
+        await fetch(base + "/api/account/sessions/revoke-others", {
+          method: "POST",
+          headers: { Cookie: admin, Origin: "https://other.example" },
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request(
+          "/api/account/sessions/revoke-others",
+          admin,
+          "POST",
+        ).then((r) => r.json())
+      ).revoked,
+      1,
+    );
+    assert.equal(
+      (await request("/api/session", secondAdminSession).then((r) => r.json()))
+        .user,
+      null,
+    );
+    assert.equal(
+      (await request("/api/session", admin).then((r) => r.json())).user.id,
+      "first",
+    );
+    assert.equal(
+      (await request("/api/session", reader).then((r) => r.json())).user.id,
+      "second",
+    );
     assert.equal((await request("/api/admin/research-resources")).status, 401);
     assert.equal(
       (await request("/api/admin/research-resources", reader)).status,
