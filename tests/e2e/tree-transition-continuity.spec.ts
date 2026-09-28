@@ -17,6 +17,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
       spouses: [],
     });
     data.partial = false;
+    data.treePreferences.cardVariant = "classic";
     await route.fulfill({ response, json: data });
   });
   await page.goto("/people/e2e-child");

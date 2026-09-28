@@ -2003,7 +2003,7 @@
   -webkit-line-clamp: 3;
   overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 18px;
 }
 .flow-person.is-portrait-card .portrait-card-info small {
@@ -2012,7 +2012,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   white-space: normal;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 16px;
 }
 .flow-person.is-portrait-card .portrait-card-years {
@@ -2023,12 +2023,12 @@
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-info strong {
   -webkit-line-clamp: 2;
-  font-size: 21px;
+  font-size: 22px;
   line-height: 23px;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-info small {
   -webkit-line-clamp: 1;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 20px;
 }
 .flow-person.is-portrait-card.is-overview .portrait-card-years {
@@ -2040,7 +2040,7 @@
   display: none;
 }
 .flow-person.is-portrait-card.is-distant .portrait-card-info strong {
-  font-size: 28px;
+  font-size: 29px;
   line-height: 30px;
 }
 /* A personal white canvas keeps cards and routes legible without the warm tint. */

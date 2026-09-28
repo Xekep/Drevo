@@ -117,6 +117,29 @@ export function TreePreferencesDialog({
           <legend>Карточки</legend>
           <div className="tree-preference-options card-options">
             <label
+              className={draft.cardVariant === "portrait" ? "is-selected" : ""}
+            >
+              <input
+                type="radio"
+                name="tree-card"
+                aria-label="Фото · ФИО · Родство"
+                checked={draft.cardVariant === "portrait"}
+                onChange={() =>
+                  void choose({ ...draft, cardVariant: "portrait" })
+                }
+              />
+              <span
+                className="tree-card-preview stacked-preview"
+                aria-hidden="true"
+              >
+                <i>А</i>
+                <b>Иванова Анна Петровна</b>
+                <small>1988–2024</small>
+                <small>Двоюродная сестра</small>
+              </span>
+              <strong>Фото · ФИО · Родство</strong>
+            </label>
+            <label
               className={draft.cardVariant === "classic" ? "is-selected" : ""}
             >
               <input
@@ -140,29 +163,6 @@ export function TreePreferencesDialog({
                 </span>
               </span>
               <strong>Обычная</strong>
-            </label>
-            <label
-              className={draft.cardVariant === "portrait" ? "is-selected" : ""}
-            >
-              <input
-                type="radio"
-                name="tree-card"
-                aria-label="Фото · ФИО · Родство"
-                checked={draft.cardVariant === "portrait"}
-                onChange={() =>
-                  void choose({ ...draft, cardVariant: "portrait" })
-                }
-              />
-              <span
-                className="tree-card-preview stacked-preview"
-                aria-hidden="true"
-              >
-                <i>А</i>
-                <b>Иванова Анна Петровна</b>
-                <small>1988–2024</small>
-                <small>Двоюродная сестра</small>
-              </span>
-              <strong>Фото · ФИО · Родство</strong>
             </label>
           </div>
           {!linkedPerson && (

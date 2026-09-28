@@ -1137,7 +1137,9 @@ test("привязанный человек видит отметку и пер�
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
-  await expect(page.getByText("Это вы", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".inspector-dock").getByText("Это вы", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await expect(
     page.getByText("Здравствуйте, Иван!", { exact: true }),
@@ -1685,7 +1687,7 @@ test("переход к выбранному человеку остаётся �
   expect(after).not.toBe(before);
 });
 
-test("collapsing descendants moves the remaining cards smoothly", async ({
+test("collapsing descendants animates the remaining cards smoothly", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -1695,10 +1697,6 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
 
   const child = page.getByTestId("rf__node-e2e-child");
   const sibling = page.getByTestId("rf__node-e2e-sibling");
-  const before = await Promise.all([
-    child.boundingBox(),
-    sibling.boundingBox(),
-  ]);
   await canvas.evaluate((element) => {
     const observed = window as typeof window & {
       treeLayoutSettled?: boolean;
@@ -1721,7 +1719,7 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
       ) observed.treeCardMoved = true;
     });
   });
-  await child.getByRole("button", { name: "Свернуть потомков" }).click();
+  await child.getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
 
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
@@ -1735,15 +1733,10 @@ test("collapsing descendants moves the remaining cards smoothly", async ({
   await expect(canvas).not.toHaveClass(/is-layout-settling/, {
     timeout: 1_000,
   });
-  const after = await Promise.all([child.boundingBox(), sibling.boundingBox()]);
-  expect(
-    after.some(
-      (box, index) =>
-        !!box &&
-        !!before[index] &&
-        Math.hypot(box.x - before[index]!.x, box.y - before[index]!.y) > 1,
-    ),
-  ).toBe(true);
+  // The camera keeps the clicked card in place, so screen coordinates may
+  // return to their starting values after the nodes have animated.
+  await expect(child).toBeVisible();
+  await expect(sibling).toBeVisible();
 });
 
 test("mobile person card stays below the project menu and starts the memorial flight", async ({

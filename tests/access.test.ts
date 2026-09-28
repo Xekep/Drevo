@@ -283,7 +283,7 @@ test("OAuth roles, ownership, public sections and complete backup work through H
       await request("/api/tree-preferences", reader).then((response) =>
         response.json(),
       ),
-      { reverseTimeline: false, cardVariant: "classic", colorScheme: "warm" },
+      { reverseTimeline: false, cardVariant: "portrait", colorScheme: "warm" },
       "другой участник не наследует выбор администратора",
     );
     assert.equal(

@@ -33,6 +33,11 @@ test("resource directory replaces quality navigation while its direct route is r
     2,
   );
   assert.doesNotMatch(navigation, /\["quality",/);
+  const insights = readFileSync(
+    new URL("src/components/insights-page.tsx", root),
+    "utf8",
+  );
+  assert.match(insights, /href="\/quality"/);
   const section = readFileSync(
     new URL("src/components/archive-section.tsx", root),
     "utf8",

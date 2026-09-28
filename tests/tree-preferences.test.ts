@@ -22,7 +22,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
     const preferences = treePreferencesStore(db);
     assert.deepEqual(preferences.read("admin"), {
       reverseTimeline: true,
-      cardVariant: "classic",
+      cardVariant: "portrait",
       colorScheme: "warm",
     });
     assert.deepEqual(preferences.read("reader"), preferences.read("admin"));
@@ -32,7 +32,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
       cardVariant: "portrait",
       colorScheme: "white",
     });
-    assert.equal(preferences.read("admin").cardVariant, "classic");
+    assert.equal(preferences.read("admin").cardVariant, "portrait");
     assert.equal(preferences.read("reader").reverseTimeline, false);
     assert.equal(preferences.read("reader").colorScheme, "white");
     assert.equal(preferences.read("admin").colorScheme, "warm");
@@ -45,9 +45,38 @@ test("legacy direction becomes individual preferences; deleting an account remov
     );
     assert.deepEqual(preferences.read("new-account"), {
       reverseTimeline: false,
-      cardVariant: "classic",
+      cardVariant: "portrait",
       colorScheme: "warm",
     });
+  } finally {
+    db.close();
+  }
+});
+
+test("existing classic cards switch to portrait once without resetting direction or colors", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    const preferences = treePreferencesStore(db);
+    preferences.write("reader", {
+      reverseTimeline: true,
+      cardVariant: "classic",
+      colorScheme: "white",
+    });
+    db.exec("DELETE FROM migrations WHERE id='2026-09-default-portrait-cards'");
+    initializeArchiveSchema(db);
+    assert.deepEqual(preferences.read("reader"), {
+      reverseTimeline: true,
+      cardVariant: "portrait",
+      colorScheme: "white",
+    });
+    preferences.write("reader", {
+      reverseTimeline: true,
+      cardVariant: "classic",
+      colorScheme: "white",
+    });
+    initializeArchiveSchema(db);
+    assert.equal(preferences.read("reader").cardVariant, "classic");
   } finally {
     db.close();
   }

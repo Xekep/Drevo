@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, type MouseEvent } from "react";
 import {
   Baby,
   BookOpenCheck,
@@ -11,50 +11,31 @@ import {
 } from "lucide-react";
 import { analyzeFamilyInsights, type Family } from "../domain";
 import { ArchiveSummary } from "./archive-summary";
-import { ArchiveWarningCards } from "./archive-warning-cards";
 
 export default function InsightsPage({
   family,
   loadingDetails,
   onPerson,
+  onQuality,
 }: {
   family: Family;
   loadingDetails: boolean;
   onPerson: (id: string) => void;
+  onQuality: () => void;
 }) {
   const insights = useMemo(() => analyzeFamilyInsights(family), [family]);
-  const [warningFilter, setWarningFilter] = useState<
-    "all" | "error" | "check" | "duplicate"
-  >("all");
-  const filteredWarnings = insights.warnings.filter((warning) =>
-    warningFilter === "all"
-      ? true
-      : warningFilter === "duplicate"
-        ? warning.code === "possible-duplicate"
-        : warning.level === warningFilter,
-  );
-  const filters = [
-    { id: "all", label: "Все", count: insights.warnings.length },
-    {
-      id: "error",
-      label: "Ошибки и противоречия",
-      count: insights.warnings.filter((warning) => warning.level === "error")
-        .length,
-    },
-    {
-      id: "check",
-      label: "Нужна проверка",
-      count: insights.warnings.filter((warning) => warning.level === "check")
-        .length,
-    },
-    {
-      id: "duplicate",
-      label: "Возможные дубли",
-      count: insights.warnings.filter(
-        (warning) => warning.code === "possible-duplicate",
-      ).length,
-    },
-  ] as const;
+  const openQuality = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    event.preventDefault();
+    onQuality();
+  };
   if (!family.people.length)
     return (
       <section className="insights-page insights-empty">
@@ -118,6 +99,13 @@ export default function InsightsPage({
         <div>
           <h1>Сводка архива</h1>
           <p>Люди, материалы и факты из семейного архива.</p>
+          <a
+            className="insights-quality-link"
+            href="/quality"
+            onClick={openQuality}
+          >
+            Проверить данные →
+          </a>
         </div>
         <section
           className="insights-summary"
@@ -209,48 +197,6 @@ export default function InsightsPage({
           </div>
         </article>
       </div>
-
-      <article className="insights-card warnings-card">
-        <header>
-          <div>
-            <h2>Проверить записи</h2>
-            <p>
-              Подсказки помогают найти записи для проверки и не меняют данные
-              автоматически.
-            </p>
-          </div>
-        </header>
-        {insights.warnings.length ? (
-          <>
-            <div
-              className="insight-warning-filters"
-              aria-label="Фильтры проверок"
-            >
-              {filters.map((filter) => (
-                <button
-                  type="button"
-                  key={filter.id}
-                  aria-pressed={warningFilter === filter.id}
-                  onClick={() => setWarningFilter(filter.id)}
-                >
-                  {filter.label} <span>{filter.count}</span>
-                </button>
-              ))}
-            </div>
-            <ArchiveWarningCards
-              key={warningFilter}
-              family={family}
-              warnings={filteredWarnings}
-              onPerson={onPerson}
-            />
-          </>
-        ) : (
-          <p className="insights-clean">
-            Явных противоречий в известных датах и родительских связях не
-            найдено.
-          </p>
-        )}
-      </article>
     </section>
   );
 }

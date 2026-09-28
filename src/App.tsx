@@ -901,6 +901,7 @@ export default function App() {
                   loadingDetails={archive.loadingDetails}
                   save={save}
                   onPerson={showPerson}
+                  onQuality={() => navigate("quality")}
                   onReveal={(ids, groupId) => {
                     lastUrlTarget.current = "";
                     setView("tree", undefined, true);
