@@ -1,6 +1,10 @@
 import type { ElkNode, ElkExtendedEdge } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
-import { treeNodeSize, type TreeNodeSize } from "./tree-layout-constants.ts";
+import {
+  TREE_NODE_WIDTH,
+  TREE_NODE_HEIGHT,
+  type TreeNodeSize,
+} from "./tree-layout-constants.ts";
 import {
   bounds,
   routeRelationships,
@@ -501,7 +505,7 @@ export async function unionGeometry(
   layout: (graph: ElkNode) => Promise<ElkNode>,
   reverse = false,
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
-  size: TreeNodeSize = treeNodeSize(),
+  size: TreeNodeSize = { width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT },
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);

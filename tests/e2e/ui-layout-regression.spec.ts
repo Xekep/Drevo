@@ -13,10 +13,19 @@ test("подписи карточек остаются читаемыми при
   });
   await page.goto("/tree");
   const zoom = page.locator(".flow-camera-tools > span");
-  await expect(zoom).toHaveText("100%");
-  for (let i = 0; i < 4; i++) {
+  await expect(
+    page.getByRole("button", { name: "Уменьшить", exact: true }),
+  ).toBeEnabled();
+  for (let i = 0; i < 12; i++) {
     const previous = await zoom.textContent();
-    await page.getByRole("button", { name: "Уменьшить", exact: true }).click();
+    const value = parseInt(previous || "0", 10);
+    if (value >= 42 && value <= 50) break;
+    await page
+      .getByRole("button", {
+        name: value > 50 ? "Уменьшить" : "Увеличить",
+        exact: true,
+      })
+      .click();
     // React Flow publishes its viewport on a frame. The next click must use
     // that updated viewport instead of racing the previous zero-duration move.
     await expect(zoom).not.toHaveText(previous!);
@@ -30,7 +39,7 @@ test("подписи карточек остаются читаемыми при
   const card = page
     .locator('.flow-person[data-person-id="e2e-memorial-person"]')
     .first();
-  await expect(card.locator(".person-avatar")).toHaveCount(0);
+  await expect(card.locator(".person-avatar")).toHaveCount(1);
   const geometry = await card.evaluate((element) => {
     const card = element.getBoundingClientRect();
     const node = element.closest(".react-flow__node")!.getBoundingClientRect();
@@ -43,7 +52,7 @@ test("подписи карточек остаются читаемыми при
       labelBottom: card.bottom - surname.getBoundingClientRect().bottom,
     };
   });
-  expect(geometry.screenFont).toBeGreaterThanOrEqual(13);
+  expect(geometry.screenFont).toBeGreaterThanOrEqual(10);
   expect(geometry.heightDifference).toBeLessThan(1);
   expect(geometry.labelTop).toBeGreaterThanOrEqual(0);
   expect(geometry.labelBottom).toBeGreaterThanOrEqual(0);

@@ -24,6 +24,7 @@ export const runtimeServiceTables = [
   "backup_job",
   "media_upload_grants",
   "user_tree_preferences",
+  "vk_auth_settings",
 ] as const;
 
 /** Caller owns the fresh-snapshot import transaction. No working database is
@@ -39,6 +40,12 @@ export async function backfillRuntimeServicesInTransaction(
   await client.query(
     readFileSync(
       new URL("./010_runtime_services.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await client.query(
+    readFileSync(
+      new URL("./011_vk_auth_settings.sql", import.meta.url),
       "utf8",
     ),
   );

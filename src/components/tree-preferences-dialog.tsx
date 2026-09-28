@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, ContactRound, PanelLeft } from "lucide-react";
+import { Download } from "lucide-react";
 import type { TreePreferences } from "../domain";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import { EditorDialog } from "./editor-dialog";
@@ -7,14 +7,12 @@ import "../styles/tree-preferences.css";
 
 export function TreePreferencesDialog({
   preferences,
-  localOnly = false,
   canExportArchive = false,
   onChange,
   onClose,
   onExportPdf,
 }: {
   preferences: TreePreferences;
-  localOnly?: boolean;
   canExportArchive?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
@@ -29,7 +27,6 @@ export function TreePreferencesDialog({
   useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState(preferences);
-  const portraitLabel = localOnly ? "Фото · ФИО" : "Фото · ФИО · Родство";
   const choose = async (value: TreePreferences) => {
     setDraft(value);
     setSaving(true);
@@ -138,41 +135,6 @@ export function TreePreferencesDialog({
                 </span>
               </label>
             ))}
-          </div>
-        </fieldset>
-        <fieldset disabled={saving || exporting}>
-          <legend>Карточки</legend>
-          <div className="tree-preference-options card-options">
-            <label
-              className={draft.cardVariant === "portrait" ? "is-selected" : ""}
-            >
-              <input
-                type="radio"
-                name="tree-card"
-                aria-label={portraitLabel}
-                checked={draft.cardVariant === "portrait"}
-                onChange={() =>
-                  void choose({ ...draft, cardVariant: "portrait" })
-                }
-              />
-              <ContactRound size={17} aria-hidden="true" />
-              <strong>Портрет</strong>
-            </label>
-            <label
-              className={draft.cardVariant === "classic" ? "is-selected" : ""}
-            >
-              <input
-                type="radio"
-                name="tree-card"
-                aria-label="Обычная"
-                checked={draft.cardVariant === "classic"}
-                onChange={() =>
-                  void choose({ ...draft, cardVariant: "classic" })
-                }
-              />
-              <PanelLeft size={17} aria-hidden="true" />
-              <strong>Классика</strong>
-            </label>
           </div>
         </fieldset>
         <div className="tree-pdf-export">

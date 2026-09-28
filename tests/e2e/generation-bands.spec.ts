@@ -81,7 +81,8 @@ test("rendered families share generation floors with bounded soft alignment", as
     .getByRole("button", { name: "Вписать видимую часть дерева" })
     .click();
   await expect(page.getByTestId("rf__node-grand-d")).toBeInViewport({
-    ratio: 1,
+    // Chromium's intersection ratio can round below 1 after viewport scaling.
+    ratio: 0.99999,
   });
   await page
     .locator(".tree-canvas")

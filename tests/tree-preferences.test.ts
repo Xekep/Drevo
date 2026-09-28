@@ -60,7 +60,7 @@ test("legacy direction becomes individual preferences; deleting an account remov
   }
 });
 
-test("existing classic cards switch to portrait once without resetting direction or colors", async () => {
+test("legacy classic preferences always resolve to portrait without resetting direction or colors", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
@@ -83,7 +83,7 @@ test("existing classic cards switch to portrait once without resetting direction
       colorScheme: "white",
     });
     initializeArchiveSchema(db);
-    assert.equal((await preferences.read("reader")).cardVariant, "classic");
+    assert.equal((await preferences.read("reader")).cardVariant, "portrait");
   } finally {
     db.close();
   }

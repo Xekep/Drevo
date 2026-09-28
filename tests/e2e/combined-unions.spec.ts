@@ -80,38 +80,9 @@ for (const cardVariant of ["classic", "portrait"] as const)
       path: testInfo.outputPath(`combined-unions-${cardVariant}.png`),
     });
     const parent = page.getByTestId("rf__node-parent");
-    if (isMobile && cardVariant === "classic") {
-      // The overview hides classic collapse controls below 75% zoom.
-      const box = (await parent.boundingBox())!;
-      const x = box.x + box.width / 2,
-        y = box.y - 20;
-      const session = await page.context().newCDPSession(page);
-      const touchPoints = (offset: number) => [
-        { x: x - offset, y, id: 0 },
-        { x: x + offset, y, id: 1 },
-      ];
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchStart",
-        touchPoints: touchPoints(10),
-      });
-      for (const offset of [25, 50, 75, 100])
-        await session.send("Input.dispatchTouchEvent", {
-          type: "touchMove",
-          touchPoints: touchPoints(offset),
-        });
-      await session.send("Input.dispatchTouchEvent", {
-        type: "touchEnd",
-        touchPoints: [],
-      });
-      await session.detach();
-      await expect(parent.locator(".flow-person")).not.toHaveClass(
-        /is-compact/,
-      );
-    }
     await parent
       .getByRole("button", {
-        name:
-          cardVariant === "portrait" ? "Свернуть ветвь" : "Свернуть потомков",
+        name: "Свернуть ветвь",
       })
       .click();
     for (const id of ["first-a", "first-b", "second-a", "second-b"])
@@ -119,10 +90,7 @@ for (const cardVariant of ["classic", "portrait"] as const)
     await expect(parent).toBeVisible();
     await parent
       .getByRole("button", {
-        name:
-          cardVariant === "portrait"
-            ? "Развернуть ветвь"
-            : "Развернуть потомков",
+        name: "Развернуть ветвь",
       })
       .click();
     for (const id of ["first-a", "first-b", "second-a", "second-b"])

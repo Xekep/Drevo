@@ -20,7 +20,7 @@ test("new accounts see portrait cards with ancestors above descendants", async (
   expect(parentBounds!.y).toBeLessThan(childBounds!.y);
 });
 
-test("each viewer can switch tree direction, colors and card variant", async ({
+test("each viewer can switch direction and colors; legacy card variants stay portrait", async ({
   page,
 }, testInfo) => {
   let preferences = {
@@ -102,7 +102,6 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   await dialog.getByRole("radio", { name: "Тёплая" }).check();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/theme-white/);
   await dialog.getByRole("radio", { name: "Белая" }).check();
-  await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
   await expect(self).toHaveClass(/is-portrait-card/);
   await expect
     .poll(() => self.evaluate((node) => node.clientHeight))
@@ -130,15 +129,6 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   await expect(child.locator(".portrait-card-years")).toHaveText(
     "1965 — н. в.",
   );
-  await dialog.getByRole("radio", { name: "Обычная", exact: true }).check();
-  await expect(self).not.toHaveClass(/is-portrait-card/);
-  await expect
-    .poll(() => self.evaluate((node) => node.clientHeight))
-    .toBeLessThan(90);
-  await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
-  await expect
-    .poll(() => self.evaluate((node) => node.clientHeight))
-    .toBeGreaterThan(220);
   await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
   await expect
     .poll(async () => {
@@ -159,8 +149,8 @@ test("each viewer can switch tree direction, colors and card variant", async ({
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   );
-  await expect(dialog.getByText("Портрет", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("Классика", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Портрет", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByText("Классика", { exact: true })).toHaveCount(0);
   expect(bounds!.height).toBeLessThan(470);
   await dialog.screenshot({
     path: testInfo.outputPath("tree-settings-dialog.png"),
@@ -170,9 +160,7 @@ test("each viewer can switch tree direction, colors and card variant", async ({
     const narrowBounds = await dialog.boundingBox();
     expect(narrowBounds!.x).toBeGreaterThanOrEqual(0);
     expect(narrowBounds!.x + narrowBounds!.width).toBeLessThanOrEqual(320);
-    await dialog
-      .getByRole("radio", { name: "Фото · ФИО · Родство" })
-      .scrollIntoViewIfNeeded();
+    await dialog.getByRole("radio", { name: "Белая" }).scrollIntoViewIfNeeded();
   }
 
   await dialog.getByRole("button", { name: "Закрыть" }).click();
@@ -274,7 +262,7 @@ test("white scheme also colors the fan", async ({ page }, testInfo) => {
     .click();
   await expect(
     page.getByTestId("rf__node-e2e-child").locator(".flow-person"),
-  ).toHaveCSS("border-top-width", "2px");
+  ).toHaveClass(/is-selected/);
   if (testInfo.project.name === "mobile")
     await page.getByRole("button", { name: "Свернуть панель" }).click();
   await familyViewAction(page, "Веер");

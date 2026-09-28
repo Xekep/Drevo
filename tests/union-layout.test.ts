@@ -282,7 +282,7 @@ test("two spouses flank one shared parent and half-siblings keep distinct family
         (graph) => new ELK().layout(graph),
         reverse,
         [],
-        treeNodeSize(variant),
+        (variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 }),
       );
       verify(people, g);
       assert.equal(g.occurrences!.length, people.length);
@@ -566,7 +566,7 @@ test("portrait cards reserve their full height for siblings, spouses and routed 
       (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
       reverse,
       [],
-      treeNodeSize("portrait"),
+      treeNodeSize(),
     );
     verify(people, geometry);
     assert.equal(geometry.nodeSize?.height, 264);

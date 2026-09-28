@@ -38,7 +38,6 @@ import {
   type ArchiveUser,
   type GraphConnection,
   type TreeMode,
-  type TreeCardVariant,
   type TreeColorScheme,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
@@ -75,7 +74,7 @@ import { FanChart } from "./fan-chart";
 import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-morph";
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
 import { useEdgePan } from "./use-edge-pan";
-import { TREE_NODE_WIDTH, TREE_NODE_HEIGHT } from "../../domain/tree-layout";
+import { treeNodeSize } from "../../domain/tree-layout-constants";
 
 export type ConnectionDraft = {
   from: string;
@@ -104,7 +103,6 @@ type Props = {
   canEdit: boolean;
   busy: boolean;
   reverse: boolean;
-  cardVariant?: TreeCardVariant;
   colorScheme?: TreeColorScheme;
   selected: string[];
   selectedEdge?: string;
@@ -370,8 +368,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const lastAssistantZoom = useRef(0);
   const context = props.assistantFilter
-    ? `${mode}:research:${props.assistantFilter.token}:${props.cardVariant || "classic"}`
-    : `${mode}:${familyView.mode}:${root || "all"}:${props.cardVariant || "classic"}`;
+    ? `${mode}:research:${props.assistantFilter.token}:portrait`
+    : `${mode}:${familyView.mode}:${root || "all"}:portrait`;
   useTouchZoom(container, flow, !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
@@ -383,10 +381,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       user
         ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
         : null,
-      props.cardVariant,
     );
-  const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH;
-  const nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
+  const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;
+  const nodeHeight = geometry?.nodeSize?.height ?? treeNodeSize().height;
   useEffect(() => {
     const request = props.zoomRequest;
     if (
@@ -640,7 +637,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const actions = useMemo(
     () => ({
-      cardVariant: props.cardVariant || "classic",
       showRelationLabel: Boolean(user?.id),
       kinshipReference:
         family.people.find((person) => person.id === user?.personId) || null,
@@ -682,7 +678,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       personOccurrences,
       flow,
       introCameraFinished,
-      props.cardVariant,
       family.people,
       family.links,
       user?.id,
@@ -948,7 +943,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} ${props.cardVariant === "portrait" ? "has-portrait-cards" : ""} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         onPointerDownCapture={edgePan.onPointerDownCapture}
         onClickCapture={edgePan.onClickCapture}

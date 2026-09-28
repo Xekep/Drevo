@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import pg from "pg";
+import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
 
 type Row = Record<string, unknown>;
 export function configuredDatabaseBackend(file: string): "sqlite" | "postgres" {
@@ -260,6 +261,7 @@ export async function openPostgresDatabase(
       archiveId,
     ]);
     if (result.rowCount !== 1) throw new Error("Архив PostgreSQL не найден");
+    await initializePostgresRuntimeSchema(database);
     return database;
   } catch (error) {
     await pool.end();

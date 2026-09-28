@@ -872,6 +872,11 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  db.exec(`CREATE TABLE IF NOT EXISTS vk_auth_settings (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+    client_id TEXT NOT NULL
+  ) STRICT;`);
   const webSearchExtension = "2026-09-web-search";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(webSearchExtension)

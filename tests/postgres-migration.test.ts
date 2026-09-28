@@ -80,7 +80,7 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 28);
+    assert.equal(snapshot.services.length, 29);
     assert.equal(
       snapshot.services.find((table) => table.name === "user_tree_preferences")
         ?.rows[0]?.data.card_variant,

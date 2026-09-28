@@ -725,7 +725,6 @@ export default function App() {
                       canEdit={canEdit}
                       busy={busy}
                       reverse={archive.reverseTimeline}
-                      cardVariant={archive.treePreferences.cardVariant}
                       colorScheme={archive.treePreferences.colorScheme}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
@@ -1034,7 +1033,6 @@ export default function App() {
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
           canExportArchive={user?.role === "admin"}
           preferences={archive.treePreferences}
-          localOnly={!user?.approved}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
         />

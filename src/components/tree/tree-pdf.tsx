@@ -1,4 +1,4 @@
-import { useContext, useEffect } from "react";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { safeUrl } from "../../domain";
 import {
@@ -53,10 +53,9 @@ function PrintTree({
   y: number;
   onReady: () => void;
 }) {
-  const actions = useContext(TreeActions);
   return (
     <div
-      className={`tree-canvas tree-print-canvas ${white ? "theme-white" : ""} ${actions.cardVariant === "portrait" ? "has-portrait-cards" : ""}`}
+      className={`tree-canvas tree-print-canvas ${white ? "theme-white" : ""} has-portrait-cards`}
       style={{ width, height }}
     >
       <ReactFlowProvider>

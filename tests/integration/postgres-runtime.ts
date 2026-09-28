@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,6 +93,8 @@ try {
   );
   process.env.DATABASE_BACKEND = "postgres";
   process.env.ARCHIVE_ID = "runtime-test";
+  // Simulate the deployed schema before the additive VK extension.
+  await client.query("DROP TABLE vk_auth_settings");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
   assert.deepEqual(await live.read(), before);
@@ -163,6 +166,29 @@ try {
     /владельца/,
   );
   const preferences = treePreferencesStore(live.db);
+  const vkSettings = vkAuthSettingsStore(live.db, "https://archive.invalid");
+  assert.equal((await vkSettings.read()).available, false);
+  await vkSettings.write({ enabled: true, clientId: "12345" }, owner);
+  assert.equal((await vkSettings.read()).available, true);
+  const isolatedVk = await openPostgresDatabase("other-archive", source);
+  try {
+    assert.equal(
+      (await vkAuthSettingsStore(isolatedVk, "https://archive.invalid").read())
+        .available,
+      false,
+    );
+    await assert.rejects(
+      isolatedVk
+        .prepare(
+          "",
+          "INSERT INTO vk_auth_settings(archive_id,id,enabled,client_id) VALUES('runtime-test',1,1,'1')",
+        )
+        .run(),
+      /row-level security/,
+    );
+  } finally {
+    await isolatedVk.close();
+  }
   await preferences.write("owner", {
     reverseTimeline: false,
     cardVariant: "portrait",
@@ -253,6 +279,11 @@ try {
   live = undefined;
   delete process.env.DATABASE_BACKEND;
   const restored = await openArchive(portable, family);
+  assert.equal(
+    (await vkAuthSettingsStore(restored.db, "https://archive.invalid").read())
+      .clientId,
+    "12345",
+  );
   assert.equal((await restored.read()).revision, snapshot.revision + 1);
   assert.equal(
     (await aiChatStore(restored.db).messages(chat.id, "owner"))?.length,

@@ -1,0 +1,56 @@
+.vk-auth-settings {
+  max-width: 600px;
+}
+.vk-auth-settings fieldset {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.vk-auth-settings label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.vk-auth-settings .check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+}
+.vk-auth-settings .check-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: #527260;
+}
+.vk-auth-settings input:not([type="checkbox"]) {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cdd8c8;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+.vk-auth-settings .field-help {
+  margin: 0;
+}
+.vk-auth-callback {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #f3f5ef;
+  font-size: 12px;
+  user-select: text;
+}
+.vk-auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #527260;
+}

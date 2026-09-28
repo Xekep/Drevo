@@ -25,7 +25,7 @@ export function treePreferencesStore(db: StoreDatabase) {
     return row
       ? {
           reverseTimeline: !!row.reverse_timeline,
-          cardVariant: row.card_variant as TreePreferences["cardVariant"],
+          cardVariant: "portrait",
           colorScheme: row.color_scheme as TreePreferences["colorScheme"],
         }
       : { ...DEFAULT_TREE_PREFERENCES };
@@ -37,15 +37,14 @@ export function treePreferencesStore(db: StoreDatabase) {
         !value ||
         typeof value !== "object" ||
         Array.isArray(value) ||
-        ![2, 3].includes(Object.keys(value).length) ||
+        ![1, 2, 3].includes(Object.keys(value).length) ||
         Object.keys(value).some(
           (key) =>
             !["reverseTimeline", "cardVariant", "colorScheme"].includes(key),
         ) ||
         typeof (value as TreePreferences).reverseTimeline !== "boolean" ||
-        !["classic", "portrait"].includes(
-          (value as TreePreferences).cardVariant,
-        ) ||
+        ("cardVariant" in value &&
+          !["classic", "portrait"].includes(String(value.cardVariant))) ||
         ("colorScheme" in value &&
           !["warm", "white"].includes((value as TreePreferences).colorScheme))
       )
@@ -54,7 +53,7 @@ export function treePreferencesStore(db: StoreDatabase) {
       await save.run(
         userId,
         Number(preferences.reverseTimeline),
-        preferences.cardVariant,
+        "portrait",
         preferences.colorScheme || (await read(userId)).colorScheme,
       );
       return await read(userId);

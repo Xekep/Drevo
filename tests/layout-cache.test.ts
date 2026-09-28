@@ -71,10 +71,7 @@ test("layout key ignores metadata and object identity but includes dates, relati
     mode: "generations" as const,
     reverse: false,
   };
-  assert.notEqual(
-    layoutCacheKey({ ...input, cardVariant: "classic" }),
-    layoutCacheKey({ ...input, cardVariant: "portrait" }),
-  );
+  assert.equal(JSON.parse(layoutCacheKey(input)).height, 264);
   assert.notEqual(
     layoutCacheKey(input),
     layoutCacheKey({ ...input, reverse: true }),

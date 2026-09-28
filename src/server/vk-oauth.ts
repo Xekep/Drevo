@@ -7,11 +7,11 @@ export function createVkOAuth(options: OAuthOptions) {
     id: "vk",
     name: "VK",
     configured: /^[1-9][0-9]*$/.test(options.clientId || ""),
-    authorize({ state, callback, challenge }) {
+    authorize({ state, callback, challenge, clientId }) {
       const target = new URL("https://id.vk.ru/authorize");
       target.search = new URLSearchParams({
         response_type: "code",
-        client_id: options.clientId!,
+        client_id: clientId,
         redirect_uri: callback,
         state,
         code_challenge: challenge,
@@ -19,7 +19,7 @@ export function createVkOAuth(options: OAuthOptions) {
       }).toString();
       return target;
     },
-    async profile({ code, state, verifier, callback, url, signal }) {
+    async profile({ code, state, verifier, callback, url, signal, clientId }) {
       const device = url.searchParams.get("device_id");
       if (!device || device.length > 1024)
         throw new Error("Invalid VK device ID");
@@ -27,7 +27,7 @@ export function createVkOAuth(options: OAuthOptions) {
         method: "POST",
         body: new URLSearchParams({
           grant_type: "authorization_code",
-          client_id: options.clientId!,
+          client_id: clientId,
           redirect_uri: callback,
           code,
           code_verifier: verifier,
@@ -50,7 +50,7 @@ export function createVkOAuth(options: OAuthOptions) {
         {
           method: "POST",
           body: new URLSearchParams({
-            client_id: options.clientId!,
+            client_id: clientId,
             access_token: token.access_token,
           }),
           signal,

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { TreeCardVariant } from "../../domain/tree-preferences";
 import type { Family } from "../../domain/types";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout";
 import { projectTree } from "../../domain/family-neighborhood";
@@ -14,7 +13,6 @@ export function useTreeLayout(
   mode: TreeMode,
   reverse: boolean,
   cacheScope: string | null = null,
-  cardVariant: TreeCardVariant = "classic",
 ) {
   const { people, links } = family;
   // Выделение человека, фотография и текстовая правка не перезапускают геометрию,
@@ -24,8 +22,8 @@ export function useTreeLayout(
     [people, links, visible],
   );
   const key = useMemo(
-    () => layoutCacheKey({ ...projected, mode, reverse, cardVariant }),
-    [projected, mode, reverse, cardVariant],
+    () => layoutCacheKey({ ...projected, mode, reverse }),
+    [projected, mode, reverse],
   );
   // Stabilize by content, not React object identity. Preserve the input order
   // because ELK's model-order constraint is part of the layout contract.
