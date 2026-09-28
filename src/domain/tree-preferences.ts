@@ -9,6 +9,6 @@ export type TreePreferences = {
 
 export const DEFAULT_TREE_PREFERENCES: TreePreferences = {
   reverseTimeline: false,
-  cardVariant: "classic",
+  cardVariant: "portrait",
   colorScheme: "warm",
 };
