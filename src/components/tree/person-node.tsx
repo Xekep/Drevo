@@ -145,7 +145,7 @@ export const PersonNode = memo(function PersonNode({
         />
       ))}
       <button
-        className="flow-person-content"
+        className="flow-person-content nopan"
         {...longPress.handlers}
         onMouseDown={(event) => {
           if (event.shiftKey) event.preventDefault();
