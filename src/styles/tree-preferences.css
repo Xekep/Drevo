@@ -183,11 +183,6 @@
   cursor: pointer;
   font-size: 12px;
 }
-@media (max-width: 420px) {
-  .tree-export-actions {
-    grid-template-columns: 1fr;
-  }
-}
 .tree-pdf-export button:disabled {
   opacity: 0.6;
   cursor: wait;

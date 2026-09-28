@@ -203,11 +203,12 @@ export function TreePreferencesDialog({
               <button
                 key={format}
                 type="button"
+                aria-label={`Сохранить древо в ${format.toUpperCase()}`}
                 disabled={saving || exporting}
                 onClick={() => void exportTree(format)}
               >
                 <Download size={16} aria-hidden="true" />
-                Сохранить древо в {format.toUpperCase()}
+                Скачать {format.toUpperCase()}
               </button>
             ))}
           </div>

@@ -81,14 +81,17 @@ test("блоки сводки имеют одинаковую ширину на 
   test.skip(testInfo.project.name !== "desktop");
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/insights");
-  await expect(page.locator(".warnings-card")).toBeVisible();
+  await expect(page.locator(".insights-columns")).toBeVisible();
   const widths = await page
     .locator(
-      ".insight-facts:not(.secondary-facts), .insights-more, .insights-columns, .warnings-card",
+      ".insight-facts:not(.secondary-facts), .insights-more, .insights-columns",
     )
     .evaluateAll((elements) =>
       elements.map((element) => element.getBoundingClientRect().width),
     );
+  await page.goto("/quality");
+  await expect(page.locator(".quality-results")).toBeVisible();
+  widths.push(await page.locator(".quality-results").evaluate((element) => element.getBoundingClientRect().width));
   expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(2);
 });
 
@@ -105,7 +108,7 @@ test("сводка объясняет предупреждение и фильт
     child.parents = ["e2e-child", "e2e-spouse", "e2e-memorial-person"];
     await route.fulfill({ response, json: data });
   });
-  await page.goto("/insights");
+  await page.goto("/quality");
   const warning = page.locator(".insight-warning").filter({
     hasText: "Больше двух кровных родителей",
   });
@@ -114,11 +117,11 @@ test("сводка объясняет предупреждение и фильт
   await expect(warning.locator(".insight-warning-people button")).toHaveCount(
     4,
   );
-  await page.getByRole("button", { name: /Возможные дубли 0/ }).click();
+  await page.getByRole("button", { name: /Вероятные дубли 0/ }).click();
   await expect(
     page.getByText("В этой категории предупреждений нет."),
   ).toBeVisible();
-  await page.getByRole("button", { name: /Нужна проверка/ }).click();
+  await page.getByRole("button", { name: /Возможные ошибки 1/ }).click();
   await expect(warning).toBeVisible();
 });
 
@@ -1351,7 +1354,7 @@ test("mobile tree appears fully without branch drawing", async ({
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
-  await expect(page.locator(".flow-person")).toHaveCount(7);
+  await expect(page.locator(".flow-person")).toHaveCount(6);
   await expect(canvas).not.toHaveClass(/is-growing/);
   await expect(canvas).toHaveAttribute("aria-busy", "false");
   await expect(
