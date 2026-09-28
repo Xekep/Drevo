@@ -35,6 +35,13 @@ async function waitForFlight(page: Page) {
 
 async function expectCentered(page: Page) {
   await expect
+    .poll(() =>
+      page
+        .locator(".react-flow__viewport")
+        .evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a),
+    )
+    .toBeCloseTo(0.55, 2);
+  await expect
     .poll(async () =>
       page.getByTestId("rf__node-e2e-memorial-person").evaluate((card) => {
         const viewport = card.closest(".react-flow")!.getBoundingClientRect();

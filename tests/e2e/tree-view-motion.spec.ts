@@ -68,9 +68,7 @@ test("close, blood and branch views animate their cards and camera", async ({
   await familyViewAction(page, "Кровные");
   await expect
     .poll(() =>
-      commonMotion.evaluate(
-        (s) => (s.exited || s.entered) && s.settling,
-      ),
+      commonMotion.evaluate((s) => (s.exited || s.entered) && s.settling),
     )
     .toBe(true);
   await expect(canvas).not.toHaveClass(/is-layout-settling/);
@@ -196,6 +194,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   await showTree(page);
   await page.waitForTimeout(750);
   const afterNavigation = await camera();
+  expect(afterNavigation[2]).toBeCloseTo(0.55, 2);
   expect(
     Math.hypot(
       afterNavigation[0] - familyBefore[0],
@@ -204,7 +203,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   ).toBeGreaterThan(25);
 });
 
-test("AI focuses one person without zooming out", async ({
+test("AI focuses one person at 55 percent after manual zoom", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -225,14 +224,18 @@ test("AI focuses one person without zooming out", async ({
     timeout: 5_000,
   });
   const viewport = page.locator(".react-flow__viewport");
-  await page
+  const zoomIn = page
     .locator(".flow-camera-tools")
-    .getByRole("button", { name: "Увеличить" })
-    .click();
+    .getByRole("button", { name: "Увеличить" });
+  for (let step = 0; step < 6; step++) {
+    await zoomIn.click();
+    await page.waitForTimeout(220);
+  }
   await page.waitForTimeout(400);
   const before = await viewport.evaluate((element) =>
     Number(element.getAttribute("style")?.match(/scale\(([^)]+)\)/)?.[1] || 0),
   );
+  expect(before).toBeGreaterThan(0.6);
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   const panel = page.locator(".research-assistant");
   await panel.getByRole("textbox").fill("Покажи человека в древе");
@@ -252,11 +255,28 @@ test("AI focuses one person without zooming out", async ({
         : Infinity;
     })
     .toBeLessThan(20);
-  const after = await viewport.evaluate((element) =>
-    Number(element.getAttribute("style")?.match(/scale\(([^)]+)\)/)?.[1] || 0),
-  );
-  expect(after).toBeGreaterThanOrEqual(before - 0.02);
+  await expect
+    .poll(() =>
+      viewport.evaluate((element) =>
+        Number(
+          element.getAttribute("style")?.match(/scale\(([^)]+)\)/)?.[1] || 0,
+        ),
+      ),
+    )
+    .toBeCloseTo(0.55, 2);
   await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Закрыть ИИ-исследователя" }).click();
+  const tools = page.locator(".flow-camera-tools");
+  for (let step = 0; step < 3; step++)
+    await tools.getByRole("button", { name: "Уменьшить" }).click();
+  await tools.getByRole("button", { name: "К выбранному человеку" }).click();
+  await expect
+    .poll(() =>
+      viewport.evaluate(
+        (node) => new DOMMatrix(getComputedStyle(node).transform).a,
+      ),
+    )
+    .toBeCloseTo(0.55, 2);
 });
 
 test("opening another card after personal intro keeps the camera in place", async ({

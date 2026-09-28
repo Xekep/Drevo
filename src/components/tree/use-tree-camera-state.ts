@@ -8,9 +8,10 @@ import {
   type TreeMode,
 } from "../../domain/tree-layout.ts";
 
+export const PERSON_FOCUS_ZOOM = 0.55;
+
 type CameraFlow = {
   getViewport: () => Viewport;
-  getZoom: () => number;
   setCenter: (
     x: number,
     y: number,
@@ -193,7 +194,7 @@ export function useTreeCameraState({
             target.x + (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
             target.y + (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
             {
-              zoom: Math.min(1, Math.max(flow.getZoom(), narrow ? 0.82 : 0.9)),
+              zoom: PERSON_FOCUS_ZOOM,
               duration: motionEnabled ? 560 : 0,
               ease: (progress) => 1 - (1 - progress) ** 3,
             },
@@ -208,7 +209,8 @@ export function useTreeCameraState({
           branchAnchor.layoutKey !== layoutKey
         ) {
           const occurrence =
-            branchAnchor.occurrenceId && positions.has(branchAnchor.occurrenceId)
+            branchAnchor.occurrenceId &&
+            positions.has(branchAnchor.occurrenceId)
               ? branchAnchor.occurrenceId
               : personOccurrences
                   .get(branchAnchor.personId)
@@ -248,7 +250,7 @@ export function useTreeCameraState({
                 target.x + (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
                 target.y + (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
                 {
-                  zoom: Math.max(flow.getZoom(), narrow ? 0.82 : 0.9),
+                  zoom: PERSON_FOCUS_ZOOM,
                   duration: motionEnabled ? 650 : 0,
                   ease: (progress) => 1 - (1 - progress) ** 3,
                 },
