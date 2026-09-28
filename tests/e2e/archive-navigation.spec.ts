@@ -129,6 +129,12 @@ test("account avatar is beside the menu and opens the personal cabinet", async (
   await expect(
     page.getByRole("heading", { name: "Личный кабинет" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Просмотр древа" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Изменить просмотр" }),
+  ).toHaveCount(0);
 });
 
 test("account avatar uses the linked person's portrait when available", async ({

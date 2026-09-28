@@ -6,19 +6,12 @@ import {
   Clock3,
   ExternalLink,
   LogOut,
-  Settings2,
   ShieldCheck,
   TreeDeciduous,
   UserRound,
   Users,
 } from "lucide-react";
-import {
-  ROLE_NAMES,
-  fullName,
-  type ArchiveUser,
-  type Family,
-  type TreePreferences,
-} from "../domain";
+import { ROLE_NAMES, fullName, type ArchiveUser, type Family } from "../domain";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
@@ -46,9 +39,7 @@ export function AccountPage({
   error,
   family,
   readTree,
-  preferences,
   onPerson,
-  onTreePreferences,
   onAdmin,
 }: {
   session: AccountSession | null;
@@ -56,9 +47,7 @@ export function AccountPage({
   error: boolean;
   family: Family | null;
   readTree: boolean;
-  preferences: TreePreferences;
   onPerson: (id: string) => void;
-  onTreePreferences: () => void;
   onAdmin: () => void;
 }) {
   const user = session?.user;
@@ -233,56 +222,6 @@ export function AccountPage({
                   <button className="account-row-action" onClick={onAdmin}>
                     Управление архивом <ArrowRight size={17} />
                   </button>
-                )}
-              </section>
-
-              <section
-                className="account-card"
-                aria-labelledby="account-preferences-title"
-              >
-                <div className="account-card-title">
-                  <span className="account-icon">
-                    <Settings2 size={20} />
-                  </span>
-                  <div>
-                    <span className="account-eyebrow">Под себя</span>
-                    <h2 id="account-preferences-title">Просмотр древа</h2>
-                  </div>
-                </div>
-                {user.approved && family && readTree ? (
-                  <>
-                    <p className="account-card-copy">
-                      Настройки влияют только на ваш просмотр.
-                    </p>
-                    <div className="account-facts">
-                      <div>
-                        <span>Поколения</span>
-                        <strong>
-                          {preferences.reverseTimeline
-                            ? "Младшие сверху"
-                            : "Предки сверху"}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Карточки</span>
-                        <strong>
-                          {preferences.cardVariant === "portrait"
-                            ? "Фото · ФИО · Родство"
-                            : "Обычные"}
-                        </strong>
-                      </div>
-                    </div>
-                    <button
-                      className="account-row-action"
-                      onClick={onTreePreferences}
-                    >
-                      Изменить просмотр <ArrowRight size={17} />
-                    </button>
-                  </>
-                ) : (
-                  <p className="account-card-copy">
-                    Настройки появятся, когда вам откроется доступ к древу.
-                  </p>
                 )}
               </section>
 

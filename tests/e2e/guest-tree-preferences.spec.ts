@@ -49,7 +49,9 @@ for (const mode of ["shared", "public"] as const)
     const canvas = page.locator(".tree-canvas");
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     await expect(page.locator(".flow-person").first()).toBeVisible();
-    await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
+    await expect
+      .poll(() => page.locator(".react-flow__edge").count())
+      .toBeGreaterThan(0);
     await expect(page.locator(".portrait-card-info small")).toHaveCount(0);
     const gear = page.getByRole("button", { name: "Настройки древа" });
     await expect(gear).toBeVisible();
@@ -60,8 +62,12 @@ for (const mode of ["shared", "public"] as const)
     await gear.click();
     const dialog = page.getByRole("dialog", { name: "Вид древа" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("combobox", { name: "Генеалогический формат" })).toHaveCount(0);
-    await expect(dialog.getByText(/сохраняется в этом браузере/)).toBeVisible();
+    await expect(
+      dialog.getByRole("combobox", { name: "Генеалогический формат" }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByText(/Личные настройки · в этом браузере/),
+    ).toBeVisible();
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
@@ -94,7 +100,9 @@ for (const mode of ["shared", "public"] as const)
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
     await expect(page.locator(".flow-person").first()).toBeVisible();
-    await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
+    await expect
+      .poll(() => page.locator(".react-flow__edge").count())
+      .toBeGreaterThan(0);
     await gear.click();
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),

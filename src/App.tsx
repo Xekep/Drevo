@@ -645,9 +645,7 @@ export default function App() {
             error={accountError}
             family={family}
             readTree={readTree}
-            preferences={archive.treePreferences}
             onPerson={showPerson}
-            onTreePreferences={() => setTreePreferencesOpen(true)}
             onAdmin={() => navigate("admin")}
           />
         ) : family ? (
@@ -1036,7 +1034,6 @@ export default function App() {
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
           canExportArchive={user?.role === "admin"}
           preferences={archive.treePreferences}
-          linkedPerson={!!user?.personId}
           localOnly={!user?.approved}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}

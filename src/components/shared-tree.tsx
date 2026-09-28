@@ -166,7 +166,10 @@ export default function SharedTree({ token }: { token: string }) {
                 user={null}
                 canEdit={false}
                 busy={false}
-                reverse={preferences?.reverseTimeline ?? DEFAULT_TREE_PREFERENCES.reverseTimeline}
+                reverse={
+                  preferences?.reverseTimeline ??
+                  DEFAULT_TREE_PREFERENCES.reverseTimeline
+                }
                 cardVariant={preferences?.cardVariant}
                 colorScheme={preferences?.colorScheme}
                 selected={selected}
@@ -230,7 +233,6 @@ export default function SharedTree({ token }: { token: string }) {
         <TreePreferencesDialog
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
           preferences={preferences}
-          linkedPerson={false}
           localOnly
           onChange={async (value) => {
             writeGuestTreePreferences(value);
