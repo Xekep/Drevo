@@ -81,7 +81,10 @@ test("экспорт отделён от резервных копий; наст
   ).toHaveCount(0);
   await expect(page.getByText("Настройки и перенос данных")).toHaveCount(0);
   await expect(page.getByText("JSON Drevo", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Доступ и древо" }).click();
+  await expect(page.getByRole("button", { name: "Доступ и древо" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Общий доступ" }).click();
+  await expect(page.getByRole("heading", { name: "Публичный просмотр" })).toBeVisible();
+  await page.getByRole("button", { name: "Экспорт и импорт", exact: true }).click();
   const archiveSettings = page.getByRole("button", {
     name: "Изменить название и описание",
   });

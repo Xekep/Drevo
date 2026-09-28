@@ -161,16 +161,29 @@
 }
 .tree-pdf-export {
   display: grid;
-  gap: 6px;
   border-top: 1px solid #dce3d6;
-  padding-top: 12px;
+  padding-top: 8px;
 }
 .tree-export-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.tree-genealogy-export {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
-.tree-pdf-export button {
+.tree-genealogy-export select {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #dce3d6;
+  border-radius: 8px;
+  background: #fff;
+  color: #365b40;
+  padding: 0 8px;
+}
+.tree-pdf-export button,
+.tree-pdf-export a {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -182,6 +195,7 @@
   color: #365b40;
   cursor: pointer;
   font-size: 12px;
+  text-decoration: none;
 }
 .tree-pdf-export button:disabled {
   opacity: 0.6;

@@ -32,6 +32,11 @@ test("PDF respects collapsed branches and cancelling preparation releases the do
     "data-print-requested",
     "true",
   );
+  await expect(frame.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(frame.locator(".tree-print-canvas")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
   await expect(frame.locator('[data-person-id="e2e-grandchild"]')).toHaveCount(
     0,
   );

@@ -165,7 +165,6 @@ export function archiveHttp({
       archive,
       media,
       previewImage,
-      visibility,
       shares,
     });
   const restore = restoreHttp({

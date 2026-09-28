@@ -93,7 +93,6 @@ export type TreeFocus = {
 };
 export type TreeCanvasHandle = {
   exportPdf: (signal?: AbortSignal) => Promise<void>;
-  exportSvg: (signal?: AbortSignal) => Promise<void>;
 };
 type Props = {
   onPreferences?: () => void;
@@ -637,6 +636,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const actions = useMemo(
     () => ({
       cardVariant: props.cardVariant || "classic",
+      showRelationLabel: Boolean(user?.id),
       kinshipReference:
         family.people.find((person) => person.id === user?.personId) || null,
       kinshipPeople: family.people,
@@ -680,6 +680,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       props.cardVariant,
       family.people,
       family.links,
+      user?.id,
       user?.personId,
     ],
   );
@@ -841,11 +842,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           const tree = await preparedTree(signal);
           const { exportTreePdf } = await import("./tree-pdf");
           await exportTreePdf(tree, signal);
-        },
-        async exportSvg(signal) {
-          const tree = await preparedTree(signal);
-          const { exportTreeSvg } = await import("./tree-svg");
-          await exportTreeSvg(tree, signal);
         },
       };
     },

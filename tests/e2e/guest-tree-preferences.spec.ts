@@ -50,6 +50,7 @@ for (const mode of ["shared", "public"] as const)
     await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
     await expect(page.locator(".flow-person").first()).toBeVisible();
     await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
+    await expect(page.locator(".portrait-card-info small")).toHaveCount(0);
     const gear = page.getByRole("button", { name: "Настройки древа" });
     await expect(gear).toBeVisible();
     const gearBox = (await gear.boundingBox())!;
@@ -59,12 +60,14 @@ for (const mode of ["shared", "public"] as const)
     await gear.click();
     const dialog = page.getByRole("dialog", { name: "Вид древа" });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("combobox", { name: "Генеалогический формат" })).toHaveCount(0);
     await expect(dialog.getByText(/сохраняется в этом браузере/)).toBeVisible();
     await expect(
-      dialog.getByRole("radio", { name: "Младшие сверху" }),
+      dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
+    await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
     await dialog.getByRole("radio", { name: "Предки сверху" }).check();
-    await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
+    await dialog.getByRole("radio", { name: "Фото · ФИО" }).check();
     await dialog.getByRole("radio", { name: "Белая" }).check();
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
@@ -97,7 +100,7 @@ for (const mode of ["shared", "public"] as const)
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
     await expect(
-      dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }),
+      dialog.getByRole("radio", { name: "Фото · ФИО" }),
     ).toBeChecked();
     await dialog.getByRole("button", { name: "Закрыть" }).click();
     expect(writes).toEqual([]);
