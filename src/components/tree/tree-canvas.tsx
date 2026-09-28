@@ -1116,6 +1116,7 @@ function Canvas(props: Props) {
           zoomOnScroll={false}
           zoomOnPinch={!cameraLocked}
           zoomOnDoubleClick={!cameraLocked && !screen.fullscreen}
+          selectionKeyCode={null}
           selectionOnDrag={false}
           panOnDrag={cameraLocked ? false : [0, 1]}
           minZoom={0.05}

@@ -952,7 +952,7 @@ test("семья на древе подсвечивается без режим�
   await expect(page.locator(".comparison-content")).toHaveCount(0);
 });
 
-test("выбор двух людей с Shift не выделяет текст на древе", async ({
+test("Shift выбирает второго человека с первого клика при движении мыши", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -963,10 +963,20 @@ test("выбор двух людей с Shift не выделяет текст �
     .locator(".flow-person-content")
     .click();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
-  await page
+  await page.keyboard.down("Shift");
+  await expect(page.locator(".react-flow__pane")).not.toHaveClass(/selection/);
+  const second = page
     .getByTestId("rf__node-e2e-spouse")
-    .locator(".flow-person-content")
-    .click({ modifiers: ["Shift"] });
+    .locator(".flow-person-content");
+  const box = (await second.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  // A real mouse rarely stays perfectly still between down and up.
+  await page.mouse.move(x + 2, y + 1);
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
   await expect
     .poll(() =>
       page
