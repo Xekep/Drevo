@@ -140,5 +140,14 @@ export async function persistPostgresGraphChanges(
        target=EXCLUDED.target,type=EXCLUDED.type,note=EXCLUDED.note,created_by=EXCLUDED.created_by`,
       [archiveId, JSON.stringify(changed)],
     );
+  const remaining = new Set(next.people.map((row) => row.id));
+  const deleted = previous.people
+    .filter((row) => !remaining.has(row.id))
+    .map((row) => row.id);
+  if (deleted.length)
+    await client.query(
+      "DELETE FROM people WHERE archive_id=$1 AND id=ANY($2::text[])",
+      [archiveId, deleted],
+    );
   return persisted;
 }

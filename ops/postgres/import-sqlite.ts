@@ -467,6 +467,12 @@ export async function importSqliteSnapshot(
     await client.query(
       "INSERT INTO account_tiers(account_id,full_access) SELECT id,true FROM accounts",
     );
+    await client.query(
+      readFileSync(
+        new URL("./009_person_removals.sql", import.meta.url),
+        "utf8",
+      ),
+    );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
     await client.query("COMMIT");
     return {
