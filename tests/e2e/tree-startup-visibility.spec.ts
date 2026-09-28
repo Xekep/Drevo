@@ -54,6 +54,13 @@ test("a direct person link skips tree growth and smoothly focuses the requested 
     new Set(samples.map((sample) => sample.transform)).size,
   ).toBeGreaterThan(3);
   await expect(card.locator(".flow-person")).toHaveCSS("opacity", "1");
+  await expect
+    .poll(() =>
+      page
+        .locator(".react-flow__viewport")
+        .evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a),
+    )
+    .toBeCloseTo(0.55, 2);
 });
 
 test("a person selected during tree growth waits for the animation before opening the side panel", async ({

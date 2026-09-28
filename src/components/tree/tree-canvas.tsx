@@ -69,7 +69,7 @@ import {
   treeGrowthDuration,
 } from "./tree-growth";
 import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
-import { useTreeCameraState } from "./use-tree-camera-state";
+import { PERSON_FOCUS_ZOOM, useTreeCameraState } from "./use-tree-camera-state";
 import { familySpotlight } from "./family-spotlight";
 import { FanChart } from "./fan-chart";
 import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-morph";
@@ -554,7 +554,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     // which can still be updating as growth and virtualization finish.
     void flow
       .setCenter(introX + nodeWidth / 2, introY + nodeHeight / 2, {
-        zoom: narrow ? 0.96 : 1.08,
+        zoom: PERSON_FOCUS_ZOOM,
         duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
           ? 0
           : 620,

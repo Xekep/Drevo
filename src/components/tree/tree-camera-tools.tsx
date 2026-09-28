@@ -1,5 +1,6 @@
 import { Focus, Maximize2, Minus, Plus } from "lucide-react";
 import { Panel, useReactFlow, useViewport } from "@xyflow/react";
+import { PERSON_FOCUS_ZOOM } from "./use-tree-camera-state";
 
 export function TreeCameraTools({
   selected,
@@ -43,7 +44,8 @@ export function TreeCameraTools({
         onClick={() => {
           void flow.fitView({
             nodes: selected.map((id) => ({ id })),
-            maxZoom: 1,
+            minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
+            maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
             padding: 0.4,
             duration: window.matchMedia("(prefers-reduced-motion: reduce)")
               .matches
