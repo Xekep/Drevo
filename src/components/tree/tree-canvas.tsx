@@ -294,7 +294,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     const frame = requestAnimationFrame(() => onGrowthChange?.(false));
     return () => cancelAnimationFrame(frame);
   }, [growthLocked, onGrowthChange]);
-  useTreeGrowthInputLock(container, cameraLocked, !growthLocked);
+  // Timeline has its own scroll controls and does not wait for the hidden
+  // React Flow camera to finish its initial positioning.
+  useTreeGrowthInputLock(container, mode !== "timeline" && cameraLocked, !growthLocked);
   useEffect(() => {
     if (!growthActive || growthRevealed) return;
     // Let the browser apply the first animation frame while the viewport is
