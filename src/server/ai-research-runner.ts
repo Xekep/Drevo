@@ -47,6 +47,7 @@ import {
 } from "./research-suggestions.ts";
 import {
   missingYandexConversation,
+  YandexResponseError,
   yandexResponsesClient,
   type ResponseItem,
 } from "./yandex-responses.ts";
@@ -139,6 +140,19 @@ export function createResearchRunner({
       string,
       Extract<AnswerReference, { kind: "web" }>
     >();
+    let webCitationRetryUsed = false;
+    let webSearchFailed = false;
+    let webSearchCompleted = false;
+    const webPagesToVerify = (introduction: string) =>
+      [
+        introduction,
+        ...[...webReferences.values()]
+          .slice(0, 5)
+          .map(
+            (source) =>
+              `- [${source.label.replace(/[\\[\]]/g, "") || source.domain}](${source.url})`,
+          ),
+      ].join("\n\n");
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 8000)
       throw new RangeError("Некорректный текст запроса");
@@ -225,7 +239,7 @@ export function createResearchRunner({
         ...(searchTool
           ? [
               searchTool.description,
-              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global только явно, если доверенных источников недостаточно или пользователь просит более широкий поиск. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой.",
+              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global, если доверенных источников недостаточно или пользователь просит более широкий поиск. Trusted проверяет только перечисленные searchedDomains, а не все архивы: если сайт нужного архива не проверен или результаты относятся к другому региону, выполни global с полным названием архива, регионом и шифром. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
             ]
           : []),
         "Опирайся только на данные инструментов и слова пользователя.",
@@ -585,6 +599,39 @@ export function createResearchRunner({
           round--;
           continue;
         } else {
+          if (
+            !signal.aborted &&
+            webReferences.size &&
+            !createdSuggestionIds.size &&
+            !files.length
+          ) {
+            // Keep successful search results even when the following model call
+            // fails. Reset only the remote context; the local answer is saved.
+            chats.setRemote(chatId, null);
+            console.warn(
+              JSON.stringify({
+                event: "ai.web_answer_fallback",
+                model: runtime.modelUri,
+                sourceCount: webReferences.size,
+                providerStatus:
+                  error instanceof YandexResponseError
+                    ? error.status
+                    : undefined,
+                providerErrorCode:
+                  error instanceof YandexResponseError ? error.code : undefined,
+                errorType: error instanceof Error ? error.name : "unknown",
+              }),
+            );
+            return {
+              answer: webPagesToVerify(
+                "Поиск нашёл страницы, но ИИ не смог завершить анализ результатов. Сохранил ссылки для проверки. Соответствие нужному архиву и шифру пока не подтверждено:",
+              ),
+              references: [...webReferences.values()],
+              suggestionIds: [],
+              uiActions: [],
+              files: [],
+            };
+          }
           throw error;
         }
       }
@@ -633,6 +680,32 @@ export function createResearchRunner({
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
+        if (webSearchFailed && !webSearchCompleted)
+          answer.content =
+            "Не удалось завершить поиск во внешних архивах. Это не означает, что документа нет: наличие записи пока не проверено. Попробуйте повторить запрос.";
+        const hasWebCitation = [...webReferences.keys()].some((url) =>
+          rawContent.includes(`](${url})`),
+        );
+        if (
+          webReferences.size &&
+          !hasWebCitation &&
+          !webCitationRetryUsed &&
+          round < runtime.maxToolIterations
+        ) {
+          webCitationRetryUsed = true;
+          pendingInput.push({
+            type: "message",
+            role: "user",
+            content:
+              "В ответе нет ссылок на проверенные поиском источники. Не повторяй неподтверждённые утверждения о фондах и содержимом дел. Если выдача не относится к нужному архиву и региону, выполни web_search со scope global, полным названием архива, регионом и шифром. Затем дай краткий ответ с Markdown-ссылками на конкретные страницы из результатов. Если точное совпадение не подтверждено, прямо скажи это; не утверждай, что документ отсутствует в архиве.",
+          });
+          onStatus("Проверяю ссылки и соответствие источников запросу…");
+          continue;
+        }
+        if (webReferences.size && !hasWebCitation)
+          answer.content = webPagesToVerify(
+            "Не удалось подтвердить ответ источниками. Поиск вернул следующие страницы — их ещё нужно сверить с нужным архивом и шифром; это не подтверждение наличия или отсутствия документа:",
+          );
         if (
           !rawContent.trim() &&
           !createdSuggestionIds.size &&
@@ -879,6 +952,7 @@ export function createResearchRunner({
           else if (call.function.name === "web_search") {
             if (!search) throw new WebSearchError("WEB_SEARCH_DISABLED");
             const found = await search.search(toolArgs, signal, onStatus);
+            webSearchCompleted = true;
             for (const source of found.results)
               webReferences.set(source.url, {
                 kind: "web",
@@ -1105,6 +1179,7 @@ export function createResearchRunner({
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
           if (signal.aborted) throw error;
+          if (error instanceof WebSearchError) webSearchFailed = true;
           const detail =
             error instanceof Error ? error.message : "Ошибка инструмента";
           const safeDetail =
@@ -1120,7 +1195,14 @@ export function createResearchRunner({
             )
           )
             proposalErrors.push(safeDetail);
-          result = { error: safeDetail };
+          result =
+            error instanceof WebSearchError
+              ? {
+                  error: error.code,
+                  notice:
+                    "Внешний поиск не завершён. Это не означает, что запись отсутствует. Сообщи о сбое поиска понятным языком; не выдавай код ошибки и не утверждай, что проверил архив или не нашёл документ.",
+                }
+              : { error: safeDetail };
         }
         if (call.function.name === CREATE_PDF_TOOL.name && files.length)
           onStatus(

@@ -349,10 +349,13 @@ export function aiResearchHttp({
       message,
       selectedPerson ? { hidden: true } : {},
     );
-    const lockRenewal = setInterval(
-      () => chats.renew(chat.id, lockToken),
-      20_000,
-    );
+    const lockRenewal = setInterval(() => {
+      chats.renew(chat.id, lockToken);
+      // A provider may be silent while reasoning/searching. Keep the browser
+      // stream alive through proxies without adding activity messages.
+      if (stream && !res.writableEnded && !res.destroyed)
+        res.write(": keep-alive\n\n");
+    }, 20_000);
     lockRenewal.unref();
     const usageRun = usage.begin(user.id, runtime.model),
       metrics: ResearchMetrics = {
@@ -477,15 +480,20 @@ export function aiResearchHttp({
             (error.name === "TimeoutError" ||
               /aborted due to timeout|timed out/i.test(error.message))
           ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
-          : error instanceof Error
-            ? error.message
-            : "Не удалось получить ответ ИИ";
+          : error instanceof YandexResponseError
+            ? "Сервис ИИ не смог завершить ответ. Попробуйте повторить запрос."
+            : error instanceof Error
+              ? error.message
+              : "Не удалось получить ответ ИИ";
       console.warn(
         JSON.stringify({
           event: "ai.turn_failed",
           localConversationId: chat.id,
           model: runtime.modelUri,
-          responseId: metrics.responseId,
+          responseId:
+            error instanceof YandexResponseError && error.responseId
+              ? error.responseId
+              : metrics.responseId,
           agentIterations: metrics.agentIterations,
           toolCallCount: metrics.toolCallCount,
           providerErrorCode:

@@ -55,6 +55,20 @@ export function yandexWebSearchProvider({
         if (!data || typeof data !== "object")
           throw new WebSearchError("WEB_SEARCH_MALFORMED_RESPONSE");
         const raw = data as Record<string, unknown>;
+        // Incomplete responses are billable too; do not lose their usage.
+        const usage =
+          raw.usage && typeof raw.usage === "object"
+            ? (raw.usage as Record<string, unknown>)
+            : {};
+        const count = (n: unknown) =>
+          typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : 0;
+        onUsage({
+          inputTokens: count(usage.input_tokens),
+          outputTokens: count(usage.output_tokens),
+          cachedTokens: 0,
+        });
+        if (raw.status === "incomplete")
+          throw new WebSearchError("WEB_SEARCH_INCOMPLETE");
         if (raw.status !== "completed")
           throw new WebSearchError("WEB_SEARCH_UNAVAILABLE");
         if (!Array.isArray(raw.output))
@@ -110,17 +124,6 @@ export function yandexWebSearchProvider({
         response.summary = invalidCitation
           ? ""
           : summaries.join("\n").slice(0, 6000);
-        const usage =
-          raw.usage && typeof raw.usage === "object"
-            ? (raw.usage as Record<string, unknown>)
-            : {};
-        const count = (n: unknown) =>
-          typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : 0;
-        onUsage({
-          inputTokens: count(usage.input_tokens),
-          outputTokens: count(usage.output_tokens),
-          cachedTokens: 0,
-        });
         // Defensive redaction even if a misconfigured endpoint echoes credentials.
         const safe = (value: string) =>
           runtime.apiKey

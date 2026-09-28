@@ -337,7 +337,7 @@ export function aiRuntimeConfig(settings: ReturnType<typeof aiSettingsStore>) {
     webSearchDefaultScope: "trusted" as const,
     webSearchTimeoutMs: Math.max(
       1000,
-      Math.min(90000, Number(process.env.AI_WEB_SEARCH_TIMEOUT_MS) || 25000),
+      Math.min(90000, Number(process.env.AI_WEB_SEARCH_TIMEOUT_MS) || 60000),
     ),
     active: stored.enabled && configured,
     configured,

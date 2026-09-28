@@ -58,7 +58,7 @@ export function webSearchTool(categories: string[]) {
           },
           maxItems: 20,
           description:
-            "Types of trusted genealogy resources to search. Select relevant catalogue categories; omit to search the catalogue by priority.",
+            "Types of trusted genealogy resources to search. Select relevant catalogue categories; omit to search the catalogue by priority. Ignored for global search.",
         },
         scope: {
           type: "string",
@@ -79,7 +79,7 @@ export function webSearchTool(categories: string[]) {
           minimum: 0,
           maximum: 1000,
           description:
-            "Trusted source group, starting at 0. Use nextSourcePage from a previous result to cover remaining catalogue domains without repeating them.",
+            "Trusted source group, starting at 0. Use nextSourcePage from a previous result to cover remaining catalogue domains without repeating them. Ignored for global search.",
         },
       },
       required: ["query"],
@@ -91,7 +91,7 @@ export function webSearchTool(categories: string[]) {
 export function createWebSearchService({
   provider,
   sources,
-  timeoutMs = 25000,
+  timeoutMs = 60000,
   log = (event: object) => console.info(JSON.stringify(event)),
 }: {
   provider: WebSearchProvider;
@@ -157,9 +157,10 @@ export function createWebSearchService({
             !raw.categories.every((c) => typeof c === "string"))
         )
           throw new WebSearchError("WEB_SEARCH_INVALID_INPUT");
-        categories = (raw.categories || []) as string[];
+        categories =
+          scope === "global" ? [] : ((raw.categories || []) as string[]);
         const maxResults = raw.maxResults ?? 5,
-          page = raw.sourcePage ?? 0;
+          page = scope === "global" ? 0 : (raw.sourcePage ?? 0);
         if (
           typeof maxResults !== "number" ||
           !Number.isInteger(maxResults) ||
@@ -168,8 +169,7 @@ export function createWebSearchService({
           typeof page !== "number" ||
           !Number.isInteger(page) ||
           page < 0 ||
-          page > 1000 ||
-          (scope === "global" && (categories.length || page))
+          page > 1000
         )
           throw new WebSearchError("WEB_SEARCH_INVALID_INPUT");
         const catalog = sources().filter(
