@@ -16,6 +16,7 @@ import {
   writeGuestTreePreferences,
 } from "../data/guest-tree-preferences";
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
+import { TreeSearch } from "./tree-search";
 const noop = () => {};
 type SharedData = {
   family: Family;
@@ -28,6 +29,7 @@ export default function SharedTree({ token }: { token: string }) {
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const { selected, compare, selectionOnly, choose, reveal, dispatch, focus } =
     useWorkspaceSelection();
   useEffect(() => {
@@ -40,6 +42,7 @@ export default function SharedTree({ token }: { token: string }) {
     let loading = false;
     const unavailable = (message: string) => {
       setData(null);
+      setQuery("");
       setError(message);
     };
     const refresh = async () => {
@@ -121,7 +124,7 @@ export default function SharedTree({ token }: { token: string }) {
       <div className="archive-main">
         <header className="shared-header">
           <img src="/favicon.svg" alt="" />
-          <div>
+          <div className="shared-header-title">
             <strong>{data?.family.title || "Семейное древо"}</strong>
             {data && (
               <small>
@@ -130,6 +133,14 @@ export default function SharedTree({ token }: { token: string }) {
               </small>
             )}
           </div>
+          {data && (
+            <TreeSearch
+              people={data.family.people}
+              query={query}
+              onQuery={setQuery}
+              onSelect={(id) => reveal([id])}
+            />
+          )}
         </header>
         {data ? (
           <main className="archive-workspace is-tree">
@@ -168,7 +179,7 @@ export default function SharedTree({ token }: { token: string }) {
                 onLink={noop}
                 focus={focus}
                 preview={null}
-                query=""
+                query={query}
                 highlighted={relation?.path || []}
               />
               {!selectionOnly && (compare || chosen.length > 0) && (

@@ -79,6 +79,10 @@
   box-shadow: 0 16px 40px #2b42291a;
   z-index: 40;
 }
+.archive-search-results {
+  max-height: min(420px, 50dvh);
+  overflow-y: auto;
+}
 .archive-search-results button {
   width: 100%;
   text-align: left;
