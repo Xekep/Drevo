@@ -1,0 +1,43 @@
+import type { TreePreferences } from "../domain/tree-preferences.ts";
+
+const KEY = "drevo:guest-tree-preferences:v1";
+
+/** Только параметры вида: без данных архива, аккаунта или токена ссылки. */
+export function readGuestTreePreferences(
+  fallback: TreePreferences,
+): TreePreferences {
+  try {
+    const value = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      return fallback;
+    return {
+      reverseTimeline:
+        typeof value.reverseTimeline === "boolean"
+          ? value.reverseTimeline
+          : fallback.reverseTimeline,
+      cardVariant: ["classic", "portrait"].includes(value.cardVariant)
+        ? value.cardVariant
+        : fallback.cardVariant,
+      colorScheme: ["warm", "white"].includes(value.colorScheme)
+        ? value.colorScheme
+        : fallback.colorScheme,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export function writeGuestTreePreferences(value: TreePreferences) {
+  try {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        reverseTimeline: value.reverseTimeline,
+        cardVariant: value.cardVariant,
+        colorScheme: value.colorScheme,
+      }),
+    );
+  } catch {
+    // При недоступном хранилище выбор всё равно действует в открытом древе.
+  }
+}

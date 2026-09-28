@@ -690,6 +690,7 @@ export default function App() {
                     aria-hidden={view !== "tree"}
                   >
                     <TreeCanvas
+                      onPreferences={() => setTreePreferencesOpen(true)}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
@@ -1040,10 +1041,11 @@ export default function App() {
           onClose={() => setSettings(false)}
         />
       )}
-      {treePreferencesOpen && user?.approved && readTree && (
+      {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
           preferences={archive.treePreferences}
-          linkedPerson={!!user.personId}
+          linkedPerson={!!user?.personId}
+          localOnly={!user?.approved}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
         />

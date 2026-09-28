@@ -6,11 +6,13 @@ import "../styles/tree-preferences.css";
 export function TreePreferencesDialog({
   preferences,
   linkedPerson,
+  localOnly = false,
   onChange,
   onClose,
 }: {
   preferences: TreePreferences;
   linkedPerson: boolean;
+  localOnly?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
 }) {
@@ -32,27 +34,29 @@ export function TreePreferencesDialog({
   };
   return (
     <EditorDialog
-      title="Моё древо"
+      title="Вид древа"
       onClose={onClose}
       className="tree-preferences-dialog"
     >
       <div className="tree-preferences">
-        <p>Эти настройки меняют только ваш просмотр древа.</p>
+        <p>
+          {localOnly
+            ? "Ваш вид · сохраняется в этом браузере"
+            : "Ваш вид · сохраняется в аккаунте"}
+        </p>
         <fieldset disabled={saving}>
-          <legend>Направление времени</legend>
+          <legend>Поколения</legend>
           <div className="tree-preference-options">
             {[
               {
                 reverse: false,
                 title: "Предки сверху",
-                detail: "От прошлого к настоящему",
               },
               {
                 reverse: true,
                 title: "Младшие сверху",
-                detail: "От настоящего к прошлому",
               },
-            ].map(({ reverse, title, detail }) => (
+            ].map(({ reverse, title }) => (
               <label
                 key={title}
                 className={
@@ -70,20 +74,21 @@ export function TreePreferencesDialog({
                 />
                 <span>
                   <strong>{title}</strong>
-                  <small>{detail}</small>
                 </span>
               </label>
             ))}
           </div>
-          <small>В хронологии время всегда идёт слева направо.</small>
+          <small>В хронологии время идёт слева направо.</small>
         </fieldset>
         <fieldset disabled={saving}>
-          <legend>Цветовая схема</legend>
+          <legend>Фон</legend>
           <div className="tree-preference-options color-options">
-            {([
-              { scheme: "warm", title: "Тёплая", detail: "Мягкий светлый фон" },
-              { scheme: "white", title: "Белая", detail: "Белый фон древа" },
-            ] as const).map(({ scheme, title, detail }) => (
+            {(
+              [
+                { scheme: "warm", title: "Тёплая" },
+                { scheme: "white", title: "Белая" },
+              ] as const
+            ).map(({ scheme, title }) => (
               <label
                 key={scheme}
                 className={draft.colorScheme === scheme ? "is-selected" : ""}
@@ -93,26 +98,23 @@ export function TreePreferencesDialog({
                   name="tree-color-scheme"
                   aria-label={title}
                   checked={draft.colorScheme === scheme}
-                  onChange={() => void choose({ ...draft, colorScheme: scheme })}
+                  onChange={() =>
+                    void choose({ ...draft, colorScheme: scheme })
+                  }
                 />
                 <span
                   className={`tree-color-preview ${scheme}-preview`}
                   aria-hidden="true"
-                >
-                  <i />
-                  <i />
-                  <i />
-                </span>
+                />
                 <span>
                   <strong>{title}</strong>
-                  <small>{detail}</small>
                 </span>
               </label>
             ))}
           </div>
         </fieldset>
         <fieldset disabled={saving}>
-          <legend>Вид карточки</legend>
+          <legend>Карточки</legend>
           <div className="tree-preference-options card-options">
             <label
               className={draft.cardVariant === "classic" ? "is-selected" : ""}
@@ -120,6 +122,7 @@ export function TreePreferencesDialog({
               <input
                 type="radio"
                 name="tree-card"
+                aria-label="Обычная"
                 checked={draft.cardVariant === "classic"}
                 onChange={() =>
                   void choose({ ...draft, cardVariant: "classic" })
@@ -144,6 +147,7 @@ export function TreePreferencesDialog({
               <input
                 type="radio"
                 name="tree-card"
+                aria-label="Фото · ФИО · Родство"
                 checked={draft.cardVariant === "portrait"}
                 onChange={() =>
                   void choose({ ...draft, cardVariant: "portrait" })
@@ -162,13 +166,12 @@ export function TreePreferencesDialog({
             </label>
           </div>
           {!linkedPerson && (
-            <small>
-              Для подписи родства аккаунт должен быть привязан к человеку в
-              древе.
-            </small>
+            <small>Родство появится после привязки аккаунта к человеку.</small>
           )}
         </fieldset>
-        {saving && <p role="status">Сохраняем…</p>}
+        <p className="tree-preferences-status" role="status">
+          {saving ? "Сохраняем…" : ""}
+        </p>
         {error && (
           <p className="form-error" role="alert">
             {error}

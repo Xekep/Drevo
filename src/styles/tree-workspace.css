@@ -1927,6 +1927,7 @@
 }
 .tree-canvas.is-fullscreen .tree-mode-bar,
 .tree-canvas.is-fullscreen .workspace-actions,
+.tree-canvas.is-fullscreen .tree-display-actions,
 .tree-canvas.is-fullscreen .react-flow__panel,
 .tree-canvas.is-fullscreen .timeline-period-menu,
 .tree-canvas.is-fullscreen .timeline-quick-centuries,
@@ -2094,4 +2095,56 @@
   .flow-household:not(.flow-household--siblings)::before {
   inset: 4px 32px auto;
   height: 144px;
+}
+
+.tree-display-actions {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tree-display-actions .workspace-actions {
+  position: static;
+}
+.tree-preferences-trigger {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid #e1e7db;
+  border-radius: 8px;
+  color: #42654a;
+  background: #fffffff0;
+}
+.tree-preferences-trigger:hover {
+  background: #eaf0e2;
+}
+.tree-preferences-trigger:focus-visible {
+  outline: 2px solid #658751;
+  outline-offset: 2px;
+}
+@media (min-width: 900px) {
+  .tree-canvas:has(.tree-preferences-trigger) .tree-mode-bar {
+    max-width: calc(100% - 210px);
+  }
+  .tree-canvas.mode-timeline:has(.tree-preferences-trigger) .tree-mode-bar {
+    max-width: calc(100% - var(--timeline-rail) - 210px);
+  }
+}
+@media (max-width: 899px) {
+  .tree-mode-bar .tree-preferences-trigger {
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+  }
+  .tree-mode-switch > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
