@@ -7,6 +7,7 @@ import {
   projectTree,
   completeVisibleParents,
   commonAncestorNetwork,
+  bloodRelativesWithPartners,
 } from "../src/domain/family-neighborhood.ts";
 import { unionGeometry } from "../src/domain/union-layout.ts";
 import { unionTimeline } from "../src/domain/union-timeline.ts";
@@ -111,6 +112,20 @@ test("common ancestors include the full blood branch but exclude spouses, stepfa
     assert.equal(visible.has(id), false, id);
   assert.deepEqual([...commonAncestorNetwork(index, "outsider")], ["outsider"]);
   assert.equal(commonAncestorNetwork(index, "missing").size, 0);
+});
+test("blood view adds recorded partners once without extending the blood or access network", () => {
+  const data = archive();
+  data.people.find((p) => p.id === "sibling")!.spouses = [];
+  data.people.find((p) => p.id === "stepmother")!.spouses.push("outsider");
+  data.people.find((p) => p.id === "outsider")!.spouses = ["stepmother"];
+  const index = familyNeighbors(data);
+  const visible = bloodRelativesWithPartners(index, "main");
+  for (const id of ["spouse", "stepmother", "sibling-spouse"])
+    assert.ok(visible.has(id), id);
+  for (const id of ["outsider", "godparent"])
+    assert.equal(visible.has(id), false, id);
+  assert.equal(commonAncestorNetwork(index, "main").has("spouse"), false);
+  assert.equal(bloodRelativesWithPartners(index, "missing").size, 0);
 });
 test("branches expand one step at a time and folding the access point removes detached expansions", () => {
   const index = familyNeighbors(archive());

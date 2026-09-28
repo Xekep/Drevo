@@ -1,7 +1,7 @@
 import { familyViewAction, showTree } from "./tree-toolbar-actions";
 import { expect, test } from "@playwright/test";
 
-test("family, common ancestors and branch changes animate their cards and camera", async ({
+test("close, blood and branch views animate their cards and camera", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -53,7 +53,7 @@ test("family, common ancestors and branch changes animate their cards and camera
     });
 
   const familyMotion = await observe();
-  await familyViewAction(page, "Семья выбранного");
+  await familyViewAction(page, "Близкие");
   await expect
     .poll(() =>
       familyMotion.evaluate(
@@ -65,7 +65,7 @@ test("family, common ancestors and branch changes animate their cards and camera
   await familyMotion.evaluate((s) => s.stop());
 
   const commonMotion = await observe();
-  await familyViewAction(page, "Общие предки");
+  await familyViewAction(page, "Кровные");
   await expect
     .poll(() =>
       commonMotion.evaluate(
@@ -176,7 +176,7 @@ test("leaving the fan for the same person preserves the tree camera", async ({
   await page.waitForTimeout(750);
   sameCamera(await camera(), before);
 
-  await familyViewAction(page, "Семья выбранного");
+  await familyViewAction(page, "Близкие");
   await page.waitForTimeout(1_200);
   const familyBefore = await camera();
   await familyViewAction(page, "Веер");
@@ -482,7 +482,7 @@ test("reduced motion skips the tree and fan transitions", async ({
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  await familyViewAction(page, "Семья выбранного");
+  await familyViewAction(page, "Близкие");
   const selectedCard = page.getByTestId("rf__node-e2e-child");
   await expect(selectedCard).toHaveCSS("animation-name", "none");
   await expect(selectedCard).toHaveCSS("transition-duration", "0s");

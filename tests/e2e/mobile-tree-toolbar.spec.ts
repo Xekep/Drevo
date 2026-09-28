@@ -56,16 +56,16 @@ test("мобильная панель помещается в один ряд и
   const menu = page.getByLabel("Область просмотра", { exact: true });
   await menu.click();
   await expect(
-    page.getByRole("button", { name: "Общие предки" }),
+    page.getByRole("button", { name: "Кровные" }),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
   await expect(
-    page.getByRole("button", { name: "Общие предки" }),
+    page.getByRole("button", { name: "Кровные" }),
   ).not.toBeVisible();
   await menu.press("Enter");
-  await page.getByRole("button", { name: "Общие предки" }).click();
-  await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCount(0);
+  await page.getByRole("button", { name: "Кровные" }).click();
+  await expect(page.getByTestId("rf__node-e2e-spouse")).toBeAttached();
   await expectSingleRow(page, 320);
   await menu.click();
   await page.getByRole("button", { name: "Всё древо" }).click();

@@ -69,7 +69,7 @@ export function FamilyViewTools({
       {anchor && (
         <span
           className="tree-family-name"
-          title={`${fanActive ? "Веер" : mode === "common" ? "Общие предки" : "Семья"}: ${fullName(anchor)}`}
+          title={`${fanActive ? "Веер" : mode === "common" ? "Кровные" : "Близкие"}: ${fullName(anchor)}`}
         >
           <GitBranch size={15} />
           <span>
@@ -85,19 +85,19 @@ export function FamilyViewTools({
       {selected && (mode !== "family" || selected.id !== anchor?.id) && (
         <button
           onClick={() => runAction(onFamily)}
-          title={`Показать семью: ${fullName(selected)}`}
+          title={"Близкие родственники\n\nЭто родственники, которые близки в генеалогическом древе."}
           aria-pressed={false}
         >
-          Семья выбранного
+          Близкие
         </button>
       )}
       {selected && (mode !== "common" || selected.id !== anchor?.id) && (
         <button
           onClick={() => runAction(onCommon)}
-          title={`Показать людей с общими предками: ${fullName(selected)}`}
+          title={"Кровные родственники\n\nРодственники, с которыми есть кровное родство, и их партнеры (муж/жена)."}
           aria-pressed={false}
         >
-          Общие предки
+          Кровные
         </button>
       )}
       {!fanActive && (selected || anchor) && (
@@ -105,7 +105,7 @@ export function FamilyViewTools({
           type="button"
           onClick={() => runAction(onFan)}
           aria-pressed={false}
-          title={`Веер предков: ${fullName(selected || anchor!)}`}
+          title={"Веер предков\n\nПредки выбранного человека по поколениям в виде полукруга."}
         >
           Веер
         </button>
@@ -141,7 +141,7 @@ export function FamilyViewTools({
       <details className="tree-family-menu" ref={menu}>
         <summary
           aria-label="Область просмотра"
-          title="Семья, общие предки и веер"
+          title="Близкие, кровные и веер"
         >
           <GitBranch size={19} aria-hidden="true" />
         </summary>
