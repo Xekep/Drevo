@@ -266,7 +266,7 @@ test("активный веер перестраивается при перех
     .not.toBe(before);
 });
 
-test("семья и общие предки центрируют человека, а веер сохраняет ракурс", async ({
+test("близкие и кровные центрируют человека, а веер сохраняет ракурс", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
@@ -290,16 +290,32 @@ test("семья и общие предки центрируют человек�
   const expectCentered = async () =>
     expect.poll(distanceFromCenter, { timeout: 2_000 }).toBeLessThan(16);
 
-  await page.getByRole("button", { name: "Семья выбранного" }).click();
+  const closeButton = page.getByRole("button", { name: "Близкие" });
+  await expect(closeButton).toHaveAttribute(
+    "title",
+    "Близкие родственники\n\nЭто родственники, которые близки в генеалогическом древе.",
+  );
+  await closeButton.click();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expectCentered();
 
-  await page.getByRole("button", { name: "Общие предки" }).click();
+  const bloodButton = page.getByRole("button", { name: "Кровные" });
+  await expect(bloodButton).toHaveAttribute(
+    "title",
+    "Кровные родственники\n\nРодственники, с которыми есть кровное родство, и их партнеры (муж/жена).",
+  );
+  await bloodButton.click();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expectCentered();
+  await expect(canvas).not.toHaveClass(/is-layout-settling/);
 
   const beforeFan = await distanceFromCenter();
-  await page.getByRole("button", { name: "Веер" }).click();
+  const fanButton = page.getByRole("button", { name: "Веер" });
+  await expect(fanButton).toHaveAttribute(
+    "title",
+    "Веер предков\n\nПредки выбранного человека по поколениям в виде полукруга.",
+  );
+  await fanButton.click();
   await expect(page.locator(".fan-chart-svg")).toBeVisible();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".fan-chart-svg")).toHaveCount(0);
@@ -1174,7 +1190,7 @@ test("mobile archive does not overflow the viewport", async ({ page }) => {
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("common ancestors view keeps blood relatives and excludes the spouse", async ({
+test("blood view keeps relatives and their partners", async ({
   page,
 }, testInfo) => {
   await page.goto("/tree");
@@ -1188,10 +1204,10 @@ test("common ancestors view keeps blood relatives and excludes the spouse", asyn
     await dock.getByRole("button", { name: "Свернуть панель" }).click();
   if (testInfo.project.name === "mobile")
     await page.getByLabel("Область просмотра", { exact: true }).click();
-  await page.getByRole("button", { name: "Общие предки" }).click();
+  await page.getByRole("button", { name: "Кровные" }).click();
   if (testInfo.project.name === "mobile")
     await page.getByLabel("Область просмотра", { exact: true }).click();
-  await expect(page.locator(".tree-family-count")).toHaveText("5 из 6");
+  await expect(page.locator(".tree-family-count")).toHaveText("6 из 6");
   if (testInfo.project.name === "desktop") {
     const share = page.getByRole("button", { name: "Поделиться" });
     await expect(share).toBeVisible();
@@ -1204,7 +1220,7 @@ test("common ancestors view keeps blood relatives and excludes the spouse", asyn
     });
     expect(aligned).toBeLessThan(2);
   }
-  await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCount(0);
+  await expect(page.getByTestId("rf__node-e2e-spouse")).toBeAttached();
   await expect(page.getByTestId("rf__node-e2e-sibling-child")).toBeAttached();
   await page.getByRole("button", { name: "Всё древо" }).click();
   await expect(page.locator(".tree-family-count")).toHaveCount(0);

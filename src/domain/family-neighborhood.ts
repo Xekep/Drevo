@@ -83,6 +83,24 @@ export function commonAncestorNetwork(
   return visible;
 }
 
+/** Один шаг по записанным союзам от кровных родственников, без цепочки супругов супругов. */
+export function bloodRelativesWithPartners(
+  index: ReturnType<typeof familyNeighbors>,
+  anchor: string,
+) {
+  const blood = commonAncestorNetwork(index, anchor);
+  const visible = new Set(blood);
+  for (const person of index.people.values()) {
+    if (blood.has(person.id)) {
+      for (const spouse of person.spouses)
+        if (index.people.has(spouse)) visible.add(spouse);
+    } else if (person.spouses.some((spouse) => blood.has(spouse))) {
+      visible.add(person.id);
+    }
+  }
+  return visible;
+}
+
 /** Ближайшая семья, раскрываемые границы и путь к выбранным для сравнения людям. */
 export function familyNeighborhood(
   index: ReturnType<typeof familyNeighbors>,

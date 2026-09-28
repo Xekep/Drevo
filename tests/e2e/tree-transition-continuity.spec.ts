@@ -30,7 +30,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
     state.stop = () => cancelAnimationFrame(frame);
     return state;
   });
-  await familyViewAction(page, "Семья выбранного");
+  await familyViewAction(page, "Близкие");
   await page.waitForTimeout(1200);
   await samples.evaluate((s) => s.stop());
   expect(await original.evaluate((node) => node.isConnected)).toBe(true);
