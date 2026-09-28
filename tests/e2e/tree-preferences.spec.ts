@@ -72,6 +72,7 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
     path: testInfo.outputPath("tree-settings-dialog.png"),
   });
   if (testInfo.project.name === "mobile") {
+    const originalViewport = page.viewportSize()!;
     await page.setViewportSize({ width: 320, height: 640 });
     const narrowBounds = await dialog.boundingBox();
     expect(narrowBounds!.x).toBeGreaterThanOrEqual(0);
@@ -79,6 +80,7 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
     await dialog
       .getByRole("radio", { name: "Фото · ФИО · Родство" })
       .scrollIntoViewIfNeeded();
+    await page.setViewportSize(originalViewport);
   }
 
   await dialog.getByRole("button", { name: "Закрыть" }).click();
