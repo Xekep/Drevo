@@ -48,9 +48,17 @@ test("map correction accepts DMS and decimal coordinate pairs", () => {
   assert.ok(dms);
   assert.ok(Math.abs(dms.lat - 53.7695833333) < 0.0000001);
   assert.ok(Math.abs(dms.lon - 67.3712222222) < 0.0000001);
+  const compassPair = parsePlaceCoordinates("56°52'45.5\"N 60°24'20.0\"E");
+  assert.ok(compassPair);
+  assert.ok(Math.abs(compassPair.lat - 56.8793055556) < 0.0000001);
+  assert.ok(Math.abs(compassPair.lon - 60.4055555556) < 0.0000001);
   assert.deepEqual(parsePlaceCoordinates("53.76958, 67.37122"), {
     lat: 53.76958,
     lon: 67.37122,
+  });
+  assert.deepEqual(parsePlaceCoordinates("56.879306, 60.405560"), {
+    lat: 56.879306,
+    lon: 60.40556,
   });
   assert.deepEqual(parsePlaceCoordinates("10°30′ S; 20°15′ W"), {
     lat: -10.5,
@@ -64,6 +72,8 @@ test("map correction accepts DMS and decimal coordinate pairs", () => {
     "-53° N, 67° E",
     "53° N, 181° E",
     "53.5°30′ N, 67° E",
+    "56°52'45.5\"E 60°24'20.0\"N",
+    "56°52'60\"N 60°24'20.0\"E",
   ])
     assert.equal(parsePlaceCoordinates(invalid), null, invalid);
 });

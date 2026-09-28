@@ -16,7 +16,12 @@ export function placeSearch(text: string) {
 }
 /** Широта и долгота в десятичных градусах либо в градусах, минутах и секундах. */
 export function parsePlaceCoordinates(text: string) {
-  const parts = text.trim().split(/\s*[,;]\s*/u);
+  const input = text.trim();
+  const separated = input.split(/\s*[,;]\s*/u);
+  const parts =
+    separated.length === 2
+      ? separated
+      : input.match(/^(.+?[NS])\s+(.+?[EW])$/iu)?.slice(1) || [];
   if (parts.length !== 2) return null;
   function component(value: string, axis: "lat" | "lon") {
     const match = value
