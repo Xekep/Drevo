@@ -17,11 +17,11 @@ export function TreePreferencesDialog({
   localOnly?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
-  onExport: (signal: AbortSignal) => Promise<void>;
+  onExport: (format: "pdf" | "svg", signal: AbortSignal) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [exported, setExported] = useState(false);
+  const [exported, setExported] = useState<"pdf" | "svg" | null>(null);
   const exportController = useRef<AbortController | null>(null);
   useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
@@ -37,6 +37,27 @@ export function TreePreferencesDialog({
       setError((reason as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+  const exportTree = async (format: "pdf" | "svg") => {
+    exportController.current?.abort();
+    const controller = new AbortController();
+    exportController.current = controller;
+    setExporting(true);
+    setExported(null);
+    setError("");
+    try {
+      await onExport(format, controller.signal);
+      if (!controller.signal.aborted) setExported(format);
+    } catch (reason) {
+      if (!controller.signal.aborted)
+        setError(
+          reason instanceof Error && reason.message === "Не удалось дождаться построения древа."
+            ? reason.message
+            : `Не удалось создать ${format.toUpperCase()}. Попробуйте ещё раз.`,
+        );
+    } finally {
+      if (!controller.signal.aborted) setExporting(false);
     }
   };
   return (
@@ -177,35 +198,22 @@ export function TreePreferencesDialog({
           )}
         </fieldset>
         <div className="tree-pdf-export">
-          <button
-            type="button"
-            disabled={saving || exporting}
-            onClick={async () => {
-              exportController.current?.abort();
-              const controller = new AbortController();
-              exportController.current = controller;
-              setExporting(true);
-              setExported(false);
-              setError("");
-              try {
-                await onExport(controller.signal);
-                if (!controller.signal.aborted) setExported(true);
-              } catch {
-                if (!controller.signal.aborted)
-                  setError(
-                    "Не удалось создать PDF. Дождитесь загрузки фотографий и попробуйте ещё раз.",
-                  );
-              } finally {
-                if (!controller.signal.aborted) setExporting(false);
-              }
-            }}
-          >
-            <Download size={16} aria-hidden="true" />
-            {exporting ? "Готовим древо…" : "Сохранить древо в PDF"}
-          </button>
+          <div className="tree-export-actions">
+            {(["pdf", "svg"] as const).map((format) => (
+              <button
+                key={format}
+                type="button"
+                aria-label={`Сохранить древо в ${format.toUpperCase()}`}
+                disabled={saving || exporting}
+                onClick={() => void exportTree(format)}
+              >
+                <Download size={16} aria-hidden="true" />
+                Скачать {format.toUpperCase()}
+              </button>
+            ))}
+          </div>
           <small>
-            Все раскрытые ветви на одной странице. В окне печати выберите
-            «Сохранить как PDF».
+            Все раскрытые ветви. PDF — через окно печати; SVG — отдельный векторный файл.
           </small>
         </div>
         <p className="tree-preferences-status" role="status">
@@ -213,8 +221,10 @@ export function TreePreferencesDialog({
             ? "Сохраняем…"
             : exporting
               ? "Подготавливаем древо…"
-              : exported
+              : exported === "pdf"
                 ? "Окно печати открыто."
+                : exported === "svg"
+                  ? "Скачивание SVG началось."
                 : ""}
         </p>
         {error && (

@@ -153,5 +153,6 @@ for (const warmCache of [false, true])
         .every((item) => item.viewportVisibility === "hidden"),
     ).toBe(true);
     expect(samples[firstVisible].className).toContain("is-growing");
-    expect(Number(samples[firstVisible].opacity)).toBeLessThan(0.1);
+    // The first sampled frame may already be one 60 Hz step into the reveal.
+    expect(Number(samples[firstVisible].opacity)).toBeLessThan(0.25);
   });

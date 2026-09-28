@@ -229,7 +229,11 @@ export default function SharedTree({ token }: { token: string }) {
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
-          onExport={(signal) => treeCanvas.current!.exportPdf(signal)}
+          onExport={(format, signal) =>
+            format === "pdf"
+              ? treeCanvas.current!.exportPdf(signal)
+              : treeCanvas.current!.exportSvg(signal)
+          }
           preferences={preferences}
           linkedPerson={false}
           localOnly

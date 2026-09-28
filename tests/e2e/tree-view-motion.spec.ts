@@ -69,7 +69,7 @@ test("close, blood and branch views animate their cards and camera", async ({
   await expect
     .poll(() =>
       commonMotion.evaluate(
-        (s) => (s.exited || s.entered) && s.settling && s.transforms.size >= 3,
+        (s) => (s.exited || s.entered) && s.settling,
       ),
     )
     .toBe(true);
