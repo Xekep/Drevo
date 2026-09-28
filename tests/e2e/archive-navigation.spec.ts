@@ -57,6 +57,7 @@ test("modified clicks open a tab and plain clicks retain the application", async
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
+  await page.bringToFront();
   const sections = page.locator(".nav-sections");
   const opened = context.waitForEvent("page");
   await sections

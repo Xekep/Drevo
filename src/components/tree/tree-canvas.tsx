@@ -279,7 +279,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const growthPreparing = growing && !narrow && family.people.length > 0 && !growthRevealed;
   const growthActive = growing && !narrow && growthStarted;
   const growthLocked = growthPreparing || growthActive;
-  const cameraLocked = growthLocked || introMoving;
+  // A click before the first fitView completes would be overwritten by that
+  // initial camera placement, especially with reduced motion / a slow layout.
+  const cameraLocked =
+    (!initialCameraReady && family.people.length > 0) || growthLocked || introMoving;
   const onGrowthChange = props.onGrowthChange;
   useLayoutEffect(() => {
     if (growthLocked) {

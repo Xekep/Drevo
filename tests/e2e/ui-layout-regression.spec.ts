@@ -15,7 +15,11 @@ test("подписи карточек остаются читаемыми при
   const zoom = page.locator(".flow-camera-tools > span");
   await expect(zoom).toHaveText("100%");
   for (let i = 0; i < 4; i++) {
+    const previous = await zoom.textContent();
     await page.getByRole("button", { name: "Уменьшить", exact: true }).click();
+    // React Flow publishes its viewport on a frame. The next click must use
+    // that updated viewport instead of racing the previous zero-duration move.
+    await expect(zoom).not.toHaveText(previous!);
   }
   await expect
     .poll(async () => parseInt((await zoom.textContent()) || "0", 10))
