@@ -59,6 +59,15 @@ type TreeCameraStateInput = {
   manualCameraOverride: boolean;
   expanded: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
+  layoutKey: string;
+  branchAnchor: {
+    personId: string;
+    occurrenceId: string | null;
+    position: { x: number; y: number };
+    viewport: Viewport;
+    layoutKey: string;
+    token: number;
+  } | null;
 };
 
 function initialTreePadding(width: number, height: number, narrow: boolean) {
@@ -95,6 +104,8 @@ export function useTreeCameraState({
   manualCameraOverride,
   expanded,
   collapsed,
+  layoutKey,
+  branchAnchor,
 }: TreeCameraStateInput) {
   const canvasWidth = useStore((state) => state.width);
   const canvasHeight = useStore((state) => state.height);
@@ -106,6 +117,7 @@ export function useTreeCameraState({
   );
   const lastReturn = useRef(-1);
   const lastRestore = useRef(-1);
+  const lastBranch = useRef(-1);
   const previousContext = useRef("");
   const previousReverse = useRef(reverse);
   const initialViewSent = useRef(false);
@@ -189,6 +201,29 @@ export function useTreeCameraState({
           void Promise.resolve(viewportUpdate).then(
             () => onReturnComplete?.(),
             () => onReturnComplete?.(),
+          );
+        } else if (
+          branchAnchor &&
+          branchAnchor.token !== lastBranch.current &&
+          branchAnchor.layoutKey !== layoutKey
+        ) {
+          const occurrence =
+            branchAnchor.occurrenceId && positions.has(branchAnchor.occurrenceId)
+              ? branchAnchor.occurrenceId
+              : personOccurrences
+                  .get(branchAnchor.personId)
+                  ?.find((id) => positions.has(id));
+          const target = occurrence ? positions.get(occurrence) : undefined;
+          if (!target) return;
+          lastBranch.current = branchAnchor.token;
+          const { viewport, position } = branchAnchor;
+          viewportUpdate = flow.setViewport(
+            {
+              x: viewport.x + (position.x - target.x) * viewport.zoom,
+              y: viewport.y + (position.y - target.y) * viewport.zoom,
+              zoom: viewport.zoom,
+            },
+            { duration: motionEnabled ? 440 : 0, ease: contextEase },
           );
         } else if (
           focusReady &&
@@ -319,6 +354,8 @@ export function useTreeCameraState({
     root,
     expanded,
     collapsed,
+    layoutKey,
+    branchAnchor,
   ]);
 
   return {

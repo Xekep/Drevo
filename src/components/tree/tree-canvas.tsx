@@ -182,6 +182,15 @@ function Canvas(props: Props) {
     token: number;
   } | null>(null);
   const restoreToken = useRef(0);
+  const branchToken = useRef(0);
+  const [branchAnchor, setBranchAnchor] = useState<{
+    personId: string;
+    occurrenceId: string | null;
+    position: { x: number; y: number };
+    viewport: Viewport;
+    layoutKey: string;
+    token: number;
+  } | null>(null);
   const [returnTarget, setReturnTarget] = useState<{
     id: string;
     token: number;
@@ -587,13 +596,31 @@ function Canvas(props: Props) {
       manualCameraOverride,
       expanded: familyView.expanded,
       collapsed,
+      layoutKey,
+      branchAnchor,
     });
   const toggleBranch = useCallback(
-    (id: string) => {
+    (id: string, occurrenceId?: string) => {
+      const occurrence =
+        occurrenceId && positions.has(occurrenceId)
+          ? occurrenceId
+          : personOccurrences.get(id)?.find((candidate) => positions.has(candidate));
+      const position = occurrence ? positions.get(occurrence) : undefined;
+      if (position) {
+        branchToken.current += 1;
+        setBranchAnchor({
+          personId: id,
+          occurrenceId: occurrence || null,
+          position,
+          viewport: flow.getViewport(),
+          layoutKey,
+          token: branchToken.current,
+        });
+      }
       setGrowing(false);
       toggleView(id);
     },
-    [toggleView],
+    [flow, layoutKey, personOccurrences, positions, toggleView],
   );
   const actions = useMemo(
     () => ({
@@ -844,7 +871,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} ${props.cardVariant === "portrait" ? "has-portrait-cards" : ""} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         onPointerDownCapture={edgePan.onPointerDownCapture}
         onClickCapture={edgePan.onClickCapture}

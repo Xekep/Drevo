@@ -118,6 +118,8 @@ export const PersonNode = memo(function PersonNode({
     kinshipLinks,
   ]);
   const cardLabel = `${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
+  const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
+  const branchTitle = `${branchAction} ${portraitCard ? "ветвь" : "потомков"}`;
   return (
     <div
       className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""} ${portraitCard ? "is-portrait-card" : ""}`}
@@ -215,19 +217,23 @@ export const PersonNode = memo(function PersonNode({
           </span>
         </button>
       )}
-      {!data.familyFocus && !compact && data.childrenCount > 0 && (
-        <button
-          className="flow-collapse nodrag nopan"
-          aria-label={
-            data.collapsed ? "Развернуть потомков" : "Свернуть потомков"
-          }
-          title={data.collapsed ? "Развернуть потомков" : "Свернуть потомков"}
-          onClick={() => collapse(data.person.id, id)}
-        >
-          {data.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          <span>{data.childrenCount}</span>
-        </button>
-      )}
+      {!data.familyFocus &&
+        (!compact || portraitCard) &&
+        data.childrenCount > 0 && (
+          <button
+            className="flow-collapse nodrag nopan"
+            aria-label={branchTitle}
+            title={branchTitle}
+            onClick={() => collapse(data.person.id, id)}
+          >
+            {data.collapsed ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronUp size={14} />
+            )}
+            <span>{data.childrenCount}</span>
+          </button>
+        )}
     </div>
   );
 }, samePersonNodeProps);
