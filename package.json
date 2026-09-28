@@ -12,6 +12,7 @@
     "test": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:worker": "node --test tests/built-worker.test.mjs",
+    "test:postgres": "node --experimental-strip-types tests/integration/postgres-person-patches.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src tests ops/postgres vite.config.ts",
     "preview:static": "vite preview --host 127.0.0.1",
