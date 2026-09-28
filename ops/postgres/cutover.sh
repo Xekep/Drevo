@@ -57,6 +57,8 @@ python3 - "$shared/drevo.sqlite" "$stage/snapshot.sqlite" <<'PY'
 import sqlite3,sys
 with sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True) as source, sqlite3.connect(sys.argv[2]) as target:
     source.backup(target)
+    target.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+    target.execute('PRAGMA journal_mode=DELETE')
     assert target.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
     assert not target.execute('PRAGMA foreign_key_check').fetchall()
 PY
