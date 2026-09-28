@@ -8,7 +8,6 @@ import {
 } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import {
-  analyzeKinship,
   fullName,
   years,
   type TreeCardVariant,
@@ -18,6 +17,7 @@ import {
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
+import { personRelationLabel } from "./person-relation-label";
 import {
   TREE_NODE_HEIGHT,
   TREE_NODE_WIDTH,
@@ -96,20 +96,12 @@ export const PersonNode = memo(function PersonNode({
   const portraitCard = cardVariant === "portrait";
   const relationLabel = useMemo(() => {
     if (!portraitCard) return "";
-    if (!kinshipReference) return "Нет привязки к древу";
-    if (data.person.id === kinshipReference.id) return "Это вы";
-    const relation = analyzeKinship(
+    return personRelationLabel(
       data.person,
       kinshipReference,
       kinshipPeople,
       kinshipLinks,
     );
-    const label =
-      relation.roles?.[0]?.term ||
-      (relation.kind === "unknown"
-        ? "Родство не установлено"
-        : "Семейная связь");
-    return label[0].toLocaleUpperCase("ru") + label.slice(1);
   }, [
     portraitCard,
     data.person,

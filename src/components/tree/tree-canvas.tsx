@@ -93,6 +93,7 @@ export type TreeFocus = {
 };
 export type TreeCanvasHandle = {
   exportPdf: (signal?: AbortSignal) => Promise<void>;
+  exportSvg: (signal?: AbortSignal) => Promise<void>;
 };
 type Props = {
   onPreferences?: () => void;
@@ -799,33 +800,56 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : displayEdges,
     [displayEdges, layoutTransition],
   );
-  useImperativeHandle(
-    exportRef,
-    () => ({
-      async exportPdf(signal) {
-        if (!ready || layoutBusy) throw new Error("Дождитесь построения древа.");
-        const { exportTreePdf } = await import("./tree-pdf");
-        await exportTreePdf(
-          {
-            nodes: displayNodes,
-            edges: displayEdges,
-            actions,
-            title: family.title,
-            white: props.colorScheme === "white",
-          },
-          signal,
-        );
-      },
-    }),
-    [
+  const exportSnapshot = useRef({
+    ready,
+    layoutBusy,
+    tree: {
+      nodes: displayNodes,
+      edges: displayEdges,
+      actions,
+      title: family.title,
+      white: props.colorScheme === "white",
+    },
+  });
+  useLayoutEffect(() => {
+    exportSnapshot.current = {
       ready,
       layoutBusy,
-      displayNodes,
-      displayEdges,
-      actions,
-      family.title,
-      props.colorScheme,
-    ],
+      tree: {
+        nodes: displayNodes,
+        edges: displayEdges,
+        actions,
+        title: family.title,
+        white: props.colorScheme === "white",
+      },
+    };
+  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family.title, props.colorScheme]);
+  useImperativeHandle(
+    exportRef,
+    () => {
+      const preparedTree = async (signal?: AbortSignal) => {
+        for (let attempt = 0; attempt < 300; attempt++) {
+          signal?.throwIfAborted();
+          const current = exportSnapshot.current;
+          if (current.ready && !current.layoutBusy) return current.tree;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error("Не удалось дождаться построения древа.");
+      };
+      return {
+        async exportPdf(signal) {
+          const tree = await preparedTree(signal);
+          const { exportTreePdf } = await import("./tree-pdf");
+          await exportTreePdf(tree, signal);
+        },
+        async exportSvg(signal) {
+          const tree = await preparedTree(signal);
+          const { exportTreeSvg } = await import("./tree-svg");
+          await exportTreeSvg(tree, signal);
+        },
+      };
+    },
+    [],
   );
   useEffect(() => {
     if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
@@ -913,7 +937,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       aria-label="Настройки древа"
       title="Настройки древа"
       aria-haspopup="dialog"
-      disabled={growthLocked}
+      disabled={growthLocked || layoutBusy}
       onClick={props.onPreferences}
     >
       <Settings size={19} aria-hidden="true" />

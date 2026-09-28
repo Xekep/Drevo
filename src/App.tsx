@@ -1047,7 +1047,11 @@ export default function App() {
       )}
       {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
-          onExport={(signal) => treeCanvas.current!.exportPdf(signal)}
+          onExport={(format, signal) =>
+            format === "pdf"
+              ? treeCanvas.current!.exportPdf(signal)
+              : treeCanvas.current!.exportSvg(signal)
+          }
           preferences={archive.treePreferences}
           linkedPerson={!!user?.personId}
           localOnly={!user?.approved}
