@@ -5,6 +5,21 @@ test("family layout keeps the focused card mounted throughout its move", async (
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch(),
+      data = await response.json();
+    // Removing this unrelated component changes the focused card's X.
+    // The six-person family alone can retain its coordinates in both views.
+    data.family.people.push({
+      ...data.family.people[0],
+      id: "000-unrelated",
+      parents: [],
+      spouses: [],
+    });
+    data.partial = false;
+    data.treePreferences.cardVariant = "classic";
+    await route.fulfill({ response, json: data });
+  });
   await page.goto("/people/e2e-child");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
@@ -31,6 +46,7 @@ test("family layout keeps the focused card mounted throughout its move", async (
     return state;
   });
   await familyViewAction(page, "Близкие");
+  await expect(page.getByTestId("rf__node-000-unrelated")).toHaveCount(0);
   await page.waitForTimeout(1200);
   await samples.evaluate((s) => s.stop());
   expect(await original.evaluate((node) => node.isConnected)).toBe(true);

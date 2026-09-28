@@ -9,8 +9,18 @@ import {
   type EdgeRoute,
 } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
-import { familyLeafGroups, compactFamilyLayout } from "./family-packing.ts";
 import { optimizeBranches } from "./branch-routing.ts";
+import { householdLevels } from "./household-levels.ts";
+import {
+  alignGenerationBands,
+  GENERATION_DEVIATION,
+} from "./generation-bands.ts";
+import {
+  groupFamilyUnions,
+  localUnionRoutes,
+  type FamilyUnion,
+  type UnionGroup,
+} from "./union-groups.ts";
 
 export type UnionOccurrence = { id: string; personId: string; block: string };
 export type UnionBranch = {
@@ -29,18 +39,13 @@ export type UnionBlock = {
   width: number;
   height: number;
 };
-type Unit = {
-  id: string;
-  members: string[];
-  children: string[];
-  married: boolean;
-};
+type Unit = UnionGroup;
 const unionId = (ids: string[]) => `union:${JSON.stringify([...ids].sort())}`;
 
 /** Один союз — одна точная пара. Общий супруг не объединяет разные союзы. */
 export function familyUnions(people: LayoutPerson[]) {
   const known = new Set(people.map((p) => p.id));
-  const units = new Map<string, Unit>();
+  const units = new Map<string, FamilyUnion>();
   const ensure = (members: string[]) => {
     const ids = [...new Set(members.filter((id) => known.has(id)))].sort();
     if (!ids.length) return undefined;
@@ -70,11 +75,25 @@ async function geometryForSeed(
   size: TreeNodeSize,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
-  const units = familyUnions(people);
+  const families = familyUnions(people);
   const byId = new Map(people.map((p) => [p.id, p]));
-  const origins = new Map<string, Unit>();
-  for (const unit of units)
-    for (const child of unit.children) origins.set(child, unit);
+  const origins = new Map<string, FamilyUnion>();
+  for (const family of families)
+    for (const child of family.children) origins.set(child, family);
+  const adoptedBy = new Map<string, string[]>();
+  for (const link of links)
+    if (link.type === "adoptive_parent" && !origins.has(link.to)) {
+      const parents = adoptedBy.get(link.to) || [];
+      parents.push(link.from);
+      adoptedBy.set(link.to, parents);
+    }
+  const levels = householdLevels(
+    people.map((p) => ({ ...p, parents: adoptedBy.get(p.id) || p.parents })),
+  );
+  const units = groupFamilyUnions(families, levels);
+  const familyGroups = new Map(
+    units.flatMap((u) => u.families.map((f) => [f.id, u] as const)),
+  );
   const primary = new Map<string, Unit>();
   for (const unit of units)
     for (const id of unit.members) if (!primary.has(id)) primary.set(id, unit);
@@ -83,16 +102,25 @@ async function geometryForSeed(
     const unit = {
       id: `person:${JSON.stringify(p.id)}`,
       members: [p.id],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(unit);
     primary.set(p.id, unit);
   }
-  type Attachment = { from: Unit; to: Unit; child: string };
+  type Attachment = {
+    from: Unit;
+    to: Unit;
+    child: string;
+    family: FamilyUnion;
+  };
   const attachments: Attachment[] = [];
-  for (const [child, from] of origins)
-    attachments.push({ from, to: primary.get(child)!, child });
+  for (const [child, family] of origins)
+    attachments.push({
+      from: familyGroups.get(family.id)!,
+      to: primary.get(child)!,
+      child,
+      family,
+    });
 
   // Циклы возникают в проекции союзов даже при корректном DAG происхождения.
   // Разрываем только визуальную зависимость: ребёнок получает карточку-ссылку.
@@ -123,8 +151,7 @@ async function geometryForSeed(
     const leaf = {
       id: `reference:${JSON.stringify([edge.from.id, edge.child])}`,
       members: [edge.child],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(leaf);
     edge.to = leaf;
@@ -138,7 +165,12 @@ async function geometryForSeed(
     children.get(a.from.id)!.push(a);
   }
   const queue = units.filter((u) => !incoming.get(u.id)).map((u) => u.id);
-  const depth = new Map(queue.map((id) => [id, 0]));
+  const depth = new Map(
+    units.map((u) => [
+      u.id,
+      Math.max(...u.members.map((id) => levels.get(id) || 0)),
+    ]),
+  );
   for (let i = 0; i < queue.length; i++) {
     const id = queue[i];
     for (const a of children.get(id)!) {
@@ -157,10 +189,10 @@ async function geometryForSeed(
     const leaf = {
       id: `continuation:${JSON.stringify([a.from.id, a.child])}`,
       members: [a.child],
-      children: [],
-      married: false,
+      families: [],
     };
     units.push(leaf);
+    depth.set(leaf.id, depth.get(a.to.id)!);
     a.to = leaf;
   }
   const occurrences: UnionOccurrence[] = [];
@@ -179,39 +211,67 @@ async function geometryForSeed(
     }
   const nodeId = (unit: Unit, person: string) =>
     occurrence.get(JSON.stringify([unit.id, person]))!;
-  const width = (u: Unit) => u.members.length * (W + 32) - 32;
-  const { groups, folded } = familyLeafGroups(
-    units,
-    attachments,
-    new Set(
-      links
-        .filter((l) => l.type === "adoptive_parent")
-        .flatMap((l) => [l.from, l.to]),
-    ),
-    new Map(people.map((p) => [p.id, p.birth])),
-    size,
+  const unitOccurrences = new Map(
+    units.map((u) => [u.id, u.members.map((id) => nodeId(u, id))]),
   );
+  const width = (u: Unit) => u.members.length * (W + 32) - 32;
+  const localRoutes = new Map(
+    units.map((u) => [u.id, localUnionRoutes(u, size)]),
+  );
+  const familyRoutes = new Map(
+    [...localRoutes.values()].flatMap((r) =>
+      r.families.map((f) => [f.family.id, f] as const),
+    ),
+  );
+  const layerHeights = new Map<number, number>();
+  for (const unit of units) {
+    const level = depth.get(unit.id)!;
+    layerHeights.set(
+      level,
+      Math.max(
+        layerHeights.get(level) || 0,
+        H + 2 * GENERATION_DEVIATION + localRoutes.get(unit.id)!.bottom,
+      ),
+    );
+  }
+  const outPort = (family: FamilyUnion) => JSON.stringify([family.id, "out"]);
   const portId = (u: Unit, person: string) =>
     JSON.stringify([u.id, person, "in"]);
-  const nodes: ElkNode[] = units
-    .filter((u) => !folded.has(u.id))
+  const nodes: ElkNode[] = [...units]
+    .sort(
+      (a, b) =>
+        (byId.get(a.members[0])!.birth || "9999").localeCompare(
+          byId.get(b.members[0])!.birth || "9999",
+        ) || a.id.localeCompare(b.id),
+    )
     .map((u) => ({
       id: u.id,
-      width: groups.get(u.id)?.width ?? width(u),
-      height: groups.get(u.id)?.height ?? H + 24,
-      layoutOptions: { "elk.portConstraints": "FIXED_POS" },
+      width: width(u),
+      height: layerHeights.get(depth.get(u.id)!),
+      layoutOptions: {
+        "elk.portConstraints": "FIXED_POS",
+        "elk.partitioning.partition": String(depth.get(u.id)),
+      },
       ports: [
         {
-          id: `${u.id}:out`,
-          x: groups.has(u.id) ? 12 : width(u) / 2,
-          y: groups.get(u.id)?.height ?? H + 24,
+          id: `${u.id}:adoption`,
+          x: width(u) / 2,
+          y: layerHeights.get(depth.get(u.id)!),
           width: 0,
           height: 0,
           layoutOptions: { "elk.port.side": "SOUTH" },
         },
+        ...localRoutes.get(u.id)!.families.map((f) => ({
+          id: outPort(f.family),
+          x: f.joint.x,
+          y: layerHeights.get(depth.get(u.id)!),
+          width: 0,
+          height: 0,
+          layoutOptions: { "elk.port.side": "SOUTH" },
+        })),
         ...u.members.map((id, i) => ({
           id: portId(u, id),
-          x: (groups.get(u.id)?.inset || 0) + i * (W + 32) + W / 2,
+          x: i * (W + 32) + W / 2,
           y: 0,
           width: 0,
           height: 0,
@@ -219,17 +279,11 @@ async function geometryForSeed(
         })),
       ],
     }));
-  const elkEdges: ElkExtendedEdge[] = attachments.flatMap((a, i) =>
-    folded.has(a.to.id)
-      ? []
-      : [
-          {
-            id: `branch:${i}`,
-            sources: [`${a.from.id}:out`],
-            targets: [portId(a.to, a.child)],
-          },
-        ],
-  );
+  const elkEdges: ElkExtendedEdge[] = attachments.map((a, i) => ({
+    id: `branch:${i}`,
+    sources: [outPort(a.family)],
+    targets: [portId(a.to, a.child)],
+  }));
   // Усыновление влияет на расположение одиночной карточки, но не на состав союза.
   const adoptions = links.filter(
     (l) =>
@@ -237,58 +291,65 @@ async function geometryForSeed(
       !origins.has(l.to) &&
       primary.has(l.from) &&
       primary.has(l.to) &&
-      primary.get(l.from) !== primary.get(l.to),
+      depth.get(primary.get(l.from)!.id)! < depth.get(primary.get(l.to)!.id)!,
   );
   for (const [i, a] of adoptions.entries())
     elkEdges.push({
       id: `adoption:${i}`,
-      sources: [`${primary.get(a.from)!.id}:out`],
+      sources: [`${primary.get(a.from)!.id}:adoption`],
       targets: [portId(primary.get(a.to)!, a.to)],
     });
-  const graph = await compactFamilyLayout(
-    {
-      id: "family-layout",
-      children: nodes,
-      edges: elkEdges,
-      layoutOptions: {
-        "elk.algorithm": "layered",
-        "elk.direction": "DOWN",
-        "elk.edgeRouting": "ORTHOGONAL",
-        "elk.randomSeed": String(seed),
-        "elk.spacing.nodeNode": "64",
-        "elk.spacing.componentComponent": "100",
-        "elk.layered.spacing.nodeNodeBetweenLayers": "100",
-        "elk.layered.spacing.edgeNodeBetweenLayers": "24",
-        "elk.layered.spacing.edgeEdgeBetweenLayers": "16",
-        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
-        "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-        "elk.layered.thoroughness": "12",
-        "elk.separateConnectedComponents": "true",
-      },
+  const laidOut = await layout({
+    id: "family-layout",
+    children: nodes,
+    edges: elkEdges,
+    layoutOptions: {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.randomSeed": String(seed),
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "true",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "true",
     },
-    layout,
-  );
+  });
+  const { graph, bands, offsets } = alignGenerationBands(laidOut, size);
   const placed = new Map(
     graph.children!.map((n) => [
       n.id,
-      { x: n.x! + (groups.get(n.id)?.inset || 0), y: n.y! },
+      { x: n.x!, y: n.y! + GENERATION_DEVIATION + offsets.get(n.id)! },
     ]),
   );
-  for (const [id, group] of groups) {
-    const p = placed.get(id)!;
-    for (const leaf of group.leaves)
-      placed.set(leaf.unit, { x: p.x - group.inset + leaf.x, y: p.y + leaf.y });
-  }
   const positions: TreeGeometry["positions"] = [];
   const blocks: UnionBlock[] = [];
+  const partners = new Map<string, Set<string>>();
+  for (const f of families.filter((f) => f.married))
+    for (const id of f.members) {
+      const list = partners.get(id) || new Set<string>();
+      f.members
+        .filter((other) => other !== id)
+        .forEach((other) => list.add(other));
+      partners.set(id, list);
+    }
   for (const unit of units) {
     const p = placed.get(unit.id)!;
     unit.members.forEach((id, i) =>
       positions.push([nodeId(unit, id), { x: p.x + i * (W + 32), y: p.y }]),
     );
     // Общая подложка обозначает брак, а не только общих детей.
-    if (unit.members.length > 1 && unit.married)
+    if (
+      unit.members.length === 2 &&
+      unit.families.some((f) => f.married) &&
+      unit.members.every((id) => partners.get(id)!.size === 1)
+    )
       blocks.push({
         id: unit.id,
         members: unit.members.map((id) => nodeId(unit, id)),
@@ -298,46 +359,29 @@ async function geometryForSeed(
       });
   }
   let branches: UnionBranch[] = [];
-  const siblingGroups: UnionBlock[] = [];
-  for (const [id, group] of groups) {
-    // Рамка объединяет ряды братьев и сестёр; это не отдельные поколения.
-    if (new Set(group.leaves.map((l) => l.y)).size < 2) continue;
-    const p = placed.get(id)!;
-    const top = Math.min(...group.leaves.map((l) => l.y)) - 12;
-    const bottom = Math.max(...group.leaves.map((l) => l.y)) + H + 24;
-    siblingGroups.push({
-      id: `siblings:${id}`,
-      members: group.leaves.map((l) =>
-        occurrence.get(JSON.stringify([l.unit, l.person]))!,
-      ),
-      x: p.x - group.inset + 24,
-      y: p.y + top,
-      width: group.width - 48,
-      height: bottom - top,
-    });
-  }
-  for (const unit of units) {
-    if (unit.members.length !== 2) continue;
+  for (const family of families) {
+    const unit = familyGroups.get(family.id)!;
+    const local = familyRoutes.get(family.id)!;
+    if (!local.pair) continue;
     const p = placed.get(unit.id)!;
-    const [a, b] = unit.members;
-    const relations: UnionBranch["relations"] = unit.married
+    const [a, b] = family.members;
+    const relations: UnionBranch["relations"] = family.married
       ? [{ from: a, to: b, type: "spouse" }]
-      : unit.children.flatMap((to) =>
-          unit.members.map((from) => ({ from, to, type: "parent" as const })),
+      : family.children.flatMap((to) =>
+          family.members.map((from) => ({ from, to, type: "parent" as const })),
         );
     branches.push({
-      id: `pair:${unit.id}`,
+      id: `pair:${family.id}`,
       source: nodeId(unit, a),
       target: nodeId(unit, b),
-      union: unit.id,
+      union: family.id,
       relations,
       route: {
-        sourceHandle: "right",
-        targetHandle: "left",
-        points: [
-          { x: p.x + W, y: p.y + H / 2 },
-          { x: p.x + W + 32, y: p.y + H / 2 },
-        ],
+        ...local.pair,
+        points: local.pair.points.map((point) => ({
+          x: p.x + point.x,
+          y: p.y + point.y,
+        })),
       },
     });
   }
@@ -345,48 +389,22 @@ async function geometryForSeed(
   for (const [i, a] of attachments.entries()) {
     const route = laidEdges.get(`branch:${i}`)?.sections?.[0];
     const p = placed.get(a.from.id)!;
-    const joint = {
-      x: p.x + width(a.from) / 2,
-      y: p.y + (a.from.members.length > 1 ? H / 2 : H),
-    };
-    const group = groups.get(a.from.id);
+    const localJoint = familyRoutes.get(a.family.id)!.joint;
+    const joint = { x: p.x + localJoint.x, y: p.y + localJoint.y };
     const target = placed.get(a.to.id)!;
-    const trunk = group ? p.x - group.inset + 12 : joint.x;
-    const local = folded.has(a.to.id);
-    const firstRow = group
-      ? p.y + Math.min(...group.leaves.map((l) => l.y)) - 24
-      : p.y + H + 28;
-    const points = local
-      ? [
-          joint,
-          { x: joint.x, y: firstRow },
-          ...(target.y - 24 > firstRow
-            ? [
-                { x: trunk, y: firstRow },
-                { x: trunk, y: target.y - 24 },
-              ]
-            : []),
-          { x: target.x + W / 2, y: target.y - 24 },
-          { x: target.x + W / 2, y: target.y },
-        ]
-      : [
-          joint,
-          ...(group
-            ? [
-                { x: joint.x, y: firstRow },
-                { x: trunk, y: firstRow },
-              ]
-            : []),
-          route!.startPoint,
-          ...(route!.bendPoints || []),
-          route!.endPoint,
-        ];
+    const points = [
+      joint,
+      route!.startPoint,
+      ...(route!.bendPoints || []),
+      route!.endPoint,
+      { x: route!.endPoint.x, y: target.y },
+    ];
     branches.push({
       id: `child:${JSON.stringify(a.child)}`,
-      source: nodeId(a.from, a.from.members[0]),
+      source: nodeId(a.from, a.family.members[0]),
       target: nodeId(a.to, a.child),
-      union: a.from.id,
-      relations: a.from.members.map((from) => ({
+      union: a.family.id,
+      relations: a.family.members.map((from) => ({
         from,
         to: a.child,
         type: "parent",
@@ -403,11 +421,17 @@ async function geometryForSeed(
     const maxY = Math.max(0, ...positions.map(([, p]) => p.y));
     for (const [, p] of positions) p.y = maxY - p.y;
     for (const b of blocks) b.y = maxY - b.y;
-    for (const g of siblingGroups) g.y = maxY + H - g.y - g.height;
+    for (const band of bands) {
+      band.targetY = maxY - band.targetY;
+      band.minY = band.targetY - GENERATION_DEVIATION;
+      band.maxY = band.targetY + GENERATION_DEVIATION;
+    }
     for (const b of branches) {
       for (const p of b.route.points) p.y = maxY + H - p.y;
-      if (b.route.sourceHandle === "bottom") b.route.sourceHandle = "top";
-      if (b.route.targetHandle === "top") b.route.targetHandle = "bottom";
+      const mirror = (handle: EdgeRoute["sourceHandle"]) =>
+        handle === "bottom" ? "top" : handle === "top" ? "bottom" : handle;
+      b.route.sourceHandle = mirror(b.route.sourceHandle);
+      b.route.targetHandle = mirror(b.route.targetHandle);
     }
   }
   // Дополнительные отношения обходят все отображаемые карточки, включая повторы.
@@ -436,7 +460,11 @@ async function geometryForSeed(
     routes,
     occurrences,
     blocks,
-    siblingGroups,
+    siblingGroups: [],
+    generationBands: bands.map((band) => ({
+      ...band,
+      members: band.members.flatMap((id) => unitOccurrences.get(id)!),
+    })),
     branches,
   };
 }
@@ -467,7 +495,7 @@ function mainRouteContacts(geometry: TreeGeometry) {
   return contacts;
 }
 
-/** Сравниваем видимые маршруты после ELK, группировки листьев и их прокладки. */
+/** Сравниваем видимые маршруты после ELK и уплотнения полос поколений. */
 export async function unionGeometry(
   people: LayoutPerson[],
   layout: (graph: ElkNode) => Promise<ElkNode>,

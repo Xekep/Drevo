@@ -77,6 +77,30 @@ test("экспорт отделён от резервных копий; наст
     page.getByRole("link", { name: "Экспорт JSON без фото" }),
   ).toBeVisible();
   await expect(
+    page.getByRole("link", { name: "Скачать базу SQLite" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Настройки и перенос данных")).toHaveCount(0);
+  await expect(page.getByText("JSON Drevo", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Доступ и древо" }).click();
+  const archiveSettings = page.getByRole("button", {
+    name: "Изменить название и описание",
+  });
+  if (testInfo.project.name === "mobile") {
+    await expect(archiveSettings).toBeDisabled();
+  } else {
+    await archiveSettings.click();
+    await expect(
+      page.getByRole("dialog", { name: "Настройки архива" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByLabel("Выберите экспорт архива"),
+    ).toHaveCount(0);
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Закрыть" })
+      .click();
+  }
+  await expect(
     page.getByRole("button", { name: "Создать копию", exact: true }),
   ).toHaveCount(0);
   await page

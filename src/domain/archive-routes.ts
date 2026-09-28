@@ -6,6 +6,7 @@ export const archivePaths = {
   documents: "/documents",
   places: "/places",
   insights: "/insights",
+  resources: "/resources",
   quality: "/quality",
   account: "/account",
   admin: "/admin",

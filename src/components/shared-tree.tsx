@@ -1,12 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3 } from "lucide-react";
 import type { Family } from "../domain/types";
 import { analyzeKinship } from "../domain/kinship";
-import { TreeCanvas } from "./tree/tree-canvas";
+import { TreeCanvas, type TreeCanvasHandle } from "./tree/tree-canvas";
 import { InspectorDock } from "./inspector-dock";
 import { PersonInspector } from "./person-inspector";
 import { ComparisonPanel } from "./comparison-panel";
 import { useWorkspaceSelection } from "../hooks/useWorkspaceSelection";
+import {
+  DEFAULT_TREE_PREFERENCES,
+  type TreePreferences,
+} from "../domain/tree-preferences";
+import {
+  readGuestTreePreferences,
+  writeGuestTreePreferences,
+} from "../data/guest-tree-preferences";
+import { TreePreferencesDialog } from "./tree-preferences-dialog";
+import { TreeSearch } from "./tree-search";
 const noop = () => {};
 type SharedData = {
   family: Family;
@@ -15,8 +25,12 @@ type SharedData = {
   reverseTimeline: boolean;
 };
 export default function SharedTree({ token }: { token: string }) {
+  const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
+  const [preferences, setPreferences] = useState<TreePreferences | null>(null);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const { selected, compare, selectionOnly, choose, reveal, dispatch, focus } =
     useWorkspaceSelection();
   useEffect(() => {
@@ -29,6 +43,7 @@ export default function SharedTree({ token }: { token: string }) {
     let loading = false;
     const unavailable = (message: string) => {
       setData(null);
+      setQuery("");
       setError(message);
     };
     const refresh = async () => {
@@ -51,6 +66,14 @@ export default function SharedTree({ token }: { token: string }) {
           return;
         }
         setData(result);
+        setPreferences(
+          (current) =>
+            current ??
+            readGuestTreePreferences({
+              ...DEFAULT_TREE_PREFERENCES,
+              reverseTimeline: result.reverseTimeline === true,
+            }),
+        );
         setError("");
         clearTimeout(expiry);
         expiry = setTimeout(
@@ -102,7 +125,7 @@ export default function SharedTree({ token }: { token: string }) {
       <div className="archive-main">
         <header className="shared-header">
           <img src="/favicon.svg" alt="" />
-          <div>
+          <div className="shared-header-title">
             <strong>{data?.family.title || "Семейное древо"}</strong>
             {data && (
               <small>
@@ -111,12 +134,22 @@ export default function SharedTree({ token }: { token: string }) {
               </small>
             )}
           </div>
+          {data && (
+            <TreeSearch
+              people={data.family.people}
+              query={query}
+              onQuery={setQuery}
+              onSelect={(id) => reveal([id])}
+            />
+          )}
         </header>
         {data ? (
           <main className="archive-workspace is-tree">
             <div className="tree-view">
               <TreeCanvas
+                ref={treeCanvas}
                 restricted
+                onPreferences={() => setPreferencesOpen(true)}
                 comparisonAction={
                   <div className="workspace-actions">
                     <button
@@ -134,7 +167,9 @@ export default function SharedTree({ token }: { token: string }) {
                 user={null}
                 canEdit={false}
                 busy={false}
-                reverse={data.reverseTimeline}
+                reverse={preferences?.reverseTimeline ?? data.reverseTimeline}
+                cardVariant={preferences?.cardVariant}
+                colorScheme={preferences?.colorScheme}
                 selected={selected}
                 onChoose={choose}
                 onSelectOnly={(id) => dispatch({ type: "selectOnly", id })}
@@ -146,7 +181,7 @@ export default function SharedTree({ token }: { token: string }) {
                 onLink={noop}
                 focus={focus}
                 preview={null}
-                query=""
+                query={query}
                 highlighted={relation?.path || []}
               />
               {!selectionOnly && (compare || chosen.length > 0) && (
@@ -192,6 +227,24 @@ export default function SharedTree({ token }: { token: string }) {
           </main>
         )}
       </div>
+      {data && preferences && preferencesOpen && (
+        <TreePreferencesDialog
+          onExport={(format, signal) =>
+            format === "pdf"
+              ? treeCanvas.current!.exportPdf(signal)
+              : treeCanvas.current!.exportSvg(signal)
+          }
+          preferences={preferences}
+          linkedPerson={false}
+          localOnly
+          onChange={async (value) => {
+            writeGuestTreePreferences(value);
+            setPreferences(value);
+            return value;
+          }}
+          onClose={() => setPreferencesOpen(false)}
+        />
+      )}
     </div>
   );
 }

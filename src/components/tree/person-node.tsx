@@ -8,7 +8,6 @@ import {
 } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
 import {
-  analyzeKinship,
   fullName,
   years,
   type TreeCardVariant,
@@ -18,6 +17,7 @@ import {
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
+import { personRelationLabel } from "./person-relation-label";
 import {
   TREE_NODE_HEIGHT,
   TREE_NODE_WIDTH,
@@ -96,20 +96,12 @@ export const PersonNode = memo(function PersonNode({
   const portraitCard = cardVariant === "portrait";
   const relationLabel = useMemo(() => {
     if (!portraitCard) return "";
-    if (!kinshipReference) return "Нет привязки к древу";
-    if (data.person.id === kinshipReference.id) return "Это вы";
-    const relation = analyzeKinship(
+    return personRelationLabel(
       data.person,
       kinshipReference,
       kinshipPeople,
       kinshipLinks,
     );
-    const label =
-      relation.roles?.[0]?.term ||
-      (relation.kind === "unknown"
-        ? "Родство не установлено"
-        : "Семейная связь");
-    return label[0].toLocaleUpperCase("ru") + label.slice(1);
   }, [
     portraitCard,
     data.person,
@@ -117,7 +109,10 @@ export const PersonNode = memo(function PersonNode({
     kinshipPeople,
     kinshipLinks,
   ]);
-  const cardLabel = `${fullName(data.person)}${years(data.person) ? `, ${years(data.person)}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
+  const lifespan = years(data.person);
+  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${portraitCard ? `, ${relationLabel}` : ""}`;
+  const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
+  const branchTitle = `${branchAction} ${portraitCard ? "ветвь" : "потомков"}`;
   return (
     <div
       className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""} ${portraitCard ? "is-portrait-card" : ""}`}
@@ -145,8 +140,13 @@ export const PersonNode = memo(function PersonNode({
       <button
         className="flow-person-content"
         {...longPress.handlers}
-        onMouseDown={(event) => {
-          if (event.shiftKey) event.preventDefault();
+        onMouseDownCapture={(event) => {
+          // Shift is a selection gesture, even with a little mouse movement.
+          // Ordinary drags should reach React Flow and pan from the card too.
+          if (event.shiftKey && event.button === 0) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
         }}
         onContextMenu={(event) => {
           if (longPress.active() || longPress.suppressClick.current)
@@ -169,6 +169,9 @@ export const PersonNode = memo(function PersonNode({
             <Avatar person={data.person} />
             <span className="portrait-card-info">
               <strong>{fullName(data.person)}</strong>
+              {lifespan && (
+                <span className="portrait-card-years">{lifespan}</span>
+              )}
               <small>{relationLabel}</small>
             </span>
           </>
@@ -180,9 +183,7 @@ export const PersonNode = memo(function PersonNode({
               <span>
                 {data.person.name} {!compact && data.person.patronymic}
               </span>
-              {!compact && years(data.person) && (
-                <small>{years(data.person)}</small>
-              )}
+              {!compact && lifespan && <small>{lifespan}</small>}
             </span>
           </>
         )}
@@ -215,19 +216,23 @@ export const PersonNode = memo(function PersonNode({
           </span>
         </button>
       )}
-      {!data.familyFocus && !compact && data.childrenCount > 0 && (
-        <button
-          className="flow-collapse nodrag nopan"
-          aria-label={
-            data.collapsed ? "Развернуть потомков" : "Свернуть потомков"
-          }
-          title={data.collapsed ? "Развернуть потомков" : "Свернуть потомков"}
-          onClick={() => collapse(data.person.id, id)}
-        >
-          {data.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          <span>{data.childrenCount}</span>
-        </button>
-      )}
+      {!data.familyFocus &&
+        (!compact || portraitCard) &&
+        data.childrenCount > 0 && (
+          <button
+            className="flow-collapse nodrag nopan"
+            aria-label={branchTitle}
+            title={branchTitle}
+            onClick={() => collapse(data.person.id, id)}
+          >
+            {data.collapsed ? (
+              <ChevronDown size={14} />
+            ) : (
+              <ChevronUp size={14} />
+            )}
+            <span>{data.childrenCount}</span>
+          </button>
+        )}
     </div>
   );
 }, samePersonNodeProps);

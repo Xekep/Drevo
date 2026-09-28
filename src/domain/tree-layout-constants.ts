@@ -10,6 +10,6 @@ export function treeNodeSize(
 ): TreeNodeSize {
   return {
     width: TREE_NODE_WIDTH,
-    height: variant === "portrait" ? 240 : TREE_NODE_HEIGHT,
+    height: variant === "portrait" ? 264 : TREE_NODE_HEIGHT,
   };
 }

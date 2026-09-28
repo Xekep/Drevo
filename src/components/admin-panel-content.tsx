@@ -70,7 +70,7 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   },
   access: {
     title: "Доступ и древо",
-    description: "Публичный просмотр и направление поколений.",
+    description: "Публичный просмотр, название и описание архива.",
   },
   data: {
     title: "Экспорт и импорт",
@@ -254,12 +254,16 @@ export function AdminPanel({
   onClose,
   onChanged,
   onSettings,
+  save,
+  canEdit,
 }: {
   family: Family;
   currentUserId: string;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;
+  save: (family: Family) => Promise<Family>;
+  canEdit: boolean;
 }) {
   const [section, setSection] = useState("users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
@@ -552,6 +556,16 @@ export function AdminPanel({
             </footer>
           </form>
         )}
+        {section === "access" && (
+          <section className="admin-card archive-form">
+            <h2>Название и описание</h2>
+            <p>Эти сведения показываются участникам семейного архива.</p>
+            <button type="button" disabled={!canEdit} onClick={onSettings}>
+              Изменить название и описание
+            </button>
+            {!canEdit && <small>Редактирование доступно с компьютера.</small>}
+          </section>
+        )}
         {section === "ai" && <AiSettingsAdmin />}
         {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}
@@ -580,25 +594,11 @@ export function AdminPanel({
         {section === "backups" && <BackupAdmin onRestored={onChanged} />}
         {section === "data" && (
           <section className="admin-card archive-form">
-            <GedcomTransfer onImported={onChanged} />
-            <hr />
-            <h2>Настройки и перенос данных</h2>
-            <a href="/api/export.json?download=1" download="drevo-family.json">
-              <Download size={18} /> Экспорт JSON без фото
-            </a>
-            <p>
-              Карточки и связи для анализа. Для восстановления используйте
-              резервную копию.
-            </p>
-            <a href="/api/backup" download>
-              <Download size={18} /> Скачать базу SQLite
-            </a>
-            <p>
-              База с участниками, настройками и историей. Без файлов фото и
-              документов.
-            </p>
-            <p>Название архива, описание и импорт сохранённого JSON.</p>
-            <button onClick={onSettings}>Открыть настройки данных</button>
+            <GedcomTransfer
+              onImported={onChanged}
+              save={save}
+              canEdit={canEdit}
+            />
           </section>
         )}
         {error && section !== "users" && (

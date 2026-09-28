@@ -96,13 +96,22 @@
   color: #68735f;
 }
 .flow-household {
+  position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 18px;
-  border: 1px solid #d5dfcc;
-  background: #fffffbea;
-  box-shadow: 0 4px 20px #39533309;
   pointer-events: none;
+}
+/* A soft wash groups the couple without drawing another card around them. */
+.flow-household:not(.flow-household--siblings)::before {
+  content: "";
+  position: absolute;
+  inset: 2px 6px;
+  background: radial-gradient(
+    ellipse at center,
+    #83977714 0%,
+    #8397770a 58%,
+    #83977700 78%
+  );
 }
 .flow-person[data-household="true"]:not(.is-selected):not(:hover) {
   background: transparent;
@@ -110,8 +119,7 @@
   box-shadow: none;
 }
 .flow-household--siblings {
-  position: relative;
-  border-color: #dfe6d7;
+  border: 1px solid #dfe6d7;
   border-radius: 14px;
   background: #eaf0e21a;
   box-shadow: none;

@@ -14,28 +14,38 @@ import {
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
+import {
+  readGuestTreePreferences,
+  writeGuestTreePreferences,
+} from "../data/guest-tree-preferences";
 
 const WRITE_TIMEOUT_MS = 45000;
 const UPLOAD_TIMEOUT_MS = 90000;
 const RECONCILE_TIMEOUT_MS = 15000;
 
 function treePreferencesFromResponse(data: {
+  user?: Pick<ArchiveUser, "approved"> | null;
   reverseTimeline?: boolean;
   treePreferences?: Partial<TreePreferences> | null;
 }): TreePreferences {
-  return {
+  const preferences: TreePreferences = {
     reverseTimeline:
       typeof data.treePreferences?.reverseTimeline === "boolean"
         ? data.treePreferences.reverseTimeline
         : data.reverseTimeline === true,
     cardVariant:
-      data.treePreferences?.cardVariant === "portrait" ? "portrait" : "classic",
+      data.treePreferences?.cardVariant === "classic" ? "classic" : "portrait",
+    colorScheme:
+      data.treePreferences?.colorScheme === "white" ? "white" : "warm",
   };
+  return data.user?.approved
+    ? preferences
+    : readGuestTreePreferences(preferences);
 }
 
 export function useArchive() {
-  const [treePreferences, setTreePreferences] = useState<TreePreferences>(
-    DEFAULT_TREE_PREFERENCES,
+  const [treePreferences, setTreePreferences] = useState<TreePreferences>(() =>
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
   );
   const [family, setFamily] = useState<Family | null>(null),
     [error, setError] = useState(""),
@@ -436,19 +446,30 @@ export function useArchive() {
     history.current.pop();
     publishHistory();
   }, [write, publishHistory]);
-  const saveTreePreferences = useCallback(async (value: TreePreferences) => {
-    const response = await fetch("/api/tree-preferences", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(value),
-    });
-    const result = await response.json();
-    if (!response.ok)
-      throw new Error(result.error || "Не удалось сохранить настройки древа");
-    const saved = treePreferencesFromResponse({ treePreferences: result });
-    setTreePreferences(saved);
-    return saved;
-  }, []);
+  const saveTreePreferences = useCallback(
+    async (value: TreePreferences) => {
+      if (!user?.approved) {
+        writeGuestTreePreferences(value);
+        setTreePreferences(value);
+        return value;
+      }
+      const response = await fetch("/api/tree-preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(value),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Не удалось сохранить настройки древа");
+      const saved = treePreferencesFromResponse({
+        treePreferences: result,
+        user,
+      });
+      setTreePreferences(saved);
+      return saved;
+    },
+    [user],
+  );
   return {
     conflict,
     getRevision: () => revision.current,

@@ -9,6 +9,78 @@ import { researchCatalogStore } from "../src/server/research-catalog.ts";
 import { startServer } from "../src/server/index.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 import { adaptLegacyAiFake } from "./legacy-ai-fake.ts";
+import type { ResearchDirectoryCategory } from "../src/shared/research-catalog.ts";
+
+test("read-only directory reflects the existing catalog, including resources disabled for AI", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-resource-directory-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const catalog = researchCatalogStore(app.archive.db);
+    const actor = {
+      id: "admin",
+      name: "Администратор",
+      role: "admin",
+    } as ArchiveUser;
+    const category = catalog
+      .createCategory({ name: "Региональные источники" }, actor)
+      .at(-1)!;
+    const resource = catalog
+      .createResource(
+        category.id,
+        {
+          name: "Местный справочник",
+          url: "https://example.org/directory",
+          description: "Поиск вручную по адресным книгам",
+          enabledForAiSearch: false,
+        },
+        actor,
+      )
+      .find((item) => item.id === category.id)!.resources[0];
+    const read = async () => {
+      const response = await fetch(`${base}/api/research-resources`);
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      return (await response.json()).categories as ResearchDirectoryCategory[];
+    };
+    const listed = (await read()).find((item) => item.id === category.id)!
+      .resources[0];
+    assert.deepEqual(listed, {
+      id: resource.id,
+      categoryId: category.id,
+      name: resource.name,
+      url: resource.url,
+      description: resource.description,
+    });
+    assert.equal(
+      catalog.webSearchSources().find((item) => item.id === resource.id)!
+        .enabledForAiSearch,
+      false,
+    );
+    catalog.updateResource(
+      resource.id,
+      { ...resource, name: "Новое название" },
+      actor,
+    );
+    assert.equal(
+      (await read()).find((item) => item.id === category.id)!.resources[0].name,
+      "Новое название",
+    );
+    for (const method of ["POST", "PATCH", "DELETE"])
+      assert.equal(
+        (await fetch(`${base}/api/research-resources`, { method })).status,
+        405,
+      );
+    catalog.deleteCategory(category.id, actor);
+    assert.equal(
+      (await read()).some((item) => item.id === category.id),
+      false,
+    );
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("research catalog migrates the supplied list once and limits contextual suggestions", () => {
   const db = new DatabaseSync(":memory:");

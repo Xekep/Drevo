@@ -74,7 +74,7 @@ test("growth draws parent arrows before descendants without squeezing cards", as
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).toHaveClass(/is-growing/);
-  await expect(page.locator(".tree-grow-node")).toHaveCount(7);
+  await expect(page.locator(".tree-grow-node")).toHaveCount(6);
   await expect(
     page.locator(".relationship-parent .tree-edge-growth-path"),
   ).not.toHaveCount(0);
