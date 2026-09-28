@@ -1907,63 +1907,84 @@
   }
 }
 
+/* Portraits have their own layout dimensions; only the photo has a surface. */
+.tree-canvas .flow-person.is-portrait-card {
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.tree-canvas .flow-person.is-portrait-card.is-spotlit {
+  animation: none;
+}
 .flow-person.is-portrait-card .flow-person-content {
   flex-direction: column;
-  justify-content: center;
-  gap: 1px;
-  padding: 2px 6px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 4px 8px;
   text-align: center;
 }
 .flow-person.is-portrait-card .person-avatar,
 .flow-person.is-portrait-card.is-compact .person-avatar {
   flex: none;
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
+  width: 132px;
+  min-width: 132px;
+  height: 132px;
+  border: 3px solid #fffefa;
+  box-shadow: 0 3px 12px #293e3424;
+}
+.flow-person.is-portrait-card:hover .person-avatar,
+.flow-person.is-portrait-card:focus-within .person-avatar {
+  box-shadow:
+    0 0 0 3px #a4b79b,
+    0 4px 14px #293e3424;
+}
+.flow-person.is-portrait-card.is-selected .person-avatar,
+.tree-canvas .flow-person.is-portrait-card.is-spotlit .person-avatar {
+  box-shadow:
+    0 0 0 4px #5c8650,
+    0 4px 14px #293e3424;
 }
 .flow-person.is-portrait-card .portrait-card-info {
   display: grid;
   flex: none;
   width: 100%;
-  gap: 1px;
+  gap: 4px;
   min-width: 0;
+  text-shadow: 0 1px 3px #f8f7f2;
 }
 .flow-person.is-portrait-card .portrait-card-info strong {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
   white-space: normal;
-  font-size: 12px;
-  line-height: 13px;
-}
-.flow-person.is-portrait-card .portrait-card-info small {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 11px;
-  line-height: 13px;
-}
-.flow-person.is-portrait-card.is-overview .person-avatar {
-  width: 42px;
-  min-width: 42px;
-  height: 42px;
-}
-.flow-person.is-portrait-card.is-overview .portrait-card-info strong {
-  display: block;
-  white-space: nowrap;
-  font-size: 17px;
+  font-size: 15px;
   line-height: 18px;
 }
-.flow-person.is-portrait-card.is-overview .portrait-card-info small {
-  font-size: 14px;
-  line-height: 15px;
+.flow-person.is-portrait-card .portrait-card-info small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  font-size: 13px;
+  line-height: 16px;
 }
-.flow-person.is-portrait-card.is-distant .person-avatar,
+.flow-person.is-portrait-card.is-overview .portrait-card-info strong {
+  -webkit-line-clamp: 2;
+  font-size: 21px;
+  line-height: 23px;
+}
+.flow-person.is-portrait-card.is-overview .portrait-card-info small {
+  -webkit-line-clamp: 1;
+  font-size: 17px;
+  line-height: 20px;
+}
 .flow-person.is-portrait-card.is-distant .portrait-card-info small {
   display: none;
 }
 .flow-person.is-portrait-card.is-distant .portrait-card-info strong {
-  font-size: 32px;
-  line-height: 1.1;
+  font-size: 28px;
+  line-height: 30px;
 }

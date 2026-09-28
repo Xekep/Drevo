@@ -72,6 +72,10 @@ test("layout key ignores metadata and object identity but includes dates, relati
     reverse: false,
   };
   assert.notEqual(
+    layoutCacheKey({ ...input, cardVariant: "classic" }),
+    layoutCacheKey({ ...input, cardVariant: "portrait" }),
+  );
+  assert.notEqual(
     layoutCacheKey(input),
     layoutCacheKey({ ...input, reverse: true }),
   );

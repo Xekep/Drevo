@@ -100,12 +100,21 @@
   line-height: 1.2;
 }
 .tree-card-preview.stacked-preview {
+  height: 172px;
   flex-direction: column;
-  gap: 1px;
+  gap: 6px;
+  padding: 8px;
+  border-color: transparent;
+  background: transparent;
+  text-align: center;
 }
 .tree-card-preview.stacked-preview i {
-  width: 29px;
-  height: 29px;
+  width: 86px;
+  height: 86px;
+  border: 3px solid #fffefa;
+  box-shadow: 0 2px 8px #293e3424;
+  font-family: var(--serif);
+  font-size: 32px;
 }
 @media (max-width: 520px) {
   .tree-preference-options {

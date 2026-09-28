@@ -178,8 +178,8 @@ export function useTreeCameraState({
           if (!target) return;
           lastReturn.current = returnToken;
           viewportUpdate = flow.setCenter(
-            target.x + TREE_NODE_WIDTH / 2,
-            target.y + TREE_NODE_HEIGHT / 2,
+            target.x + (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
+            target.y + (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
             {
               zoom: Math.min(1, Math.max(flow.getZoom(), narrow ? 0.82 : 0.9)),
               duration: motionEnabled ? 560 : 0,
@@ -210,8 +210,8 @@ export function useTreeCameraState({
               : undefined;
           viewportUpdate = target
             ? flow.setCenter(
-                target.x + TREE_NODE_WIDTH / 2,
-                target.y + TREE_NODE_HEIGHT / 2,
+                target.x + (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
+                target.y + (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
                 {
                   zoom: Math.max(flow.getZoom(), narrow ? 0.82 : 0.9),
                   duration: motionEnabled ? 650 : 0,
