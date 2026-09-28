@@ -1120,7 +1120,14 @@ export function createResearchRunner({
             )
           )
             proposalErrors.push(safeDetail);
-          result = { error: safeDetail };
+          result =
+            error instanceof WebSearchError
+              ? {
+                  error: error.code,
+                  notice:
+                    "Внешний поиск не завершён. Это не означает, что запись отсутствует. Сообщи о сбое поиска понятным языком; не выдавай код ошибки и не утверждай, что проверил архив или не нашёл документ.",
+                }
+              : { error: safeDetail };
         }
         if (call.function.name === CREATE_PDF_TOOL.name && files.length)
           onStatus(

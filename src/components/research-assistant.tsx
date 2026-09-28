@@ -581,7 +581,11 @@ export function ResearchAssistant({
               chatMessages.current.set(chatId, data.messages);
               setMessages(data.messages);
             }
-            if (!running && wasBusy) {
+            if (
+              !running &&
+              wasBusy &&
+              data.messages.at(-1)?.role === "assistant"
+            ) {
               chatErrors.current.delete(chatId);
               setError("");
             }
@@ -1000,6 +1004,7 @@ export function ResearchAssistant({
         }
         if (parsed.event === "done") {
           finished = true;
+          setServerBusyChats((current) => ({ ...current, [jobKey]: false }));
           if (data.chatId) {
             setChats((current) => [
               {
@@ -1034,27 +1039,34 @@ export function ResearchAssistant({
             pendingUiActions.current.set(jobKey, data.uiActions);
           return;
         }
-        if (parsed.event === "error")
+        if (parsed.event === "error") {
+          setServerBusyChats((current) => ({ ...current, [jobKey]: false }));
           throw new Error(data.error || "Ошибка потокового ответа ИИ");
+        }
       };
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (!isCurrent()) return;
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+      try {
         while (true) {
-          const match = /\r?\n\r?\n/.exec(buffer);
-          if (!match || match.index === undefined) break;
-          const frame = buffer.slice(0, match.index);
-          buffer = buffer.slice(match.index + match[0].length);
-          consume(frame);
+          const { value, done } = await reader.read();
+          if (!isCurrent()) return;
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          while (true) {
+            const match = /\r?\n\r?\n/.exec(buffer);
+            if (!match || match.index === undefined) break;
+            const frame = buffer.slice(0, match.index);
+            buffer = buffer.slice(match.index + match[0].length);
+            consume(frame);
+          }
         }
+        buffer += decoder.decode();
+        if (buffer.trim()) consume(buffer);
+        if (!finished)
+          throw new Error("Соединение прервалось. Проверяю сохранённый ответ…");
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
-      buffer += decoder.decode();
-      if (buffer.trim()) consume(buffer);
-      if (!finished)
-        throw new Error("Поток ответа завершился раньше события done");
 
       if (canEdit && isCurrent()) await loadSuggestions();
     } catch (reason) {

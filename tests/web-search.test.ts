@@ -264,11 +264,36 @@ test("Yandex sends documented filters using existing client, parses citations wi
   assert.equal(response.results[0].snippet, "");
   assert.equal(response.results[0].snippetKind, "unavailable");
   assert.equal(usage, 20);
+  assert.equal(bodies[0].max_output_tokens, 6000);
+  assert.equal(bodies[0].max_tool_calls, 1);
   await provider.search({ ...request, scope: "global" });
   assert.deepEqual(bodies[1].tools, [
     { type: "web_search", search_context_size: "medium" },
   ]);
   assert.ok(!JSON.stringify(response).includes(runtime.apiKey));
+});
+
+test("incomplete search is distinct from no results and retains charged tokens", async () => {
+  let tokens = 0;
+  const provider = yandexWebSearchProvider({
+    runtime,
+    client: yandexResponsesClient(async () =>
+      Response.json({
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [{ type: "reasoning", summary: [] }],
+        usage: { input_tokens: 100, output_tokens: 2000 },
+      }),
+    ),
+    onUsage: (usage) => {
+      tokens += usage.inputTokens + usage.outputTokens;
+    },
+  });
+  await assert.rejects(
+    provider.search(request),
+    /^Error: WEB_SEARCH_INCOMPLETE$/,
+  );
+  assert.equal(tokens, 2100);
 });
 
 test("Yandex controlled errors never leak error bodies or credentials", async () => {

@@ -91,7 +91,7 @@ export function webSearchTool(categories: string[]) {
 export function createWebSearchService({
   provider,
   sources,
-  timeoutMs = 25000,
+  timeoutMs = 60000,
   log = (event: object) => console.info(JSON.stringify(event)),
 }: {
   provider: WebSearchProvider;
