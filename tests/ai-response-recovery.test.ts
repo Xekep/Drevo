@@ -30,7 +30,7 @@ test("completed SSE is terminal even when upstream never closes or finishes canc
   let cancelled = false;
   const client = yandexResponsesClient(async (_url, init) => {
     const body = JSON.parse(String(init?.body));
-    assert.deepEqual(body.reasoning, { effort: "none" });
+    assert.equal(body.reasoning, undefined);
     assert.equal(body.max_output_tokens, 8000);
     return new Response(
       new ReadableStream({
@@ -367,4 +367,24 @@ test("a model cannot exceed three external searches in one turn", async () => {
     }
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("only the Qwen search summarizer disables reasoning; other models retain provider defaults", async () => {
+  const requests: Array<Record<string, unknown>> = [];
+  const client = yandexResponsesClient(async (_url, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({ status: "completed", output: [] });
+  });
+  await client.webSearch({
+    runtime: options.runtime,
+    query: "ГАСО",
+    signal: new AbortController().signal,
+  });
+  await client.webSearch({
+    runtime: { ...options.runtime, modelUri: "gpt://folder/other-model" },
+    query: "ГАСО",
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(requests[0].reasoning, { effort: "none" });
+  assert.equal(requests[1].reasoning, undefined);
 });
