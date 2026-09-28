@@ -89,10 +89,21 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-layout-settling|is-growing/,
   );
-  await page.getByRole("button", { name: "Хронология" }).click();
-  await expect(
-    page.getByRole("button", { name: "Хронология" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".tree-mode-bar")).toBeVisible();
+  const mobileModeSwitch = page.getByRole("switch", {
+    name: "Древо / Хронология",
+  });
+  if (await mobileModeSwitch.isVisible()) {
+    await mobileModeSwitch.click();
+    await expect(mobileModeSwitch).toHaveAttribute("aria-checked", "true");
+  } else {
+    const timelineButton = page.getByRole("button", {
+      name: "Хронология",
+      exact: true,
+    });
+    await timelineButton.click();
+    await expect(timelineButton).toHaveAttribute("aria-pressed", "true");
+  }
   const timeline = page.getByRole("region", {
     name: /Горизонтальная хронология/,
   });
