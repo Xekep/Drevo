@@ -820,10 +820,10 @@ export function initializeArchiveSchema(db: DatabaseSync) {
           card_variant TEXT NOT NULL CHECK(card_variant IN ('classic','portrait'))
         ) STRICT;
         INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant)
-          SELECT u.id,t.reverse_timeline,'classic'
+          SELECT u.id,t.reverse_timeline,'portrait'
           FROM users u CROSS JOIN tree_settings t WHERE t.id=1;
         INSERT INTO user_tree_preferences(user_id,reverse_timeline,card_variant)
-          SELECT 'local',reverse_timeline,'classic' FROM tree_settings WHERE id=1;
+          SELECT 'local',reverse_timeline,'portrait' FROM tree_settings WHERE id=1;
       `);
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
         treePreferencesExtension,
@@ -845,6 +845,26 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       );
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
         treeColorExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  const portraitCardsExtension = "2026-09-default-portrait-cards";
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(portraitCardsExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(
+        "UPDATE user_tree_preferences SET card_variant='portrait' WHERE card_variant='classic'",
+      );
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        portraitCardsExtension,
       );
       db.exec("COMMIT");
     } catch (error) {

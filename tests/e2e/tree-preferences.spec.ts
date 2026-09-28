@@ -1,12 +1,31 @@
 import { test, expect } from "@playwright/test";
 import { familyViewAction } from "./tree-toolbar-actions";
 
+test("new accounts see portrait cards with ancestors above descendants", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  const parent = page
+    .locator('.flow-person[data-person-id="e2e-memorial-person"]')
+    .first();
+  const child = page
+    .locator('.flow-person[data-person-id="e2e-child"]')
+    .first();
+  await expect(parent).toHaveClass(/is-portrait-card/);
+  await expect(child).toHaveClass(/is-portrait-card/);
+  const [parentBounds, childBounds] = await Promise.all([
+    parent.boundingBox(),
+    child.boundingBox(),
+  ]);
+  expect(parentBounds!.y).toBeLessThan(childBounds!.y);
+});
+
 test("each viewer can switch tree direction, colors and card variant", async ({
   page,
 }, testInfo) => {
   let preferences = {
     reverseTimeline: false,
-    cardVariant: "classic",
+    cardVariant: "portrait",
     colorScheme: "warm",
   };
   let referenceId: string | undefined = "e2e-memorial-person";
@@ -36,6 +55,7 @@ test("each viewer can switch tree direction, colors and card variant", async ({
     .first();
   await expect(self).toBeVisible();
   await expect(child).toBeVisible();
+  await expect(self).toHaveClass(/is-portrait-card/);
   const initialOrder = await Promise.all([
     self.boundingBox(),
     child.boundingBox(),

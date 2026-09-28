@@ -5,6 +5,12 @@ test("family layout keeps the focused card mounted throughout its move", async (
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.treePreferences.cardVariant = "classic";
+    await route.fulfill({ response, json: data });
+  });
   await page.goto("/people/e2e-child");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });

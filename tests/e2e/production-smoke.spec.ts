@@ -1137,7 +1137,9 @@ test("привязанный человек видит отметку и пер�
     .getByTestId("rf__node-e2e-memorial-person")
     .locator(".flow-person-content")
     .evaluate((card) => (card as HTMLElement).click());
-  await expect(page.getByText("Это вы", { exact: true })).toBeVisible();
+  await expect(
+    page.locator(".inspector-dock").getByText("Это вы", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
   await expect(
     page.getByText("Здравствуйте, Иван!", { exact: true }),
@@ -1714,7 +1716,7 @@ test("collapsing descendants animates the remaining cards smoothly", async ({
       ) observed.treeCardMoved = true;
     });
   });
-  await child.getByRole("button", { name: "Свернуть потомков" }).click();
+  await child.getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
 
   await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (
