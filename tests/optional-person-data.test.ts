@@ -36,12 +36,12 @@ const family = (...people: Person[]): Family => ({
   people,
 });
 
-test("a person can be saved with only a name; missing dates never produce age, birth year or inferred surname", () => {
+test("a person can be saved with only a name; missing dates never produce age, birth year or inferred surname", async () => {
   const p = { ...person("new"), ...splitFullName("  Иванова   Анна  ") };
-  const store = openArchive(":memory:", family());
+  const store = await openArchive(":memory:", family());
   try {
-    store.write(family(p), store.read().revision);
-    const saved = store.read().family.people[0];
+    await store.write(family(p), (await store.read()).revision);
+    const saved = (await store.read()).family.people[0];
     assert.equal(saved.name, "Анна");
     assert.equal(saved.patronymic, "");
     assert.equal(saved.birth, "");
@@ -53,7 +53,7 @@ test("a person can be saved with only a name; missing dates never produce age, b
     assert.equal(years({ ...saved, death: "1985" }), "† 1985");
     assert.equal(ageLabel({ ...saved, death: "1985" }), "");
   } finally {
-    store.close();
+    await store.close();
   }
 });
 

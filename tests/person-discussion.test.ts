@@ -35,16 +35,18 @@ test("person discussion enforces login, visible scope, authorship and origin", a
   };
   const db = app.archive.db;
   const token = (seed: string) => seed.repeat(64).slice(0, 64);
-  function login(id: string, name: string, seed: string) {
-    const user = userStore(db).register(id, name);
+  async function login(id: string, name: string, seed: string) {
+    const user = await (await userStore(db)).register(id, name);
     const value = token(seed);
-    db.prepare(
-      "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
-    ).run(
-      createHash("sha256").update(value).digest("hex"),
-      id,
-      Date.now() + 3600_000,
-    );
+    await db
+      .prepare(
+        "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+      )
+      .run(
+        createHash("sha256").update(value).digest("hex"),
+        id,
+        Date.now() + 3600_000,
+      );
     return { user, cookie: `drevo_session=${value}` };
   }
   function request(
@@ -65,14 +67,16 @@ test("person discussion enforces login, visible scope, authorship and origin", a
     });
   }
   try {
-    app.archive.write(family, app.archive.read().revision);
-    const admin = login("admin", "Администратор", "a");
-    const reader = login("reader", "Читатель", "b");
-    const other = login("other", "Другой участник", "c");
-    db.prepare(
-      "UPDATE users SET approved=1,tree_access='common_ancestors',person_id='boris' WHERE id='reader'",
-    ).run();
-    db.prepare("UPDATE users SET approved=1 WHERE id='other'").run();
+    await app.archive.write(family, (await app.archive.read()).revision);
+    const admin = await login("admin", "Администратор", "a");
+    const reader = await login("reader", "Читатель", "b");
+    const other = await login("other", "Другой участник", "c");
+    await db
+      .prepare(
+        "UPDATE users SET approved=1,tree_access='common_ancestors',person_id='boris' WHERE id='reader'",
+      )
+      .run();
+    await db.prepare("UPDATE users SET approved=1 WHERE id='other'").run();
 
     const anna = "/api/people/anna/discussion";
     const boris = "/api/people/boris/discussion";
@@ -171,12 +175,16 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       429,
       "удаление своего сообщения не обходит лимит",
     );
-    db.prepare("DELETE FROM person_comments WHERE person_id='anna'").run();
+    await db
+      .prepare("DELETE FROM person_comments WHERE person_id='anna'")
+      .run();
 
     for (let index = 0; index < 22; index++)
-      db.prepare(
-        "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
-      ).run("anna", "admin", 1_000 + index, `Сообщение ${index}`);
+      await db
+        .prepare(
+          "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
+        )
+        .run("anna", "admin", 1_000 + index, `Сообщение ${index}`);
     const first = (await (await request(anna, admin.cookie)).json()) as {
       items: Array<{ id: number }>;
       nextBefore: number | null;
@@ -196,19 +204,19 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       400,
     );
 
-    app.archive.write(
+    await app.archive.write(
       {
         ...family,
         people: family.people.filter((person) => person.id !== "anna"),
       },
-      app.archive.read().revision,
+      (await app.archive.read()).revision,
     );
     assert.equal(
-      db
+      (await db
         .prepare(
           "SELECT count(*) AS n FROM person_comments WHERE person_id='anna'",
         )
-        .get()!.n,
+        .get())!.n,
       0,
     );
   } finally {

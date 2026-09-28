@@ -1,3 +1,4 @@
+import { storeDatabase } from "../../src/server/store-database.ts";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -19,7 +20,7 @@ export async function verifyArchiveRead(
       sqlite.prepare("PRAGMA integrity_check").get()?.integrity_check !== "ok"
     )
       throw new Error("Копия SQLite повреждена");
-    const source = readArchive(sqlite);
+    const source = await readArchive(storeDatabase(sqlite));
     const imported = await readPostgresArchive(client, archiveId);
     if (!isDeepStrictEqual(imported, source))
       throw new Error("Семейный граф PostgreSQL отличается от снимка SQLite");

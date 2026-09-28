@@ -72,7 +72,7 @@ test("AI person update stays pending until a human accepts it", async () => {
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       family: Family = {
         ...current.family,
         people: [
@@ -93,7 +93,7 @@ test("AI person update stays pending until a human accepts it", async () => {
           },
         ],
       };
-    app.archive.write(family, current.revision);
+    await app.archive.write(family, current.revision);
 
     const chat = await fetch(base + "/api/ai/chat", {
       method: "POST",
@@ -108,9 +108,9 @@ test("AI person update stays pending until a human accepts it", async () => {
     assert.equal(chatResult.suggestionIds.length, 1);
     assert.match(chatResult.answer, /Проверьте изменение и выберите действие/);
 
-    const before = app.archive
-      .read()
-      .family.people.find((person) => person.id === "anna-suggestion-test");
+    const before = (await app.archive.read()).family.people.find(
+      (person) => person.id === "anna-suggestion-test",
+    );
     assert.equal(before?.birthPlace, "Нижнее");
     assert.equal(before?.birth, "1919");
 
@@ -143,9 +143,9 @@ test("AI person update stays pending until a human accepts it", async () => {
     );
     assert.equal(accepted.status, 200);
 
-    const after = app.archive
-      .read()
-      .family.people.find((person) => person.id === "anna-suggestion-test");
+    const after = (await app.archive.read()).family.people.find(
+      (person) => person.id === "anna-suggestion-test",
+    );
     assert.equal(after?.birthPlace, "Нижнее, Луганская область");
     assert.equal(after?.birth, "1920");
 
@@ -297,7 +297,7 @@ test("AI source and relation proposals require separate human acceptance", async
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       family: Family = {
         ...current.family,
         people: [
@@ -332,7 +332,7 @@ test("AI source and relation proposals require separate human acceptance", async
           },
         ],
       };
-    app.archive.write(family, current.revision);
+    await app.archive.write(family, current.revision);
 
     const sourceChat = await fetch(base + "/api/ai/chat", {
       method: "POST",
@@ -344,10 +344,9 @@ test("AI source and relation proposals require separate human acceptance", async
     });
     assert.equal(sourceChat.status, 200);
     assert.equal(
-      app.archive
-        .read()
-        .family.people.find((person) => person.id === "anna-source-test")
-        ?.sources.length,
+      (await app.archive.read()).family.people.find(
+        (person) => person.id === "anna-source-test",
+      )?.sources.length,
       0,
     );
 
@@ -369,10 +368,9 @@ test("AI source and relation proposals require separate human acceptance", async
     );
     assert.equal(sourceAccepted.status, 200);
     assert.equal(
-      app.archive
-        .read()
-        .family.people.find((person) => person.id === "anna-source-test")
-        ?.sources[0]?.reference,
+      (await app.archive.read()).family.people.find(
+        (person) => person.id === "anna-source-test",
+      )?.sources[0]?.reference,
       "Ф. 1, оп. 2, д. 3",
     );
 
@@ -389,9 +387,8 @@ test("AI source and relation proposals require separate human acceptance", async
     });
     assert.equal(relationChat.status, 200);
     assert.equal(
-      app.archive
-        .read()
-        .family.people.find((person) => person.id === "child-relation-test")
+      (await app.archive.read()).family.people
+        .find((person) => person.id === "child-relation-test")
         ?.parents.includes("anna-source-test"),
       false,
     );
@@ -415,9 +412,8 @@ test("AI source and relation proposals require separate human acceptance", async
     );
     assert.equal(relationAccepted.status, 200);
     assert.equal(
-      app.archive
-        .read()
-        .family.people.find((person) => person.id === "child-relation-test")
+      (await app.archive.read()).family.people
+        .find((person) => person.id === "child-relation-test")
         ?.parents.includes("anna-source-test"),
       true,
     );
@@ -438,9 +434,9 @@ test("AI source and relation proposals require separate human acceptance", async
       JSON.stringify(createResult),
     );
     assert.equal(
-      app.archive
-        .read()
-        .family.people.some((person) => person.surname === "Пупкин"),
+      (await app.archive.read()).family.people.some(
+        (person) => person.surname === "Пупкин",
+      ),
       false,
     );
     queue = await fetch(base + "/api/research/suggestions").then((response) =>
@@ -456,11 +452,9 @@ test("AI source and relation proposals require separate human acceptance", async
     );
     assert.equal(createAccepted.status, 200);
     assert.equal(
-      app.archive
-        .read()
-        .family.people.some(
-          (person) => person.surname === "Пупкин" && person.birth === "1991",
-        ),
+      (await app.archive.read()).family.people.some(
+        (person) => person.surname === "Пупкин" && person.birth === "1991",
+      ),
       true,
     );
   } finally {

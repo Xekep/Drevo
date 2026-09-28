@@ -137,11 +137,11 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
       dailyTokens: 1000,
     });
 
-    const row = app.archive.db
+    const row = (await app.archive.db
       .prepare(
         "SELECT api_key_ciphertext,folder_id FROM ai_settings WHERE id=1",
       )
-      .get()!;
+      .get())!;
     assert.equal(String(row.folder_id), "folder-1");
     assert.match(String(row.api_key_ciphertext), /^v1\./);
     assert.equal(String(row.api_key_ciphertext).includes(secret), false);
@@ -151,7 +151,7 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(readFileSync(keyPath).length, 32);
 
     const auditText = JSON.stringify(
-      app.archive.db.prepare("SELECT * FROM audit_entries").all(),
+      await app.archive.db.prepare("SELECT * FROM audit_entries").all(),
     );
     assert.equal(auditText.includes(secret), false);
 
@@ -248,9 +248,9 @@ test("admin can save encrypted AI Studio credentials and select a model", async 
     assert.equal(cleared.configured, false);
     assert.equal(
       String(
-        app.archive.db
+        (await app.archive.db
           .prepare("SELECT api_key_ciphertext FROM ai_settings WHERE id=1")
-          .get()!.api_key_ciphertext,
+          .get())!.api_key_ciphertext,
       ),
       "",
     );

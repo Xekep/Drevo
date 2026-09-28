@@ -14,8 +14,8 @@ const base =
   /** @type {{port:number}} */ (app.server.address()).port;
 
 try {
-  const current = app.archive.read();
-  app.archive.write(
+  const current = await app.archive.read();
+  await app.archive.write(
     {
       ...current.family,
       people: [

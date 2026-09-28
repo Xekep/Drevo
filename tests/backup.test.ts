@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -17,13 +23,13 @@ const seed: Family = {
   photos: [],
 };
 
-test("writeDatabaseBackup creates a standalone private SQLite file", () => {
+test("writeDatabaseBackup creates a standalone private SQLite file", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-backup-test-"));
   const source = join(directory, "source.sqlite");
   const destination = join(directory, "backup.sqlite");
-  const store = openArchive(source, seed);
+  const store = await openArchive(source, seed);
   try {
-    writeDatabaseBackup(store.db, destination);
+    await writeDatabaseBackup(store.db, destination);
 
     if (process.platform !== "win32")
       assert.equal(statSync(destination).mode & 0o777, 0o600);
@@ -42,22 +48,24 @@ test("writeDatabaseBackup creates a standalone private SQLite file", () => {
       backup.close();
     }
   } finally {
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("writeDatabaseBackup does not delete an existing destination on failure", () => {
+test("writeDatabaseBackup does not delete an existing destination on failure", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-backup-existing-"));
   const source = join(directory, "source.sqlite");
   const destination = join(directory, "already-there.sqlite");
-  const store = openArchive(source, seed);
+  const store = await openArchive(source, seed);
   try {
     writeFileSync(destination, "sentinel", { mode: 0o600 });
-    assert.throws(() => writeDatabaseBackup(store.db, destination));
+    await assert.rejects(
+      async () => await writeDatabaseBackup(store.db, destination),
+    );
     assert.equal(readFileSync(destination, "utf8"), "sentinel");
   } finally {
-    store.close();
+    await store.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

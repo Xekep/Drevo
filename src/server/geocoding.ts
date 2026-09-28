@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   photonResult,
@@ -19,7 +19,7 @@ export type GeocodingStore = {
 
 /** Один общий последовательный поиск; постоянный кэш не зависит от посетителя. */
 export function geocodingStore(
-  db: DatabaseSync,
+  db: StoreDatabase,
   fetcher: typeof fetch = fetch,
   interval = 1200,
 ) {
@@ -31,7 +31,7 @@ export function geocodingStore(
     pauseUntil = 0;
   let day = new Date().toISOString().slice(0, 10),
     requests = 0;
-  function locate(text: string) {
+  async function locate(text: string) {
     const query = placeSearch(text),
       provider = process.env.GEOCODER_URL || "https://photon.komoot.io/api/",
       wiki =
@@ -43,8 +43,11 @@ export function geocodingStore(
       return Promise.reject(
         new Error("Укажите название населённого пункта (до 250 символов)"),
       );
-    const cached = db
-      .prepare("SELECT data,saved_at FROM geocode_cache WHERE query=?")
+    const cached = await db
+      .prepare(
+        "SELECT data,saved_at FROM geocode_cache WHERE query=?",
+        "SELECT data,saved_at FROM geocode_cache WHERE query=?",
+      )
       .get(key);
     if (cached && Date.now() - Number(cached.saved_at) < 180 * 86400000)
       return Promise.resolve(JSON.parse(String(cached.data)) as PlaceResult);
@@ -200,12 +203,14 @@ export function geocodingStore(
       }
       if (closed) throw new Error("Поиск остановлен");
       if (cacheable) {
-        db.prepare("INSERT OR REPLACE INTO geocode_cache VALUES(?,?,?)").run(
-          key,
-          JSON.stringify(data),
-          Date.now(),
-        );
-        db.exec(
+        await db
+          .prepare(
+            "INSERT OR REPLACE INTO geocode_cache VALUES(?,?,?)",
+            "INSERT INTO geocode_cache(query,data,saved_at) VALUES(?,?,?) ON CONFLICT(archive_id,query) DO UPDATE SET data=excluded.data,saved_at=excluded.saved_at",
+          )
+          .run(key, JSON.stringify(data), Date.now());
+        await db.exec(
+          "DELETE FROM geocode_cache WHERE query NOT IN (SELECT query FROM geocode_cache ORDER BY saved_at DESC LIMIT 5000)",
           "DELETE FROM geocode_cache WHERE query NOT IN (SELECT query FROM geocode_cache ORDER BY saved_at DESC LIMIT 5000)",
         );
       }

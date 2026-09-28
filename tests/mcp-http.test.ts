@@ -10,8 +10,7 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-"));
   const app = await startServer(0, join(dir, "drevo.sqlite"), true);
   const base =
-    "http://127.0.0.1:" +
-    (app.server.address() as { port: number }).port;
+    "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
   try {
     const created = await fetch(base + "/api/mcp/tokens", {
       method: "POST",
@@ -107,7 +106,9 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
         params: {},
       }),
     }).then((response) => response.json());
-    const names = listed.result.tools.map((tool: { name: string }) => tool.name);
+    const names = listed.result.tools.map(
+      (tool: { name: string }) => tool.name,
+    );
     assert.ok(names.includes("search_people"));
     assert.ok(names.includes("get_ancestors"));
     assert.equal(names.includes("find_inconsistencies"), false);
@@ -137,7 +138,10 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
           item.toolName === "find_inconsistencies" && item.status === "error",
       ),
     );
-    assert.equal(JSON.stringify(audit.recentUsage).includes("arguments"), false);
+    assert.equal(
+      JSON.stringify(audit.recentUsage).includes("arguments"),
+      false,
+    );
 
     const limited = await fetch(base + "/mcp", {
       method: "POST",
@@ -184,16 +188,14 @@ test("admin-issued MCP token exposes only granted read-only tools", async () => 
   }
 });
 
-
 test("MCP token bound to a common-ancestors user sees only that projection", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-scope-"));
   const app = await startServer(0, join(dir, "drevo.sqlite"), true);
   const base =
-    "http://127.0.0.1:" +
-    (app.server.address() as { port: number }).port;
+    "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       family: Family = {
         ...current.family,
         people: [
@@ -242,9 +244,9 @@ test("MCP token bound to a common-ancestors user sees only that projection", asy
           },
         ],
       };
-    app.archive.write(family, current.revision);
+    await app.archive.write(family, current.revision);
 
-    app.archive.db
+    await app.archive.db
       .prepare(
         `INSERT INTO users(
           id,name,role,approved,person_id,tree_access
@@ -313,7 +315,7 @@ test("MCP token bound to a common-ancestors user sees only that projection", asy
       ),
     );
 
-    app.archive.db
+    await app.archive.db
       .prepare("UPDATE users SET approved=0 WHERE id='mcp-scoped-user'")
       .run();
 
@@ -333,13 +335,11 @@ test("MCP token bound to a common-ancestors user sees only that projection", asy
   }
 });
 
-
 test("MCP rejects an explicit cross-origin browser request", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-origin-"));
   const app = await startServer(0, join(dir, "drevo.sqlite"), true);
   const base =
-    "http://127.0.0.1:" +
-    (app.server.address() as { port: number }).port;
+    "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
   try {
     const created = await fetch(base + "/api/mcp/tokens", {
       method: "POST",

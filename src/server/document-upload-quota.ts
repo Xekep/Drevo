@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import { randomUUID } from "node:crypto";
 
 export class UploadQuotaError extends Error {
@@ -11,7 +11,7 @@ export class UploadQuotaError extends Error {
 
 /** Reservations count unfinished uploads, including requests in other processes. */
 export function documentUploadQuota(
-  db: DatabaseSync,
+  db: StoreDatabase,
   {
     bytes = 10 * 1024 ** 3,
     files = 20_000,
@@ -22,7 +22,7 @@ export function documentUploadQuota(
   } = {},
 ) {
   return {
-    acquire(
+    async acquire(
       userId: string,
       maximumBytes: number,
       freeBytes: number,
@@ -30,36 +30,44 @@ export function documentUploadQuota(
     ) {
       const time = now(),
         id = randomUUID();
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        db.prepare(
-          "DELETE FROM document_upload_requests WHERE started_ms<?",
-        ).run(time - 3600_000);
-        db.prepare(
-          "UPDATE document_upload_requests SET reserved_bytes=0 WHERE expires_ms<?",
-        ).run(time);
+      return await db.transaction(async () => {
+        await db
+          .prepare(
+            "DELETE FROM document_upload_requests WHERE started_ms<?",
+            "DELETE FROM document_upload_requests WHERE started_ms<?",
+          )
+          .run(time - 3600_000);
+        await db
+          .prepare(
+            "UPDATE document_upload_requests SET reserved_bytes=0 WHERE expires_ms<?",
+            "UPDATE document_upload_requests SET reserved_bytes=0 WHERE expires_ms<?",
+          )
+          .run(time);
         const recent = Number(
-          db
+          (await db
             .prepare(
               "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=?",
+              "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=?",
             )
-            .get(userId)!.n,
+            .get(userId))!.n,
         );
-        const pending = db
+        const pending = (await db
           .prepare(
             "SELECT count(*) AS n,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0",
+            "SELECT count(*) AS n,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0",
           )
-          .get()!;
+          .get())!;
         if (recent >= requestsPerHour || Number(pending.n) >= concurrent)
           throw new UploadQuotaError(
             "Слишком много загрузок документов. Попробуйте позже.",
             429,
           );
-        const used = db
+        const used = (await db
           .prepare(
             "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
+            "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
           )
-          .get()!;
+          .get())!;
         if (
           images.files + Number(used.n) + Number(pending.n) >= files ||
           images.bytes +
@@ -73,20 +81,21 @@ export function documentUploadQuota(
             "Недостаточно места для документа. Лимит хранилища достигнут.",
             507,
           );
-        db.prepare(
-          "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
-        ).run(id, userId, time, time + 300_000, maximumBytes);
-        db.exec("COMMIT");
-        return () =>
-          db
+        await db
+          .prepare(
+            "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
+            "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
+          )
+          .run(id, userId, time, time + 300_000, maximumBytes);
+
+        return async () =>
+          await db
             .prepare(
+              "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
               "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
             )
             .run(id);
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+      });
     },
   };
 }

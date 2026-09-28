@@ -22,11 +22,11 @@ import {
 
 test("PostgreSQL matches SQLite patches, audit and inverse changes without rewriting unrelated rows", async (t) => {
   const { first } = await fixture(t);
-  const sqlite = openArchive(":memory:", family);
-  t.after(() => sqlite.close());
+  const sqlite = await openArchive(":memory:", family);
+  t.after(async () => await sqlite.close());
   // Both stores start at the same revision; SQLite seeds the first revision.
   await first.query("UPDATE archives SET revision=$1 WHERE id='tree-a'", [
-    sqlite.read().revision,
+    (await sqlite.read()).revision,
   ]);
   const untouched = (
     await first.query(
@@ -52,14 +52,17 @@ test("PostgreSQL matches SQLite patches, audit and inverse changes without rewri
     ),
   ];
   const pgResult = await patch(first, tokens.admin, "tree-a", changes, 0);
-  const sqliteResult = sqlite.patchPeople(changes, 0, actor);
+  const sqliteResult = await sqlite.patchPeople(changes, 0, actor);
   assert.deepEqual(pgResult, sqliteResult);
-  assert.deepEqual(await readPostgresArchive(first, "tree-a"), sqlite.read());
+  assert.deepEqual(
+    await readPostgresArchive(first, "tree-a"),
+    await sqlite.read(),
+  );
   const withoutTime = (items: Array<{ at: string }>) =>
     items.map((entry) => ({ ...entry, at: "" }));
   assert.deepEqual(
     withoutTime((await postgresAuditReader(first, "tree-a").list()).items),
-    withoutTime(auditStore(sqlite.db).list().items),
+    withoutTime((await auditStore(sqlite.db).list()).items),
   );
   assert.deepEqual(
     (
@@ -86,8 +89,11 @@ test("PostgreSQL matches SQLite patches, audit and inverse changes without rewri
   );
   assert.deepEqual(await fingerprint(first), retryBefore);
   await patch(first, tokens.admin, "tree-a", history.changes, 1);
-  sqlite.patchPeople(history.changes, 1, actor);
-  assert.deepEqual(await readPostgresArchive(first, "tree-a"), sqlite.read());
+  await sqlite.patchPeople(history.changes, 1, actor);
+  assert.deepEqual(
+    await readPostgresArchive(first, "tree-a"),
+    await sqlite.read(),
+  );
 });
 
 test("write rejects readers, missing/expired sessions, unapproved or unrelated memberships", async (t) => {

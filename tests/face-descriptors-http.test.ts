@@ -40,8 +40,8 @@ const family: Family = {
 };
 
 test("face matching stays server-side and saving still requires confirmation", async () => {
-  const archive = openArchive(":memory:", family);
-  archive.db
+  const archive = await openArchive(":memory:", family);
+  await archive.db
     .prepare(
       "INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?),(?,?,?)",
     )
@@ -58,7 +58,7 @@ test("face matching stays server-side and saving still requires confirmation", a
     canEdit: () => canEdit,
     currentUser: () =>
       canEdit ? { id: "editor", role: "admin", approved: true } : null,
-  } as unknown as ReturnType<typeof createAuth>;
+  } as unknown as Awaited<ReturnType<typeof createAuth>>;
   const handler = faceDescriptorsHttp({ archive, auth });
   const server = createServer(async (req, res) => {
     if (await handler(req, res, new URL(req.url || "/", "http://localhost")))
@@ -97,7 +97,7 @@ test("face matching stays server-side and saving still requires confirmation", a
     });
     assert.deepEqual(await response.json(), { match: null });
 
-    archive.db
+    await archive.db
       .prepare(
         "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
       )
@@ -131,14 +131,14 @@ test("face matching stays server-side and saving still requires confirmation", a
       model: "face-api-1.7.15",
     });
     assert.equal(response.status, 201);
-    const count = archive.db
+    const count = (await archive.db
       .prepare("SELECT COUNT(*) AS count FROM face_descriptors")
-      .get() as { count: number };
+      .get()) as { count: number };
     assert.equal(Number(count.count), 4);
     assert.equal(
-      archive.db
+      (await archive.db
         .prepare("SELECT source_tag_id FROM face_descriptors WHERE id=?")
-        .get("confirmed")!.source_tag_id,
+        .get("confirmed"))!.source_tag_id,
       "source-photo:tag-first",
     );
 
@@ -147,7 +147,7 @@ test("face matching stays server-side and saving still requires confirmation", a
       "INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?)",
     );
     for (let index = 0; index < 18; index++)
-      addLegacy.run(
+      await addLegacy.run(
         `legacy-${index}`,
         "first",
         JSON.stringify(Array(128).fill(0.01)),
@@ -162,7 +162,7 @@ test("face matching stays server-side and saving still requires confirmation", a
     });
     assert.equal(response.status, 201);
 
-    archive.db
+    await archive.db
       .prepare(
         "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
       )
@@ -192,15 +192,14 @@ test("face matching stays server-side and saving still requires confirmation", a
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
-    archive.close();
+    await archive.close();
   }
 });
 
-
-test("face descriptors follow corrected tags and disappear with removed tags", () => {
-  const archive = openArchive(":memory:", family);
+test("face descriptors follow corrected tags and disappear with removed tags", async () => {
+  const archive = await openArchive(":memory:", family);
   try {
-    archive.db
+    await archive.db
       .prepare(
         `INSERT INTO face_descriptors
            (id,person_id,data,source_photo_id,source_tag_id,model)
@@ -215,8 +214,8 @@ test("face descriptors follow corrected tags and disappear with removed tags", (
         "human-faceres-3.3.6",
       );
 
-    let current = archive.read();
-    archive.write(
+    let current = await archive.read();
+    await archive.write(
       {
         ...current.family,
         photos: current.family.photos!.map((photo) => ({
@@ -229,14 +228,14 @@ test("face descriptors follow corrected tags and disappear with removed tags", (
       current.revision,
     );
     assert.equal(
-      archive.db
+      (await archive.db
         .prepare("SELECT person_id FROM face_descriptors WHERE id=?")
-        .get("remembered")!.person_id,
+        .get("remembered"))!.person_id,
       "second",
     );
 
-    current = archive.read();
-    archive.write(
+    current = await archive.read();
+    await archive.write(
       {
         ...current.family,
         photos: current.family.photos!.map((photo) => ({
@@ -247,12 +246,12 @@ test("face descriptors follow corrected tags and disappear with removed tags", (
       current.revision,
     );
     assert.equal(
-      archive.db
+      (await archive.db
         .prepare("SELECT count(*) AS n FROM face_descriptors WHERE id=?")
-        .get("remembered")!.n,
+        .get("remembered"))!.n,
       0,
     );
   } finally {
-    archive.close();
+    await archive.close();
   }
 });

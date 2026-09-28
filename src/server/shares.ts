@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
 import type { ShareLink } from "../domain/shared-family.ts";
@@ -7,7 +7,7 @@ import { auditStore } from "./audit.ts";
 const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const hash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
-export function sharesStore(db: DatabaseSync) {
+export function sharesStore(db: StoreDatabase) {
   const audit = auditStore(db);
   const convert = (row: Record<string, unknown>): ShareLink => ({
     id: String(row.id),
@@ -21,7 +21,7 @@ export function sharesStore(db: DatabaseSync) {
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
   });
   return {
-    create(
+    async create(
       input: {
         anchorId: string;
         personIds: string[];
@@ -62,22 +62,24 @@ export function sharesStore(db: DatabaseSync) {
         createdName: actor.name,
         revokedAt: null,
       };
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        db.prepare(
-          "INSERT INTO share_links VALUES(?,?,?,?,?,?,?,?,?,NULL)",
-        ).run(
-          share.id,
-          hash(token),
-          share.title,
-          share.anchorId,
-          JSON.stringify(share.personIds),
-          share.createdAt,
-          share.expiresAt,
-          actor.id,
-          actor.name,
-        );
-        audit.record(
+      await db.transaction(async () => {
+        await db
+          .prepare(
+            "INSERT INTO share_links VALUES(?,?,?,?,?,?,?,?,?,NULL)",
+            "INSERT INTO share_links(id,token_hash,title,anchor_id,person_ids,created_at,expires_at,created_by,created_name,revoked_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)",
+          )
+          .run(
+            share.id,
+            hash(token),
+            share.title,
+            share.anchorId,
+            JSON.stringify(share.personIds),
+            share.createdAt,
+            share.expiresAt,
+            actor.id,
+            actor.name,
+          );
+        await audit.record(
           {
             action: "Выдана ссылка",
             entity: "share",
@@ -95,27 +97,25 @@ export function sharesStore(db: DatabaseSync) {
           },
           actor,
         );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+      });
       return { share, token };
     },
-    get(token: string, now = Date.now()): ShareLink | null {
+    async get(token: string, now = Date.now()): Promise<ShareLink | null> {
       if (!shareTokenPattern.test(token)) return null;
-      const row = db
+      const row = await db
         .prepare(
+          "SELECT * FROM share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
           "SELECT * FROM share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
         )
         .get(hash(token), new Date(now).toISOString());
       return row ? convert(row) : null;
     },
-    list(before = "") {
+    async list(before = "") {
       const cursor = Number(before || 0);
-      const rows = db
+      const rows = await db
         .prepare(
           "SELECT rowid AS cursor,* FROM share_links WHERE (?=0 OR rowid<?) ORDER BY rowid DESC LIMIT 101",
+          "SELECT ordinal AS cursor,* FROM share_links WHERE (?=0 OR ordinal<?) ORDER BY ordinal DESC LIMIT 101",
         )
         .all(cursor, cursor);
       return {
@@ -123,20 +123,26 @@ export function sharesStore(db: DatabaseSync) {
         next: rows.length > 100 ? String(rows[99].cursor) : null,
       };
     },
-    revoke(id: string, actor: ArchiveUser) {
+    async revoke(id: string, actor: ArchiveUser) {
       if (actor.role !== "admin")
         throw new Error("Ссылки отзывает администратор");
-      const row = db.prepare("SELECT * FROM share_links WHERE id=?").get(id);
+      const row = await db
+        .prepare(
+          "SELECT * FROM share_links WHERE id=?",
+          "SELECT * FROM share_links WHERE id=?",
+        )
+        .get(id);
       if (!row) throw new Error("Ссылка не найдена");
       if (row.revoked_at) return;
       const share = convert(row);
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        db.prepare("UPDATE share_links SET revoked_at=? WHERE id=?").run(
-          new Date().toISOString(),
-          id,
-        );
-        audit.record(
+      return await db.transaction(async () => {
+        await db
+          .prepare(
+            "UPDATE share_links SET revoked_at=? WHERE id=?",
+            "UPDATE share_links SET revoked_at=? WHERE id=?",
+          )
+          .run(new Date().toISOString(), id);
+        await audit.record(
           {
             action: "Отозвана ссылка",
             entity: "share",
@@ -147,11 +153,7 @@ export function sharesStore(db: DatabaseSync) {
           },
           actor,
         );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+      });
     },
   };
 }

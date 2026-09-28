@@ -23,9 +23,9 @@ try {
       try {
         const response = await fetch('http://127.0.0.1:' + app.server.address().port + '/api/health');
         if (!response.ok || !(await response.json()).ok) throw new Error('Health check failed');
-        const checks = app.archive.db.prepare('PRAGMA integrity_check').all();
+        const checks = await app.archive.db.prepare('PRAGMA integrity_check').all();
         if (checks.length !== 1 || checks[0].integrity_check !== 'ok') throw new Error('Database integrity check failed');
-        if (app.archive.db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('Foreign keys are invalid');
+        if ((await app.archive.db.prepare('PRAGMA foreign_key_check').all()).length) throw new Error('Foreign keys are invalid');
       } finally { await app.close(); }
     `;
     const result = spawnSync(
@@ -36,6 +36,7 @@ try {
         env: {
           ...process.env,
           NODE_ENV: "production",
+          DATABASE_BACKEND: "sqlite",
           PUBLIC_ORIGIN: "https://migration-check.invalid",
           INITIAL_ADMIN_YANDEX_ID: "migration-check",
         },

@@ -10,6 +10,11 @@ import { tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
+import {
+  openPostgresDatabase,
+  storeDatabase,
+  configuredDatabaseBackend,
+} from "./store-database.ts";
 import { createServer as createViteServer } from "vite";
 
 const [databasePath, uploadsPath, outputPath, browserPath] =
@@ -19,14 +24,23 @@ if (!databasePath || !uploadsPath || !outputPath || !browserPath)
     "Usage: browser-face-backfill <database.sqlite> <uploads-dir> <result.json> <browser.exe>",
   );
 
-const db = new DatabaseSync(databasePath, { readOnly: true });
-const manifest = (() => {
+const db =
+  configuredDatabaseBackend(databasePath) === "postgres"
+    ? await openPostgresDatabase(process.env.ARCHIVE_ID || "", databasePath)
+    : storeDatabase(new DatabaseSync(databasePath, { readOnly: true }));
+const manifest = await (async () => {
   try {
-    const photos = db
-      .prepare("SELECT id,data FROM photos ORDER BY rowid")
+    const photos = await db
+      .prepare(
+        "SELECT id,data FROM photos ORDER BY rowid",
+        "SELECT id,data FROM photos ORDER BY ordinal",
+      )
       .all();
-    const tags = db
-      .prepare("SELECT photo_id,data FROM photo_tags ORDER BY rowid")
+    const tags = await db
+      .prepare(
+        "SELECT photo_id,data FROM photo_tags ORDER BY rowid",
+        "SELECT photo_id,data FROM photo_tags ORDER BY ordinal",
+      )
       .all();
     const byPhoto = new Map<string, unknown[]>();
     for (const row of tags) {
@@ -44,7 +58,7 @@ const manifest = (() => {
         : [];
     });
   } finally {
-    db.close();
+    await db.close();
   }
 })();
 

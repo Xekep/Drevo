@@ -105,16 +105,16 @@ test("explicit step-parent works with incomplete ancestry and never becomes a bl
   assert.throws(() => connectPeople(f, "child", "father", "step_parent"));
   assert.throws(() => connectPeople(f, "child", "father", "parent"));
 });
-test("SQLite persists graph and photo tags, rejects stale writes, makes readable standalone backup", () => {
+test("SQLite persists graph and photo tags, rejects stale writes, makes readable standalone backup", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-test-")),
     path = join(dir, "archive.sqlite"),
     uploads = join(dir, "uploads"),
     photoFile = join(uploads, "photo.png");
-  let store = openArchive(path, seed());
+  let store = await openArchive(path, seed());
   try {
     mkdirSync(uploads, { recursive: true });
     writeFileSync(photoFile, "test image placeholder");
-    const first = store.read();
+    const first = await store.read();
     const family = connectPeople(
       connectPeople(first.family, "father", "child", "parent"),
       "mother",
@@ -141,20 +141,22 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
         ],
       },
     ];
-    const saved = store.write(family, first.revision);
+    const saved = await store.write(family, first.revision);
     assert.equal(saved.family.links?.[0].type, "step_parent");
     assert.equal(existsSync(photoFile), true);
-    assert.throws(
-      () => store.write(first.family, first.revision),
+    await assert.rejects(
+      async () => await store.write(first.family, first.revision),
       ConflictError,
     );
-    assert.equal(store.read().revision, saved.revision);
+    assert.equal((await store.read()).revision, saved.revision);
     const invalid = structuredClone(saved.family);
     invalid.photos![0].tags[0].width = 2;
-    assert.throws(() => store.write(invalid, saved.revision));
-    assert.deepEqual(store.read(), saved);
+    await assert.rejects(
+      async () => await store.write(invalid, saved.revision),
+    );
+    assert.deepEqual(await store.read(), saved);
     const backup = join(dir, "backup.sqlite");
-    writeDatabaseBackup(store.db, backup);
+    await writeDatabaseBackup(store.db, backup);
     const db = new DatabaseSync(backup);
     assert.equal(
       db.prepare("SELECT count(*) AS n FROM photo_tags").get()!.n,
@@ -165,9 +167,9 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
       "ok",
     );
     db.close();
-    store.close();
-    store = openArchive(path, seed());
-    assert.deepEqual(store.read(), saved);
+    await store.close();
+    store = await openArchive(path, seed());
+    assert.deepEqual(await store.read(), saved);
     assert.equal(
       existsSync(photoFile),
       true,
@@ -175,7 +177,7 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
     );
     const removed = removePerson(saved.family, "child");
     assert.equal(removed.photos![0].tags.length, 0);
-    store.write({ ...seed(), people: [] }, saved.revision, {
+    await store.write({ ...seed(), people: [] }, saved.revision, {
       id: "admin",
       name: "Администратор",
       role: "admin",
@@ -186,11 +188,11 @@ test("SQLite persists graph and photo tags, rejects stale writes, makes readable
       true,
       "dropped media remains available to history and backup restoration",
     );
-    store.close();
-    store = openArchive(path, seed());
-    assert.equal(store.read().family.people.length, 0);
+    await store.close();
+    store = await openArchive(path, seed());
+    assert.equal((await store.read()).family.people.length, 0);
   } finally {
-    store.close();
+    await store.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

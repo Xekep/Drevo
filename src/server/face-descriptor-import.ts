@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 
 type FaceModel = "face-api-1.7.15" | "human-faceres-3.3.6";
 type Descriptor = {
@@ -62,9 +62,15 @@ function parseDescriptors(values: unknown): Descriptor[] {
   });
 }
 
-export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
+export async function importFaceDescriptors(
+  db: StoreDatabase,
+  values: unknown,
+) {
   const descriptors = parseDescriptors(values);
-  const person = db.prepare("SELECT 1 FROM people WHERE id=?");
+  const person = db.prepare(
+    "SELECT 1 FROM people WHERE id=?",
+    "SELECT 1 FROM people WHERE id=?",
+  );
   const tagged = db.prepare(
     `SELECT id
        FROM photo_tags
@@ -73,8 +79,10 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
         AND (? IS NULL OR id=?)
       ORDER BY rowid
       LIMIT 1`,
+    "SELECT id\n       FROM photo_tags\n      WHERE photo_id=?\n        AND person_id=?\n        AND (? IS NULL OR id=?)\n      ORDER BY ordinal\n      LIMIT 1",
   );
   const existing = db.prepare(
+    "SELECT person_id,data,source_photo_id,source_tag_id,model FROM face_descriptors WHERE id=?",
     "SELECT person_id,data,source_photo_id,source_tag_id,model FROM face_descriptors WHERE id=?",
   );
   const insert = db.prepare(
@@ -87,14 +95,14 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
        source_photo_id=excluded.source_photo_id,
        source_tag_id=excluded.source_tag_id,
        model=excluded.model`,
+    "INSERT INTO face_descriptors\n       (id,person_id,data,source_photo_id,source_tag_id,model)\n     VALUES(?,?,?,?,?,?)\n     ON CONFLICT(archive_id,id) DO UPDATE SET\n       person_id=excluded.person_id,\n       data=excluded.data,\n       source_photo_id=excluded.source_photo_id,\n       source_tag_id=excluded.source_tag_id,\n       model=excluded.model",
   );
   let inserted = 0;
   let updated = 0;
   let skipped = 0;
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  await db.transaction(async () => {
     for (const sample of descriptors) {
-      if (!person.get(sample.personId))
+      if (!(await person.get(sample.personId)))
         throw new Error(`Unknown person: ${sample.personId}`);
       const requestedTagRowId =
         sample.model === "human-faceres-3.3.6" && sample.sourceTagId
@@ -102,7 +110,7 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
           : null;
       const confirmedTag =
         sample.model === "human-faceres-3.3.6"
-          ? tagged.get(
+          ? await tagged.get(
               sample.sourcePhotoId || "",
               sample.personId,
               requestedTagRowId,
@@ -127,7 +135,7 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
               .slice(0, 32)}`
           : sample.id;
       const data = JSON.stringify(sample.descriptor);
-      const previous = existing.get(id);
+      const previous = await existing.get(id);
       if (previous && sample.model === "face-api-1.7.15") {
         skipped++;
         continue;
@@ -145,7 +153,7 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
       }
       if (previous && previous.model !== sample.model)
         throw new Error(`Descriptor ID collision: ${id}`);
-      insert.run(
+      await insert.run(
         id,
         sample.personId,
         data,
@@ -156,10 +164,6 @@ export function importFaceDescriptors(db: DatabaseSync, values: unknown) {
       if (previous) updated++;
       else inserted++;
     }
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+  });
   return { received: descriptors.length, inserted, updated, skipped };
 }

@@ -1,3 +1,4 @@
+import { storeDatabase } from "./store-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { createGunzip } from "node:zlib";
@@ -272,14 +273,15 @@ type StoredDocument = {
 };
 
 export function restoreStore(
-  archive: ReturnType<typeof openArchive>,
+  archive: Awaited<ReturnType<typeof openArchive>>,
   dbPath: string,
 ) {
   const stagingRoot = join(dirname(dbPath), "staging");
   mkdirSync(stagingRoot, { recursive: true });
-  const readStage = (token: string): Stage | undefined => {
-    const row = archive.db
+  const readStage = async (token: string): Promise<Stage | undefined> => {
+    const row = await archive.db
       .prepare(
+        "SELECT actor_id,revision,expires_at,data,directory FROM workflow_stages WHERE kind='restore' AND token=?",
         "SELECT actor_id,revision,expires_at,data,directory FROM workflow_stages WHERE kind='restore' AND token=?",
       )
       .get(token);
@@ -303,20 +305,24 @@ export function restoreStore(
       documentFiles: new Map(data.documentFiles || []),
     };
   };
-  const discard = (token: string) => {
-    const stage = readStage(token);
+  const discard = async (token: string) => {
+    const stage = await readStage(token);
     if (stage) removeStage(stage.directory, stagingRoot);
-    archive.db
-      .prepare("DELETE FROM workflow_stages WHERE kind='restore' AND token=?")
+    await archive.db
+      .prepare(
+        "DELETE FROM workflow_stages WHERE kind='restore' AND token=?",
+        "DELETE FROM workflow_stages WHERE kind='restore' AND token=?",
+      )
       .run(token);
   };
-  const cleanup = setInterval(() => {
-    const expired = archive.db
+  const cleanup = setInterval(async () => {
+    const expired = await archive.db
       .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='restore' AND expires_at<?",
         "SELECT token FROM workflow_stages WHERE kind='restore' AND expires_at<?",
       )
       .all(Date.now());
-    for (const row of expired) discard(String(row.token));
+    for (const row of expired) await discard(String(row.token));
   }, 60000);
   cleanup.unref();
 
@@ -327,18 +333,20 @@ export function restoreStore(
   ) {
     if (actor.role !== "admin")
       throw new Error("Восстановление доступно администратору");
-    const obsolete = archive.db
+    const obsolete = await archive.db
       .prepare(
+        "SELECT token FROM workflow_stages WHERE kind='restore' AND (actor_id=? OR expires_at<?)",
         "SELECT token FROM workflow_stages WHERE kind='restore' AND (actor_id=? OR expires_at<?)",
       )
       .all(actor.id, Date.now());
-    for (const row of obsolete) discard(String(row.token));
+    for (const row of obsolete) await discard(String(row.token));
     const active = Number(
-      archive.db
+      (await archive.db
         .prepare(
           "SELECT count(*) AS count FROM workflow_stages WHERE kind='restore'",
+          "SELECT count(*) AS count FROM workflow_stages WHERE kind='restore'",
         )
-        .get()!.count,
+        .get())!.count,
     );
     if (active >= 3)
       throw new Error("Уже проверяется несколько бэкапов. Повторите позже.");
@@ -376,7 +384,9 @@ export function restoreStore(
           throw new Error("Это не база семейного архива Drevo");
         if (source.prepare("PRAGMA quick_check").get()?.quick_check !== "ok")
           throw new Error("База повреждена");
-        family = validateFamily(readArchive(source).family);
+        family = validateFamily(
+          (await readArchive(storeDatabase(source))).family,
+        );
         if (
           source
             .prepare(
@@ -535,7 +545,7 @@ export function restoreStore(
           missing++;
       }
       const token = randomUUID(),
-        current = archive.read();
+        current = await archive.read();
       const stage: Stage = {
         directory,
         family,
@@ -547,10 +557,11 @@ export function restoreStore(
         documents,
         documentFiles,
       };
-      archive.db
+      await archive.db
         .prepare(
           `INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data,directory)
            VALUES(?,'restore',?,?,?,?,?)`,
+          "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data,directory)\n           VALUES(?,'restore',?,?,?,?,?)",
         )
         .run(
           token,
@@ -588,12 +599,12 @@ export function restoreStore(
     async preview(bytes: Buffer, actor: ArchiveUser) {
       if (!bytes.length || bytes.length > RESTORE_LIMIT)
         throw new Error("Бэкап должен быть не больше 12 ГБ");
-      return previewStream(Readable.from([bytes]), actor);
+      return await previewStream(Readable.from([bytes]), actor);
     },
     previewStream,
     discard,
     async apply(token: string, actor: ArchiveUser) {
-      const stage = readStage(token);
+      const stage = await readStage(token);
       if (
         actor.role !== "admin" ||
         !stage ||
@@ -601,18 +612,18 @@ export function restoreStore(
         stage.expires < Date.now()
       )
         throw new Error("Проверка бэкапа истекла. Выберите файл повторно.");
-      if (archive.read().revision !== stage.revision)
+      if ((await archive.read()).revision !== stage.revision)
         throw new ConflictError(
           "После проверки бэкапа архив изменился. Проверьте файл повторно перед восстановлением.",
         );
       const backups = join(dirname(dbPath), "backups");
       mkdirSync(backups, { recursive: true });
       const backupName = `before-import-${Date.now()}-${randomUUID()}.sqlite`;
-      writeDatabaseBackup(archive.db, join(backups, backupName));
+      await writeDatabaseBackup(archive.db, join(backups, backupName));
       const created: string[] = [],
         urls = new Map<string, string>();
       const restoredDocuments: StoredDocument[] = [];
-      let result: ReturnType<typeof archive.write>;
+      let result: Awaited<ReturnType<typeof archive.write>>;
       try {
         for (const [url, path] of stage.files) {
           const name = `${randomUUID()}.${imageExtensionFile(path)}`,
@@ -642,23 +653,25 @@ export function restoreStore(
             url: urls.get(p.url) || p.url,
           })),
         };
-        result = archive.write(
+        result = await archive.write(
           family,
           stage.revision,
           actor,
           "Восстановление из бэкапа",
           undefined,
           stage.faceDescriptors,
-          (db) => {
-            db.exec("DELETE FROM documents");
+          async (db) => {
+            await db.exec("DELETE FROM documents", "DELETE FROM documents");
             const insert = db.prepare(
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
               "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
             );
             const link = db.prepare(
               "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+              "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
             );
             for (const document of restoredDocuments) {
-              insert.run(
+              await insert.run(
                 document.id,
                 document.title,
                 document.title.toLocaleLowerCase("ru"),
@@ -668,7 +681,7 @@ export function restoreStore(
                 document.createdAt,
               );
               for (const personId of document.personIds)
-                link.run(document.id, personId);
+                await link.run(document.id, personId);
             }
           },
         );
@@ -680,10 +693,11 @@ export function restoreStore(
       }
       // Ошибка уборки временного каталога не должна удалять уже сохранённые фото.
       try {
-        discard(token);
+        await discard(token);
       } catch {
-        archive.db
+        await archive.db
           .prepare(
+            "DELETE FROM workflow_stages WHERE kind='restore' AND token=?",
             "DELETE FROM workflow_stages WHERE kind='restore' AND token=?",
           )
           .run(token);

@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -36,7 +37,7 @@ const family: Family = {
 };
 
 test("places HTTP searches only visible family places and rechecks access after locate", async () => {
-  const archive = openArchive(":memory:", family);
+  const archive = await openArchive(":memory:", family);
   let publicTree = true,
     calls = 0,
     revokeOnLocate = false;
@@ -44,14 +45,14 @@ test("places HTTP searches only visible family places and rechecks access after 
       currentUser: () => null,
       canRead: () => false,
       canEdit: () => false,
-    } as unknown as ReturnType<typeof createAuth>,
+    } as unknown as Awaited<ReturnType<typeof createAuth>>,
     visibility = {
       read: () => ({
         publicTree,
         publicAlbums: false,
         reverseTimeline: false,
       }),
-    } as unknown as ReturnType<typeof settingsStore>,
+    } as unknown as Awaited<ReturnType<typeof settingsStore>>,
     geocoding: GeocodingStore = {
       async locate(query) {
         calls++;
@@ -103,7 +104,7 @@ test("places HTTP searches only visible family places and rechecks access after 
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
-    archive.close();
+    await archive.close();
   }
 });
 
@@ -111,7 +112,7 @@ test("closed geocoding store rejects further work", async () => {
   const db = new DatabaseSync(":memory:");
   initializeArchiveSchema(db);
   const store = geocodingStore(
-    db,
+    storeDatabase(db),
     async () => Response.json({ features: [] }),
     0,
   );

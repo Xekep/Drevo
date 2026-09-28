@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -305,7 +306,7 @@ test("historical names use external aliases and Earth coordinates without city-s
       ),
     );
   };
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const [a, b] = await Promise.all([
       store.locate("Старое имя"),
@@ -318,7 +319,7 @@ test("historical names use external aliases and Earth coordinates without city-s
     await store.locate("Старое имя");
     assert.equal(calls.length, 3);
     store.close();
-    const reopened = geocodingStore(db, fetcher, 0);
+    const reopened = geocodingStore(storeDatabase(db), fetcher, 0);
     await reopened.locate("Старое имя");
     assert.equal(calls.length, 3);
     reopened.close();
@@ -410,7 +411,7 @@ test("qualified historical geocoding locates a settlement absent from Photon", a
       },
     });
   };
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const result = await store.locate("Нижнее, Луганская область");
     assert.equal(result.automatic?.name, "Нижнее");
@@ -447,7 +448,7 @@ test("historical geocoding retries a Wikidata maxlag response", async () => {
     }
     return Response.json(entities);
   };
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const result = await store.locate("Старое имя");
     assert.equal(result.automatic?.name, "Современное имя");
@@ -477,7 +478,7 @@ test("repeated Wikidata maxlag does not hold every queued Photon lookup", async 
       { headers: { "Retry-After": "0" } },
     );
   };
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const first = await store.locate("Старое имя");
     const second = await store.locate("Другое старое имя");
@@ -502,7 +503,7 @@ test("historical directory failure keeps current candidates and manual correctio
       ? Response.json({ features: [feature("Современное место")] })
       : Response.json({ error: { code: "readonly" } });
   };
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const result = await store.locate("Старое имя");
     assert.equal(result.candidates.length, 1);
@@ -530,15 +531,17 @@ test("Photon failure with an empty Wikidata search is reported as partial lookup
     new URL(String(input)).hostname === "photon.komoot.io"
       ? Response.error()
       : Response.json({ search: [] });
-  const store = geocodingStore(db, fetcher, 0);
+  const store = geocodingStore(storeDatabase(db), fetcher, 0);
   try {
     const result = await store.locate("Неизвестное место");
     assert.deepEqual(result.candidates, []);
     assert.match(result.notice || "", /Основной поиск мест сейчас недоступен/);
     assert.equal(
-      (db.prepare("SELECT COUNT(*) AS count FROM geocode_cache").get() as {
-        count: number;
-      }).count,
+      (
+        db.prepare("SELECT COUNT(*) AS count FROM geocode_cache").get() as {
+          count: number;
+        }
+      ).count,
       0,
     );
   } finally {

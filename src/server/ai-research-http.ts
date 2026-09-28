@@ -50,10 +50,10 @@ export function aiResearchHttp({
   publicOrigin,
   fetcher = fetch,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
-  aiSettings: ReturnType<typeof aiSettingsStore>;
+  aiSettings: Awaited<ReturnType<typeof aiSettingsStore>>;
   usage: ReturnType<typeof aiUsageStore>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
@@ -85,10 +85,10 @@ export function aiResearchHttp({
     }
   }
   const responses = yandexResponsesClient(fetcher);
-  const accessScope = (user: ArchiveUser) => {
+  const accessScope = async (user: ArchiveUser) => {
     const identity = [user.role, user.treeAccess || "all", user.personId || ""];
     if (!isScopedUser(user)) return JSON.stringify(identity);
-    const visible = projectFamilyForUser(archive.read().family, user);
+    const visible = projectFamilyForUser((await archive.read()).family, user);
     const fingerprint = createHash("sha256")
       .update(
         JSON.stringify([
@@ -142,7 +142,8 @@ export function aiResearchHttp({
         : undefined,
   });
 
-  return async (
+  let closing = false;
+  const handle = async (
     req: IncomingMessage,
     res: ServerResponse,
     url: URL,
@@ -152,14 +153,14 @@ export function aiResearchHttp({
     if (path.startsWith("/api/ai/files/")) {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
-      if (!auth.canRead(req))
+      if (!(await auth.canRead(req)))
         return json(res, 401, { error: "Войдите в архив" });
       const id = path.slice("/api/ai/files/".length),
         file = pdfFiles.get(id);
       if (
         !file ||
         file.expires < Date.now() ||
-        file.ownerId !== auth.currentUser(req)?.id
+        file.ownerId !== (await auth.currentUser(req))?.id
       )
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
@@ -182,8 +183,8 @@ export function aiResearchHttp({
       !path.startsWith("/api/ai/chats/")
     )
       return false;
-    if (!auth.canRead(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.canRead(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Войдите в архив для работы с ИИ-исследователем",
       });
 
@@ -191,20 +192,22 @@ export function aiResearchHttp({
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
       return json(res, 200, {
-        enabled: aiRuntimeConfig(aiSettings).active,
-        canPropose: auth.canEdit(req),
+        enabled: (await aiRuntimeConfig(aiSettings)).active,
+        canPropose: await auth.canEdit(req),
         streaming: true,
       });
     }
 
     if (path === "/api/ai/chats" && req.method === "GET") {
-      const user = auth.currentUser(req)!;
-      return json(res, 200, { chats: chats.list(user.id, accessScope(user)) });
+      const user = (await auth.currentUser(req))!;
+      return json(res, 200, {
+        chats: await chats.list(user.id, await accessScope(user)),
+      });
     }
     if (path.startsWith("/api/ai/chats/")) {
       const stopRequested = path.endsWith("/stop");
       const id = path.slice("/api/ai/chats/".length).replace(/\/stop$/, "");
-      const user = auth.currentUser(req)!;
+      const user = (await auth.currentUser(req))!;
       if (!/^[a-f0-9-]{36}$/i.test(id))
         return json(res, 404, { error: "Диалог не найден" });
       if (stopRequested) {
@@ -212,44 +215,44 @@ export function aiResearchHttp({
           return json(res, 405, { error: "Ожидается POST" });
         if (!isSameOriginRequest(req, publicOrigin))
           return json(res, 403, { error: "Invalid origin" });
-        const chat = chats.read(id, user.id);
-        if (!chat || chat.accessScope !== accessScope(user))
+        const chat = await chats.read(id, user.id);
+        if (!chat || chat.accessScope !== (await accessScope(user)))
           return json(res, 404, { error: "Диалог не найден" });
         await stopChat(id);
-        return json(res, 200, { busy: !!chats.isBusy(id) });
+        return json(res, 200, { busy: !!(await chats.isBusy(id)) });
       }
       if (req.method === "GET") {
-        const chat = chats.read(id, user.id);
-        if (!chat || chat.accessScope !== accessScope(user))
+        const chat = await chats.read(id, user.id);
+        if (!chat || chat.accessScope !== (await accessScope(user)))
           return json(res, 404, { error: "Диалог не найден" });
         return json(res, 200, {
           chat: {
             id: chat.id,
             createdAt: chat.createdAt,
             updatedAt: chat.updatedAt,
-            busy: !!chats.isBusy(id),
+            busy: !!(await chats.isBusy(id)),
           },
-          messages: chats.messages(id, user.id),
+          messages: await chats.messages(id, user.id),
         });
       }
       if (req.method === "DELETE") {
         if (!isSameOriginRequest(req, publicOrigin))
           return json(res, 403, { error: "Invalid origin" });
-        const existing = chats.read(id, user.id);
-        if (!existing || existing.accessScope !== accessScope(user))
+        const existing = await chats.read(id, user.id);
+        if (!existing || existing.accessScope !== (await accessScope(user)))
           return json(res, 404, { error: "Диалог не найден" });
         await stopChat(id);
-        if (chats.isBusy(id))
+        if (await chats.isBusy(id))
           return json(res, 409, {
             error: "Дождитесь завершения ответа перед удалением диалога",
           });
-        const chat = chats.delete(id, user.id);
+        const chat = await chats.delete(id, user.id);
         if (!chat) return json(res, 404, { error: "Диалог не найден" });
         const remoteId =
           chat.yandexConversationId || existing.yandexConversationId;
         if (remoteId) {
           void responses
-            .deleteConversation(aiRuntimeConfig(aiSettings), remoteId)
+            .deleteConversation(await aiRuntimeConfig(aiSettings), remoteId)
             .catch((error) =>
               console.warn(
                 JSON.stringify({
@@ -272,7 +275,7 @@ export function aiResearchHttp({
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
-    const runtime = aiRuntimeConfig(aiSettings);
+    const runtime = await aiRuntimeConfig(aiSettings);
     if (!runtime.active)
       return json(res, 503, {
         error: runtime.configured
@@ -291,8 +294,8 @@ export function aiResearchHttp({
           error instanceof Error ? error.message : "Некорректный JSON запроса",
       });
     }
-    const user = auth.currentUser(req)!,
-      canPropose = auth.canEdit(req);
+    const user = (await auth.currentUser(req))!,
+      canPropose = await auth.canEdit(req);
     const selectedPersonId = body.selectedPersonId;
     if (
       selectedPersonId !== undefined &&
@@ -310,7 +313,7 @@ export function aiResearchHttp({
     const requestedChatId = typeof body.chatId === "string" ? body.chatId : "";
     if (selectedPersonId && !requestedChatId)
       return json(res, 400, { error: "Выберите диалог для уточнения" });
-    const family = archive.read().family;
+    const family = (await archive.read()).family;
     const visibleFamily = isScopedUser(user)
       ? projectFamilyForUser(family, user)
       : family;
@@ -323,7 +326,7 @@ export function aiResearchHttp({
       ? `Уточнение к предыдущему вопросу: речь о ${fullName(selectedPerson)}. Продолжи ответ.`
       : typedMessage;
     try {
-      usage.check(user.id, runtime.limits);
+      await usage.check(user.id, runtime.limits);
     } catch (error) {
       if (error instanceof AiLimitError) {
         if (error.retryAfterSeconds)
@@ -334,31 +337,35 @@ export function aiResearchHttp({
     }
 
     const chat = requestedChatId
-      ? chats.read(requestedChatId, user.id)
-      : chats.create(user.id, accessScope(user));
-    if (!chat || chat.accessScope !== accessScope(user))
+      ? await chats.read(requestedChatId, user.id)
+      : await chats.create(user.id, await accessScope(user));
+    if (!chat || chat.accessScope !== (await accessScope(user)))
       return json(res, 404, { error: "Диалог не найден" });
-    const lockToken = chats.acquire(chat.id);
+    if (closing)
+      return json(res, 503, {
+        error: "Сервер перезапускается. Повторите запрос.",
+      });
+    const lockToken = await chats.acquire(chat.id);
     if (!lockToken)
       return json(res, 409, {
         error: "Дождитесь завершения предыдущего ответа в этом диалоге",
       });
-    chats.append(
-      chat.id,
-      "user",
-      message,
-      selectedPerson ? { hidden: true } : {},
-    );
-    const lockRenewal = setInterval(() => {
-      chats.renew(chat.id, lockToken);
-      // A provider may be silent while reasoning/searching. Keep the browser
-      // stream alive through proxies without adding activity messages.
-      if (stream && !res.writableEnded && !res.destroyed)
-        res.write(": keep-alive\n\n");
-    }, 20_000);
-    lockRenewal.unref();
-    const usageRun = usage.begin(user.id, runtime.model),
-      metrics: ResearchMetrics = {
+    let usageRun: Awaited<ReturnType<typeof usage.begin>>;
+    try {
+      if (closing) throw new Error("Сервер перезапускается");
+      await chats.append(
+        chat.id,
+        "user",
+        message,
+        selectedPerson ? { hidden: true } : {},
+      );
+      usageRun = await usage.begin(user.id, runtime.model);
+      if (closing) throw new Error("Сервер перезапускается");
+    } catch (error) {
+      await chats.release(chat.id, lockToken);
+      throw error;
+    }
+    const metrics: ResearchMetrics = {
         providerCalls: 0,
         agentIterations: 0,
         compactionAvailable: null,
@@ -370,6 +377,36 @@ export function aiResearchHttp({
         models: new Map(),
       },
       controller = new AbortController();
+    let renewing = false;
+    let leaseLost = false;
+    const lockRenewal = setInterval(() => {
+      if (renewing) return;
+      renewing = true;
+      void chats
+        .renew(chat.id, lockToken)
+        .then((held) => {
+          if (!held) {
+            leaseLost = true;
+            controller.abort();
+          } else if (stream && !res.writableEnded && !res.destroyed) {
+            res.write(": keep-alive\n\n");
+          }
+        })
+        .catch(() => {
+          leaseLost = true;
+          controller.abort();
+          console.warn(
+            JSON.stringify({
+              event: "ai.chat_lease_lost",
+              localConversationId: chat.id,
+            }),
+          );
+        })
+        .finally(() => {
+          renewing = false;
+        });
+    }, 20_000);
+    lockRenewal.unref();
     let finishRun: () => void = () => {};
     const done = new Promise<void>((resolve) => {
       finishRun = resolve;
@@ -408,12 +445,12 @@ export function aiResearchHttp({
       });
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
-      chats.append(chat.id, "assistant", result.answer, {
+      await chats.append(chat.id, "assistant", result.answer, {
         references: result.references,
         suggestionIds: result.suggestionIds,
         files: result.files,
       });
-      const latestFamily = archive.read().family;
+      const latestFamily = (await archive.read()).family;
       const accessiblePeople = new Set(
         (isScopedUser(user)
           ? projectFamilyForUser(latestFamily, user)
@@ -428,8 +465,8 @@ export function aiResearchHttp({
             .map((item) => item.id),
         ]),
       ].filter((id) => accessiblePeople.has(id));
-      chats.setActivePeople(chat.id, activeIds);
-      usage.finish(usageRun.id, usageRun.started, {
+      await chats.setActivePeople(chat.id, activeIds);
+      await usage.finish(usageRun.id, usageRun.started, {
         status: "ok",
         providerCalls: metrics.providerCalls,
         inputTokens: metrics.inputTokens,
@@ -441,7 +478,7 @@ export function aiResearchHttp({
         JSON.stringify({
           event: "ai.turn_completed",
           localConversationId: chat.id,
-          yandexConversationId: chats.read(chat.id, user.id)
+          yandexConversationId: (await chats.read(chat.id, user.id))
             ?.yandexConversationId,
           model: runtime.modelUri,
           providerCalls: metrics.providerCalls,
@@ -473,18 +510,26 @@ export function aiResearchHttp({
       }
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
-      chats.setRemote(chat.id, null);
-      const errorMessage = controller.signal.aborted
-        ? "Ответ остановлен"
-        : error instanceof Error &&
-            (error.name === "TimeoutError" ||
-              /aborted due to timeout|timed out/i.test(error.message))
-          ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
-          : error instanceof YandexResponseError
-            ? "Сервис ИИ не смог завершить ответ. Попробуйте повторить запрос."
-            : error instanceof Error
-              ? error.message
-              : "Не удалось получить ответ ИИ";
+      await chats.setRemote(chat.id, null);
+      const errorMessage = leaseLost
+        ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
+        : controller.signal.aborted
+          ? "Ответ остановлен"
+          : error instanceof Error &&
+              (error.name === "TimeoutError" ||
+                /aborted due to timeout|timed out/i.test(error.message))
+            ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
+            : error instanceof YandexResponseError
+              ? error.status === 401 || error.status === 403
+                ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
+                : error.status === 429
+                  ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
+                  : error.code === "provider_timeout"
+                    ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
+                    : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
+              : error instanceof Error
+                ? error.message
+                : "Не удалось получить ответ ИИ";
       console.warn(
         JSON.stringify({
           event: "ai.turn_failed",
@@ -500,10 +545,13 @@ export function aiResearchHttp({
             error instanceof YandexResponseError ? error.code : undefined,
           providerStatus:
             error instanceof YandexResponseError ? error.status : undefined,
+          providerEndpoint:
+            error instanceof YandexResponseError ? error.endpoint : undefined,
+          errorType: error instanceof Error ? error.name : "unknown",
           latencyMs: Date.now() - usageRun.started,
         }),
       );
-      usage.finish(usageRun.id, usageRun.started, {
+      await usage.finish(usageRun.id, usageRun.started, {
         status: "error",
         providerCalls: metrics.providerCalls,
         inputTokens: metrics.inputTokens,
@@ -521,10 +569,22 @@ export function aiResearchHttp({
       });
     } finally {
       clearInterval(lockRenewal);
-      chats.release(chat.id, lockToken);
-      if (activeRuns.get(chat.id)?.controller === controller)
-        activeRuns.delete(chat.id);
-      finishRun();
+      try {
+        await chats.release(chat.id, lockToken);
+      } finally {
+        if (activeRuns.get(chat.id)?.controller === controller)
+          activeRuns.delete(chat.id);
+        finishRun();
+      }
     }
   };
+  return Object.assign(handle, {
+    async close() {
+      closing = true;
+      const runs = [...activeRuns.values()];
+      for (const run of runs) run.controller.abort();
+      await Promise.all(runs.map((run) => run.done));
+      pdfFiles.clear();
+    },
+  });
 }

@@ -16,40 +16,43 @@ export function mediaHttp({
   visibility,
   archive,
 }: {
-  auth: ReturnType<typeof createAuth>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
-  visibility: ReturnType<typeof settingsStore>;
-  archive: ReturnType<typeof openArchive>;
+  visibility: Awaited<ReturnType<typeof settingsStore>>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
 }) {
   let cachedKey = "",
     cachedUrls = new Set<string>();
-  const permitted = (req: IncomingMessage, url?: string) => {
-    if (!auth.canRead(req) && !visibility.read().publicAlbums) return false;
-    if (!auth.canRead(req)) {
+  const permitted = async (req: IncomingMessage, url?: string) => {
+    if (!(await auth.canRead(req)) && !(await visibility.read()).publicAlbums)
+      return false;
+    if (!(await auth.canRead(req))) {
       // UUID is an identifier, not permission to view an unpublished upload.
       if (!url) return false;
-      const settings = visibility.read();
+      const settings = await visibility.read();
       return (
-        !!archive.db
+        !!(await archive.db
           .prepare(
             "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
+            "SELECT 1 FROM photos WHERE (data->>'url')=? LIMIT 1",
           )
-          .get(url) ||
+          .get(url)) ||
         (settings.publicTree &&
-          !!archive.db
+          !!(await archive.db
             .prepare(
               "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
+              "SELECT 1 FROM people WHERE (data->>'photo')=? LIMIT 1",
             )
-            .get(url))
+            .get(url)))
       );
     }
-    const user = auth.currentUser(req);
+    const user = await auth.currentUser(req);
     if (!isScopedUser(user) || !url) return true;
-    if (ownsPendingMedia(archive.db, url, user.id)) return true;
-    const key = `${archive.meta().revision}:${user.id}:${user.personId || ""}`;
+    if (await ownsPendingMedia(archive.db, url, user.id)) return true;
+    const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
     if (key !== cachedKey) {
-      const scoped = projectFamilyForUser(archive.read().family, user);
+      const scoped = projectFamilyForUser((await archive.read()).family, user);
       cachedUrls = new Set([
         ...scoped.people
           .map((person) => person.photo)
@@ -76,7 +79,7 @@ export function mediaHttp({
   ): Promise<boolean> => {
     if (!url.pathname.startsWith("/media/") || req.method !== "GET")
       return false;
-    if (!permitted(req, url.pathname))
+    if (!(await permitted(req, url.pathname)))
       return json(res, 401, { error: "Sign in to view this archive" });
 
     const file = media.open(url.pathname);
@@ -91,7 +94,7 @@ export function mediaHttp({
           { path: file.path, cacheKey: file.name },
           variant,
         );
-        if (!permitted(req, url.pathname))
+        if (!(await permitted(req, url.pathname)))
           return json(res, 401, { error: "Доступ к фотографиям закрыт" });
         res.writeHead(200, {
           "Content-Type": "image/webp",
@@ -114,7 +117,7 @@ export function mediaHttp({
         await handle.close();
         return json(res, 404, { error: "Фото не найдено" });
       }
-      if (!permitted(req, url.pathname)) {
+      if (!(await permitted(req, url.pathname))) {
         await handle.close();
         return json(res, 401, { error: "Доступ к фотографиям закрыт" });
       }

@@ -8,7 +8,7 @@ export function treePreferencesHttp({
   preferences,
   publicOrigin,
 }: {
-  auth: ReturnType<typeof createAuth>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   preferences: ReturnType<typeof treePreferencesStore>;
   publicOrigin?: string;
 }) {
@@ -22,10 +22,11 @@ export function treePreferencesHttp({
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname !== "/api/tree-preferences") return false;
-    const user = auth.currentUser(req);
+    const user = await auth.currentUser(req);
     if (!user?.approved)
       return json(res, user ? 403 : 401, { error: "Войдите в архив" });
-    if (req.method === "GET") return json(res, 200, preferences.read(user.id));
+    if (req.method === "GET")
+      return json(res, 200, await preferences.read(user.id));
     if (req.method !== "PUT")
       return json(res, 405, { error: "Method not allowed" });
     if (!isSameOriginRequest(req, publicOrigin))
@@ -42,9 +43,9 @@ export function treePreferencesHttp({
         chunks.push(Buffer.from(chunk));
       }
       const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (!auth.currentUser(req)?.approved)
+      if (!(await auth.currentUser(req))?.approved)
         return json(res, 403, { error: "Доступ отозван" });
-      return json(res, 200, preferences.write(user.id, value));
+      return json(res, 200, await preferences.write(user.id, value));
     } catch (error) {
       return json(res, 400, { error: (error as Error).message });
     }

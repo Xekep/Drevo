@@ -1,26 +1,11 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-} from "node:crypto";
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import type { StoreDatabase } from "./store-database.ts";
 
-const memoryKeys = new WeakMap<DatabaseSync, Buffer>();
+const memoryKeys = new WeakMap<StoreDatabase, Buffer>();
 
-function databaseFile(db: DatabaseSync) {
-  const rows = db.prepare("PRAGMA database_list").all();
-  const main = rows.find((row) => String(row.name) === "main");
-  return main?.file ? String(main.file) : "";
-}
-
-function keyFile(db: DatabaseSync) {
-  const file = databaseFile(db);
+function keyFile(db: StoreDatabase) {
+  const file = db.file;
   return file ? file + ".secrets.key" : "";
 }
 
@@ -37,7 +22,7 @@ function readKeyFile(path: string) {
   return key;
 }
 
-function secretKey(db: DatabaseSync, create: boolean) {
+function secretKey(db: StoreDatabase, create: boolean) {
   const path = keyFile(db);
   if (!path) {
     const existing = memoryKeys.get(db);
@@ -62,14 +47,11 @@ function secretKey(db: DatabaseSync, create: boolean) {
   }
 }
 
-export function encryptAiSecret(db: DatabaseSync, value: string) {
+export function encryptAiSecret(db: StoreDatabase, value: string) {
   const key = secretKey(db, true)!,
     iv = randomBytes(12),
     cipher = createCipheriv("aes-256-gcm", key, iv),
-    encrypted = Buffer.concat([
-      cipher.update(value, "utf8"),
-      cipher.final(),
-    ]),
+    encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]),
     tag = cipher.getAuthTag();
   return [
     "v1",
@@ -79,7 +61,7 @@ export function encryptAiSecret(db: DatabaseSync, value: string) {
   ].join(".");
 }
 
-export function decryptAiSecret(db: DatabaseSync, value: string) {
+export function decryptAiSecret(db: StoreDatabase, value: string) {
   if (!value) return "";
   const parts = value.split(".");
   if (
@@ -100,12 +82,11 @@ export function decryptAiSecret(db: DatabaseSync, value: string) {
     encrypted = Buffer.from(parts[3], "base64url"),
     decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
-  return Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]).toString("utf8");
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
+    "utf8",
+  );
 }
 
-export function aiSecretKeyPath(db: DatabaseSync) {
+export function aiSecretKeyPath(db: StoreDatabase) {
   return keyFile(db) || null;
 }

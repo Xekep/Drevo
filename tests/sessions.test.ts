@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -11,23 +12,30 @@ import { initializeArchiveSchema } from "../src/server/schema.ts";
 
 test("persistent sessions survive server restart, renew on activity and revoke on logout", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-sessions-"));
-  function open() {
+  async function open() {
     const db = new DatabaseSync(join(directory, "sessions.sqlite"));
     initializeArchiveSchema(db);
-    const users = userStore(db);
-    const auth = createAuth(users, db, "https://drevo.kiiko.ru");
-    const server = createServer((req, res) => {
+    const users = await userStore(storeDatabase(db));
+    const auth = await createAuth(
+      users,
+      storeDatabase(db),
+      "https://drevo.kiiko.ru",
+    );
+    const server = createServer(async (req, res) => {
       if (req.url === "/login") {
         res.setHeader("Set-Cookie", "oauth_state=; Max-Age=0; Path=/");
-        auth.issueSession(req, res, { id: "test-user", name: "Участник" });
-      } else if (req.url === "/logout") auth.logout(req, res);
-      else auth.refreshSession(req, res);
+        await auth.issueSession(req, res, {
+          id: "test-user",
+          name: "Участник",
+        });
+      } else if (req.url === "/logout") await auth.logout(req, res);
+      else await auth.refreshSession(req, res);
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ user: auth.currentUser(req) }));
+      res.end(JSON.stringify({ user: await auth.currentUser(req) }));
     });
     return { db, users, server };
   }
-  let app = open();
+  let app = await open();
   async function listen() {
     await new Promise<void>((resolve) =>
       app.server.listen(0, "127.0.0.1", resolve),
@@ -59,14 +67,14 @@ test("persistent sessions survive server restart, renew on activity and revoke o
     );
     const stored = app.db.prepare("SELECT * FROM auth_sessions").get()!;
     assert.notEqual(stored.token_hash, token, "only the hash is persisted");
-    const loginVisit = app.users.get("test-user")!.lastVisitAt;
+    const loginVisit = (await app.users.get("test-user"))!.lastVisitAt;
     assert.ok(loginVisit && Date.now() - Date.parse(loginVisit) < 5000);
     assert.equal(
       (await request("/session", cookie).then((r) => r.json())).user.role,
       "admin",
     );
     assert.equal(
-      app.users.get("test-user")!.lastVisitAt,
+      (await app.users.get("test-user"))!.lastVisitAt,
       loginVisit,
       "ordinary API requests within a minute do not write a new visit",
     );
@@ -77,35 +85,38 @@ test("persistent sessions survive server restart, renew on activity and revoke o
     await request("/session", cookie, { "Sec-Fetch-Site": "cross-site" });
     await request("/session", "drevo_session=" + "0".repeat(64));
     assert.equal(
-      app.users.get("test-user")!.lastVisitAt,
+      (await app.users.get("test-user"))!.lastVisitAt,
       oldVisit,
       "foreign and invalid requests do not count as visits",
     );
     await request("/session", cookie);
-    const activeVisit = app.users.get("test-user")!.lastVisitAt;
+    const activeVisit = (await app.users.get("test-user"))!.lastVisitAt;
     assert.ok(activeVisit && Date.parse(activeVisit) > Date.parse(oldVisit));
-    assert.equal(app.users.listPage(20).users[0].lastVisitAt, activeVisit);
-    app.users.recordVisit(
+    assert.equal(
+      (await app.users.listPage(20)).users[0].lastVisitAt,
+      activeVisit,
+    );
+    await app.users.recordVisit(
       "test-user",
       Date.parse(activeVisit!) + 30_000,
       60_000,
     );
     assert.equal(
-      app.users.get("test-user")!.lastVisitAt,
+      (await app.users.get("test-user"))!.lastVisitAt,
       activeVisit,
       "database guard throttles another concurrent session too",
     );
-    app.users.recordVisit("test-user", Date.parse(oldVisit));
+    await app.users.recordVisit("test-user", Date.parse(oldVisit));
     assert.equal(
-      app.users.get("test-user")!.lastVisitAt,
+      (await app.users.get("test-user"))!.lastVisitAt,
       activeVisit,
       "an older request cannot move the visit backwards",
     );
     await close();
-    app = open();
+    app = await open();
     await listen();
     assert.equal(
-      app.users.get("test-user")!.lastVisitAt,
+      (await app.users.get("test-user"))!.lastVisitAt,
       activeVisit,
       "last visit survives restart",
     );
@@ -151,9 +162,17 @@ test("persistent sessions survive server restart, renew on activity and revoke o
       "no renewal for every image or request",
     );
 
-    const admin = app.users.register("second", "Администратор");
-    app.users.setRole(app.users.get("test-user")!, admin.id, "admin");
-    app.users.setRole(app.users.get("second")!, "test-user", "reader");
+    const admin = await app.users.register("second", "Администратор");
+    await app.users.setRole(
+      (await app.users.get("test-user"))!,
+      admin.id,
+      "admin",
+    );
+    await app.users.setRole(
+      (await app.users.get("second"))!,
+      "test-user",
+      "reader",
+    );
     assert.equal(
       (await request("/session", cookie).then((r) => r.json())).user.role,
       "reader",
@@ -174,7 +193,7 @@ test("persistent sessions survive server restart, renew on activity and revoke o
     const logout = await request("/logout", secondCookie);
     assert.match(logout.headers.get("set-cookie")!, /Max-Age=0/);
     await close();
-    app = open();
+    app = await open();
     await listen();
     assert.equal(
       (await request("/session", secondCookie).then((r) => r.json())).user,

@@ -1,3 +1,4 @@
+import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
@@ -22,11 +23,11 @@ test("read-only directory reflects the existing catalog, including resources dis
       name: "Администратор",
       role: "admin",
     } as ArchiveUser;
-    const category = catalog
-      .createCategory({ name: "Региональные источники" }, actor)
-      .at(-1)!;
-    const resource = catalog
-      .createResource(
+    const category = (
+      await catalog.createCategory({ name: "Региональные источники" }, actor)
+    ).at(-1)!;
+    const resource = (
+      await catalog.createResource(
         category.id,
         {
           name: "Местный справочник",
@@ -36,7 +37,7 @@ test("read-only directory reflects the existing catalog, including resources dis
         },
         actor,
       )
-      .find((item) => item.id === category.id)!.resources[0];
+    ).find((item) => item.id === category.id)!.resources[0];
     const read = async () => {
       const response = await fetch(`${base}/api/research-resources`);
       assert.equal(response.status, 200);
@@ -53,11 +54,12 @@ test("read-only directory reflects the existing catalog, including resources dis
       description: resource.description,
     });
     assert.equal(
-      catalog.webSearchSources().find((item) => item.id === resource.id)!
-        .enabledForAiSearch,
+      (await catalog.webSearchSources()).find(
+        (item) => item.id === resource.id,
+      )!.enabledForAiSearch,
       false,
     );
-    catalog.updateResource(
+    await catalog.updateResource(
       resource.id,
       { ...resource, name: "Новое название" },
       actor,
@@ -71,7 +73,7 @@ test("read-only directory reflects the existing catalog, including resources dis
         (await fetch(`${base}/api/research-resources`, { method })).status,
         405,
       );
-    catalog.deleteCategory(category.id, actor);
+    await catalog.deleteCategory(category.id, actor);
     assert.equal(
       (await read()).some((item) => item.id === category.id),
       false,
@@ -82,37 +84,44 @@ test("read-only directory reflects the existing catalog, including resources dis
   }
 });
 
-test("research catalog migrates the supplied list once and limits contextual suggestions", () => {
+test("research catalog migrates the supplied list once and limits contextual suggestions", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
-    const catalog = researchCatalogStore(db);
-    assert.equal(catalog.list().length, 8);
+    const catalog = researchCatalogStore(storeDatabase(db));
+    assert.equal((await catalog.list()).length, 8);
     assert.equal(
-      catalog
-        .list()
-        .reduce((sum, category) => sum + category.resources.length, 0),
+      (await catalog.list()).reduce(
+        (sum, category) => sum + category.resources.length,
+        0,
+      ),
       63,
     );
     assert.deepEqual(
-      catalog
-        .search("Война", "фронтовик ВОВ")
-        .resources.slice(0, 3)
+      (await catalog.search("Война", "фронтовик ВОВ")).resources
+        .slice(0, 3)
         .map((item) => item.name),
       ["Память народа", "ОБД Мемориал", "Подвиг народа"],
     );
     assert.equal(
-      catalog.search("Захоронения", "Свердловская область").resources.length,
+      (await catalog.search("Захоронения", "Свердловская область")).resources
+        .length,
       5,
     );
-    assert.equal(catalog.search("Неизвестная категория").resources.length, 0);
     assert.equal(
-      catalog.searchAny("дай мне цифровое кладбище режевское").resources[0]
-        .name,
+      (await catalog.search("Неизвестная категория")).resources.length,
+      0,
+    );
+    assert.equal(
+      (await catalog.searchAny("дай мне цифровое кладбище режевское"))
+        .resources[0].name,
       "Skorbim",
     );
     initializeArchiveSchema(db);
-    assert.equal(researchCatalogStore(db).list().length, 8);
+    assert.equal(
+      (await researchCatalogStore(storeDatabase(db)).list()).length,
+      8,
+    );
   } finally {
     db.close();
   }
@@ -139,10 +148,10 @@ test("specific resource request returns catalog URLs and links from descriptions
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
     const catalog = researchCatalogStore(app.archive.db);
-    const category = catalog
-      .list()
-      .find((item) => item.name === "Захоронения")!;
-    catalog.createResource(
+    const category = (await catalog.list()).find(
+      (item) => item.name === "Захоронения",
+    )!;
+    await catalog.createResource(
       category.id,
       {
         name: "Цифровое кладбище Режа",
@@ -182,20 +191,20 @@ test("specific resource request returns catalog URLs and links from descriptions
   }
 });
 
-test("admin can edit categories and resources; unsafe URLs and duplicates are rejected", () => {
+test("admin can edit categories and resources; unsafe URLs and duplicates are rejected", async () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
-    const catalog = researchCatalogStore(db);
+    const catalog = researchCatalogStore(storeDatabase(db));
     const actor = {
       id: "admin",
       name: "Администратор",
       role: "admin",
     } as ArchiveUser;
-    const group = catalog
-      .createCategory({ name: "Местный архив" }, actor)
-      .find((item) => item.name === "Местный архив")!;
-    const saved = catalog.createResource(
+    const group = (
+      await catalog.createCategory({ name: "Местный архив" }, actor)
+    ).find((item) => item.name === "Местный архив")!;
+    const saved = await catalog.createResource(
       group.id,
       {
         name: "Областной архив",
@@ -206,9 +215,9 @@ test("admin can edit categories and resources; unsafe URLs and duplicates are re
     );
     const resource = saved.find((item) => item.id === group.id)!.resources[0];
     assert.ok(resource.id);
-    assert.throws(
-      () =>
-        catalog.createResource(
+    await assert.rejects(
+      async () =>
+        await catalog.createResource(
           group.id,
           {
             name: "Опасная ссылка",
@@ -219,18 +228,19 @@ test("admin can edit categories and resources; unsafe URLs and duplicates are re
         ),
       /HTTP/,
     );
-    assert.throws(() =>
-      catalog.createResource(
-        group.id,
-        {
-          name: "Дубль",
-          url: resource.url,
-          description: "Тест",
-        },
-        actor,
-      ),
+    await assert.rejects(
+      async () =>
+        await catalog.createResource(
+          group.id,
+          {
+            name: "Дубль",
+            url: resource.url,
+            description: "Тест",
+          },
+          actor,
+        ),
     );
-    catalog.updateResource(
+    await catalog.updateResource(
       resource.id,
       {
         name: "Новый архив",
@@ -240,13 +250,13 @@ test("admin can edit categories and resources; unsafe URLs and duplicates are re
       actor,
     );
     assert.equal(
-      catalog.search("Местный архив").resources[0].name,
+      (await catalog.search("Местный архив")).resources[0].name,
       "Новый архив",
     );
-    catalog.updateCategory(group.id, { name: "Архив области" }, actor);
-    assert.equal(catalog.search("Местный архив").resources.length, 0);
-    assert.equal(catalog.search("Архив области").resources.length, 1);
-    catalog.deleteCategory(group.id, actor);
+    await catalog.updateCategory(group.id, { name: "Архив области" }, actor);
+    assert.equal((await catalog.search("Местный архив")).resources.length, 0);
+    assert.equal((await catalog.search("Архив области")).resources.length, 1);
+    await catalog.deleteCategory(group.id, actor);
     assert.equal(
       db
         .prepare("SELECT COUNT(*) AS n FROM research_resources WHERE id=?")

@@ -1,20 +1,26 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { Person } from "../domain/types.ts";
 import { createPeopleSearch } from "../domain/people-search.ts";
 
 /** Короткие ответы AJAX; записи перечитываются только после изменения архива. */
-export function peopleSearchStore(db: DatabaseSync) {
+export function peopleSearchStore(db: StoreDatabase) {
   let revision = -1,
     search = createPeopleSearch([]);
-  return (query: string, visible?: ReadonlySet<string>) => {
+  return async (query: string, visible?: ReadonlySet<string>) => {
     const current = Number(
-      db.prepare("SELECT revision FROM archive WHERE id=1").get()!.revision,
+      (await db
+        .prepare(
+          "SELECT revision FROM archive WHERE id=1",
+          "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id', true)",
+        )
+        .get())!.revision,
     );
     if (current !== revision) {
-      const people = db
-        .prepare("SELECT data FROM people")
-        .all()
-        .map((row) => JSON.parse(String(row.data)) as Person);
+      const people = (
+        await db
+          .prepare("SELECT data FROM people", "SELECT data FROM people")
+          .all()
+      ).map((row) => JSON.parse(String(row.data)) as Person);
       search = createPeopleSearch(people);
       revision = current;
     }

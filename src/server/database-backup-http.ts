@@ -13,8 +13,8 @@ export function databaseBackupHttp({
   archive,
   auth,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -33,8 +33,8 @@ export function databaseBackupHttp({
     const full = url.pathname === "/api/backup/full";
     if ((!full && url.pathname !== "/api/backup") || req.method !== "GET")
       return false;
-    if (!auth.isAdmin(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: full
           ? "Only administrators can download backups"
           : "Only administrators can download database backups",
@@ -48,7 +48,7 @@ export function databaseBackupHttp({
     const directory = await mkdtemp(join(tmpdir(), "drevo-download-")),
       file = join(directory, "drevo.sqlite");
     try {
-      writeDatabaseBackup(archive.db, file);
+      await writeDatabaseBackup(archive.db, file);
       const info = await stat(file);
       res.writeHead(200, {
         "Content-Type": "application/vnd.sqlite3",

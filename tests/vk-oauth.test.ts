@@ -103,13 +103,15 @@ test("VK ID reuses secure archive sessions, isolates identities and validates ev
       headers: cookie ? { Cookie: cookie } : {},
     });
   try {
-    const users = userStore(app.archive.db);
-    const vkFirst = userStore(app.archive.db, {
-      requireInitialAdmin: false,
-    }).register("vk:99", "Первый VK");
+    const users = await userStore(app.archive.db);
+    const vkFirst = await (
+      await userStore(app.archive.db, {
+        requireInitialAdmin: false,
+      })
+    ).register("vk:99", "Первый VK");
     assert.equal(vkFirst.role, "reader");
     assert.equal(vkFirst.approved, false);
-    assert.equal(users.register("77", "Владелец Яндекс").role, "admin");
+    assert.equal((await users.register("77", "Владелец Яндекс")).role, "admin");
     const session = await fetch(`${base}/api/session`).then((r) => r.json());
     assert.equal(session.vk, true);
     assert.equal(session.yandex, true);
@@ -134,7 +136,7 @@ test("VK ID reuses secure archive sessions, isolates identities and validates ev
     assert.equal(signedIn.user.name, "Анна Иванова");
     assert.equal(signedIn.user.role, "reader");
     assert.equal(signedIn.user.approved, false);
-    assert.equal(users.get("77")?.name, "Владелец Яндекс");
+    assert.equal((await users.get("77"))?.name, "Владелец Яндекс");
     assert.equal(
       (
         await fetch(`${base}/api/family`, {
@@ -155,7 +157,9 @@ test("VK ID reuses secure archive sessions, isolates identities and validates ev
     assert.equal((await callback(cookie, "error=access_denied")).status, 400);
     assert.equal(calls, 2);
     cookie = await begin();
-    app.archive.db.prepare("UPDATE oauth_transactions SET expires_at=0").run();
+    await app.archive.db
+      .prepare("UPDATE oauth_transactions SET expires_at=0")
+      .run();
     assert.equal((await callback(cookie)).status, 400);
     assert.equal(calls, 2);
     await begin("yandex");

@@ -6,12 +6,23 @@ import { validateFamily } from "../src/domain/validation.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 
 const person = (id: string): Person => ({
-  id, name: id, surname: "Тестов", patronymic: "", sex: "u", birth: "",
-  birthPlace: "", parents: [], spouses: [], sources: [], generation: 1, column: 0,
+  id,
+  name: id,
+  surname: "Тестов",
+  patronymic: "",
+  sex: "u",
+  birth: "",
+  birthPlace: "",
+  parents: [],
+  spouses: [],
+  sources: [],
+  generation: 1,
+  column: 0,
 });
 
 test("rebase of an open person draft preserves independent server fields", () => {
-  const base = person("one"), fresh = { ...base, surname: "Серверов" },
+  const base = person("one"),
+    fresh = { ...base, surname: "Серверов" },
     draft = { ...base, name: "Локальное имя" };
   assert.deepEqual(rebasePersonDraft(base, fresh, draft), {
     ...fresh,
@@ -19,27 +30,32 @@ test("rebase of an open person draft preserves independent server fields", () =>
   });
 });
 
-test("relationship reorder does not cascade-delete face descriptors", () => {
+test("relationship reorder does not cascade-delete face descriptors", async () => {
   const family: Family = {
-    title: "Тест", description: "", demo: false,
-    people: [person("one"), person("two"), person("three")], photos: [],
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: [person("one"), person("two"), person("three")],
+    photos: [],
   };
-  const archive = openArchive(":memory:", family);
+  const archive = await openArchive(":memory:", family);
   try {
-    archive.db.prepare(
-      "INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?)",
-    ).run("sample", "one", JSON.stringify(Array(128).fill(0)));
-    const state = archive.read();
+    await archive.db
+      .prepare("INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?)")
+      .run("sample", "one", JSON.stringify(Array(128).fill(0)));
+    const state = await archive.read();
     state.family.people[2].parents = ["one"];
-    const saved = archive.write(state.family, state.revision);
+    const saved = await archive.write(state.family, state.revision);
     saved.family.people[1].parents = ["one"];
-    archive.write(saved.family, saved.revision);
+    await archive.write(saved.family, saved.revision);
     assert.equal(
-      archive.db.prepare("SELECT count(*) AS n FROM face_descriptors").get()!.n,
+      (await archive.db
+        .prepare("SELECT count(*) AS n FROM face_descriptors")
+        .get())!.n,
       1,
     );
   } finally {
-    archive.close();
+    await archive.close();
   }
 });
 
@@ -48,21 +64,38 @@ test("supported maximum-depth input does not overflow the JavaScript stack", () 
     ...person(`p${index}`),
     parents: index ? [`p${index - 1}`] : [],
   })).reverse();
-  assert.equal(validateFamily({
-    title: "Глубокий тест", description: "", demo: false, people, photos: [],
-  }).people.length, 10_000);
+  assert.equal(
+    validateFamily({
+      title: "Глубокий тест",
+      description: "",
+      demo: false,
+      people,
+      photos: [],
+    }).people.length,
+    10_000,
+  );
 });
 
-test("photo tag lookup uses the photo_id index", () => {
-  const archive = openArchive(":memory:", {
-    title: "Тест", description: "", demo: false, people: [person("one")], photos: [],
+test("photo tag lookup uses the photo_id index", async () => {
+  const archive = await openArchive(":memory:", {
+    title: "Тест",
+    description: "",
+    demo: false,
+    people: [person("one")],
+    photos: [],
   });
   try {
-    const plan = archive.db.prepare(
-      "EXPLAIN QUERY PLAN SELECT photo_id,data FROM photo_tags WHERE photo_id IN (?) ORDER BY rowid",
-    ).all("photo").map((row) => String(row.detail)).join(" ");
+    const plan = (
+      await archive.db
+        .prepare(
+          "EXPLAIN QUERY PLAN SELECT photo_id,data FROM photo_tags WHERE photo_id IN (?) ORDER BY rowid",
+        )
+        .all("photo")
+    )
+      .map((row) => String(row.detail))
+      .join(" ");
     assert.match(plan, /photo_tags_photo/);
   } finally {
-    archive.close();
+    await archive.close();
   }
 });

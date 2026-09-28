@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 
 type ChatRow = {
   id: string;
@@ -20,13 +20,14 @@ export type AiChatMessage = {
   files?: Array<{ name: string; url: string }>;
 };
 
-export function aiChatStore(db: DatabaseSync) {
+export function aiChatStore(db: StoreDatabase) {
   const getRow = db.prepare(
     `SELECT id,user_id,access_scope,yandex_conversation_id,session_state,created_at,updated_at
      FROM ai_chats WHERE id=? AND user_id=?`,
+    "SELECT id,user_id,access_scope,yandex_conversation_id,session_state,created_at,updated_at\n     FROM ai_chats WHERE id=? AND user_id=?",
   );
-  function read(id: string, userId: string) {
-    const row = getRow.get(id, userId) as ChatRow | undefined;
+  async function read(id: string, userId: string) {
+    const row = (await getRow.get(id, userId)) as ChatRow | undefined;
     if (!row) return null;
     return {
       id: row.id,
@@ -43,16 +44,19 @@ export function aiChatStore(db: DatabaseSync) {
   }
   return {
     read,
-    create(userId: string, accessScope: string) {
+    async create(userId: string, accessScope: string) {
       const id = randomUUID();
-      db.prepare(
-        "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
-      ).run(id, userId, accessScope);
-      return read(id, userId)!;
+      await db
+        .prepare(
+          "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+          "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+        )
+        .run(id, userId, accessScope);
+      return (await read(id, userId))!;
     },
-    list(userId: string, accessScope: string) {
+    async list(userId: string, accessScope: string) {
       return (
-        db
+        (await db
           .prepare(
             `SELECT ai_chats.id,updated_at,
              (SELECT content FROM ai_chat_messages
@@ -61,8 +65,9 @@ export function aiChatStore(db: DatabaseSync) {
               ORDER BY id LIMIT 1) AS title
            FROM ai_chats WHERE user_id=? AND access_scope=?
            ORDER BY updated_at DESC LIMIT 50`,
+            "SELECT ai_chats.id,updated_at,\n             (SELECT content FROM ai_chat_messages\n              WHERE chat_id=ai_chats.id AND role='user'\n                AND (data->>'hidden') IS DISTINCT FROM 'true'\n              ORDER BY id LIMIT 1) AS title\n           FROM ai_chats WHERE user_id=? AND access_scope=?\n           ORDER BY updated_at DESC LIMIT 50",
           )
-          .all(userId, accessScope) as Array<{
+          .all(userId, accessScope)) as Array<{
           id: string;
           updated_at: string;
           title: string | null;
@@ -73,19 +78,20 @@ export function aiChatStore(db: DatabaseSync) {
         title: row.title?.slice(0, 80) || "Новый диалог",
       }));
     },
-    messages(
+    async messages(
       id: string,
       userId: string,
       includeHidden = false,
-    ): AiChatMessage[] | null {
-      if (!read(id, userId)) return null;
+    ): Promise<AiChatMessage[] | null> {
+      if (!(await read(id, userId))) return null;
       return (
-        db
+        (await db
           .prepare(
             `SELECT role,content,data FROM ai_chat_messages
            WHERE chat_id=? ORDER BY id`,
+            "SELECT role,content,data FROM ai_chat_messages\n           WHERE chat_id=? ORDER BY id",
           )
-          .all(id) as Array<{
+          .all(id)) as Array<{
           role: "user" | "assistant";
           content: string;
           data: string;
@@ -98,69 +104,95 @@ export function aiChatStore(db: DatabaseSync) {
         }))
         .filter((message) => includeHidden || message.hidden !== true);
     },
-    append(
+    async append(
       id: string,
       role: "user" | "assistant",
       content: string,
       data: unknown = {},
     ) {
-      db.prepare(
-        "INSERT INTO ai_chat_messages(chat_id,role,content,data) VALUES(?,?,?,?)",
-      ).run(id, role, content, JSON.stringify(data));
-      db.prepare(
-        "UPDATE ai_chats SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-      ).run(id);
+      await db
+        .prepare(
+          "INSERT INTO ai_chat_messages(chat_id,role,content,data) VALUES(?,?,?,?)",
+          "INSERT INTO ai_chat_messages(chat_id,role,content,data) VALUES(?,?,?,?) RETURNING id",
+        )
+        .run(id, role, content, JSON.stringify(data));
+      await db
+        .prepare(
+          "UPDATE ai_chats SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+          "UPDATE ai_chats SET updated_at=to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') WHERE id=?",
+        )
+        .run(id);
     },
-    setRemote(id: string, conversationId: string | null) {
-      db.prepare("UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?").run(
-        conversationId,
-        id,
-      );
+    async setRemote(id: string, conversationId: string | null) {
+      await db
+        .prepare(
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
+          "UPDATE ai_chats SET yandex_conversation_id=? WHERE id=?",
+        )
+        .run(conversationId, id);
     },
-    setActivePeople(id: string, personIds: string[]) {
-      db.prepare("UPDATE ai_chats SET session_state=? WHERE id=?").run(
-        JSON.stringify({
-          schemaVersion: 1,
-          activePersonIds: personIds.slice(-8),
-        }),
-        id,
-      );
+    async setActivePeople(id: string, personIds: string[]) {
+      await db
+        .prepare(
+          "UPDATE ai_chats SET session_state=? WHERE id=?",
+          "UPDATE ai_chats SET session_state=? WHERE id=?",
+        )
+        .run(
+          JSON.stringify({
+            schemaVersion: 1,
+            activePersonIds: personIds.slice(-8),
+          }),
+          id,
+        );
     },
-    acquire(id: string) {
+    async acquire(id: string) {
       const token = randomUUID();
-      const result = db
+      const result = await db
         .prepare(
           `UPDATE ai_chats SET busy_token=?,busy_until=?
            WHERE id=? AND (busy_token IS NULL OR busy_until<?)`,
+          "UPDATE ai_chats SET busy_token=?,busy_until=?\n           WHERE id=? AND (busy_token IS NULL OR busy_until<?)",
         )
         .run(token, Date.now() + 60_000, id, Date.now());
       return result.changes ? token : null;
     },
-    renew(id: string, token: string) {
-      db.prepare(
-        "UPDATE ai_chats SET busy_until=? WHERE id=? AND busy_token=?",
-      ).run(Date.now() + 60_000, id, token);
+    async renew(id: string, token: string) {
+      const result = await db
+        .prepare(
+          "UPDATE ai_chats SET busy_until=? WHERE id=? AND busy_token=?",
+          "UPDATE ai_chats SET busy_until=? WHERE id=? AND busy_token=?",
+        )
+        .run(Date.now() + 60_000, id, token);
+      return result.changes === 1;
     },
-    release(id: string, token: string) {
-      db.prepare(
-        "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL WHERE id=? AND busy_token=?",
-      ).run(id, token);
+    async release(id: string, token: string) {
+      await db
+        .prepare(
+          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL WHERE id=? AND busy_token=?",
+          "UPDATE ai_chats SET busy_token=NULL,busy_until=NULL WHERE id=? AND busy_token=?",
+        )
+        .run(id, token);
     },
-    isBusy(id: string) {
-      const row = db
-        .prepare("SELECT busy_until FROM ai_chats WHERE id=?")
+    async isBusy(id: string) {
+      const row = await db
+        .prepare(
+          "SELECT busy_until FROM ai_chats WHERE id=?",
+          "SELECT busy_until FROM ai_chats WHERE id=?",
+        )
         .get(id);
       return (
         row && typeof row.busy_until === "number" && row.busy_until > Date.now()
       );
     },
-    delete(id: string, userId: string) {
-      const row = read(id, userId);
+    async delete(id: string, userId: string) {
+      const row = await read(id, userId);
       if (row)
-        db.prepare("DELETE FROM ai_chats WHERE id=? AND user_id=?").run(
-          id,
-          userId,
-        );
+        await db
+          .prepare(
+            "DELETE FROM ai_chats WHERE id=? AND user_id=?",
+            "DELETE FROM ai_chats WHERE id=? AND user_id=?",
+          )
+          .run(id, userId);
       return row;
     },
   };

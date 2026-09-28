@@ -47,37 +47,83 @@ test("raw photo IDs become a clickable photo instead of a service identifier", (
 });
 
 test("internal kinship classification is explained without exposing its code", () => {
-  const text=humanizeResearchAnswer("Тип: `half_or_unknown`.",new Map(),new Map());
-  assert.doesNotMatch(text,/half_or_unknown/);
-  assert.match(text,/один общий известный родитель/);
+  const text = humanizeResearchAnswer(
+    "Тип: `half_or_unknown`.",
+    new Map(),
+    new Map(),
+  );
+  assert.doesNotMatch(text, /half_or_unknown/);
+  assert.match(text, /один общий известный родитель/);
 });
 
 test("a reader's edit request returns permissions without a model call or data changes", async () => {
-  const dir=mkdtempSync(join(tmpdir(),"drevo-reader-ai-"));
-  const keys=["PUBLIC_ORIGIN","YANDEX_AI_API_KEY","YANDEX_AI_FOLDER_ID","YANDEX_AI_MODEL"];
-  const previous=keys.map(key=>process.env[key]);
-  Object.assign(process.env,{PUBLIC_ORIGIN:"http://localhost",YANDEX_AI_API_KEY:"test-key",YANDEX_AI_FOLDER_ID:"folder-1",YANDEX_AI_MODEL:"yandexgpt/rc"});
-  let calls=0;
-  const app=await startServer(0,join(dir,"archive.sqlite"),true,undefined,async()=>{
-    calls++; throw new Error("Reader mutation should not invoke the model");
+  const dir = mkdtempSync(join(tmpdir(), "drevo-reader-ai-"));
+  const keys = [
+    "PUBLIC_ORIGIN",
+    "YANDEX_AI_API_KEY",
+    "YANDEX_AI_FOLDER_ID",
+    "YANDEX_AI_MODEL",
+  ];
+  const previous = keys.map((key) => process.env[key]);
+  Object.assign(process.env, {
+    PUBLIC_ORIGIN: "http://localhost",
+    YANDEX_AI_API_KEY: "test-key",
+    YANDEX_AI_FOLDER_ID: "folder-1",
+    YANDEX_AI_MODEL: "yandexgpt/rc",
   });
+  let calls = 0;
+  const app = await startServer(
+    0,
+    join(dir, "archive.sqlite"),
+    true,
+    undefined,
+    async () => {
+      calls++;
+      throw new Error("Reader mutation should not invoke the model");
+    },
+  );
   try {
-    app.archive.db.prepare("INSERT INTO users(id,name,role,approved) VALUES('reader','Читатель','reader',1)").run();
-    const token=randomBytes(32).toString("hex");
-    app.archive.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)").run(createHash("sha256").update(token).digest("hex"),"reader",Date.now()+60000);
-    const before=app.archive.read();
-    const base=`http://127.0.0.1:${(app.server.address() as {port:number}).port}`;
-    const response=await fetch(`${base}/api/ai/chat`,{method:"POST",headers:{"Content-Type":"application/json",Origin:"http://localhost",Cookie:`drevo_session=${token}`},body:JSON.stringify({message:"Измени Анне Тестовой год рождения на 1961"})});
-    assert.equal(response.status,200);
-    const result=await response.json();
-    assert.match(result.answer,/доступ только для чтения/);
-    assert.deepEqual(result.suggestionIds,[]);
-    assert.equal(calls,0);
-    assert.deepEqual(app.archive.read(),before);
+    await app.archive.db
+      .prepare(
+        "INSERT INTO users(id,name,role,approved) VALUES('reader','Читатель','reader',1)",
+      )
+      .run();
+    const token = randomBytes(32).toString("hex");
+    await app.archive.db
+      .prepare(
+        "INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+      )
+      .run(
+        createHash("sha256").update(token).digest("hex"),
+        "reader",
+        Date.now() + 60000,
+      );
+    const before = await app.archive.read();
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    const response = await fetch(`${base}/api/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost",
+        Cookie: `drevo_session=${token}`,
+      },
+      body: JSON.stringify({
+        message: "Измени Анне Тестовой год рождения на 1961",
+      }),
+    });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.match(result.answer, /доступ только для чтения/);
+    assert.deepEqual(result.suggestionIds, []);
+    assert.equal(calls, 0);
+    assert.deepEqual(await app.archive.read(), before);
   } finally {
     await app.close();
-    keys.forEach((key,index)=>{if(previous[index]===undefined) delete process.env[key]; else process.env[key]=previous[index];});
-    rmSync(dir,{recursive:true,force:true});
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete process.env[key];
+      else process.env[key] = previous[index];
+    });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -145,7 +191,7 @@ test("surname-only tree request builds a verified temporary subset without a mod
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read();
+    const current = await app.archive.read();
     const template = {
       surname: "Чепчугов",
       name: "Иван",
@@ -159,7 +205,7 @@ test("surname-only tree request builds a verified temporary subset without a mod
       column: 0,
       sources: [],
     };
-    app.archive.write(
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -312,8 +358,8 @@ test("stream only exposes the checked answer after textual tool calls", async ()
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read();
-    app.archive.write(
+    const current = await app.archive.read();
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -559,8 +605,8 @@ test("showing a found photo finishes from the verified search without another mo
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read();
-    app.archive.write(
+    const current = await app.archive.read();
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -685,8 +731,8 @@ test("listing cousins finishes from the kinship tool without a final model call"
     sources: [],
   });
   try {
-    const current = app.archive.read();
-    app.archive.write(
+    const current = await app.archive.read();
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -804,7 +850,7 @@ test("researcher retries an unverified archive answer and executes a textual too
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       parent = {
         id: "parent-retry",
         surname: "Вьюхин",
@@ -819,7 +865,7 @@ test("researcher retries an unverified archive answer and executes a textual too
         column: 0,
         sources: [],
       };
-    app.archive.write(
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -957,7 +1003,7 @@ test("researcher resolves a short cousin follow-up from conversation history", a
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       makePerson = (
         id: string,
         surname: string,
@@ -978,7 +1024,7 @@ test("researcher resolves a short cousin follow-up from conversation history", a
         column: 0,
         sources: [],
       });
-    app.archive.write(
+    await app.archive.write(
       {
         ...current.family,
         people: [
@@ -1101,7 +1147,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
     "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
-    const current = app.archive.read();
+    const current = await app.archive.read();
     const family: Family = {
       ...current.family,
       people: [
@@ -1129,7 +1175,7 @@ test("web researcher uses Yandex AI Studio function calling through server only"
         },
       ],
     };
-    app.archive.write(family, current.revision);
+    await app.archive.write(family, current.revision);
     assert.match(
       requesterPromptContext(
         {
@@ -1360,8 +1406,8 @@ test("web researcher can inspect an authorized archive photo through a bounded p
     ),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const current = app.archive.read();
-    app.archive.write(
+    const current = await app.archive.read();
+    await app.archive.write(
       {
         ...current.family,
         photos: [

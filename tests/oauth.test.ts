@@ -1,3 +1,4 @@
+﻿import { storeDatabase } from "../src/server/store-database.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -48,7 +49,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
       if (profile.id === "failed") throw new Error("test session failure");
       issued++;
     },
-    db,
+    db: storeDatabase(db),
   });
   const server = createServer((req, res) => {
     void oauth

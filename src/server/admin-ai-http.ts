@@ -28,8 +28,8 @@ export function adminAiHttp({
   publicOrigin,
   fetcher = fetch,
 }: {
-  auth: ReturnType<typeof createAuth>;
-  settings: ReturnType<typeof aiSettingsStore>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
+  settings: Awaited<ReturnType<typeof aiSettingsStore>>;
   usage: ReturnType<typeof aiUsageStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
@@ -43,7 +43,7 @@ export function adminAiHttp({
     return true;
   };
   const statusValue = async () => {
-    const runtime = aiRuntimeConfig(settings);
+    const runtime = await aiRuntimeConfig(settings);
     let models: AiStudioModel[] = [];
     let modelsError = "";
     if (runtime.apiKey && runtime.folderId)
@@ -61,10 +61,10 @@ export function adminAiHttp({
             : "Не удалось получить список моделей AI Studio";
       }
     return {
-      ...publicAiStatus(settings),
+      ...(await publicAiStatus(settings)),
       models,
       modelsError,
-      usage: usage.summary(),
+      usage: await usage.summary(),
     };
   };
 
@@ -80,8 +80,8 @@ export function adminAiHttp({
       path !== "/api/admin/ai/models"
     )
       return false;
-    if (!auth.isAdmin(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
 
@@ -95,7 +95,10 @@ export function adminAiHttp({
       if (!req.headers["content-type"]?.startsWith("application/json"))
         return json(res, 415, { error: "JSON required" });
       try {
-        settings.write(await readJson(req), auth.currentUser(req)!);
+        await settings.write(
+          await readJson(req),
+          (await auth.currentUser(req))!,
+        );
         return json(res, 200, await statusValue());
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
@@ -109,7 +112,7 @@ export function adminAiHttp({
         return json(res, 415, { error: "JSON required" });
       try {
         const body = (await readJson(req)) as Record<string, unknown>,
-          runtime = aiRuntimeConfig(settings),
+          runtime = await aiRuntimeConfig(settings),
           folderId =
             typeof body.folderId === "string" ? body.folderId.trim() : "",
           submittedApiKey =
@@ -137,7 +140,7 @@ export function adminAiHttp({
     }
 
     if (path === "/api/admin/ai/test" && req.method === "POST") {
-      const runtime = aiRuntimeConfig(settings);
+      const runtime = await aiRuntimeConfig(settings);
       if (!runtime.configured)
         return json(res, 400, {
           error:

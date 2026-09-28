@@ -14,7 +14,7 @@ export function publicSharingHttp({
   previewImage,
   shares,
 }: {
-  archive: ReturnType<typeof openArchive>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
   shares: ReturnType<typeof sharesStore>;
@@ -40,12 +40,12 @@ export function publicSharingHttp({
       /^\/api\/shared\/([A-Za-z0-9_-]{43})(?:\/portrait\/([^/]+))?$/.exec(path);
     if (req.method !== "GET")
       return json(405, { error: "Доступен только просмотр" });
-    const share = shared && shares.get(shared[1]);
+    const share = shared && (await shares.get(shared[1]));
     if (!share)
       return json(410, {
         error: "Ссылка недействительна, отозвана или срок её действия истёк.",
       });
-    const { family } = archive.read();
+    const { family } = await archive.read();
     if (shared![2]) {
       const token = shared![1],
         id = decodeURIComponent(shared![2]);
@@ -63,7 +63,7 @@ export function publicSharingHttp({
             { path: file.path, cacheKey: file.name },
             "thumb",
           );
-          if (!shares.get(token))
+          if (!(await shares.get(token)))
             return json(410, { error: "Срок ссылки истёк" });
           res.writeHead(200, {
             "Content-Type": "image/webp",
@@ -85,7 +85,7 @@ export function publicSharingHttp({
           await handle.close();
           return json(404, { error: "Портрет не найден" });
         }
-        if (!shares.get(token)) {
+        if (!(await shares.get(token))) {
           await handle.close();
           return json(410, { error: "Срок ссылки истёк" });
         }
@@ -102,8 +102,7 @@ export function publicSharingHttp({
         return true;
       } catch {
         if (handle) await handle.close().catch(() => {});
-        if (!res.headersSent)
-          return json(404, { error: "Портрет не найден" });
+        if (!res.headersSent) return json(404, { error: "Портрет не найден" });
         if (!res.destroyed) res.destroy();
         return true;
       }

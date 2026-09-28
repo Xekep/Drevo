@@ -15,16 +15,14 @@ test("shared visual parser preserves people, dates and relation labels", () => {
   assert.equal(result.kind, "graph");
   if (result.kind !== "graph") return;
   assert.equal(result.graph.nodes[0].label, "Анна\n1900–1980");
-  assert.deepEqual(result.graph.edges.map((edge) => edge.type), [
-    "parent",
-    "spouse",
-    "other",
-  ]);
-  assert.deepEqual(result.graph.edges.map((edge) => edge.label), [
-    "родитель → ребёнок",
-    "супруги",
-    "крёстный родитель",
-  ]);
+  assert.deepEqual(
+    result.graph.edges.map((edge) => edge.type),
+    ["parent", "spouse", "other"],
+  );
+  assert.deepEqual(
+    result.graph.edges.map((edge) => edge.label),
+    ["родитель → ребёнок", "супруги", "крёстный родитель"],
+  );
 });
 
 test("PDF contains Cyrillic text and is a real PDF", async () => {
@@ -250,8 +248,8 @@ test("a requested relationship graph is embedded in the downloaded PDF", async (
     adaptLegacyAiFake(aiFetch),
   );
   try {
-    const snapshot = app.archive.read();
-    app.archive.write(
+    const snapshot = await app.archive.read();
+    await app.archive.write(
       {
         ...snapshot.family,
         people: [

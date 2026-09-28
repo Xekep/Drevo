@@ -214,7 +214,7 @@ test("HTTP agent refreshes its clock per model round and per chat turn; client d
       }),
     });
   try {
-    app.archive.write(family, app.archive.read().revision);
+    await app.archive.write(family, (await app.archive.read()).revision);
     const response = await send("Europe/Moscow", undefined, "сколько мне лет?");
     assert.equal(response.status, 200);
     const first = (await response.json()) as { chatId: string };

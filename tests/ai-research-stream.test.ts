@@ -102,7 +102,7 @@ test("AI research stream preserves tool calling and emits the checked answer", a
       "http://127.0.0.1:" + (app.server.address() as { port: number }).port;
 
   try {
-    const current = app.archive.read(),
+    const current = await app.archive.read(),
       family: Family = {
         ...current.family,
         people: [
@@ -123,7 +123,7 @@ test("AI research stream preserves tool calling and emits the checked answer", a
           },
         ],
       };
-    app.archive.write(family, current.revision);
+    await app.archive.write(family, current.revision);
 
     const response = await fetch(base + "/api/ai/chat/stream", {
       method: "POST",

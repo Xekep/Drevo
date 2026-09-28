@@ -47,6 +47,7 @@ import {
 } from "./research-suggestions.ts";
 import {
   missingYandexConversation,
+  retryableYandexResponse,
   YandexResponseError,
   yandexResponsesClient,
   type ResponseItem,
@@ -92,14 +93,14 @@ export function createResearchRunner({
   pdfFiles,
   webSearch,
 }: {
-  archive: ReturnType<typeof openArchive>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
   researchCatalog: ReturnType<typeof researchCatalogStore>;
   fetcher: typeof fetch;
   webSearch?: (
-    runtime: ReturnType<typeof aiRuntimeConfig>,
+    runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>,
     metrics: ResearchMetrics,
   ) => ReturnType<typeof createWebSearchService> | undefined;
   chats: ReturnType<typeof aiChatStore>;
@@ -124,9 +125,11 @@ export function createResearchRunner({
     chatId,
   }: {
     body: Record<string, unknown>;
-    user: NonNullable<ReturnType<ReturnType<typeof createAuth>["currentUser"]>>;
+    user: NonNullable<
+      Awaited<ReturnType<Awaited<ReturnType<typeof createAuth>>["currentUser"]>>
+    >;
     canPropose: boolean;
-    runtime: ReturnType<typeof aiRuntimeConfig>;
+    runtime: Awaited<ReturnType<typeof aiRuntimeConfig>>;
     stream: boolean;
     metrics: ResearchMetrics;
     onDelta: (text: string) => void;
@@ -135,7 +138,9 @@ export function createResearchRunner({
     chatId: string;
   }): Promise<ResearchResult> {
     const search = webSearch?.(runtime, metrics);
-    const searchTool = search ? webSearchTool(search.categories()) : undefined;
+    const searchTool = search
+      ? webSearchTool(await search.categories())
+      : undefined;
     const webReferences = new Map<
       string,
       Extract<AnswerReference, { kind: "web" }>
@@ -143,6 +148,7 @@ export function createResearchRunner({
     let webCitationRetryUsed = false;
     let webSearchFailed = false;
     let webSearchCompleted = false;
+    let webSearchAttempts = 0;
     const webPagesToVerify = (introduction: string) =>
       [
         introduction,
@@ -184,7 +190,7 @@ export function createResearchRunner({
       };
     }
 
-    const snapshot = archive.read(),
+    const snapshot = await archive.read(),
       fullFamily = snapshot.family,
       family = isScopedUser(user)
         ? projectFamilyForUser(fullFamily, user)
@@ -213,11 +219,12 @@ export function createResearchRunner({
         typeof context.openPhotoId === "string"
           ? family.photos?.find((photo) => photo.id === context.openPhotoId)
           : undefined,
-      history = (chats.messages(chatId, user.id, true) || [])
-        .slice(0, -1)
-        .slice(-12),
+      savedHistory = (
+        (await chats.messages(chatId, user.id, true)) || []
+      ).slice(0, -1),
+      history = savedHistory.slice(-12),
       activePersonIds = (
-        chats.read(chatId, user.id)?.sessionState.activePersonIds || []
+        (await chats.read(chatId, user.id))?.sessionState.activePersonIds || []
       ).filter((id) => family.people.some((person) => person.id === id)),
       selectedPerson =
         typeof body.selectedPersonId === "string"
@@ -239,7 +246,7 @@ export function createResearchRunner({
         ...(searchTool
           ? [
               searchTool.description,
-              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Сначала уточни trusted search; используй global, если доверенных источников недостаточно или пользователь просит более широкий поиск. Trusted проверяет только перечисленные searchedDomains, а не все архивы: если сайт нужного архива не проверен или результаты относятся к другому региону, выполни global с полным названием архива, регионом и шифром. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
+              "Для поиска внешних сведений вызывай web_search; find_research_resources только подбирает сайты из справочника. Если назван конкретный государственный архив, используй global с полным названием архива, регионом и шифром из предыдущих сообщений: общие trusted-каталоги могут не включать этот архив. Иначе начинай с trusted; если searchedDomains не включают нужный архив или результаты относятся к другому региону, переходи к global. Не повторяй поиск по тем же доменам с незначительно изменённым запросом. За один ответ доступно не более трёх поисков. В ответе связывай каждый внешний факт с конкретной Markdown-ссылкой на страницу из результатов. Резюме поиска не является первичным документом; пустой snippet не восполняй догадкой. Не расшифровывай фонд по памяти: одинаковые номера и аббревиатуры есть в разных архивах. Отсутствие точного совпадения в поиске не означает отсутствия дела в архиве.",
             ]
           : []),
         "Опирайся только на данные инструментов и слова пользователя.",
@@ -248,7 +255,7 @@ export function createResearchRunner({
         "Для продолжительности жизни вызывай get_lifespan_statistics: по умолчанию учитывай и детские смерти; adultsOnly=true только если пользователь просит взрослых. Используй sampleSize и approximateDates для оговорки о выборке и приблизительности. Живущие не входят в среднюю завершённую жизнь. Вставляй готовое поле mermaid без изменения чисел.",
         "Для обзора архива используй get_archive_insights; для пробелов в источниках — find_evidence_gaps и, если нужен приоритет действий, get_research_backlog; для пропущенных полей, противоречий и возможных дублей — find_missing_data, find_inconsistencies и find_possible_duplicates по смыслу вопроса. Если спрашивают, что делать дальше, используй get_research_backlog и предложи конкретные шаги. Укажи, какие выводы подтверждены данными, а какие требуют проверки источников.",
         "Если пользователь называет человека по имени, фамилии или их части, всегда сначала вызывай search_people. Никогда не проси пользователя искать или сообщать personId.",
-        `Когда нужен следующий шаг поиска вне Drevo или пользователь просит конкретный сайт, вызови find_research_resources с его словами. Категорию можно не указывать: поиск охватит весь каталог, включая названия и описания ресурсов. Категории каталога: ${researchCatalog.categoryNames().join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Выводи найденные URL обычными Markdown-ссылками [название](https://адрес), включая полезные ссылки из описания. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
+        `Когда нужен следующий шаг поиска вне Drevo или пользователь просит конкретный сайт, вызови find_research_resources с его словами. Категорию можно не указывать: поиск охватит весь каталог, включая названия и описания ресурсов. Категории каталога: ${(await researchCatalog.categoryNames()).join(", ")}. Не показывай каталог целиком и не добавляй ссылки к каждому ответу. По теме вопроса предложи обычно три, максимум пять ресурсов с кратким объяснением пользы. Для фронтовика ВОВ выбери прежде всего «Память народа», «ОБД Мемориал», «Подвиг народа»; для рождения в XIX веке — «Яндекс Архивы», подходящий региональный архив и FamilySearch, если они есть в каталоге. Выводи найденные URL обычными Markdown-ссылками [название](https://адрес), включая полезные ссылки из описания. Не придумывай адреса и не выдавай внешнюю базу за доказательство факта о человеке.`,
         "Для вопроса о братьях или сёстрах после search_people вызови get_family и используй поле siblings. kind=full означает общих известных родителей, kind=half_or_unknown — одного общего известного родителя или неполные данные.",
         "Для вопроса о двоюродных, троюродных и более дальних братьях или сёстрах вызови get_cousins. degree=2 означает двоюродных, degree=3 — троюродных, degree=4 — четвероюродных и далее. В коротком продолжении вроде «а двоюродные?» используй человека из предыдущих реплик и не проси уже указанные сведения повторно.",
         "Если search_people вернул несколько подходящих людей и данных недостаточно для выбора, не угадывай: перечисли варианты в формате [[choose-person:personId|Фамилия Имя Отчество]] и попроси нажать нужного человека.",
@@ -339,7 +346,7 @@ export function createResearchRunner({
       selectedPerson?.id,
     );
     if (directRelationship) {
-      chats.setRemote(chatId, null);
+      await chats.setRemote(chatId, null);
       onDelta(directRelationship.answer);
       return {
         ...directRelationship,
@@ -437,7 +444,7 @@ export function createResearchRunner({
         message,
       )
     ) {
-      const pending = suggestions.list(user).slice(0, 8);
+      const pending = (await suggestions.list(user)).slice(0, 8);
       if (pending.length)
         return {
           answer:
@@ -483,7 +490,7 @@ export function createResearchRunner({
     }
 
     if (specificResourceRequest(message)) {
-      const matches = researchCatalog.searchAny(message).resources;
+      const matches = (await researchCatalog.searchAny(message)).resources;
       if (matches.length) {
         const multiple =
           /(?:список|подборк|несколько|все\s+(?:сайт|ресурс)|какие\s+(?:сайт|ресурс))/iu.test(
@@ -508,9 +515,15 @@ export function createResearchRunner({
 
     onStatus("Обрабатываю запрос…");
 
-    let conversationId = chats.read(chatId, user.id)?.yandexConversationId;
+    let conversationId = (await chats.read(chatId, user.id))
+      ?.yandexConversationId;
     const restoreHistory = () =>
-      history.slice(-10).map((item) => ({
+      // Repeated "are you there?" messages after failures must not erase the
+      // original question when rebuilding a lost provider conversation.
+      (savedHistory.length > 12
+        ? [...savedHistory.slice(0, 2), ...savedHistory.slice(-10)]
+        : savedHistory
+      ).map((item) => ({
         type: "message" as const,
         role: item.role,
         content:
@@ -521,11 +534,12 @@ export function createResearchRunner({
       }));
     if (!conversationId) {
       conversationId = await responses.createConversation(runtime, signal);
-      chats.setRemote(chatId, conversationId);
+      await chats.setRemote(chatId, conversationId);
       pendingInput.push(...restoreHistory());
     }
     pendingInput.push({ type: "message", role: "user", content: message });
 
+    let contextRecovered = false;
     for (let round = 0; round <= runtime.maxToolIterations; round++) {
       metrics.agentIterations++;
       recordModelCall(metrics, runtime.modelUri);
@@ -542,7 +556,7 @@ export function createResearchRunner({
           ...researchDefinitions,
           ...(photoAnalysisRequested ? [ANALYZE_PHOTO_TOOL] : []),
           RESEARCH_RESOURCES_TOOL,
-          ...(searchTool ? [searchTool] : []),
+          ...(searchTool && webSearchAttempts < 3 ? [searchTool] : []),
           ...(viewControlRequested ||
           photoViewRequested ||
           shortTreeZoomRequest(message, view)
@@ -560,37 +574,62 @@ export function createResearchRunner({
           ? runtime.compactThresholdTokens
           : null,
         automaticTruncation: runtime.automaticTruncation,
-        signal,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
         stream,
       };
       try {
         completion = await responses.respond(requestOptions);
       } catch (error) {
         if (
-          stream &&
           round === 0 &&
           !signal.aborted &&
-          error instanceof Error &&
-          /Поток Yandex AI Studio завершился без response\.completed/iu.test(
-            error.message,
-          )
+          !contextRecovered &&
+          retryableYandexResponse(error)
         ) {
           console.warn(
             JSON.stringify({
-              event: "ai.incomplete_stream_retry",
+              event: "ai.response_recovery",
               model: runtime.modelUri,
+              providerErrorCode:
+                error instanceof YandexResponseError
+                  ? error.code
+                  : "provider_timeout",
+              responseId:
+                error instanceof YandexResponseError ? error.responseId : "",
             }),
           );
-          onStatus("Повторяю запрос без потоковой передачи…");
+          contextRecovered = true;
+          onStatus("Сервис ИИ прервал ответ. Восстанавливаю запрос…");
+          // No local tools have run yet. Use a fresh remote conversation so a
+          // timed-out request cannot leave dangling calls or duplicate input.
+          const recoverySignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(25_000),
+          ]);
+          conversationId = await responses.createConversation(
+            runtime,
+            recoverySignal,
+          );
+          await chats.setRemote(chatId, conversationId);
           recordModelCall(metrics, runtime.modelUri);
           completion = await responses.respond({
             ...requestOptions,
+            conversationId,
+            input: [
+              ...restoreHistory(),
+              { type: "message", role: "user", content: message },
+            ],
             stream: false,
-            signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+            signal: recoverySignal,
           });
-        } else if (round === 0 && missingYandexConversation(error)) {
+        } else if (
+          round === 0 &&
+          !contextRecovered &&
+          missingYandexConversation(error)
+        ) {
+          contextRecovered = true;
           conversationId = await responses.createConversation(runtime, signal);
-          chats.setRemote(chatId, conversationId);
+          await chats.setRemote(chatId, conversationId);
           pendingInput.splice(0, pendingInput.length, ...restoreHistory(), {
             type: "message",
             role: "user",
@@ -607,7 +646,7 @@ export function createResearchRunner({
           ) {
             // Keep successful search results even when the following model call
             // fails. Reset only the remote context; the local answer is saved.
-            chats.setRemote(chatId, null);
+            await chats.setRemote(chatId, null);
             console.warn(
               JSON.stringify({
                 event: "ai.web_answer_fallback",
@@ -675,8 +714,21 @@ export function createResearchRunner({
       }
 
       const calls = answer.tool_calls || [];
-      if (calls.length && round === runtime.maxToolIterations)
+      if (calls.length && round === runtime.maxToolIterations) {
+        if (webReferences.size && !createdSuggestionIds.size && !files.length) {
+          await chats.setRemote(chatId, null);
+          return {
+            answer: webPagesToVerify(
+              "Поиск завершён, но точный ответ пока не подтверждён. Найденные страницы нужно сверить с нужным архивом и шифром:",
+            ),
+            references: [...webReferences.values()],
+            suggestionIds: [],
+            uiActions: [],
+            files: [],
+          };
+        }
         throw new Error("ИИ превысил допустимое число вызовов инструментов");
+      }
       if (!calls.length) {
         const rawContent =
           typeof answer.content === "string" ? answer.content : "";
@@ -951,6 +1003,11 @@ export function createResearchRunner({
             );
           else if (call.function.name === "web_search") {
             if (!search) throw new WebSearchError("WEB_SEARCH_DISABLED");
+            if (webSearchAttempts >= 3)
+              throw new Error(
+                "Поиск на этот ответ завершён. Ответь по уже полученным источникам и укажи, что осталось непроверенным.",
+              );
+            webSearchAttempts++;
             const found = await search.search(toolArgs, signal, onStatus);
             webSearchCompleted = true;
             for (const source of found.results)
@@ -978,8 +1035,8 @@ export function createResearchRunner({
                 : message.slice(0, 200);
             result =
               typeof raw.category === "string" && raw.category.trim()
-                ? researchCatalog.search(raw.category, query)
-                : researchCatalog.searchAny(query);
+                ? await researchCatalog.search(raw.category, query)
+                : await researchCatalog.searchAny(query);
           } else if (call.function.name === CREATE_PDF_TOOL.name) {
             if (!pdfRequested)
               throw new Error("PDF создаётся только по просьбе пользователя");
@@ -1167,7 +1224,7 @@ export function createResearchRunner({
               (tool) => tool.name === call.function.name,
             )
           ) {
-            const suggestion = suggestions.createFromTool(
+            const suggestion = await suggestions.createFromTool(
               call.function.name,
               user,
               family,
@@ -1499,7 +1556,7 @@ export function createResearchRunner({
         if (directAnswer) {
           // The remote conversation has an unanswered function call. Rebuild it
           // from the local chat history on the next turn instead of reusing it.
-          chats.setRemote(chatId, null);
+          await chats.setRemote(chatId, null);
           const references: AnswerReference[] = [
             ...webReferences.values(),
             ...[...referencedPeople].slice(0, 250).map((id) => ({

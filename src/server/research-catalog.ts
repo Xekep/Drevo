@@ -11,7 +11,7 @@ import {
   validateSearchSettings,
 } from "./web-search-sources.ts";
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { auditStore } from "./audit.ts";
 
@@ -102,14 +102,18 @@ function resourceUrl(value: unknown) {
   return url.href;
 }
 
-export function researchCatalogStore(db: DatabaseSync) {
+export function researchCatalogStore(db: StoreDatabase) {
   const audit = auditStore(db);
-  function list(): ResearchCategory[] {
-    const categories = db
-      .prepare("SELECT id,name FROM research_categories ORDER BY sort_order,id")
-      .all();
-    const resources = db
+  async function list(): Promise<ResearchCategory[]> {
+    const categories = await db
       .prepare(
+        "SELECT id,name FROM research_categories ORDER BY sort_order,id",
+        "SELECT id,name FROM research_categories ORDER BY sort_order,id",
+      )
+      .all();
+    const resources = await db
+      .prepare(
+        "SELECT id,category_id,name,url,description,ai_search FROM research_resources ORDER BY category_id,sort_order,id",
         "SELECT id,category_id,name,url,description,ai_search FROM research_resources ORDER BY category_id,sort_order,id",
       )
       .all();
@@ -136,17 +140,16 @@ export function researchCatalogStore(db: DatabaseSync) {
     }));
   }
 
-  function write(
+  async function write(
     action: string,
     entityId: string,
     label: string,
     actor: ArchiveUser,
-    run: () => void,
+    run: () => void | Promise<void>,
   ) {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      run();
-      audit.record(
+    return await db.transaction(async () => {
+      await run();
+      await audit.record(
         {
           action,
           entity: "research_resource",
@@ -157,32 +160,38 @@ export function researchCatalogStore(db: DatabaseSync) {
         },
         actor,
       );
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    });
   }
 
-  function existing(
+  async function existing(
     table: "research_categories" | "research_resources",
     id: string,
   ) {
-    const row = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(id);
+    const row = await db
+      .prepare(
+        `SELECT * FROM ${table} WHERE id=?`,
+        `SELECT * FROM ${table} WHERE id=?`,
+      )
+      .get(id);
     if (!row) throw new RangeError("Запись не найдена");
     return row;
   }
 
   return {
     list,
-    webSearchSources: () => list().flatMap((category) => category.resources),
-    categoryNames: () =>
-      db
-        .prepare("SELECT name FROM research_categories ORDER BY sort_order,id")
-        .all()
-        .map((row) => String(row.name)),
-    search(categoryName: string, query = "") {
-      const category = list().find(
+    webSearchSources: async () =>
+      (await list()).flatMap((category) => category.resources),
+    categoryNames: async () =>
+      (
+        await db
+          .prepare(
+            "SELECT name FROM research_categories ORDER BY sort_order,id",
+            "SELECT name FROM research_categories ORDER BY sort_order,id",
+          )
+          .all()
+      ).map((row) => String(row.name)),
+    async search(categoryName: string, query = "") {
+      const category = (await list()).find(
         (item) =>
           item.name.toLocaleLowerCase("ru-RU") ===
           categoryName.trim().toLocaleLowerCase("ru-RU"),
@@ -219,13 +228,13 @@ export function researchCatalogStore(db: DatabaseSync) {
         resources: scored.slice(0, 5).map(({ resource }) => resource),
       };
     },
-    searchAny(query: string, categoryName = "") {
+    async searchAny(query: string, categoryName = "") {
       const words = searchWords(query);
       if (!words.length)
         return {
           resources: [] as Array<ResearchResource & { category: string }>,
         };
-      const categories = list().filter(
+      const categories = (await list()).filter(
         (category) =>
           !categoryName ||
           category.name.toLocaleLowerCase("ru-RU") ===
@@ -284,44 +293,64 @@ export function researchCatalogStore(db: DatabaseSync) {
           })),
       };
     },
-    createCategory(value: unknown, actor: ArchiveUser) {
+    async createCategory(value: unknown, actor: ArchiveUser) {
       const name = requiredText(
         (value as Record<string, unknown>)?.name,
         "Категория",
         100,
       );
       const id = randomUUID();
-      write("Добавлена категория поиска", id, name, actor, () => {
-        db.prepare(
-          "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_categories))",
-        ).run(id, name);
+      await write("Добавлена категория поиска", id, name, actor, async () => {
+        await db
+          .prepare(
+            "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_categories))",
+            "INSERT INTO research_categories(id,name,sort_order) VALUES(?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_categories))",
+          )
+          .run(id, name);
       });
-      return list();
+      return await list();
     },
-    updateCategory(id: string, value: unknown, actor: ArchiveUser) {
-      existing("research_categories", id);
+    async updateCategory(id: string, value: unknown, actor: ArchiveUser) {
+      await existing("research_categories", id);
       const name = requiredText(
         (value as Record<string, unknown>)?.name,
         "Категория",
         100,
       );
-      write("Изменена категория поиска", id, name, actor, () => {
-        db.prepare("UPDATE research_categories SET name=? WHERE id=?").run(
-          name,
-          id,
-        );
+      await write("Изменена категория поиска", id, name, actor, async () => {
+        await db
+          .prepare(
+            "UPDATE research_categories SET name=? WHERE id=?",
+            "UPDATE research_categories SET name=? WHERE id=?",
+          )
+          .run(name, id);
       });
-      return list();
+      return await list();
     },
-    deleteCategory(id: string, actor: ArchiveUser) {
-      const row = existing("research_categories", id);
-      write("Удалена категория поиска", id, String(row.name), actor, () => {
-        db.prepare("DELETE FROM research_categories WHERE id=?").run(id);
-      });
-      return list();
+    async deleteCategory(id: string, actor: ArchiveUser) {
+      const row = await existing("research_categories", id);
+      await write(
+        "Удалена категория поиска",
+        id,
+        String(row.name),
+        actor,
+        async () => {
+          await db
+            .prepare(
+              "DELETE FROM research_categories WHERE id=?",
+              "DELETE FROM research_categories WHERE id=?",
+            )
+            .run(id);
+        },
+      );
+      return await list();
     },
-    createResource(categoryId: string, value: unknown, actor: ArchiveUser) {
-      const category = existing("research_categories", categoryId);
+    async createResource(
+      categoryId: string,
+      value: unknown,
+      actor: ArchiveUser,
+    ) {
+      const category = await existing("research_categories", categoryId);
       const item = value as Record<string, unknown>;
       const name = requiredText(item?.name, "Название", 160);
       const url = resourceUrl(item?.url);
@@ -340,23 +369,26 @@ export function researchCatalogStore(db: DatabaseSync) {
         ),
       );
       const id = randomUUID();
-      write("Добавлен ресурс поиска", id, name, actor, () => {
-        db.prepare(
-          "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
-        ).run(
-          id,
-          categoryId,
-          name,
-          url,
-          description,
-          JSON.stringify(search),
-          categoryId,
-        );
+      await write("Добавлен ресурс поиска", id, name, actor, async () => {
+        await db
+          .prepare(
+            "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
+            "INSERT INTO research_resources(id,category_id,name,url,description,ai_search,sort_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(sort_order),-1)+1 FROM research_resources WHERE category_id=?))",
+          )
+          .run(
+            id,
+            categoryId,
+            name,
+            url,
+            description,
+            JSON.stringify(search),
+            categoryId,
+          );
       });
-      return list();
+      return await list();
     },
-    updateResource(id: string, value: unknown, actor: ArchiveUser) {
-      const before = list()
+    async updateResource(id: string, value: unknown, actor: ArchiveUser) {
+      const before = (await list())
         .flatMap((category) => category.resources)
         .find((resource) => resource.id === id);
       if (!before) throw new RangeError("Запись не найдена");
@@ -370,19 +402,33 @@ export function researchCatalogStore(db: DatabaseSync) {
         true,
       );
       const search = validateSearchSettings(item, before);
-      write("Изменён ресурс поиска", id, name, actor, () => {
-        db.prepare(
-          "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
-        ).run(name, url, description, JSON.stringify(search), id);
+      await write("Изменён ресурс поиска", id, name, actor, async () => {
+        await db
+          .prepare(
+            "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
+            "UPDATE research_resources SET name=?,url=?,description=?,ai_search=? WHERE id=?",
+          )
+          .run(name, url, description, JSON.stringify(search), id);
       });
-      return list();
+      return await list();
     },
-    deleteResource(id: string, actor: ArchiveUser) {
-      const row = existing("research_resources", id);
-      write("Удалён ресурс поиска", id, String(row.name), actor, () => {
-        db.prepare("DELETE FROM research_resources WHERE id=?").run(id);
-      });
-      return list();
+    async deleteResource(id: string, actor: ArchiveUser) {
+      const row = await existing("research_resources", id);
+      await write(
+        "Удалён ресурс поиска",
+        id,
+        String(row.name),
+        actor,
+        async () => {
+          await db
+            .prepare(
+              "DELETE FROM research_resources WHERE id=?",
+              "DELETE FROM research_resources WHERE id=?",
+            )
+            .run(id);
+        },
+      );
+      return await list();
     },
   };
 }

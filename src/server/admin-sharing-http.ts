@@ -12,8 +12,8 @@ export function adminSharingHttp({
   audit,
   publicOrigin,
 }: {
-  archive: ReturnType<typeof openArchive>;
-  auth: ReturnType<typeof createAuth>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   shares: ReturnType<typeof sharesStore>;
   audit: ReturnType<typeof auditStore>;
   publicOrigin?: string;
@@ -42,7 +42,7 @@ export function adminSharingHttp({
     )
       return false;
 
-    const actor = auth.currentUser(req);
+    const actor = await auth.currentUser(req);
     if (!actor || actor.role !== "admin")
       return json(res, actor ? 403 : 401, {
         error: "Доступно администратору",
@@ -55,7 +55,7 @@ export function adminSharingHttp({
       return json(
         res,
         200,
-        audit.list({
+        await audit.list({
           before,
           personId: url.searchParams.get("personId") || undefined,
           actorId: url.searchParams.get("actorId") || undefined,
@@ -67,7 +67,7 @@ export function adminSharingHttp({
       const before = url.searchParams.get("before") || "";
       if (!Number.isSafeInteger(Number(before)) || Number(before) < 0)
         return json(res, 400, { error: "Некорректная страница ссылок" });
-      return json(res, 200, shares.list(before));
+      return json(res, 200, await shares.list(before));
     }
 
     if (!isSameOriginRequest(req, publicOrigin))
@@ -75,7 +75,7 @@ export function adminSharingHttp({
 
     try {
       if (path.startsWith("/api/shares/") && req.method === "DELETE") {
-        shares.revoke(
+        await shares.revoke(
           decodeURIComponent(path.slice("/api/shares/".length)),
           actor,
         );
@@ -93,10 +93,10 @@ export function adminSharingHttp({
             return json(res, 413, { error: "Слишком большой запрос" });
           chunks.push(Buffer.from(chunk));
         }
-        const currentActor = auth.currentUser(req);
+        const currentActor = await auth.currentUser(req);
         if (currentActor?.role !== "admin")
           return json(res, 403, { error: "Доступ отозван" });
-        const current = archive.read();
+        const current = await archive.read();
         if (
           !req.headers["if-match"] ||
           Number(req.headers["if-match"]) !== current.revision
@@ -104,7 +104,7 @@ export function adminSharingHttp({
           return json(res, 409, {
             error: "Архив изменился. Обновите древо и проверьте состав семьи.",
           });
-        const result = shares.create(
+        const result = await shares.create(
           JSON.parse(Buffer.concat(chunks).toString("utf8")),
           current.family,
           currentActor,

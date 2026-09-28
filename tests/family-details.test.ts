@@ -117,31 +117,32 @@ test("awards accept posthumous years, unknown details and repeated names with di
   f.people[0].awards = [award, award];
   assert.throws(() => validateFamily(f));
 });
-test("awards persist in SQLite and respect ownership and revision conflicts", () => {
+test("awards persist in SQLite and respect ownership and revision conflicts", async () => {
   const f = family();
   f.people[0].createdBy = "owner";
-  const db = openArchive(":memory:", f);
+  const db = await openArchive(":memory:", f);
   try {
     const next = structuredClone(f);
     next.people[0].awards = [award];
-    const initial = db.read();
+    const initial = await db.read();
     for (const role of ["reader", "relative"] as const)
-      assert.throws(() =>
-        db.write(next, initial.revision, {
-          id: "other",
-          name: "Другой",
-          role,
-          createdAt: "2026-01-01",
-        }),
+      await assert.rejects(
+        async () =>
+          await db.write(next, initial.revision, {
+            id: "other",
+            name: "Другой",
+            role,
+            createdAt: "2026-01-01",
+          }),
       );
-    const saved = db.write(next, initial.revision, {
+    const saved = await db.write(next, initial.revision, {
       id: "owner",
       name: "Владелец",
       role: "relative",
       createdAt: "2026-01-01",
     });
-    assert.deepEqual(db.read().family.people[0].awards, [award]);
-    assert.throws(() => db.write(f, initial.revision));
+    assert.deepEqual((await db.read()).family.people[0].awards, [award]);
+    await assert.rejects(async () => await db.write(f, initial.revision));
     const edited = structuredClone(saved.family);
     edited.people[0].awards![0].name = "Уточнённое название";
     const changes = archiveChanges(saved.family, edited);
@@ -156,7 +157,7 @@ test("awards persist in SQLite and respect ownership and revision conflicts", ()
       "awards",
     );
   } finally {
-    db.close();
+    await db.close();
   }
 });
 test("a recorded death place without its date is not presented as a current age", () => {

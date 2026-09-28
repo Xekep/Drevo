@@ -55,8 +55,8 @@ test("family change endpoint saves a small delta, accepts identical retries and 
   const app = await startServer(0, join(dir, "drevo.sqlite"), true),
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const emptyRevision = app.archive.meta().revision;
-    app.archive.write(seed, emptyRevision);
+    const emptyRevision = (await app.archive.meta()).revision;
+    await app.archive.write(seed, emptyRevision);
 
     const initialResponse = await fetch(base + "/api/family");
     assert.equal(initialResponse.status, 200);
@@ -195,10 +195,13 @@ test("family change endpoint saves a small delta, accepts identical retries and 
     );
     assert.equal(undo.status, 200);
     assert.equal(
-      app.archive.read().family.people[0].biography,
+      (await app.archive.read()).family.people[0].biography,
       "Первая вкладка",
     );
-    assert.equal(app.archive.read().family.people[1].biography, undefined);
+    assert.equal(
+      (await app.archive.read()).family.people[1].biography,
+      undefined,
+    );
   } finally {
     await app.close();
     if (previousOrigin === undefined) delete process.env.PUBLIC_ORIGIN;

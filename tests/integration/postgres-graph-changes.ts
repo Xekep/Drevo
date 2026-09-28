@@ -190,8 +190,8 @@ async function growTo(client: pg.Client, count: number, archiveId = "tree-a") {
 
 test("new people and parent/spouse relations commit together with the same family as SQLite", async (t) => {
   const { first } = await fixture(t);
-  const sqlite = openArchive(":memory:", family);
-  t.after(() => sqlite.close());
+  const sqlite = await openArchive(":memory:", family);
+  t.after(async () => await sqlite.close());
   await first.query("UPDATE archives SET revision=1 WHERE id='tree-a'");
   const untouched = (
     await first.query(
@@ -231,9 +231,9 @@ test("new people and parent/spouse relations commit together with the same famil
   );
   for (const p of after.people)
     if (["mother", "baby"].includes(p.id)) p.createdBy = actor.id;
-  sqlite.write(after, 1, actor);
+  await sqlite.write(after, 1, actor);
   assert.equal(result.revision, 2);
-  assert.deepEqual(await read(first, "tree-a"), sqlite.read());
+  assert.deepEqual(await read(first, "tree-a"), await sqlite.read());
   assert.deepEqual(
     (
       await first.query(

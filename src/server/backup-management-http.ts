@@ -33,7 +33,7 @@ export function backupManagementHttp({
 }: {
   backups: BackupCoordinator;
   restores: RestoreStore;
-  auth: ReturnType<typeof createAuth>;
+  auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
   let downloading = false;
@@ -49,8 +49,8 @@ export function backupManagementHttp({
     const path = url.pathname;
     if (path !== "/api/backups" && !path.startsWith("/api/backups/"))
       return false;
-    if (!auth.isAdmin(req))
-      return json(res, auth.currentUser(req) ? 403 : 401, {
+    if (!(await auth.isAdmin(req)))
+      return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Резервные копии доступны только администратору.",
       });
     if (
@@ -67,25 +67,37 @@ export function backupManagementHttp({
         return json(
           res,
           200,
-          backups.status(auth.currentUser(req)!.id, offset),
+          await backups.status((await auth.currentUser(req))!.id, offset),
         );
       }
       if (path === "/api/backups/settings" && req.method === "PUT") {
         const body = await readJson(req);
-        if (!auth.isAdmin(req))
+        if (!(await auth.isAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
-        return json(res, 200, backups.save(body, auth.currentUser(req)!));
+        return json(
+          res,
+          200,
+          await backups.save(body, (await auth.currentUser(req))!),
+        );
       }
       if (path === "/api/backups/check" && req.method === "POST") {
         const body = await readJson(req);
-        if (!auth.isAdmin(req))
+        if (!(await auth.isAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
-        return json(res, 202, backups.check(body, auth.currentUser(req)!));
+        return json(
+          res,
+          202,
+          await backups.check(body, (await auth.currentUser(req))!),
+        );
       }
       if (path === "/api/backups/create" && req.method === "POST") {
         if (downloading)
           throw new BackupBusyError("Дождитесь скачивания резервной копии.");
-        return json(res, 202, backups.startCreate(auth.currentUser(req)!));
+        return json(
+          res,
+          202,
+          await backups.startCreate((await auth.currentUser(req))!),
+        );
       }
       const match = path.match(
         /^\/api\/backups\/([a-f0-9-]{36})\/(preview|download)$/,
@@ -94,18 +106,18 @@ export function backupManagementHttp({
         return json(
           res,
           202,
-          backups.preview(
+          await backups.preview(
             match[1],
-            auth.currentUser(req)!,
+            (await auth.currentUser(req))!,
             async (file, signal) => {
-              const assertAccess = () => {
-                if (!auth.isAdmin(req))
+              const assertAccess = async () => {
+                if (!(await auth.isAdmin(req)))
                   throw new BackupInputError("Доступ администратора отозван.");
               };
-              assertAccess();
-              return restores.previewStream(
+              await assertAccess();
+              return await restores.previewStream(
                 createReadStream(file, { signal }),
-                auth.currentUser(req)!,
+                (await auth.currentUser(req))!,
                 assertAccess,
               );
             },
@@ -115,7 +127,8 @@ export function backupManagementHttp({
       if (match?.[2] === "download" && req.method === "GET") {
         if (
           downloading ||
-          backups.status(auth.currentUser(req)!.id).job?.state === "running"
+          (await backups.status((await auth.currentUser(req))!.id)).job
+            ?.state === "running"
         )
           throw new BackupBusyError(
             "Дождитесь завершения операции с резервными копиями.",
@@ -123,7 +136,7 @@ export function backupManagementHttp({
         downloading = true;
         try {
           await backups.withFile(match[1], async (file, item) => {
-            if (!auth.isAdmin(req))
+            if (!(await auth.isAdmin(req)))
               throw new BackupInputError("Доступ администратора отозван.");
             res.writeHead(200, {
               "Content-Type": "application/gzip",

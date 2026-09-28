@@ -91,7 +91,7 @@ for (const streaming of [false, true]) {
             const id = initial.chatId as string;
             assert.ok(id);
             const chats = aiChatStore(app.archive.db);
-            if (phase === "conversations") chats.setRemote(id, null);
+            if (phase === "conversations") await chats.setRemote(id, null);
             waiting = true;
             pending = send(id, controller.signal)
               .then(async (response) => {
@@ -114,7 +114,7 @@ for (const streaming of [false, true]) {
             });
             assert.equal(forbidden.status, 403);
             assert.equal(aborted, false);
-            const other = chats.create("another-user", "[]");
+            const other = await chats.create("another-user", "[]");
             assert.equal(
               (
                 await fetch(`${base}/api/ai/chats/${other.id}/stop`, {
@@ -138,26 +138,32 @@ for (const streaming of [false, true]) {
             if (action === "disconnect") {
               await new Promise((resolve) => setTimeout(resolve, 25));
               assert.equal(aborted, false);
-              assert.ok(chats.isBusy(id));
+              assert.ok(await chats.isBusy(id));
               waiting = false;
               release();
             }
-            for (let attempt = 0; attempt < 100 && chats.isBusy(id); attempt++)
+            for (
+              let attempt = 0;
+              attempt < 100 && (await chats.isBusy(id));
+              attempt++
+            )
               await new Promise((resolve) => setTimeout(resolve, 10));
             assert.equal(
               aborted,
               action !== "disconnect",
               "only explicit stop/delete aborts upstream setup or generation",
             );
-            assert.ok(!chats.isBusy(id));
+            assert.ok(!(await chats.isBusy(id)));
             if (action === "delete") {
-              assert.equal(chats.read(id, "local"), null);
+              assert.equal(await chats.read(id, "local"), null);
               assert.equal(
-                app.archive.db
-                  .prepare(
-                    "SELECT count(*) AS n FROM ai_chat_messages WHERE chat_id=?",
-                  )
-                  .get(id)?.n,
+                (
+                  await app.archive.db
+                    .prepare(
+                      "SELECT count(*) AS n FROM ai_chat_messages WHERE chat_id=?",
+                    )
+                    .get(id)
+                )?.n,
                 0,
               );
             } else {

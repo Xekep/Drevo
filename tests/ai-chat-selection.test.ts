@@ -36,8 +36,8 @@ test("person choice continues a chat without exposing an internal user message",
   );
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   try {
-    const snapshot = app.archive.read();
-    app.archive.write(
+    const snapshot = await app.archive.read();
+    await app.archive.write(
       {
         ...snapshot.family,
         people: [
@@ -80,10 +80,7 @@ test("person choice continues a chat without exposing an internal user message",
     assert.equal(choice.response.status, 200);
     assert.equal(choice.data.chatId, first.data.chatId);
     assert.equal(choice.data.answer, "Понял, продолжаю.");
-    assert.match(
-      JSON.stringify(requests[1].input),
-      /Петров Иван Петрович/,
-    );
+    assert.match(JSON.stringify(requests[1].input), /Петров Иван Петрович/);
     assert.match(
       String(requests.at(-1)?.instructions),
       /лёгкой ненавязчивой шуткой/,

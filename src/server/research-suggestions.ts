@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { StoreDatabase } from "./store-database.ts";
 import { isDeepStrictEqual } from "node:util";
 import {
   EXTRA_LINK_TYPES,
@@ -46,10 +46,7 @@ export type SourceSuggestionPayload = {
   source: Source;
 };
 
-export type SuggestedRelationType =
-  | "parent"
-  | "spouse"
-  | FamilyLink["type"];
+export type SuggestedRelationType = "parent" | "spouse" | FamilyLink["type"];
 
 type RelationBefore =
   | { mode: "parent"; toParents: string[] }
@@ -283,8 +280,7 @@ function proposedPerson(value: unknown, actor: ArchiveUser): Person {
     patronymic: optionalText(raw.patronymic, "person.patronymic", 300) || "",
     sex,
     birth: optionalText(raw.birth, "person.birth", 40) || "",
-    birthPlace:
-      optionalText(raw.birthPlace, "person.birthPlace", 1000) || "",
+    birthPlace: optionalText(raw.birthPlace, "person.birthPlace", 1000) || "",
     ...(optionalText(raw.occupation, "person.occupation", 1000)
       ? { occupation: optionalText(raw.occupation, "person.occupation", 1000) }
       : {}),
@@ -397,9 +393,7 @@ function extraRelationMatches(
       (link.from === payload.fromPersonId && link.to === payload.toPersonId) ||
       (link.from === payload.toPersonId && link.to === payload.fromPersonId)
     );
-  return (
-    link.from === payload.fromPersonId && link.to === payload.toPersonId
-  );
+  return link.from === payload.fromPersonId && link.to === payload.toPersonId;
 }
 
 function relationBefore(
@@ -411,9 +405,9 @@ function relationBefore(
   const from = family.people.find((person) => person.id === fromPersonId),
     to = family.people.find((person) => person.id === toPersonId);
   if (!from || !to) throw new Error("Один из участников связи не найден");
-  if (from.id === to.id) throw new Error("Нельзя связать человека с самим собой");
-  if (type === "parent")
-    return { mode: "parent", toParents: [...to.parents] };
+  if (from.id === to.id)
+    throw new Error("Нельзя связать человека с самим собой");
+  if (type === "parent") return { mode: "parent", toParents: [...to.parents] };
   if (type === "spouse")
     return {
       mode: "spouse",
@@ -440,7 +434,8 @@ function withRelation(
     from = family.people.find((person) => person.id === fromPersonId),
     to = family.people.find((person) => person.id === toPersonId);
   if (!from || !to) throw new Error("Один из участников связи не найден");
-  if (from.id === to.id) throw new Error("Нельзя связать человека с самим собой");
+  if (from.id === to.id)
+    throw new Error("Нельзя связать человека с самим собой");
 
   if (type === "parent") {
     if (to.parents.includes(from.id))
@@ -493,12 +488,12 @@ function withRelation(
   };
 }
 
-export function researchSuggestionStore(db: DatabaseSync) {
+export function researchSuggestionStore(db: StoreDatabase) {
   const select = `SELECT id,kind,status,person_id,payload,reason,evidence,base_revision,
       created_at,created_by,reviewed_at,reviewed_by
     FROM research_suggestions`;
 
-  const insert = (
+  const insert = async (
     actor: ArchiveUser,
     kind: ResearchSuggestion["kind"],
     personId: string,
@@ -512,43 +507,50 @@ export function researchSuggestionStore(db: DatabaseSync) {
     revision: number,
   ) => {
     const id = randomUUID();
-    db.prepare(
-      `INSERT INTO research_suggestions
+    await db
+      .prepare(
+        `INSERT INTO research_suggestions
         (id,kind,status,person_id,payload,reason,evidence,base_revision,created_at,created_by)
        VALUES(?,?,'pending',?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?)`,
-    ).run(
-      id,
-      kind,
-      personId,
-      JSON.stringify(payload),
-      reason,
-      JSON.stringify(grounds),
-      revision,
-      actor.id,
-    );
+        "INSERT INTO research_suggestions\n        (id,kind,status,person_id,payload,reason,evidence,base_revision,created_at,created_by)\n       VALUES(?,?,'pending',?,?,?,?,?,to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),?)",
+      )
+      .run(
+        id,
+        kind,
+        personId,
+        JSON.stringify(payload),
+        reason,
+        JSON.stringify(grounds),
+        revision,
+        actor.id,
+      );
     return rowSuggestion(
-      db.prepare(`${select} WHERE id=?`).get(id) as Record<string, unknown>,
+      (await db
+        .prepare(`${select} WHERE id=?`, `${select} WHERE id=?`)
+        .get(id)) as Record<string, unknown>,
     );
   };
 
   return {
-    list(actor: ArchiveUser) {
+    async list(actor: ArchiveUser) {
       const rows =
         actor.role === "admin"
-          ? db
+          ? await db
               .prepare(
+                `${select} WHERE status='pending' ORDER BY created_at DESC,id DESC`,
                 `${select} WHERE status='pending' ORDER BY created_at DESC,id DESC`,
               )
               .all()
-          : db
+          : await db
               .prepare(
+                `${select} WHERE status='pending' AND created_by=? ORDER BY created_at DESC,id DESC`,
                 `${select} WHERE status='pending' AND created_by=? ORDER BY created_at DESC,id DESC`,
               )
               .all(actor.id);
       return rows.map((row) => rowSuggestion(row));
     },
 
-    createPerson(
+    async createPerson(
       actor: ArchiveUser,
       family: Family,
       revision: number,
@@ -562,7 +564,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
         grounds = evidence(input.evidence),
         candidate: Family = { ...family, people: [...family.people, person] };
       authorizeArchive(candidate, family, actor);
-      return insert(
+      return await insert(
         actor,
         "person_create",
         person.id,
@@ -573,7 +575,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
       );
     },
 
-    createPersonUpdate(
+    async createPersonUpdate(
       actor: ArchiveUser,
       family: Family,
       revision: number,
@@ -607,7 +609,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
       )
         throw new Error("Предлагаемые значения уже записаны в карточке");
 
-      return insert(
+      return await insert(
         actor,
         "person_update",
         personId,
@@ -618,7 +620,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
       );
     },
 
-    createSource(
+    async createSource(
       actor: ArchiveUser,
       family: Family,
       revision: number,
@@ -645,7 +647,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
         ),
       };
       authorizeArchive(candidate, family, actor);
-      return insert(
+      return await insert(
         actor,
         "source",
         personId,
@@ -660,7 +662,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
       );
     },
 
-    createRelation(
+    async createRelation(
       actor: ArchiveUser,
       family: Family,
       revision: number,
@@ -687,7 +689,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
           before,
         };
       authorizeArchive(withRelation(family, payload), family, actor);
-      return insert(
+      return await insert(
         actor,
         "relation",
         fromPersonId,
@@ -698,7 +700,7 @@ export function researchSuggestionStore(db: DatabaseSync) {
       );
     },
 
-    createFromTool(
+    async createFromTool(
       name: string,
       actor: ArchiveUser,
       family: Family,
@@ -706,38 +708,46 @@ export function researchSuggestionStore(db: DatabaseSync) {
       raw: unknown,
     ) {
       if (name === PERSON_CREATE_PROPOSAL_TOOL.name)
-        return this.createPerson(actor, family, revision, raw);
+        return await this.createPerson(actor, family, revision, raw);
       if (name === PERSON_UPDATE_PROPOSAL_TOOL.name)
-        return this.createPersonUpdate(actor, family, revision, raw);
+        return await this.createPersonUpdate(actor, family, revision, raw);
       if (name === SOURCE_PROPOSAL_TOOL.name)
-        return this.createSource(actor, family, revision, raw);
+        return await this.createSource(actor, family, revision, raw);
       if (name === RELATION_PROPOSAL_TOOL.name)
-        return this.createRelation(actor, family, revision, raw);
+        return await this.createRelation(actor, family, revision, raw);
       throw new Error("Неизвестный инструмент предложения");
     },
 
-    get(actor: ArchiveUser, id: string) {
+    async get(actor: ArchiveUser, id: string) {
       const row =
         actor.role === "admin"
-          ? db.prepare(`${select} WHERE id=?`).get(id)
-          : db
-              .prepare(`${select} WHERE id=? AND created_by=?`)
+          ? await db
+              .prepare(`${select} WHERE id=?`, `${select} WHERE id=?`)
+              .get(id)
+          : await db
+              .prepare(
+                `${select} WHERE id=? AND created_by=?`,
+                `${select} WHERE id=? AND created_by=?`,
+              )
               .get(id, actor.id);
       return row ? rowSuggestion(row as Record<string, unknown>) : null;
     },
 
-    mark(actor: ArchiveUser, id: string, status: SuggestionStatus) {
+    async mark(actor: ArchiveUser, id: string, status: SuggestionStatus) {
       if (status === "pending") throw new Error("Некорректный статус");
-      const suggestion = this.get(actor, id);
+      const suggestion = await this.get(actor, id);
       if (!suggestion) throw new Error("Предложение не найдено");
       if (suggestion.status !== "pending")
         throw new Error("Предложение уже обработано");
-      db.prepare(
-        `UPDATE research_suggestions
+      await db
+        .prepare(
+          `UPDATE research_suggestions
          SET status=?,reviewed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),reviewed_by=?
          WHERE id=? AND status='pending'`,
-      ).run(status, actor.id, id);
-      return this.get(actor, id)!;
+          "UPDATE research_suggestions\n         SET status=?,reviewed_at=to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),reviewed_by=?\n         WHERE id=? AND status='pending'",
+        )
+        .run(status, actor.id, id);
+      return (await this.get(actor, id))!;
     },
   };
 }
@@ -747,7 +757,9 @@ export function applyResearchSuggestion(
   suggestion: ResearchSuggestion,
 ) {
   if (suggestion.kind === "person_create") {
-    if (family.people.some((person) => person.id === suggestion.payload.person.id))
+    if (
+      family.people.some((person) => person.id === suggestion.payload.person.id)
+    )
       throw new Error("Карточка этого человека уже существует");
     return {
       ...family,

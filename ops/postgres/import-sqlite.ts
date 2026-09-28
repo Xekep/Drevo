@@ -15,6 +15,7 @@ import pg from "pg";
 import { ARCHIVE_SCHEMA_VERSION } from "../../src/server/schema.ts";
 import { backfillArchiveAccessInTransaction } from "./backfill-archive-access.ts";
 import { backfillArchiveAuditInTransaction } from "./backfill-archive-audit.ts";
+import { backfillRuntimeServicesInTransaction } from "./backfill-runtime-services.ts";
 
 type Row = Record<string, unknown>;
 type Table = {
@@ -451,7 +452,7 @@ export async function importSqliteSnapshot(
       ),
     );
     await client.query(
-      "INSERT INTO account_identities(provider,subject,account_id) SELECT 'yandex',id,id FROM accounts",
+      "INSERT INTO account_identities(provider,subject,account_id) SELECT CASE WHEN id LIKE 'vk:%' THEN 'vk' ELSE 'yandex' END,CASE WHEN id LIKE 'vk:%' THEN substring(id FROM 4) ELSE id END,id FROM accounts",
     );
     await client.query(
       readFileSync(
@@ -474,12 +475,17 @@ export async function importSqliteSnapshot(
       ),
     );
     const audit = await backfillArchiveAuditInTransaction(client, archiveId);
+    const services = await backfillRuntimeServicesInTransaction(
+      client,
+      archiveId,
+    );
     await client.query("COMMIT");
     return {
       archiveId,
       counts,
       access,
       audit,
+      services,
       media: snapshot.media,
       sqliteSha256: snapshot.sha256,
     };

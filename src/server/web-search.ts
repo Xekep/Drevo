@@ -95,15 +95,15 @@ export function createWebSearchService({
   log = (event: object) => console.info(JSON.stringify(event)),
 }: {
   provider: WebSearchProvider;
-  sources: () => WebSearchSource[];
+  sources: () => WebSearchSource[] | Promise<WebSearchSource[]>;
   timeoutMs?: number;
   log?: (event: object) => void;
 }) {
   return {
-    categories: () =>
+    categories: async () =>
       [
         ...new Set(
-          sources()
+          (await sources())
             .filter((s) => s.enabledForAiSearch)
             .flatMap((s) => s.categories),
         ),
@@ -172,7 +172,7 @@ export function createWebSearchService({
           page > 1000
         )
           throw new WebSearchError("WEB_SEARCH_INVALID_INPUT");
-        const catalog = sources().filter(
+        const catalog = (await sources()).filter(
           (s) => s.enabledForAiSearch && s.domain,
         );
         if (

@@ -13,7 +13,7 @@ import {
   END_YEAR,
 } from "../src/domain/index.ts";
 
-test("starter cleanup preserves real people, photos, accounts and settings and runs once", () => {
+test("starter cleanup preserves real people, photos, accounts and settings and runs once", async () => {
   const family = validateFamily(
     JSON.parse(
       readFileSync(new URL("./fixtures/family.json", import.meta.url), "utf8"),
@@ -57,18 +57,18 @@ test("starter cleanup preserves real people, photos, accounts and settings and r
       ],
     },
   ];
-  const archive = openArchive(":memory:", family);
+  const archive = await openArchive(":memory:", family);
   try {
-    const settings = settingsStore(archive.db);
-    settings.write({
+    const settings = await settingsStore(archive.db);
+    await settings.write({
       publicTree: false,
       publicAlbums: true,
       reverseTimeline: true,
     });
-    const users = userStore(archive.db);
-    users.register("user", "Владелец");
-    removeStarterFamily(archive);
-    const result = archive.read();
+    const users = await userStore(archive.db);
+    await users.register("user", "Владелец");
+    await removeStarterFamily(archive);
+    const result = await archive.read();
     assert.deepEqual(
       result.family.people.map((p) => p.id),
       ["real"],
@@ -81,16 +81,16 @@ test("starter cleanup preserves real people, photos, accounts and settings and r
       ["real-tag"],
     );
     assert.equal(result.family.demo, false);
-    assert.equal(users.get("user")!.role, "admin");
-    assert.equal(settings.read().reverseTimeline, true);
+    assert.equal((await users.get("user"))!.role, "admin");
+    assert.equal((await settings.read()).reverseTimeline, true);
     assert.equal(
-      archive.db.prepare("SELECT count(*) AS n FROM history").get()!.n,
+      (await archive.db.prepare("SELECT count(*) AS n FROM history").get())!.n,
       1,
     );
-    removeStarterFamily(archive);
-    assert.equal(archive.read().revision, result.revision);
+    await removeStarterFamily(archive);
+    assert.equal((await archive.read()).revision, result.revision);
   } finally {
-    archive.close();
+    await archive.close();
   }
 });
 
