@@ -62,6 +62,49 @@
   color: #687565;
   font-size: 11px;
 }
+.tree-color-preview {
+  position: relative;
+  flex: none;
+  width: 76px;
+  height: 44px;
+  border: 1px solid #d9e2d7;
+  border-radius: 7px;
+  background: radial-gradient(ellipse at 40% 30%, #fffef9, #f1f4eb);
+}
+.tree-color-preview.white-preview {
+  background: #fff;
+  border-color: #cbd8d2;
+}
+.tree-color-preview::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 22px;
+  border-top: 1px solid #789379;
+}
+.tree-color-preview i {
+  position: absolute;
+  z-index: 1;
+  width: 16px;
+  height: 12px;
+  border: 1px solid #aabca8;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 1px 2px #293e3414;
+}
+.tree-color-preview i:nth-child(1) {
+  top: 8px;
+  left: 30px;
+}
+.tree-color-preview i:nth-child(2) {
+  bottom: 7px;
+  left: 12px;
+}
+.tree-color-preview i:nth-child(3) {
+  bottom: 7px;
+  right: 12px;
+}
 .tree-preference-options.card-options label {
   flex-direction: column;
   align-items: flex-start;

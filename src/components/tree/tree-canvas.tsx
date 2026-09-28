@@ -35,6 +35,7 @@ import {
   type GraphConnection,
   type TreeMode,
   type TreeCardVariant,
+  type TreeColorScheme,
 } from "../../domain";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
@@ -96,6 +97,7 @@ type Props = {
   busy: boolean;
   reverse: boolean;
   cardVariant?: TreeCardVariant;
+  colorScheme?: TreeColorScheme;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -842,7 +844,7 @@ function Canvas(props: Props) {
     <TreeActions.Provider value={actions}>
       <div
         ref={container}
-        className={`tree-canvas mode-${mode} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
+        className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         onPointerDownCapture={edgePan.onPointerDownCapture}
         onClickCapture={edgePan.onClickCapture}

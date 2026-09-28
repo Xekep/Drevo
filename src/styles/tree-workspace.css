@@ -1988,3 +1988,28 @@
   font-size: 28px;
   line-height: 30px;
 }
+
+/* A personal white canvas keeps cards and routes legible without the warm tint. */
+.tree-canvas.theme-white {
+  background: #fff;
+}
+.tree-canvas.theme-white .flow-person:not(.is-portrait-card):not(.is-spotlit) {
+  background: #fff;
+}
+.tree-canvas.theme-white
+  .flow-person:not(.is-portrait-card):not(.is-selected):not(.is-spotlit):not(:hover) {
+  border-color: #cbd8d2;
+  box-shadow: 0 3px 13px #24473717;
+}
+.tree-canvas.theme-white .flow-edge-label.is-inline {
+  background: #fff;
+}
+.tree-canvas.theme-white .flow-person.is-portrait-card .portrait-card-info {
+  text-shadow: 0 1px 3px #fff;
+}
+.tree-canvas.theme-white .fan-chart {
+  background: #fff;
+}
+.tree-canvas.theme-white .fan-sector.is-empty path {
+  fill: #fff;
+}
