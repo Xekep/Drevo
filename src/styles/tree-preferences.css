@@ -143,7 +143,7 @@
   line-height: 1.2;
 }
 .tree-card-preview.stacked-preview {
-  height: 172px;
+  height: 196px;
   flex-direction: column;
   gap: 6px;
   padding: 8px;

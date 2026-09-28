@@ -569,13 +569,15 @@ test("portrait cards reserve their full height for siblings, spouses and routed 
       treeNodeSize("portrait"),
     );
     verify(people, geometry);
-    assert.equal(geometry.nodeSize?.height, 240);
+    assert.equal(geometry.nodeSize?.height, 264);
     for (const group of [...geometry.blocks!, ...geometry.siblingGroups!]) {
       const positions = new Map(geometry.positions);
       for (const id of group.members) {
         const position = positions.get(id)!;
         assert.ok(position.y >= group.y);
-        assert.ok(position.y + 240 <= group.y + group.height);
+        assert.ok(
+          position.y + geometry.nodeSize!.height <= group.y + group.height,
+        );
       }
     }
   }

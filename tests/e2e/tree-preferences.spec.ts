@@ -78,6 +78,10 @@ test("each viewer can switch tree direction, colors and card variant", async ({
     .toBeLessThan(2);
   await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
   await expect(child.locator(".portrait-card-info small")).toHaveText("Сын");
+  await expect(self.locator(".portrait-card-years")).toHaveText("1940 — 2020");
+  await expect(child.locator(".portrait-card-years")).toHaveText(
+    "1965 — н. в.",
+  );
   await dialog.getByRole("radio", { name: "Обычная", exact: true }).check();
   await expect(self).not.toHaveClass(/is-portrait-card/);
   await expect

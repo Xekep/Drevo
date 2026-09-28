@@ -155,6 +155,7 @@ export function TreePreferencesDialog({
               >
                 <i>А</i>
                 <b>Иванова Анна Петровна</b>
+                <small>1988–2024</small>
                 <small>Двоюродная сестра</small>
               </span>
               <strong>Фото · ФИО · Родство</strong>

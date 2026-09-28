@@ -2010,6 +2010,12 @@
   font-size: 13px;
   line-height: 16px;
 }
+.flow-person.is-portrait-card .portrait-card-years {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
 .flow-person.is-portrait-card.is-overview .portrait-card-info strong {
   -webkit-line-clamp: 2;
   font-size: 21px;
@@ -2020,6 +2026,11 @@
   font-size: 17px;
   line-height: 20px;
 }
+.flow-person.is-portrait-card.is-overview .portrait-card-years {
+  font-size: 15px;
+  line-height: 18px;
+}
+.flow-person.is-portrait-card.is-distant .portrait-card-years,
 .flow-person.is-portrait-card.is-distant .portrait-card-info small {
   display: none;
 }

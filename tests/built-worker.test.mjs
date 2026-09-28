@@ -71,11 +71,11 @@ test(
         "portrait",
       );
       assert.equal(portrait.error, undefined);
-      assert.deepEqual(portrait.nodeSize, { width: 220, height: 240 });
+      assert.deepEqual(portrait.nodeSize, { width: 220, height: 264 });
       assert.equal(portrait.branches.length, g.branches.length);
       for (const [index, [, a]] of portrait.positions.entries())
         for (const [, b] of portrait.positions.slice(0, index))
-          assert.ok(Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 240);
+          assert.ok(Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 264);
       const timeline = await calculate(worker, "timeline");
       assert.equal(timeline.error, undefined);
       assert.equal(timeline.positions.length, g.positions.length);
