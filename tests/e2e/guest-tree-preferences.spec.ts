@@ -65,9 +65,7 @@ for (const mode of ["shared", "public"] as const)
     await expect(
       dialog.getByRole("combobox", { name: "Генеалогический формат" }),
     ).toHaveCount(0);
-    await expect(
-      dialog.getByText(/Личные настройки · в этом браузере/),
-    ).toBeVisible();
+    await expect(dialog.getByText(/Личные настройки/)).toHaveCount(0);
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();

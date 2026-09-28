@@ -14,6 +14,7 @@ import {
   RelationshipEdge,
   type RelationshipEdgeType,
 } from "./relationship-edge";
+import { preparePdfFont, downloadTreeVectorPdf } from "./tree-pdf-vector";
 
 export type ExportTree = {
   nodes: Array<PersonNodeType | HouseholdNodeType>;
@@ -91,12 +92,12 @@ function PrintTree({
   );
 }
 
-/** Print the active tree projection, including nodes outside the screen camera.
- * Chromium's PDF printer keeps HTML text and SVG paths vector, without an
- * archive-sized canvas or a server-side copy of private family data.
+/** Download the active tree projection, including nodes outside the camera.
+ * Explicit vector PDF geometry is independent of browser printer preferences.
  */
 export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   signal?.throwIfAborted();
+  const work = new AbortController();
   if (!tree.nodes.length) throw new Error("В древе пока нет людей.");
   const bounds = getNodesBounds(tree.nodes);
   let left = bounds.x,
@@ -134,7 +135,6 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   iframe.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:${height}px;border:0;pointer-events:none;opacity:0;z-index:-1`;
   document.body.append(iframe);
   const target = iframe.contentDocument!;
-  const printWindow = iframe.contentWindow!;
   // about:blank starts in quirks mode, which ignores the intended body/page
   // dimensions on custom-sized sheets.
   target.open();
@@ -162,6 +162,7 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    work.abort();
     clearTimeout(expiry);
     signal?.removeEventListener("abort", abort);
     root.unmount();
@@ -178,6 +179,7 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
   signal?.addEventListener("abort", abort, { once: true });
   try {
     const prepared = (async () => {
+      const font = await preparePdfFont(target, work.signal);
       // Use the actual app styles and fonts instead of maintaining PDF card layouts.
       await Promise.all(
         Array.from(
@@ -206,10 +208,12 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       @page { size: ${width}px ${height}px; margin: 0; }
       html, body { margin: 0 !important; padding: 0 !important; width: ${width}px !important; height: ${height}px !important; overflow: hidden !important; background: #fff !important; }
       * { animation: none !important; transition: none !important; print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+      .tree-print-canvas * { font-family: Drevo, sans-serif !important; font-weight: 400 !important; }
       .tree-print-canvas { position: absolute !important; inset: 0 auto auto 0 !important; background: transparent !important; }
       .tree-print-canvas .react-flow { background: transparent !important; }
       .react-flow__handle { visibility: hidden !important; }
       .react-flow__panel, .react-flow__attribution { display: none !important; }
+      .flow-collapse, .flow-expand-family, .flow-reference { display: none !important; }
     `;
       target.head.append(styles);
       const ready = new Promise<void>((resolve) => {
@@ -226,7 +230,7 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
           </TreeActions.Provider>,
         );
       });
-      // Timeout also cleans up failed exports; a later resolution cannot print.
+      // Timeout cleans up failed exports and aborts any later download.
       await ready;
       const photos = new Map(
         tree.nodes.flatMap((node) =>
@@ -247,12 +251,21 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       );
       await target.fonts.ready;
       if (disposed) return;
-      // Freeze the measured HTML/SVG before print media changes dimensions.
-      // No React Flow listeners or further handle measurements are needed.
+      // Freeze measured HTML/SVG for vector serialization. React Flow listeners
+      // and further handle measurements are no longer needed.
       const snapshot = target.body.firstElementChild!.cloneNode(true);
       root.unmount();
       target.body.replaceChildren(snapshot);
       await Promise.all(Array.from(target.images, (image) => image.decode()));
+      if (!disposed)
+        await downloadTreeVectorPdf(
+          target,
+          width,
+          height,
+          tree.title,
+          font,
+          work.signal,
+        );
     })();
     await Promise.race([
       prepared,
@@ -265,12 +278,7 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       }),
     ]);
     clearTimeout(expiry);
-    printWindow.addEventListener("afterprint", () => setTimeout(dispose, 0), {
-      once: true,
-    });
-    // Some mobile browsers do not dispatch afterprint.
-    expiry = setTimeout(dispose, 300_000);
-    printWindow.print();
+    dispose();
   } catch (error) {
     dispose();
     throw error;
