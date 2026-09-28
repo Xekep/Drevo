@@ -146,10 +146,15 @@ export const PersonNode = memo(function PersonNode({
         />
       ))}
       <button
-        className="flow-person-content nopan"
+        className="flow-person-content"
         {...longPress.handlers}
-        onMouseDown={(event) => {
-          if (event.shiftKey) event.preventDefault();
+        onMouseDownCapture={(event) => {
+          // Shift is a selection gesture, even with a little mouse movement.
+          // Ordinary drags should reach React Flow and pan from the card too.
+          if (event.shiftKey && event.button === 0) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
         }}
         onContextMenu={(event) => {
           if (longPress.active() || longPress.suppressClick.current)

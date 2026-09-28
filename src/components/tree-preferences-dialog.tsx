@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Download } from "lucide-react";
 import type { TreePreferences } from "../domain";
 import { EditorDialog } from "./editor-dialog";
 import "../styles/tree-preferences.css";
@@ -9,14 +10,20 @@ export function TreePreferencesDialog({
   localOnly = false,
   onChange,
   onClose,
+  onExport,
 }: {
   preferences: TreePreferences;
   linkedPerson: boolean;
   localOnly?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
+  onExport: (signal: AbortSignal) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState(false);
+  const exportController = useRef<AbortController | null>(null);
+  useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState(preferences);
   const choose = async (value: TreePreferences) => {
@@ -44,7 +51,7 @@ export function TreePreferencesDialog({
             ? "Ваш вид · сохраняется в этом браузере"
             : "Ваш вид · сохраняется в аккаунте"}
         </p>
-        <fieldset disabled={saving}>
+        <fieldset disabled={saving || exporting}>
           <legend>Поколения</legend>
           <div className="tree-preference-options">
             {[
@@ -80,7 +87,7 @@ export function TreePreferencesDialog({
           </div>
           <small>В хронологии время идёт слева направо.</small>
         </fieldset>
-        <fieldset disabled={saving}>
+        <fieldset disabled={saving || exporting}>
           <legend>Фон</legend>
           <div className="tree-preference-options color-options">
             {(
@@ -113,7 +120,7 @@ export function TreePreferencesDialog({
             ))}
           </div>
         </fieldset>
-        <fieldset disabled={saving}>
+        <fieldset disabled={saving || exporting}>
           <legend>Карточки</legend>
           <div className="tree-preference-options card-options">
             <label
@@ -169,8 +176,46 @@ export function TreePreferencesDialog({
             <small>Родство появится после привязки аккаунта к человеку.</small>
           )}
         </fieldset>
+        <div className="tree-pdf-export">
+          <button
+            type="button"
+            disabled={saving || exporting}
+            onClick={async () => {
+              exportController.current?.abort();
+              const controller = new AbortController();
+              exportController.current = controller;
+              setExporting(true);
+              setExported(false);
+              setError("");
+              try {
+                await onExport(controller.signal);
+                if (!controller.signal.aborted) setExported(true);
+              } catch {
+                if (!controller.signal.aborted)
+                  setError(
+                    "Не удалось создать PDF. Дождитесь загрузки фотографий и попробуйте ещё раз.",
+                  );
+              } finally {
+                if (!controller.signal.aborted) setExporting(false);
+              }
+            }}
+          >
+            <Download size={16} aria-hidden="true" />
+            {exporting ? "Готовим древо…" : "Сохранить древо в PDF"}
+          </button>
+          <small>
+            Все раскрытые ветви на одной странице. В окне печати выберите
+            «Сохранить как PDF».
+          </small>
+        </div>
         <p className="tree-preferences-status" role="status">
-          {saving ? "Сохраняем…" : ""}
+          {saving
+            ? "Сохраняем…"
+            : exporting
+              ? "Подготавливаем древо…"
+              : exported
+                ? "Окно печати открыто."
+                : ""}
         </p>
         {error && (
           <p className="form-error" role="alert">

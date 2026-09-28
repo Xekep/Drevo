@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3 } from "lucide-react";
 import type { Family } from "../domain/types";
 import { analyzeKinship } from "../domain/kinship";
-import { TreeCanvas } from "./tree/tree-canvas";
+import { TreeCanvas, type TreeCanvasHandle } from "./tree/tree-canvas";
 import { InspectorDock } from "./inspector-dock";
 import { PersonInspector } from "./person-inspector";
 import { ComparisonPanel } from "./comparison-panel";
@@ -25,6 +25,7 @@ type SharedData = {
   reverseTimeline: boolean;
 };
 export default function SharedTree({ token }: { token: string }) {
+  const treeCanvas = useRef<TreeCanvasHandle>(null);
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
@@ -146,6 +147,7 @@ export default function SharedTree({ token }: { token: string }) {
           <main className="archive-workspace is-tree">
             <div className="tree-view">
               <TreeCanvas
+                ref={treeCanvas}
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
                 comparisonAction={
@@ -227,6 +229,7 @@ export default function SharedTree({ token }: { token: string }) {
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
+          onExport={(signal) => treeCanvas.current!.exportPdf(signal)}
           preferences={preferences}
           linkedPerson={false}
           localOnly
