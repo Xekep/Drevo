@@ -18,6 +18,7 @@ export type OAuthOptions = {
   fetcher?: typeof fetch;
   db?: StoreDatabase;
   transactions?: OAuthTransactions;
+  configuration?: () => Promise<{ enabled: boolean; clientId: string }>;
 };
 type OAuthProvider = {
   id: "yandex" | "vk";
@@ -27,6 +28,7 @@ type OAuthProvider = {
     state: string;
     challenge: string;
     callback: string;
+    clientId: string;
   }): URL;
   profile(params: {
     code: string;
@@ -35,6 +37,7 @@ type OAuthProvider = {
     callback: string;
     url: URL;
     signal: AbortSignal;
+    clientId: string;
   }): Promise<{ id: string; name: string }>;
 };
 /** Общая защита Authorization Code + PKCE и выдача сессии архива. */
@@ -52,8 +55,16 @@ export function createOAuthFlow(
   const callback = options.origin ? `${options.origin}${path}/callback` : "";
   const cookieName =
     provider.id === "yandex" ? "drevo_oauth_state" : "drevo_vk_oauth_state";
-  const stateKey = (state: string) =>
-    createHash("sha256").update(`${provider.id}:${state}`).digest("hex");
+  const stateKey = (state: string, clientId: string) =>
+    createHash("sha256")
+      .update(
+        `${provider.id}:${options.configuration ? `${clientId}:` : ""}${state}`,
+      )
+      .digest("hex");
+  const configuration = async () =>
+    options.configuration
+      ? await options.configuration()
+      : { enabled: provider.configured, clientId: options.clientId || "" };
   const secure = options.origin?.startsWith("https://") ? "; Secure" : "";
   function fail(res: ServerResponse, status: number, message: string) {
     res.writeHead(status, {
@@ -67,13 +78,17 @@ export function createOAuthFlow(
   }
   return {
     enabled,
+    async isEnabled() {
+      return !!options.origin && (await configuration()).enabled;
+    },
     async handle(req: IncomingMessage, res: ServerResponse, url: URL) {
       if (![path, `${path}/callback`].includes(url.pathname)) return false;
       if (req.method !== "GET") {
         fail(res, 405, "Для этого адреса требуется GET-запрос.");
         return true;
       }
-      if (!enabled) {
+      const current = await configuration();
+      if (!options.origin || !current.enabled) {
         fail(
           res,
           503,
@@ -101,7 +116,7 @@ export function createOAuthFlow(
         const state = randomBytes(32).toString("base64url"),
           verifier = randomBytes(32).toString("base64url");
         await transactions.create(
-          stateKey(state),
+          stateKey(state, current.clientId),
           verifier,
           now + 10 * 60 * 1000,
         );
@@ -110,6 +125,7 @@ export function createOAuthFlow(
           `${cookieName}=${state}; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=600${secure}`,
         );
         const target = provider.authorize({
+          clientId: current.clientId,
           state,
           callback,
           challenge: createHash("sha256").update(verifier).digest("base64url"),
@@ -129,7 +145,7 @@ export function createOAuthFlow(
             .map((s) => s.trim())
             .find((s) => s.startsWith(`${cookieName}=`))
             ?.slice(cookieName.length + 1) || "";
-      const stateHash = stateKey(state);
+      const stateHash = stateKey(state, current.clientId);
       res.setHeader(
         "Set-Cookie",
         `${cookieName}=; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=0${secure}`,
@@ -160,6 +176,7 @@ export function createOAuthFlow(
       }
       try {
         const profile = await provider.profile({
+          clientId: current.clientId,
           code,
           state,
           verifier: transaction.verifier,

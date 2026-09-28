@@ -1,17 +1,17 @@
 import type { TreeGeometry } from "../../domain/tree-layout.ts";
 import {
-  TREE_NODE_HEIGHT,
+  treeNodeSize,
   TREE_NODE_WIDTH,
 } from "../../domain/tree-layout-constants.ts";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol.ts";
 
 // Bump when layout, packing or routing changes. Keep model order: ELK uses it.
-export const LAYOUT_CACHE_VERSION = 4;
+export const LAYOUT_CACHE_VERSION = 5;
 export function layoutCacheKey(input: Omit<LayoutWorkerRequest, "requestId">) {
   return JSON.stringify({
     version: LAYOUT_CACHE_VERSION,
     width: TREE_NODE_WIDTH,
-    height: TREE_NODE_HEIGHT,
+    height: treeNodeSize().height,
     input,
   });
 }

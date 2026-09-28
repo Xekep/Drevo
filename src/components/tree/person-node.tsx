@@ -7,19 +7,13 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
-import {
-  fullName,
-  years,
-  type TreeCardVariant,
-  type Person,
-  type FamilyLink,
-} from "../../domain";
+import { fullName, years, type Person, type FamilyLink } from "../../domain";
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
 import { personRelationLabel } from "./person-relation-label";
 import {
-  TREE_NODE_HEIGHT,
+  treeNodeSize,
   TREE_NODE_WIDTH,
 } from "../../domain/tree-layout-constants";
 export const TreeActions = createContext<{
@@ -28,7 +22,6 @@ export const TreeActions = createContext<{
   collapse: (id: string, occurrenceId?: string) => void;
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
-  cardVariant: TreeCardVariant;
   showRelationLabel: boolean;
   kinshipReference: Person | null;
   kinshipPeople: Person[];
@@ -39,7 +32,6 @@ export const TreeActions = createContext<{
   collapse: () => {},
   expand: () => {},
   reference: () => {},
-  cardVariant: "classic",
   showRelationLabel: true,
   kinshipReference: null,
   kinshipPeople: [],
@@ -69,7 +61,7 @@ export const PersonNode = memo(function PersonNode({
   id,
   selected,
   width = TREE_NODE_WIDTH,
-  height = TREE_NODE_HEIGHT,
+  height = treeNodeSize().height,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
   const {
@@ -78,7 +70,6 @@ export const PersonNode = memo(function PersonNode({
     collapse,
     expand,
     reference,
-    cardVariant,
     showRelationLabel,
     kinshipReference,
     kinshipPeople,
@@ -96,9 +87,8 @@ export const PersonNode = memo(function PersonNode({
   );
   const compact = detail !== "full";
   const overview = detail === "overview" || detail === "distant";
-  const portraitCard = cardVariant === "portrait";
   const relationLabel = useMemo(() => {
-    if (!portraitCard || !showRelationLabel) return "";
+    if (!showRelationLabel) return "";
     return personRelationLabel(
       data.person,
       kinshipReference,
@@ -106,7 +96,6 @@ export const PersonNode = memo(function PersonNode({
       kinshipLinks,
     );
   }, [
-    portraitCard,
     showRelationLabel,
     data.person,
     kinshipReference,
@@ -116,10 +105,10 @@ export const PersonNode = memo(function PersonNode({
   const lifespan = years(data.person);
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
-  const branchTitle = `${branchAction} ${portraitCard ? "ветвь" : "потомков"}`;
+  const branchTitle = `${branchAction} ветвь`;
   return (
     <div
-      className={`flow-person ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""} ${portraitCard ? "is-portrait-card" : ""}`}
+      className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-person-id={data.person.id}
       data-household={data.household || undefined}
@@ -168,29 +157,12 @@ export const PersonNode = memo(function PersonNode({
         aria-label={cardLabel}
         title={cardLabel}
       >
-        {portraitCard ? (
-          <>
-            <Avatar person={data.person} />
-            <span className="portrait-card-info">
-              <strong>{fullName(data.person)}</strong>
-              {lifespan && (
-                <span className="portrait-card-years">{lifespan}</span>
-              )}
-              {relationLabel && <small>{relationLabel}</small>}
-            </span>
-          </>
-        ) : (
-          <>
-            {!overview && <Avatar person={data.person} />}
-            <span>
-              <strong>{data.person.surname}</strong>
-              <span>
-                {data.person.name} {!compact && data.person.patronymic}
-              </span>
-              {!compact && lifespan && <small>{lifespan}</small>}
-            </span>
-          </>
-        )}
+        <Avatar person={data.person} />
+        <span className="portrait-card-info">
+          <strong>{fullName(data.person)}</strong>
+          {lifespan && <span className="portrait-card-years">{lifespan}</span>}
+          {relationLabel && <small>{relationLabel}</small>}
+        </span>
       </button>
       {(data.occurrences || 0) > 1 && (
         <button
@@ -220,23 +192,17 @@ export const PersonNode = memo(function PersonNode({
           </span>
         </button>
       )}
-      {!data.familyFocus &&
-        (!compact || portraitCard) &&
-        data.childrenCount > 0 && (
-          <button
-            className="flow-collapse nodrag nopan"
-            aria-label={branchTitle}
-            title={branchTitle}
-            onClick={() => collapse(data.person.id, id)}
-          >
-            {data.collapsed ? (
-              <ChevronDown size={14} />
-            ) : (
-              <ChevronUp size={14} />
-            )}
-            <span>{data.childrenCount}</span>
-          </button>
-        )}
+      {!data.familyFocus && data.childrenCount > 0 && (
+        <button
+          className="flow-collapse nodrag nopan"
+          aria-label={branchTitle}
+          title={branchTitle}
+          onClick={() => collapse(data.person.id, id)}
+        >
+          {data.collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          <span>{data.childrenCount}</span>
+        </button>
+      )}
     </div>
   );
 }, samePersonNodeProps);

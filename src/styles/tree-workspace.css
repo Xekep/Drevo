@@ -2047,16 +2047,6 @@
 .tree-canvas.theme-white {
   background: #fff;
 }
-.tree-canvas.theme-white .flow-person:not(.is-portrait-card):not(.is-spotlit) {
-  background: #fff;
-}
-.tree-canvas.theme-white
-  .flow-person:not(.is-portrait-card):not(.is-selected):not(.is-spotlit):not(
-    :hover
-  ) {
-  border-color: #cbd8d2;
-  box-shadow: 0 3px 13px #24473717;
-}
 .tree-canvas.theme-white
   .flow-person[data-household="true"]:not(.is-selected):not(.is-spotlit):not(
     :hover

@@ -1,4 +1,5 @@
-export type TreeCardVariant = "classic" | "portrait";
+/** Kept in the wire format for older clients; only portrait is rendered. */
+export type TreeCardVariant = "portrait";
 export type TreeColorScheme = "warm" | "white";
 
 export type TreePreferences = {

@@ -133,6 +133,7 @@ const serviceTables = [
   "user_tree_preferences",
   "users",
   "workflow_stages",
+  "vk_auth_settings",
 ] as const;
 
 type ServiceTable = {
@@ -153,7 +154,11 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
     ...tables.map((table) => table.name),
     ...serviceTables,
   ]
-    .filter((name) => name !== "person_comments" || actual.includes(name))
+    .filter(
+      (name) =>
+        !["person_comments", "vk_auth_settings"].includes(name) ||
+        actual.includes(name),
+    )
     .sort();
   if (!isDeepStrictEqual(actual, expected))
     throw new Error(
@@ -187,6 +192,9 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   )
     throw new Error("Столбцы archive отличаются от схемы импорта");
   return serviceTables.map((name) => {
+    // Older standalone backups predate the additive VK settings table.
+    if (name === "vk_auth_settings" && !actual.includes(name))
+      return { name, columns: ["id", "enabled", "client_id"], rows: [] };
     const columns = db
       .prepare(`PRAGMA table_info(${name})`)
       .all()

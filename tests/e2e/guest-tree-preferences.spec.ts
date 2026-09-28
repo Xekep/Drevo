@@ -71,7 +71,9 @@ for (const mode of ["shared", "public"] as const)
     ).toBeChecked();
     await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
     await dialog.getByRole("radio", { name: "Предки сверху" }).check();
-    await dialog.getByRole("radio", { name: "Фото · ФИО" }).check();
+    await expect(dialog.getByRole("radio", { name: "Фото · ФИО" })).toHaveCount(
+      0,
+    );
     await dialog.getByRole("radio", { name: "Белая" }).check();
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
@@ -105,9 +107,9 @@ for (const mode of ["shared", "public"] as const)
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
-    await expect(
-      dialog.getByRole("radio", { name: "Фото · ФИО" }),
-    ).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: "Фото · ФИО" })).toHaveCount(
+      0,
+    );
     await dialog.getByRole("button", { name: "Закрыть" }).click();
     expect(writes).toEqual([]);
     expect(

@@ -51,7 +51,7 @@ test("large empty vertical gaps compact while every routing lane keeps its order
     before = structuredClone(original);
   const { graph, bands, offsets } = alignGenerationBands(
     original,
-    treeNodeSize(),
+    { width: 220, height: 84 },
   );
   assert.deepEqual(original, before);
   assert.equal(bands[1].targetY - bands[0].targetY, 204);
@@ -86,7 +86,7 @@ test("large empty vertical gaps compact while every routing lane keeps its order
 
 test("simple generations use 180px pitch and portrait cards reserve their actual height", () => {
   for (const variant of ["classic", "portrait"] as const) {
-    const size = treeNodeSize(variant),
+    const size = (variant === "portrait" ? treeNodeSize() : { width: 220, height: 84 }),
       graph = drawing(1, size.height);
     const { bands } = alignGenerationBands(graph, size);
     assert.equal(bands[1].targetY - bands[0].targetY, size.height + 96);
@@ -94,7 +94,7 @@ test("simple generations use 180px pitch and portrait cards reserve their actual
 });
 
 test("a dense routing corridor keeps necessary space instead of collapsing lines", () => {
-  const { graph, bands } = alignGenerationBands(drawing(30), treeNodeSize());
+  const { graph, bands } = alignGenerationBands(drawing(30), { width: 220, height: 84 });
   assert.equal(bands[1].targetY - bands[0].targetY, 144 + 31 * 12);
   const ys = graph.edges!.map((e) => e.sections![0].bendPoints![0].y);
   for (let i = 1; i < ys.length; i++) assert.equal(ys[i] - ys[i - 1], 12);

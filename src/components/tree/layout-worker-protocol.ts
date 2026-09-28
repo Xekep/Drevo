@@ -1,4 +1,3 @@
-import type { TreeCardVariant } from "../../domain/tree-preferences";
 import type { FamilyLink } from "../../domain/types";
 import type {
   LayoutPerson,
@@ -7,7 +6,6 @@ import type {
 } from "../../domain/tree-layout";
 
 type LayoutWorkerInput = {
-  cardVariant?: TreeCardVariant;
   people: LayoutPerson[];
   links: Pick<FamilyLink, "type" | "from" | "to">[];
   mode: TreeMode;

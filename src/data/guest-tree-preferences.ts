@@ -15,9 +15,7 @@ export function readGuestTreePreferences(
         typeof value.reverseTimeline === "boolean"
           ? value.reverseTimeline
           : fallback.reverseTimeline,
-      cardVariant: ["classic", "portrait"].includes(value.cardVariant)
-        ? value.cardVariant
-        : fallback.cardVariant,
+      cardVariant: "portrait",
       colorScheme: ["warm", "white"].includes(value.colorScheme)
         ? value.colorScheme
         : fallback.colorScheme,
@@ -33,7 +31,7 @@ export function writeGuestTreePreferences(value: TreePreferences) {
       KEY,
       JSON.stringify({
         reverseTimeline: value.reverseTimeline,
-        cardVariant: value.cardVariant,
+        cardVariant: "portrait",
         colorScheme: value.colorScheme,
       }),
     );

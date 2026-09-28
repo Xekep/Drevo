@@ -11,6 +11,8 @@ import { openArchive } from "./database.ts";
 import { removeStarterFamily } from "./demo-cleanup.ts";
 import { validateFamily } from "../domain/index.ts";
 import { createVkOAuth } from "./vk-oauth.ts";
+import { vkAuthSettingsStore } from "./vk-auth-settings.ts";
+import { adminVkAuthHttp } from "./admin-vk-auth-http.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
 import { userStore } from "./users.ts";
 import { createAuth } from "./auth.ts";
@@ -91,9 +93,19 @@ export async function startServer(
     fetcher: oauthFetch,
     db: archive.db,
   });
+  const vkSettings = vkAuthSettingsStore(
+    archive.db,
+    publicOrigin,
+    process.env.VK_CLIENT_ID,
+  );
+  const manageVkAuth = adminVkAuthHttp(auth, vkSettings, publicOrigin);
   const vk = createVkOAuth({
     origin: publicOrigin,
     clientId: process.env.VK_CLIENT_ID,
+    configuration: async () => {
+      const settings = await vkSettings.read();
+      return { enabled: settings.available, clientId: settings.clientId };
+    },
     issueSession: auth.issueSession,
     fetcher: oauthFetch,
     db: archive.db,
@@ -140,6 +152,7 @@ export async function startServer(
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       path = parsedUrl.pathname;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
+    if (await manageVkAuth(req, res, parsedUrl)) return;
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
@@ -151,7 +164,7 @@ export async function startServer(
         canEdit: await auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
-        vk: vk.enabled,
+        vk: await vk.isEnabled(),
         user: await auth.currentUser(req),
       });
 

@@ -27,6 +27,7 @@ import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { McpTokenAdmin } from "./mcp-token-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
+import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
 type Settings = {
   publicTree: boolean;
@@ -46,6 +47,7 @@ const ADMIN_SECTIONS = [
     label: "Архив",
     items: [
       { id: "users", label: "Участники", icon: Users },
+      { id: "vk", label: "Вход через VK", icon: ShieldCheck },
       { id: "data", label: "Экспорт и импорт", icon: Download },
       { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
@@ -62,6 +64,10 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  vk: {
+    title: "Вход через VK",
+    description: "Подключение VK ID для входа в архив.",
+  },
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
@@ -561,6 +567,7 @@ export function AdminPanel({
           </section>
         )}
         {section === "ai" && <AiSettingsAdmin />}
+        {section === "vk" && <VkAuthAdmin />}
         {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}

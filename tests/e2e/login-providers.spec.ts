@@ -53,7 +53,7 @@ for (const path of ["/tree", "/account"])
       await expect(page).toHaveURL(new RegExp(`/auth/${provider}$`));
     });
 
-test("unconfigured VK stays visible but cannot start a broken sign-in", async ({
+test("unconfigured VK has no icon or unavailable-provider notice", async ({
   page,
 }) => {
   await page.route("**/api/family?projection=overview", (route) =>
@@ -67,11 +67,11 @@ test("unconfigured VK stays visible but cannot start a broken sign-in", async ({
   await page.goto("/tree");
   await expect(
     page.getByRole("button", { name: "Войти через VK", exact: true }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Войти через Яндекс", exact: true }),
   ).toBeEnabled();
   await expect(
     page.getByText("Вход через VK пока недоступен.", { exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
 });

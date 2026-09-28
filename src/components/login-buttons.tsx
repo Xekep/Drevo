@@ -28,6 +28,7 @@ export function LoginButtons() {
         aria-label="Способ входа"
       >
         {(["vk", "yandex"] as const).map((provider) => {
+          if (!providers?.[provider]) return null;
           const label = provider === "vk" ? "VK" : "Яндекс";
           return (
             <button
@@ -35,12 +36,7 @@ export function LoginButtons() {
               type="button"
               className={`login-provider login-provider-${provider}`}
               aria-label={`Войти через ${label}`}
-              title={
-                providers && !providers[provider]
-                  ? `Вход через ${label} пока недоступен`
-                  : `Войти через ${label}`
-              }
-              disabled={!providers?.[provider]}
+              title={`Войти через ${label}`}
               onClick={() => {
                 markEntrySequence();
                 window.location.assign(`/auth/${provider}`);
@@ -69,12 +65,10 @@ export function LoginButtons() {
         <p role="alert">
           Не удалось загрузить способы входа. Обновите страницу.
         </p>
-      ) : providers && (!providers.vk || !providers.yandex) ? (
-        <p>
-          {!providers.vk && !providers.yandex
-            ? "Вход пока недоступен."
-            : `Вход через ${!providers.vk ? "VK" : "Яндекс"} пока недоступен.`}
-        </p>
+      ) : providers && !providers.vk && !providers.yandex ? (
+        <p>Вход пока недоступен.</p>
+      ) : !providers ? (
+        <span role="status">Загружаем способы входа…</span>
       ) : null}
     </div>
   );

@@ -32,8 +32,7 @@ function treePreferencesFromResponse(data: {
       typeof data.treePreferences?.reverseTimeline === "boolean"
         ? data.treePreferences.reverseTimeline
         : DEFAULT_TREE_PREFERENCES.reverseTimeline,
-    cardVariant:
-      data.treePreferences?.cardVariant === "classic" ? "classic" : "portrait",
+    cardVariant: "portrait",
     colorScheme:
       data.treePreferences?.colorScheme === "white" ? "white" : "warm",
   };

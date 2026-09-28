@@ -6,7 +6,7 @@ import type { LayoutWorkerRequest } from "./layout-worker-protocol";
 
 let engine: ReturnType<typeof createUnionLayout> | undefined;
 self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
-  const { requestId, people, links, mode, reverse, cardVariant } = event.data;
+  const { requestId, people, links, mode, reverse } = event.data;
   try {
     engine ??= createUnionLayout();
     const geometry =
@@ -16,7 +16,7 @@ self.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
             engine.layout,
             reverse,
             links,
-            treeNodeSize(cardVariant),
+            treeNodeSize(),
           )
         : unionTimeline(
             people,
