@@ -98,7 +98,7 @@ export function VkAuthAdmin() {
               </p>
             )}
             <div className="vk-auth-actions">
-              <button type="submit" className="primary">
+              <button type="submit" className="primary-action">
                 {busy ? "Сохраняем…" : "Сохранить"}
               </button>
               <span role="status">{saved ? "Сохранено" : ""}</span>
