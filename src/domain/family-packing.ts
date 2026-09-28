@@ -1,7 +1,8 @@
 import type { ElkNode } from "elkjs";
 import {
   TREE_NODE_WIDTH as W,
-  TREE_NODE_HEIGHT as H,
+  treeNodeSize,
+  type TreeNodeSize,
 } from "./tree-layout-constants.ts";
 import { completeLayout, layoutCost, layoutQuality } from "./layout-quality.ts";
 
@@ -19,7 +20,9 @@ export function familyLeafGroups(
   attachments: Attachment[],
   protectedPeople: Set<string>,
   births: ReadonlyMap<string, string> = new Map(),
+  size: TreeNodeSize = treeNodeSize(),
 ) {
+  const { width: W, height: H } = size;
   const candidates = new Map<string, Attachment[]>();
   const parents = new Set(attachments.map((a) => a.from.id));
   for (const a of attachments) {

@@ -11,7 +11,10 @@ import { segmentHitsBox } from "../src/domain/edge-routing.ts";
 import { segmentsCross } from "../src/domain/layout-order.ts";
 import type { ElkNode } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "../src/domain/tree-layout.ts";
-import { TREE_NODE_HEIGHT } from "../src/domain/tree-layout-constants.ts";
+import {
+  treeNodeSize,
+  TREE_NODE_HEIGHT,
+} from "../src/domain/tree-layout-constants.ts";
 const unionGeometry = (
   people: LayoutPerson[],
   reverse = false,
@@ -175,6 +178,7 @@ test("broad descendant families use different heights while preserving every car
   }
 });
 function verify(people: LayoutPerson[], g: TreeGeometry) {
+  const { width, height } = g.nodeSize ?? treeNodeSize();
   const occurrences = new Map(g.occurrences!.map((o) => [o.id, o.personId]));
   assert.deepEqual(
     [...new Set(occurrences.values())].sort(),
@@ -200,7 +204,7 @@ function verify(people: LayoutPerson[], g: TreeGeometry) {
       const a = g.positions[i][1],
         b = g.positions[j][1];
       assert.ok(
-        Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= TREE_NODE_HEIGHT,
+        Math.abs(a.x - b.x) >= width || Math.abs(a.y - b.y) >= height,
         "overlapping cards",
       );
     }
@@ -215,8 +219,8 @@ function verify(people: LayoutPerson[], g: TreeGeometry) {
           segmentHitsBox(a, c, {
             left: p.x,
             top: p.y,
-            right: p.x + 220,
-            bottom: p.y + TREE_NODE_HEIGHT,
+            right: p.x + width,
+            bottom: p.y + height,
           }),
           false,
           `${b.id} crosses card ${id}`,
@@ -451,4 +455,35 @@ test("adoption and godparents do not create a biological union or lose their rou
   assert.deepEqual(people, before);
   const points = new Map(g.positions);
   assert.ok(points.get("adopted")!.y > points.get("a")!.y);
+});
+
+test("portrait cards reserve their full height for siblings, spouses and routed links in both directions", async () => {
+  const people = [
+    person("a", [], ["b", "c"]),
+    person("b", [], ["a"]),
+    person("c", [], ["a"]),
+    ...Array.from({ length: 7 }, (_, i) => person(`child-${i}`, ["a", "b"])),
+    person("other-child", ["a", "c"]),
+  ];
+  const before = structuredClone(people);
+  for (const reverse of [false, true]) {
+    const geometry = await calculateUnions(
+      people,
+      (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
+      reverse,
+      [],
+      treeNodeSize("portrait"),
+    );
+    verify(people, geometry);
+    assert.equal(geometry.nodeSize?.height, 240);
+    for (const group of [...geometry.blocks!, ...geometry.siblingGroups!]) {
+      const positions = new Map(geometry.positions);
+      for (const id of group.members) {
+        const position = positions.get(id)!;
+        assert.ok(position.y >= group.y);
+        assert.ok(position.y + 240 <= group.y + group.height);
+      }
+    }
+  }
+  assert.deepEqual(people, before);
 });

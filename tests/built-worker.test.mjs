@@ -16,11 +16,25 @@ const people = [
   { id: "ab", birth: "1930", parents: ["a", "b"], spouses: [] },
   { id: "ac", birth: "1935", parents: ["a", "c"], spouses: [] },
 ];
-function calculate(worker, mode, reverse = false, data = people) {
+function calculate(
+  worker,
+  mode,
+  reverse = false,
+  data = people,
+  cardVariant = "classic",
+) {
   return new Promise((resolve, reject) => {
-    worker.once("error", reject);
-    worker.once("message", resolve);
-    worker.postMessage({ people: data, links: [], mode, reverse });
+    const onError = (error) => {
+      worker.off("message", onMessage);
+      reject(error);
+    };
+    const onMessage = (message) => {
+      worker.off("error", onError);
+      resolve(message);
+    };
+    worker.once("error", onError);
+    worker.once("message", onMessage);
+    worker.postMessage({ people: data, links: [], mode, reverse, cardVariant });
   });
 }
 test(
@@ -42,6 +56,19 @@ test(
       assert.equal(g.blocks.length, 2);
       assert.equal(g.occurrences.length, 6);
       assert.equal(g.branches.length, 4);
+      const portrait = await calculate(
+        worker,
+        "generations",
+        false,
+        people,
+        "portrait",
+      );
+      assert.equal(portrait.error, undefined);
+      assert.deepEqual(portrait.nodeSize, { width: 220, height: 240 });
+      assert.equal(portrait.branches.length, g.branches.length);
+      for (const [index, [, a]] of portrait.positions.entries())
+        for (const [, b] of portrait.positions.slice(0, index))
+          assert.ok(Math.abs(a.x - b.x) >= 220 || Math.abs(a.y - b.y) >= 240);
       const timeline = await calculate(worker, "timeline");
       assert.equal(timeline.error, undefined);
       assert.equal(timeline.positions.length, g.positions.length);

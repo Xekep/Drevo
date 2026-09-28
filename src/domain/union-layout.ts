@@ -1,9 +1,6 @@
 import type { ElkNode, ElkExtendedEdge } from "elkjs";
 import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
-import {
-  TREE_NODE_WIDTH as W,
-  TREE_NODE_HEIGHT as H,
-} from "./tree-layout-constants.ts";
+import { treeNodeSize, type TreeNodeSize } from "./tree-layout-constants.ts";
 import {
   bounds,
   routeRelationships,
@@ -70,7 +67,9 @@ async function geometryForSeed(
   reverse: boolean,
   links: Pick<FamilyLink, "type" | "from" | "to">[],
   seed: number,
+  size: TreeNodeSize,
 ): Promise<TreeGeometry> {
+  const { width: W, height: H } = size;
   const units = familyUnions(people);
   const byId = new Map(people.map((p) => [p.id, p]));
   const origins = new Map<string, Unit>();
@@ -190,6 +189,7 @@ async function geometryForSeed(
         .flatMap((l) => [l.from, l.to]),
     ),
     new Map(people.map((p) => [p.id, p.birth])),
+    size,
   );
   const portId = (u: Unit, person: string) =>
     JSON.stringify([u.id, person, "in"]);
@@ -427,6 +427,7 @@ async function geometryForSeed(
     branches.map((b) => ({ group: b.union, route: b.route })),
   );
   return {
+    nodeSize: size,
     mode: "generations",
     reverse,
     start: 1700,
@@ -472,8 +473,10 @@ export async function unionGeometry(
   layout: (graph: ElkNode) => Promise<ElkNode>,
   reverse = false,
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+  size: TreeNodeSize = treeNodeSize(),
 ): Promise<TreeGeometry> {
-  let best = await geometryForSeed(people, layout, reverse, links, 1);
+  const { width: W, height: H } = size;
+  let best = await geometryForSeed(people, layout, reverse, links, 1, size);
   let contacts = mainRouteContacts(best);
   if (!contacts) return best;
 
@@ -497,15 +500,23 @@ export async function unionGeometry(
   for (const seed of seeds) {
     let candidate: TreeGeometry;
     try {
-      candidate = await geometryForSeed(people, layout, reverse, links, seed);
+      candidate = await geometryForSeed(
+        people,
+        layout,
+        reverse,
+        links,
+        seed,
+        size,
+      );
     } catch {
       continue;
     }
-    const size = extent(candidate);
+    const candidateExtent = extent(candidate);
     if (
-      Math.max(size.width, size.height) >
+      Math.max(candidateExtent.width, candidateExtent.height) >
         Math.max(initial.width, initial.height) * 1.4 ||
-      size.width * size.height > initial.width * initial.height * 1.5
+      candidateExtent.width * candidateExtent.height >
+        initial.width * initial.height * 1.5
     )
       continue;
     const next = mainRouteContacts(candidate);

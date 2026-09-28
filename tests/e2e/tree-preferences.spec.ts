@@ -42,8 +42,37 @@ test("each viewer can switch tree direction and a photo/name/kinship card", asyn
   const dialog = page.getByRole("dialog", { name: "Моё древо" });
   await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
   await expect(self).toHaveClass(/is-portrait-card/);
+  await expect
+    .poll(() => self.evaluate((node) => node.clientHeight))
+    .toBeGreaterThan(220);
+  await expect
+    .poll(() =>
+      self.locator(".person-avatar").evaluate((node) => node.clientWidth),
+    )
+    .toBeGreaterThan(120);
+  await expect(self).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect
+    .poll(() =>
+      self.evaluate((node) => {
+        const wrapper = node.closest(".react-flow__node")!;
+        return Math.abs(
+          wrapper.getBoundingClientRect().height -
+            node.getBoundingClientRect().height,
+        );
+      }),
+    )
+    .toBeLessThan(2);
   await expect(self.locator(".portrait-card-info small")).toHaveText("Это вы");
   await expect(child.locator(".portrait-card-info small")).toHaveText("Сын");
+  await dialog.getByRole("radio", { name: "Обычная", exact: true }).check();
+  await expect(self).not.toHaveClass(/is-portrait-card/);
+  await expect
+    .poll(() => self.evaluate((node) => node.clientHeight))
+    .toBeLessThan(90);
+  await dialog.getByRole("radio", { name: "Фото · ФИО · Родство" }).check();
+  await expect
+    .poll(() => self.evaluate((node) => node.clientHeight))
+    .toBeGreaterThan(220);
   await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
   await expect
     .poll(async () => {

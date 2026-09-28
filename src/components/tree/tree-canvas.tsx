@@ -343,8 +343,8 @@ function Canvas(props: Props) {
   );
   const lastAssistantZoom = useRef(0);
   const context = props.assistantFilter
-    ? `${mode}:research:${props.assistantFilter.token}`
-    : `${mode}:${familyView.mode}:${root || "all"}`;
+    ? `${mode}:research:${props.assistantFilter.token}:${props.cardVariant || "classic"}`
+    : `${mode}:${familyView.mode}:${root || "all"}:${props.cardVariant || "classic"}`;
   useTouchZoom(container, flow, !cameraLocked && !screen.fullscreen && !activeFanAnchor && mode !== "timeline");
   useCtrlWheelZoom(container, flow, !cameraLocked && !activeFanAnchor && mode !== "timeline");
   const { geometry, renderVisible, ready, problem, layoutBusy, layoutKey } =
@@ -356,7 +356,10 @@ function Canvas(props: Props) {
       user
         ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
         : null,
+      props.cardVariant,
     );
+  const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH;
+  const nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
   useEffect(() => {
     const request = props.zoomRequest;
     if (
@@ -528,7 +531,7 @@ function Canvas(props: Props) {
     // Use worker geometry: fitView depends on React Flow's measured nodes,
     // which can still be updating as growth and virtualization finish.
     void flow
-      .setCenter(introX + TREE_NODE_WIDTH / 2, introY + TREE_NODE_HEIGHT / 2, {
+      .setCenter(introX + nodeWidth / 2, introY + nodeHeight / 2, {
         zoom: narrow ? 0.96 : 1.08,
         duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
           ? 0
@@ -546,6 +549,8 @@ function Canvas(props: Props) {
     nodes.length,
     introX,
     introY,
+    nodeWidth,
+    nodeHeight,
     keepRequestedFocus,
     manualCameraOverride,
     canvasWidth,

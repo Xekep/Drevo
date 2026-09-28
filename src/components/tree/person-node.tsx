@@ -55,6 +55,8 @@ function samePersonNodeProps(
   return (
     a.id === b.id &&
     a.selected === b.selected &&
+    a.width === b.width &&
+    a.height === b.height &&
     a.isConnectable === b.isConnectable &&
     samePersonNodeData(a.data, b.data)
   );
@@ -64,6 +66,8 @@ export const PersonNode = memo(function PersonNode({
   data,
   id,
   selected,
+  width = TREE_NODE_WIDTH,
+  height = TREE_NODE_HEIGHT,
   isConnectable,
 }: NodeProps<PersonNodeType>) {
   const {
@@ -121,7 +125,7 @@ export const PersonNode = memo(function PersonNode({
       data-person-id={data.person.id}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
-      style={{ width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT }}
+      style={{ width, height }}
     >
       {[
         ["top", Position.Top],
