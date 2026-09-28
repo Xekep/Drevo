@@ -572,6 +572,11 @@ export default function App() {
       />
     </div>
   );
+  const navigationUser =
+    user || (view === "account" ? accountSession?.user : null) || null;
+  const accountPerson = navigationUser?.personId
+    ? family?.people.find((person) => person.id === navigationUser.personId)
+    : undefined;
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -583,11 +588,8 @@ export default function App() {
             <ArchiveNavigation
               view={view}
               onView={navigate}
-              user={
-                user ||
-                (view === "account" ? accountSession?.user : null) ||
-                null
-              }
+              user={navigationUser}
+              accountPerson={accountPerson}
               local={archive.local || accountSession?.local === true}
               readTree={readTree}
               readPhotos={readPhotos}
@@ -601,9 +603,7 @@ export default function App() {
           onSelect={showPerson}
           busy={busy}
           onLogin={() => setLogin(true)}
-          user={
-            user || (view === "account" ? accountSession?.user : null) || null
-          }
+          user={navigationUser}
         />
         {addMenu && canEdit && (
           <div className="archive-add-menu">

@@ -21,15 +21,16 @@ import {
   ClipboardCheck,
   X,
   Settings2,
-  UserRound,
 } from "lucide-react";
 import {
   fullName,
   years,
   matchesPerson,
+  safeUrl,
   type Person,
   type ArchiveUser,
 } from "../domain";
+import { mediaPreview } from "../domain/media-preview";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
 import { clearLayoutStorage } from "./tree/layout-storage";
 export type { ArchiveView } from "../domain/archive-routes";
@@ -37,6 +38,7 @@ export function ArchiveNavigation({
   view,
   onView,
   user,
+  accountPerson,
   local,
   readTree,
   readPhotos,
@@ -46,6 +48,7 @@ export function ArchiveNavigation({
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
   user: ArchiveUser | null;
+  accountPerson?: Person;
   local: boolean;
   readTree: boolean;
   readPhotos: boolean;
@@ -53,6 +56,9 @@ export function ArchiveNavigation({
   onTreePreferences: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const [failedPortrait, setFailedPortrait] = useState<string>();
+  const portrait = mediaPreview(safeUrl(accountPerson?.photo));
+  const initial = user?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
     event: MouseEvent<HTMLAnchorElement>,
     next: ArchiveView,
@@ -147,6 +153,28 @@ export function ArchiveNavigation({
             </a>
           ))}
       </div>
+      {user && (
+        <a
+          className="nav-account"
+          href={archivePaths.account}
+          aria-label={`Личный кабинет: ${user.name}`}
+          aria-current={view === "account" ? "page" : undefined}
+          onClick={(event) => navigate(event, "account")}
+          title="Личный кабинет"
+        >
+          <span className="nav-account-avatar" aria-hidden="true">
+            {portrait && portrait !== failedPortrait ? (
+              <img
+                src={portrait}
+                alt=""
+                onError={() => setFailedPortrait(portrait)}
+              />
+            ) : (
+              initial
+            )}
+          </span>
+        </a>
+      )}
       <details ref={menu} className="archive-more" key={view}>
         <summary aria-label="Меню проекта">
           <Menu size={20} />
@@ -186,17 +214,6 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
-          {user && (
-            <a
-              href={archivePaths.account}
-              aria-current={view === "account" ? "page" : undefined}
-              onClick={(event) => navigate(event, "account")}
-              title="Личный кабинет"
-            >
-              <UserRound size={18} />
-              <span>Личный кабинет</span>
-            </a>
-          )}
           {user?.approved && readTree && (
             <button
               onClick={() => {
