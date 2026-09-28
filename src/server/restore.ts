@@ -315,7 +315,7 @@ export function restoreStore(
       )
       .run(token);
   };
-  const cleanup = setInterval(async () => {
+  const clean = async () => {
     const expired = await archive.db
       .prepare(
         "SELECT token FROM workflow_stages WHERE kind='restore' AND expires_at<?",
@@ -323,13 +323,24 @@ export function restoreStore(
       )
       .all(Date.now());
     for (const row of expired) await discard(String(row.token));
+  };
+  let cleaning: Promise<void> | undefined;
+  const cleanup = setInterval(() => {
+    if (cleaning) return;
+    cleaning = clean()
+      .catch(() => {
+        console.warn("restore_stage_cleanup_failed");
+      })
+      .finally(() => {
+        cleaning = undefined;
+      });
   }, 60000);
   cleanup.unref();
 
   async function previewStream(
     sourceStream: Readable,
     actor: ArchiveUser,
-    assertAccess?: () => void,
+    assertAccess?: () => void | Promise<void>,
   ) {
     if (actor.role !== "admin")
       throw new Error("Восстановление доступно администратору");
@@ -356,7 +367,7 @@ export function restoreStore(
     mkdirSync(join(directory, "uploads"));
     try {
       const size = await streamUpload(sourceStream, upload);
-      assertAccess?.();
+      await assertAccess?.();
       const header = await fileHeader(upload);
       if (header.toString("binary") === "SQLite format 3\0") {
         if (size > SQLITE_LIMIT) throw new Error("База больше 512 МБ");
@@ -704,8 +715,9 @@ export function restoreStore(
       }
       return { ...result, backupName };
     },
-    close() {
+    async close() {
       clearInterval(cleanup);
+      await cleaning;
     },
   };
 }

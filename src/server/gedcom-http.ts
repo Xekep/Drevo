@@ -96,11 +96,22 @@ export function gedcomHttp(
       expires: Number(row.expires_at),
     };
   };
-  const timer = setInterval(clean, 60000);
+  let cleaning: Promise<void> | undefined;
+  const timer = setInterval(() => {
+    if (cleaning) return;
+    cleaning = clean()
+      .catch(() => {
+        console.warn("gedcom_stage_cleanup_failed");
+      })
+      .finally(() => {
+        cleaning = undefined;
+      });
+  }, 60000);
   timer.unref();
   return {
-    close() {
+    async close() {
       clearInterval(timer);
+      await cleaning;
     },
     async handle(
       req: IncomingMessage,

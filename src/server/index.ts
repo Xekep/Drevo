@@ -235,8 +235,8 @@ export async function startServer(
       if (activeRequests > 0) server.closeAllConnections();
       await closed;
       await backups.close();
-      restores.close();
-      gedcom.close();
+      await restores.close();
+      await gedcom.close();
       geocoding.close();
       await archive.close();
     },
