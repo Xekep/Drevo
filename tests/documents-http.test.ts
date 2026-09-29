@@ -326,10 +326,52 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     assert.ok(await db.prepare("SELECT 1 FROM documents WHERE id=?").get(id));
     assert.ok(existsSync(join(directory, "uploads", `${id}.pdf`)));
     await db.exec("DROP TRIGGER reject_document_audit");
-    const results = await Promise.all([
-      request(path, "owner", "DELETE"),
-      request(path, "owner", "DELETE"),
-    ]);
+    const transaction = db.transaction;
+    let revoked = false;
+    db.transaction = async (work, readOnly = false) => {
+      if (!readOnly && !revoked) {
+        revoked = true;
+        await db
+          .prepare("UPDATE users SET role='reader' WHERE id='owner'")
+          .run();
+      }
+      return transaction(work, readOnly);
+    };
+    try {
+      assert.equal((await request(path, "owner", "DELETE")).status, 403);
+      assert.equal(revoked, true);
+      assert.ok(await db.prepare("SELECT 1 FROM documents WHERE id=?").get(id));
+      assert.ok(existsSync(join(directory, "uploads", `${id}.pdf`)));
+    } finally {
+      db.transaction = transaction;
+      await db
+        .prepare("UPDATE users SET role='relative' WHERE id='owner'")
+        .run();
+    }
+    // Both handlers reach the write boundary before either can delete. A
+    // lookup outside the transaction would now let both report success.
+    let arrivals = 0;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    db.transaction = async (work, readOnly = false) => {
+      if (!readOnly) {
+        if (++arrivals === 2) release();
+        await ready;
+      }
+      return transaction(work, readOnly);
+    };
+    let results: Response[];
+    try {
+      results = await Promise.all([
+        request(path, "owner", "DELETE"),
+        request(path, "owner", "DELETE"),
+      ]);
+    } finally {
+      release();
+      db.transaction = transaction;
+    }
     assert.deepEqual(
       results.map((response) => response.status).sort(),
       [200, 404],

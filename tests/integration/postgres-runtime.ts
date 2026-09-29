@@ -408,11 +408,27 @@ try {
     ),
     pdfBytes,
   );
-  const deleted = await fetch(
-    base + "/api/documents/" + afterDocuments.items[0].id,
-    { method: "DELETE" },
+  const documentId = afterDocuments.items[0].id;
+  const deleted = await Promise.all(
+    [0, 1].map(() =>
+      fetch(base + "/api/documents/" + documentId, { method: "DELETE" }),
+    ),
   );
-  assert.equal(deleted.status, 200, await deleted.text());
+  assert.deepEqual(
+    deleted.map((response) => response.status).sort(),
+    [200, 404],
+  );
+  assert.equal(
+    Number(
+      (await app.archive.db
+        .prepare(
+          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
+          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
+        )
+        .get(documentId))!.n,
+    ),
+    1,
+  );
   assert.equal(
     (await fetch(base + "/api/documents").then((r) => r.json())).total,
     0,

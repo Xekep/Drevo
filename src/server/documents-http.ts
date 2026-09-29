@@ -192,33 +192,39 @@ export function documentsHttp({
         return json(res, 403, { error: "Нет прав на удаление документа" });
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
-      const row = (await db
-        .prepare(
-          "SELECT * FROM documents WHERE id=?",
-          "SELECT * FROM documents WHERE id=?",
-        )
-        .get(item[1])) as Row | undefined;
-      const access = await visible(req);
-      const personIds = row
-        ? (await associations([row.id])).get(row.id) || []
-        : [];
-      if (
-        !row ||
-        (access.scoped && !personIds.some((id) => access.ids.includes(id)))
-      )
-        return json(res, 404, { error: "Документ не найден" });
-      const actor = await auth.currentUser(req);
-      if (!owns(actor, { createdBy: row.uploaded_by }))
-        return json(res, 403, {
-          error: "Удалить документ может его автор или администратор",
-        });
-      await db.transaction(async () => {
-        await db
+      const result = await db.transaction(async () => {
+        // Recheck access and existence after acquiring the archive write lock.
+        // Another request can delete the document or revoke access while we wait.
+        if (!(await auth.canEdit(req)))
+          return {
+            status: 403 as const,
+            error: "Нет прав на удаление документа",
+          };
+        const row = (await db
+          .prepare(
+            "SELECT * FROM documents WHERE id=?",
+            "SELECT * FROM documents WHERE id=?",
+          )
+          .get(item[1])) as Row | undefined;
+        if (!row) return { status: 404 as const, error: "Документ не найден" };
+        const access = await visible(req);
+        const personIds = (await associations([row.id])).get(row.id) || [];
+        if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+          return { status: 404 as const, error: "Документ не найден" };
+        const actor = await auth.currentUser(req);
+        if (!owns(actor, { createdBy: row.uploaded_by }))
+          return {
+            status: 403 as const,
+            error: "Удалить документ может его автор или администратор",
+          };
+        const deleted = await db
           .prepare(
             "DELETE FROM documents WHERE id=?",
             "DELETE FROM documents WHERE id=?",
           )
           .run(row.id);
+        if (deleted.changes !== 1)
+          return { status: 404 as const, error: "Документ не найден" };
         await audit.record(
           {
             action: "Удалён документ",
@@ -230,7 +236,11 @@ export function documentsHttp({
           },
           actor!,
         );
+        return { status: 200 as const, row };
       });
+      if (result.status !== 200)
+        return json(res, result.status, { error: result.error });
+      const { row } = result;
       // The committed catalogue removal revokes access first. A filesystem
       // cleanup failure must not expose the file again or report a false rollback.
       if (/^[a-f0-9-]{36}\.pdf$/.test(row.file_name)) {
