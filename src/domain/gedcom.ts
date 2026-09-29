@@ -300,6 +300,36 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "";
       if (s.pointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
+      const data = child(s, "DATA"),
+        citationEvent = child(s, "EVEN"),
+        eventRole = citationEvent && child(citationEvent, "ROLE"),
+        citationDetails = [
+          data && value(data, "DATE")
+            ? `Дата сведений в источнике: ${value(data, "DATE")}`
+            : "",
+          ...(data ? children(data, "TEXT") : []).map((entry, index) =>
+            entry.value
+              ? `Текст свидетельства ${index + 1}: ${entry.value}`
+              : "",
+          ),
+          citationEvent?.value
+            ? `Тип события в цитате: ${citationEvent.value}`
+            : "",
+          citationEvent && value(citationEvent, "PHRASE")
+            ? `Пояснение события: ${value(citationEvent, "PHRASE")}`
+            : "",
+          eventRole?.value ? `Роль в событии: ${eventRole.value}` : "",
+          eventRole && value(eventRole, "PHRASE")
+            ? `Пояснение роли: ${value(eventRole, "PHRASE")}`
+            : "",
+          value(s, "QUAY")
+            ? `Оценка качества цитаты (QUAY): ${value(s, "QUAY")}`
+            : "",
+        ].filter(Boolean);
+      if (citationDetails.length)
+        warnings.add(
+          "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
+        );
       return {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
@@ -313,7 +343,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             record && value(record, "AUTH"),
             record && value(record, "PUBL"),
             notes(s),
-            child(s, "DATA") && value(child(s, "DATA")!, "TEXT"),
+            ...citationDetails,
           ]
             .filter(Boolean)
             .join("\n") || undefined,
