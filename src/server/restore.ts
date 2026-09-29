@@ -35,6 +35,7 @@ import {
 import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
+import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
@@ -710,6 +711,7 @@ export function restoreStore(
               for (const personId of document.personIds)
                 await link.run(document.id, personId);
             }
+            await enforcePostgresMediaQuota(db);
           },
         );
       } catch (error) {

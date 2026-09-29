@@ -5,6 +5,7 @@ import { RestoreTooLargeError, type RestoreStore } from "./restore.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
+import { UploadQuotaError } from "./upload-quota.ts";
 
 export function restoreHttp({
   restores,
@@ -87,11 +88,13 @@ export function restoreHttp({
         res,
         error instanceof RestoreTooLargeError
           ? 413
-          : error instanceof ForbiddenError
-            ? 403
-            : error instanceof ConflictError
-              ? 409
-              : 400,
+          : error instanceof UploadQuotaError
+            ? error.status
+            : error instanceof ForbiddenError
+              ? 403
+              : error instanceof ConflictError
+                ? 409
+                : 400,
         {
           error:
             error instanceof Error

@@ -19,6 +19,7 @@ import {
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
+import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
@@ -594,6 +595,7 @@ export function documentsHttp({
             "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
           );
           for (const personId of ids as string[]) await link.run(id, personId);
+          await enforcePostgresMediaQuota(db);
         });
         return json(res, 201, { id });
       } catch (error) {

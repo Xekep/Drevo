@@ -29,6 +29,7 @@ import {
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { mediaStore } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
+import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 
 export function gedcomHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -414,6 +415,7 @@ export function gedcomHttp(
                     )
                     .run(file.documentId!, id);
               }
+              if (stage.files.length) await enforcePostgresMediaQuota(db);
             },
           );
           undo = undefined;

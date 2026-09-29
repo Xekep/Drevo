@@ -4,6 +4,7 @@ import type { Family, Person } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { ForbiddenError } from "./users.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
+import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 
 /** Provenance for a newly uploaded file before it is attached to a card. */
 export async function registerMediaUpload(
@@ -26,6 +27,7 @@ export async function registerMediaUpload(
         "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)",
       )
       .run(url, userId, Date.now() + 24 * 60 * 60_000);
+    await enforcePostgresMediaQuota(db);
   });
   return async () =>
     await db.transaction(async () => {
