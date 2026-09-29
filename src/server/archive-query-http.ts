@@ -79,7 +79,9 @@ export function archiveQueryHttp({
       ...data,
       canEdit: await auth.canEdit(req),
       local: auth.local,
-      user,
+      user: user
+        ? { ...user, platformAdmin: await auth.isPlatformAdmin(req) }
+        : null,
       readTree,
       readPhotos,
       reverseTimeline:
@@ -240,7 +242,9 @@ export function archiveQueryHttp({
           revision: data.revision,
           canEdit: await auth.canEdit(req),
           local: auth.local,
-          user: visitor,
+          user: visitor
+            ? { ...visitor, platformAdmin: await auth.isPlatformAdmin(req) }
+            : null,
           readTree,
           readPhotos,
           reverseTimeline:

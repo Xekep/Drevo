@@ -49,9 +49,9 @@ export function backupManagementHttp({
     const path = url.pathname;
     if (path !== "/api/backups" && !path.startsWith("/api/backups/"))
       return false;
-    if (!(await auth.isAdmin(req)))
+    if (!(await auth.isPlatformAdmin(req)))
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error: "Резервные копии доступны только администратору.",
+        error: "Системные резервные копии доступны администратору платформы.",
       });
     if (
       req.method !== "GET" &&
@@ -72,7 +72,7 @@ export function backupManagementHttp({
       }
       if (path === "/api/backups/settings" && req.method === "PUT") {
         const body = await readJson(req);
-        if (!(await auth.isAdmin(req)))
+        if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
         return json(
           res,
@@ -82,7 +82,7 @@ export function backupManagementHttp({
       }
       if (path === "/api/backups/check" && req.method === "POST") {
         const body = await readJson(req);
-        if (!(await auth.isAdmin(req)))
+        if (!(await auth.isPlatformAdmin(req)))
           return json(res, 403, { error: "Доступ администратора отозван." });
         return json(
           res,
@@ -111,7 +111,7 @@ export function backupManagementHttp({
             (await auth.currentUser(req))!,
             async (file, signal) => {
               const assertAccess = async () => {
-                if (!(await auth.isAdmin(req)))
+                if (!(await auth.isPlatformAdmin(req)))
                   throw new BackupInputError("Доступ администратора отозван.");
               };
               await assertAccess();
@@ -136,7 +136,7 @@ export function backupManagementHttp({
         downloading = true;
         try {
           await backups.withFile(match[1], async (file, item) => {
-            if (!(await auth.isAdmin(req)))
+            if (!(await auth.isPlatformAdmin(req)))
               throw new BackupInputError("Доступ администратора отозван.");
             res.writeHead(200, {
               "Content-Type": "application/gzip",

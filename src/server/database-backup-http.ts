@@ -33,11 +33,11 @@ export function databaseBackupHttp({
     const full = url.pathname === "/api/backup/full";
     if ((!full && url.pathname !== "/api/backup") || req.method !== "GET")
       return false;
-    if (!(await auth.isAdmin(req)))
+    if (!(await auth.isPlatformAdmin(req)))
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: full
-          ? "Only administrators can download backups"
-          : "Only administrators can download database backups",
+          ? "Системную копию может скачать администратор платформы"
+          : "Копию базы может скачать администратор платформы",
       });
 
     if (full) {

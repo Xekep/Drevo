@@ -52,16 +52,14 @@ test("форматы экспорта и импорт GEDCOM с предпрос
   for (const [label, format] of [
     ["GEDCOM 5.5.1", "gedcom551"],
     ["GEDCOM 7", "gedcom7"],
-    ["Drevo Archive", "drevoArchive"],
   ]) {
     await panel.getByRole("radio", { name: label, exact: true }).check();
     await expect(download).toHaveAttribute(
       "href",
-      format === "drevoArchive"
-        ? "/api/backup/full"
-        : `/api/gedcom/export?format=${format}`,
+      `/api/gedcom/export?format=${format}`,
     );
   }
+  await expect(panel.getByRole("radio", { name: "Drevo Archive" })).toHaveCount(0);
   await expect(
     panel.getByRole("radio", { name: "XML «Древа Жизни 6»" }),
   ).toHaveCount(0);

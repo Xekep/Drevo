@@ -39,6 +39,10 @@ export async function createAuth(
     "DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?",
     "DELETE FROM account_sessions WHERE user_id=? AND token_hash<>?",
   );
+  const platformAdmin =
+    db.kind === "postgres"
+      ? db.prepare("", "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?")
+      : null;
   const cookie = (req: IncomingMessage) =>
     req.headers.cookie
       ?.split(";")
@@ -182,6 +186,14 @@ export async function createAuth(
     isAdmin: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true &&
       (await currentUser(req))?.role === "admin",
+    isPlatformAdmin: async (req: IncomingMessage) => {
+      const user = await currentUser(req);
+      if (!user?.approved) return false;
+      if (local) return true;
+      return platformAdmin
+        ? !!(await platformAdmin.get(user.id))?.allowed
+        : user.role === "admin";
+    },
     async logout(req: IncomingMessage, res: ServerResponse) {
       await revoke.run(sessionTokenHash(cookie(req)));
       setCookie(res, "", 0);

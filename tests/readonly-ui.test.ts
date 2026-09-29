@@ -78,6 +78,30 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       demo: false,
     };
     const noop = () => {};
+    const { AdminPanel } = await server.ssrLoadModule(
+      "/src/components/admin-panel-content.tsx",
+    );
+    const adminProps = {
+      family,
+      currentUserId: user.id,
+      onClose: noop,
+      onChanged: noop,
+      onSettings: noop,
+      save: async () => family,
+      canEdit: true,
+    };
+    assert.doesNotMatch(
+      renderToStaticMarkup(
+        createElement(AdminPanel, { ...adminProps, platformAdmin: false }),
+      ),
+      /Резервные копии/,
+    );
+    assert.match(
+      renderToStaticMarkup(
+        createElement(AdminPanel, { ...adminProps, platformAdmin: true }),
+      ),
+      /Резервные копии/,
+    );
     const navigation = renderToStaticMarkup(
       createElement(ArchiveNavigation, {
         view: "tree",

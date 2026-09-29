@@ -251,6 +251,7 @@ function AdminUserRow({
 export function AdminPanel({
   family,
   currentUserId,
+  platformAdmin,
   onClose,
   onChanged,
   onSettings,
@@ -259,6 +260,7 @@ export function AdminPanel({
 }: {
   family: Family;
   currentUserId: string;
+  platformAdmin: boolean;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;
@@ -357,20 +359,22 @@ export function AdminPanel({
           {ADMIN_SECTIONS.map((group) => (
             <div className="admin-nav-group" key={group.label}>
               <span className="admin-nav-label">{group.label}</span>
-              {group.items.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-current={section === id ? "page" : undefined}
-                  onClick={() => {
-                    setSection(id);
-                    setNotice("");
-                  }}
-                >
-                  <Icon size={17} aria-hidden="true" />
-                  {label}
-                </button>
-              ))}
+              {group.items
+                .filter(({ id }) => id !== "backups" || platformAdmin)
+                .map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-current={section === id ? "page" : undefined}
+                    onClick={() => {
+                      setSection(id);
+                      setNotice("");
+                    }}
+                  >
+                    <Icon size={17} aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
             </div>
           ))}
         </nav>
@@ -592,7 +596,9 @@ export function AdminPanel({
             <AuditLog key={auditActor} actorId={auditActor || undefined} />
           </section>
         )}
-        {section === "backups" && <BackupAdmin onRestored={onChanged} />}
+        {section === "backups" && platformAdmin && (
+          <BackupAdmin onRestored={onChanged} />
+        )}
         {section === "data" && (
           <section className="admin-card archive-form">
             <GedcomTransfer

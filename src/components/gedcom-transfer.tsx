@@ -88,20 +88,13 @@ export function GedcomTransfer({
   return (
     <section className="gedcom-transfer">
       <h2>Экспорт</h2>
-      <p>
-        Обмен с генеалогическими программами и полная резервная копия Drevo.
-      </p>
+      <p>Обмен данными с генеалогическими программами.</p>
       <fieldset className="genealogy-formats" aria-label="Формат экспорта">
         {(
           [
             ["gedcom551", "GEDCOM 5.5.1", "Максимальная совместимость"],
             ["gedcom7", "GEDCOM 7", "Современный стандарт"],
             ["gedzip7", "GEDZIP 7", "GEDCOM + фотографии + документы"],
-            [
-              "drevoArchive",
-              "Drevo Archive",
-              "Полная резервная копия без потерь",
-            ],
           ] as const
         ).map(([value, title, description]) => (
           <label
@@ -127,11 +120,7 @@ export function GedcomTransfer({
       </fieldset>
       <a
         className="primary-action"
-        href={
-          format === "drevoArchive"
-            ? "/api/backup/full"
-            : `/api/gedcom/export?format=${format}`
-        }
+        href={`/api/gedcom/export?format=${format}`}
         download
       >
         <Download size={16} />

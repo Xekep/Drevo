@@ -57,7 +57,7 @@ export function TreePreferencesDialog({
   const [pdfReportKind, setPdfReportKind] =
     useState<ArchiveReportKind>("person");
   const [genealogyFormat, setGenealogyFormat] =
-    useState<Exclude<GenealogyExportFormat, "drevoArchive">>("gedzip7");
+    useState<GenealogyExportFormat>("gedzip7");
   const exportController = useRef<AbortController | null>(null);
   useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");

@@ -667,6 +667,7 @@ export default function App() {
                 <AdminPanel
                   family={family}
                   currentUserId={user.id}
+                  platformAdmin={user.platformAdmin === true}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}

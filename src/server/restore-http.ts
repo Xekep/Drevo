@@ -38,9 +38,9 @@ export function restoreHttp({
       return false;
     if (req.method !== "POST")
       return json(res, 405, { error: "Ожидается POST" });
-    if (!(await auth.isAdmin(req)))
+    if (!(await auth.isPlatformAdmin(req)))
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
-        error: "Импорт доступен только администратору",
+        error: "Системное восстановление доступно администратору платформы",
       });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -59,7 +59,7 @@ export function restoreHttp({
         const actor = (await auth.currentUser(req))!;
         const result = await restores.previewStream(req, actor, async () => {
           const current = await auth.currentUser(req);
-          if (!current || current.role !== "admin")
+          if (!current || !(await auth.isPlatformAdmin(req)))
             throw new ForbiddenError("Доступ администратора отозван");
         });
         return json(res, 200, result);
@@ -76,7 +76,7 @@ export function restoreHttp({
         chunks.push(Buffer.from(chunk));
       }
       const actor = await auth.currentUser(req);
-      if (!actor || actor.role !== "admin")
+      if (!actor || !(await auth.isPlatformAdmin(req)))
         return json(res, 403, { error: "Доступ администратора отозван" });
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
