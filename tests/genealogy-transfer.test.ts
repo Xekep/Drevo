@@ -381,6 +381,53 @@ for (const version of ["5.5.1", "7.0"] as const)
     );
   });
 
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version}: all citation transcripts and provenance remain visible`, () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS ${version}
+0 @I1@ INDI
+1 NAME Мария /Тестова/
+1 BIRT
+2 DATE 3 FEB 1900
+2 SOUR @S1@
+3 PAGE л. 7
+3 DATA
+4 DATE 4 FEB 1900
+4 TEXT Первая строка записи
+4 TEXT Вторая строка записи
+3 EVEN BIRT
+4 ROLE CHIL
+3 QUAY 3
+0 @S1@ SOUR
+1 TITL Метрическая книга
+0 TRLR
+`;
+    const parsed = importGedcom(input, `citation-${version}`);
+    const source = parsed.family.people[0].sources[0];
+    assert.equal(source.title, "Метрическая книга");
+    assert.equal(source.reference, "л. 7");
+    for (const detail of [
+      "Дата сведений в источнике: 4 FEB 1900",
+      "Текст свидетельства 1: Первая строка записи",
+      "Текст свидетельства 2: Вторая строка записи",
+      "Тип события в цитате: BIRT",
+      "Роль в событии: CHIL",
+      "Оценка качества цитаты (QUAY): 3",
+    ])
+      assert.ok(source.note?.includes(detail), detail);
+    assert.ok(
+      parsed.warnings.some((warning) =>
+        warning.includes("сохранены в примечании источника"),
+      ),
+    );
+    const roundtrip = importGedcom(
+      exportGedcom(parsed.family, { version }),
+      `citation-roundtrip-${version}`,
+    );
+    assert.equal(roundtrip.family.people[0].sources[0].note, source.note);
+  });
+
 const xml = `<?xml version="1.0" encoding="utf-8"?>
 <agelongtree lang="ru" dateformat="DD.MM.YYYY"><persons>
 <person id="a" sex="М" fn="Алексей" sn="Тестов" mn="Иванович" bdate="Около 1900"><comment>Текст &amp; &lt;заметка&gt;</comment><documents><document id="d" ismain="1" /></documents></person>
