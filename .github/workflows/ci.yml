@@ -10,7 +10,7 @@ concurrency:
 jobs:
   postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18
@@ -70,6 +70,21 @@ jobs:
             cat "benchmark-$size.jsonl" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
+      - name: Measure mixed HTTP profile across two backend processes
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client();
+          await client.connect();
+          await client.query('CREATE DATABASE drevo_migration_bench_http_ci OWNER drevo_runtime');
+          await client.end();
+          NODE
+          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_bench_http_ci \
+            node --experimental-strip-types ops/postgres/benchmark-http.ts 1000 45 | tee benchmark-http.jsonl
+          echo '### PostgreSQL: two-process mixed HTTP profile (synthetic)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat benchmark-http.jsonl >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
