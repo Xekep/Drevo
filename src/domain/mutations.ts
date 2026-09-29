@@ -1,12 +1,13 @@
 import { validateFamily } from "./validation.ts";
 import { dateYear } from "./dates.ts";
-import type { Family, Person, ExtraLinkType } from "./types.ts";
+import type { Family, Person, ExtraLinkType, TwinKind } from "./types.ts";
 export type ConnectionType = "parent" | "spouse" | ExtraLinkType;
 export type Connection = {
   from: string;
   to: string;
   type: ConnectionType;
   id?: string;
+  twinKind?: TwinKind;
 };
 export const CONNECTION_NAMES: Record<ConnectionType, string> = {
   parent: "Кровный родитель",
@@ -16,6 +17,7 @@ export const CONNECTION_NAMES: Record<ConnectionType, string> = {
   godparent: "Крёстный родитель",
   nurse: "Кормилица",
   sworn_sibling: "Названые брат / сестра",
+  twin: "Близнецы",
   guardian: "Опекун",
 };
 export function connectPeople(
@@ -24,6 +26,7 @@ export function connectPeople(
   to: string,
   type: ConnectionType,
   note = "",
+  twinKind: TwinKind = "unknown",
 ): Family {
   if (from === to) throw new Error("Выберите двух разных людей");
   const next = structuredClone(family),
@@ -53,6 +56,7 @@ export function connectPeople(
       to,
       type,
       ...(note ? { note } : {}),
+      ...(type === "twin" ? { twinKind } : {}),
     });
   }
   return validateFamily(next);

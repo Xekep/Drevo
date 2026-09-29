@@ -20,6 +20,7 @@ test("additional relationships show both roles on an edge", () => {
   assert.equal(connectionPairName("godparent", woman, man), "Крёстная мать → крестник");
   assert.equal(connectionPairName("adoptive_parent", man, woman), "Приёмный отец → приёмная дочь");
   assert.equal(connectionPairName("sworn_sibling", woman, man), "Названая сестра ↔ названый брат");
+  assert.equal(connectionPairName("twin", woman, man), "Сестра-близнец ↔ брат-близнец");
 });
 
 test("unknown sex remains neutral, but a reliable name hint resolves the role", () => {

@@ -602,7 +602,11 @@ function analyzeBloodAndMarriage(
 function specialRole(link: FamilyLink, subject: Person): KinshipRole {
   if (subject.sex === "u" && link.type === "step_parent")
     return {
-      term: connectionRoleName(link.type, subject, link.from === subject.id ? "from" : "to"),
+      term: connectionRoleName(
+        link.type,
+        subject,
+        link.from === subject.id ? "from" : "to",
+      ),
       description:
         "Роль супруга родителя явно указана в архиве; кровное и приёмное родительство из неё не следует.",
     };
@@ -666,6 +670,16 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
         description:
           "Признанное братство; кровная связь из этой записи не следует.",
         ...(f ? {} : { aliases: ["побратим"] }),
+      };
+    case "twin":
+      return {
+        term: f ? "сестра-близнец" : "брат-близнец",
+        description:
+          link.twinKind === "identical"
+            ? "В архиве явно указаны однояйцевые близнецы."
+            : link.twinKind === "fraternal"
+              ? "В архиве явно указаны разнояйцевые близнецы."
+              : "В архиве явно указаны близнецы; тип не установлен.",
       };
     case "guardian":
       return {

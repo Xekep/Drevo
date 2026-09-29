@@ -58,7 +58,8 @@ export function ConnectionInspector({
   const stepRole = connectionRoleName("step_parent", from);
   const stepRoleLabel = stepRole[0].toLocaleUpperCase("ru") + stepRole.slice(1);
   const targetRole = connectionRoleName(draft.type, to, "to");
-  const targetRoleLabel = targetRole[0].toLocaleUpperCase("ru") + targetRole.slice(1);
+  const targetRoleLabel =
+    targetRole[0].toLocaleUpperCase("ru") + targetRole.slice(1);
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
@@ -92,6 +93,7 @@ export function ConnectionInspector({
                 draft.to,
                 draft.type,
                 draft.note,
+                draft.twinKind,
               );
       if (!remove && archiveConnections(next).length === 0)
         throw new Error("Связь не создана");
@@ -119,6 +121,16 @@ export function ConnectionInspector({
             {to ? fullName(to) : "второго человека"}.
           </p>
           {draft.note && <p>{draft.note}</p>}
+          {draft.type === "twin" && (
+            <p>
+              Тип:{" "}
+              {draft.twinKind === "identical"
+                ? "однояйцевые"
+                : draft.twinKind === "fraternal"
+                  ? "разнояйцевые"
+                  : "неизвестен"}
+            </p>
+          )}
         </div>
       </section>
     );
@@ -186,12 +198,14 @@ export function ConnectionInspector({
                 "step_parent",
               ].map((type) => (
                 <option key={type} value={type}>
-                  {type === "step_parent" ? stepRoleLabel : CONNECTION_NAMES[type as ConnectionType]}
+                  {type === "step_parent"
+                    ? stepRoleLabel
+                    : CONNECTION_NAMES[type as ConnectionType]}
                 </option>
               ))}
             </optgroup>
             <optgroup label="Другие связи">
-              {["guardian", "nurse", "sworn_sibling"].map((type) => (
+              {["guardian", "nurse", "sworn_sibling", "twin"].map((type) => (
                 <option key={type} value={type}>
                   {CONNECTION_NAMES[type as ConnectionType]}
                 </option>
@@ -199,6 +213,25 @@ export function ConnectionInspector({
             </optgroup>
           </select>
         </label>
+        {draft.type === "twin" && (
+          <label>
+            Тип близнецов
+            <select
+              value={draft.twinKind || "unknown"}
+              disabled={readonly || busy}
+              onChange={(e) =>
+                update({
+                  twinKind: e.target.value as
+                    "unknown" | "identical" | "fraternal",
+                })
+              }
+            >
+              <option value="unknown">Неизвестен</option>
+              <option value="identical">Однояйцевые</option>
+              <option value="fraternal">Разнояйцевые</option>
+            </select>
+          </label>
+        )}
         <PersonSearch
           label={
             draft.type === "parent"

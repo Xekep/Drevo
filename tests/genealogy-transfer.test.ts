@@ -104,6 +104,25 @@ test("unknown GEDCOM 7 extensions are disclosed without turning hypotheses into 
   assert.ok(parsed.warnings.some((warning) => warning.includes("_HYPOTHESIS")));
   assert.ok(!JSON.stringify(parsed.family).includes("possible ancestor"));
 });
+for (const version of ["5.5.1", "7.0"] as const) {
+  test(`GEDCOM ${version} preserves explicitly recorded twin type`, () => {
+    const family = seed();
+    family.links = [
+      {
+        id: "twins",
+        from: "parent",
+        to: "partner",
+        type: "twin",
+        twinKind: "identical",
+      },
+    ];
+    const text = exportGedcom(family, { version });
+    assert.match(text, /2 _DREVO_TWIN identical/);
+    const imported = importGedcom(text, "twins");
+    assert.equal(imported.family.links?.[0].type, "twin");
+    assert.equal(imported.family.links?.[0].twinKind, "identical");
+  });
+}
 const external7 = `0 HEAD
 1 GEDC
 2 VERS 7.0.18

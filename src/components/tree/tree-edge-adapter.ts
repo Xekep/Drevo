@@ -24,6 +24,7 @@ const colors = {
   guardian: "#8d9860",
   nurse: "#a58958",
   sworn_sibling: "#748ca9",
+  twin: "#718798",
 };
 
 const patterns = {
@@ -35,6 +36,7 @@ const patterns = {
   guardian: "10 3 2 3",
   nurse: "2 3",
   sworn_sibling: "7 3 2 3",
+  twin: "4 3",
 };
 
 type Point = { x: number; y: number };
@@ -118,9 +120,15 @@ export function buildTreeEdges({
     .map((edge) => {
       const from = positions.get(edge.from),
         to = positions.get(edge.to),
-        side = ["spouse", "sworn_sibling"].includes(edge.type),
+        side = ["spouse", "sworn_sibling", "twin"].includes(edge.type),
         route = routes.get(routeKey(edge)),
         active = isHighlighted(highlighted, edge),
+        twinType =
+          edge.type === "twin" && edge.twinKind && edge.twinKind !== "unknown"
+            ? edge.twinKind === "identical"
+              ? " · однояйцевые"
+              : " · разнояйцевые"
+            : "",
         select = () => onEdge(edge);
       return {
         id: edge.key,
@@ -151,17 +159,19 @@ export function buildTreeEdges({
           connection: edge,
           onSelect: onEdge,
           route,
-          label: connectionPairName(
-            edge.type,
-            peopleMap.get(edge.from),
-            peopleMap.get(edge.to),
-          ),
-          reverseLabel: connectionPairName(
-            edge.type,
-            peopleMap.get(edge.from),
-            peopleMap.get(edge.to),
-            true,
-          ),
+          label:
+            connectionPairName(
+              edge.type,
+              peopleMap.get(edge.from),
+              peopleMap.get(edge.to),
+            ) + twinType,
+          reverseLabel:
+            connectionPairName(
+              edge.type,
+              peopleMap.get(edge.from),
+              peopleMap.get(edge.to),
+              true,
+            ) + twinType,
         },
         style: {
           stroke: colors[edge.type],

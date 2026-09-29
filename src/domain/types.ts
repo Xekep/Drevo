@@ -115,9 +115,11 @@ export const EXTRA_LINK_TYPES = [
   "godparent",
   "nurse",
   "sworn_sibling",
+  "twin",
   "guardian",
 ] as const;
 export type ExtraLinkType = (typeof EXTRA_LINK_TYPES)[number];
+export type TwinKind = "identical" | "fraternal" | "unknown";
 export type FamilyLink = {
   createdBy?: string;
   id: string;
@@ -125,6 +127,8 @@ export type FamilyLink = {
   to: string;
   type: ExtraLinkType;
   note?: string;
+  /** Явная запись; совпадение даты рождения не устанавливает близнецов. */
+  twinKind?: TwinKind;
 };
 export type Relation = {
   title: string;
