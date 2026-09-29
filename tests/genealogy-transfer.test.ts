@@ -121,6 +121,58 @@ const external7 = `0 HEAD
 0 TRLR
 `;
 
+test("GEDCOM FAM without marriage keeps shared parents but does not invent spouses", () => {
+  const familyRecord = `0 HEAD
+1 GEDC
+2 VERS 7.0
+0 @I1@ INDI
+1 NAME Олег /Тестов/
+0 @I2@ INDI
+1 NAME Ирина /Тестова/
+0 @I3@ INDI
+1 NAME Маша /Тестова/
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+0 TRLR
+`;
+  for (const version of ["7.0", "5.5.1"]) {
+    const text = familyRecord.replace("2 VERS 7.0", `2 VERS ${version}`);
+    const parsed = importGedcom(text, `parents-${version}`);
+    assert.equal(parsed.family.people[2].parents.length, 2);
+    assert.deepEqual(parsed.family.people[0].spouses, []);
+    assert.deepEqual(parsed.family.people[1].spouses, []);
+    assert.ok(
+      parsed.warnings.some((warning) =>
+        warning.includes("не указано событие брака"),
+      ),
+    );
+    const married = importGedcom(
+      text.replace("1 CHIL @I3@", "1 MARR Y\n1 CHIL @I3@"),
+      `married-${version}`,
+    );
+    assert.deepEqual(married.family.people[0].spouses, [
+      married.family.people[1].id,
+    ]);
+  }
+
+  const unmarried = seed();
+  unmarried.people[0].spouses = [];
+  unmarried.people[1].spouses = [];
+  const roundtrip = importGedcom(
+    exportGedcom(unmarried, { version: "7.0" }),
+    "unmarried-roundtrip",
+  );
+  assert.equal(roundtrip.family.people[2].parents.length, 2);
+  assert.deepEqual(roundtrip.family.people[0].spouses, []);
+  assert.ok(
+    !roundtrip.warnings.some((warning) =>
+      warning.includes("не указано событие брака"),
+    ),
+  );
+});
+
 test("GEDCOM 7 external SNOTE, ROLE, escapes, patch versions and media resolve", () => {
   const parsed = importGedcom(external7, "external");
   assert.equal(parsed.version, "7.0.18");
