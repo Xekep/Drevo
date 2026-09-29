@@ -19,6 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { routingQuality } from "./routing-quality.ts";
+import { invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
 import { householdLevels } from "./household-levels.ts";
 import {
   alignGenerationBands,
@@ -555,29 +556,6 @@ function geometryRoutingQuality(geometry: TreeGeometry) {
   ]);
 }
 
-/** A couple can be reversed when their two parent families arrive in opposite order. */
-function invertedCoupleBlocks(geometry: TreeGeometry, cardWidth: number) {
-  const positions = new Map(geometry.positions);
-  const arrivals = new Map<string, number>();
-  for (const branch of geometry.branches || []) {
-    if (!branch.id.startsWith("child:")) continue;
-    const source = branch.route.points[0];
-    if (source) arrivals.set(branch.target, source.x);
-  }
-  const flipped = new Set<string>();
-  for (const block of geometry.blocks || []) {
-    if (block.members.length !== 2) continue;
-    const [left, right] = [...block.members].sort(
-      (a, b) => positions.get(a)!.x - positions.get(b)!.x,
-    );
-    const leftOrigin = arrivals.get(left), rightOrigin = arrivals.get(right);
-    if (leftOrigin !== undefined && rightOrigin !== undefined &&
-        leftOrigin > rightOrigin + cardWidth / 2)
-      flipped.add(block.id);
-  }
-  return flipped;
-}
-
 /** Сравниваем видимые маршруты после ELK и уплотнения полос поколений. */
 export async function unionGeometry(
   people: LayoutPerson[],
@@ -754,6 +732,29 @@ export async function unionGeometry(
       } catch {
         // The original layout remains valid if ELK rejects the alternative order.
       }
+    }
+  }
+  if (!previous && people.length > 300 && people.length <= 1200 && contacts.distinct) {
+    // Keep ELK block coordinates; reject each local spouse swap unless its rerouted
+    // ancestry improves the complete visible routes.
+    let currentRoutes = geometryRoutingQuality(best);
+    let cardContacts = routeCardContacts(best, W, H);
+    for (const id of invertedCoupleBlocks(best, W)) {
+      const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
+      if (!candidate) continue;
+      const next = branchContactCounts(candidate.branches || []);
+      if (next.distinct >= contacts.distinct) continue;
+      const nextRoutes = geometryRoutingQuality(candidate);
+      if (nextRoutes.crossings > currentRoutes.crossings ||
+          nextRoutes.length > currentRoutes.length * 1.02 ||
+          nextRoutes.bends > currentRoutes.bends + 2)
+        continue;
+      const nextCardContacts = routeCardContacts(candidate, W, H);
+      if (nextCardContacts > cardContacts) continue;
+      best = candidate;
+      contacts = next;
+      currentRoutes = nextRoutes;
+      cardContacts = nextCardContacts;
     }
   }
   return best;
