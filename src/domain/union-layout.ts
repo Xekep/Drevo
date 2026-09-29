@@ -3,6 +3,7 @@ import type { LayoutPerson, TreeGeometry } from "./tree-layout.ts";
 import {
   TREE_NODE_WIDTH,
   TREE_NODE_HEIGHT,
+  MAX_INCREMENTAL_LAYOUT_PEOPLE,
   type TreeNodeSize,
 } from "./tree-layout-constants.ts";
 import {
@@ -562,9 +563,7 @@ export async function unionGeometry(
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);
   let contacts = branchContactCounts(best.branches || []);
-  // Ограничиваем дополнительный запуск ELK, чтобы не замедлять большие архивы.
-  const incrementalLimit = 200;
-  const seedCandidates = previous && people.length <= incrementalLimit
+  const seedCandidates = previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
     ? [{ geometry: best, contacts }]
     : [];
 
@@ -624,7 +623,7 @@ export async function unionGeometry(
     previous.reverse === reverse &&
     (!previous.nodeSize ||
       (previous.nodeSize.width === W && previous.nodeSize.height === H)) &&
-    people.length <= incrementalLimit &&
+    people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE &&
     previous.positions.length
   ) {
     // Одна устранённая точка контакта не должна переставлять почти всё дерево.

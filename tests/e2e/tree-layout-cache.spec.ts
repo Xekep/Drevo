@@ -1,4 +1,59 @@
 import { expect, test, type Page } from "@playwright/test";
+import { randomFamily } from "../layout-fixtures";
+
+test("medium tree edits pass the previous geometry to the layout worker", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  const people = randomFamily(5, 4);
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.family.people = people.map((person) => ({
+      ...person,
+      name: person.id,
+      surname: "Тестов",
+      patronymic: "",
+      sex: "m",
+      birthPlace: "",
+      sources: [],
+      generation: 1,
+      column: 0,
+    }));
+    data.family.links = [];
+    data.family.photos = [];
+    data.partial = false;
+    data.user.personId = null;
+    await route.fulfill({ response, json: data });
+  });
+  await page.addInitScript(() => {
+    const requests: { people: number; previous: number }[] = [];
+    Object.assign(window, { __layoutHistoryRequests: requests });
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      postMessage(message: unknown, transfer: Transferable[] | StructuredSerializeOptions = []) {
+        if (message && typeof message === "object" && "people" in message && "mode" in message) {
+          const request = message as { people: unknown[]; previousGeometry?: { positions: unknown[] } };
+          requests.push({ people: request.people.length, previous: request.previousGeometry?.positions.length || 0 });
+        }
+        if (Array.isArray(transfer)) super.postMessage(message, transfer);
+        else super.postMessage(message, transfer);
+      }
+    };
+  });
+  const requests = () => page.evaluate(() =>
+    (window as typeof window & { __layoutHistoryRequests: { people: number; previous: number }[] })
+      .__layoutHistoryRequests);
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
+  await expect.poll(async () => (await requests()).length).toBe(1);
+  const collapse = page.getByTestId("rf__node-g-0-0").getByRole("button", { name: /Свернуть/ });
+  await collapse.click();
+  await expect.poll(async () => (await requests()).length).toBe(2);
+  const history = await requests();
+  expect(history[0].people).toBeGreaterThan(100);
+  expect(history[1].people).toBeGreaterThan(100);
+  expect(history[1].people).toBeLessThanOrEqual(200);
+  expect(history[1].previous).toBeGreaterThan(100);
+});
 
 async function observeLayouts(page: Page) {
   await page.addInitScript(() => {

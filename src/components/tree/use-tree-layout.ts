@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Family } from "../../domain/types";
 import type { TreeGeometry, TreeMode } from "../../domain/tree-layout";
+import { MAX_INCREMENTAL_LAYOUT_PEOPLE } from "../../domain/tree-layout-constants";
 import { projectTree } from "../../domain/family-neighborhood";
 import type { TaggedLayoutWorkerResponse } from "./layout-worker-protocol";
 import type { LayoutWorkerRequest } from "./layout-worker-protocol";
@@ -79,7 +80,7 @@ export function useTreeLayout(
     const last = lastGeometryRef.current;
     const previousGeometry =
       mode === "generations" &&
-      input.people.length <= 100 &&
+      input.people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE &&
       last !== null &&
       last.scope === cacheScope &&
       last.key !== key &&
