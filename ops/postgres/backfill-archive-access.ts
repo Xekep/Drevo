@@ -80,6 +80,12 @@ export async function backfillArchiveAccessInTransaction(
     "utf8",
   );
   await client.query(schema);
+  await client.query(
+    readFileSync(
+      new URL("./012_ai_role_profiles.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   if ((await client.query("SELECT 1 FROM accounts LIMIT 1")).rowCount)
     throw new Error("Аккаунты уже перенесены; повторный перенос запрещён");
   const sourceUsers = await shadowRows(client, archiveId, "users");

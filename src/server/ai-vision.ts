@@ -27,6 +27,10 @@ export function aiVision(fetcher: typeof fetch) {
         /^gpt:\/\/([^/]+)/.exec(runtime.modelUri)?.[1] ||
         "",
       key = `${runtime.baseUrl}\0${folderId}`;
+    if (runtime.visionModel)
+      return runtime.visionModel.startsWith("gpt://")
+        ? runtime.visionModel
+        : `gpt://${folderId}/${runtime.visionModel}`;
     if (
       visionModelCache?.key === key &&
       visionModelCache.expiresAt > Date.now()

@@ -10,7 +10,10 @@ import { ForbiddenError } from "./users.ts";
 
 function canEdit(user: ArchiveUser | null): user is ArchiveUser {
   return (
-    !!user?.approved && (user.role === "admin" || user.role === "relative")
+    !!user?.approved &&
+    (user.role === "admin" ||
+      user.role === "researcher" ||
+      user.role === "relative")
   );
 }
 

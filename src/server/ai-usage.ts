@@ -63,7 +63,11 @@ export function aiUsageStore(db: StoreDatabase) {
   };
 
   return {
-    async check(userId: string, limits: AiUsageLimits) {
+    async check(
+      userId: string,
+      limits: AiUsageLimits,
+      dailyScope: "archive" | "user" = "archive",
+    ) {
       const now = Date.now(),
         minuteAgo = now - 60_000,
         recent = Number(
@@ -90,23 +94,35 @@ export function aiUsageStore(db: StoreDatabase) {
         );
       }
 
-      const daily = (await db
-        .prepare(
-          `SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens
+      const daily =
+        dailyScope === "user"
+          ? (await db
+              .prepare(
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens FROM ai_usage WHERE started_ms>=? AND user_id=?",
+              )
+              .get(todayStart(), userId))!
+          : (await db
+              .prepare(
+                `SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens
            FROM ai_usage WHERE started_ms>=?`,
-          "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens\n           FROM ai_usage WHERE started_ms>=?",
-        )
-        .get(todayStart()))!;
+                "SELECT count(*) AS requests,coalesce(sum(total_tokens),0) AS tokens\n           FROM ai_usage WHERE started_ms>=?",
+              )
+              .get(todayStart()))!;
       if (
         limits.dailyRequests > 0 &&
         Number(daily.requests) >= limits.dailyRequests
       )
         throw new AiLimitError(
-          "Дневной лимит запросов к ИИ исчерпан. Лимит обновится завтра.",
+          dailyScope === "user"
+            ? "Ваш дневной лимит запросов к ИИ исчерпан. Лимит обновится завтра."
+            : "Дневной лимит запросов к ИИ исчерпан. Лимит обновится завтра.",
         );
       if (limits.dailyTokens > 0 && Number(daily.tokens) >= limits.dailyTokens)
         throw new AiLimitError(
-          "Дневной лимит токенов ИИ исчерпан. Лимит обновится завтра.",
+          dailyScope === "user"
+            ? "Ваш дневной лимит токенов ИИ исчерпан. Лимит обновится завтра."
+            : "Дневной лимит токенов ИИ исчерпан. Лимит обновится завтра.",
         );
     },
 

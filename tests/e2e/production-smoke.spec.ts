@@ -527,7 +527,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
 
   const apiKey = page.getByLabel("API-ключ"),
     folderId = page.getByLabel("Folder ID"),
-    model = page.getByLabel("Модель");
+    model = page.locator("#ai-model");
 
   await expect(apiKey).toHaveAttribute("type", "password");
   await expect(folderId).toBeVisible();

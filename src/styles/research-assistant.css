@@ -1044,6 +1044,42 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   display: grid;
   gap: 12px;
 }
+.ai-role-profiles,
+.ai-role-profiles > fieldset {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #e2e8df;
+  border-radius: 9px;
+}
+.ai-role-profiles legend {
+  padding: 0 6px;
+  color: #394d3d;
+  font-weight: 600;
+}
+.ai-role-profiles p,
+.ai-role-profiles > small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-role-profiles select,
+.ai-role-profiles input {
+  min-width: 0;
+  max-width: 100%;
+}
+.ai-role-profiles fieldset:disabled {
+  opacity: 0.65;
+}
+.ai-role-profiles .setting-toggle > span {
+  min-width: 0;
+}
+.ai-role-profiles .setting-toggle > input {
+  flex: 0 0 20px;
+}
 .ai-settings-admin label > small {
   color: var(--muted);
   font-size: 12px;
