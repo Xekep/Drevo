@@ -295,7 +295,10 @@ test("half siblings require distinct known second parents", () => {
   assert.equal(analyzeKinship(a, b, list).title, "Брат и сестра");
   a.parents.push("maria");
   b.parents.push("elizaveta");
-  assert.match(analyzeKinship(a, b, list).title, /Неполнородные/);
+  assert.equal(
+    analyzeKinship(a, b, list).title,
+    "Единокровные брат и сестра",
+  );
 });
 test("dates calculate completed years at death", () => {
   assert.equal(ageLabel(find("alexander-old")), "71 год");
