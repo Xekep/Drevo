@@ -160,6 +160,28 @@ try {
   ]);
   const other = await openPostgresDatabase("other-archive", source);
   try {
+    // Explicit archive selection keeps same-ID people in separate snapshots.
+    const otherArchive = await openArchive(source, family, "other-archive");
+    try {
+      const [firstSnapshot, secondSnapshot] = await Promise.all([
+        live.read(),
+        otherArchive.read(),
+      ]);
+      assert.equal(firstSnapshot.family.people[0].name, "Иван");
+      assert.equal(secondSnapshot.family.people[0].name, "Чужой");
+      assert.equal(otherArchive.db.archiveId, "other-archive");
+      assert.equal(live.db.archiveId, "runtime-test");
+      const changed = structuredClone(secondSnapshot.family);
+      changed.people[0].name = "Исправленный сосед";
+      await otherArchive.write(changed, secondSnapshot.revision);
+      assert.equal(
+        (await otherArchive.read()).family.people[0].name,
+        "Исправленный сосед",
+      );
+      assert.equal((await live.read()).family.people[0].name, "Иван");
+    } finally {
+      await otherArchive.close();
+    }
     assert.equal(
       (await other.prepare("", "SELECT count(*) AS n FROM people").get())?.n,
       1,

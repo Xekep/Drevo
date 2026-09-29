@@ -47,6 +47,12 @@ const seed = (): Family => ({
     person("other", "1981", "f"),
   ],
 });
+test("explicit archive selection cannot silently reuse a SQLite archive", async () => {
+  await assert.rejects(
+    openArchive(":memory:", seed(), "other-archive"),
+    /только PostgreSQL/,
+  );
+});
 test("documented relationships preserve direction and coexist with blood kinship", () => {
   let f = connectPeople(seed(), "father", "child", "parent");
   f = connectPeople(f, "mother", "child", "godparent");
