@@ -1,4 +1,3 @@
-import { serialize, deserialize } from "node:v8";
 import { setImmediate } from "node:timers/promises";
 import type { StoreDatabase } from "./store-database.ts";
 
@@ -8,7 +7,7 @@ export function archiveSnapshotReader<T extends { revision: number }>(
   load: () => Promise<T>,
   maximumBytes = 16 * 1024 ** 2,
 ) {
-  type Snapshot = { revision: number; bytes: Buffer };
+  type Snapshot = { revision: number; json: string };
   let cached: Snapshot | undefined;
   let pending: { revision: number; value: Promise<Snapshot> } | undefined;
   const revisionQuery = db.prepare(
@@ -20,7 +19,7 @@ export function archiveSnapshotReader<T extends { revision: number }>(
     // otherwise creates every large caller object in one microtask batch before
     // any consumer can release it, multiplying transient RAM during a burst.
     await setImmediate();
-    return deserialize(snapshot.bytes) as T;
+    return JSON.parse(snapshot.json) as T;
   };
   return async (): Promise<T> => {
     // A transaction must see its own writes / REPEATABLE READ snapshot. Detached
@@ -34,9 +33,9 @@ export function archiveSnapshotReader<T extends { revision: number }>(
         revision,
         value: load().then((snapshot) => ({
           revision: snapshot.revision,
-          // v8 preserves undefined fields and isolates mutable caller objects.
-          // Only in-process bytes created here are ever deserialized.
-          bytes: serialize(snapshot),
+          // Archive hydration contains only persisted JSON values and arrays.
+          // Parsing native JSON keeps compact object shapes, unlike v8.deserialize.
+          json: JSON.stringify(snapshot),
         })),
       };
       pending = entry;
@@ -45,7 +44,7 @@ export function archiveSnapshotReader<T extends { revision: number }>(
       void entry.value.then(
         (value) => {
           if (pending === entry) {
-            cached = value.bytes.length <= maximumBytes ? value : undefined;
+            cached = value.json.length * 2 <= maximumBytes ? value : undefined;
             pending = undefined;
           }
         },

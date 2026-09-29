@@ -76,6 +76,10 @@ test("concurrent snapshots share a load but never mutable objects or view varian
       archive.overview(false),
     ]);
     assert.equal(full.family.people[0].biography, "Биография");
+    assert.deepEqual(
+      full,
+      await archive.db.transaction(() => readArchive(archive.db), true),
+    );
     assert.equal(portraits.family.people[0].photo, "/media/portrait.png");
     assert.equal(hidden.family.people[0].photo, undefined);
     assert.equal(portraits.family.people[0].biography, undefined);
