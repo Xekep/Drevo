@@ -112,6 +112,20 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  assert.equal(
+    (
+      await live.db
+        .prepare("", "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?")
+        .get("owner")
+    )?.allowed,
+    1,
+  );
+  assert.equal(
+    await live.db
+      .prepare("", "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?")
+      .get("vk:42"),
+    undefined,
+  );
   assert.deepEqual(await live.read(), before);
   await live.db
     .prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,?)")
@@ -673,6 +687,48 @@ try {
     ).status,
     403,
   );
+  const archiveAdminToken = newSessionToken();
+  await app.archive.db
+    .prepare(
+      "",
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'vk:42',?)",
+    )
+    .run(sessionTokenHash(archiveAdminToken), Date.now() + 60_000);
+  await app.archive.db
+    .prepare("", "UPDATE archive_memberships SET role='admin' WHERE user_id='vk:42'")
+    .run();
+  const archiveAdminHeaders = {
+    ...headers,
+    Cookie: `drevo_session=${archiveAdminToken}`,
+  };
+  const archiveAdminSession = await fetch(securedBase + "/api/session", {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json());
+  assert.equal(archiveAdminSession.user.role, "admin");
+  assert.equal(archiveAdminSession.user.platformAdmin, false);
+  assert.equal(
+    (await fetch(securedBase + "/api/family?projection=overview", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json())).user.platformAdmin,
+    false,
+  );
+  for (const path of ["/api/backups", "/api/backup/full"]) {
+    assert.equal(
+      (await fetch(securedBase + path, { headers: archiveAdminHeaders })).status,
+      403,
+    );
+  }
+  assert.equal(
+    (await fetch(securedBase + "/api/restore/preview", {
+      method: "POST",
+      headers: { ...archiveAdminHeaders, "x-drevo-restore": "1" },
+      body: "invalid backup",
+    })).status,
+    403,
+  );
+  await app.archive.db
+    .prepare("", "UPDATE archive_memberships SET role='reader' WHERE user_id='vk:42'")
+    .run();
   const manager = await backupCoordinator(app.archive.db, source, {
     schedule: false,
   });
@@ -710,6 +766,18 @@ try {
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
     )
     .run(sessionTokenHash(ownerToken), Date.now() + 60_000);
+  assert.equal(
+    (await fetch(securedBase + "/api/backups", {
+      headers: { Cookie: `drevo_session=${ownerToken}` },
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/family?projection=overview", {
+      headers: { Cookie: `drevo_session=${ownerToken}` },
+    }).then((response) => response.json())).user.platformAdmin,
+    true,
+  );
   const rejectedPdf = await fetch(securedBase + "/api/documents", {
     method: "POST",
     headers: {

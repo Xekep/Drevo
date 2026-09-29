@@ -21,8 +21,7 @@ export type GenealogyImport = {
   media: TransferMedia[];
 };
 export type GedcomVersion = "5.5.1" | "7.0";
-export type GenealogyExportFormat =
-  "gedcom551" | "gedcom7" | "gedzip7" | "drevoArchive";
+export type GenealogyExportFormat = "gedcom551" | "gedcom7" | "gedzip7";
 
 export const TRANSFER_TEXT_LIMIT = 32 * 1024 * 1024;
 export const TRANSFER_PACKAGE_LIMIT = 256 * 1024 * 1024;

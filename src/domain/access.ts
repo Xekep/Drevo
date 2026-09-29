@@ -9,6 +9,7 @@ export type ArchiveUser = {
   approved?: boolean;
   personId?: string;
   treeAccess?: TreeAccess;
+  platformAdmin?: boolean;
 };
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "Администратор",

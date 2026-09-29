@@ -173,14 +173,21 @@ export async function startServer(
     if (await yandex.handle(req, res, parsedUrl)) return;
     if (await vk.handle(req, res, parsedUrl)) return;
 
-    if (path === "/api/session" && req.method === "GET")
+    if (path === "/api/session" && req.method === "GET") {
+      const sessionUser = await auth.currentUser(req);
       return json(res, 200, {
         canEdit: await auth.canEdit(req),
         local: auth.local,
         yandex: yandex.enabled,
         vk: await vk.isEnabled(),
-        user: await auth.currentUser(req),
+        user: sessionUser
+          ? {
+              ...sessionUser,
+              platformAdmin: await auth.isPlatformAdmin(req),
+            }
+          : null,
       });
+    }
 
     if (!path.startsWith("/api/")) {
       if (vite) {
