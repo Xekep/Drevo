@@ -4,11 +4,13 @@ import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
   suggestConnectionOrder,
+  fullName,
   type Person,
   type GraphConnection,
   type ConnectionType,
 } from "./domain";
 import { useArchive } from "./hooks/useArchive";
+import { downloadLineageReport } from "./components/tree/download-lineage-report";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
@@ -113,6 +115,9 @@ export default function App() {
     } = selection;
   const navigationDirty = useRef(false);
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const [lastTreeExportAnchorId, setLastTreeExportAnchorId] = useState<
+    string | null
+  >(null);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -447,6 +452,7 @@ export default function App() {
         return;
       }
       if (!closeConnection()) return;
+      setLastTreeExportAnchorId(id);
       choose(id, additive);
       if (additive || compare) {
         lastUrlTarget.current = "";
@@ -470,6 +476,7 @@ export default function App() {
   const selectPersonOnly = useCallback(
     (id: string) => {
       if (!closeConnection() || !setPersonDraft(null)) return;
+      setLastTreeExportAnchorId(id);
       dispatch({ type: "selectOnly", id });
       lastUrlTarget.current = "";
       setView("tree", undefined, true);
@@ -479,6 +486,7 @@ export default function App() {
   const showPerson = useCallback(
     (id: string) => {
       if (!closeConnection()) return;
+      setLastTreeExportAnchorId(id);
       const target: ArchiveTarget = { kind: "person", id };
       lastUrlTarget.current = targetKey(target);
       setView("tree", target);
@@ -578,6 +586,11 @@ export default function App() {
   const accountPerson = navigationUser?.personId
     ? family?.people.find((person) => person.id === navigationUser.personId)
     : undefined;
+  const treeExportAnchor = family?.people.find(
+    (person) =>
+      person.id ===
+      (selected[0] || lastTreeExportAnchorId || accountPerson?.id),
+  );
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -1029,7 +1042,46 @@ export default function App() {
       )}
       {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
-          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
+          anchorId={treeExportAnchor?.id}
+          anchorName={treeExportAnchor && fullName(treeExportAnchor)}
+          onExportPdf={(signal, scope, anchorId, generations, printOptions) =>
+            treeCanvas.current!.exportPdf(
+              signal,
+              scope,
+              anchorId,
+              generations,
+              printOptions,
+            )
+          }
+          onPreviewPdf={(signal, scope, anchorId, generations, options) =>
+            treeCanvas.current!.previewPdf(
+              signal,
+              scope,
+              anchorId,
+              generations,
+              options,
+            )
+          }
+          onExportPng={(signal, scope, anchorId, generations) =>
+            treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
+          }
+          onExportReport={(direction, generations) => {
+            downloadLineageReport(
+              family,
+              treeExportAnchor?.id,
+              direction,
+              generations,
+            );
+          }}
+          onExportFan={async (options, signal) => {
+            const { exportFan } = await import("./components/tree/fan-export");
+            await exportFan(
+              family,
+              treeExportAnchor?.id || "",
+              options,
+              signal,
+            );
+          }}
           canExportArchive={user?.role === "admin"}
           preferences={archive.treePreferences}
           onChange={archive.saveTreePreferences}

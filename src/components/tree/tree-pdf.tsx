@@ -5,7 +5,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   ConnectionMode,
-  getNodesBounds,
   useNodesInitialized,
 } from "@xyflow/react";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
@@ -14,7 +13,16 @@ import {
   RelationshipEdge,
   type RelationshipEdgeType,
 } from "./relationship-edge";
-import { preparePdfFont, downloadTreeVectorPdf } from "./tree-pdf-vector";
+import {
+  preparePdfFont,
+  downloadTreeVectorPdf,
+  downloadTreePng,
+} from "./tree-pdf-vector";
+import {
+  treeGraphicBounds,
+  treePrintPlan,
+  type TreePrintOptions,
+} from "./tree-print-plan";
 
 export type ExportTree = {
   nodes: Array<PersonNodeType | HouseholdNodeType>;
@@ -94,40 +102,29 @@ function PrintTree({
 /** Download the active tree projection, including nodes outside the camera.
  * Explicit vector PDF geometry is independent of browser printer preferences.
  */
-export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
+async function exportTreeGraphic(
+  tree: ExportTree,
+  format: "pdf" | "png",
+  signal?: AbortSignal,
+  printOptions?: TreePrintOptions,
+) {
   signal?.throwIfAborted();
   const work = new AbortController();
-  if (!tree.nodes.length) throw new Error("В древе пока нет людей.");
-  const bounds = getNodesBounds(tree.nodes);
-  let left = bounds.x,
-    top = bounds.y;
-  let right = bounds.x + bounds.width,
-    bottom = bounds.y + bounds.height;
-  // Relationship routes can leave node bounds (e.g. additional relationships).
-  for (const edge of tree.edges)
-    for (const point of edge.data?.route?.points || []) {
-      left = Math.min(left, point.x);
-      top = Math.min(top, point.y);
-      right = Math.max(right, point.x);
-      bottom = Math.max(bottom, point.y);
-    }
-  const padding = 96;
-  const contentWidth = right - left;
-  const contentHeight = bottom - top;
-  // Grow the sheet instead of shrinking the cards. A 16px label must remain
-  // 12pt in the PDF even when the tree is much wider than a print-sized page.
-  // Keep tall/narrow projections on a landscape sheet too, centred naturally.
-  const height = Math.max(794, Math.ceil(contentHeight + 2 * padding));
-  const width = Math.max(
-    1123,
-    Math.ceil(contentWidth + 2 * padding),
-    Math.ceil(height * Math.SQRT2),
-  );
-  const x = (width - contentWidth) / 2 - left;
-  const y = (height - contentHeight) / 2 - top;
+  const { width, height, x, y } = treeGraphicBounds(tree);
+  if (format === "pdf" && printOptions)
+    treePrintPlan(width, height, printOptions);
+  // Browsers cannot allocate a bitmap for a full large archive. Vector PDF
+  // remains available; PNG is intended for a selected, publication-sized area.
+  if (
+    format === "png" &&
+    (width > 8192 || height > 8192 || width * height > 18_000_000)
+  )
+    throw new Error(
+      "Для PNG область слишком велика. Выберите ветку или сохраните всё древо в PDF.",
+    );
   const iframe = document.createElement("iframe");
-  iframe.title = "PDF древа";
-  iframe.name = "drevo-pdf";
+  iframe.title = format === "pdf" ? "PDF древа" : "PNG древа";
+  iframe.name = `drevo-${format}`;
   iframe.dataset.treePrint = "";
   iframe.setAttribute("aria-hidden", "true");
   // Keep the print viewport underneath the app so its layout can be measured.
@@ -250,28 +247,43 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
       );
       await target.fonts.ready;
       if (disposed) return;
+      for (const label of target.querySelectorAll(".portrait-card-info small"))
+        if (label.textContent?.trim() === "Нет привязки к древу")
+          label.remove();
       // Freeze measured HTML/SVG for vector serialization. React Flow listeners
       // and further handle measurements are no longer needed.
       const snapshot = target.body.firstElementChild!.cloneNode(true);
       root.unmount();
       target.body.replaceChildren(snapshot);
       await Promise.all(Array.from(target.images, (image) => image.decode()));
-      if (!disposed)
-        await downloadTreeVectorPdf(
-          target,
-          width,
-          height,
-          tree.title,
-          font,
-          work.signal,
-        );
+      if (!disposed) {
+        if (format === "pdf")
+          await downloadTreeVectorPdf(
+            target,
+            width,
+            height,
+            tree.title,
+            font,
+            work.signal,
+            printOptions,
+          );
+        else
+          await downloadTreePng(
+            target,
+            width,
+            height,
+            tree.title,
+            font,
+            work.signal,
+          );
+      }
     })();
     await Promise.race([
       prepared,
       cancelled,
       new Promise<never>((_, reject) => {
         expiry = setTimeout(
-          () => reject(new Error("Подготовка PDF заняла слишком долго.")),
+          () => reject(new Error("Подготовка файла заняла слишком долго.")),
           30_000,
         );
       }),
@@ -283,3 +295,12 @@ export async function exportTreePdf(tree: ExportTree, signal?: AbortSignal) {
     throw error;
   }
 }
+
+export const exportTreePdf = (
+  tree: ExportTree,
+  signal?: AbortSignal,
+  printOptions?: TreePrintOptions,
+) => exportTreeGraphic(tree, "pdf", signal, printOptions);
+
+export const exportTreePng = (tree: ExportTree, signal?: AbortSignal) =>
+  exportTreeGraphic(tree, "png", signal);

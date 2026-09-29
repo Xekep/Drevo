@@ -18,6 +18,7 @@ import {
   Panel,
   useReactFlow,
   useStore,
+  getNodesBounds,
   type Connection as FlowConnection,
   type Viewport,
 } from "@xyflow/react";
@@ -75,6 +76,11 @@ import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
 import { useEdgePan } from "./use-edge-pan";
 import { treeNodeSize } from "../../domain/tree-layout-constants";
+import { treeGraphicBounds, treePrintPlan, type TreePrintOptions, type TreePrintPreview } from "./tree-print-plan";
+import {
+  treeExportPeople,
+  type TreeExportScope,
+} from "../../domain/tree-export-selection";
 
 export type ConnectionDraft = {
   from: string;
@@ -91,7 +97,9 @@ export type TreeFocus = {
   groupId?: string;
 };
 export type TreeCanvasHandle = {
-  exportPdf: (signal?: AbortSignal) => Promise<void>;
+  exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number, options?: TreePrintOptions) => Promise<void>;
+  exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
+  previewPdf: (signal: AbortSignal, scope: TreeExportScope, anchorId: string | undefined, generations: number, options: TreePrintOptions) => Promise<TreePrintPreview>;
 };
 type Props = {
   onPreferences?: () => void;
@@ -804,6 +812,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const exportSnapshot = useRef({
     ready,
     layoutBusy,
+    family,
+    reverse,
     tree: {
       nodes: displayNodes,
       edges: displayEdges,
@@ -816,6 +826,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     exportSnapshot.current = {
       ready,
       layoutBusy,
+      family,
+      reverse,
       tree: {
         nodes: displayNodes,
         edges: displayEdges,
@@ -824,7 +836,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         white: props.colorScheme === "white",
       },
     };
-  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family.title, props.colorScheme]);
+  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family, reverse, props.colorScheme]);
   useImperativeHandle(
     exportRef,
     () => {
@@ -837,11 +849,47 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         }
         throw new Error("Не удалось дождаться построения древа.");
       };
+      const selectedTree = async (
+        signal?: AbortSignal,
+        scope: TreeExportScope = "current",
+        anchorId?: string,
+        generations = 5,
+      ) => {
+        if (scope === "current") return preparedTree(signal);
+        const current = exportSnapshot.current;
+        const { prepareTreeExport } = await import("./tree-export-model");
+        return prepareTreeExport(
+          current.family,
+          treeExportPeople(current.family, scope, anchorId, generations),
+          current.reverse,
+          current.tree.white,
+          current.tree.actions,
+          signal,
+        );
+      };
       return {
-        async exportPdf(signal) {
-          const tree = await preparedTree(signal);
+        async exportPdf(signal, scope, anchorId, generations, options) {
+          const tree = await selectedTree(signal, scope, anchorId, generations);
           const { exportTreePdf } = await import("./tree-pdf");
-          await exportTreePdf(tree, signal);
+          await exportTreePdf(tree, signal, options);
+        },
+        async exportPng(signal, scope, anchorId, generations) {
+          const tree = await selectedTree(signal, scope, anchorId, generations);
+          const { exportTreePng } = await import("./tree-pdf");
+          await exportTreePng(tree, signal);
+        },
+        async previewPdf(signal, scope, anchorId, generations, options) {
+          const tree = await selectedTree(signal, scope, anchorId, generations);
+          const { width, height, x, y } = treeGraphicBounds(tree);
+          return {
+            ...treePrintPlan(width, height, options),
+            sceneWidth: width,
+            sceneHeight: height,
+            cards: tree.nodes.filter((node) => node.type === "person").map((node) => {
+              const bounds = getNodesBounds([node]);
+              return { x: bounds.x + x, y: bounds.y + y, width: bounds.width, height: bounds.height };
+            }),
+          };
         },
       };
     },

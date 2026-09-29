@@ -16,6 +16,8 @@ import {
   writeGuestTreePreferences,
 } from "../data/guest-tree-preferences";
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
+import { downloadLineageReport } from "./tree/download-lineage-report";
+import { fullName } from "../domain";
 import { TreeSearch } from "./tree-search";
 const noop = () => {};
 type SharedData = {
@@ -25,6 +27,9 @@ type SharedData = {
 };
 export default function SharedTree({ token }: { token: string }) {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
+  const [lastExportAnchorId, setLastExportAnchorId] = useState<string | null>(
+    null,
+  );
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
@@ -107,6 +112,9 @@ export default function SharedTree({ token }: { token: string }) {
       ),
     [data, selected],
   );
+  const exportAnchor = data?.family.people.find(
+    (person) => person.id === (chosen[0]?.id || lastExportAnchorId),
+  );
   const relation = useMemo(
     () =>
       chosen.length === 2 && data
@@ -138,7 +146,10 @@ export default function SharedTree({ token }: { token: string }) {
               people={data.family.people}
               query={query}
               onQuery={setQuery}
-              onSelect={(id) => reveal([id])}
+              onSelect={(id) => {
+                setLastExportAnchorId(id);
+                reveal([id]);
+              }}
             />
           )}
         </header>
@@ -172,8 +183,14 @@ export default function SharedTree({ token }: { token: string }) {
                 }
                 colorScheme={preferences?.colorScheme}
                 selected={selected}
-                onChoose={choose}
-                onSelectOnly={(id) => dispatch({ type: "selectOnly", id })}
+                onChoose={(id, additive) => {
+                  setLastExportAnchorId(id);
+                  choose(id, additive);
+                }}
+                onSelectOnly={(id) => {
+                  setLastExportAnchorId(id);
+                  dispatch({ type: "selectOnly", id });
+                }}
                 onEdge={(edge) => reveal([edge.from, edge.to])}
                 onConnect={noop}
                 onClear={() => dispatch({ type: "clear" })}
@@ -212,7 +229,10 @@ export default function SharedTree({ token }: { token: string }) {
                         onNewRelative={noop}
                         onExistingRelative={noop}
                         onAlbum={noop}
-                        onSelect={(id) => reveal([id])}
+                        onSelect={(id) => {
+                          setLastExportAnchorId(id);
+                          reveal([id]);
+                        }}
                         onCompare={() => dispatch({ type: "compare" })}
                       />
                     )
@@ -230,7 +250,46 @@ export default function SharedTree({ token }: { token: string }) {
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
-          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal)}
+          anchorId={exportAnchor?.id}
+          anchorName={exportAnchor && fullName(exportAnchor)}
+          onExportPdf={(signal, scope, anchorId, generations, printOptions) =>
+            treeCanvas.current!.exportPdf(
+              signal,
+              scope,
+              anchorId,
+              generations,
+              printOptions,
+            )
+          }
+          onPreviewPdf={(signal, scope, anchorId, generations, options) =>
+            treeCanvas.current!.previewPdf(
+              signal,
+              scope,
+              anchorId,
+              generations,
+              options,
+            )
+          }
+          onExportPng={(signal, scope, anchorId, generations) =>
+            treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
+          }
+          onExportReport={(direction, generations) =>
+            downloadLineageReport(
+              data.family,
+              exportAnchor?.id,
+              direction,
+              generations,
+            )
+          }
+          onExportFan={async (options, signal) => {
+            const { exportFan } = await import("./tree/fan-export");
+            await exportFan(
+              data.family,
+              exportAnchor?.id || "",
+              options,
+              signal,
+            );
+          }}
           preferences={preferences}
           onChange={async (value) => {
             writeGuestTreePreferences(value);
