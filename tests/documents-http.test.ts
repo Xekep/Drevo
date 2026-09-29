@@ -119,6 +119,9 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       list.items[0].people.map((person) => person.id),
       ["anna"],
     );
+    const direct = await fetch(`${base}/api/documents/${id}`);
+    assert.equal(direct.status, 200);
+    assert.deepEqual(await direct.json(), list.items[0]);
     const byTitle = (await (
       await fetch(`${base}/api/documents?q=${encodeURIComponent("семейная")}`)
     ).json()) as { total: number };
@@ -148,11 +151,20 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const comment = await fetch(annotationUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...selection, authorName: "Подмена", canDelete: false }),
+      body: JSON.stringify({
+        ...selection,
+        authorName: "Подмена",
+        canDelete: false,
+      }),
     });
     assert.equal(comment.status, 201, await comment.clone().text());
     const saved = (await comment.json()) as {
-      items: Array<{ id: string; text: string; canDelete: boolean; authorName: string }>;
+      items: Array<{
+        id: string;
+        text: string;
+        canDelete: boolean;
+        authorName: string;
+      }>;
     };
     assert.equal(saved.items[0].text, selection.text);
     assert.equal(saved.items[0].canDelete, true);
@@ -374,7 +386,12 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         items: Array<{ canDelete: boolean }>;
       };
       assert.equal(list.items[0].canDelete, expected);
+      const direct = (await (await request(path, user)).json()) as {
+        canDelete: boolean;
+      };
+      assert.equal(direct.canDelete, expected);
     }
+    assert.equal((await request(path, "")).status, 401);
     assert.equal((await request(path, "", "DELETE")).status, 401);
     assert.equal((await request(path, "reader", "DELETE")).status, 403);
     assert.equal((await request(path, "other", "DELETE")).status, 403);
@@ -392,6 +409,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     ).json()) as { total: number };
     assert.equal(hiddenFilter.total, 0);
     assert.equal((await request(path, "owner", "DELETE")).status, 404);
+    assert.equal((await request(path, "owner")).status, 404);
     assert.equal((await request(annotationPath, "owner")).status, 404);
     assert.equal((await annotate("owner")).status, 404);
     await db

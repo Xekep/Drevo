@@ -45,6 +45,25 @@ type Row = {
   annotations: string;
 };
 
+function listedDocument(
+  row: Row,
+  linkedIds: string[],
+  people: Map<string, string>,
+  canDelete: boolean,
+) {
+  return {
+    id: row.id,
+    title: row.title,
+    size: row.file_size,
+    createdAt: row.created_at,
+    canDelete,
+    url: `/api/documents/${row.id}/file`,
+    people: linkedIds
+      .filter((id) => people.has(id))
+      .map((id) => ({ id, name: people.get(id)! })),
+  };
+}
+
 export function documentsHttp({
   archive,
   auth,
@@ -194,18 +213,40 @@ export function documentsHttp({
         mayEdit = await auth.canEdit(req);
       return json(res, 200, {
         total,
-        items: rows.map((row) => ({
-          id: row.id,
-          title: row.title,
-          size: row.file_size,
-          createdAt: row.created_at,
-          canDelete: mayEdit && owns(actor, { createdBy: row.uploaded_by }),
-          url: `/api/documents/${row.id}/file`,
-          people: (links.get(row.id) || [])
-            .filter((id) => people.has(id))
-            .map((id) => ({ id, name: people.get(id) })),
-        })),
+        items: rows.map((row) =>
+          listedDocument(
+            row,
+            links.get(row.id) || [],
+            people,
+            mayEdit && owns(actor, { createdBy: row.uploaded_by }),
+          ),
+        ),
       });
+    }
+
+    if (item && req.method === "GET") {
+      const row = (await db
+        .prepare("SELECT * FROM documents WHERE id=?")
+        .get(item[1])) as Row | undefined;
+      if (!row) return json(res, 404, { error: "Документ не найден" });
+      const access = await visible(req);
+      const linkedIds = (await associations([row.id])).get(row.id) || [];
+      if (access.scoped && !linkedIds.some((id) => access.ids.includes(id)))
+        return json(res, 404, { error: "Документ не найден" });
+      const people = new Map(
+        access.people.map((person) => [person.id, fullName(person)]),
+      );
+      return json(
+        res,
+        200,
+        listedDocument(
+          row,
+          linkedIds,
+          people,
+          (await auth.canEdit(req)) &&
+            owns(await auth.currentUser(req), { createdBy: row.uploaded_by }),
+        ),
+      );
     }
 
     if (annotations) {

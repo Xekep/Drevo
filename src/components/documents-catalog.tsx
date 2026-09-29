@@ -29,10 +29,12 @@ type PersonOption = { id: string; label: string; detail: string };
 export function DocumentsCatalog({
   mayEdit,
   personFilter,
+  documentId,
   people,
 }: {
   mayEdit: boolean;
   personFilter: string | null;
+  documentId: string | null;
   people: Person[];
 }) {
   const [documents, setDocuments] = useState<ListedDocument[]>([]);
@@ -42,6 +44,10 @@ export function DocumentsCatalog({
   const [annotateOnOpen, setAnnotateOnOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [directFailure, setDirectFailure] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const controller = useRef<AbortController | null>(null);
@@ -101,6 +107,46 @@ export function DocumentsCatalog({
   }, [load, query]);
 
   useEffect(() => {
+    if (!documentId) return;
+    if (!/^[a-f0-9-]{36}$/.test(documentId)) return;
+    const request = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/documents/${documentId}`, {
+          signal: request.signal,
+        });
+        if (!response.ok) throw new Error("Документ не найден или недоступен");
+        const entry = (await response.json()) as ListedDocument;
+        if (
+          personFilter &&
+          !entry.people.some((person) => person.id === personFilter)
+        )
+          throw new Error("Документ больше не связан с этим человеком");
+        if (!request.signal.aborted) {
+          setAnnotateOnOpen(false);
+          setSelected(entry);
+        }
+      } catch (reason) {
+        if (!request.signal.aborted)
+          setDirectFailure({
+            id: documentId,
+            message:
+              reason instanceof Error
+                ? reason.message
+                : "Не удалось открыть документ",
+          });
+      }
+    })();
+    return () => request.abort();
+  }, [documentId, personFilter]);
+  const directError =
+    documentId && !/^[a-f0-9-]{36}$/.test(documentId)
+      ? "Некорректная ссылка на документ"
+      : directFailure?.id === documentId
+        ? directFailure.message
+        : "";
+
+  useEffect(() => {
     if (personQuery.trim().length < 2) return;
     const request = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -154,7 +200,10 @@ export function DocumentsCatalog({
         size: file.size,
         createdAt: new Date().toISOString(),
         canDelete: true,
-        people: selectedPeople.map((person) => ({ id: person.id, name: person.label })),
+        people: selectedPeople.map((person) => ({
+          id: person.id,
+          name: person.label,
+        })),
       });
       setUploadOpen(false);
       setFile(null);
@@ -422,6 +471,11 @@ export function DocumentsCatalog({
             Повторить
           </button>
         </div>
+      )}
+      {directError && (
+        <p className="documents-state" role="alert">
+          {directError}
+        </p>
       )}
       {!error && loading && !documents.length && (
         <p className="documents-state" role="status">

@@ -35,9 +35,11 @@ test("из карточки человека открываются только
   page,
 }, testInfo) => {
   const title = `Документ ребёнка ${testInfo.project.name}`;
+  const secondTitle = `Метрическая выписка ребёнка ${testInfo.project.name}`;
   const otherTitle = `Документ супруга ${testInfo.project.name}`;
   for (const [name, personId] of [
     [title, "e2e-child"],
+    [secondTitle, "e2e-child"],
     [otherTitle, "e2e-spouse"],
   ]) {
     const response = await page.request.post("/api/documents", {
@@ -54,10 +56,29 @@ test("из карточки человека открываются только
   await page.goto("/people/e2e-child");
   const panel = page.locator(".inspector-dock");
   await panel.getByRole("tab", { name: /Источники/ }).click();
-  await panel
-    .getByRole("link", { name: "PDF-документы этого человека" })
-    .click();
-  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
+  await expect(
+    panel.getByRole("heading", { name: title, exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByRole("heading", { name: secondTitle })).toBeVisible();
+  await expect(panel.getByRole("heading", { name: otherTitle })).toHaveCount(0);
+  const documentLink = panel
+    .getByRole("heading", { name: title, exact: true })
+    .locator("..")
+    .getByRole("link", { name: "Открыть документ" });
+  const linkedUrl = await documentLink.getAttribute("href");
+  expect(linkedUrl).toMatch(
+    /^\/documents\?personId=e2e-child&documentId=[a-f0-9-]{36}$/,
+  );
+  await documentLink.click();
+  await expect(page).toHaveURL(linkedUrl!);
+  await expect(
+    page.getByRole("dialog", { name: `Документ: ${title}` }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("dialog", { name: `Документ: ${title}` }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(
     page.locator(".document-item").filter({ hasText: title }),
   ).toBeVisible();
@@ -69,6 +90,7 @@ test("из карточки человека открываются только
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toBeVisible();
   await page.goBack();
+  await page.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toHaveCount(0);

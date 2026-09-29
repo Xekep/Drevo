@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
   ArrowUpRight,
@@ -115,6 +115,62 @@ export function PersonPanel({
   idPrefix?: string;
 }) {
   const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
+  const [documents, setDocuments] = useState<{
+    personId: string;
+    retry: number;
+    items: Array<{ id: string; title: string }>;
+    error: string;
+  }>({ personId: "", retry: -1, items: [], error: "" });
+  const [documentRetry, setDocumentRetry] = useState(0);
+  useEffect(() => {
+    if (tab !== "sources") return;
+    const request = new AbortController();
+    void (async () => {
+      try {
+        const items: Array<{ id: string; title: string }> = [];
+        let total = 0;
+        do {
+          const response = await fetch(
+            `/api/documents?personId=${encodeURIComponent(person.id)}&offset=${items.length}&limit=100`,
+            { signal: request.signal },
+          );
+          if (!response.ok)
+            throw new Error("Не удалось загрузить PDF-документы");
+          const page = (await response.json()) as {
+            total: number;
+            items: Array<{ id: string; title: string }>;
+          };
+          total = page.total;
+          if (!page.items.length && items.length < total)
+            throw new Error("Не удалось загрузить все PDF-документы");
+          items.push(...page.items);
+        } while (items.length < total);
+        if (!request.signal.aborted)
+          setDocuments({
+            personId: person.id,
+            retry: documentRetry,
+            items,
+            error: "",
+          });
+      } catch (reason) {
+        if (!request.signal.aborted)
+          setDocuments({
+            personId: person.id,
+            retry: documentRetry,
+            items: [],
+            error:
+              reason instanceof Error
+                ? reason.message
+                : "Не удалось загрузить PDF-документы",
+          });
+      }
+    })();
+    return () => request.abort();
+  }, [person.id, tab, documentRetry]);
+  const documentsCurrent =
+    documents.personId === person.id && documents.retry === documentRetry;
+  const personDocuments = documentsCurrent ? documents.items : [];
+  const documentsLoading = !documentsCurrent;
   const sources = collectPersonSources(person);
   const relatives = people.filter(
     (p) =>
@@ -215,7 +271,10 @@ export function PersonPanel({
           className={tab === "sources" ? "active" : ""}
           onClick={() => setTab("sources")}
         >
-          Источники <span className="count-badge">{sources.length}</span>
+          Источники{" "}
+          <span className="count-badge">
+            {sources.length + personDocuments.length}
+          </span>
         </button>
         {canDiscuss && (
           <button
@@ -312,14 +371,37 @@ export function PersonPanel({
         ) : (
           <>
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>
-            <a
-              className="person-documents-link"
-              href={`/documents?personId=${encodeURIComponent(person.id)}`}
-            >
-              <FileText size={16} aria-hidden="true" />
-              PDF-документы этого человека
-              <ArrowUpRight size={14} aria-hidden="true" />
-            </a>
+            {documentsLoading && (
+              <p className="muted-copy" role="status">
+                Загружаем PDF-документы…
+              </p>
+            )}
+            {documentsCurrent && documents.error && (
+              <div role="alert">
+                <p className="muted-copy">{documents.error}</p>
+                <button
+                  type="button"
+                  onClick={() => setDocumentRetry((value) => value + 1)}
+                >
+                  Повторить
+                </button>
+              </div>
+            )}
+            {personDocuments.map((document) => (
+              <div className="source-card" key={document.id}>
+                <div className="source-type">
+                  <FileText size={13} />
+                  PDF-документ
+                </div>
+                <h3>{document.title}</h3>
+                <a
+                  href={`/documents?personId=${encodeURIComponent(person.id)}&documentId=${encodeURIComponent(document.id)}`}
+                >
+                  Открыть документ
+                  <ArrowUpRight size={12} />
+                </a>
+              </div>
+            ))}
             {sources.length ? (
               sources.map((s, i) => (
                 <div
@@ -353,13 +435,15 @@ export function PersonPanel({
                   )}
                 </div>
               ))
-            ) : (
+            ) : !personDocuments.length &&
+              !documentsLoading &&
+              !documents.error ? (
               <div className="empty-sources">
                 <BookOpen size={28} strokeWidth={1} />
                 <h3>У истории ещё есть пробелы</h3>
                 <p>Источники об этом человеке пока не добавлены в архив.</p>
               </div>
-            )}
+            ) : null}
           </>
         )}
       </div>

@@ -915,6 +915,10 @@ export default function App() {
                     currentPath,
                     window.location.origin,
                   ).searchParams.get("personId")}
+                  documentId={new URL(
+                    currentPath,
+                    window.location.origin,
+                  ).searchParams.get("documentId")}
                   personFilter={photoWorkspace.personFilter}
                   onClearPhotoFilter={photoWorkspace.clearFilter}
                 />
@@ -1074,9 +1078,8 @@ export default function App() {
             );
           }}
           onExportPdfReport={async (kind, generations, signal) => {
-            const { downloadArchiveReport } = await import(
-              "./components/tree/download-archive-report"
-            );
+            const { downloadArchiveReport } =
+              await import("./components/tree/download-archive-report");
             await downloadArchiveReport(
               family,
               treeExportAnchor?.id,
