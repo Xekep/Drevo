@@ -123,6 +123,7 @@ const serviceTables = [
   "geocode_cache",
   "mcp_tokens",
   "mcp_usage",
+  "media_originals",
   "media_upload_grants",
   "migrations",
   "oauth_transactions",
@@ -157,8 +158,9 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   ]
     .filter(
       (name) =>
-        !["person_comments", "vk_auth_settings"].includes(name) ||
-        actual.includes(name),
+        !["person_comments", "vk_auth_settings", "media_originals"].includes(
+          name,
+        ) || actual.includes(name),
     )
     .sort();
   if (!isDeepStrictEqual(actual, expected))
@@ -196,6 +198,12 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
     // Older standalone backups predate the additive VK settings table.
     if (name === "vk_auth_settings" && !actual.includes(name))
       return { name, columns: ["id", "enabled", "client_id"], rows: [] };
+    if (name === "media_originals" && !actual.includes(name))
+      return {
+        name,
+        columns: ["url", "size_bytes", "uploaded_by", "created_at"],
+        rows: [],
+      };
     const columns = db
       .prepare(`PRAGMA table_info(${name})`)
       .all()

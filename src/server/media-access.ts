@@ -3,32 +3,45 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { Family, Person } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { ForbiddenError } from "./users.ts";
+import { recordMediaOriginal } from "./media-originals.ts";
 
 /** Provenance for a newly uploaded file before it is attached to a card. */
 export async function registerMediaUpload(
   db: StoreDatabase,
   url: string,
   userId: string,
+  sizeBytes: number,
 ) {
-  await db
-    .prepare(
-      "DELETE FROM media_upload_grants WHERE expires_ms<?",
-      "DELETE FROM media_upload_grants WHERE expires_ms<?",
-    )
-    .run(Date.now());
-  await db
-    .prepare(
-      "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)",
-      "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)",
-    )
-    .run(url, userId, Date.now() + 24 * 60 * 60_000);
-  return async () =>
+  await db.transaction(async () => {
     await db
       .prepare(
-        "DELETE FROM media_upload_grants WHERE url=?",
-        "DELETE FROM media_upload_grants WHERE url=?",
+        "DELETE FROM media_upload_grants WHERE expires_ms<?",
+        "DELETE FROM media_upload_grants WHERE expires_ms<?",
       )
-      .run(url);
+      .run(Date.now());
+    await recordMediaOriginal(db, url, sizeBytes, userId);
+    await db
+      .prepare(
+        "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)",
+        "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES(?,?,?)",
+      )
+      .run(url, userId, Date.now() + 24 * 60 * 60_000);
+  });
+  return async () =>
+    await db.transaction(async () => {
+      await db
+        .prepare(
+          "DELETE FROM media_upload_grants WHERE url=?",
+          "DELETE FROM media_upload_grants WHERE url=?",
+        )
+        .run(url);
+      await db
+        .prepare(
+          "DELETE FROM media_originals WHERE url=?",
+          "DELETE FROM media_originals WHERE url=?",
+        )
+        .run(url);
+    });
 }
 
 export async function ownsPendingMedia(

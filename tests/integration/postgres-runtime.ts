@@ -105,6 +105,14 @@ try {
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
   assert.deepEqual(await live.read(), before);
+  await live.db
+    .prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,?)")
+    .run("/media/original.png", 123);
+  assert.equal(
+    (await live.db.prepare("", "SELECT size_bytes FROM media_originals").get())
+      ?.size_bytes,
+    123,
+  );
   await client.query(
     "SELECT set_config('drevo.archive_id','runtime-test',false)",
   );
@@ -132,6 +140,23 @@ try {
     assert.equal(
       (await other.prepare("", "SELECT count(*) AS n FROM people").get())?.n,
       1,
+    );
+    assert.equal(
+      (
+        await other
+          .prepare("", "SELECT count(*) AS n FROM media_originals")
+          .get()
+      )?.n,
+      0,
+    );
+    await assert.rejects(
+      other
+        .prepare(
+          "",
+          "INSERT INTO media_originals(archive_id,url,size_bytes) VALUES('runtime-test','/media/forbidden.png',1)",
+        )
+        .run(),
+      /row-level security/,
     );
     assert.equal(
       (

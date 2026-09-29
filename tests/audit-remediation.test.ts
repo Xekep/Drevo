@@ -74,19 +74,20 @@ test("scoped media assignments require ownership, retain portrait undo and rejec
       archive.db,
       "/media/new.png",
       "other",
+      1,
     );
     await assert.rejects(
       async () => await assign("/media/new.png"),
       /Нет доступа/,
     );
     await removeOther();
-    await registerMediaUpload(archive.db, "/media/new.png", user.id);
+    await registerMediaUpload(archive.db, "/media/new.png", user.id, 1);
     await archive.db.exec("UPDATE media_upload_grants SET expires_ms=0");
     await assert.rejects(
       async () => await assign("/media/new.png"),
       /Нет доступа/,
     );
-    await registerMediaUpload(archive.db, "/media/new.png", user.id);
+    await registerMediaUpload(archive.db, "/media/new.png", user.id, 1);
     await assign("/media/new.png");
     await archive.db.exec("DELETE FROM media_upload_grants");
     await assign("/media/previous.png");

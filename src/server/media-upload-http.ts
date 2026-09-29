@@ -110,7 +110,12 @@ export function mediaUploadHttp({
         return conflict(res);
       }
 
-      forgetUpload = await registerMediaUpload(archive.db, file.url, actor.id);
+      forgetUpload = await registerMediaUpload(
+        archive.db,
+        file.url,
+        actor.id,
+        file.size,
+      );
       if (portrait) return json(res, 201, { url: file.url });
 
       const current = (await archive.read()).family,
@@ -144,7 +149,7 @@ export function mediaUploadHttp({
         throw error;
       }
     } catch (error) {
-      forgetUpload?.();
+      await forgetUpload?.();
       if (file) await file.undo();
       if (error instanceof UploadQuotaError && error.status === 429)
         res.setHeader("Retry-After", "60");
