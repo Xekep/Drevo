@@ -179,7 +179,13 @@ export async function archiveHttp({
     publicOrigin,
   });
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
-  const uploadMedia = mediaUploadHttp({ archive, auth, media, publicOrigin });
+  const uploadMedia = mediaUploadHttp({
+    archive,
+    auth,
+    media,
+    publicOrigin,
+    uploadsDirectory,
+  });
   const faceDescriptors = faceDescriptorsHttp({ archive, auth, publicOrigin });
   const serveMedia = mediaHttp({
     auth,

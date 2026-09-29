@@ -10,7 +10,7 @@ export class UploadQuotaError extends Error {
 }
 
 /** Reservations count unfinished uploads, including requests in other processes. */
-export function documentUploadQuota(
+export function uploadQuota(
   db: StoreDatabase,
   {
     bytes = 10 * 1024 ** 3,
@@ -59,7 +59,7 @@ export function documentUploadQuota(
           .get())!;
         if (recent >= requestsPerHour || Number(pending.n) >= concurrent)
           throw new UploadQuotaError(
-            "Слишком много загрузок документов. Попробуйте позже.",
+            "Слишком много загрузок. Попробуйте позже.",
             429,
           );
         const used = (await db
@@ -78,7 +78,7 @@ export function documentUploadQuota(
           freeBytes - Number(pending.bytes) - maximumBytes < freeReserve
         )
           throw new UploadQuotaError(
-            "Недостаточно места для документа. Лимит хранилища достигнут.",
+            "Недостаточно места. Лимит хранилища достигнут.",
             507,
           );
         await db

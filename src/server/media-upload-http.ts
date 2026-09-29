@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { statfs } from "node:fs/promises";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { MediaTooLargeError, type mediaStore } from "./media.ts";
@@ -6,10 +7,9 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
 import { registerMediaUpload } from "./media-access.ts";
+import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 
 const MAX_UPLOAD = 20 * 1024 * 1024;
-const MAX_MEDIA_FILES = 20_000;
-const MAX_MEDIA_BYTES = 10 * 1024 * 1024 * 1024;
 
 function photoFields(req: IncomingMessage) {
   const metadata = JSON.parse(
@@ -33,32 +33,15 @@ export function mediaUploadHttp({
   auth,
   media,
   publicOrigin,
+  uploadsDirectory,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   media: ReturnType<typeof mediaStore>;
   publicOrigin?: string;
+  uploadsDirectory: string;
 }) {
-  const uploads = new Map<string, { since: number; count: number }>();
-  const totalUsage = async () => {
-    const images = await media.usage();
-    const documents = (await archive.db
-      .prepare(
-        "SELECT count(*) AS files,coalesce(sum(file_size),0) AS bytes FROM documents",
-        "SELECT count(*) AS files,coalesce(sum(file_size),0) AS bytes FROM documents",
-      )
-      .get())!;
-    const pending = (await archive.db
-      .prepare(
-        "SELECT count(*) AS files,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0 AND expires_ms>?",
-        "SELECT count(*) AS files,coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests WHERE reserved_bytes>0 AND expires_ms>?",
-      )
-      .get(Date.now()))!;
-    return {
-      files: images.files + Number(documents.files) + Number(pending.files),
-      bytes: images.bytes + Number(documents.bytes) + Number(pending.bytes),
-    };
-  };
+  const quota = uploadQuota(archive.db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -90,21 +73,6 @@ export function mediaUploadHttp({
         error: "You do not have editing access",
       });
     const requester = (await auth.currentUser(req))!;
-    const now = Date.now(),
-      window = uploads.get(requester.id);
-    if (!window || now - window.since >= 60 * 60 * 1000)
-      uploads.set(requester.id, { since: now, count: 1 });
-    else if (++window.count > 60) {
-      res.setHeader("Retry-After", "3600");
-      return json(res, 429, {
-        error: "Слишком много загрузок. Повторите позже",
-      });
-    }
-    const usage = await totalUsage();
-    if (usage.files >= MAX_MEDIA_FILES || usage.bytes >= MAX_MEDIA_BYTES)
-      return json(res, 507, {
-        error: "Хранилище фотографий достигло установленного лимита",
-      });
     if (req.headers["x-drevo-upload"] !== "1")
       return json(res, 400, { error: "Некорректная загрузка" });
 
@@ -119,19 +87,16 @@ export function mediaUploadHttp({
 
     let file: Awaited<ReturnType<typeof media.addStream>> | undefined;
     let forgetUpload: (() => unknown) | undefined;
+    let release: (() => Promise<unknown>) | undefined;
     try {
+      const disk = await statfs(uploadsDirectory);
+      release = await quota.acquire(
+        requester.id,
+        MAX_UPLOAD,
+        disk.bavail * disk.bsize,
+        await media.usage(),
+      );
       file = await media.addStream(req, MAX_UPLOAD);
-      const afterUpload = await totalUsage();
-      if (
-        afterUpload.files > MAX_MEDIA_FILES ||
-        afterUpload.bytes > MAX_MEDIA_BYTES
-      ) {
-        await file.undo();
-        file = undefined;
-        return json(res, 507, {
-          error: "Загрузка превысит установленный лимит хранилища",
-        });
-      }
       const actor = await auth.currentUser(req);
       if (
         !actor?.approved ||
@@ -181,15 +146,19 @@ export function mediaUploadHttp({
     } catch (error) {
       forgetUpload?.();
       if (file) await file.undo();
+      if (error instanceof UploadQuotaError && error.status === 429)
+        res.setHeader("Retry-After", "60");
       return json(
         res,
         error instanceof MediaTooLargeError
           ? 413
-          : error instanceof ConflictError
-            ? 409
-            : error instanceof ForbiddenError
-              ? 403
-              : 400,
+          : error instanceof UploadQuotaError
+            ? error.status
+            : error instanceof ConflictError
+              ? 409
+              : error instanceof ForbiddenError
+                ? 403
+                : 400,
         {
           error:
             error instanceof Error
@@ -197,6 +166,8 @@ export function mediaUploadHttp({
               : "Не удалось загрузить фотографию",
         },
       );
+    } finally {
+      await release?.();
     }
   };
 }
