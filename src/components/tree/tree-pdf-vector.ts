@@ -1,14 +1,94 @@
 import { jsPDF } from "jspdf";
 import "svg2pdf.js";
 import fontUrl from "../../../assets/DejaVuSans.ttf?url";
+import {
+  DEFAULT_TREE_PRINT,
+  treePrintPlan,
+  type TreePrintOptions,
+} from "./tree-print-plan";
 
 const namespace = "http://www.w3.org/2000/svg";
 const fontName = "Drevo";
 
-export async function preparePdfFont(target: Document, signal?: AbortSignal) {
+export function downloadBlob(
+  blob: Blob,
+  title: string,
+  extension: "pdf" | "png",
+) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  const filename = Array.from(title, (char) =>
+    char.charCodeAt(0) < 32 ? "_" : char,
+  ).join("");
+  link.download = `${filename.replace(/[<>:"/\\|?*]/g, "_").slice(0, 120) || "Древо"}.${extension}`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export function base64(bytes: Uint8Array) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 8192)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  return btoa(binary);
+}
+
+export async function downloadTreePng(
+  target: Document,
+  width: number,
+  height: number,
+  title: string,
+  font: Uint8Array,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  const svg = treePdfSvg(target, width, height);
+  const style = svgElement(target, "style");
+  style.textContent = `@font-face{font-family:${fontName};src:url(data:font/ttf;base64,${base64(font)}) format('truetype')}`;
+  svg.prepend(style);
+  const imageUrl = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(svg)], {
+      type: "image/svg+xml;charset=utf-8",
+    }),
+  );
+  const image = new Image();
+  try {
+    image.src = imageUrl;
+    await image.decode();
+    signal?.throwIfAborted();
+    const canvas = target.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Браузер не смог подготовить PNG.");
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (value) =>
+          value ? resolve(value) : reject(new Error("Не удалось создать PNG.")),
+        "image/png",
+      ),
+    );
+    canvas.width = canvas.height = 0;
+    signal?.throwIfAborted();
+    downloadBlob(blob, title, "png");
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+export async function loadPdfFontBytes(signal?: AbortSignal) {
   const response = await fetch(fontUrl, { signal });
   if (!response.ok) throw new Error("Не удалось загрузить шрифт PDF.");
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function preparePdfFont(target: Document, signal?: AbortSignal) {
+  const bytes = await loadPdfFontBytes(signal);
   const face = new FontFace(fontName, bytes);
   await face.load();
   target.fonts.add(face);
@@ -251,8 +331,50 @@ export async function downloadTreeVectorPdf(
   title: string,
   font: Uint8Array,
   signal?: AbortSignal,
+  options: TreePrintOptions = DEFAULT_TREE_PRINT,
 ) {
   signal?.throwIfAborted();
+  const plan = treePrintPlan(width, height, options);
+  if (options.paper !== "large") {
+    const pdf = new jsPDF({
+      orientation: options.orientation,
+      unit: "pt",
+      format: [plan.widthPt, plan.heightPt],
+      compress: true,
+      putOnlyUsedFonts: true,
+    });
+    pdf.addFileToVFS("Drevo.ttf", base64(font));
+    pdf.addFont("Drevo.ttf", fontName, "normal");
+    pdf.setFont(fontName);
+    pdf.setProperties({ title, creator: "Drevo" });
+    const svg = treePdfSvg(target, width, height);
+    const usableWidth = plan.widthPt - 2 * plan.marginPt;
+    const usableHeight = plan.heightPt - 2 * plan.marginPt;
+    const tileWidth = usableWidth / (0.75 * plan.scale);
+    const tileHeight = usableHeight / (0.75 * plan.scale);
+    for (let row = 0; row < plan.rows; row++)
+      for (let column = 0; column < plan.columns; column++) {
+        signal?.throwIfAborted();
+        if (row || column)
+          pdf.addPage([plan.widthPt, plan.heightPt], options.orientation);
+        const tile = svg.cloneNode(true) as SVGSVGElement;
+        tile.setAttribute(
+          "viewBox",
+          `${column * tileWidth} ${row * tileHeight} ${tileWidth} ${tileHeight}`,
+        );
+        tile.setAttribute("width", String(tileWidth));
+        tile.setAttribute("height", String(tileHeight));
+        await pdf.svg(tile, {
+          x: plan.marginPt,
+          y: plan.marginPt,
+          width: usableWidth,
+          height: usableHeight,
+        });
+      }
+    signal?.throwIfAborted();
+    downloadBlob(pdf.output("blob"), title, "pdf");
+    return;
+  }
   // PDF page coordinates are limited to 14,400 points. UserUnit preserves the
   // physical scale of very wide trees instead of shrinking their text.
   const userUnit = Math.max(
@@ -274,10 +396,7 @@ export async function downloadTreeVectorPdf(
       __private__: { setPdfVersion: (version: string) => void };
     }
   ).__private__.setPdfVersion("1.7");
-  let binary = "";
-  for (let offset = 0; offset < font.length; offset += 8192)
-    binary += String.fromCharCode(...font.subarray(offset, offset + 8192));
-  pdf.addFileToVFS("Drevo.ttf", btoa(binary));
+  pdf.addFileToVFS("Drevo.ttf", base64(font));
   pdf.addFont("Drevo.ttf", fontName, "normal");
   pdf.setFont(fontName);
   pdf.setProperties({ title, creator: "Drevo" });
@@ -287,15 +406,5 @@ export async function downloadTreeVectorPdf(
     height: (height * 0.75) / userUnit,
   });
   signal?.throwIfAborted();
-  const url = URL.createObjectURL(pdf.output("blob"));
-  const link = document.createElement("a");
-  link.href = url;
-  const filename = Array.from(title, (char) =>
-    char.charCodeAt(0) < 32 ? "_" : char,
-  ).join("");
-  link.download = `${filename.replace(/[<>:"/\\|?*]/g, "_").slice(0, 120) || "Древо"}.pdf`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  downloadBlob(pdf.output("blob"), title, "pdf");
 }

@@ -3,14 +3,14 @@ import "../../styles/fan-chart.css";
 import {
   ancestorFanSlots,
   fullName,
+  safeUrl,
   years,
   type Family,
 } from "../../domain";
 
-const GENERATIONS = 5;
+const DEFAULT_GENERATIONS = 5;
 const ROOT_RADIUS = 78;
 const RING_WIDTH = 105;
-const OUTER_RADIUS = ROOT_RADIUS + (GENERATIONS - 1) * RING_WIDTH;
 
 function polar(radius: number, degrees: number) {
   const radians = (degrees * Math.PI) / 180;
@@ -58,12 +58,23 @@ export function FanChart({
   anchorId,
   selected,
   onChoose,
+  generations = DEFAULT_GENERATIONS,
+  showNames = true,
+  showYears = true,
+  showPortraits = false,
+  showUnknown = true,
 }: {
   family: Family;
   anchorId: string;
   selected: readonly string[];
   onChoose: (id: string) => void;
+  generations?: number;
+  showNames?: boolean;
+  showYears?: boolean;
+  showPortraits?: boolean;
+  showUnknown?: boolean;
 }) {
+  const outerRadius = ROOT_RADIUS + (generations - 1) * RING_WIDTH;
   const viewport = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = viewport.current;
@@ -82,8 +93,8 @@ export function FanChart({
     [family.people],
   );
   const slots = useMemo(
-    () => ancestorFanSlots(family.people, anchorId, GENERATIONS),
-    [family.people, anchorId],
+    () => ancestorFanSlots(family.people, anchorId, generations),
+    [family.people, anchorId, generations],
   );
   const root = people.get(anchorId);
   if (!root) return null;
@@ -91,18 +102,22 @@ export function FanChart({
   const known = slots.filter((slot) => slot.personId).length;
 
   return (
-    <div ref={viewport} className="fan-chart" aria-label={`Веер предков: ${fullName(root)}`}>
+    <div
+      ref={viewport}
+      className="fan-chart"
+      aria-label={`Веер предков: ${fullName(root)}`}
+    >
       <div className="fan-chart-meta">
         <strong>{fullName(root)}</strong>
         <span>
-          {GENERATIONS} поколений · {Math.max(0, known - 1)} известных предков
+          {generations} поколений · {Math.max(0, known - 1)} известных предков
         </span>
       </div>
       <svg
         className="fan-chart-svg"
-        viewBox={`${-OUTER_RADIUS - 28} ${-OUTER_RADIUS - 28} ${(OUTER_RADIUS + 28) * 2} ${OUTER_RADIUS + 94}`}
+        viewBox={`${-outerRadius - 28} ${-outerRadius - 28} ${(outerRadius + 28) * 2} ${outerRadius + 94}`}
         role="img"
-        aria-label={`Веер предков в пяти поколениях для ${fullName(root)}`}
+        aria-label={`Веер предков в ${generations} поколениях для ${fullName(root)}`}
       >
         {slots.map((slot) => {
           const count = 2 ** slot.generation;
@@ -121,19 +136,23 @@ export function FanChart({
           const labelRadius =
             slot.generation === 0 ? ROOT_RADIUS * 0.5 : (inner + outer) / 2;
           const label = polar(labelRadius, mid);
-          const availableArc =
-            labelRadius * ((angle * Math.PI) / 180);
-          const denseLabel =
-            slot.generation > 0 && availableArc < 150;
-          const tangentialRotation =
-            ((mid + 90) % 360 + 360) % 360;
+          const availableArc = labelRadius * ((angle * Math.PI) / 180);
+          const denseLabel = slot.generation > 0 && availableArc < 150;
+          const tangentialRotation = (((mid + 90) % 360) + 360) % 360;
           const rotation =
             slot.generation === 0
               ? 0
               : denseLabel
-                ? ((tangentialRotation - 90) % 360 + 360) % 360
+                ? (((tangentialRotation - 90) % 360) + 360) % 360
                 : tangentialRotation;
           const person = slot.personId ? people.get(slot.personId) : undefined;
+          if (!person && !showUnknown) return null;
+          const portrait =
+            showPortraits && slot.generation <= 2 && person?.photo
+              ? safeUrl(person.photo)
+              : undefined;
+          const portraitRadius = slot.generation === 0 ? 14 : 17;
+          const portraitCenterY = label.y - (slot.generation === 0 ? 20 : 13);
           const side =
             slot.generation === 0
               ? "root"
@@ -167,49 +186,72 @@ export function FanChart({
               }
               onClick={() => person && onChoose(person.id)}
               onKeyDown={(event) => {
-                if (
-                  person &&
-                  (event.key === "Enter" || event.key === " ")
-                ) {
+                if (person && (event.key === "Enter" || event.key === " ")) {
                   event.preventDefault();
                   onChoose(person.id);
                 }
               }}
             >
               <path d={sectorPath(inner, outer, start, end)} />
+              {portrait && (
+                <>
+                  <defs>
+                    <clipPath
+                      id={`fan-portrait-${slot.generation}-${slot.index}`}
+                    >
+                      <circle
+                        cx={label.x}
+                        cy={portraitCenterY}
+                        r={portraitRadius}
+                      />
+                    </clipPath>
+                  </defs>
+                  <image
+                    href={portrait}
+                    x={label.x - portraitRadius}
+                    y={portraitCenterY - portraitRadius}
+                    width={portraitRadius * 2}
+                    height={portraitRadius * 2}
+                    preserveAspectRatio="xMidYMid slice"
+                    clipPath={`url(#fan-portrait-${slot.generation}-${slot.index})`}
+                  />
+                </>
+              )}
               {person ? <title>{fullName(person)}</title> : null}
-              {person ? (
+              {person && (showNames || showYears) ? (
                 <text
                   className="fan-sector-label"
                   data-label-orientation={denseLabel ? "radial" : "tangential"}
-                  transform={`translate(${label.x} ${label.y}) rotate(${rotation})`}
+                  transform={`translate(${label.x} ${label.y + (portrait ? (slot.generation === 0 ? 14 : 21) : 0)}) rotate(${rotation})`}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   aria-hidden="true"
                 >
-                  <tspan
-                    x="0"
-                    dy={
-                      slot.generation <= 2 ||
-                      (denseLabel && slot.generation <= 3 && !!person.surname)
-                        ? "-7"
-                        : "0"
-                    }
-                  >
-                    {clipped(person.surname || person.name, nameLimit)}
-                  </tspan>
-                  {slot.generation <= 3 && person.surname && (
+                  {showNames && (
+                    <tspan
+                      x="0"
+                      dy={
+                        slot.generation <= 2 ||
+                        (denseLabel && slot.generation <= 3 && !!person.surname)
+                          ? "-7"
+                          : "0"
+                      }
+                    >
+                      {clipped(person.surname || person.name, nameLimit)}
+                    </tspan>
+                  )}
+                  {showNames && slot.generation <= 3 && person.surname && (
                     <tspan x="0" dy="15">
                       {clipped(person.name, nameLimit)}
                     </tspan>
                   )}
-                  {slot.generation <= 2 && life && (
+                  {showYears && slot.generation <= 2 && life && (
                     <tspan className="fan-sector-years" x="0" dy="15">
                       {life}
                     </tspan>
                   )}
                 </text>
-              ) : slot.generation <= 2 ? (
+              ) : !person && slot.generation <= 2 ? (
                 <text
                   className="fan-sector-empty-label"
                   x={label.x}
