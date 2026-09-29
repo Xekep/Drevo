@@ -191,9 +191,11 @@ export function aiResearchHttp({
     if (path === "/api/ai/status") {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
+      const user = (await auth.currentUser(req))!;
+      const runtime = await aiRuntimeConfig(aiSettings, user.role);
       return json(res, 200, {
-        enabled: (await aiRuntimeConfig(aiSettings)).active,
-        canPropose: await auth.canEdit(req),
+        enabled: runtime.active,
+        canPropose: runtime.capabilities.proposals && (await auth.canEdit(req)),
         streaming: true,
       });
     }
@@ -275,13 +277,6 @@ export function aiResearchHttp({
       return json(res, 405, { error: "Ожидается POST" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
-    const runtime = await aiRuntimeConfig(aiSettings);
-    if (!runtime.active)
-      return json(res, 503, {
-        error: runtime.configured
-          ? "ИИ-исследователь отключён администратором"
-          : "ИИ-исследователь не настроен: задайте API-ключ, Folder ID и модель",
-      });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(res, 415, { error: "JSON required" });
 
@@ -294,8 +289,18 @@ export function aiResearchHttp({
           error instanceof Error ? error.message : "Некорректный JSON запроса",
       });
     }
-    const user = (await auth.currentUser(req))!,
-      canPropose = await auth.canEdit(req);
+    const user = await auth.currentUser(req);
+    if (!user?.approved)
+      return json(res, 403, { error: "Доступ к архиву отозван" });
+    const runtime = await aiRuntimeConfig(aiSettings, user.role);
+    if (!runtime.active)
+      return json(res, 503, {
+        error: runtime.configured
+          ? "ИИ-исследователь отключён администратором"
+          : "ИИ-исследователь не настроен: задайте API-ключ, Folder ID и модель",
+      });
+    const canPropose =
+      runtime.capabilities.proposals && (await auth.canEdit(req));
     const selectedPersonId = body.selectedPersonId;
     if (
       selectedPersonId !== undefined &&
@@ -327,6 +332,8 @@ export function aiResearchHttp({
       : typedMessage;
     try {
       await usage.check(user.id, runtime.limits);
+      if (runtime.userLimits)
+        await usage.check(user.id, runtime.userLimits, "user");
     } catch (error) {
       if (error instanceof AiLimitError) {
         if (error.retryAfterSeconds)

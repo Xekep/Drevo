@@ -8,8 +8,17 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { AiTokenUsageChart } from "./charts/ai-token-usage-chart";
+import { AiRoleProfilesEditor } from "./ai-role-profiles-editor";
+import {
+  inheritedAiRoleProfiles,
+  type AiRoleProfile,
+  type AiRoleProfiles,
+} from "../shared/ai-role-profiles";
+import type { Role } from "../domain/access";
 
 type AiAdminStatus = {
+  roleProfiles: AiRoleProfiles;
+  defaultRoleProfile: AiRoleProfile;
   enabled: boolean;
   webSearchEnabled: boolean;
   webSearchProvider: string;
@@ -103,6 +112,9 @@ export function AiSettingsAdmin() {
     [compactThresholdTokens, setCompactThresholdTokens] = useState(32000),
     [automaticTruncation, setAutomaticTruncation] = useState(true),
     [maxToolIterations, setMaxToolIterations] = useState(8),
+    [roleProfiles, setRoleProfiles] = useState<AiRoleProfiles>(
+      inheritedAiRoleProfiles,
+    ),
     [busy, setBusy] = useState(false),
     [testing, setTesting] = useState(false),
     [loadingModels, setLoadingModels] = useState(false),
@@ -125,6 +137,7 @@ export function AiSettingsAdmin() {
     setCompactThresholdTokens(next.compactThresholdTokens);
     setAutomaticTruncation(next.automaticTruncation);
     setMaxToolIterations(next.maxToolIterations);
+    setRoleProfiles(next.roleProfiles);
   }, []);
 
   const load = useCallback(async () => {
@@ -171,6 +184,7 @@ export function AiSettingsAdmin() {
             compactThresholdTokens,
             automaticTruncation,
             maxToolIterations,
+            roleProfiles,
           }),
         }),
         data = await response.json();
@@ -187,12 +201,15 @@ export function AiSettingsAdmin() {
     }
   }
 
-  async function testConnection() {
+  async function testConnection(role?: Role) {
     setTesting(true);
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/admin/ai/test", { method: "POST" }),
+      const response = await fetch(
+          `/api/admin/ai/test${role ? `?role=${role}` : ""}`,
+          { method: "POST" },
+        ),
         data = await response.json();
       if (!response.ok) throw new Error(data.error || "AI Studio не ответила");
       setNotice(
@@ -260,7 +277,7 @@ export function AiSettingsAdmin() {
           <Bot size={20} />
           <span>
             <h2>Yandex AI Studio</h2>
-            <p>Модель встроенного ИИ-исследователя Drevo.</p>
+            <p>Общее подключение и отдельные AI-профили ролей.</p>
           </span>
         </div>
         {status && (
@@ -359,7 +376,7 @@ export function AiSettingsAdmin() {
             </label>
 
             <fieldset className="ai-credential-settings">
-              <legend>Подключение к Yandex AI Studio</legend>
+              <legend>Подключение и модель по умолчанию</legend>
 
               <label htmlFor="ai-api-key">
                 API-ключ
@@ -577,6 +594,26 @@ export function AiSettingsAdmin() {
               </label>
               <small>Ноль отключает соответствующий лимит.</small>
             </fieldset>
+
+            <AiRoleProfilesEditor
+              profiles={roleProfiles}
+              defaults={{
+                ...status.defaultRoleProfile,
+                model,
+                webSearchEnabled,
+                requestsPerMinute,
+                dailyRequests,
+                dailyTokens,
+                compactionEnabled,
+                compactThresholdTokens,
+                automaticTruncation,
+                maxToolIterations,
+              }}
+              models={status.models}
+              disabled={busy || testing}
+              onChange={setRoleProfiles}
+              onTest={(role) => void testConnection(role)}
+            />
 
             <footer className="ai-settings-actions">
               <button

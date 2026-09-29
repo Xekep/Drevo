@@ -50,6 +50,12 @@ export async function backfillRuntimeServicesInTransaction(
     ),
   );
   const counts: Record<string, number> = {};
+  await client.query(
+    readFileSync(
+      new URL("./012_ai_role_profiles.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   for (const table of runtimeServiceTables) {
     const metadata = (
       await client.query(

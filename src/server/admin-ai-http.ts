@@ -9,13 +9,14 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import type { aiUsageStore } from "./ai-usage.ts";
 import { fetchAiStudioModels, type AiStudioModel } from "./ai-models.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
+import { ROLE_NAMES, type Role } from "../domain/access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 4096) throw new RangeError("Request too large");
+    if (size > 16384) throw new RangeError("Request too large");
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -95,10 +96,10 @@ export function adminAiHttp({
       if (!req.headers["content-type"]?.startsWith("application/json"))
         return json(res, 415, { error: "JSON required" });
       try {
-        await settings.write(
-          await readJson(req),
-          (await auth.currentUser(req))!,
-        );
+        const body = await readJson(req);
+        if (!(await auth.isAdmin(req)))
+          return json(res, 403, { error: "Доступ отозван" });
+        await settings.write(body, (await auth.currentUser(req))!);
         return json(res, 200, await statusValue());
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
@@ -140,7 +141,13 @@ export function adminAiHttp({
     }
 
     if (path === "/api/admin/ai/test" && req.method === "POST") {
-      const runtime = await aiRuntimeConfig(settings);
+      const role = url.searchParams.get("role");
+      if (role !== null && !Object.hasOwn(ROLE_NAMES, role))
+        return json(res, 400, { error: "Неизвестная роль" });
+      const runtime = await aiRuntimeConfig(
+        settings,
+        (role as Role | undefined) || undefined,
+      );
       if (!runtime.configured)
         return json(res, 400, {
           error:

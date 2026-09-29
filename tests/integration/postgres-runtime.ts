@@ -14,7 +14,11 @@ import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { settingsStore } from "../../src/server/settings.ts";
-import { aiSettingsStore } from "../../src/server/ai-settings.ts";
+import {
+  aiSettingsStore,
+  aiRuntimeConfig,
+  defaultAiRoleProfile,
+} from "../../src/server/ai-settings.ts";
 import { aiChatStore } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
@@ -75,6 +79,7 @@ try {
   const users = await userStore(sqlite.db, { initialAdminId: "owner" });
   await users.register("owner", "Владелец");
   await users.register("vk:42", "Участник VK");
+  await users.setRole((await users.get("owner"))!, "vk:42", "researcher");
   await settingsStore(sqlite.db);
   await aiSettingsStore(sqlite.db);
   const before = await sqlite.read();
@@ -95,6 +100,7 @@ try {
   process.env.ARCHIVE_ID = "runtime-test";
   // Simulate the deployed schema before the additive VK extension.
   await client.query("DROP TABLE vk_auth_settings");
+  await client.query("ALTER TABLE ai_settings DROP COLUMN role_profiles");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
   assert.deepEqual(await live.read(), before);
@@ -157,8 +163,29 @@ try {
   );
   const runtimeUsers = await userStore(live.db);
   assert.equal((await runtimeUsers.get("owner"))?.role, "admin");
+  assert.equal((await runtimeUsers.get("vk:42"))?.role, "researcher");
   await runtimeUsers.register("reader", "Читатель");
   const owner = (await runtimeUsers.get("owner"))!;
+  const aiSettings = await aiSettingsStore(live.db);
+  const commonAi = await aiSettings.read();
+  await aiSettings.write(
+    {
+      ...commonAi,
+      roleProfiles: {
+        ...commonAi.roleProfiles,
+        researcher: {
+          ...defaultAiRoleProfile(commonAi),
+          model: "gpt://test/researcher",
+          pdfEnabled: false,
+        },
+      },
+    },
+    owner,
+  );
+  assert.equal(
+    (await aiRuntimeConfig(aiSettings, "researcher")).modelUri,
+    "gpt://test/researcher",
+  );
   await runtimeUsers.setRole(owner, "reader", "reader");
   assert.equal((await runtimeUsers.list()).length, 3);
   await assert.rejects(
@@ -172,6 +199,17 @@ try {
   assert.equal((await vkSettings.read()).available, true);
   const isolatedVk = await openPostgresDatabase("other-archive", source);
   try {
+    const isolatedAi = await aiSettingsStore(isolatedVk);
+    assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
+    await assert.rejects(
+      isolatedVk
+        .prepare(
+          "",
+          "INSERT INTO ai_settings(archive_id,id) VALUES('runtime-test',1)",
+        )
+        .run(),
+      /row-level security/,
+    );
     assert.equal(
       (await vkAuthSettingsStore(isolatedVk, "https://archive.invalid").read())
         .available,
@@ -398,6 +436,11 @@ try {
     body: JSON.stringify({ token: previewData.token, confirm: true }),
   });
   assert.equal(restore.status, 200, await restore.text());
+  assert.equal(
+    (await (await aiSettingsStore(app.archive.db)).read()).roleProfiles
+      .researcher?.pdfEnabled,
+    false,
+  );
   const afterDocuments = await fetch(base + "/api/documents").then((r) =>
     r.json(),
   );

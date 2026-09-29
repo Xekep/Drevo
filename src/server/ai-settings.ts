@@ -1,5 +1,10 @@
 import type { StoreDatabase } from "./store-database.ts";
-import type { ArchiveUser } from "../domain/access.ts";
+import { ROLE_NAMES, type ArchiveUser, type Role } from "../domain/access.ts";
+import {
+  inheritedAiRoleProfiles,
+  type AiRoleProfile,
+  type AiRoleProfiles,
+} from "../shared/ai-role-profiles.ts";
 import { auditStore } from "./audit.ts";
 import { decryptAiSecret, encryptAiSecret } from "./ai-secret.ts";
 
@@ -16,6 +21,7 @@ export type AiSettings = {
   compactThresholdTokens: number;
   automaticTruncation: boolean;
   maxToolIterations: number;
+  roleProfiles: AiRoleProfiles;
 };
 
 type AiSettingsRow = {
@@ -31,6 +37,7 @@ type AiSettingsRow = {
   compact_threshold_tokens: unknown;
   automatic_truncation: unknown;
   max_tool_iterations: unknown;
+  role_profiles: unknown;
 };
 
 function modelValue(value: unknown) {
@@ -71,6 +78,117 @@ function integerValue(value: unknown, label: string, min: number, max: number) {
   return value;
 }
 
+function roleProfilesValue(value: unknown): AiRoleProfiles {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Некорректные AI-профили ролей");
+  const profiles = inheritedAiRoleProfiles();
+  for (const [role, profile] of Object.entries(value)) {
+    if (!Object.hasOwn(profiles, role))
+      throw new Error("Неизвестная роль AI-профиля");
+    if (profile === null) continue;
+    if (!profile || typeof profile !== "object" || Array.isArray(profile))
+      throw new Error("Некорректный AI-профиль");
+    const raw = profile as Record<string, unknown>;
+    const defaults = defaultAiRoleProfile({
+      enabled: true,
+      model: "",
+      webSearchEnabled: false,
+      requestsPerMinute: 6,
+      dailyRequests: 100,
+      dailyTokens: 250000,
+      compactionEnabled: true,
+      compactThresholdTokens: 32000,
+      automaticTruncation: true,
+      maxToolIterations: 8,
+    });
+    for (const key of Object.keys(raw))
+      if (!Object.hasOwn(defaults, key))
+        throw new Error("Неизвестная настройка AI-профиля");
+    for (const [key, fallback] of Object.entries(defaults))
+      if (typeof fallback === "boolean" && typeof raw[key] !== "boolean")
+        throw new Error(
+          `Укажите настройку «${key}» для ${ROLE_NAMES[role as Role]}`,
+        );
+    profiles[role as Role] = {
+      enabled: raw.enabled === true,
+      model: modelValue(raw.model),
+      visionModel: modelValue(raw.visionModel),
+      webSearchEnabled: raw.webSearchEnabled === true,
+      globalSearchEnabled: raw.globalSearchEnabled === true,
+      photoAnalysisEnabled: raw.photoAnalysisEnabled === true,
+      proposalsEnabled: raw.proposalsEnabled === true,
+      pdfEnabled: raw.pdfEnabled === true,
+      requestsPerMinute: integerValue(
+        raw.requestsPerMinute,
+        "Запросов в минуту",
+        0,
+        120,
+      ),
+      dailyRequests: integerValue(
+        raw.dailyRequests,
+        "Запросов в день",
+        0,
+        100000,
+      ),
+      dailyTokens: integerValue(
+        raw.dailyTokens,
+        "Токенов в день",
+        0,
+        1000000000,
+      ),
+      compactionEnabled: raw.compactionEnabled === true,
+      compactThresholdTokens: integerValue(
+        raw.compactThresholdTokens,
+        "Порог сжатия",
+        1000,
+        1000000,
+      ),
+      automaticTruncation: raw.automaticTruncation === true,
+      maxToolIterations: integerValue(
+        raw.maxToolIterations,
+        "Шагов инструментов",
+        1,
+        20,
+      ),
+    };
+  }
+  return profiles;
+}
+
+export function defaultAiRoleProfile(
+  settings: Pick<
+    AiSettings,
+    | "enabled"
+    | "model"
+    | "webSearchEnabled"
+    | "requestsPerMinute"
+    | "dailyRequests"
+    | "dailyTokens"
+    | "compactionEnabled"
+    | "compactThresholdTokens"
+    | "automaticTruncation"
+    | "maxToolIterations"
+  >,
+): AiRoleProfile {
+  return {
+    enabled: true,
+    model: settings.model,
+    visionModel: "",
+    webSearchEnabled: settings.webSearchEnabled,
+    globalSearchEnabled: true,
+    photoAnalysisEnabled: true,
+    proposalsEnabled: true,
+    pdfEnabled: true,
+    requestsPerMinute: settings.requestsPerMinute,
+    dailyRequests: settings.dailyRequests,
+    dailyTokens: settings.dailyTokens,
+    compactionEnabled: settings.compactionEnabled,
+    compactThresholdTokens: settings.compactThresholdTokens,
+    automaticTruncation: settings.automaticTruncation,
+    maxToolIterations: settings.maxToolIterations,
+  };
+}
+
 export async function aiSettingsStore(db: StoreDatabase) {
   const audit = auditStore(db);
   await db
@@ -89,9 +207,9 @@ export async function aiSettingsStore(db: StoreDatabase) {
         `SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,
                 requests_per_minute,daily_requests,daily_tokens,
                 compaction_enabled,compact_threshold_tokens,
-                automatic_truncation,max_tool_iterations
+                automatic_truncation,max_tool_iterations,role_profiles
          FROM ai_settings WHERE id=1`,
-        "SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations\n         FROM ai_settings WHERE id=1",
+        "SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations,role_profiles\n         FROM ai_settings WHERE id=1",
       )
       .get()) as AiSettingsRow;
   }
@@ -114,6 +232,9 @@ export async function aiSettingsStore(db: StoreDatabase) {
       compactThresholdTokens: Number(value.compact_threshold_tokens),
       automaticTruncation: !!value.automatic_truncation,
       maxToolIterations: Number(value.max_tool_iterations),
+      roleProfiles: roleProfilesValue(
+        JSON.parse(String(value.role_profiles || "{}")),
+      ),
     };
   }
 
@@ -171,6 +292,10 @@ export async function aiSettingsStore(db: StoreDatabase) {
       if (newApiKey) ciphertext = encryptAiSecret(db, newApiKey);
 
       const afterInput = {
+        roleProfiles:
+          raw.roleProfiles === undefined
+            ? before.roleProfiles
+            : roleProfilesValue(raw.roleProfiles),
         enabled: raw.enabled,
         webSearchEnabled:
           raw.webSearchEnabled === undefined
@@ -225,9 +350,9 @@ export async function aiSettingsStore(db: StoreDatabase) {
           enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
           requests_per_minute=?,daily_requests=?,daily_tokens=?,
           compaction_enabled=?,compact_threshold_tokens=?,
-          automatic_truncation=?,max_tool_iterations=?
+          automatic_truncation=?,max_tool_iterations=?,role_profiles=?
          WHERE id=1`,
-          "UPDATE ai_settings SET\n          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?\n         WHERE id=1",
+          "UPDATE ai_settings SET\n          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?,role_profiles=?\n         WHERE id=1",
         )
         .run(
           Number(afterInput.enabled),
@@ -242,10 +367,24 @@ export async function aiSettingsStore(db: StoreDatabase) {
           afterInput.compactThresholdTokens,
           Number(afterInput.automaticTruncation),
           afterInput.maxToolIterations,
+          JSON.stringify(afterInput.roleProfiles),
         );
 
       const after = await read(),
         details = [
+          ...Object.keys(ROLE_NAMES).flatMap((role) => {
+            const key = role as Role;
+            return JSON.stringify(before.roleProfiles[key]) ===
+              JSON.stringify(after.roleProfiles[key])
+              ? []
+              : [
+                  {
+                    field: `AI · ${ROLE_NAMES[key]}`,
+                    before: JSON.stringify(before.roleProfiles[key]),
+                    after: JSON.stringify(after.roleProfiles[key]),
+                  },
+                ];
+          }),
           ...(before.enabled !== after.enabled
             ? [
                 {
@@ -320,8 +459,19 @@ export async function aiSettingsStore(db: StoreDatabase) {
 
 export async function aiRuntimeConfig(
   settings: Awaited<ReturnType<typeof aiSettingsStore>>,
+  role?: Role,
 ) {
-  const stored = await settings.read(),
+  const common = await settings.read(),
+    profile = role ? common.roleProfiles[role] : null,
+    stored = profile
+      ? {
+          ...common,
+          ...profile,
+          enabled: common.enabled && profile.enabled,
+          model: profile.model || common.model,
+        }
+      : common,
+    capabilities = profile || defaultAiRoleProfile(common),
     savedSecret = await settings.savedApiKey(),
     envApiKey = process.env.YANDEX_AI_API_KEY?.trim() || "",
     envFolderId = process.env.YANDEX_AI_FOLDER_ID?.trim() || "",
@@ -340,6 +490,13 @@ export async function aiRuntimeConfig(
     configured =
       !!apiKey && !!model && (!!folderId || model.startsWith("gpt://"));
   return {
+    capabilities: {
+      globalSearch: capabilities.globalSearchEnabled,
+      photoAnalysis: capabilities.photoAnalysisEnabled,
+      proposals: capabilities.proposalsEnabled,
+      pdf: capabilities.pdfEnabled,
+    },
+    visionModel: capabilities.visionModel,
     enabled: stored.enabled,
     webSearchEnabled: stored.webSearchEnabled,
     webSearchProvider: process.env.AI_WEB_SEARCH_PROVIDER || "yandex",
@@ -377,9 +534,16 @@ export async function aiRuntimeConfig(
         : "default",
     limits: {
       requestsPerMinute: stored.requestsPerMinute,
-      dailyRequests: stored.dailyRequests,
-      dailyTokens: stored.dailyTokens,
+      dailyRequests: common.dailyRequests,
+      dailyTokens: common.dailyTokens,
     },
+    userLimits: profile
+      ? {
+          requestsPerMinute: profile.requestsPerMinute,
+          dailyRequests: profile.dailyRequests,
+          dailyTokens: profile.dailyTokens,
+        }
+      : null,
     compactionEnabled: stored.compactionEnabled,
     compactThresholdTokens: stored.compactThresholdTokens,
     automaticTruncation: stored.automaticTruncation,
@@ -392,7 +556,13 @@ export async function publicAiStatus(
   settings: Awaited<ReturnType<typeof aiSettingsStore>>,
 ) {
   const runtime = await aiRuntimeConfig(settings);
+  const stored = await settings.read();
   return {
+    roleProfiles: stored.roleProfiles,
+    defaultRoleProfile: {
+      ...defaultAiRoleProfile(stored),
+      model: runtime.model,
+    },
     enabled: runtime.enabled,
     webSearchEnabled: runtime.webSearchEnabled,
     webSearchProvider: runtime.webSearchProvider,

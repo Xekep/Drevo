@@ -898,4 +898,59 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const profilesExtension = "2026-09-ai-role-profiles";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(profilesExtension)
+  ) {
+    // SQLite cannot alter a CHECK constraint. Rebuild only users, keeping all
+    // columns/indexes and the original table name used by foreign keys.
+    const foreignKeys = Number(
+      db.prepare("PRAGMA foreign_keys").get()?.foreign_keys,
+    );
+    db.exec("PRAGMA foreign_keys=OFF");
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const sql = String(
+        db
+          .prepare(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name='users'",
+          )
+          .get()!.sql,
+      );
+      if (!sql.includes("'researcher'")) {
+        const indexes = db
+          .prepare(
+            "SELECT sql FROM sqlite_schema WHERE tbl_name='users' AND type IN ('index','trigger') AND sql IS NOT NULL",
+          )
+          .all();
+        db.exec(
+          sql
+            .replace(
+              /CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?users["`]?/i,
+              "CREATE TABLE users_with_researcher",
+            )
+            .replace(
+              /CHECK\s*\(\s*role\s+IN\s*\(\s*'admin'\s*,\s*'relative'\s*,\s*'reader'\s*\)\s*\)/i,
+              "CHECK(role IN ('admin','researcher','relative','reader'))",
+            ),
+        );
+        db.exec(
+          "INSERT INTO users_with_researcher SELECT * FROM users; DROP TABLE users; ALTER TABLE users_with_researcher RENAME TO users;",
+        );
+        for (const index of indexes) db.exec(String(index.sql));
+      }
+      db.exec(
+        "ALTER TABLE ai_settings ADD COLUMN role_profiles TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(role_profiles))",
+      );
+      if (db.prepare("PRAGMA foreign_key_check").all().length)
+        throw new Error("Нарушены связи при обновлении ролей пользователей");
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(profilesExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    } finally {
+      db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
+    }
+  }
 }

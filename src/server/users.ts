@@ -141,8 +141,7 @@ export async function userStore(
         throw new ForbiddenError(
           "Управлять доступом может только администратор",
         );
-      if (!["admin", "relative", "reader"].includes(role))
-        throw new Error("Неизвестная роль");
+      if (!Object.hasOwn(ROLE_NAMES, role)) throw new Error("Неизвестная роль");
       const target = await get(id);
       if (!target) throw new Error("Пользователь не найден");
       if (

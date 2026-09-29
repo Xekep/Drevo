@@ -35,7 +35,7 @@ export class WebSearchError extends Error {
   }
 }
 
-export function webSearchTool(categories: string[]) {
+export function webSearchTool(categories: string[], allowGlobal = true) {
   return {
     name: "web_search",
     description:
@@ -62,10 +62,11 @@ export function webSearchTool(categories: string[]) {
         },
         scope: {
           type: "string",
-          enum: ["trusted", "global"],
+          enum: allowGlobal ? ["trusted", "global"] : ["trusted"],
           default: "trusted",
-          description:
-            "Use trusted by default. Use global only if trusted genealogy sources are insufficient or broader web search is explicitly requested.",
+          description: allowGlobal
+            ? "Use trusted by default. Use global only if trusted genealogy sources are insufficient or broader web search is explicitly requested."
+            : "Only trusted search is available for this user. Global search is disabled.",
         },
         maxResults: {
           type: "integer",

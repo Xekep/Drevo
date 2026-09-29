@@ -176,7 +176,9 @@ export async function createAuth(
       (await currentUser(req))?.approved === true,
     canEdit: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true &&
-      ["admin", "relative"].includes((await currentUser(req))?.role || ""),
+      ["admin", "researcher", "relative"].includes(
+        (await currentUser(req))?.role || "",
+      ),
     isAdmin: async (req: IncomingMessage) =>
       (await currentUser(req))?.approved === true &&
       (await currentUser(req))?.role === "admin",

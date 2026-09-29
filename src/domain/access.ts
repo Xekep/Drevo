@@ -1,4 +1,4 @@
-export type Role = "admin" | "relative" | "reader";
+export type Role = "admin" | "researcher" | "relative" | "reader";
 export type TreeAccess = "all" | "common_ancestors";
 export type ArchiveUser = {
   id: string;
@@ -12,10 +12,12 @@ export type ArchiveUser = {
 };
 export const ROLE_NAMES: Record<Role, string> = {
   admin: "Администратор",
+  researcher: "Исследователь",
   relative: "Родственник",
   reader: "Читатель",
 };
 export const owns = (user: ArchiveUser | null, item: { createdBy?: string }) =>
   !!user &&
   (user.role === "admin" ||
-    (user.role === "relative" && item.createdBy === user.id));
+    ((user.role === "relative" || user.role === "researcher") &&
+      item.createdBy === user.id));
