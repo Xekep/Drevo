@@ -37,7 +37,6 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
     await page.getByRole("button", { name: "Закрыть панель" }).click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByText("Параметры экспорта").click();
   await dialog
     .getByRole("combobox", { name: "Область экспорта" })
     .selectOption("descendants");
@@ -76,6 +75,7 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
   expect(metadata.width).toBeGreaterThan(1000);
   const colors = await png.stats();
   expect(colors.channels[0].stdev).toBeGreaterThan(2);
+  await dialog.getByText("Отчёты", { exact: true }).click();
   const reportPending = page.waitForEvent("download");
   await dialog
     .getByRole("combobox", { name: "Направление росписи" })
@@ -101,7 +101,9 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
     data: new Uint8Array(await readFile(reportPdfPath)),
   }).promise;
   try {
-    const reportText = (await (await reportPdf.getPage(1)).getTextContent()).items
+    const reportText = (
+      await (await reportPdf.getPage(1)).getTextContent()
+    ).items
       .flatMap((item) => ("str" in item ? item.str : []))
       .join(" ");
     expect(reportText).toContain("Роспись потомков");
@@ -117,7 +119,9 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
     ["ancestors", "Роспись предков"],
     ["research", "Исследовательская сводка"],
   ] as const) {
-    await dialog.getByRole("combobox", { name: "Тип PDF-отчёта" }).selectOption(kind);
+    await dialog
+      .getByRole("combobox", { name: "Тип PDF-отчёта" })
+      .selectOption(kind);
     const pending = page.waitForEvent("download");
     await dialog.getByRole("button", { name: "Скачать PDF-отчёт" }).click();
     const download = await pending;
@@ -139,158 +143,6 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
 });
 
-test("fan export respects generations, labels and output format", async ({
-  page,
-  isMobile,
-}, info) => {
-  const portrait = await sharp({
-    create: { width: 120, height: 120, channels: 3, background: "#31779a" },
-  })
-    .png()
-    .toBuffer();
-  await page
-    .context()
-    .route("**/media/fan-portrait.png**", (route) =>
-      route.fulfill({ contentType: "image/png", body: portrait }),
-    );
-  await page.route("**/api/family?projection=overview", async (route) => {
-    const response = await route.fetch();
-    const overview = await response.json();
-    overview.family.people.find(
-      (person: { id: string }) => person.id === "e2e-child",
-    ).photo = "/media/fan-portrait.png";
-    await route.fulfill({ response, json: overview });
-  });
-  await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
-  await page
-    .getByTestId("rf__node-e2e-child")
-    .locator(".flow-person-content")
-    .click();
-  if (isMobile)
-    await page.getByRole("button", { name: "Закрыть панель" }).click();
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByText("Параметры экспорта").click();
-  await dialog.getByText("Экспорт веера").click();
-  await dialog
-    .getByRole("combobox", { name: "Поколений в веере" })
-    .selectOption("2");
-  await dialog.getByRole("checkbox", { name: "Портреты" }).check();
-  const pdfPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Скачать веер · PDF" }).click();
-  const pdfDownload = await pdfPending;
-  const pdfPath = info.outputPath("fan.pdf");
-  await pdfDownload.saveAs(pdfPath);
-  const pdf = await getDocument({
-    data: new Uint8Array(await readFile(pdfPath)),
-  }).promise;
-  try {
-    expect(pdf.numPages).toBe(1);
-    const content = (await (await pdf.getPage(1)).getTextContent()).items
-      .flatMap((item) => ("str" in item ? item.str : []))
-      .join(" ");
-    expect(content).toContain("Пётр");
-    expect(content).toContain("1940");
-    expect((await (await pdf.getPage(1)).getOperatorList()).fnArray).toContain(
-      OPS.paintImageXObject,
-    );
-  } finally {
-    await pdf.loadingTask.destroy();
-  }
-  await dialog
-    .getByRole("combobox", { name: "Формат изображения" })
-    .selectOption("png");
-  const pngPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Скачать веер · PNG" }).click();
-  const pngDownload = await pngPending;
-  const pngPath = info.outputPath("fan.png");
-  await pngDownload.saveAs(pngPath);
-  const metadata = await sharp(await readFile(pngPath)).metadata();
-  expect(metadata.format).toBe("png");
-  expect(metadata.width).toBeGreaterThan(500);
-  const pixels = await sharp(await readFile(pngPath))
-    .removeAlpha()
-    .raw()
-    .toBuffer();
-  let portraitPixels = 0;
-  for (let i = 0; i < pixels.length; i += 3)
-    if (
-      Math.abs(pixels[i] - 49) < 4 &&
-      Math.abs(pixels[i + 1] - 119) < 4 &&
-      Math.abs(pixels[i + 2] - 154) < 4
-    )
-      portraitPixels++;
-  expect(portraitPixels).toBeGreaterThan(100);
-});
-
-test("A4 print preview and tiled PDF preserve names and landscape pages", async ({
-  page,
-}, info) => {
-  await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).not.toHaveClass(
-    /is-grow|is-layout-settling/,
-  );
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByText("Параметры экспорта").click();
-  await dialog.getByText("Настройки печати PDF").click();
-  await dialog
-    .getByRole("combobox", { name: "Размер листа" })
-    .selectOption("a4");
-  await dialog.getByRole("combobox", { name: "Поля листа" }).selectOption("10");
-  await dialog
-    .getByRole("combobox", { name: "Масштаб печати" })
-    .selectOption("1");
-  await dialog.getByRole("button", { name: "Предпросмотр печати" }).click();
-  await expect(
-    dialog.getByRole("img", { name: "Расположение карточек на листах" }),
-  ).toBeVisible();
-  const pending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Сохранить древо в PDF" }).click();
-  const download = await pending;
-  const path = info.outputPath("tree-a4.pdf");
-  await download.saveAs(path);
-  const pdf = await getDocument({ data: new Uint8Array(await readFile(path)) })
-    .promise;
-  try {
-    expect(pdf.numPages).toBeGreaterThan(1);
-    let text = "";
-    for (let index = 1; index <= pdf.numPages; index++) {
-      const page = await pdf.getPage(index);
-      const viewport = page.getViewport({ scale: 1 });
-      expect(viewport.width).toBeGreaterThan(viewport.height);
-      expect(viewport.width).toBeCloseTo(842, 0);
-      text += (await page.getTextContent()).items
-        .flatMap((item) => ("str" in item ? item.str : []))
-        .join(" ");
-    }
-    expect(text).toContain("Пётр");
-    expect(text).toContain("Анна");
-  } finally {
-    await pdf.loadingTask.destroy();
-  }
-  await dialog
-    .getByRole("combobox", { name: "Ориентация листа" })
-    .selectOption("portrait");
-  const portraitPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Сохранить древо в PDF" }).click();
-  const portraitDownload = await portraitPending;
-  const portraitPath = info.outputPath("tree-a4-portrait.pdf");
-  await portraitDownload.saveAs(portraitPath);
-  const portraitPdf = await getDocument({
-    data: new Uint8Array(await readFile(portraitPath)),
-  }).promise;
-  try {
-    const viewport = (await portraitPdf.getPage(1)).getViewport({ scale: 1 });
-    expect(viewport.width).toBeLessThan(viewport.height);
-  } finally {
-    await portraitPdf.loadingTask.destroy();
-  }
-});
-
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
@@ -298,6 +150,28 @@ test.beforeEach(async ({ page }) => {
       throw new Error("PDF must not invoke the printer");
     };
   });
+});
+
+test("tree export keeps the essential controls", async ({ page }) => {
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-grow|is-layout-settling/,
+  );
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(
+    dialog.getByRole("combobox", { name: "Формат изображения" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("combobox", { name: "Область экспорта" }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Сохранить древо в PDF" }),
+  ).toBeVisible();
+  await expect(dialog.getByText("Отчёты", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Офлайн-архив")).toHaveCount(0);
+  await expect(dialog.getByText("Настройки печати PDF")).toHaveCount(0);
+  await expect(dialog.getByText("Экспорт веера")).toHaveCount(0);
 });
 
 test("download respects collapsed branches; cancel releases preparation without downloading", async ({

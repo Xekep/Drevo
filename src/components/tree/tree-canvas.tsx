@@ -18,7 +18,6 @@ import {
   Panel,
   useReactFlow,
   useStore,
-  getNodesBounds,
   type Connection as FlowConnection,
   type Viewport,
 } from "@xyflow/react";
@@ -76,7 +75,6 @@ import { captureFanMorphSources, runFanMorph, type FanMorphSource } from "./fan-
 import { useTreeGrowthInputLock } from "./use-tree-growth-input-lock";
 import { useEdgePan } from "./use-edge-pan";
 import { treeNodeSize } from "../../domain/tree-layout-constants";
-import { treeGraphicBounds, treePrintPlan, type TreePrintOptions, type TreePrintPreview } from "./tree-print-plan";
 import {
   treeExportPeople,
   type TreeExportScope,
@@ -97,9 +95,8 @@ export type TreeFocus = {
   groupId?: string;
 };
 export type TreeCanvasHandle = {
-  exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number, options?: TreePrintOptions) => Promise<void>;
+  exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
-  previewPdf: (signal: AbortSignal, scope: TreeExportScope, anchorId: string | undefined, generations: number, options: TreePrintOptions) => Promise<TreePrintPreview>;
 };
 type Props = {
   onPreferences?: () => void;
@@ -868,28 +865,15 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         );
       };
       return {
-        async exportPdf(signal, scope, anchorId, generations, options) {
+        async exportPdf(signal, scope, anchorId, generations) {
           const tree = await selectedTree(signal, scope, anchorId, generations);
           const { exportTreePdf } = await import("./tree-pdf");
-          await exportTreePdf(tree, signal, options);
+          await exportTreePdf(tree, signal);
         },
         async exportPng(signal, scope, anchorId, generations) {
           const tree = await selectedTree(signal, scope, anchorId, generations);
           const { exportTreePng } = await import("./tree-pdf");
           await exportTreePng(tree, signal);
-        },
-        async previewPdf(signal, scope, anchorId, generations, options) {
-          const tree = await selectedTree(signal, scope, anchorId, generations);
-          const { width, height, x, y } = treeGraphicBounds(tree);
-          return {
-            ...treePrintPlan(width, height, options),
-            sceneWidth: width,
-            sceneHeight: height,
-            cards: tree.nodes.filter((node) => node.type === "person").map((node) => {
-              const bounds = getNodesBounds([node]);
-              return { x: bounds.x + x, y: bounds.y + y, width: bounds.width, height: bounds.height };
-            }),
-          };
         },
       };
     },

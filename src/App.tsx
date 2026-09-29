@@ -1048,23 +1048,8 @@ export default function App() {
         <TreePreferencesDialog
           anchorId={treeExportAnchor?.id}
           anchorName={treeExportAnchor && fullName(treeExportAnchor)}
-          onExportPdf={(signal, scope, anchorId, generations, printOptions) =>
-            treeCanvas.current!.exportPdf(
-              signal,
-              scope,
-              anchorId,
-              generations,
-              printOptions,
-            )
-          }
-          onPreviewPdf={(signal, scope, anchorId, generations, options) =>
-            treeCanvas.current!.previewPdf(
-              signal,
-              scope,
-              anchorId,
-              generations,
-              options,
-            )
+          onExportPdf={(signal, scope, anchorId, generations) =>
+            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
           }
           onExportPng={(signal, scope, anchorId, generations) =>
             treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
@@ -1088,17 +1073,7 @@ export default function App() {
               signal,
             );
           }}
-          onExportFan={async (options, signal) => {
-            const { exportFan } = await import("./components/tree/fan-export");
-            await exportFan(
-              family,
-              treeExportAnchor?.id || "",
-              options,
-              signal,
-            );
-          }}
           canExportArchive={user?.role === "admin"}
-          canExportOffline={Boolean(user && readTree)}
           preferences={archive.treePreferences}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
