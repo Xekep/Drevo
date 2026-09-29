@@ -18,7 +18,6 @@ import {
   MapPin,
   ChartNoAxesCombined,
   LibraryBig,
-  Settings2,
 } from "lucide-react";
 import { safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
@@ -35,7 +34,6 @@ export function ArchiveNavigation({
   readTree,
   readPhotos,
   onHelp,
-  onTreePreferences,
 }: {
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
@@ -45,7 +43,6 @@ export function ArchiveNavigation({
   readTree: boolean;
   readPhotos: boolean;
   onHelp: () => void;
-  onTreePreferences: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const [failedPortrait, setFailedPortrait] = useState<string>();
@@ -206,18 +203,6 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
-          {user?.approved && readTree && (
-            <button
-              onClick={() => {
-                if (menu.current) menu.current.open = false;
-                onTreePreferences();
-              }}
-              title="Моё древо"
-            >
-              <Settings2 size={18} />
-              <span>Моё древо</span>
-            </button>
-          )}
           <button
             onClick={() => {
               if (menu.current) menu.current.open = false;

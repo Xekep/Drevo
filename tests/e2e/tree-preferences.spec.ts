@@ -73,6 +73,11 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   ]);
   expect(initialOrder[0]!.y).toBeLessThan(initialOrder[1]!.y);
 
+  await page.locator(".archive-more summary").click();
+  await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
+    "Моё древо",
+  );
+  await page.locator(".archive-more summary").click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   const genealogyFormat = dialog.getByRole("combobox", {
@@ -129,7 +134,7 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   await expect(child.locator(".portrait-card-years")).toHaveText(
     "1965 — н. в.",
   );
-  await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
+  await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
   await expect
     .poll(async () => {
       const [a, b] = await Promise.all([
