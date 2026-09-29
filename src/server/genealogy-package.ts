@@ -112,7 +112,9 @@ async function unpack(
   directory: string,
 ): Promise<Map<string, string>> {
   const zip = await openPromise(path, {
-    strictFileNames: true,
+    // Windows Compress-Archive writes backslashes in ZIP entry names. yauzl
+    // normalizes them to '/' before packagePath rejects traversal and drives.
+    strictFileNames: false,
     validateEntrySizes: true,
   });
   const files = new Map<string, string>(),
