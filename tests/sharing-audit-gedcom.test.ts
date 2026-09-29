@@ -134,6 +134,72 @@ test("share membership is fixed, excludes outside edges and metadata, token is h
   }
 });
 
+test("share visits keep only the latest opening and dead links are purged after 30 days", async () => {
+  const archive = await openArchive(":memory:", seed());
+  const shares = sharesStore(archive.db);
+  const now = Date.parse("2026-09-01T00:00:00.000Z");
+  const family = (await archive.read()).family;
+  const create = (title: string) =>
+    shares.create(
+      { title, anchorId: "child", personIds: ["child"], durationHours: 1 },
+      family,
+      actor,
+      now,
+    );
+  try {
+    const revoked = await create("Отозванная");
+    assert.equal(revoked.share.lastVisitedAt, null);
+    assert.equal(await shares.recordVisit(revoked.share.id, now + 1000), true);
+    assert.equal(await shares.recordVisit(revoked.share.id, now + 2000), true);
+    assert.equal(
+      (await shares.list("", now + 2000)).items.find(
+        (item) => item.id === revoked.share.id,
+      )?.lastVisitedAt,
+      new Date(now + 2000).toISOString(),
+    );
+    await shares.revoke(revoked.share.id, actor, now + 3000);
+    assert.equal(
+      (await shares.list("", now + 3000)).items.find(
+        (item) => item.id === revoked.share.id,
+      )?.lastVisitedAt,
+      null,
+    );
+    assert.equal(await shares.recordVisit(revoked.share.id, now + 4000), false);
+
+    const expired = await create("Истёкшая");
+    assert.equal(await shares.recordVisit(expired.share.id, now + 1000), true);
+    assert.equal(await shares.get(expired.token, now + 3600000), null);
+    assert.equal(
+      (await shares.list("", now + 3600000)).items.find(
+        (item) => item.id === expired.share.id,
+      )?.lastVisitedAt,
+      null,
+    );
+    assert.equal(
+      (
+        await archive.db
+          .prepare("SELECT count(*) AS count FROM share_link_activity")
+          .get()
+      )?.count,
+      0,
+    );
+
+    assert.equal((await shares.list("", now + 31 * 86400000)).items.length, 0);
+    assert.equal(
+      (
+        await archive.db
+          .prepare(
+            "SELECT count(*) AS count FROM audit_entries WHERE entity='share'",
+          )
+          .get()
+      )?.count,
+      0,
+    );
+  } finally {
+    await archive.close();
+  }
+});
+
 test("audit keeps field values and relationship participants, remains atomic, no invented old author", async () => {
   const archive = await openArchive(":memory:", seed()),
     audit = auditStore(archive.db);
@@ -439,10 +505,35 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     assert.equal(data.family.description, "");
     assert.ok(!JSON.stringify(data).includes("outside"));
     assert.deepEqual(data.family.photos, []);
+    const openedAt = (
+      await (await request("/api/shares", admin)).json()
+    ).items.find(
+      (item: { id: string }) => item.id === shared.share.id,
+    ).lastVisitedAt;
+    assert.ok(Date.parse(openedAt));
     const portrait = data.family.people.find(
       (p: Person) => p.id === "child",
     ).photo;
     assert.equal((await request(portrait)).status, 200);
+    assert.equal(
+      (await (await request("/api/shares", admin)).json()).items.find(
+        (item: { id: string }) => item.id === shared.share.id,
+      ).lastVisitedAt,
+      openedAt,
+    );
+    const previousOpening = "2026-01-01T00:00:00.000Z";
+    await app.archive.db
+      .prepare(
+        "UPDATE share_link_activity SET last_visited_at=? WHERE share_id=?",
+      )
+      .run(previousOpening, shared.share.id);
+    assert.equal((await request(`/api/shared/${token}?check=1`)).status, 200);
+    assert.equal(
+      (await (await request("/api/shares", admin)).json()).items.find(
+        (item: { id: string }) => item.id === shared.share.id,
+      ).lastVisitedAt,
+      previousOpening,
+    );
     assert.equal(
       (await request(`/api/shared/${token}/portrait/outside`)).status,
       404,
@@ -473,6 +564,12 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     );
     assert.equal((await request(`/api/shared/${token}`)).status, 410);
     assert.equal((await request(portrait)).status, 410);
+    assert.equal(
+      (await (await request("/api/shares", admin)).json()).items.find(
+        (item: { id: string }) => item.id === shared.share.id,
+      ).lastVisitedAt,
+      null,
+    );
     const expired = await (await issue()).json();
     await app.archive.db
       .prepare("UPDATE share_links SET expires_at=? WHERE id=?")

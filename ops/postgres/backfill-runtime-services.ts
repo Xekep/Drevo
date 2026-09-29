@@ -4,6 +4,7 @@ import type pg from "pg";
 
 export const runtimeServiceTables = [
   "share_links",
+  "share_link_activity",
   "geocode_cache",
   "migrations",
   "face_descriptors",

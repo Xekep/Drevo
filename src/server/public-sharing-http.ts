@@ -107,6 +107,11 @@ export function publicSharingHttp({
         return true;
       }
     }
+    const stillValid =
+      url.searchParams.get("check") === "1"
+        ? !!(await shares.get(shared![1]))
+        : await shares.recordVisit(share.id);
+    if (!stillValid) return json(410, { error: "Срок ссылки истёк" });
     return json(200, {
       family: sharedFamily(family, share, shared![1]),
       expiresAt: share.expiresAt,

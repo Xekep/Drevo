@@ -1,4 +1,38 @@
 import { expect, test } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
+
+test("share catalog shows the last opening and clears it after revocation", async ({
+  page,
+}, testInfo) => {
+  const title = `Ссылка для проверки посещения · ${testInfo.project.name}`;
+  const archive = await (await page.request.get("/api/family")).json();
+  const created = await page.request.post("/api/shares", {
+    headers: {
+      Origin: "http://127.0.0.1:4173",
+      "If-Match": String(archive.revision),
+    },
+    data: {
+      title,
+      anchorId: "e2e-memorial-person",
+      personIds: ["e2e-memorial-person"],
+      durationHours: 1,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const share = await created.json();
+  await page.goto(share.path);
+  await expect(page.locator(".tree-canvas")).toBeVisible();
+
+  await page.goto("/admin");
+  await openAdminSection(page, "shares", "Общий доступ");
+  const item = page
+    .locator(".share-catalog article")
+    .filter({ hasText: title });
+  await expect(item).toContainText("Последнее открытие:");
+  await item.getByRole("button", { name: "Отозвать" }).click();
+  await expect(item).toContainText("Отозвана");
+  await expect(item).not.toContainText("Последнее открытие:");
+});
 
 test("shared search selects only shared people and disappears after revocation", async ({
   page,

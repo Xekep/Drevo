@@ -110,6 +110,7 @@ test("fresh SQLite archive gets current schema version", () => {
       "audit_entries",
       "audit_people",
       "share_links",
+      "share_link_activity",
       "geocode_cache",
       "migrations",
       "mcp_tokens",
@@ -249,6 +250,7 @@ test("schema v1 upgrades service tables to v2 without losing existing users", ()
       "audit_entries",
       "audit_people",
       "share_links",
+      "share_link_activity",
       "geocode_cache",
       "migrations",
     ])

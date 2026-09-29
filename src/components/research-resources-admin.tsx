@@ -20,11 +20,21 @@ const emptyDraft: ResourceDraft = {
 };
 const endpoint = "/api/admin/research-resources";
 
+function resourceHost(resource: Resource) {
+  if (resource.domain) return resource.domain;
+  try {
+    return new URL(resource.url).hostname;
+  } catch {
+    return resource.url;
+  }
+}
+
 export function ResearchResourcesAdmin() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [newCategory, setNewCategory] = useState("");
+  const [resourceQuery, setResourceQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<ResourceDraft>(emptyDraft);
   const [loading, setLoading] = useState(true);
@@ -32,6 +42,17 @@ export function ResearchResourcesAdmin() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const selected = categories.find((item) => item.id === categoryId);
+  const filteredResources =
+    selected?.resources.filter((resource) => {
+      const query = resourceQuery.trim().toLocaleLowerCase("ru-RU");
+      return (
+        !query ||
+        [resource.name, resource.domain, resource.url, resource.description]
+          .join(" ")
+          .toLocaleLowerCase("ru-RU")
+          .includes(query)
+      );
+    }) || [];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,6 +105,7 @@ export function ResearchResourcesAdmin() {
   function chooseCategory(category: Category) {
     setCategoryId(category.id);
     setCategoryName(category.name);
+    setResourceQuery("");
     setEditing(null);
     setError("");
     setNotice("");
@@ -135,16 +157,9 @@ export function ResearchResourcesAdmin() {
   return (
     <section className="admin-card research-resources-admin">
       <div className="research-resources-heading">
-        <div>
-          <h2>Сайты для поиска</h2>
-          <p>
-            ИИ предлагает несколько подходящих ресурсов по теме вопроса.
-            Изменения сразу доступны в новых ответах.
-          </p>
-        </div>
         <span>
           {categories.reduce((count, item) => count + item.resources.length, 0)}{" "}
-          ресурсов
+          ресурсов в каталоге
         </span>
       </div>
       {loading && <p role="status">Загружаем каталог…</p>}
@@ -162,6 +177,28 @@ export function ResearchResourcesAdmin() {
         <div className="research-resources-layout">
           <div className="research-resources-categories">
             <h3>Категории</h3>
+            <label
+              className="research-category-mobile"
+              htmlFor="research-category-select"
+            >
+              Категория
+              <select
+                id="research-category-select"
+                value={categoryId}
+                onChange={(event) => {
+                  const category = categories.find(
+                    (item) => item.id === event.target.value,
+                  );
+                  if (category) chooseCategory(category);
+                }}
+              >
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name} · {category.resources.length}
+                  </option>
+                ))}
+              </select>
+            </label>
             <nav aria-label="Категории ресурсов">
               {categories.map((category) => (
                 <button
@@ -175,89 +212,113 @@ export function ResearchResourcesAdmin() {
                 </button>
               ))}
             </nav>
-            <form onSubmit={(event) => void addCategory(event)}>
-              <label htmlFor="new-research-category">Новая категория</label>
-              <div className="research-resources-add-category">
-                <input
-                  id="new-research-category"
-                  value={newCategory}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  maxLength={100}
-                  required
-                  disabled={busy}
-                  placeholder="Например, Региональные архивы"
-                />
-                <button
-                  type="submit"
-                  disabled={busy || !newCategory.trim()}
-                  aria-label="Добавить категорию"
-                  title="Добавить категорию"
-                >
-                  <Plus size={18} />
-                </button>
-              </div>
-            </form>
+            <details className="research-category-actions">
+              <summary>Добавить категорию</summary>
+              <form onSubmit={(event) => void addCategory(event)}>
+                <label htmlFor="new-research-category">Новая категория</label>
+                <div className="research-resources-add-category">
+                  <input
+                    id="new-research-category"
+                    value={newCategory}
+                    onChange={(event) => setNewCategory(event.target.value)}
+                    maxLength={100}
+                    required
+                    disabled={busy}
+                    placeholder="Например, Региональные архивы"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy || !newCategory.trim()}
+                    aria-label="Добавить категорию"
+                    title="Добавить категорию"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+              </form>
+            </details>
           </div>
           <div className="research-resources-detail">
             {selected ? (
               <>
-                <form
-                  className="research-resources-category-editor"
-                  onSubmit={(event) => void saveCategory(event)}
-                >
-                  <label htmlFor="research-category-name">
-                    Название категории
-                  </label>
-                  <div>
-                    <input
-                      id="research-category-name"
-                      value={categoryName}
-                      onChange={(event) => setCategoryName(event.target.value)}
-                      maxLength={100}
-                      required
-                      disabled={busy}
-                    />
-                    <button
-                      type="submit"
-                      disabled={
-                        busy ||
-                        !categoryName.trim() ||
-                        categoryName.trim() === selected.name
-                      }
-                    >
-                      Сохранить
-                    </button>
-                    <button
-                      type="button"
-                      className="research-resources-delete"
-                      aria-label="Удалить категорию"
-                      title="Удалить категорию и её ресурсы"
-                      disabled={busy}
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Удалить категорию «${selected.name}» и все её ресурсы (${selected.resources.length})?`,
+                <details className="research-category-actions research-category-edit">
+                  <summary>Изменить категорию «{selected.name}»</summary>
+                  <form
+                    className="research-resources-category-editor"
+                    onSubmit={(event) => void saveCategory(event)}
+                  >
+                    <label htmlFor="research-category-name">
+                      Название категории
+                    </label>
+                    <div>
+                      <input
+                        id="research-category-name"
+                        value={categoryName}
+                        onChange={(event) =>
+                          setCategoryName(event.target.value)
+                        }
+                        maxLength={100}
+                        required
+                        disabled={busy}
+                      />
+                      <button
+                        type="submit"
+                        disabled={
+                          busy ||
+                          !categoryName.trim() ||
+                          categoryName.trim() === selected.name
+                        }
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        type="button"
+                        className="research-resources-delete"
+                        aria-label="Удалить категорию"
+                        title="Удалить категорию и её ресурсы"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Удалить категорию «${selected.name}» и все её ресурсы (${selected.resources.length})?`,
+                            )
                           )
-                        )
-                          return;
-                        void change(
-                          `/categories/${encodeURIComponent(selected.id)}`,
-                          "DELETE",
-                        ).then((next) => {
-                          if (next) {
-                            setCategoryId(next[0]?.id || "");
-                            setCategoryName(next[0]?.name || "");
-                            setEditing(null);
-                          }
-                        });
-                      }}
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  </div>
-                </form>
+                            return;
+                          void change(
+                            `/categories/${encodeURIComponent(selected.id)}`,
+                            "DELETE",
+                          ).then((next) => {
+                            if (next) {
+                              setCategoryId(next[0]?.id || "");
+                              setCategoryName(next[0]?.name || "");
+                              setEditing(null);
+                            }
+                          });
+                        }}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  </form>
+                </details>
                 <div className="research-resources-list-head">
-                  <h3>Ресурсы</h3>
+                  <div>
+                    <h3>Ресурсы · {selected.resources.length}</h3>
+                    <label htmlFor="research-resource-filter">
+                      <span className="research-filter-label">
+                        Поиск по ресурсам
+                      </span>
+                      <input
+                        id="research-resource-filter"
+                        type="search"
+                        value={resourceQuery}
+                        onChange={(event) =>
+                          setResourceQuery(event.target.value)
+                        }
+                        placeholder="Найти ресурс или домен"
+                      />
+                    </label>
+                  </div>
                   <button
                     type="button"
                     disabled={busy}
@@ -421,20 +482,37 @@ export function ResearchResourcesAdmin() {
                   {selected.resources.length === 0 && (
                     <p>В категории пока нет ресурсов.</p>
                   )}
-                  {selected.resources.map((resource) => (
+                  {selected.resources.length > 0 &&
+                    filteredResources.length === 0 && (
+                      <p>По вашему запросу ресурсов нет.</p>
+                    )}
+                  {filteredResources.map((resource) => (
                     <article key={resource.id}>
                       <div>
                         <strong>{resource.name}</strong>
-                        <p>{resource.description}</p>
+                        <p title={resource.description}>
+                          {resource.description}
+                        </p>
                         <a
                           href={resource.url}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          {resource.url}{" "}
+                          {resourceHost(resource)}{" "}
                           <ExternalLink size={13} aria-hidden="true" />
                         </a>
                       </div>
+                      <span
+                        className={
+                          resource.enabledForAiSearch
+                            ? "research-search-on"
+                            : "research-search-off"
+                        }
+                      >
+                        {resource.enabledForAiSearch
+                          ? "Поиск ИИ"
+                          : "Без поиска ИИ"}
+                      </span>
                       <button
                         type="button"
                         disabled={busy}

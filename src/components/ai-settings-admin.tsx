@@ -265,7 +265,6 @@ export function AiSettingsAdmin() {
   if (!status && !error)
     return (
       <section className="admin-card archive-form ai-settings-admin">
-        <h2>Yandex AI Studio</h2>
         <p role="status">Проверяем конфигурацию…</p>
       </section>
     );
@@ -273,13 +272,9 @@ export function AiSettingsAdmin() {
   return (
     <section className="admin-card archive-form ai-settings-admin">
       <div className="ai-settings-title">
-        <div>
-          <Bot size={20} />
-          <span>
-            <h2>Yandex AI Studio</h2>
-            <p>Общее подключение и отдельные AI-профили ролей.</p>
-          </span>
-        </div>
+        <span className="ai-provider-name">
+          <Bot size={16} /> Yandex AI Studio
+        </span>
         {status && (
           <span
             className={`ai-runtime-state ${status.active ? "is-active" : "is-inactive"}`}
@@ -300,41 +295,23 @@ export function AiSettingsAdmin() {
 
       {status && (
         <>
-          <details className="ai-admin-connection">
-          <summary>Текущее подключение · {status.configured ? "настроено" : "требует настройки"}</summary>
-          <div className="ai-config-status">
-            <div>
-              <b>API-ключ</b>
-              <span>
-                {status.apiKeyConfigured
-                  ? status.apiKeySource === "database"
-                    ? "Сохранён в Drevo"
-                    : "Из окружения сервера"
-                  : "Не задан"}
-              </span>
-            </div>
-            <div>
-              <b>Folder ID</b>
-              <span>
-                {status.folderConfigured
-                  ? `${status.folderId} · ${
-                      status.folderSource === "database" ? "Drevo" : "окружение"
-                    }`
-                  : "Не задан"}
-              </span>
-            </div>
-            <div>
-              <b>Модель</b>
-              <span>{status.model}</span>
-            </div>
-            <div>
-              <b>Endpoint</b>
-              <span>{status.baseUrl}</span>
-            </div>
-          </div>
-          </details>
-
           <form onSubmit={save}>
+            <label
+              className="setting-toggle"
+              htmlFor="ai-research-enabled"
+              aria-label="ИИ-исследователь"
+            >
+              <span>
+                <b>ИИ-исследователь</b>
+                <small>Доступен пользователям с разрешёнными ролями.</small>
+              </span>
+              <input
+                id="ai-research-enabled"
+                type="checkbox"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+            </label>
             <label
               className="setting-toggle"
               htmlFor="ai-web-search-enabled"
@@ -342,13 +319,7 @@ export function AiSettingsAdmin() {
             >
               <span>
                 <b>Поиск в интернете</b>
-                <small>
-                  Провайдер:{" "}
-                  {status.webSearchProvider === "yandex"
-                    ? "Yandex"
-                    : status.webSearchProvider}
-                  . По умолчанию: доверенные ресурсы каталога.
-                </small>
+                <small>По умолчанию — по доверенным ресурсам каталога.</small>
               </span>
               <input
                 id="ai-web-search-enabled"
@@ -358,26 +329,6 @@ export function AiSettingsAdmin() {
                 onChange={(event) => setWebSearchEnabled(event.target.checked)}
               />
             </label>
-            <label
-              className="setting-toggle"
-              htmlFor="ai-research-enabled"
-              aria-label="ИИ-исследователь"
-            >
-              <span>
-                <b>ИИ-исследователь</b>
-                <small>
-                  Отключение скрывает панель ИИ и блокирует новые запросы, но не
-                  удаляет настройки и предложения.
-                </small>
-              </span>
-              <input
-                id="ai-research-enabled"
-                type="checkbox"
-                checked={enabled}
-                onChange={(event) => setEnabled(event.target.checked)}
-              />
-            </label>
-
             <AiRoleProfilesEditor
               profiles={roleProfiles}
               defaults={{
@@ -640,6 +591,40 @@ export function AiSettingsAdmin() {
               </button>
             </footer>
           </form>
+
+          <details className="ai-admin-connection">
+          <summary>Текущее подключение · {status.configured ? "настроено" : "требует настройки"}</summary>
+          <div className="ai-config-status">
+            <div>
+              <b>API-ключ</b>
+              <span>
+                {status.apiKeyConfigured
+                  ? status.apiKeySource === "database"
+                    ? "Сохранён в Drevo"
+                    : "Из окружения сервера"
+                  : "Не задан"}
+              </span>
+            </div>
+            <div>
+              <b>Folder ID</b>
+              <span>
+                {status.folderConfigured
+                  ? `${status.folderId} · ${
+                      status.folderSource === "database" ? "Drevo" : "окружение"
+                    }`
+                  : "Не задан"}
+              </span>
+            </div>
+            <div>
+              <b>Модель</b>
+              <span>{status.model}</span>
+            </div>
+            <div>
+              <b>Endpoint</b>
+              <span>{status.baseUrl}</span>
+            </div>
+          </div>
+          </details>
 
           <details className="ai-admin-connection ai-usage-details">
             <summary>Статистика · сегодня {status.usage.today.requests} запросов</summary>

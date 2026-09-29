@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS share_links (
   PRIMARY KEY(archive_id,id),
   UNIQUE(archive_id,token_hash));
 
+CREATE TABLE IF NOT EXISTS share_link_activity (
+  archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id', true),
+  share_id text NOT NULL,
+  last_visited_at text NOT NULL,
+  PRIMARY KEY (archive_id, share_id),
+  FOREIGN KEY (archive_id, share_id)
+    REFERENCES share_links(archive_id, id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS geocode_cache (
   archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id', true) REFERENCES archives(id) ON DELETE CASCADE,
   query TEXT NOT NULL,
@@ -378,6 +387,11 @@ ALTER TABLE share_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE share_links FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS archive_scope ON share_links;
 CREATE POLICY archive_scope ON share_links USING (archive_id=current_setting('drevo.archive_id', true)) WITH CHECK (archive_id=current_setting('drevo.archive_id', true));
+
+ALTER TABLE share_link_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE share_link_activity FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS archive_scope ON share_link_activity;
+CREATE POLICY archive_scope ON share_link_activity USING (archive_id=current_setting('drevo.archive_id', true)) WITH CHECK (archive_id=current_setting('drevo.archive_id', true));
 
 ALTER TABLE geocode_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE geocode_cache FORCE ROW LEVEL SECURITY;

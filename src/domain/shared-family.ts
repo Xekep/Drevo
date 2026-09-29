@@ -9,6 +9,7 @@ export type ShareLink = {
   createdBy: string;
   createdName: string;
   revokedAt: string | null;
+  lastVisitedAt: string | null;
 };
 /** Отдельная граница доступа: ни глобальных метаданных, ни концов связей за пределами выдачи. */
 export function sharedFamily(

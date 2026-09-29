@@ -169,19 +169,45 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
             </label>
           </div>
           <div className="backup-fields">
-            <label>
-              Период, часов
-              <input
-                type="number"
-                min={1}
-                max={720}
-                required
-                value={draft.intervalHours}
+            <div className="backup-interval-field">
+              <label htmlFor="backup-interval">Как часто</label>
+              <select
+                id="backup-interval"
+                value={
+                  [12, 24, 168].includes(draft.intervalHours)
+                    ? draft.intervalHours
+                    : "custom"
+                }
                 disabled={running}
-                onChange={(e) => field("intervalHours", Number(e.target.value))}
-              />
-              <small>24 — каждый день, 168 — раз в неделю</small>
-            </label>
+                onChange={(e) =>
+                  field(
+                    "intervalHours",
+                    e.target.value === "custom" ? 48 : Number(e.target.value),
+                  )
+                }
+              >
+                <option value={12}>Каждые 12 часов</option>
+                <option value={24}>Ежедневно</option>
+                <option value={168}>Еженедельно</option>
+                <option value="custom">Свой интервал</option>
+              </select>
+              {![12, 24, 168].includes(draft.intervalHours) && (
+                <label>
+                  Период, часов
+                  <input
+                    type="number"
+                    min={1}
+                    max={720}
+                    required
+                    value={draft.intervalHours}
+                    disabled={running}
+                    onChange={(e) =>
+                      field("intervalHours", Number(e.target.value))
+                    }
+                  />
+                </label>
+              )}
+            </div>
             <label>
               Количество копий
               <input
@@ -211,10 +237,10 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
             </select>
           </label>
           {draft.storage === "local" ? (
-            <p className="backup-location">
-              <HardDrive size={16} aria-hidden="true" />
-              {status.localDirectory}
-            </p>
+            <details className="backup-location">
+              <summary>Локально на сервере архива · показать путь</summary>
+              <code>{status.localDirectory}</code>
+            </details>
           ) : (
             <>
               <div className="backup-fields">

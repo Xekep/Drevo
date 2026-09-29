@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 
 test.use({ timezoneId: "Europe/Moscow" });
 test("participants show last visit in the viewer timezone and keep unknown visits explicit", async ({
@@ -32,7 +33,7 @@ test("participants show last visit in the viewer timezone and keep unknown visit
     }),
   );
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Участники", exact: true }).click();
+  await openAdminSection(page, "users", "Участники");
   const visited = page.getByRole("article", {
     name: "Участник: Иван Тестовый",
     exact: true,
@@ -66,19 +67,23 @@ test("participants show last visit in the viewer timezone and keep unknown visit
   }
 });
 
-test("platform administrator changes the account tier separately from tree role", async ({ page }) => {
+test("platform administrator changes the account tier separately from tree role", async ({
+  page,
+}) => {
   const patches: unknown[] = [];
   await page.route("**/api/users?**", (route) =>
     route.fulfill({
       json: {
-        users: [{
-          id: "member",
-          name: "Участник",
-          role: "reader",
-          approved: true,
-          fullAccess: false,
-          createdAt: "2026-01-01T00:00:00Z",
-        }],
+        users: [
+          {
+            id: "member",
+            name: "Участник",
+            role: "reader",
+            approved: true,
+            fullAccess: false,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
         next: null,
         total: 1,
       },
@@ -100,11 +105,15 @@ test("platform administrator changes the account tier separately from tree role"
     });
   });
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Участники", exact: true }).click();
-  const tier = page.getByRole("combobox", { name: "Уровень аккаунта: Участник" });
+  await openAdminSection(page, "users", "Участники");
+  const tier = page.getByRole("combobox", {
+    name: "Уровень аккаунта: Участник",
+  });
   await expect(tier).toHaveValue("basic");
   await tier.selectOption("full");
   await expect(tier).toHaveValue("full");
   expect(patches).toEqual([{ fullAccess: true }]);
-  await expect(page.getByRole("combobox", { name: "Роль: Участник" })).toHaveValue("reader");
+  await expect(
+    page.getByRole("combobox", { name: "Роль: Участник" }),
+  ).toHaveValue("reader");
 });
