@@ -1095,6 +1095,7 @@ export default function App() {
             );
           }}
           canExportArchive={user?.role === "admin"}
+          canExportOffline={Boolean(user && readTree)}
           preferences={archive.treePreferences}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}

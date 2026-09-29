@@ -10,6 +10,7 @@ import { auditStore } from "./audit.ts";
 import { adminAccessHttp } from "./admin-access-http.ts";
 import { adminSharingHttp } from "./admin-sharing-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
+import { offlinePackageHttp } from "./offline-package-http.ts";
 import { coreHttp } from "./core-http.ts";
 import { databaseBackupHttp } from "./database-backup-http.ts";
 import { placesHttp } from "./places-http.ts";
@@ -133,6 +134,11 @@ export async function archiveHttp({
     treePreferences,
     researchCatalog,
   });
+  const offlinePackage = offlinePackageHttp({
+    archive,
+    auth,
+    uploadsDirectory,
+  });
   const documents = documentsHttp({
     archive,
     auth,
@@ -196,6 +202,7 @@ export async function archiveHttp({
     if (await adminResearchResources(req, res, url)) return true;
     if (await personalTreeSettings(req, res, url)) return true;
     if (await archiveQuery(req, res, url)) return true;
+    if (await offlinePackage(req, res, url)) return true;
     if (await documents(req, res, url)) return true;
     if (await personDiscussion(req, res, url)) return true;
     if (await places(req, res, url)) return true;
