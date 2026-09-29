@@ -228,6 +228,37 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       warnings.add(
         `Запись ${node.tag} не перенесена. Сохраните исходный GEDCOM.`,
       );
+  const supportedExtensions = new Set([
+    "_DREVO",
+    "_DREVO_PARENT",
+    "_DREVO_UNMARRIED",
+    "_DREVO_MEDIA",
+    "_MAIDEN",
+    "_UID",
+    "_PATR",
+    "_TYPE",
+    "_URL",
+    "_PRIM",
+    ...Object.keys(eventTags).filter((tag) => tag.startsWith("_")),
+  ]);
+  for (const root of roots) {
+    const nested: Array<{ node: Node; parentTag: string }> = root.children.map(
+      (node) => ({ node, parentTag: root.tag }),
+    );
+    while (nested.length) {
+      const { node, parentTag } = nested.pop()!;
+      if (
+        node.tag.startsWith("_") &&
+        !supportedExtensions.has(node.tag) &&
+        !["INDI", "FAM"].includes(parentTag)
+      )
+        warnings.add(
+          `Поле ${node.tag} не перенесено. Сохраните исходный GEDCOM.`,
+        );
+      for (const child of node.children)
+        nested.push({ node: child, parentTag: node.tag });
+    }
+  }
   for (const n of roots)
     if (n.xref) {
       if (records.has(n.xref))
@@ -342,9 +373,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       (value(name, "SURN") || /\/(.*?)\//.exec(name.value)?.[1] || "").trim();
     // BIRTH is explicit birth information; MAIDEN is a legacy fallback and
     // can differ from the birth surname after adoption or another name change.
-    const birthName = ["BIRTH", "MAIDEN"].flatMap((type) =>
-      names.filter((name) => value(name, "TYPE").trim().toUpperCase() === type),
-    ).find((name) => nameSurname(name));
+    const birthName = ["BIRTH", "MAIDEN"]
+      .flatMap((type) =>
+        names.filter(
+          (name) => value(name, "TYPE").trim().toUpperCase() === type,
+        ),
+      )
+      .find((name) => nameSurname(name));
     const nameNode = names[0],
       nameText = nameNode?.value || "",
       slash = /^(.*?)\/(.*?)\/(.*)$/.exec(nameText);
@@ -385,7 +420,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       biography: notes(n) || undefined,
       occupation: value(n, "OCCU") || undefined,
       maidenName:
-        (birthName && nameSurname(birthName)) || value(n, "_MAIDEN") || undefined,
+        (birthName && nameSurname(birthName)) ||
+        value(n, "_MAIDEN") ||
+        undefined,
       sources: [
         ...sources(n),
         ...(birth ? sources(birth) : []),
