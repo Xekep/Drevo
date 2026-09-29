@@ -500,7 +500,15 @@ try {
     headers: {
       "Content-Type": "application/pdf",
       "X-Document-Metadata": encodeURIComponent(
-        JSON.stringify({ title: "Семейная запись", personIds: ["person-a"] }),
+        JSON.stringify({
+          title: "Семейная запись",
+          personIds: ["person-a"],
+          documentType: "metrical record",
+          documentDate: "1887",
+          place: "Rezh",
+          description: "Register page 12",
+          provenance: "GASO F6 Op13 D104",
+        }),
       ),
     },
     body: new Uint8Array(pdfBytes),
@@ -552,6 +560,8 @@ try {
     r.json(),
   );
   assert.equal(afterDocuments.total, 1);
+  assert.equal(afterDocuments.items[0].documentType, "metrical record");
+  assert.equal(afterDocuments.items[0].provenance, "GASO F6 Op13 D104");
   const restoredAnnotations = await fetch(
     `${base}/api/documents/${afterDocuments.items[0].id}/annotations`,
   ).then((r) => r.json());
@@ -592,18 +602,25 @@ try {
     headers: {
       "Content-Type": "application/pdf",
       "X-Document-Metadata": encodeURIComponent(
-        JSON.stringify({ title: "Документ без привязки", personIds: [] }),
+        JSON.stringify({
+          title: "Документ без привязки",
+          personIds: [],
+          documentType: "metrical record",
+          documentDate: "1887",
+          place: "Rezh",
+          description: "Register page 12",
+          provenance: "GASO F6 Op13 D104",
+        }),
       ),
     },
     body: new Uint8Array(pdfBytes),
   });
   assert.equal(unlinkedUpload.status, 201, await unlinkedUpload.clone().text());
   const unlinkedId = (await unlinkedUpload.json()).id;
-  assert.deepEqual(
-    (await fetch(base + `/api/documents/${unlinkedId}`).then((r) => r.json()))
-      .people,
-    [],
-  );
+  const unlinkedDocument = await fetch(base + `/api/documents/${unlinkedId}`).then((r) => r.json());
+  assert.deepEqual(unlinkedDocument.people, []);
+  assert.equal(unlinkedDocument.provenance, "GASO F6 Op13 D104");
+  assert.equal(unlinkedDocument.documentDate, "1887");
   assert.equal(
     (await fetch(base + `/api/documents/${unlinkedId}`, { method: "DELETE" }))
       .status,

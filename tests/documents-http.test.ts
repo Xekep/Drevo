@@ -13,6 +13,7 @@ import { join } from "node:path";
 import PDFDocument from "pdfkit";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
+import type { DocumentDetails } from "../src/shared/document-details.ts";
 
 async function samplePdf() {
   const pdf = new PDFDocument({ autoFirstPage: false });
@@ -69,9 +70,18 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       },
     ],
   };
-  const metadata = encodeURIComponent(
-    JSON.stringify({ title: "Семейная запись", personIds: ["anna"] }),
-  );
+  const metadata = `base64:${Buffer.from(
+    JSON.stringify({
+      title: "Семейная запись",
+      personIds: ["anna"],
+      documentType: "metrical record",
+      documentDate: "1887",
+      place: "Rezh",
+      description: "Register page 12",
+      provenance: "GASO F6 Op13 D104",
+    }),
+    "utf8",
+  ).toString("base64")}`;
   const upload = (body: Buffer, extra: Record<string, string> = {}) =>
     fetch(`${base}/api/documents`, {
       method: "POST",
@@ -92,6 +102,16 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       (
         await upload(pdf, {
           "X-Document-Metadata": encodeURIComponent(
+            JSON.stringify({ title: "Неверные сведения", personIds: ["anna"], documentType: 42 }),
+          ),
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await upload(pdf, {
+          "X-Document-Metadata": encodeURIComponent(
             JSON.stringify({
               title: "Чужая запись",
               personIds: ["missing"],
@@ -106,7 +126,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const { id } = (await created.json()) as { id: string };
     const list = (await (await fetch(`${base}/api/documents`)).json()) as {
       total: number;
-      items: Array<{
+      items: Array<DocumentDetails & {
         id: string;
         title: string;
         people: Array<{ id: string; name: string }>;
@@ -115,6 +135,11 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal(list.total, 1);
     assert.equal(list.items[0].id, id);
     assert.equal(list.items[0].title, "Семейная запись");
+    assert.equal(list.items[0].documentType, "metrical record");
+    assert.equal(list.items[0].documentDate, "1887");
+    assert.equal(list.items[0].place, "Rezh");
+    assert.equal(list.items[0].description, "Register page 12");
+    assert.equal(list.items[0].provenance, "GASO F6 Op13 D104");
     assert.deepEqual(
       list.items[0].people.map((person) => person.id),
       ["anna"],
@@ -134,6 +159,10 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal(byTitle.total, 1);
     assert.equal(byPerson.total, 1);
     assert.equal(noMatch.total, 0);
+    const byProvenance = (await (
+      await fetch(`${base}/api/documents?q=GASO`)
+    ).json()) as { total: number };
+    assert.equal(byProvenance.total, 1);
     const file = await fetch(`${base}/api/documents/${id}/file`);
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -206,9 +235,10 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     });
     assert.equal(restored.status, 200, await restored.clone().text());
     const after = (await (await fetch(`${base}/api/documents`)).json()) as {
-      items: Array<{ id: string; url: string; people: Array<{ id: string }> }>;
+      items: Array<DocumentDetails & { id: string; url: string; people: Array<{ id: string }> }>;
     };
     assert.equal(after.items.length, 1);
+    assert.equal(after.items[0].provenance, "GASO F6 Op13 D104");
     assert.notEqual(after.items[0].id, id);
     assert.deepEqual(
       after.items[0].people.map((person) => person.id),
