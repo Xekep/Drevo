@@ -11,6 +11,7 @@ export const MCP_SCOPES: ResearchScope[] = [
 
 export type McpTokenGrant = {
   id: string;
+  createdBy: string;
   name: string;
   scopes: ResearchScope[];
   createdAt: string;
@@ -202,6 +203,7 @@ export function mcpTokenStore(db: StoreDatabase) {
       await touch.run(now, String(row.id), now - 60 * 60 * 1000);
       return {
         id: String(row.id),
+        createdBy: String(row.created_by),
         name: String(row.name),
         scopes: JSON.parse(String(row.scopes)) as ResearchScope[],
         createdAt: String(row.created_at),

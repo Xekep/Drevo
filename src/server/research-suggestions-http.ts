@@ -8,6 +8,7 @@ import {
 } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 export function researchSuggestionsHttp({
   archive,
@@ -45,6 +46,8 @@ export function researchSuggestionsHttp({
       return json(res, actor ? 403 : 401, {
         error: "Предложения доступны пользователям с правом редактирования",
       });
+    if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (url.pathname === "/api/research/suggestions" && req.method === "GET") {
       const people = new Map(

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import {
+  faceRecognitionAvailable,
   saveFaceDescriptor,
   suggestFaces,
   type FaceSuggestion,
@@ -74,6 +75,17 @@ function PhotoViewerContent({
   const previous = photos[index - 1];
   const next = photos[index + 1];
   const [editing, setEditing] = useState(initialEditing);
+  const [faceAccess, setFaceAccess] = useState(false);
+  useEffect(() => {
+    if (!allowedEdit) return;
+    const controller = new AbortController();
+    void faceRecognitionAvailable(controller.signal)
+      .then((enabled) => {
+        if (!controller.signal.aborted) setFaceAccess(enabled);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [allowedEdit]);
   const [showTags, setShowTags] = useState(false);
   const [highlightedPerson, setHighlightedPerson] = useState<string | null>(
     null,
@@ -165,8 +177,13 @@ function PhotoViewerContent({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   useEffect(() => () => scanController.current?.abort(), []);
-  async function scan(enterEditing = false) {
-    if (!(canEdit || (enterEditing && allowedEdit)) || scanning) return;
+  const scan = useCallback(async (enterEditing = false) => {
+    if (!(canEdit || (enterEditing && allowedEdit)) || scanning || !faceAccess)
+      return;
+    if (!(await faceRecognitionAvailable())) {
+      setFaceAccess(false);
+      return;
+    }
     scanned.current = true;
     const controller = new AbortController();
     scanController.current = controller;
@@ -192,7 +209,17 @@ function PhotoViewerContent({
     } finally {
       if (!controller.signal.aborted) setScanning(false);
     }
-  }
+  }, [allowedEdit, canEdit, faceAccess, photo, scanning]);
+  useEffect(() => {
+    if (
+      canEdit &&
+      faceAccess &&
+      imageState === "ready" &&
+      !photo.tags.length &&
+      !scanned.current
+    )
+      void scan();
+  }, [canEdit, faceAccess, imageState, photo.tags.length, scan]);
   function selectSuggestion(s: FaceSuggestion) {
     if (busy) return;
     setRect(s.box);
@@ -351,8 +378,6 @@ function PhotoViewerContent({
                     draggable={false}
                     onLoad={() => {
                       setImageState("ready");
-                      if (canEdit && !photo.tags.length && !scanned.current)
-                        void scan();
                     }}
                     onError={() => setImageState("error")}
                   />
@@ -567,13 +592,15 @@ function PhotoViewerContent({
                   aria-label="Отметить людей"
                 >
                   <div className="photo-tagging-actions">
-                    <button
-                      disabled={busy || scanning || imageState !== "ready"}
-                      onClick={() => void scan()}
-                    >
-                      <ScanFace size={16} />
-                      {scanning ? "Ищем лица…" : "Найти лица"}
-                    </button>
+                    {faceAccess && (
+                      <button
+                        disabled={busy || scanning || imageState !== "ready"}
+                        onClick={() => void scan()}
+                      >
+                        <ScanFace size={16} />
+                        {scanning ? "Ищем лица…" : "Найти лица"}
+                      </button>
+                    )}
                     <button
                       disabled={busy || imageState !== "ready"}
                       onClick={() => {

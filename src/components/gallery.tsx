@@ -7,7 +7,10 @@ import { newestPhotos, photoAlbums } from "../domain/photo-albums";
 import { mediaPreview } from "../domain/media-preview";
 import { LoadMore } from "./load-more";
 import { photoFileError } from "../domain/photo-upload";
-import { warmFaceAssistant } from "../vision/face-assistant";
+import {
+  faceRecognitionAvailable,
+  warmFaceAssistant,
+} from "../vision/face-assistant";
 export function Gallery({
   family,
   canEdit,
@@ -34,12 +37,21 @@ export function Gallery({
     [limit, setLimit] = useState(30);
   useEffect(() => {
     if (!canEdit) return;
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void warmFaceAssistant().catch((error) =>
-        console.error("Не удалось загрузить модель поиска лиц", error),
-      );
+      void faceRecognitionAvailable(controller.signal)
+        .then((enabled) => {
+          if (enabled && !controller.signal.aborted) return warmFaceAssistant();
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error("Не удалось загрузить модель поиска лиц", error);
+        });
     }, 600);
-    return () => window.clearTimeout(timer);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [canEdit]);
   useEffect(() => {
     const hasFiles = (event: DragEvent) =>

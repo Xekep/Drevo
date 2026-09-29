@@ -4,6 +4,7 @@ import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 const MODELS = {
   "face-api-1.7.15": { dimensions: 128, maxValue: 2 },
@@ -175,6 +176,17 @@ export function faceDescriptorsHttp({
   publicOrigin?: string;
 }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
+    if (url.pathname === "/api/faces/status") {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      const user = await auth.currentUser(req);
+      return json(res, 200, {
+        enabled:
+          !!user?.approved &&
+          (await auth.canEdit(req)) &&
+          (await accountAiAccess(archive.db, user.id, auth.local)),
+      });
+    }
     const saving = url.pathname === "/api/faces/descriptors";
     const matching = url.pathname === "/api/faces/match";
     const deleting = /^\/api\/faces\/descriptors\/[a-zA-Z0-9-]{1,64}$/.test(
@@ -185,6 +197,9 @@ export function faceDescriptorsHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "You do not have editing access",
       });
+    const actor = (await auth.currentUser(req))!;
+    if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+      return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
     if (deleting && req.method !== "DELETE")
       return json(res, 405, { error: "Ожидается DELETE" });
     if (!deleting && req.method !== "POST")
