@@ -102,6 +102,7 @@ export function PersonPanel({
   suggestions,
   isCurrentUser = false,
   canDiscuss = false,
+  canLoadDocuments = false,
   idPrefix = "person",
 }: {
   person: Person;
@@ -112,6 +113,7 @@ export function PersonPanel({
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
   canDiscuss?: boolean;
+  canLoadDocuments?: boolean;
   idPrefix?: string;
 }) {
   const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
@@ -121,9 +123,37 @@ export function PersonPanel({
     items: Array<{ id: string; title: string }>;
     error: string;
   }>({ personId: "", retry: -1, items: [], error: "" });
+  const [documentCount, setDocumentCount] = useState<{
+    personId: string;
+    retry: number;
+    total: number;
+  }>({ personId: "", retry: -1, total: 0 });
   const [documentRetry, setDocumentRetry] = useState(0);
   useEffect(() => {
-    if (tab !== "sources") return;
+    if (!canLoadDocuments) return;
+    const request = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/documents?personId=${encodeURIComponent(person.id)}&limit=1`,
+          { signal: request.signal },
+        );
+        if (!response.ok) return;
+        const page = (await response.json()) as { total: number };
+        if (!request.signal.aborted)
+          setDocumentCount({
+            personId: person.id,
+            retry: documentRetry,
+            total: page.total,
+          });
+      } catch {
+        // The sources tab shows a retryable error if the document list fails.
+      }
+    })();
+    return () => request.abort();
+  }, [person.id, documentRetry, canLoadDocuments]);
+  useEffect(() => {
+    if (tab !== "sources" || !canLoadDocuments) return;
     const request = new AbortController();
     void (async () => {
       try {
@@ -166,11 +196,18 @@ export function PersonPanel({
       }
     })();
     return () => request.abort();
-  }, [person.id, tab, documentRetry]);
+  }, [person.id, tab, documentRetry, canLoadDocuments]);
   const documentsCurrent =
     documents.personId === person.id && documents.retry === documentRetry;
   const personDocuments = documentsCurrent ? documents.items : [];
-  const documentsLoading = !documentsCurrent;
+  const documentsLoading = canLoadDocuments && !documentsCurrent;
+  const personDocumentCount =
+    documentsCurrent && !documents.error
+      ? documents.items.length
+      : documentCount.personId === person.id &&
+          documentCount.retry === documentRetry
+        ? documentCount.total
+        : 0;
   const sources = collectPersonSources(person);
   const relatives = people.filter(
     (p) =>
@@ -273,7 +310,7 @@ export function PersonPanel({
         >
           Источники{" "}
           <span className="count-badge">
-            {sources.length + personDocuments.length}
+            {sources.length + personDocumentCount}
           </span>
         </button>
         {canDiscuss && (

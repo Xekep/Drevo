@@ -234,6 +234,7 @@ export function PersonInspector({
         person={person}
         isCurrentUser={user?.personId === person.id}
         canDiscuss={user?.approved === true}
+        canLoadDocuments={user?.approved === true}
         people={family.people}
         links={family.links}
         onSelect={onSelect}

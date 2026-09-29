@@ -130,6 +130,7 @@ export function PersonFullView({
                 person={active}
                 isCurrentUser={user?.personId === active.id}
                 canDiscuss={user?.approved === true}
+                canLoadDocuments={user?.approved === true}
                 people={family.people}
                 links={family.links}
                 onSelect={selectActive}

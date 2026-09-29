@@ -55,6 +55,17 @@ test("из карточки человека открываются только
   }
   await page.goto("/people/e2e-child");
   const panel = page.locator(".inspector-dock");
+  // Desktop and mobile workers may upload to the same fixture database.
+  await expect
+    .poll(async () =>
+      Number(
+        await panel
+          .getByRole("tab", { name: /Источники/ })
+          .locator(".count-badge")
+          .textContent(),
+      ),
+    )
+    .toBeGreaterThanOrEqual(2);
   await panel.getByRole("tab", { name: /Источники/ }).click();
   await expect(
     panel.getByRole("heading", { name: title, exact: true }),

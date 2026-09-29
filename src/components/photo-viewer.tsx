@@ -45,6 +45,7 @@ function PhotoViewerContent({
   onClose,
   onPerson,
   currentUserPersonId,
+  canLoadDocuments,
   initialEditing = false,
   onDirtyChange,
 }: {
@@ -59,6 +60,7 @@ function PhotoViewerContent({
   onClose: () => void;
   onPerson: (id: string) => void;
   currentUserPersonId?: string;
+  canLoadDocuments: boolean;
   initialEditing?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -898,6 +900,7 @@ function PhotoViewerContent({
             person={viewedPerson}
             family={family}
             isCurrentUser={currentUserPersonId === viewedPerson.id}
+            canLoadDocuments={canLoadDocuments}
             onSelect={previewPerson}
             onTree={onPerson}
             onBack={() => {
