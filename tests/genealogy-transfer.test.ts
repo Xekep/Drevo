@@ -477,6 +477,26 @@ async function zipFile(path: string, entries: [string, Buffer][]) {
   await writing;
 }
 
+function replaceZipEntryName(
+  bytes: Buffer,
+  original: string,
+  replacement: string,
+) {
+  assert.equal(Buffer.byteLength(original), Buffer.byteLength(replacement));
+  const needle = Buffer.from(original);
+  const value = Buffer.from(replacement);
+  let count = 0;
+  for (let offset = 0; ;) {
+    const index = bytes.indexOf(needle, offset);
+    if (index < 0) break;
+    value.copy(bytes, index);
+    count++;
+    offset = index + needle.length;
+  }
+  assert.equal(count, 2); // local header and central directory
+  return bytes;
+}
+
 test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documents and rejects missing media", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-gdz-"));
   try {
@@ -693,6 +713,29 @@ test("XML ZIP and base64 load originals; package paths and malformed archives ar
     const result = await prepareGenealogyImport(path, dir, "xml");
     assert.equal(result.files.length, 1);
     assert.equal(result.family.people[0].photo, result.family.photos?.[0].url);
+    const windowsZip = replaceZipEntryName(
+      await readFile(path),
+      "example.xml.files/photo.png",
+      "example.xml.files\\photo.png",
+    );
+    await writeFile(path, windowsZip);
+    const windowsImport = await prepareGenealogyImport(path, dir, "windows");
+    assert.equal(windowsImport.files.length, 1);
+    assert.equal(windowsImport.family.photos?.length, 1);
+    await zipFile(path, [
+      ["example.xml", Buffer.from(xml)],
+      ["media/ok/photo.png", image],
+    ]);
+    const traversal = replaceZipEntryName(
+      await readFile(path),
+      "media/ok/photo.png",
+      "media\\..\\photo.png",
+    );
+    await writeFile(path, traversal);
+    await assert.rejects(
+      prepareGenealogyImport(path, dir, "traversal"),
+      /invalid relative path|Недопустимый путь/,
+    );
     const inline = xml.replace(
       '<details><detail><person id="a" /></detail></details>',
       `<data>${image.toString("base64")}</data>`,
