@@ -85,6 +85,13 @@ test("GEDCOM media export reads document associations in two queries regardless 
   assert.equal(result.length, 1000);
   assert.deepEqual(result[7].personIds, ["child", "parent"]);
   assert.deepEqual(result[8].personIds, []);
+  assert.deepEqual(result[7].document, {
+    documentType: "",
+    documentDate: "",
+    place: "",
+    description: "",
+    provenance: "",
+  });
 });
 
 test("unknown GEDCOM 7 extensions are disclosed without turning hypotheses into facts", () => {
@@ -556,6 +563,13 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
         mime: "application/pdf",
         personIds: ["child"],
         portraitIds: [],
+        document: {
+          documentType: "Метрическая запись",
+          documentDate: "1887 год",
+          place: "Мурзинка",
+          description: "Лист 7",
+          provenance: "ГАСО, Ф. 6",
+        },
       },
     ];
     const path = join(dir, "test.gdz");
@@ -627,6 +641,10 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     assert.deepEqual(parsed.files.find((f) => f.documentId)?.personIds, [
       "back-p3",
     ]);
+    assert.deepEqual(
+      parsed.files.find((f) => f.documentId)?.document,
+      media[1].document,
+    );
     const broken = join(dir, "missing.gdz");
     await zipFile(broken, [["gedcom.ged", Buffer.from(external7)]]);
     await assert.rejects(
@@ -852,10 +870,17 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       .png()
       .toBuffer();
     const path = join(dir, "upload.gdz");
+    const documentDetails = {
+      documentType: "Метрическая запись",
+      documentDate: "1887 год",
+      place: "Мурзинка",
+      description: "Лист 7",
+      provenance: "ГАСО, Ф. 6",
+    };
     const ged = external7
       .replace(
         "0 TRLR",
-        "0 @D@ OBJE\n1 FILE media/document.pdf\n2 FORM application/pdf\n2 TITL Документ\n0 TRLR",
+        `0 @D@ OBJE\n1 FILE media/document.pdf\n2 FORM application/pdf\n2 TITL Документ\n1 _DREVO_MEDIA ${JSON.stringify({ document: documentDetails })}\n0 TRLR`,
       )
       .replace("1 OBJE @M@", "1 OBJE @M@\n1 OBJE @D@");
     await zipFile(path, [
@@ -904,6 +929,17 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
         .n,
       1,
     );
+    const importedDocument = await archive.db
+      .prepare(
+        "SELECT title_search,document_type,document_date,place,description,provenance FROM documents",
+      )
+      .get();
+    assert.equal(importedDocument?.document_type, documentDetails.documentType);
+    assert.equal(importedDocument?.document_date, documentDetails.documentDate);
+    assert.equal(importedDocument?.place, documentDetails.place);
+    assert.equal(importedDocument?.description, documentDetails.description);
+    assert.equal(importedDocument?.provenance, documentDetails.provenance);
+    assert.match(String(importedDocument?.title_search), /мурзинка/);
     assert.equal(
       (await archive.db
         .prepare("SELECT count(*) AS n FROM document_people")
@@ -942,10 +978,21 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       (await request("/api/gedcom/export?format=agelongZip")).status,
       400,
     );
-    const round = await request(
-      "/api/gedcom/preview",
-      Buffer.from(await exported.arrayBuffer()),
+    const exportedBytes = Buffer.from(await exported.arrayBuffer());
+    const exportedPath = join(dir, "round.gdz");
+    const exportedStage = join(dir, "round-stage");
+    await writeFile(exportedPath, exportedBytes);
+    await mkdir(exportedStage);
+    const exportedImport = await prepareGenealogyImport(
+      exportedPath,
+      exportedStage,
+      "round",
     );
+    assert.deepEqual(
+      exportedImport.files.find((file) => file.documentId)?.document,
+      documentDetails,
+    );
+    const round = await request("/api/gedcom/preview", exportedBytes);
     assert.equal(round.status, 200);
     const second = await round.json();
     assert.equal(second.documents, 1);
