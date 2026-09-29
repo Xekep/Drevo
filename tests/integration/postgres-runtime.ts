@@ -236,6 +236,15 @@ try {
   );
   await runtimeUsers.setRole(owner, "reader", "reader");
   assert.equal((await runtimeUsers.list()).length, 3);
+  assert.equal((await runtimeUsers.get("reader"))?.fullAccess, false);
+  await assert.rejects(
+    runtimeUsers.setFullAccess((await runtimeUsers.get("vk:42"))!, "reader", true),
+    /администратор платформы/,
+  );
+  assert.equal((await runtimeUsers.get("reader"))?.fullAccess, false);
+  assert.equal((await runtimeUsers.setFullAccess(owner, "reader", true)).fullAccess, true);
+  assert.equal((await runtimeUsers.listPage(20)).users.find((user) => user.id === "reader")?.fullAccess, true);
+  await runtimeUsers.setFullAccess(owner, "reader", false);
   await assert.rejects(
     runtimeUsers.remove({ ...owner, id: "local" }, "owner"),
     /владельца/,
@@ -400,6 +409,27 @@ try {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, `${path}: ${await response.text()}`);
   }
+  const runtimeHttpUsers = await userStore(app.archive.db);
+  const tierChange = await fetch(base + "/api/users/reader", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fullAccess: true }),
+  });
+  assert.equal(tierChange.status, 200, await tierChange.clone().text());
+  assert.equal((await tierChange.json()).user.fullAccess, true);
+  assert.equal((await runtimeHttpUsers.get("reader"))?.fullAccess, true);
+  const mixedTierChange = await fetch(base + "/api/users/reader", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fullAccess: false, role: "admin" }),
+  });
+  assert.equal(mixedTierChange.status, 400);
+  assert.equal((await runtimeHttpUsers.get("reader"))?.fullAccess, true);
+  await runtimeHttpUsers.setFullAccess(
+    (await runtimeHttpUsers.get("owner"))!,
+    "reader",
+    false,
+  );
   // A page must retain the revision from its REPEATABLE READ snapshot even
   // when another connection commits between checking the token and reading rows.
   const concurrent = await openArchive(source, family);

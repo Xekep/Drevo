@@ -88,12 +88,26 @@ export function adminAccessHttp({
           body.personId !== undefined || body.treeAccess !== undefined;
         if (
           (body.approved !== undefined && typeof body.approved !== "boolean") ||
+          (body.fullAccess !== undefined && typeof body.fullAccess !== "boolean") ||
           Number(body.approved !== undefined) +
             Number(body.role !== undefined) +
-            Number(identity) !==
+            Number(identity) +
+            Number(body.fullAccess !== undefined) !==
             1
         )
-          throw new Error("Изменяйте допуск, роль или привязку отдельно");
+          throw new Error("Изменяйте допуск, роль, привязку или уровень отдельно");
+        if (body.fullAccess !== undefined) {
+          if (!(await auth.isPlatformAdmin(req)))
+            return json(res, 403, {
+              error: "Уровень аккаунта меняет администратор платформы",
+            });
+          const user = await users.setFullAccess(
+            (await auth.currentUser(req))!,
+            id,
+            body.fullAccess,
+          );
+          return json(res, 200, { user });
+        }
         if (typeof body.approved === "boolean")
           await users.setApproved(
             (await auth.currentUser(req))!,
