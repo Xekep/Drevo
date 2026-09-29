@@ -79,7 +79,7 @@ export function TreePreferencesDialog({
               },
               {
                 reverse: true,
-                title: "Младшие сверху",
+                title: "Потомки сверху",
               },
             ].map(({ reverse, title }) => (
               <label

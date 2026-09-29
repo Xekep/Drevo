@@ -69,7 +69,7 @@ for (const mode of ["shared", "public"] as const)
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();
-    await dialog.getByRole("radio", { name: "Младшие сверху" }).check();
+    await dialog.getByRole("radio", { name: "Потомки сверху" }).check();
     await dialog.getByRole("radio", { name: "Предки сверху" }).check();
     await expect(dialog.getByRole("radio", { name: "Фото · ФИО" })).toHaveCount(
       0,

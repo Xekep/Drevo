@@ -595,7 +595,6 @@ export default function App() {
               readTree={readTree}
               readPhotos={readPhotos}
               onHelp={() => setHelp(true)}
-              onTreePreferences={() => setTreePreferencesOpen(true)}
             />
           }
           people={people}
