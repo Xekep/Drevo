@@ -37,26 +37,28 @@ export function TreeCameraTools({
       >
         <Maximize2 size={18} />
       </button>
-      <button
-        disabled={disabled || !selected.length}
-        title="К выбранному человеку"
-        aria-label="К выбранному человеку"
-        onClick={() => {
-          void flow.fitView({
-            nodes: selected.map((id) => ({ id })),
-            minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
-            maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
-            padding: 0.4,
-            duration: window.matchMedia("(prefers-reduced-motion: reduce)")
-              .matches
-              ? 0
-              : 480,
-            ease: (progress) => 1 - (1 - progress) ** 3,
-          });
-        }}
-      >
-        <Focus size={18} />
-      </button>
+      {selected.length > 0 && (
+        <button
+          disabled={disabled}
+          title="К выбранному человеку"
+          aria-label="К выбранному человеку"
+          onClick={() => {
+            void flow.fitView({
+              nodes: selected.map((id) => ({ id })),
+              minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
+              maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
+              padding: 0.4,
+              duration: window.matchMedia("(prefers-reduced-motion: reduce)")
+                .matches
+                ? 0
+                : 480,
+              ease: (progress) => 1 - (1 - progress) ** 3,
+            });
+          }}
+        >
+          <Focus size={18} />
+        </button>
+      )}
     </Panel>
   );
 }

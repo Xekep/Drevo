@@ -1674,9 +1674,11 @@ test("переход к выбранному человеку остаётся �
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 5_000 });
+  await expect(page.getByRole("button", { name: "К выбранному человеку" })).toHaveCount(0);
 
   const person = page.getByTestId("rf__node-e2e-child");
   await person.locator(".flow-person-content").click();
+  await expect(page.getByRole("button", { name: "К выбранному человеку" })).toBeVisible();
 
   const pane = page.locator(".react-flow__pane"),
     box = await pane.boundingBox();
@@ -1699,6 +1701,8 @@ test("переход к выбранному человеку остаётся �
   expect(middle).not.toBe(before);
   expect(middle).not.toBe(after);
   expect(after).not.toBe(before);
+  await page.getByRole("button", { name: "Закрыть панель" }).click();
+  await expect(page.getByRole("button", { name: "К выбранному человеку" })).toHaveCount(0);
 });
 
 test("collapsing descendants animates the remaining cards smoothly", async ({
