@@ -567,7 +567,16 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "Семьи с более чем двумя указанными родителями сохранены как записано; проверьте характер родства.",
       );
     const spousePair = uniqueParents.slice(0, 2);
-    if (spousePair.length === 2 && value(f, "_DREVO_UNMARRIED") !== "Y") {
+    // A FAM record can describe parenthood or cohabitation without a marriage.
+    // Only an explicit marriage (or its dissolution) establishes a spouse link.
+    const marriageRecorded = ["MARR", "DIV", "DIVF", "ANUL"].some((tag) =>
+      f.children.some((node) => node.tag === tag && node.value !== "N"),
+    );
+    if (
+      spousePair.length === 2 &&
+      value(f, "_DREVO_UNMARRIED") !== "Y" &&
+      marriageRecorded
+    ) {
       for (const p of spousePair)
         p.spouses = [
           ...new Set([
@@ -575,7 +584,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             ...spousePair.filter((s) => s.id !== p.id).map((s) => s.id),
           ]),
         ];
-    }
+    } else if (spousePair.length === 2 && value(f, "_DREVO_UNMARRIED") !== "Y")
+      warnings.add(
+        "У двух родителей не указано событие брака: связь супругов не создана. Проверьте её после импорта.",
+      );
     for (const c of children(f, "CHIL").filter((n) => n.value !== "@VOID@")) {
       const person = personRef(c.value),
         individual = records.get(c.value)!;
