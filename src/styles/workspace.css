@@ -527,6 +527,12 @@ body,
   align-items: center;
   gap: 12px;
 }
+.admin-users-list.with-account-tier .admin-users-head,
+.admin-users-list.with-account-tier .admin-user-row {
+  grid-template-columns:
+    minmax(165px, 1.2fr) minmax(85px, 0.7fr) minmax(90px, 0.7fr)
+    minmax(125px, 1.2fr) minmax(105px, 1fr) minmax(76px, 0.7fr);
+}
 .admin-users-head {
   padding: 13px 10px 9px;
   color: #788478;
@@ -1040,6 +1046,9 @@ body,
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 13px 10px;
     padding: 15px 4px;
+  }
+  .admin-users-list.with-account-tier .admin-user-row {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .admin-user-name,
   .admin-user-select,

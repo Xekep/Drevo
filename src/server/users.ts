@@ -81,12 +81,16 @@ export async function userStore(
     approved: !!row.approved,
     personId: row.person_id ? String(row.person_id) : undefined,
     treeAccess: (row.tree_access || "all") as TreeAccess,
+    fullAccess:
+      row.full_access === undefined || row.full_access === null
+        ? undefined
+        : !!row.full_access,
   });
   async function get(id: string) {
     const row = await db
       .prepare(
         "SELECT * FROM users WHERE id=?",
-        "SELECT * FROM runtime_users WHERE id=?",
+        "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id WHERE u.id=?",
       )
       .get(id);
     return row ? convert(row) : null;
@@ -335,13 +339,13 @@ export async function userStore(
       ? await db
           .prepare(
             "SELECT * FROM users WHERE (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT ?",
-            "SELECT * FROM runtime_users WHERE (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT ?",
+            "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id WHERE (u.created_at,u.id)<(?,?) ORDER BY u.created_at DESC,u.id DESC LIMIT ?",
           )
           .all(after[0], after[1], limit + 1)
       : await db
           .prepare(
             "SELECT * FROM users ORDER BY created_at DESC,id DESC LIMIT ?",
-            "SELECT * FROM runtime_users ORDER BY created_at DESC,id DESC LIMIT ?",
+            "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id ORDER BY u.created_at DESC,u.id DESC LIMIT ?",
           )
           .all(limit + 1);
     const page = rows.slice(0, limit);
@@ -412,6 +416,53 @@ export async function userStore(
         .run(id);
     });
   }
+  async function setFullAccess(actor: ArchiveUser, id: string, enabled: boolean) {
+    if (db.kind !== "postgres")
+      throw new Error("Уровни аккаунтов доступны после перехода на PostgreSQL");
+    return await db.transaction(async () => {
+      if (
+        !(actor.id === "local" && !process.env.PUBLIC_ORIGIN) &&
+        !(await db
+          .prepare("", "SELECT 1 FROM platform_admins WHERE account_id=?")
+          .get(actor.id))
+      )
+        throw new ForbiddenError("Уровень аккаунта меняет администратор платформы");
+      const target = await get(id);
+      if (!target) throw new Error("Пользователь не найден");
+      const current = await db
+        .prepare(
+          "",
+          "SELECT full_access FROM account_tiers WHERE account_id=? FOR UPDATE",
+        )
+        .get(id);
+      if (!current) throw new Error("Уровень аккаунта не найден");
+      if (!!current.full_access === enabled) return target;
+      await db
+        .prepare(
+          "",
+          "UPDATE account_tiers SET full_access=?,changed_at=now() WHERE account_id=?",
+        )
+        .run(enabled ? "true" : "false", id);
+      await audit.record(
+        {
+          action: "Изменён уровень аккаунта",
+          entity: "user",
+          entityId: id,
+          label: target.name,
+          personIds: target.personId ? [target.personId] : [],
+          details: [
+            {
+              field: "Уровень",
+              before: current.full_access ? "Полный" : "Базовый",
+              after: enabled ? "Полный" : "Базовый",
+            },
+          ],
+        },
+        actor,
+      );
+      return (await get(id))!;
+    });
+  }
   return {
     get,
     recordVisit,
@@ -419,6 +470,7 @@ export async function userStore(
     setRole,
     setApproved,
     setIdentity,
+    setFullAccess,
     listPage,
     remove,
     list: async () =>
@@ -426,7 +478,7 @@ export async function userStore(
         await db
           .prepare(
             "SELECT * FROM users ORDER BY created_at,id",
-            "SELECT * FROM runtime_users ORDER BY created_at,id",
+            "SELECT u.*, t.full_access FROM runtime_users u LEFT JOIN account_tiers t ON t.account_id=u.id ORDER BY u.created_at,u.id",
           )
           .all()
       ).map(convert),

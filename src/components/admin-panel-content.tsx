@@ -39,6 +39,7 @@ type UserPatch = {
   approved?: boolean;
   personId?: string | null;
   treeAccess?: TreeAccess;
+  fullAccess?: boolean;
 };
 type UsersPage = { users: ArchiveUser[]; next: string | null; total: number };
 const USERS_PAGE_SIZE = 20;
@@ -108,6 +109,7 @@ function AdminUserRow({
   family,
   busy,
   currentUserId,
+  platformAdmin,
   onPatch,
   onDelete,
 }: {
@@ -115,6 +117,7 @@ function AdminUserRow({
   family: Family;
   busy: boolean;
   currentUserId: string;
+  platformAdmin: boolean;
   onPatch: (patch: UserPatch) => Promise<boolean>;
   onDelete: () => Promise<void>;
 }) {
@@ -185,6 +188,22 @@ function AdminUserRow({
           ))}
         </select>
       </label>
+      {platformAdmin && user.fullAccess !== undefined && (
+        <label className="admin-user-select">
+          <span>Уровень аккаунта</span>
+          <select
+            aria-label={`Уровень аккаунта: ${user.name}`}
+            value={user.fullAccess ? "full" : "basic"}
+            disabled={busy}
+            onChange={(event) =>
+              void onPatch({ fullAccess: event.target.value === "full" })
+            }
+          >
+            <option value="basic">Базовый</option>
+            <option value="full">Полный</option>
+          </select>
+        </label>
+      )}
       <PersonSearch
         label="Кто это в древе"
         inputAriaLabel={`Кто это в древе: ${user.name}`}
@@ -421,12 +440,13 @@ export function AdminPanel({
             ) : (
               users.length > 0 && (
                 <div
-                  className="admin-users-list"
+                  className={`admin-users-list${platformAdmin && users.some((user) => user.fullAccess !== undefined) ? " with-account-tier" : ""}`}
                   aria-label="Список участников"
                 >
                   <div className="admin-users-head" aria-hidden="true">
                     <span>Участник</span>
                     <span>Роль</span>
+                    {platformAdmin && users.some((user) => user.fullAccess !== undefined) && <span>Уровень</span>}
                     <span>Кто это в древе</span>
                     <span>Показывать</span>
                     <span>Действия</span>
@@ -438,6 +458,7 @@ export function AdminPanel({
                       family={family}
                       busy={busy}
                       currentUserId={currentUserId}
+                      platformAdmin={platformAdmin}
                       onPatch={async (patch) => {
                         const data = await change(
                           `/api/users/${encodeURIComponent(user.id)}`,

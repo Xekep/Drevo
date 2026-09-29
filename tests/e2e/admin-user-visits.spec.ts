@@ -13,6 +13,7 @@ test("participants show last visit in the viewer timezone and keep unknown visit
             name: "Иван Тестовый",
             role: "reader",
             approved: true,
+            fullAccess: true,
             createdAt: "2020-01-01T00:00:00Z",
             lastVisitAt: "2026-09-26T09:34:00Z",
           },
@@ -21,6 +22,7 @@ test("participants show last visit in the viewer timezone and keep unknown visit
             name: "Новый участник",
             role: "reader",
             approved: false,
+            fullAccess: false,
             createdAt: "2020-01-01T00:00:00Z",
           },
         ],
@@ -62,4 +64,47 @@ test("participants show last visit in the viewer timezone and keep unknown visit
     expect(layout.dateRight).toBeLessThanOrEqual(layout.holderRight + 1);
     expect(layout.overflow).toBeLessThanOrEqual(1);
   }
+});
+
+test("platform administrator changes the account tier separately from tree role", async ({ page }) => {
+  const patches: unknown[] = [];
+  await page.route("**/api/users?**", (route) =>
+    route.fulfill({
+      json: {
+        users: [{
+          id: "member",
+          name: "Участник",
+          role: "reader",
+          approved: true,
+          fullAccess: false,
+          createdAt: "2026-01-01T00:00:00Z",
+        }],
+        next: null,
+        total: 1,
+      },
+    }),
+  );
+  await page.route("**/api/users/member", async (route) => {
+    patches.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: {
+        user: {
+          id: "member",
+          name: "Участник",
+          role: "reader",
+          approved: true,
+          fullAccess: true,
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      },
+    });
+  });
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Участники", exact: true }).click();
+  const tier = page.getByRole("combobox", { name: "Уровень аккаунта: Участник" });
+  await expect(tier).toHaveValue("basic");
+  await tier.selectOption("full");
+  await expect(tier).toHaveValue("full");
+  expect(patches).toEqual([{ fullAccess: true }]);
+  await expect(page.getByRole("combobox", { name: "Роль: Участник" })).toHaveValue("reader");
 });
