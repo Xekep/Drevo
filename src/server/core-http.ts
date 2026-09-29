@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { accountCapacity } from "./account-capacity.ts";
 
 export function coreHttp({
   archive,
@@ -40,6 +41,13 @@ export function coreHttp({
       const sessions = await auth.sessionSummary(req);
       return sessions
         ? json(res, 200, sessions)
+        : json(res, 401, { error: "Требуется вход" });
+    }
+
+    if (path === "/api/account/capacity" && req.method === "GET") {
+      const user = await auth.currentUser(req);
+      return user
+        ? json(res, 200, await accountCapacity(archive.db, user.id))
         : json(res, 401, { error: "Требуется вход" });
     }
 

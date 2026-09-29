@@ -1,6 +1,8 @@
 import type pg from "pg";
 import { ForbiddenError } from "./users.ts";
 
+export const BASIC_PEOPLE_LIMIT = 150;
+
 /** Called after the archive/session/membership locks, before any people INSERT.
  * Quota belongs to the owner, not the editor. Tier lock also serializes creation
  * across owned archives and prevents a concurrent tier change until commit.
@@ -35,6 +37,6 @@ export async function checkPostgresPeopleGrowth(
       )
     ).rows[0].count,
   );
-  if (count + added > 150)
+  if (count + added > BASIC_PEOPLE_LIMIT)
     throw new ForbiddenError("Базовый доступ владельца ограничен 150 людьми");
 }

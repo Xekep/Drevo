@@ -22,6 +22,7 @@ import {
 import { aiChatStore } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
+import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
@@ -212,6 +213,19 @@ try {
   const runtimeUsers = await userStore(live.db);
   assert.equal((await runtimeUsers.get("owner"))?.role, "admin");
   assert.equal((await runtimeUsers.get("vk:42"))?.role, "researcher");
+  assert.deepEqual(await accountCapacity(live.db, "vk:42"), {
+    available: true,
+    owned: false,
+  });
+  assert.deepEqual(await accountCapacity(live.db, "owner"), {
+    available: true,
+    owned: true,
+    fullAccess: true,
+    people: 1,
+    peopleLimit: 150,
+    mediaBytes: 0,
+    mediaLimitBytes: 500_000_000,
+  });
   await runtimeUsers.register("reader", "Читатель");
   const owner = (await runtimeUsers.get("owner"))!;
   const aiSettings = await aiSettingsStore(live.db);
@@ -392,6 +406,7 @@ try {
   for (const path of [
     "/api/health",
     "/api/session",
+    "/api/account/capacity",
     "/api/family",
     "/api/ai/chats",
     "/api/documents?limit=20",
