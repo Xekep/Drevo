@@ -88,6 +88,54 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
   const text = await readFile(reportPath, "utf8");
   expect(text).toContain("Анна");
   expect(text).not.toContain("Ольга");
+  await dialog
+    .getByRole("combobox", { name: "Тип PDF-отчёта" })
+    .selectOption("descendants");
+  const reportPdfPending = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Скачать PDF-отчёт" }).click();
+  const reportPdfDownload = await reportPdfPending;
+  expect(reportPdfDownload.suggestedFilename()).toMatch(/\.pdf$/);
+  const reportPdfPath = info.outputPath("descendants-report.pdf");
+  await reportPdfDownload.saveAs(reportPdfPath);
+  const reportPdf = await getDocument({
+    data: new Uint8Array(await readFile(reportPdfPath)),
+  }).promise;
+  try {
+    const reportText = (await (await reportPdf.getPage(1)).getTextContent()).items
+      .flatMap((item) => ("str" in item ? item.str : []))
+      .join(" ");
+    expect(reportText).toContain("Роспись потомков");
+    expect(reportText).toContain("Анна");
+    expect(reportText).not.toContain("Ольга");
+  } finally {
+    await reportPdf.loadingTask.destroy();
+  }
+  for (const [kind, title] of [
+    ["person", "Карточка человека"],
+    ["family", "Семейный отчёт"],
+    ["timeline", "Хронология жизни"],
+    ["ancestors", "Роспись предков"],
+    ["research", "Исследовательская сводка"],
+  ] as const) {
+    await dialog.getByRole("combobox", { name: "Тип PDF-отчёта" }).selectOption(kind);
+    const pending = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: "Скачать PDF-отчёт" }).click();
+    const download = await pending;
+    const path = info.outputPath(`${kind}-report.pdf`);
+    await download.saveAs(path);
+    const file = await getDocument({
+      data: new Uint8Array(await readFile(path)),
+    }).promise;
+    try {
+      const text = (await (await file.getPage(1)).getTextContent()).items
+        .flatMap((item) => ("str" in item ? item.str : []))
+        .join(" ");
+      expect(text).toContain(title);
+      expect(text).toContain("Пётр");
+    } finally {
+      await file.loadingTask.destroy();
+    }
+  }
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
 });
 

@@ -1073,6 +1073,18 @@ export default function App() {
               generations,
             );
           }}
+          onExportPdfReport={async (kind, generations, signal) => {
+            const { downloadArchiveReport } = await import(
+              "./components/tree/download-archive-report"
+            );
+            await downloadArchiveReport(
+              family,
+              treeExportAnchor?.id,
+              kind,
+              generations,
+              signal,
+            );
+          }}
           onExportFan={async (options, signal) => {
             const { exportFan } = await import("./components/tree/fan-export");
             await exportFan(

@@ -281,6 +281,18 @@ export default function SharedTree({ token }: { token: string }) {
               generations,
             )
           }
+          onExportPdfReport={async (kind, generations, signal) => {
+            const { downloadArchiveReport } = await import(
+              "./tree/download-archive-report"
+            );
+            await downloadArchiveReport(
+              data.family,
+              exportAnchor?.id,
+              kind,
+              generations,
+              signal,
+            );
+          }}
           onExportFan={async (options, signal) => {
             const { exportFan } = await import("./tree/fan-export");
             await exportFan(
