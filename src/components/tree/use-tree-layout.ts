@@ -51,6 +51,11 @@ export function useTreeLayout(
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
   const pendingRef = useRef(false);
+  const lastGeometryRef = useRef<{
+    key: string;
+    scope: string | null;
+    geometry: TreeGeometry;
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -71,6 +76,26 @@ export function useTreeLayout(
       pendingRef.current = false;
     }
     const requestId = ++requestRef.current;
+    const last = lastGeometryRef.current;
+    const previousGeometry =
+      mode === "generations" &&
+      input.people.length <= 100 &&
+      last !== null &&
+      last.scope === cacheScope &&
+      last.key !== key &&
+      last.geometry.mode === mode &&
+      last.geometry.reverse === reverse &&
+      last.geometry.positions.length <= 300
+        ? {
+            nodeSize: last.geometry.nodeSize,
+            mode: last.geometry.mode,
+            reverse: last.geometry.reverse,
+            start: last.geometry.start,
+            offset: last.geometry.offset,
+            positions: last.geometry.positions,
+            occurrences: last.geometry.occurrences,
+          }
+        : undefined;
     let cancelled = false;
     let detach = () => {};
     const timer = setTimeout(() => {
@@ -86,6 +111,8 @@ export function useTreeLayout(
       clearTimeout(timer);
       pendingRef.current = false;
       setBusy(false);
+      if (!("error" in data))
+        lastGeometryRef.current = { key, scope: cacheScope, geometry: data.geometry };
       setResult((previous) =>
         "error" in data
           ? {
@@ -139,7 +166,7 @@ export function useTreeLayout(
           worker.removeEventListener("message", onMessage);
           worker.removeEventListener("error", onError);
         };
-        worker.postMessage({ requestId, ...input });
+        worker.postMessage({ requestId, ...input, previousGeometry });
       } catch {
         finish({
           requestId,
@@ -165,7 +192,7 @@ export function useTreeLayout(
       cancelled = true;
       detach();
     };
-  }, [key, input, layoutVisible, cache, cacheScope]);
+  }, [key, input, layoutVisible, cache, cacheScope, mode, reverse]);
 
   const sameScope = result.scope === cacheScope;
   return {
