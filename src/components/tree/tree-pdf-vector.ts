@@ -81,10 +81,14 @@ export async function downloadTreePng(
   }
 }
 
-export async function preparePdfFont(target: Document, signal?: AbortSignal) {
+export async function loadPdfFontBytes(signal?: AbortSignal) {
   const response = await fetch(fontUrl, { signal });
   if (!response.ok) throw new Error("Не удалось загрузить шрифт PDF.");
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+export async function preparePdfFont(target: Document, signal?: AbortSignal) {
+  const bytes = await loadPdfFontBytes(signal);
   const face = new FontFace(fontName, bytes);
   await face.load();
   target.fonts.add(face);

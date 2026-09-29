@@ -4,7 +4,7 @@ import { jsPDF } from "jspdf";
 import "svg2pdf.js";
 import type { Family } from "../../domain";
 import { FanChart } from "./fan-chart";
-import { base64, downloadBlob, preparePdfFont } from "./tree-pdf-vector";
+import { base64, downloadBlob, loadPdfFontBytes } from "./tree-pdf-vector";
 
 export type FanExportOptions = {
   generations: number;
@@ -91,7 +91,7 @@ export async function exportFan(
         copy.setAttribute("font-weight", "normal");
       }
     }
-    const font = await preparePdfFont(document, signal);
+    const font = await loadPdfFontBytes(signal);
     for (const image of svg.querySelectorAll<SVGImageElement>("image")) {
       const url = image.getAttribute("href");
       if (!url) continue;
