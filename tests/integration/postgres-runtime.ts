@@ -423,7 +423,7 @@ try {
       (await app.archive.db
         .prepare(
           "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
-          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
+          "SELECT count(*) AS n FROM archive_audit_entries WHERE entity='document' AND entity_id=?",
         )
         .get(documentId))!.n,
     ),
