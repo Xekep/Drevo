@@ -250,6 +250,11 @@ test("full downloaded backup restores portrait, gallery and tags without overwri
     assert.equal(restored.photos[0].tags[0].personId, p.id);
     assert.equal(restored.people[0].photo, restored.photos[0].url);
     assert.notEqual(restored.photos[0].url, "/media/original.png");
+    const original = await app.archive.db
+      .prepare("SELECT size_bytes,uploaded_by FROM media_originals WHERE url=?")
+      .get(restored.photos[0].url);
+    assert.equal(original?.size_bytes, png.length);
+    assert.equal(typeof original?.uploaded_by, "string");
     assert.deepEqual(readFileSync(join(dir, "uploads", "original.png")), png);
     assert.deepEqual(
       Buffer.from(

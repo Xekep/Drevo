@@ -34,6 +34,7 @@ import {
 } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
+import { recordMediaOriginal } from "./media-originals.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
@@ -639,6 +640,7 @@ export function restoreStore(
       await writeDatabaseBackup(archive.db, join(backups, backupName));
       const created: string[] = [],
         urls = new Map<string, string>();
+      const restoredOriginals: Array<{ url: string; size: number }> = [];
       const restoredDocuments: StoredDocument[] = [];
       let result: Awaited<ReturnType<typeof archive.write>>;
       try {
@@ -647,7 +649,12 @@ export function restoreStore(
             destination = join(dirname(dbPath), "uploads", name);
           await copyFile(path, destination, constants.COPYFILE_EXCL);
           created.push(destination);
-          urls.set(url, `/media/${name}`);
+          const restoredUrl = `/media/${name}`;
+          urls.set(url, restoredUrl);
+          restoredOriginals.push({
+            url: restoredUrl,
+            size: (await stat(destination)).size,
+          });
         }
         for (const document of stage.documents) {
           const source = stage.documentFiles.get(document.id);
@@ -678,6 +685,8 @@ export function restoreStore(
           undefined,
           stage.faceDescriptors,
           async (db) => {
+            for (const file of restoredOriginals)
+              await recordMediaOriginal(db, file.url, file.size, actor.id);
             await db.exec("DELETE FROM documents", "DELETE FROM documents");
             const insert = db.prepare(
               "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations) VALUES(?,?,?,?,?,?,?,?)",
