@@ -8,6 +8,7 @@ type Props = {
   person: Person;
   family: Family;
   isCurrentUser: boolean;
+  canLoadDocuments: boolean;
   onSelect: (id: string) => void;
   onTree: (id: string) => void;
   onBack: () => void;
@@ -17,6 +18,7 @@ export function PhotoPersonSidebar({
   person,
   family,
   isCurrentUser,
+  canLoadDocuments,
   onSelect,
   onTree,
   onBack,
@@ -58,6 +60,7 @@ export function PhotoPersonSidebar({
         people={family.people}
         links={family.links}
         isCurrentUser={isCurrentUser}
+        canLoadDocuments={canLoadDocuments}
         onSelect={onSelect}
       />
     </aside>

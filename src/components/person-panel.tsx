@@ -102,6 +102,7 @@ export function PersonPanel({
   suggestions,
   isCurrentUser = false,
   canDiscuss = false,
+  canLoadDocuments = false,
   idPrefix = "person",
 }: {
   person: Person;
@@ -112,6 +113,7 @@ export function PersonPanel({
   suggestions?: ReactNode;
   isCurrentUser?: boolean;
   canDiscuss?: boolean;
+  canLoadDocuments?: boolean;
   idPrefix?: string;
 }) {
   const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
@@ -128,6 +130,7 @@ export function PersonPanel({
   }>({ personId: "", retry: -1, total: 0 });
   const [documentRetry, setDocumentRetry] = useState(0);
   useEffect(() => {
+    if (!canLoadDocuments) return;
     const request = new AbortController();
     void (async () => {
       try {
@@ -148,9 +151,9 @@ export function PersonPanel({
       }
     })();
     return () => request.abort();
-  }, [person.id, documentRetry]);
+  }, [person.id, documentRetry, canLoadDocuments]);
   useEffect(() => {
-    if (tab !== "sources") return;
+    if (tab !== "sources" || !canLoadDocuments) return;
     const request = new AbortController();
     void (async () => {
       try {
@@ -193,11 +196,11 @@ export function PersonPanel({
       }
     })();
     return () => request.abort();
-  }, [person.id, tab, documentRetry]);
+  }, [person.id, tab, documentRetry, canLoadDocuments]);
   const documentsCurrent =
     documents.personId === person.id && documents.retry === documentRetry;
   const personDocuments = documentsCurrent ? documents.items : [];
-  const documentsLoading = !documentsCurrent;
+  const documentsLoading = canLoadDocuments && !documentsCurrent;
   const personDocumentCount =
     documentsCurrent && !documents.error
       ? documents.items.length

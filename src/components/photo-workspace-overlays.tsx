@@ -75,6 +75,7 @@ export function PhotoWorkspaceOverlays({
             onClose={workspace.closePhoto}
             onPerson={onPerson}
             currentUserPersonId={user?.personId}
+            canLoadDocuments={user?.approved === true}
             onDirtyChange={onDirtyChange}
           />
         </Suspense>
