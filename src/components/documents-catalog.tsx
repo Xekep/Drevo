@@ -6,8 +6,9 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { BookOpenText, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { BookOpenText, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { PdfBookReader } from "./pdf-book-reader";
+import { DocumentDetailsFields } from "./document-details-fields";
 import { fullName, type Person } from "../domain";
 import type { DocumentDetails } from "../shared/document-details";
 import "../styles/documents.css";
@@ -67,6 +68,11 @@ export function DocumentsCatalog({
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState<DocumentDetails>(EMPTY_DETAILS);
+  const [editing, setEditing] = useState<ListedDocument | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDetails, setEditDetails] = useState<DocumentDetails>(EMPTY_DETAILS);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
   const [personQuery, setPersonQuery] = useState("");
   const [personResults, setPersonResults] = useState<PersonOption[]>([]);
   const [selectedPeople, setSelectedPeople] = useState<PersonOption[]>([]);
@@ -236,6 +242,54 @@ export function DocumentsCatalog({
     }
   };
 
+  const beginEdit = (entry: ListedDocument) => {
+    setUploadOpen(false);
+    setSelected(null);
+    setEditing(entry);
+    setEditTitle(entry.title);
+    setEditDetails({
+      documentType: entry.documentType,
+      documentDate: entry.documentDate,
+      place: entry.place,
+      description: entry.description,
+      provenance: entry.provenance,
+    });
+    setEditError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editing || !editTitle.trim() || savingEdit) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      const response = await fetch(`/api/documents/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected: {
+            title: editing.title,
+            documentType: editing.documentType,
+            documentDate: editing.documentDate,
+            place: editing.place,
+            description: editing.description,
+            provenance: editing.provenance,
+          },
+          next: { title: editTitle.trim(), ...editDetails },
+        }),
+      });
+      const result = (await response.json()) as ListedDocument & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Не удалось сохранить документ");
+      setEditing(null);
+      await load(0);
+    } catch (reason) {
+      setEditError(reason instanceof Error ? reason.message : "Не удалось сохранить документ");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const groups = useMemo(() => {
     const grouped = new Map<
       string,
@@ -330,6 +384,7 @@ export function DocumentsCatalog({
               type="button"
               className="documents-add"
               onClick={() => {
+                setEditing(null);
                 if (!uploadOpen && filteredPerson && !selectedPeople.length)
                   setSelectedPeople([
                     {
@@ -396,65 +451,10 @@ export function DocumentsCatalog({
               aria-label="Найти человека для документа"
             />
           </label>
-          <details className="documents-extra">
-            <summary>Сведения о документе</summary>
-            <div className="documents-extra-grid">
-              <label>
-                Тип
-                <input
-                  value={details.documentType}
-                  maxLength={80}
-                  placeholder="Например, метрическая запись"
-                  onChange={(event) =>
-                    setDetails((current) => ({ ...current, documentType: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Дата или период
-                <input
-                  value={details.documentDate}
-                  maxLength={80}
-                  placeholder="Например, 1887 год"
-                  onChange={(event) =>
-                    setDetails((current) => ({ ...current, documentDate: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Место
-                <input
-                  value={details.place}
-                  maxLength={200}
-                  onChange={(event) =>
-                    setDetails((current) => ({ ...current, place: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Происхождение
-                <input
-                  value={details.provenance}
-                  maxLength={500}
-                  placeholder="Архив, фонд, опись, дело или владелец оригинала"
-                  onChange={(event) =>
-                    setDetails((current) => ({ ...current, provenance: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="documents-extra-description">
-                Описание
-                <textarea
-                  value={details.description}
-                  maxLength={1000}
-                  rows={3}
-                  onChange={(event) =>
-                    setDetails((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-          </details>
+          <DocumentDetailsFields
+            value={details}
+            onChange={(key, value) => setDetails((current) => ({ ...current, [key]: value }))}
+          />
           {personResults.length > 0 && personQuery.trim().length > 1 && (
             <div
               className="documents-person-results"
@@ -520,6 +520,32 @@ export function DocumentsCatalog({
           </button>
         </form>
       )}
+      {editing && (
+        <form className="documents-upload documents-edit" aria-label="Редактировать документ" onSubmit={(event) => void saveEdit(event)}>
+          <div className="documents-upload-heading">
+            <h2>Сведения о документе</h2>
+            <button type="button" onClick={() => setEditing(null)} aria-label="Закрыть редактирование">
+              <X size={18} />
+            </button>
+          </div>
+          <label className="documents-edit-title">
+            Название
+            <input value={editTitle} maxLength={160} required onChange={(event) => setEditTitle(event.target.value)} />
+          </label>
+          <DocumentDetailsFields
+            value={editDetails}
+            expanded
+            onChange={(key, value) => setEditDetails((current) => ({ ...current, [key]: value }))}
+          />
+          {editError && <p role="alert" className="documents-upload-error">{editError}</p>}
+          <div className="documents-edit-actions">
+            <button type="submit" className="documents-upload-submit" disabled={savingEdit || !editTitle.trim()}>
+              {savingEdit ? "Сохраняем…" : "Сохранить"}
+            </button>
+            <button type="button" onClick={() => setEditing(null)} disabled={savingEdit}>Отмена</button>
+          </div>
+        </form>
+      )}
       {(total > 0 || !!query) && (
         <label className="documents-search">
           <Search size={18} aria-hidden="true" />
@@ -565,7 +591,7 @@ export function DocumentsCatalog({
           <p>
             {personFilter !== null
               ? "К этому человеку пока не привязан ни один PDF-документ."
-              : "Загруженные PDF-файлы появятся здесь после привязки к людям."}
+              : "Загруженные PDF-файлы появятся здесь."}
           </p>
         </div>
       )}
@@ -586,7 +612,7 @@ export function DocumentsCatalog({
             </div>
             <div className="documents-grid">
               {group.items.map((document) => (
-                <div className="document-item-row" key={document.id}>
+                <div className={`document-item-row ${mayEdit && document.canDelete ? "can-edit" : ""}`} key={document.id}>
                   <button
                     type="button"
                     className="document-item"
@@ -604,6 +630,17 @@ export function DocumentsCatalog({
                       <small>PDF · Открыть книгу</small>
                     </span>
                   </button>
+                  {mayEdit && document.canDelete && (
+                    <button
+                      type="button"
+                      className="document-edit"
+                      aria-label={`Редактировать документ «${document.title}»`}
+                      title="Редактировать сведения"
+                      onClick={() => beginEdit(document)}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  )}
                   {mayEdit && document.canDelete && (
                     <button
                       type="button"
@@ -640,6 +677,7 @@ export function DocumentsCatalog({
           mayAnnotate={mayEdit}
           annotateOnOpen={annotateOnOpen}
           onClose={() => setSelected(null)}
+          onEdit={mayEdit && selected.canDelete ? () => beginEdit(selected) : undefined}
           onDelete={
             mayEdit && selected.canDelete
               ? () => void remove(selected)

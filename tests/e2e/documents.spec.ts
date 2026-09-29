@@ -38,11 +38,19 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader).toBeVisible();
   await reader.getByText("Сведения о документе").click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
-  await reader.getByRole("button", { name: "Закрыть документ" }).click();
+  await reader.getByRole("button", { name: "Редактировать сведения о документе" }).click();
+  const edit = page.getByRole("form", { name: "Редактировать документ" });
+  await expect(edit).toBeVisible();
+  await edit.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.105");
+  await edit.getByRole("button", { name: "Сохранить" }).click();
+  await expect(edit).toBeHidden();
   const group = page.locator(".documents-group").filter({
     has: page.getByRole("heading", { name: "Без привязки" }),
   });
   await expect(group.locator(".document-item").filter({ hasText: title })).toBeVisible();
+  await group.locator(".document-item").filter({ hasText: title }).click();
+  await reader.getByText("Сведения о документе").click();
+  await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.105")).toBeVisible();
 });
 
 async function samplePdf(count = 3, landscape = false) {

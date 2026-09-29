@@ -163,6 +163,23 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       await fetch(`${base}/api/documents?q=GASO`)
     ).json()) as { total: number };
     assert.equal(byProvenance.total, 1);
+    const expected = {
+      title: list.items[0].title,
+      documentType: list.items[0].documentType,
+      documentDate: list.items[0].documentDate,
+      place: list.items[0].place,
+      description: list.items[0].description,
+      provenance: list.items[0].provenance,
+    };
+    const next = { ...expected, provenance: "GASO F6 Op13 D105" };
+    const edit = () => fetch(`${base}/api/documents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected, next }),
+    });
+    assert.equal((await edit()).status, 200);
+    assert.equal((await edit()).status, 409, "устаревшая правка не затирает новый текст");
+    assert.equal((await (await fetch(`${base}/api/documents/${id}`)).json()).provenance, next.provenance);
     const file = await fetch(`${base}/api/documents/${id}/file`);
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -238,7 +255,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       items: Array<DocumentDetails & { id: string; url: string; people: Array<{ id: string }> }>;
     };
     assert.equal(after.items.length, 1);
-    assert.equal(after.items[0].provenance, "GASO F6 Op13 D104");
+    assert.equal(after.items[0].provenance, "GASO F6 Op13 D105");
     assert.notEqual(after.items[0].id, id);
     assert.deepEqual(
       after.items[0].people.map((person) => person.id),
@@ -371,6 +388,18 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     };
     const id = await upload();
     const path = `/api/documents/${id}`;
+    const edit = (user: string, origin = "https://archive.test") =>
+      fetch(base + path, {
+        method: "PATCH",
+        headers: { Cookie: cookies.get(user) || "", Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected: { title: "Record" },
+          next: { title: "Record", provenance: "GASO" },
+        }),
+      });
+    assert.equal((await edit("reader")).status, 403);
+    assert.equal((await edit("other")).status, 403);
+    assert.equal((await edit("owner", "https://evil.test")).status, 403);
     const annotationPath = `${path}/annotations`;
     const annotate = (user: string, origin = "https://archive.test") =>
       fetch(base + annotationPath, {
@@ -452,6 +481,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     ).json()) as { total: number };
     assert.equal(hiddenFilter.total, 0);
     assert.equal((await request(path, "owner", "DELETE")).status, 404);
+    assert.equal((await edit("owner")).status, 404);
     assert.equal((await request(path, "owner")).status, 404);
     assert.equal((await request(annotationPath, "owner")).status, 404);
     assert.equal((await annotate("owner")).status, 404);

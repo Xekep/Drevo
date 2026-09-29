@@ -621,6 +621,22 @@ try {
   assert.deepEqual(unlinkedDocument.people, []);
   assert.equal(unlinkedDocument.provenance, "GASO F6 Op13 D104");
   assert.equal(unlinkedDocument.documentDate, "1887");
+  const expectedDetails = {
+    title: unlinkedDocument.title,
+    documentType: unlinkedDocument.documentType,
+    documentDate: unlinkedDocument.documentDate,
+    place: unlinkedDocument.place,
+    description: unlinkedDocument.description,
+    provenance: unlinkedDocument.provenance,
+  };
+  const updatedDetails = { ...expectedDetails, provenance: "GASO F6 Op13 D105" };
+  const updateDocument = () => fetch(base + `/api/documents/${unlinkedId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected: expectedDetails, next: updatedDetails }),
+  });
+  assert.equal((await updateDocument()).status, 200);
+  assert.equal((await updateDocument()).status, 409);
   assert.equal(
     (await fetch(base + `/api/documents/${unlinkedId}`, { method: "DELETE" }))
       .status,
