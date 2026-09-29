@@ -28,6 +28,7 @@ import {
 } from "./genealogy-package.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { mediaStore } from "./media.ts";
+import { recordMediaOriginal } from "./media-originals.ts";
 
 export function gedcomHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -381,6 +382,15 @@ export function gedcomHttp(
                 .run(body.token, actor.id, Date.now());
               if (!consumed.changes)
                 throw new Error("Предпросмотр уже использован или истёк");
+              for (const file of stage.files) {
+                if (!file.documentId)
+                  await recordMediaOriginal(
+                    db,
+                    `/media/${file.name}`,
+                    file.size,
+                    actor.id,
+                  );
+              }
               for (const file of stage.files.filter((f) => f.documentId)) {
                 await db
                   .prepare(

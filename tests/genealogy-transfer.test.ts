@@ -837,6 +837,12 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     assert.equal(failed.status, 400);
     assert.equal((await archive.read()).family.people.length, 3);
     assert.equal((await readdir(join(dir, "uploads"))).length, 0);
+    assert.equal(
+      (await archive.db
+        .prepare("SELECT count(*) AS n FROM media_originals")
+        .get())!.n,
+      0,
+    );
     await archive.db.exec("DROP TRIGGER reject_document");
     const applied = await request("/api/gedcom/import", {
       token: preview.token,
@@ -844,6 +850,12 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     });
     assert.equal(applied.status, 200, await applied.text());
     assert.equal((await archive.read()).family.people.length, 5);
+    const original = await archive.db
+      .prepare("SELECT url,size_bytes,uploaded_by FROM media_originals")
+      .get();
+    assert.match(String(original?.url), /^\/media\/[\w-]+\.png$/);
+    assert.equal(original?.size_bytes, image.length);
+    assert.equal(original?.uploaded_by, "admin");
     assert.equal(
       (await archive.db.prepare("SELECT count(*) AS n FROM documents").get())!
         .n,
