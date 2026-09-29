@@ -152,11 +152,17 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("tree export keeps the essential controls", async ({ page }) => {
+test("tree export keeps the essential controls", async ({ page, isMobile }) => {
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  if (isMobile)
+    await page.getByRole("button", { name: "Закрыть панель" }).click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(

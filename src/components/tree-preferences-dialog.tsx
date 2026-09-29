@@ -274,22 +274,22 @@ export function TreePreferencesDialog({
                 </label>
               )}
               {anchorName && <small>Опорный человек: {anchorName}</small>}
-              <button
-                type="button"
-                aria-label={`Сохранить древо в ${graphicFormat.toUpperCase()}`}
-                disabled={
-                  saving ||
-                  exporting ||
-                  (exportScope !== "current" &&
-                    exportScope !== "all" &&
-                    !anchorId)
-                }
-                onClick={() => void exportTree()}
-              >
-                <Download size={16} aria-hidden="true" />
-                Скачать {graphicFormat.toUpperCase()}
-              </button>
             </div>
+            <button
+              type="button"
+              aria-label={`Сохранить древо в ${graphicFormat.toUpperCase()}`}
+              disabled={
+                saving ||
+                exporting ||
+                (exportScope !== "current" &&
+                  exportScope !== "all" &&
+                  !anchorId)
+              }
+              onClick={() => void exportTree()}
+            >
+              <Download size={16} aria-hidden="true" />
+              Скачать {graphicFormat.toUpperCase()}
+            </button>
             <details className="tree-export-options">
               <summary>Отчёты</summary>
               <div className="tree-export-options-fields">
