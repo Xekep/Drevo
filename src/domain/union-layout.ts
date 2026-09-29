@@ -84,6 +84,7 @@ async function geometryForSeed(
   size: TreeNodeSize,
   sift = false,
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
+  flippedPairs?: ReadonlySet<string>,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   const families = familyUnions(people);
@@ -102,6 +103,9 @@ async function geometryForSeed(
     people.map((p) => ({ ...p, parents: adoptedBy.get(p.id) || p.parents })),
   );
   const units = groupFamilyUnions(families, levels);
+  for (const unit of units)
+    if (unit.members.length === 2 && flippedPairs?.has(unit.id))
+      unit.members.reverse();
   const familyGroups = new Map(
     units.flatMap((u) => u.families.map((f) => [f.id, u] as const)),
   );
@@ -551,6 +555,29 @@ function geometryRoutingQuality(geometry: TreeGeometry) {
   ]);
 }
 
+/** A couple can be reversed when their two parent families arrive in opposite order. */
+function invertedCoupleBlocks(geometry: TreeGeometry, cardWidth: number) {
+  const positions = new Map(geometry.positions);
+  const arrivals = new Map<string, number>();
+  for (const branch of geometry.branches || []) {
+    if (!branch.id.startsWith("child:")) continue;
+    const source = branch.route.points[0];
+    if (source) arrivals.set(branch.target, source.x);
+  }
+  const flipped = new Set<string>();
+  for (const block of geometry.blocks || []) {
+    if (block.members.length !== 2) continue;
+    const [left, right] = [...block.members].sort(
+      (a, b) => positions.get(a)!.x - positions.get(b)!.x,
+    );
+    const leftOrigin = arrivals.get(left), rightOrigin = arrivals.get(right);
+    if (leftOrigin !== undefined && rightOrigin !== undefined &&
+        leftOrigin > rightOrigin + cardWidth / 2)
+      flipped.add(block.id);
+  }
+  return flipped;
+}
+
 /** Сравниваем видимые маршруты после ELK и уплотнения полос поколений. */
 export async function unionGeometry(
   people: LayoutPerson[],
@@ -562,6 +589,7 @@ export async function unionGeometry(
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);
+  let bestSeed = 1;
   let contacts = branchContactCounts(best.branches || []);
   const seedCandidates = previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
     ? [{ geometry: best, contacts }]
@@ -578,11 +606,14 @@ export async function unionGeometry(
   const initial = extent(best);
   // На больших архивах ограничиваем число запусков ELK, сохраняя
   // детерминированный результат для одного и того же набора людей.
+  // On scale fixtures the third ELK run helped at 782 people, but not at 977.
   const seeds =
     !contacts.distinct ? [] : people.length <= 300
       ? [15, 20, 12, 4, 8]
-      : people.length <= 2000
+      : people.length <= 900
         ? [15, 20]
+        : people.length <= 2000
+          ? [15]
         : [];
   for (const seed of seeds) {
     let candidate: TreeGeometry;
@@ -614,6 +645,7 @@ export async function unionGeometry(
       (next.distinct === contacts.distinct && next.segments < contacts.segments)
     ) {
       best = candidate;
+      bestSeed = seed;
       contacts = next;
     }
     if (!contacts.distinct) break;
@@ -695,6 +727,32 @@ export async function unionGeometry(
         ) best = candidate;
       } catch {
         // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
+      }
+    }
+  }
+  if (!previous && people.length <= 300 && contacts.distinct) {
+    const flipped = invertedCoupleBlocks(best, W);
+    if (flipped.size) {
+      try {
+        const candidate = await geometryForSeed(
+          people, layout, reverse, links, bestSeed, size, false, undefined, flipped,
+        );
+        const next = branchContactCounts(candidate.branches || []);
+        const candidateExtent = extent(candidate);
+        const bestExtent = extent(best);
+        const currentRoutes = geometryRoutingQuality(best);
+        const nextRoutes = geometryRoutingQuality(candidate);
+        if (next.distinct < contacts.distinct &&
+            nextRoutes.crossings <= currentRoutes.crossings &&
+            nextRoutes.length <= currentRoutes.length * 1.15 &&
+            Math.max(candidateExtent.width, candidateExtent.height) <=
+              Math.max(bestExtent.width, bestExtent.height) * 1.2 &&
+            candidateExtent.width * candidateExtent.height <=
+              bestExtent.width * bestExtent.height * 1.35 &&
+            routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H))
+          best = candidate;
+      } catch {
+        // The original layout remains valid if ELK rejects the alternative order.
       }
     }
   }

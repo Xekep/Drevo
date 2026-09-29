@@ -57,6 +57,34 @@ test("a shared contact at a segment joint counts once when choosing a layout", (
   ]), { distinct: 1, segments: 2 });
 });
 
+test("a couple may reverse when its parent families arrive in opposite order", async () => {
+  const people = randomFamily(3, 2);
+  const size = treeNodeSize();
+  const seenSeeds = new Set<string>();
+  const baseline = await calculateUnions(people, async (graph) => {
+    const seed = graph.layoutOptions?.["elk.randomSeed"] || "";
+    if (seenSeeds.has(seed)) throw new Error("skip alternative couple order");
+    seenSeeds.add(seed);
+    return new ELK({ algorithms: ["layered"] }).layout(graph);
+  }, false, [], size);
+  const improved = await calculateUnions(
+    people,
+    (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
+    false,
+    [],
+    size,
+  );
+  const before = new Map(baseline.positions);
+  const after = new Map(improved.positions);
+  const reversed = (improved.blocks || []).filter((block) => block.members.length === 2 &&
+    Math.sign(before.get(block.members[0])!.x - before.get(block.members[1])!.x) !==
+      Math.sign(after.get(block.members[0])!.x - after.get(block.members[1])!.x));
+  assert.ok(reversed.length > 0);
+  assert.ok(branchContactCounts(improved.branches || []).distinct <
+    branchContactCounts(baseline.branches || []).distinct);
+  verify(people, improved);
+});
+
 test("adding a founder's parent preserves the previous horizontal family order", async () => {
   const original = randomFamily(6);
   const edited = editedAncestorFamily(original, 6);
