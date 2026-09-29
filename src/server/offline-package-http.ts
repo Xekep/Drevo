@@ -90,7 +90,7 @@ export function offlinePackageHttp({
       res.setHeader("Retry-After", "300");
       return json(res, 429, "Слишком много запросов экспорта");
     }
-    if (active.has(actor.id) || active.size >= 2)
+    if (active.has(actor.id) || active.size >= 1)
       return json(res, 429, "Экспорт уже выполняется. Дождитесь завершения.");
 
     active.add(actor.id);
