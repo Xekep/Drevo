@@ -17,7 +17,7 @@ import {
   treeNodeSize,
   TREE_NODE_HEIGHT,
 } from "../src/domain/tree-layout-constants.ts";
-import { editedAncestorFamily, randomFamily } from "./layout-fixtures.ts";
+import { editedAncestorFamily, editedFamily, randomFamily } from "./layout-fixtures.ts";
 const unionGeometry = (
   people: LayoutPerson[],
   reverse = false,
@@ -80,6 +80,35 @@ test("adding a founder's parent preserves the previous horizontal family order",
     branchContactCounts(incremental.branches || []).distinct <=
       branchContactCounts(plain.branches || []).distinct,
   );
+});
+
+test("incremental ordering also protects edited families above one hundred people", async () => {
+  for (const [seed, edit] of [
+    [1, editedAncestorFamily],
+    [5, editedFamily],
+  ] as const) {
+    const original = randomFamily(seed, 4);
+    const edited = edit(original, seed);
+    assert.ok(original.length > 100 && edited.length <= 200);
+    const before = await unionGeometry(original);
+    const plain = await unionGeometry(edited);
+    const incremental = await unionGeometry(edited, false, [], before);
+    const old = new Map(before.positions);
+    const drift = (current: TreeGeometry) => {
+      const shifts = current.positions
+        .filter(([id]) => old.has(id))
+        .map(([id, point]) => point.x - old.get(id)!.x)
+        .sort((a, b) => a - b);
+      const center = shifts[Math.floor(shifts.length / 2)];
+      return shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) / shifts.length;
+    };
+    verify(edited, incremental);
+    assert.ok(drift(incremental) < drift(plain) * 0.2);
+    assert.ok(
+      branchContactCounts(incremental.branches || []).distinct <=
+        branchContactCounts(plain.branches || []).distinct,
+    );
+  }
 });
 
 test("the final family routes decide between layouts within the same bands", async () => {

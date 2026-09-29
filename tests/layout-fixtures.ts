@@ -7,7 +7,7 @@ export const person = (
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
 
 /** Одна и та же семейная структура для замеров раскладки и её регрессий. */
-export function randomFamily(seed: number): LayoutPerson[] {
+export function randomFamily(seed: number, generations = 2): LayoutPerson[] {
   let state = seed;
   const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
   const shuffle = (items: string[]) => {
@@ -38,8 +38,9 @@ export function randomFamily(seed: number): LayoutPerson[] {
     }
     return children;
   };
-  const children = generation(people.map((entry) => entry.id), "c");
-  generation(children, "g");
+  let parents = people.map((entry) => entry.id);
+  for (let level = 0; level < generations; level++)
+    parents = generation(parents, ["c", "g", "h"][level] || `level-${level}`);
   return people;
 }
 
