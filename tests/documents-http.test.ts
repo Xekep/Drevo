@@ -404,6 +404,19 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         "UPDATE users SET person_id='hidden',tree_access='common_ancestors' WHERE id='owner'",
       )
       .run();
+    const scopedUnlinked = await fetch(base + "/api/documents", {
+      method: "POST",
+      headers: {
+        Cookie: cookies.get("owner")!,
+        Origin: "https://archive.test",
+        "Content-Type": "application/pdf",
+        "X-Document-Metadata": encodeURIComponent(
+          JSON.stringify({ title: "Без привязки", personIds: [] }),
+        ),
+      },
+      body: new Uint8Array(pdf).buffer,
+    });
+    assert.equal(scopedUnlinked.status, 400);
     const hiddenFilter = (await (
       await request("/api/documents?personId=anna", "owner")
     ).json()) as { total: number };

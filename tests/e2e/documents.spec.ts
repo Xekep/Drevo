@@ -15,6 +15,28 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("PDF без привязки остаётся в общем каталоге", async ({ page }, testInfo) => {
+  const title = `Неизвестная метрическая запись ${testInfo.project.name}`;
+  await page.goto("/documents");
+  await page.getByRole("button", { name: "Добавить PDF" }).click();
+  const form = page.locator(".documents-upload");
+  await form.locator('input[type="file"]').setInputFiles({
+    name: "record.pdf",
+    mimeType: "application/pdf",
+    buffer: await samplePdf(1),
+  });
+  await form.getByLabel("Название").fill(title);
+  await expect(form.getByRole("button", { name: "Добавить документ" })).toBeEnabled();
+  await form.getByRole("button", { name: "Добавить документ" }).click();
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  await expect(reader).toBeVisible();
+  await reader.getByRole("button", { name: "Закрыть документ" }).click();
+  const group = page.locator(".documents-group").filter({
+    has: page.getByRole("heading", { name: "Без привязки" }),
+  });
+  await expect(group.locator(".document-item").filter({ hasText: title })).toBeVisible();
+});
+
 async function samplePdf(count = 3, landscape = false) {
   const pdf = new PDFDocument({ autoFirstPage: false });
   const chunks: Buffer[] = [];
