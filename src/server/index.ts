@@ -27,6 +27,7 @@ import { gedcomHttp } from "./gedcom-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
+import { indexReferencedMediaOriginals } from "./media-originals.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -56,6 +57,19 @@ export async function startServer(
   await removeStarterFamily(archive);
 
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
+  const mediaIndex = await indexReferencedMediaOriginals(
+    archive.db,
+    (await archive.read()).family,
+    media,
+  );
+  if (mediaIndex.missing)
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        event: "media_references_missing",
+        count: mediaIndex.missing,
+      }),
+    );
   const previewImage = imagePreviews(resolve(dirname(dbPath), "previews"));
   const restores = restoreStore(archive, dbPath);
   const geocoding = geocodingStore(archive.db);

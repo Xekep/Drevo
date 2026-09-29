@@ -780,6 +780,29 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const mediaOriginalsExtension = "2026-09-media-originals";
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(mediaOriginalsExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TABLE media_originals (
+        url TEXT PRIMARY KEY,
+        size_bytes INTEGER NOT NULL CHECK(size_bytes>0),
+        uploaded_by TEXT,
+        created_at TEXT NOT NULL
+      ) STRICT;`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        mediaOriginalsExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const discussionExtension = "2026-09-person-discussions";
   if (
     !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(discussionExtension)

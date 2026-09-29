@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
+import type { Family } from "../src/domain/types.ts";
 import { MediaTooLargeError, mediaStore } from "../src/server/media.ts";
 
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {
@@ -33,6 +34,7 @@ test("streamed media keeps exact bytes when the signature is split across chunks
       1024,
     );
     assert.match(file.url, /^\/media\/[a-f0-9-]+\.png$/);
+    assert.equal(file.size, pngLike.length);
     const opened = media.open(file.url);
     assert.ok(opened);
     assert.deepEqual(readFileSync(opened.path), pngLike);
@@ -113,6 +115,92 @@ test("photo upload reserves space shared with pending document uploads", async (
     assert.deepEqual(readdirSync(join(directory, "uploads")), []);
   } finally {
     await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("portrait size is recorded once and a referenced original is recovered on restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-media-originals-"));
+  const path = join(directory, "archive.sqlite");
+  let app: Awaited<ReturnType<typeof startServer>> | undefined;
+  try {
+    app = await startServer(0, path, true);
+    const family: Family = {
+      title: "Учёт фото",
+      description: "",
+      demo: false,
+      people: [
+        {
+          id: "one",
+          surname: "Тестов",
+          name: "Иван",
+          patronymic: "",
+          sex: "m",
+          birth: "1980",
+          birthPlace: "",
+          parents: [],
+          spouses: [],
+          generation: 1,
+          column: 0,
+          sources: [],
+        },
+      ],
+    };
+    await app.archive.write(family, (await app.archive.meta()).revision);
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "green" },
+    })
+      .png()
+      .toBuffer();
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    const response = await fetch(`${base}/api/portraits`, {
+      method: "POST",
+      headers: {
+        "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision),
+      },
+      body: new Uint8Array(image).buffer,
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+    const { url } = (await response.json()) as { url: string };
+    const stored = await app.archive.db
+      .prepare("SELECT size_bytes FROM media_originals WHERE url=?")
+      .get(url);
+    assert.equal(stored?.size_bytes, image.length);
+
+    const rejected = await fetch(`${base}/api/photos`, {
+      method: "POST",
+      headers: {
+        "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision),
+        "X-Photo-Metadata": "%",
+      },
+      body: new Uint8Array(image).buffer,
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(
+      (
+        await app.archive.db
+          .prepare("SELECT count(*) AS count FROM media_originals")
+          .get()
+      )?.count,
+      1,
+    );
+    assert.equal(readdirSync(join(directory, "uploads")).length, 1);
+
+    family.people[0].photo = url;
+    await app.archive.write(family, (await app.archive.meta()).revision);
+    await app.archive.db
+      .prepare("DELETE FROM media_originals WHERE url=?")
+      .run(url);
+    await app.close();
+    app = await startServer(0, path, true);
+    const recovered = await app.archive.db
+      .prepare("SELECT size_bytes FROM media_originals WHERE url=?")
+      .get(url);
+    assert.equal(recovered?.size_bytes, image.length);
+  } finally {
+    await app?.close();
     rmSync(directory, { recursive: true, force: true });
   }
 });

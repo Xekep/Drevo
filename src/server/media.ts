@@ -1,7 +1,4 @@
-import {
-  createWriteStream,
-  mkdirSync,
-} from "node:fs";
+import { createWriteStream, mkdirSync } from "node:fs";
 import { readdir, rename, stat, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Transform, type Readable } from "node:stream";
@@ -116,8 +113,7 @@ export function mediaStore(directory: string) {
           .rotate()
           .resize({ width: 1, height: 1, fit: "inside" })
           .toBuffer();
-        const
-          name = `${id}.${ext}`,
+        const name = `${id}.${ext}`,
           target = resolve(directory, name);
         await rename(temporary, target);
         if (cachedUsage) {
@@ -131,6 +127,7 @@ export function mediaStore(directory: string) {
         return {
           id,
           url: `/media/${name}`,
+          size,
           undo: async () => {
             if (!present) return;
             present = false;

@@ -37,6 +37,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
         JSON.stringify({ id: "photo-1", url: "/media/photo.jpg" }),
       );
       db.prepare(
+        "INSERT INTO media_originals(url,size_bytes,uploaded_by,created_at) VALUES(?,?,?,?)",
+      ).run("/media/photo.jpg", 5, "user-1", "2026-09-27T00:00:00Z");
+      db.prepare(
         "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
       ).run(
         "document-1",
@@ -80,7 +83,12 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 29);
+    assert.equal(snapshot.services.length, 30);
+    assert.equal(
+      snapshot.services.find((table) => table.name === "media_originals")
+        ?.rows[0]?.data.size_bytes,
+      5,
+    );
     assert.equal(
       snapshot.services.find((table) => table.name === "user_tree_preferences")
         ?.rows[0]?.data.card_variant,
