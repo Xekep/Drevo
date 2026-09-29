@@ -394,11 +394,13 @@ export function AdminPanel({
           >
             {ADMIN_SECTIONS.map((group) => (
               <optgroup key={group.label} label={group.label}>
-                {group.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
+                {group.items
+                  .filter(({ id }) => id !== "backups" || platformAdmin)
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
               </optgroup>
             ))}
           </select>

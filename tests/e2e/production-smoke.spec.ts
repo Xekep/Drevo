@@ -817,7 +817,7 @@ test("администратор выбирает себя в древе и пр
   );
   await page.goto("/admin");
   await expect(
-    page.getByRole("heading", { name: "Участники и роли" }),
+    page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
   await page
     .getByRole("combobox", { name: "Кто это в древе: Участник" })
