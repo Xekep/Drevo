@@ -261,12 +261,21 @@ async function syncArchiveRows(
   await restoreOrder("photo_tags", before.tags, after.tags);
 }
 
-export async function openArchive(path: string, seed: Family) {
+export async function openArchive(
+  path: string,
+  seed: Family,
+  archiveId?: string,
+) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   let db: StoreDatabase;
   if (configuredDatabaseBackend(path) === "postgres" && path !== ":memory:") {
-    db = await openPostgresDatabase(process.env.ARCHIVE_ID || "", path);
+    db = await openPostgresDatabase(
+      archiveId ?? process.env.ARCHIVE_ID ?? "",
+      path,
+    );
   } else {
+    if (archiveId)
+      throw new Error("Явный archive_id поддерживается только PostgreSQL");
     const sqlite = new DatabaseSync(path);
     try {
       initializeArchiveSchema(sqlite);
