@@ -1,7 +1,13 @@
 import type { TreeGeometry, LayoutPerson } from "./tree-layout.ts";
 import type { FamilyLink } from "./types.ts";
 import type { TreeNodeSize } from "./tree-layout-constants.ts";
-import { routeRelationships, simplifyRoute } from "./edge-routing.ts";
+import {
+  bounds,
+  routeRelationships,
+  segmentContact,
+  simplifyRoute,
+  Spatial,
+} from "./edge-routing.ts";
 import type { UnionBranch } from "./union-layout.ts";
 
 /** Pair blocks whose ancestral junctions arrive in the opposite horizontal order. */
@@ -32,6 +38,46 @@ export function invertedCoupleBlocks(
       flipped.add(block.id);
   }
   return flipped;
+}
+
+/** A swap can reduce branch contacts only if one of its incoming routes is touched. */
+export function coupleBlocksWithContactedAncestry(
+  geometry: TreeGeometry,
+  cardWidth: number,
+) {
+  const inverted = invertedCoupleBlocks(geometry, cardWidth);
+  type Point = { x: number; y: number };
+  type Segment = ReturnType<typeof bounds> & {
+    a: Point;
+    b: Point;
+    union: string;
+    child?: string;
+  };
+  const segments = new Spatial<Segment>();
+  const contacted = new Set<string>();
+  for (const branch of geometry.branches || []) {
+    const child = branch.id.startsWith("child:") ? branch.target : undefined;
+    const points = branch.route.points;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if (a.x === b.x && a.y === b.y) continue;
+      const box = bounds(a, b);
+      for (const other of segments.query(box)) {
+        if (branch.union === other.union ||
+            !segmentContact(a, b, other.a, other.b)) continue;
+        if (child) contacted.add(child);
+        if (other.child) contacted.add(other.child);
+      }
+      segments.add({ ...box, a, b, union: branch.union, child });
+    }
+  }
+  const candidates = (geometry.blocks || []).filter((block) =>
+    block.members.length === 2 &&
+    block.members.some((member) => contacted.has(member)));
+  return [
+    ...candidates.filter((block) => inverted.has(block.id)).map((block) => block.id),
+    ...candidates.filter((block) => !inverted.has(block.id)).map((block) => block.id),
+  ];
 }
 
 /** Reuse ELK block coordinates while rerouting only the incoming lines of reversed couples. */
