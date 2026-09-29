@@ -587,6 +587,28 @@ try {
     (await fetch(base + "/api/documents").then((r) => r.json())).total,
     0,
   );
+  const unlinkedUpload = await fetch(base + "/api/documents", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title: "Документ без привязки", personIds: [] }),
+      ),
+    },
+    body: new Uint8Array(pdfBytes),
+  });
+  assert.equal(unlinkedUpload.status, 201, await unlinkedUpload.clone().text());
+  const unlinkedId = (await unlinkedUpload.json()).id;
+  assert.deepEqual(
+    (await fetch(base + `/api/documents/${unlinkedId}`).then((r) => r.json()))
+      .people,
+    [],
+  );
+  assert.equal(
+    (await fetch(base + `/api/documents/${unlinkedId}`, { method: "DELETE" }))
+      .status,
+    200,
+  );
   await app.close();
   app = undefined;
   // Production-style authentication and persisted sessions across restart.

@@ -28,11 +28,13 @@ type PersonOption = { id: string; label: string; detail: string };
 
 export function DocumentsCatalog({
   mayEdit,
+  allowUnlinked,
   personFilter,
   documentId,
   people,
 }: {
   mayEdit: boolean;
+  allowUnlinked: boolean;
   personFilter: string | null;
   documentId: string | null;
   people: Person[];
@@ -170,7 +172,8 @@ export function DocumentsCatalog({
 
   const upload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!file || !title.trim() || !selectedPeople.length) return;
+    if (!file || !title.trim() || (!allowUnlinked && !selectedPeople.length))
+      return;
     setUploading(true);
     setUploadError("");
     try {
@@ -371,7 +374,7 @@ export function DocumentsCatalog({
             />
           </label>
           <label>
-            К кому относится
+            К кому относится{allowUnlinked ? " · необязательно" : ""}
             <input
               value={personQuery}
               onChange={(event) => {
@@ -436,7 +439,10 @@ export function DocumentsCatalog({
             type="submit"
             className="documents-upload-submit"
             disabled={
-              uploading || !file || !title.trim() || !selectedPeople.length
+              uploading ||
+              !file ||
+              !title.trim() ||
+              (!allowUnlinked && !selectedPeople.length)
             }
           >
             <Upload size={18} />{" "}

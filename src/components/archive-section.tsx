@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, type ReactNode } from "react";
 import type { ArchiveUser, Family, Person } from "../domain";
 import type { ArchiveView } from "../domain/archive-routes";
+import { isScopedUser } from "../domain/tree-access";
 import { ArchiveLoading } from "./archive-loading";
 import { loadLazyModule } from "./lazy-section-recovery";
 
@@ -147,6 +148,9 @@ export function ArchiveSection(props: Props) {
     content = (
       <DocumentsCatalog
         mayEdit={props.mayEdit}
+        allowUnlinked={
+          !isScopedUser(props.user) && props.documentPersonFilter === null
+        }
         personFilter={props.documentPersonFilter}
         documentId={props.documentId}
         people={props.people}

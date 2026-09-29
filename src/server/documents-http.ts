@@ -224,7 +224,10 @@ export function documentsHttp({
 
     if (item && req.method === "GET") {
       const row = (await db
-        .prepare("SELECT * FROM documents WHERE id=?")
+        .prepare(
+          "SELECT * FROM documents WHERE id=?",
+          "SELECT * FROM documents WHERE id=?",
+        )
         .get(item[1])) as Row | undefined;
       if (!row) return json(res, 404, { error: "Документ не найден" });
       const access = await visible(req);
@@ -507,14 +510,17 @@ export function documentsHttp({
         !title ||
         title.length > 160 ||
         !Array.isArray(ids) ||
-        !ids.length ||
         ids.length > 30 ||
         ids.some((id) => typeof id !== "string" || !id || id.length > 200) ||
         new Set(ids).size !== ids.length
       )
-        return json(res, 400, { error: "Укажите название и связанных людей" });
+        return json(res, 400, { error: "Укажите название документа" });
       const access = await visible(req),
         allowed = new Set(access.ids);
+      if (access.scoped && !ids.length)
+        return json(res, 400, {
+          error: "Для вашего доступа нужно указать хотя бы одного человека",
+        });
       if (ids.some((id) => !allowed.has(id)))
         return json(res, 403, { error: "Нет доступа к выбранному человеку" });
 
@@ -570,12 +576,23 @@ export function documentsHttp({
           !latest?.approved ||
           !(await auth.canEdit(req)) ||
           latest.id !== uploader.id ||
+          (isScopedUser(latest) && !ids.length) ||
           ids.some((personId) => !latestVisible.has(personId as string))
         )
           return json(res, 403, {
             error: "Доступ к выбранным людям изменился",
           });
-        await db.transaction(async () => {
+        const committed = await db.transaction(async () => {
+          const current = await auth.currentUser(req);
+          const currentVisible = new Set((await visible(req)).ids);
+          if (
+            !current?.approved ||
+            !(await auth.canEdit(req)) ||
+            current.id !== uploader.id ||
+            (isScopedUser(current) && !ids.length) ||
+            ids.some((personId) => !currentVisible.has(personId as string))
+          )
+            return false;
           await db
             .prepare(
               "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -596,7 +613,10 @@ export function documentsHttp({
           );
           for (const personId of ids as string[]) await link.run(id, personId);
           await enforcePostgresMediaQuota(db);
+          return true;
         });
+        if (!committed)
+          return json(res, 403, { error: "Доступ к документу изменился" });
         return json(res, 201, { id });
       } catch (error) {
         if (res.destroyed) return true;
