@@ -29,7 +29,7 @@ import {
 import { openArchive } from "../src/server/database.ts";
 import { gedcomHttp } from "../src/server/gedcom-http.ts";
 import type { createAuth } from "../src/server/auth.ts";
-import type { Family, Person } from "../src/domain/types.ts";
+import { EXTRA_LINK_TYPES, type Family, type Person } from "../src/domain/types.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 
 const person = (id: string, patch: Partial<Person> = {}): Person => ({
@@ -105,6 +105,43 @@ test("unknown GEDCOM 7 extensions are disclosed without turning hypotheses into 
   assert.ok(!JSON.stringify(parsed.family).includes("possible ancestor"));
 });
 for (const version of ["5.5.1", "7.0"] as const) {
+  test(`GEDCOM ${version} preserves every additional relationship without inventing blood parents`, () => {
+    const family: Family = {
+      ...seed(),
+      people: EXTRA_LINK_TYPES.flatMap((_, index) => [
+        person(`giver-${index}`),
+        person(`receiver-${index}`),
+      ]),
+      links: EXTRA_LINK_TYPES.map((type, index) => ({
+        id: `link-${index}`,
+        from: `giver-${index}`,
+        to: `receiver-${index}`,
+        type,
+        note: `Источник связи ${index}`,
+        ...(type === "twin" ? { twinKind: "fraternal" as const } : {}),
+      })),
+    };
+    const imported = importGedcom(exportGedcom(family, { version }), "extra-links");
+    const byId = new Map(imported.family.people.map((item) => [item.id, item]));
+    const links = (imported.family.links || []).map((link) => ({
+      from: byId.get(link.from)?.name,
+      to: byId.get(link.to)?.name,
+      type: link.type,
+      note: link.note,
+      twinKind: link.twinKind,
+    }));
+    assert.deepEqual(
+      links,
+      EXTRA_LINK_TYPES.map((type, index) => ({
+        from: `giver-${index}`,
+        to: `receiver-${index}`,
+        type,
+        note: `Источник связи ${index}`,
+        twinKind: type === "twin" ? "fraternal" : undefined,
+      })),
+    );
+    assert.ok(imported.family.people.every((item) => item.parents.length === 0));
+  });
   test(`GEDCOM ${version} preserves explicitly recorded twin type`, () => {
     const family = seed();
     family.links = [
