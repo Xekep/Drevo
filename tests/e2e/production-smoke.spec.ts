@@ -524,6 +524,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(
     page.getByRole("heading", { name: "Yandex AI Studio" }),
   ).toBeVisible();
+  await page.getByText("Подключение Yandex, общие лимиты и контекст").click();
 
   const apiKey = page.getByLabel("API-ключ"),
     folderId = page.getByLabel("Folder ID"),
@@ -536,6 +537,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
     "yandexgpt-5.1",
     "deepseek-v4-flash",
   ]);
+  await page.getByText(/Статистика · сегодня/).click();
   await expect(
     page.getByRole("img", {
       name: /Расход токенов за последние 14 дней/,

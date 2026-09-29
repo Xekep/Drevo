@@ -39,6 +39,7 @@ export function DocumentsCatalog({
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ListedDocument | null>(null);
+  const [annotateOnOpen, setAnnotateOnOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -144,6 +145,17 @@ export function DocumentsCatalog({
         const result = (await response.json()) as { error?: string };
         throw new Error(result.error || "Не удалось загрузить документ");
       }
+      const created = (await response.json()) as { id: string };
+      setAnnotateOnOpen(true);
+      setSelected({
+        id: created.id,
+        title: title.trim(),
+        url: `/api/documents/${created.id}/file`,
+        size: file.size,
+        createdAt: new Date().toISOString(),
+        canDelete: true,
+        people: selectedPeople.map((person) => ({ id: person.id, name: person.label })),
+      });
       setUploadOpen(false);
       setFile(null);
       setTitle("");
@@ -450,6 +462,7 @@ export function DocumentsCatalog({
                     className="document-item"
                     onClick={() => {
                       setDeleteError("");
+                      setAnnotateOnOpen(false);
                       setSelected(document);
                     }}
                   >
@@ -494,6 +507,8 @@ export function DocumentsCatalog({
       {selected && (
         <PdfBookReader
           document={selected}
+          mayAnnotate={mayEdit}
+          annotateOnOpen={annotateOnOpen}
           onClose={() => setSelected(null)}
           onDelete={
             mayEdit && selected.canDelete

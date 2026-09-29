@@ -75,6 +75,7 @@ const tables: Table[] = [
       "file_size",
       "uploaded_by",
       "created_at",
+      "annotations",
     ],
     order: "ordinal",
     numbers: ["ordinal", "file_size"],
@@ -223,9 +224,15 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
   )
     return [];
   const fields = table.columns.filter((column) => column !== "ordinal");
+  const hasAnnotations =
+    table.name !== "documents" ||
+    db
+      .prepare("PRAGMA table_info(documents)")
+      .all()
+      .some((row) => row.name === "annotations");
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => (field === "annotations" && !hasAnnotations ? "'[]' AS annotations" : field)).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {

@@ -26,6 +26,7 @@ declare module "page-flip" {
     ): void;
     flipNext(): void;
     flipPrev(): void;
+    turnToPage(index: number): void;
     getCurrentPageIndex(): number;
     getOrientation(): "portrait" | "landscape";
     update(): void;

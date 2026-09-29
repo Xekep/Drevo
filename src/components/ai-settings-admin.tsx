@@ -300,6 +300,8 @@ export function AiSettingsAdmin() {
 
       {status && (
         <>
+          <details className="ai-admin-connection">
+          <summary>Текущее подключение · {status.configured ? "настроено" : "требует настройки"}</summary>
           <div className="ai-config-status">
             <div>
               <b>API-ключ</b>
@@ -330,6 +332,7 @@ export function AiSettingsAdmin() {
               <span>{status.baseUrl}</span>
             </div>
           </div>
+          </details>
 
           <form onSubmit={save}>
             <label
@@ -375,6 +378,28 @@ export function AiSettingsAdmin() {
               />
             </label>
 
+            <AiRoleProfilesEditor
+              profiles={roleProfiles}
+              defaults={{
+                ...status.defaultRoleProfile,
+                model,
+                webSearchEnabled,
+                requestsPerMinute,
+                dailyRequests,
+                dailyTokens,
+                compactionEnabled,
+                compactThresholdTokens,
+                automaticTruncation,
+                maxToolIterations,
+              }}
+              models={status.models}
+              disabled={busy || testing}
+              onChange={setRoleProfiles}
+              onTest={(role) => void testConnection(role)}
+            />
+
+            <details className="ai-admin-connection">
+              <summary>Подключение Yandex, общие лимиты и контекст</summary>
             <fieldset className="ai-credential-settings">
               <legend>Подключение и модель по умолчанию</legend>
 
@@ -594,26 +619,7 @@ export function AiSettingsAdmin() {
               </label>
               <small>Ноль отключает соответствующий лимит.</small>
             </fieldset>
-
-            <AiRoleProfilesEditor
-              profiles={roleProfiles}
-              defaults={{
-                ...status.defaultRoleProfile,
-                model,
-                webSearchEnabled,
-                requestsPerMinute,
-                dailyRequests,
-                dailyTokens,
-                compactionEnabled,
-                compactThresholdTokens,
-                automaticTruncation,
-                maxToolIterations,
-              }}
-              models={status.models}
-              disabled={busy || testing}
-              onChange={setRoleProfiles}
-              onTest={(role) => void testConnection(role)}
-            />
+            </details>
 
             <footer className="ai-settings-actions">
               <button
@@ -635,6 +641,8 @@ export function AiSettingsAdmin() {
             </footer>
           </form>
 
+          <details className="ai-admin-connection ai-usage-details">
+            <summary>Статистика · сегодня {status.usage.today.requests} запросов</summary>
           <section className="ai-usage-summary" aria-label="Использование ИИ">
             <h3>Использование сегодня</h3>
             <div className="ai-usage-stats">
@@ -701,6 +709,7 @@ export function AiSettingsAdmin() {
               и аргументы Research Tools в журнал использования не записываются.
             </p>
           </section>
+          </details>
         </>
       )}
 

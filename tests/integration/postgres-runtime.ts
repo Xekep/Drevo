@@ -101,6 +101,7 @@ try {
   // Simulate the deployed schema before the additive VK extension.
   await client.query("DROP TABLE vk_auth_settings");
   await client.query("ALTER TABLE ai_settings DROP COLUMN role_profiles");
+  await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
   assert.deepEqual(await live.read(), before);
@@ -417,6 +418,20 @@ try {
     base + "/api/documents?q=" + encodeURIComponent("семейная"),
   ).then((r) => r.json());
   assert.equal(documents.total, 1);
+  const annotationUrl = `${base}/api/documents/${documents.items[0].id}/annotations`;
+  const annotated = await fetch(annotationUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      page: 1,
+      x: 0.1,
+      y: 0.1,
+      width: 0.3,
+      height: 0.2,
+      text: "Важная запись",
+    }),
+  });
+  assert.equal(annotated.status, 201, await annotated.clone().text());
   const fileResponse = await fetch(base + documents.items[0].url);
   assert.deepEqual(Buffer.from(await fileResponse.arrayBuffer()), pdfBytes);
   const fullBackup = await fetch(base + "/api/backup/full");
@@ -445,6 +460,10 @@ try {
     r.json(),
   );
   assert.equal(afterDocuments.total, 1);
+  const restoredAnnotations = await fetch(
+    `${base}/api/documents/${afterDocuments.items[0].id}/annotations`,
+  ).then((r) => r.json());
+  assert.equal(restoredAnnotations.items[0].text, "Важная запись");
   assert.deepEqual(
     Buffer.from(
       await (await fetch(base + afterDocuments.items[0].url)).arrayBuffer(),
@@ -465,8 +484,8 @@ try {
     Number(
       (await app.archive.db
         .prepare(
-          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
-          "SELECT count(*) AS n FROM archive_audit_entries WHERE entity='document' AND entity_id=?",
+          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=? AND action='Удалён документ'",
+          "SELECT count(*) AS n FROM archive_audit_entries WHERE entity='document' AND entity_id=? AND action='Удалён документ'",
         )
         .get(documentId))!.n,
     ),
