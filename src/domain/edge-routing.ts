@@ -217,7 +217,10 @@ export function routeRelationships(
     const hint = hints.get(routeKey(edge));
     const a = map.get(edge.from)!,
       b = map.get(edge.to)!;
-    const side = edge.type === "spouse" || edge.type === "sworn_sibling";
+    const side =
+      edge.type === "spouse" ||
+      edge.type === "sworn_sibling" ||
+      edge.type === "twin";
     let sourceHandle: Handle = side
       ? a.x > b.x
         ? "left"

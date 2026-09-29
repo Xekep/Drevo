@@ -30,6 +30,7 @@ import {
   type ConnectionType,
   type Family,
   type Person,
+  type TwinKind,
   type ArchiveUser,
   owns,
 } from "../domain";
@@ -119,6 +120,7 @@ export function PersonEditor({
     [relationship, setRelationship] = useState<"child" | ConnectionType>(
       initialRelationship,
     );
+  const [twinKind, setTwinKind] = useState<TwinKind>("unknown");
   const [galleryOpen, setGalleryOpen] = useState(false),
     [cropSource, setCropSource] = useState("");
   const [removedConnections, setRemovedConnections] = useState<Connection[]>(
@@ -134,6 +136,7 @@ export function PersonEditor({
     deathText,
     autoSex,
     relationship,
+    twinKind,
     accepted,
     removedConnections,
     !!portraitFile,
@@ -317,7 +320,7 @@ export function PersonEditor({
         next =
           relationship === "child"
             ? connectPeople(next, relativeTo.id, p.id, "parent")
-            : connectPeople(next, p.id, relativeTo.id, relationship);
+            : connectPeople(next, p.id, relativeTo.id, relationship, "", twinKind);
       }
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
@@ -408,36 +411,51 @@ export function PersonEditor({
             </div>
           )}
           {relativeTo && !person && (
-            <label>
-              Кем новый человек приходится {fullName(relativeTo)}
-              <select
-                value={relationship}
-                onChange={(e) =>
-                  setRelationship(e.target.value as "child" | ConnectionType)
-                }
-              >
-                <option value="child">Ребёнок</option>
-                {owns(user, relativeTo) && (
-                  <>
-                    <option value="parent">Родитель</option>
-                    <option value="spouse">Супруг / супруга</option>
-                    <option value="godparent">Крёстный / крёстная</option>
-                    <optgroup label="Другие связи">
-                      {Object.entries(CONNECTION_NAMES)
-                        .filter(
-                          ([type]) =>
-                            !["parent", "spouse", "godparent"].includes(type),
-                        )
-                        .map(([type, label]) => (
-                          <option key={type} value={type}>
-                            {label}
-                          </option>
-                        ))}
-                    </optgroup>
-                  </>
-                )}
-              </select>
-            </label>
+            <>
+              <label>
+                Кем новый человек приходится {fullName(relativeTo)}
+                <select
+                  value={relationship}
+                  onChange={(e) =>
+                    setRelationship(e.target.value as "child" | ConnectionType)
+                  }
+                >
+                  <option value="child">Ребёнок</option>
+                  {owns(user, relativeTo) && (
+                    <>
+                      <option value="parent">Родитель</option>
+                      <option value="spouse">Супруг / супруга</option>
+                      <option value="godparent">Крёстный / крёстная</option>
+                      <optgroup label="Другие связи">
+                        {Object.entries(CONNECTION_NAMES)
+                          .filter(
+                            ([type]) =>
+                              !["parent", "spouse", "godparent"].includes(type),
+                          )
+                          .map(([type, label]) => (
+                            <option key={type} value={type}>
+                              {label}
+                            </option>
+                          ))}
+                      </optgroup>
+                    </>
+                  )}
+                </select>
+              </label>
+              {relationship === "twin" && (
+                <label>
+                  Тип близнецов
+                  <select
+                    value={twinKind}
+                    onChange={(e) => setTwinKind(e.target.value as TwinKind)}
+                  >
+                    <option value="unknown">Неизвестен</option>
+                    <option value="identical">Однояйцевые</option>
+                    <option value="fraternal">Разнояйцевые</option>
+                  </select>
+                </label>
+              )}
+            </>
           )}
           <div className="person-editor-basics">
             <label className="name-entry">

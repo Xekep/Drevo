@@ -68,6 +68,7 @@ export function replaceConnection(
     to: string;
     type: ConnectionType;
     note?: string;
+    twinKind?: Connection["twinKind"];
   },
 ) {
   const actual = archiveConnections(family).find((e) => e.key === old.key);
@@ -86,6 +87,7 @@ export function replaceConnection(
     replacement.to,
     replacement.type,
     replacement.note,
+    replacement.twinKind,
   );
   if (old.id && !["parent", "spouse"].includes(replacement.type)) {
     const added = next.links![next.links!.length - 1];

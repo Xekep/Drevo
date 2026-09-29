@@ -198,15 +198,24 @@ export function validateFamily(value: unknown): Family {
       !ids.has(link.to) ||
       link.from === link.to ||
       !EXTRA_LINK_TYPES.includes(link.type) ||
-      (link.note !== undefined && typeof link.note !== "string")
+      (link.note !== undefined && typeof link.note !== "string") ||
+      (link.twinKind !== undefined &&
+        (link.type !== "twin" ||
+          !["identical", "fraternal", "unknown"].includes(link.twinKind)))
     )
       throw new Error("Некорректная дополнительная связь");
     const pair =
-      link.type === "sworn_sibling"
+      link.type === "sworn_sibling" || link.type === "twin"
         ? [link.from, link.to].sort().join(":")
         : `${link.from}:${link.to}`;
     const key = `${link.type}:${pair}`;
     if (pairs.has(key)) throw new Error("Такая связь уже существует");
+    if (
+      link.type === "twin" &&
+      (map.get(link.from)!.parents.includes(link.to) ||
+        map.get(link.to)!.parents.includes(link.from))
+    )
+      throw new Error("Родитель и ребёнок не могут быть близнецами");
     if (
       ["adoptive_parent", "step_parent", "nurse"].includes(link.type) &&
       map.get(link.from)!.birth &&

@@ -38,6 +38,8 @@ export function connectionRoleName(
         : sex === "f" ? "опекунша" : "опекун";
     case "sworn_sibling":
       return sex === "m" ? "названый брат" : sex === "f" ? "названая сестра" : "названый родственник";
+    case "twin":
+      return sex === "m" ? "брат-близнец" : sex === "f" ? "сестра-близнец" : "близнец";
     default:
       return CONNECTION_NAMES[type];
   }
@@ -54,6 +56,6 @@ export function connectionPairName(
   const right = connectionRoleName(type, to, "to");
   const first = reversed ? right : left;
   const last = reversed ? left : right;
-  const arrow = type === "sworn_sibling" ? "↔" : reversed ? "←" : "→";
+  const arrow = type === "sworn_sibling" || type === "twin" ? "↔" : reversed ? "←" : "→";
   return `${first[0].toLocaleUpperCase("ru")}${first.slice(1)} ${arrow} ${last}`;
 }

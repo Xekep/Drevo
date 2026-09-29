@@ -234,6 +234,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_PARENT",
     "_DREVO_UNMARRIED",
     "_DREVO_MEDIA",
+    "_DREVO_TWIN",
     "_MAIDEN",
     "_UID",
     "_PATR",
@@ -548,12 +549,17 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     to: string,
     type: FamilyLink["type"],
     note?: string,
+    twinKind?: FamilyLink["twinKind"],
   ) => {
     const existing = links.find(
-      (l) => l.from === from && l.to === to && l.type === type,
+      (l) =>
+        l.type === type &&
+        ((l.from === from && l.to === to) ||
+          (type === "twin" && l.from === to && l.to === from)),
     );
     if (existing) {
       if (note) existing.note = note;
+      if (type === "twin") existing.twinKind = twinKind || "unknown";
     } else
       links.push({
         id: `${namespace}-l${links.length + 1}`,
@@ -561,6 +567,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         to,
         type,
         note,
+        ...(type === "twin" ? { twinKind: twinKind || "unknown" } : {}),
       });
   };
   const families = roots.filter((n) => n.tag === "FAM");
@@ -705,6 +712,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           ids.get(n.xref)!,
           type,
           notes(assoc) || undefined,
+          type === "twin"
+            ? ((value(assoc, "_DREVO_TWIN") ||
+                "unknown") as FamilyLink["twinKind"])
+            : undefined,
         );
       else
         warnings.add(
@@ -975,6 +986,7 @@ export function exportGedcom(
       "_DREVO_PARENT",
       "_DREVO_UNMARRIED",
       "_DREVO_MEDIA",
+      "_DREVO_TWIN",
       "_TYPE",
       "_URL",
       "_PRIM",
@@ -1138,6 +1150,7 @@ export function exportGedcom(
           emit(3, "PHRASE", l.type);
         } else emit(2, "RELA", l.type);
         if (l.note) emit(2, "NOTE", l.note);
+        if (l.type === "twin") emit(2, "_DREVO_TWIN", l.twinKind || "unknown");
       }
     media.forEach((item, i) => {
       if (item.personIds.includes(p.id) || item.portraitIds.includes(p.id)) {
