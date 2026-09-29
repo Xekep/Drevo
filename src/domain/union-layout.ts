@@ -690,7 +690,7 @@ export async function unionGeometry(
           nextMovement <= movement * 0.7 &&
           movement - nextMovement >= 100 &&
           axisDisplacement(previous, candidate, "y") <=
-            Math.max(axisDisplacement(previous, best, "y"), 32)
+            Math.max(axisDisplacement(previous, best, "y"), 32) + 32
         ) best = candidate;
       } catch {
         // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.

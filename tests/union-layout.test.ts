@@ -17,16 +17,20 @@ import {
   treeNodeSize,
   TREE_NODE_HEIGHT,
 } from "../src/domain/tree-layout-constants.ts";
+import { editedAncestorFamily, randomFamily } from "./layout-fixtures.ts";
 const unionGeometry = (
   people: LayoutPerson[],
   reverse = false,
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
+  previous?: TreeGeometry,
 ) =>
   calculateUnions(
     people,
     (graph) => new ELK({ algorithms: ["layered"] }).layout(graph),
     reverse,
     links,
+    undefined,
+    previous,
   );
 const person = (
   id: string,
@@ -51,6 +55,31 @@ test("a shared contact at a segment joint counts once when choosing a layout", (
       { x: 50, y: 10 },
     ]),
   ]), { distinct: 1, segments: 2 });
+});
+
+test("adding a founder's parent preserves the previous horizontal family order", async () => {
+  const original = randomFamily(6);
+  const edited = editedAncestorFamily(original, 6);
+  const before = await unionGeometry(original);
+  const plain = await unionGeometry(edited);
+  const incremental = await unionGeometry(edited, false, [], before);
+  const drift = (current: TreeGeometry, axis: "x" | "y") => {
+    const old = new Map(before.positions);
+    const shifts = current.positions
+      .filter(([id]) => old.has(id))
+      .map(([id, point]) => point[axis] - old.get(id)![axis])
+      .sort((a, b) => a - b);
+    const center = shifts[Math.floor(shifts.length / 2)];
+    return shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) / shifts.length;
+  };
+
+  verify(edited, incremental);
+  assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.3);
+  assert.ok(drift(incremental, "y") <= Math.max(drift(plain, "y"), 32) + 32);
+  assert.ok(
+    branchContactCounts(incremental.branches || []).distinct <=
+      branchContactCounts(plain.branches || []).distinct,
+  );
 });
 
 test("the final family routes decide between layouts within the same bands", async () => {

@@ -3,6 +3,7 @@
 // DREVO_LAYOUT_FAST=1 omits experimental ELK variants during that scan.
 // DREVO_LAYOUT_EDIT_SCAN=1 measures movement after adding one small family.
 // DREVO_LAYOUT_COMPONENT_SCAN=1 separates component drift from internal drift.
+// DREVO_LAYOUT_ANCESTOR_SCAN=1 checks movement when adding a founder's parent.
 // DREVO_LAYOUT_CASE selects one graph; DREVO_ELK_BUNDLE can point to a local
 // elkjs bundle when dependencies are not installed in this checkout.
 import { readFile } from "node:fs/promises";
@@ -17,19 +18,18 @@ import {
   Spatial,
 } from "../src/domain/edge-routing.ts";
 import { TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "../src/domain/tree-layout-constants.ts";
+import {
+  editedAncestorFamily,
+  editedFamily,
+  person,
+  randomFamily,
+} from "./layout-fixtures.ts";
 
 const { default: ELK } = await import(
   process.env.DREVO_ELK_BUNDLE || "elkjs/lib/elk.bundled.js"
 );
 
 const seeds = [1, 15, 20, 12, 4, 8];
-const person = (id, parents = [], spouses = []) => ({
-  id,
-  parents,
-  spouses,
-  birth: "",
-});
-
 const demo = JSON.parse(
   await readFile(new URL("./fixtures/family.json", import.meta.url), "utf8"),
 );
@@ -306,44 +306,6 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
   return result;
 }
 
-function randomFamily(seed) {
-  let state = seed;
-  const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-  const shuffle = (items) => {
-    const result = [...items];
-    for (let index = result.length - 1; index > 0; index--) {
-      const other = Math.floor(random() * (index + 1));
-      [result[index], result[other]] = [result[other], result[index]];
-    }
-    return result;
-  };
-  const people = Array.from({ length: 12 }, (_, index) =>
-    person(`f-${index}`),
-  );
-  const map = new Map(people.map((entry) => [entry.id, entry]));
-  const generation = (parents, prefix) => {
-    const children = [];
-    const shuffled = shuffle(parents);
-    for (let index = 0; index + 1 < shuffled.length; index += 2) {
-      const left = shuffled[index];
-      const right = shuffled[index + 1];
-      map.get(left).spouses.push(right);
-      map.get(right).spouses.push(left);
-      const count = 2 + Math.floor(random() * 3);
-      for (let child = 0; child < count; child++) {
-        const entry = person(`${prefix}-${index / 2}-${child}`, [left, right]);
-        people.push(entry);
-        map.set(entry.id, entry);
-        children.push(entry.id);
-      }
-    }
-    return children;
-  };
-  const children = generation(people.map((entry) => entry.id), "c");
-  generation(children, "g");
-  return people;
-}
-
 function displacement(before, after) {
   const previous = new Map(before.positions);
   const pairs = after.positions
@@ -365,17 +327,6 @@ function verticalDisplacement(before, after) {
   if (!shifts.length) return 0;
   const center = shifts[Math.floor(shifts.length / 2)];
   return Math.round(shifts.reduce((sum, shift) => sum + Math.abs(shift - center), 0) / shifts.length);
-}
-
-function editedFamily(original, index) {
-  const edited = structuredClone(original);
-  const child = edited.find((entry) => entry.id.startsWith("g-"));
-  const spouse = person(`new-spouse-${index}`, [], [child.id]);
-  child.spouses.push(spouse.id);
-  edited.push(spouse);
-  for (let offset = 0; offset < 2; offset++)
-    edited.push(person(`new-child-${index}-${offset}`, [child.id, spouse.id]));
-  return edited;
 }
 
 function componentMotion(before, after, people) {
@@ -446,12 +397,14 @@ function orderMotion(before, after) {
   };
 }
 
-if (process.env.DREVO_LAYOUT_COMPONENT_SCAN) {
+if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR_SCAN) {
   const summary = [];
   const selectedCase = Number(process.env.DREVO_LAYOUT_CASE || 0);
   for (let index = selectedCase || 1; index <= (selectedCase || 24); index++) {
     const original = randomFamily(index);
-    const edited = editedFamily(original, index);
+    const edited = process.env.DREVO_LAYOUT_ANCESTOR_SCAN
+      ? editedAncestorFamily(original, index)
+      : editedFamily(original, index);
     const before = await measure(original);
     const after = await measure(edited);
     const plain = await measure(edited, undefined, undefined, undefined, true);
@@ -470,12 +423,14 @@ if (process.env.DREVO_LAYOUT_COMPONENT_SCAN) {
       plainDrift: plainMotion.global,
       interactiveSize: `${interactive.width}×${interactive.height}`,
       interactiveContacts: interactive.branchContacts,
+      interactiveAllContacts: interactive.contacts,
       interactiveRaw: interactive.rawContacts,
       interactiveCrossings: interactive.crossings,
       interactiveCardHits: interactive.cardHits,
       interactiveLength: Math.round(interactive.length),
       interactiveBends: interactive.bends,
       interactiveDrift: componentMotion(before.geometry, interactive.geometry, edited).global,
+      interactiveVertical: verticalDisplacement(before.geometry, interactive.geometry),
       incrementalSize: `${incremental.width}×${incremental.height}`,
       incrementalContacts: incremental.branchContacts,
       currentRaw: after.rawContacts,
