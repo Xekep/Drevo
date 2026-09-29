@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  branchContactCounts,
   familyUnions,
   unionGeometry as calculateUnions,
+  type UnionBranch,
 } from "../src/domain/union-layout.ts";
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { FamilyLink } from "../src/domain/types.ts";
@@ -31,6 +33,25 @@ const person = (
   parents: string[] = [],
   spouses: string[] = [],
 ): LayoutPerson => ({ id, parents, spouses, birth: "" });
+
+test("a shared contact at a segment joint counts once when choosing a layout", () => {
+  const branch = (union: string, points: { x: number; y: number }[]): UnionBranch => ({
+    id: union,
+    source: union,
+    target: union,
+    union,
+    relations: [],
+    route: { sourceHandle: "bottom", targetHandle: "top", points },
+  });
+  assert.deepEqual(branchContactCounts([
+    branch("family-a", [{ x: 0, y: 0 }, { x: 100, y: 0 }]),
+    branch("family-b", [
+      { x: 50, y: -10 },
+      { x: 50, y: 0 },
+      { x: 50, y: 10 },
+    ]),
+  ]), { distinct: 1, segments: 2 });
+});
 
 test("the final family routes decide between layouts within the same bands", async () => {
   const people = [
