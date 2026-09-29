@@ -1047,10 +1047,10 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
 .ai-role-profiles,
 .ai-role-profiles > fieldset {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
   margin: 0;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid #e2e8df;
   border-radius: 9px;
 }
@@ -1059,6 +1059,24 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   color: #394d3d;
   font-weight: 600;
 }
+.ai-role-profile-intro { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; }
+.ai-role-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.ai-role-choices button { display: grid; gap: 2px; min-width: 0; padding: 8px 10px; border: 1px solid #dfe8da; border-radius: 8px; background: #fff; color: #344a36; text-align: left; cursor: pointer; }
+.ai-role-choices button[aria-pressed="true"] { border-color: #6b9770; background: #edf5e9; }
+.ai-role-choices b { font-size: 12px; }
+.ai-role-choices small { color: #667965; font-size: 11px; }
+.ai-role-capabilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 12px; }
+.ai-role-capabilities .setting-toggle { min-width: 0; margin: 0; }
+.ai-role-advanced[open] { display: grid; gap: 10px; }
+.ai-role-profiles > .ai-role-profile-custom { border: 0; padding: 3px 0 0; }
+.admin-card.archive-form .ai-role-capabilities .setting-toggle { padding: 7px 4px; border: 0; border-bottom: 1px solid #e8ede6; border-radius: 0; }
+.admin-card.archive-form .ai-role-profile-custom > .setting-toggle { padding: 8px 4px; border: 0; }
+.ai-usage-details .ai-usage-summary { padding-top: 4px; border-top: 0; }
+.ai-role-profile-custom > label:not(.setting-toggle) { display: grid; gap: 5px; max-width: 360px; }
+.ai-role-profiles > button { justify-self: start; }
+.ai-admin-connection { padding: 10px 12px; border: 1px solid #e2e8df; border-radius: 9px; }
+.ai-admin-connection > summary { color: #394d3d; font-size: 13px; font-weight: 650; cursor: pointer; }
+.ai-admin-connection[open] { display: grid; gap: 12px; }
 .ai-role-profiles p,
 .ai-role-profiles > small {
   margin: 0;
@@ -1102,6 +1120,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   .ai-config-status {
     grid-template-columns: 1fr;
   }
+  .ai-role-capabilities { grid-template-columns: 1fr; }
+  .ai-role-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .ai-limit-settings {

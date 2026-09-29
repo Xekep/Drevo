@@ -128,6 +128,11 @@ test("переход из снимка перестраивает открыты
   await expect(fan).toHaveAttribute("aria-label", /Пётр/);
 
   await page.locator(".archive-nav .nav-sections").getByRole("link", { name: "Фото" }).click();
+  await expect(page.getByRole("button", { name: "По людям" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.locator(".photo-albums > button").first().click();
   await page.locator(".photo-tile").first().click();
   await page.getByRole("button", { name: /Показать сведения:.*Иван/ }).click();
   await page.getByRole("button", { name: "Показать в древе" }).click();

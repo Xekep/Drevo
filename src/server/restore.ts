@@ -269,6 +269,7 @@ type StoredDocument = {
   fileSize: number;
   uploadedBy: string;
   createdAt: string;
+  annotations?: string;
   personIds: string[];
 };
 
@@ -406,9 +407,13 @@ export function restoreStore(
             .get()
         ) {
           const people = new Set(family.people.map((person) => person.id));
+          const hasAnnotations = source
+            .prepare("PRAGMA table_info(documents)")
+            .all()
+            .some((column) => column.name === "annotations");
           const rows = source
             .prepare(
-              "SELECT id,title,file_name,file_size,uploaded_by,created_at FROM documents ORDER BY created_at,id",
+              `SELECT id,title,file_name,file_size,uploaded_by,created_at,${hasAnnotations ? "annotations" : "'[]' AS annotations"} FROM documents ORDER BY created_at,id`,
             )
             .all();
           const links = source
@@ -430,6 +435,7 @@ export function restoreStore(
               fileSize: Number(row.file_size),
               uploadedBy: String(row.uploaded_by),
               createdAt: String(row.created_at),
+              annotations: String(row.annotations || "[]"),
               personIds: byDocument.get(String(row.id)) || [],
             };
             if (
@@ -674,8 +680,8 @@ export function restoreStore(
           async (db) => {
             await db.exec("DELETE FROM documents", "DELETE FROM documents");
             const insert = db.prepare(
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations) VALUES(?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations) VALUES(?,?,?,?,?,?,?,?)",
             );
             const link = db.prepare(
               "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
@@ -690,6 +696,7 @@ export function restoreStore(
                 document.fileSize,
                 document.uploadedBy,
                 document.createdAt,
+                document.annotations || "[]",
               );
               for (const personId of document.personIds)
                 await link.run(document.id, personId);

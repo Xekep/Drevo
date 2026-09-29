@@ -119,6 +119,9 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       list.items[0].people.map((person) => person.id),
       ["anna"],
     );
+    const direct = await fetch(`${base}/api/documents/${id}`);
+    assert.equal(direct.status, 200);
+    assert.deepEqual(await direct.json(), list.items[0]);
     const byTitle = (await (
       await fetch(`${base}/api/documents?q=${encodeURIComponent("семейная")}`)
     ).json()) as { total: number };
@@ -135,6 +138,52 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
     assert.deepEqual(Buffer.from(await file.arrayBuffer()), pdf);
+
+    const annotationUrl = `${base}/api/documents/${id}/annotations`;
+    const selection = {
+      page: 2,
+      x: 0.15,
+      y: 0.25,
+      width: 0.3,
+      height: 0.2,
+      text: "Запись о рождении",
+    };
+    const comment = await fetch(annotationUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...selection,
+        authorName: "Подмена",
+        canDelete: false,
+      }),
+    });
+    assert.equal(comment.status, 201, await comment.clone().text());
+    const saved = (await comment.json()) as {
+      items: Array<{
+        id: string;
+        text: string;
+        canDelete: boolean;
+        authorName: string;
+      }>;
+    };
+    assert.equal(saved.items[0].text, selection.text);
+    assert.equal(saved.items[0].canDelete, true);
+    assert.notEqual(saved.items[0].authorName, "Подмена");
+    assert.equal(
+      (
+        await fetch(annotationUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...selection, x: 0.9 }),
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      ((await (await fetch(annotationUrl)).json()) as { items: unknown[] })
+        .items.length,
+      1,
+    );
 
     const backup = Buffer.from(
       await (await fetch(`${base}/api/backup/full`)).arrayBuffer(),
@@ -169,6 +218,10 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       Buffer.from(await (await fetch(base + after.items[0].url)).arrayBuffer()),
       pdf,
     );
+    const restoredAnnotations = (await (
+      await fetch(`${base}/api/documents/${after.items[0].id}/annotations`)
+    ).json()) as { items: Array<{ text: string }> };
+    assert.equal(restoredAnnotations.items[0].text, selection.text);
     const other = await upload(pdf, {
       "X-Document-Metadata": encodeURIComponent(
         JSON.stringify({ title: "Запись Бориса", personIds: ["boris"] }),
@@ -288,6 +341,41 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     };
     const id = await upload();
     const path = `/api/documents/${id}`;
+    const annotationPath = `${path}/annotations`;
+    const annotate = (user: string, origin = "https://archive.test") =>
+      fetch(base + annotationPath, {
+        method: "POST",
+        headers: {
+          Cookie: cookies.get(user) || "",
+          Origin: origin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          page: 1,
+          x: 0.1,
+          y: 0.2,
+          width: 0.3,
+          height: 0.2,
+          text: "Архивная пометка",
+        }),
+      });
+    assert.equal((await annotate("reader")).status, 403);
+    assert.equal((await annotate("owner", "https://evil.test")).status, 403);
+    const annotation = await annotate("owner");
+    assert.equal(annotation.status, 201);
+    const annotationId = (
+      (await annotation.json()) as { items: Array<{ id: string }> }
+    ).items[0].id;
+    assert.equal(
+      (await request(`${annotationPath}/${annotationId}`, "other", "DELETE"))
+        .status,
+      403,
+    );
+    assert.equal(
+      (await request(`${annotationPath}/${annotationId}`, "admin", "DELETE"))
+        .status,
+      200,
+    );
     for (const [user, expected] of [
       ["owner", true],
       ["admin", true],
@@ -298,7 +386,12 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         items: Array<{ canDelete: boolean }>;
       };
       assert.equal(list.items[0].canDelete, expected);
+      const direct = (await (await request(path, user)).json()) as {
+        canDelete: boolean;
+      };
+      assert.equal(direct.canDelete, expected);
     }
+    assert.equal((await request(path, "")).status, 401);
     assert.equal((await request(path, "", "DELETE")).status, 401);
     assert.equal((await request(path, "reader", "DELETE")).status, 403);
     assert.equal((await request(path, "other", "DELETE")).status, 403);
@@ -316,6 +409,9 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     ).json()) as { total: number };
     assert.equal(hiddenFilter.total, 0);
     assert.equal((await request(path, "owner", "DELETE")).status, 404);
+    assert.equal((await request(path, "owner")).status, 404);
+    assert.equal((await request(annotationPath, "owner")).status, 404);
+    assert.equal((await annotate("owner")).status, 404);
     await db
       .prepare("UPDATE users SET tree_access='all' WHERE id='owner'")
       .run();
@@ -388,7 +484,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     assert.equal(
       (await db
         .prepare(
-          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=?",
+          "SELECT count(*) AS n FROM audit_entries WHERE entity='document' AND entity_id=? AND action='Удалён документ'",
         )
         .get(id))!.n,
       1,

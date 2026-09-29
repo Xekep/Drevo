@@ -29,7 +29,7 @@ export function Gallery({
 }) {
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState("");
-  const [mode, setMode] = useState<"all" | "people" | "years">("all"),
+  const [mode, setMode] = useState<"all" | "people" | "years">("people"),
     [albumId, setAlbumId] = useState(""),
     [limit, setLimit] = useState(30);
   useEffect(() => {

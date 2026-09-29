@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS documents (
   file_size bigint NOT NULL CHECK (file_size > 0),
   uploaded_by text NOT NULL,
   created_at text NOT NULL,
+  annotations text NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(annotations::jsonb) = 'array'),
   PRIMARY KEY (archive_id, id),
   UNIQUE (archive_id, ordinal),
   UNIQUE (archive_id, file_name)

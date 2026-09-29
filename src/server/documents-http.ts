@@ -12,6 +12,11 @@ import { fullName } from "../domain/index.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { owns } from "../domain/access.ts";
+import {
+  validAnnotationSelection,
+  type AnnotationSelection,
+  type DocumentAnnotation,
+} from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
 import {
   documentUploadQuota,
@@ -19,6 +24,17 @@ import {
 } from "./document-upload-quota.ts";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
+async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 4096) throw new Error("Комментарий слишком длинный");
+    chunks.push(Buffer.from(chunk));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 type Row = {
   id: string;
   title: string;
@@ -26,7 +42,27 @@ type Row = {
   file_size: number;
   created_at: string;
   uploaded_by: string;
+  annotations: string;
 };
+
+function listedDocument(
+  row: Row,
+  linkedIds: string[],
+  people: Map<string, string>,
+  canDelete: boolean,
+) {
+  return {
+    id: row.id,
+    title: row.title,
+    size: row.file_size,
+    createdAt: row.created_at,
+    canDelete,
+    url: `/api/documents/${row.id}/file`,
+    people: linkedIds
+      .filter((id) => people.has(id))
+      .map((id) => ({ id, name: people.get(id)! })),
+  };
+}
 
 export function documentsHttp({
   archive,
@@ -93,7 +129,11 @@ export function documentsHttp({
     const list = url.pathname === "/api/documents";
     const file = /^\/api\/documents\/([a-f0-9-]{36})\/file$/.exec(url.pathname);
     const item = /^\/api\/documents\/([a-f0-9-]{36})$/.exec(url.pathname);
-    if (!list && !file && !item) return false;
+    const annotations =
+      /^\/api\/documents\/([a-f0-9-]{36})\/annotations(?:\/([a-f0-9-]{36}))?$/.exec(
+        url.pathname,
+      );
+    if (!list && !file && !item && !annotations) return false;
     if (!(await auth.canRead(req)))
       return json(res, 401, { error: "Войдите, чтобы открыть документы" });
 
@@ -173,18 +213,162 @@ export function documentsHttp({
         mayEdit = await auth.canEdit(req);
       return json(res, 200, {
         total,
-        items: rows.map((row) => ({
-          id: row.id,
-          title: row.title,
-          size: row.file_size,
-          createdAt: row.created_at,
-          canDelete: mayEdit && owns(actor, { createdBy: row.uploaded_by }),
-          url: `/api/documents/${row.id}/file`,
-          people: (links.get(row.id) || [])
-            .filter((id) => people.has(id))
-            .map((id) => ({ id, name: people.get(id) })),
-        })),
+        items: rows.map((row) =>
+          listedDocument(
+            row,
+            links.get(row.id) || [],
+            people,
+            mayEdit && owns(actor, { createdBy: row.uploaded_by }),
+          ),
+        ),
       });
+    }
+
+    if (item && req.method === "GET") {
+      const row = (await db
+        .prepare("SELECT * FROM documents WHERE id=?")
+        .get(item[1])) as Row | undefined;
+      if (!row) return json(res, 404, { error: "Документ не найден" });
+      const access = await visible(req);
+      const linkedIds = (await associations([row.id])).get(row.id) || [];
+      if (access.scoped && !linkedIds.some((id) => access.ids.includes(id)))
+        return json(res, 404, { error: "Документ не найден" });
+      const people = new Map(
+        access.people.map((person) => [person.id, fullName(person)]),
+      );
+      return json(
+        res,
+        200,
+        listedDocument(
+          row,
+          linkedIds,
+          people,
+          (await auth.canEdit(req)) &&
+            owns(await auth.currentUser(req), { createdBy: row.uploaded_by }),
+        ),
+      );
+    }
+
+    if (annotations) {
+      const row = (await db
+        .prepare(
+          "SELECT * FROM documents WHERE id=?",
+          "SELECT * FROM documents WHERE id=?",
+        )
+        .get(annotations[1])) as Row | undefined;
+      if (!row) return json(res, 404, { error: "Документ не найден" });
+      const access = await visible(req);
+      const personIds = (await associations([row.id])).get(row.id) || [];
+      if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+        return json(res, 404, { error: "Документ не найден" });
+      const visibleItems = (
+        items: DocumentAnnotation[],
+        actor: Awaited<ReturnType<typeof auth.currentUser>>,
+      ) =>
+        items.map((item) => ({
+          ...item,
+          canDelete: owns(actor, { createdBy: item.authorId }),
+        }));
+      if (req.method === "GET" && !annotations[2])
+        return json(res, 200, {
+          items: visibleItems(
+            JSON.parse(row.annotations),
+            await auth.currentUser(req),
+          ),
+        });
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!(await auth.canEdit(req)))
+        return json(res, 403, { error: "Нет прав на комментарии" });
+      let selection: AnnotationSelection | undefined;
+      if (req.method === "POST" && !annotations[2]) {
+        let body: unknown;
+        try {
+          if (req.headers["content-type"]?.split(";")[0] !== "application/json")
+            return json(res, 415, { error: "Ожидается JSON" });
+          body = await readAnnotationBody(req);
+        } catch {
+          return json(res, 400, { error: "Некорректный комментарий" });
+        }
+        if (!validAnnotationSelection(body))
+          return json(res, 400, {
+            error: "Выделите фрагмент и введите комментарий",
+          });
+        selection = body;
+      } else if (req.method !== "DELETE" || !annotations[2])
+        return json(res, 405, { error: "Метод не поддерживается" });
+      const result = await db.transaction(async () => {
+        const current = (await db
+          .prepare(
+            "SELECT * FROM documents WHERE id=?",
+            "SELECT * FROM documents WHERE id=?",
+          )
+          .get(row.id)) as Row | undefined;
+        if (!current) return { status: 404, error: "Документ не найден" };
+        const latest = await auth.currentUser(req);
+        if (!latest?.approved || !(await auth.canEdit(req)))
+          return { status: 403, error: "Нет прав на комментарии" };
+        const allowed = new Set((await visible(req)).ids);
+        const linked = (await associations([row.id])).get(row.id) || [];
+        if (isScopedUser(latest) && !linked.some((id) => allowed.has(id)))
+          return { status: 404, error: "Документ не найден" };
+        const items = JSON.parse(current.annotations) as DocumentAnnotation[];
+        let status = 201;
+        if (req.method === "POST") {
+          if (!selection)
+            return { status: 400, error: "Некорректный комментарий" };
+          if (items.length >= 500)
+            return { status: 400, error: "Достигнут лимит комментариев" };
+          items.push({
+            page: selection.page,
+            x: selection.x,
+            y: selection.y,
+            width: selection.width,
+            height: selection.height,
+            text: selection.text.trim(),
+            id: randomUUID(),
+            authorId: latest.id,
+            authorName: latest.name,
+            createdAt: new Date().toISOString(),
+          });
+        } else {
+          const index = items.findIndex((item) => item.id === annotations[2]);
+          if (index < 0) return { status: 404, error: "Комментарий не найден" };
+          if (!owns(latest, { createdBy: items[index].authorId }))
+            return {
+              status: 403,
+              error: "Удалить комментарий может его автор или администратор",
+            };
+          items.splice(index, 1);
+          status = 200;
+        }
+        await db
+          .prepare(
+            "UPDATE documents SET annotations=? WHERE id=?",
+            "UPDATE documents SET annotations=? WHERE id=?",
+          )
+          .run(JSON.stringify(items), row.id);
+        await audit.record(
+          {
+            action:
+              status === 201
+                ? "Добавлен комментарий к документу"
+                : "Удалён комментарий к документу",
+            entity: "document",
+            entityId: row.id,
+            label: row.title,
+            personIds: linked,
+            details: [],
+          },
+          latest,
+        );
+        return { status, items };
+      });
+      return "error" in result
+        ? json(res, result.status, { error: result.error })
+        : json(res, result.status, {
+            items: visibleItems(result.items, await auth.currentUser(req)),
+          });
     }
 
     if (item && req.method === "DELETE") {

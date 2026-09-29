@@ -317,7 +317,9 @@ test("PDF reservations enforce disk headroom, total quota, concurrency and hourl
     await firstPending();
     await secondPending();
     await first.db
-      .prepare("INSERT INTO documents VALUES(?,?,?,?,?,?,?)")
+      .prepare(
+        "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+      )
       .run("existing", "Doc", "doc", "file.pdf", 90, "u", "2026-09-25");
     await assert.rejects(
       async () => await b.acquire("v", 20, 1000),

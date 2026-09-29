@@ -953,4 +953,22 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
     }
   }
+  const annotationExtension = "2026-09-document-annotations";
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(annotationExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(
+        "ALTER TABLE documents ADD COLUMN annotations TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(annotations) AND json_type(annotations)='array')",
+      );
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        annotationExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

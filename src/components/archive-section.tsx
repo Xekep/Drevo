@@ -59,6 +59,7 @@ type Props = {
   onAddPhoto: () => void;
   onDropPhoto: (file: File) => void;
   documentPersonFilter: string | null;
+  documentId: string | null;
   personFilter: string | null;
   onClearPhotoFilter: () => void;
 };
@@ -147,6 +148,7 @@ export function ArchiveSection(props: Props) {
       <DocumentsCatalog
         mayEdit={props.mayEdit}
         personFilter={props.documentPersonFilter}
+        documentId={props.documentId}
         people={props.people}
       />
     );
