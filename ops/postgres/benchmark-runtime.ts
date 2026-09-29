@@ -131,14 +131,9 @@ try {
                 ? String(error.code)
                 : "error";
             errors[code] = (errors[code] || 0) + 1;
-            // This intentionally excessive read burst measures capacity. A known
-            // queue timeout is a result, never a swallowed write/validation failure.
-            if (!(
-              queueTimeout &&
-              concurrency === 100 &&
-              ["full_archive_read", "tree_overview"].includes(operation)
-            ))
-              unexpectedError ??= error;
+            // Revisioned snapshots now pass this profile without queue timeouts.
+            // Report saturation, but fail CI if that regression comes back.
+            unexpectedError ??= error;
           } finally {
             durations.push(performance.now() - began);
           }
