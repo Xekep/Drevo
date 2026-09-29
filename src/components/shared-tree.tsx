@@ -252,23 +252,8 @@ export default function SharedTree({ token }: { token: string }) {
         <TreePreferencesDialog
           anchorId={exportAnchor?.id}
           anchorName={exportAnchor && fullName(exportAnchor)}
-          onExportPdf={(signal, scope, anchorId, generations, printOptions) =>
-            treeCanvas.current!.exportPdf(
-              signal,
-              scope,
-              anchorId,
-              generations,
-              printOptions,
-            )
-          }
-          onPreviewPdf={(signal, scope, anchorId, generations, options) =>
-            treeCanvas.current!.previewPdf(
-              signal,
-              scope,
-              anchorId,
-              generations,
-              options,
-            )
+          onExportPdf={(signal, scope, anchorId, generations) =>
+            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
           }
           onExportPng={(signal, scope, anchorId, generations) =>
             treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
@@ -282,23 +267,13 @@ export default function SharedTree({ token }: { token: string }) {
             )
           }
           onExportPdfReport={async (kind, generations, signal) => {
-            const { downloadArchiveReport } = await import(
-              "./tree/download-archive-report"
-            );
+            const { downloadArchiveReport } =
+              await import("./tree/download-archive-report");
             await downloadArchiveReport(
               data.family,
               exportAnchor?.id,
               kind,
               generations,
-              signal,
-            );
-          }}
-          onExportFan={async (options, signal) => {
-            const { exportFan } = await import("./tree/fan-export");
-            await exportFan(
-              data.family,
-              exportAnchor?.id || "",
-              options,
               signal,
             );
           }}

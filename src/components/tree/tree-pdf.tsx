@@ -18,11 +18,7 @@ import {
   downloadTreeVectorPdf,
   downloadTreePng,
 } from "./tree-pdf-vector";
-import {
-  treeGraphicBounds,
-  treePrintPlan,
-  type TreePrintOptions,
-} from "./tree-print-plan";
+import { treeGraphicBounds } from "./tree-print-plan";
 
 export type ExportTree = {
   nodes: Array<PersonNodeType | HouseholdNodeType>;
@@ -106,13 +102,10 @@ async function exportTreeGraphic(
   tree: ExportTree,
   format: "pdf" | "png",
   signal?: AbortSignal,
-  printOptions?: TreePrintOptions,
 ) {
   signal?.throwIfAborted();
   const work = new AbortController();
   const { width, height, x, y } = treeGraphicBounds(tree);
-  if (format === "pdf" && printOptions)
-    treePrintPlan(width, height, printOptions);
   // Browsers cannot allocate a bitmap for a full large archive. Vector PDF
   // remains available; PNG is intended for a selected, publication-sized area.
   if (
@@ -265,7 +258,6 @@ async function exportTreeGraphic(
             tree.title,
             font,
             work.signal,
-            printOptions,
           );
         else
           await downloadTreePng(
@@ -296,11 +288,8 @@ async function exportTreeGraphic(
   }
 }
 
-export const exportTreePdf = (
-  tree: ExportTree,
-  signal?: AbortSignal,
-  printOptions?: TreePrintOptions,
-) => exportTreeGraphic(tree, "pdf", signal, printOptions);
+export const exportTreePdf = (tree: ExportTree, signal?: AbortSignal) =>
+  exportTreeGraphic(tree, "pdf", signal);
 
 export const exportTreePng = (tree: ExportTree, signal?: AbortSignal) =>
   exportTreeGraphic(tree, "png", signal);

@@ -15,12 +15,6 @@ export const DEFAULT_TREE_PRINT: TreePrintOptions = {
   scale: 1,
 };
 
-export type TreePrintPreview = ReturnType<typeof treePrintPlan> & {
-  sceneWidth: number;
-  sceneHeight: number;
-  cards: Array<{ x: number; y: number; width: number; height: number }>;
-};
-
 export function treeGraphicBounds(tree: ExportTree) {
   if (!tree.nodes.length) throw new Error("В древе пока нет людей.");
   const bounds = getNodesBounds(tree.nodes);
