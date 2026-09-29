@@ -23,6 +23,22 @@ export type AccountSession = {
   vk?: boolean;
 };
 type SessionSummary = { currentExpiresAt: string | null; otherCount: number };
+type Capacity =
+  | { available: false }
+  | { available: true; owned: false }
+  | {
+      available: true;
+      owned: true;
+      fullAccess: boolean;
+      people: number;
+      peopleLimit: number;
+      mediaBytes: number | null;
+      mediaLimitBytes: number;
+    };
+const megabytes = (bytes: number) =>
+  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(
+    bytes / 1_000_000,
+  );
 
 const date = (value?: string | null) => {
   if (!value || !Number.isFinite(Date.parse(value))) return null;
@@ -53,6 +69,13 @@ export function AccountPage({
   const user = session?.user;
   const local = session?.local === true;
   const [sessions, setSessions] = useState<SessionSummary | null>(null);
+  const [capacityState, setCapacityState] = useState<{
+    key: string;
+    result: Capacity;
+  } | null>(null);
+  const capacityKey = user ? `${user.id}:${String(user.fullAccess)}` : "";
+  const capacity =
+    capacityState?.key === capacityKey ? capacityState.result : null;
   const [sessionError, setSessionError] = useState("");
   const [revoking, setRevoking] = useState(false);
   useEffect(() => {
@@ -70,6 +93,25 @@ export function AccountPage({
       .catch(() => {
         if (!controller.signal.aborted)
           setSessionError("Не удалось загрузить сеансы. Обновите страницу.");
+      });
+    return () => controller.abort();
+  }, [user, local]);
+  useEffect(() => {
+    if (!user || local || user.fullAccess === undefined) return;
+    const controller = new AbortController();
+    const key = `${user.id}:${String(user.fullAccess)}`;
+    void fetch("/api/account/capacity", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить квоты");
+        return response.json() as Promise<Capacity>;
+      })
+      .then((result) => setCapacityState({ key, result }))
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setCapacityState({ key, result: { available: false } });
       });
     return () => controller.abort();
   }, [user, local]);
@@ -177,10 +219,43 @@ export function AccountPage({
                   </div>
                 </div>
                 <div className="account-facts">
+                  {user.fullAccess !== undefined && (
+                    <div>
+                      <span>Уровень аккаунта</span>
+                      <strong>
+                        {(capacity?.available && capacity.owned
+                          ? capacity.fullAccess
+                          : user.fullAccess)
+                          ? "Полный"
+                          : "Базовый"}
+                      </strong>
+                    </div>
+                  )}
                   <div>
                     <span>Роль</span>
                     <strong>{ROLE_NAMES[user.role]}</strong>
                   </div>
+                  {capacity?.available && capacity.owned && (
+                    <>
+                      <div>
+                        <span>Людей в этом дереве</span>
+                        <strong>
+                          {capacity.people.toLocaleString("ru-RU")}
+                          {capacity.fullAccess
+                            ? ""
+                            : ` из ${capacity.peopleLimit}`}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Фото и документы</span>
+                        <strong>
+                          {capacity.mediaBytes === null
+                            ? "Объём уточняется"
+                            : `${megabytes(capacity.mediaBytes)} МБ${capacity.fullAccess ? "" : ` из ${megabytes(capacity.mediaLimitBytes)} МБ`}`}
+                        </strong>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <span>Доступ к древу</span>
                     <strong>

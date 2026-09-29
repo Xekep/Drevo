@@ -163,3 +163,32 @@ test("account avatar uses the linked person's portrait when available", async ({
     .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
     .toBeGreaterThan(0);
 });
+
+test("account cabinet shows the owner's current tier and quotas", async ({ page }) => {
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...data, local: false, user: { ...data.user, fullAccess: false } },
+    });
+  });
+  await page.route("**/api/account/capacity", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        owned: true,
+        fullAccess: false,
+        people: 42,
+        peopleLimit: 150,
+        mediaBytes: 120_000_000,
+        mediaLimitBytes: 500_000_000,
+      },
+    }),
+  );
+  await page.goto("/account");
+  await expect(page.getByText("Уровень аккаунта")).toBeVisible();
+  await expect(page.getByText("Базовый", { exact: true })).toBeVisible();
+  await expect(page.getByText("42 из 150")).toBeVisible();
+  await expect(page.getByText("120 МБ из 500 МБ")).toBeVisible();
+});
