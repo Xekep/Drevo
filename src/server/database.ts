@@ -1,6 +1,10 @@
 import { authorizeArchive } from "./permissions.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
 import { authorizeMediaReferences } from "./media-access.ts";
+import {
+  enforcePostgresMediaQuota,
+  releaseAttachedMediaGrants,
+} from "./postgres-media-quota.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -42,6 +46,18 @@ export type StoredFaceDescriptor = {
   sourceTagId?: string;
   model: string;
 };
+
+function addsMediaReference(before: Family, after: Family) {
+  const existing = new Set([
+    ...before.people.map((person) => person.photo),
+    ...(before.photos || []).map((photo) => photo.url),
+  ]);
+  return (
+    after.people.some(
+      (person) => person.photo && !existing.has(person.photo),
+    ) || (after.photos || []).some((photo) => !existing.has(photo.url))
+  );
+}
 
 async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
   await db.exec(
@@ -390,6 +406,10 @@ export async function openArchive(path: string, seed: Family) {
           );
       }
       await afterWrite?.(db);
+      if (actor && previous && addsMediaReference(previous, family)) {
+        await releaseAttachedMediaGrants(db);
+        await enforcePostgresMediaQuota(db);
+      }
       await finishWrite();
       return { family, revision: expected + 1 };
     });
@@ -439,6 +459,8 @@ export async function openArchive(path: string, seed: Family) {
           "UPDATE archives SET revision=? WHERE id=current_setting('drevo.archive_id', true)",
         )
         .run(expected + 1);
+      await releaseAttachedMediaGrants(db);
+      await enforcePostgresMediaQuota(db);
       await finishWrite();
       return { family, revision: expected + 1 };
     });

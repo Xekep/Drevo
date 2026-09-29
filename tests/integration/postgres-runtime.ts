@@ -25,6 +25,12 @@ import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
+import {
+  BASIC_MEDIA_BYTES,
+  enforcePostgresMediaQuota,
+  releaseAttachedMediaGrants,
+} from "../../src/server/postgres-media-quota.ts";
+import { UploadQuotaError } from "../../src/server/upload-quota.ts";
 import type { Family } from "../../src/domain/types.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -572,6 +578,132 @@ try {
   } finally {
     await manager.close();
   }
+  await client.query(
+    "UPDATE account_tiers SET full_access=false WHERE account_id='owner'",
+  );
+  const quotaDb = app.archive.db;
+  await quotaDb.transaction(async () => {
+    await quotaDb
+      .prepare(
+        "",
+        "INSERT INTO media_originals(url,size_bytes) VALUES('/media/quota.png',?)",
+      )
+      .run(BASIC_MEDIA_BYTES - 1);
+    await quotaDb
+      .prepare(
+        "",
+        "INSERT INTO media_upload_grants(url,user_id,expires_ms) VALUES('/media/quota.png','owner',?)",
+      )
+      .run(Date.now() + 60_000);
+    await enforcePostgresMediaQuota(quotaDb);
+  });
+  const ownerToken = newSessionToken();
+  await quotaDb
+    .prepare(
+      "",
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
+    )
+    .run(sessionTokenHash(ownerToken), Date.now() + 60_000);
+  const rejectedPdf = await fetch(securedBase + "/api/documents", {
+    method: "POST",
+    headers: {
+      Cookie: `drevo_session=${ownerToken}`,
+      Origin: process.env.PUBLIC_ORIGIN,
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title: "Сверх лимита", personIds: ["person-a"] }),
+      ),
+    },
+    body: new Uint8Array(pdfBytes),
+  });
+  assert.equal(rejectedPdf.status, 507, await rejectedPdf.text());
+  assert.equal(
+    (await quotaDb.prepare("", "SELECT count(*) AS n FROM documents").get())?.n,
+    0,
+  );
+  const attempts = await Promise.allSettled(
+    ["quota-one", "quota-two"].map((id) =>
+      quotaDb.transaction(async () => {
+        await quotaDb
+          .prepare(
+            "",
+            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,1,'owner',?)",
+          )
+          .run(id, id, id, `${id}.pdf`, new Date().toISOString());
+        await enforcePostgresMediaQuota(quotaDb);
+      }),
+    ),
+  );
+  assert.equal(
+    attempts.filter((attempt) => attempt.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    attempts.filter((attempt) => attempt.status === "rejected").length,
+    1,
+  );
+  assert.ok(
+    attempts.some(
+      (attempt) =>
+        attempt.status === "rejected" &&
+        attempt.reason instanceof UploadQuotaError,
+    ),
+  );
+  assert.equal(
+    (await quotaDb.prepare("", "SELECT count(*) AS n FROM documents").get())?.n,
+    1,
+  );
+  await quotaDb.transaction(async () => {
+    await quotaDb
+      .prepare("", "INSERT INTO photos(id,data) VALUES('quota-photo',?::jsonb)")
+      .run(JSON.stringify({ url: "/media/quota.png", title: "", tags: [] }));
+    await releaseAttachedMediaGrants(quotaDb);
+    assert.equal(
+      (
+        await quotaDb
+          .prepare("", "SELECT count(*) AS n FROM media_upload_grants")
+          .get()
+      )?.n,
+      0,
+    );
+    await quotaDb.exec("", "DELETE FROM photos WHERE id='quota-photo'");
+    await enforcePostgresMediaQuota(quotaDb);
+  });
+  await quotaDb.transaction(async () => {
+    await quotaDb.exec("", "DELETE FROM documents WHERE id LIKE 'quota-%'");
+    await quotaDb.exec(
+      "",
+      "DELETE FROM media_originals WHERE url='/media/quota.png'",
+    );
+  });
+  await assert.rejects(
+    quotaDb.transaction(async () => {
+      await quotaDb
+        .prepare(
+          "",
+          "INSERT INTO photos(id,data) VALUES('foreign-photo',?::jsonb)",
+        )
+        .run(
+          JSON.stringify({ url: "/media/foreign.png", title: "", tags: [] }),
+        );
+      await enforcePostgresMediaQuota(quotaDb);
+    }),
+    (error) => error instanceof UploadQuotaError,
+  );
+  assert.equal(
+    (
+      await quotaDb
+        .prepare(
+          "",
+          "SELECT count(*) AS n FROM photos WHERE id='foreign-photo'",
+        )
+        .get()
+    )?.n,
+    0,
+  );
+  await client.query(
+    "UPDATE account_tiers SET full_access=true WHERE account_id='owner'",
+  );
   console.log("runtime_http_and_backup_ok");
 } finally {
   await app?.close();
