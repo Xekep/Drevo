@@ -37,20 +37,11 @@ export function archiveQueryHttp({
     windowMs: 60_000,
     limit: 60,
   });
-  let scopedCache: {
-    key: string;
-    family: Awaited<ReturnType<typeof archive.read>>["family"];
-  } | null = null;
-  const scopedFamily = async (
+  const scopedSnapshot = async (
     user: NonNullable<Awaited<ReturnType<typeof auth.currentUser>>>,
   ) => {
-    const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
-    if (scopedCache?.key !== key)
-      scopedCache = {
-        key,
-        family: projectFamilyForUser((await archive.read()).family, user),
-      };
-    return scopedCache.family;
+    const data = await archive.read();
+    return { ...data, family: projectFamilyForUser(data.family, user) };
   };
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -67,10 +58,7 @@ export function archiveQueryHttp({
       readTree = (await auth.canRead(req)) || settings.publicTree,
       readPhotos = (await auth.canRead(req)) || settings.publicAlbums;
     const data = isScopedUser(user)
-      ? {
-          family: structuredClone(await scopedFamily(user)),
-          revision: (await archive.meta()).revision,
-        }
+      ? await scopedSnapshot(user)
       : await archive.read();
     if (!readTree) {
       data.family.people = [];
@@ -154,14 +142,8 @@ export function archiveQueryHttp({
         return json(res, 401, { error: "Sign in to view this archive" });
       const projection = url.searchParams.get("projection");
       if (projection === "page") {
-        const meta = await archive.meta(),
-          readTree = (await auth.canRead(req)) || access.publicTree,
-          readPhotos = (await auth.canRead(req)) || access.publicAlbums,
-          pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
-        if (url.searchParams.get("token") !== pageToken)
-          return json(res, 409, {
-            error: "Архив или доступ к нему изменились. Обновите данные.",
-          });
+        const readTree = (await auth.canRead(req)) || access.publicTree,
+          readPhotos = (await auth.canRead(req)) || access.publicAlbums;
         const collection = url.searchParams.get("collection"),
           offset = Number(url.searchParams.get("offset"));
         if (
@@ -170,30 +152,43 @@ export function archiveQueryHttp({
           offset < 0
         )
           return json(res, 400, { error: "Некорректная страница" });
-        const scoped = isScopedUser(visitor)
-          ? await scopedFamily(visitor)
-          : null;
-        if (collection === "people")
-          return json(res, 200, {
+        const page = await archive.db.transaction(async () => {
+          const meta = await archive.meta();
+          const pageToken = `${meta.revision}:${Number(readTree)}:${Number(readPhotos)}:${visitor?.id || "guest"}:${visitor?.personId || ""}:${visitor?.treeAccess || "all"}`;
+          if (url.searchParams.get("token") !== pageToken) return null;
+          const scoped = isScopedUser(visitor)
+            ? (await scopedSnapshot(visitor)).family
+            : null;
+          if (collection === "people")
+            return {
+              pageToken,
+              items: readTree
+                ? (scoped
+                    ? scoped.people.slice(offset, offset + archivePageSize)
+                    : await archive.peoplePage(offset, archivePageSize)
+                  ).map(personDetails)
+                : [],
+              total: readTree ? (scoped?.people.length ?? meta.people) : 0,
+            };
+          return {
             pageToken,
-            items: readTree
+            items: readPhotos
               ? (scoped
-                  ? scoped.people.slice(offset, offset + archivePageSize)
-                  : await archive.peoplePage(offset, archivePageSize)
-                ).map(personDetails)
+                  ? (scoped.photos || []).slice(
+                      offset,
+                      offset + archivePageSize,
+                    )
+                  : await archive.photoPage(offset, archivePageSize)
+                ).map((photo) => (readTree ? photo : { ...photo, tags: [] }))
               : [],
-            total: readTree ? (scoped?.people.length ?? meta.people) : 0,
-          });
-        return json(res, 200, {
-          pageToken,
-          items: readPhotos
-            ? (scoped
-                ? (scoped.photos || []).slice(offset, offset + archivePageSize)
-                : await archive.photoPage(offset, archivePageSize)
-              ).map((photo) => (readTree ? photo : { ...photo, tags: [] }))
-            : [],
-          total: readPhotos ? (scoped?.photos?.length ?? meta.photos) : 0,
-        });
+            total: readPhotos ? (scoped?.photos?.length ?? meta.photos) : 0,
+          };
+        }, true);
+        return page
+          ? json(res, 200, page)
+          : json(res, 409, {
+              error: "Архив или доступ к нему изменились. Обновите данные.",
+            });
       }
       if (projection === "overview") {
         const readTree = (await auth.canRead(req)) || access.publicTree,
@@ -201,7 +196,7 @@ export function archiveQueryHttp({
         let data: Awaited<ReturnType<typeof archive.overview>>;
         if (readTree) {
           if (isScopedUser(visitor)) {
-            const scoped = await scopedFamily(visitor);
+            const { family: scoped, revision } = await scopedSnapshot(visitor);
             data = {
               family: archiveOverview(
                 readPhotos
@@ -214,7 +209,7 @@ export function archiveQueryHttp({
                       })),
                     },
               ),
-              revision: (await archive.meta()).revision,
+              revision,
               totals: {
                 people: scoped.people.length,
                 photos: scoped.photos?.length || 0,
@@ -299,7 +294,9 @@ export function archiveQueryHttp({
         return json(res, 400, { error: "Слишком длинный поисковый запрос" });
       const visible = isScopedUser(visitor)
         ? new Set(
-            (await scopedFamily(visitor)).people.map((person) => person.id),
+            (await scopedSnapshot(visitor)).family.people.map(
+              (person) => person.id,
+            ),
           )
         : undefined;
       return json(res, 200, await searchPeople(query, visible));
@@ -312,10 +309,7 @@ export function archiveQueryHttp({
     if (!(await auth.canRead(req)) && !access.publicTree)
       return json(res, 401, { error: "Войдите для экспорта древа" });
     const { family, revision } = isScopedUser(visitor)
-      ? {
-          family: await scopedFamily(visitor),
-          revision: (await archive.meta()).revision,
-        }
+      ? await scopedSnapshot(visitor)
       : await archive.read();
     if (url.searchParams.get("download") === "1")
       res.setHeader(

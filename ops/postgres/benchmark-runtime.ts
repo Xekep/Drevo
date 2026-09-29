@@ -170,6 +170,9 @@ try {
     if (unexpectedError) throw unexpectedError;
     assert.ok(succeeded > 0, `${operation}: no successful requests`);
   }
+  await measure("cold_full_archive_burst", 100, 100, async (i) => {
+    assert.equal((await archives[i % 2].read()).family.people.length, count);
+  });
   // Warm connections and queries; record small closed-loop batches, not user capacity.
   for (const archive of archives) {
     await archive.read();
@@ -267,12 +270,43 @@ try {
     saved.revision,
     "Retries must not write again",
   );
+  // Each revision has an exact matching value. Readers racing a writer may
+  // see either version, but must never attach a newer revision to old data.
+  let mixedRevision = saved.revision + 1;
+  let marker = `mixed-${mixedRevision}`;
+  await archives[0].patchPeople(
+    [{ ...same, before: same.after, after: marker }],
+    saved.revision,
+    actor,
+  );
+  await Promise.all([
+    (async () => {
+      for (let i = 0; i < 10; i++) {
+        const next = `mixed-${mixedRevision + 1}`;
+        await archives[0].patchPeople(
+          [{ ...base, before: marker, after: next }],
+          mixedRevision,
+          actor,
+        );
+        mixedRevision++;
+        marker = next;
+      }
+    })(),
+    measure("reads_during_edits", 10, 100, async (i) => {
+      const snapshot = await archives[i % 2].read();
+      assert.equal(
+        snapshot.family.people.find((p) => p.id === "person-0")!.biography,
+        `mixed-${snapshot.revision}`,
+      );
+    }),
+  ]);
   console.log(
     JSON.stringify({
       verified: true,
       independentEdits: 260,
       sameFieldConflict: true,
       retryIdempotency: true,
+      mixedRevisionConsistency: true,
       data: "synthetic only",
     }),
   );
