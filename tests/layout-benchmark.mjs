@@ -4,6 +4,7 @@
 // DREVO_LAYOUT_EDIT_SCAN=1 measures movement after adding one small family.
 // DREVO_LAYOUT_COMPONENT_SCAN=1 separates component drift from internal drift.
 // DREVO_LAYOUT_ANCESTOR_SCAN=1 checks movement when adding a founder's parent.
+// DREVO_LAYOUT_LARGE=1 adds two generations; DREVO_LAYOUT_LIMIT caps scans.
 // DREVO_LAYOUT_CASE selects one graph; DREVO_ELK_BUNDLE can point to a local
 // elkjs bundle when dependencies are not installed in this checkout.
 import { readFile } from "node:fs/promises";
@@ -400,8 +401,9 @@ function orderMotion(before, after) {
 if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR_SCAN) {
   const summary = [];
   const selectedCase = Number(process.env.DREVO_LAYOUT_CASE || 0);
-  for (let index = selectedCase || 1; index <= (selectedCase || 24); index++) {
-    const original = randomFamily(index);
+  const lastCase = selectedCase || Number(process.env.DREVO_LAYOUT_LIMIT || 24);
+  for (let index = selectedCase || 1; index <= lastCase; index++) {
+    const original = randomFamily(index, process.env.DREVO_LAYOUT_LARGE ? 4 : 2);
     const edited = process.env.DREVO_LAYOUT_ANCESTOR_SCAN
       ? editedAncestorFamily(original, index)
       : editedFamily(original, index);
@@ -449,6 +451,8 @@ if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR
       incrementalVertical: verticalDisplacement(before.geometry, incremental.geometry),
       incrementalRows: orderMotion(before.geometry, incremental.geometry).rowChanges,
       incrementalCalls: incremental.elkCalls,
+      currentMs: after.totalMs,
+      incrementalMs: incremental.totalMs,
     });
     if (selectedCase)
       console.log(JSON.stringify({ case: index, before: before.trace, after: after.trace }));
@@ -469,8 +473,9 @@ if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR
 } else if (process.env.DREVO_LAYOUT_EDIT_SCAN) {
   const summary = [];
   const selectedCase = Number(process.env.DREVO_LAYOUT_CASE || 0);
-  for (let index = selectedCase || 1; index <= (selectedCase || 24); index++) {
-    const original = randomFamily(index);
+  const lastCase = selectedCase || Number(process.env.DREVO_LAYOUT_LIMIT || 24);
+  for (let index = selectedCase || 1; index <= lastCase; index++) {
+    const original = randomFamily(index, process.env.DREVO_LAYOUT_LARGE ? 4 : 2);
     const before = await measure(original);
     const edited = editedFamily(original, index);
     const variants = [];
@@ -525,8 +530,9 @@ if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR
 } else if (process.env.DREVO_LAYOUT_RANDOM_SCAN) {
   const summary = [];
   const selectedCase = Number(process.env.DREVO_LAYOUT_CASE || 0);
-  for (let index = selectedCase || 1; index <= (selectedCase || 24); index++) {
-    const people = randomFamily(index);
+  const lastCase = selectedCase || Number(process.env.DREVO_LAYOUT_LIMIT || 24);
+  for (let index = selectedCase || 1; index <= lastCase; index++) {
+    const people = randomFamily(index, process.env.DREVO_LAYOUT_LARGE ? 4 : 2);
     const results = [];
     for (const seed of seeds) results.push(await measure(people, seed));
     const median = process.env.DREVO_LAYOUT_FAST ? null : await measure(people, 1, 0.001);

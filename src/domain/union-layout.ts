@@ -562,7 +562,9 @@ export async function unionGeometry(
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);
   let contacts = branchContactCounts(best.branches || []);
-  const seedCandidates = previous && people.length <= 100
+  // Ограничиваем дополнительный запуск ELK, чтобы не замедлять большие архивы.
+  const incrementalLimit = 200;
+  const seedCandidates = previous && people.length <= incrementalLimit
     ? [{ geometry: best, contacts }]
     : [];
 
@@ -622,7 +624,7 @@ export async function unionGeometry(
     previous.reverse === reverse &&
     (!previous.nodeSize ||
       (previous.nodeSize.width === W && previous.nodeSize.height === H)) &&
-    people.length <= 100 &&
+    people.length <= incrementalLimit &&
     previous.positions.length
   ) {
     // Одна устранённая точка контакта не должна переставлять почти всё дерево.
