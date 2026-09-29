@@ -10,6 +10,7 @@ import { EXTRA_LINK_TYPES } from "./types.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import { EVENT_NAMES } from "./person-events.ts";
+import { parseDocumentDetails } from "../shared/document-details.ts";
 import {
   familyMedia,
   TRANSFER_TEXT_LIMIT,
@@ -765,6 +766,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           item.portraitIds = (extra.portraitIds || [])
             .map((id: string) => ids.get(id))
             .filter(Boolean);
+          if (extra.document !== undefined) {
+            const document = parseDocumentDetails(extra.document);
+            if (!document)
+              throw new Error("Повреждены сведения о документе Drevo");
+            item.document = document;
+          }
         } catch {
           throw new Error("Повреждены сведения о медиа Drevo");
         }
@@ -1220,6 +1227,7 @@ export function exportGedcom(
           personId: ids.get(tag.personId),
         })),
         portraitIds: item.portraitIds.map((id) => ids.get(id)),
+        document: item.document,
       }),
     );
   });

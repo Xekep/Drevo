@@ -32,6 +32,7 @@ import type { Family } from "../domain/types.ts";
 import { validateFamily } from "../domain/validation.ts";
 import { imageExtension } from "./media.ts";
 import { decodeAnsel } from "../domain/ansel.ts";
+import type { DocumentDetails } from "../shared/document-details.ts";
 
 export type StagedMedia = {
   name: string;
@@ -39,6 +40,7 @@ export type StagedMedia = {
   title: string;
   personIds: string[];
   documentId?: string;
+  document?: DocumentDetails;
 };
 export type PreparedImport = GenealogyImport & { files: StagedMedia[] };
 
@@ -289,6 +291,7 @@ export async function prepareGenealogyImport(
         title: item.title,
         personIds: [],
         documentId: extension === "pdf" ? id : undefined,
+        document: extension === "pdf" ? item.document : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);
@@ -336,8 +339,8 @@ export async function exportMedia(
   const media = familyMedia(family);
   const rows = await db
     .prepare(
-      "SELECT id,title,file_name FROM documents ORDER BY id",
-      "SELECT id,title,file_name FROM documents ORDER BY id",
+      "SELECT id,title,file_name,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
+      "SELECT id,title,file_name,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
     )
     .all();
   const associations = await db
@@ -361,6 +364,13 @@ export async function exportMedia(
       mime: "application/pdf",
       personIds: peopleByDocument.get(String(row.id)) || [],
       portraitIds: [],
+      document: {
+        documentType: String(row.document_type || ""),
+        documentDate: String(row.document_date || ""),
+        place: String(row.place || ""),
+        description: String(row.description || ""),
+        provenance: String(row.provenance || ""),
+      },
     });
   return media;
 }
