@@ -1,4 +1,5 @@
 import { serialize, deserialize } from "node:v8";
+import { setImmediate } from "node:timers/promises";
 import type { StoreDatabase } from "./store-database.ts";
 
 /** Per archive/view, never an authorization or HTTP response cache. */
@@ -14,13 +15,20 @@ export function archiveSnapshotReader<T extends { revision: number }>(
     "SELECT revision FROM archive WHERE id=1",
     "SELECT revision FROM archives WHERE id=current_setting('drevo.archive_id', true)",
   );
+  const copy = async (snapshot: Snapshot): Promise<T> => {
+    // Deliver each copy in a separate event-loop turn. A resolved shared load
+    // otherwise creates every large caller object in one microtask batch before
+    // any consumer can release it, multiplying transient RAM during a burst.
+    await setImmediate();
+    return deserialize(snapshot.bytes) as T;
+  };
   return async (): Promise<T> => {
     // A transaction must see its own writes / REPEATABLE READ snapshot. Detached
     // work must still hit the database's expired-context guard, never the cache.
     if (db.inTransaction()) return await load();
     const revision = Number((await revisionQuery.get())?.revision);
     if (!Number.isSafeInteger(revision)) throw new Error("Архив не найден");
-    if (cached?.revision === revision) return deserialize(cached.bytes) as T;
+    if (cached?.revision === revision) return await copy(cached);
     if (pending?.revision !== revision) {
       const entry = {
         revision,
@@ -47,6 +55,6 @@ export function archiveSnapshotReader<T extends { revision: number }>(
       );
     }
     const entry = await pending.value;
-    return deserialize(entry.bytes) as T;
+    return await copy(entry);
   };
 }
