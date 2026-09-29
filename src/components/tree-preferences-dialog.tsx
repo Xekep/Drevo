@@ -4,6 +4,7 @@ import type { TreePreferences } from "../domain";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import type { TreeExportScope } from "../domain/tree-export-selection";
 import type { LineageDirection } from "../domain/lineage-report";
+import type { ArchiveReportKind } from "../domain/archive-report";
 import type { FanExportOptions } from "./tree/fan-export";
 import {
   DEFAULT_TREE_PRINT,
@@ -21,6 +22,7 @@ export function TreePreferencesDialog({
   onExportPdf,
   onExportPng,
   onExportReport,
+  onExportPdfReport,
   onExportFan,
   onPreviewPdf,
   anchorId,
@@ -44,6 +46,11 @@ export function TreePreferencesDialog({
     generations?: number,
   ) => Promise<void>;
   onExportReport: (direction: LineageDirection, generations: number) => void;
+  onExportPdfReport: (
+    kind: ArchiveReportKind,
+    generations: number,
+    signal: AbortSignal,
+  ) => Promise<void>;
   onExportFan: (
     options: FanExportOptions,
     signal: AbortSignal,
@@ -77,6 +84,8 @@ export function TreePreferencesDialog({
   );
   const [reportDirection, setReportDirection] =
     useState<LineageDirection>("ancestors");
+  const [pdfReportKind, setPdfReportKind] =
+    useState<ArchiveReportKind>("person");
   const [genealogyFormat, setGenealogyFormat] =
     useState<Exclude<GenealogyExportFormat, "drevoArchive">>("gedzip7");
   const exportController = useRef<AbortController | null>(null);
@@ -158,6 +167,23 @@ export function TreePreferencesDialog({
         setError(
           reason instanceof Error ? reason.message : "Не удалось создать веер.",
         );
+    } finally {
+      if (!controller.signal.aborted) setExporting(false);
+    }
+  };
+  const exportPdfReport = async () => {
+    exportController.current?.abort();
+    const controller = new AbortController();
+    exportController.current = controller;
+    setExporting(true);
+    setExported("");
+    setError("");
+    try {
+      await onExportPdfReport(pdfReportKind, reportGenerations, controller.signal);
+      if (!controller.signal.aborted) setExported("PDF-отчёт готов.");
+    } catch (reason) {
+      if (!controller.signal.aborted)
+        setError(reason instanceof Error ? reason.message : "Не удалось создать PDF-отчёт.");
     } finally {
       if (!controller.signal.aborted) setExporting(false);
     }
@@ -374,9 +400,31 @@ export function TreePreferencesDialog({
                   >
                     Скачать роспись
                   </button>
+                  <select
+                    aria-label="Тип PDF-отчёта"
+                    value={pdfReportKind}
+                    onChange={(event) =>
+                      setPdfReportKind(event.target.value as ArchiveReportKind)
+                    }
+                    disabled={exporting}
+                  >
+                    <option value="person">Карточка человека · PDF</option>
+                    <option value="family">Семейный отчёт · PDF</option>
+                    <option value="timeline">Хронология жизни · PDF</option>
+                    <option value="ancestors">Список предков · PDF</option>
+                    <option value="descendants">Список потомков · PDF</option>
+                    <option value="research">Исследовательская сводка · PDF</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!anchorId || exporting}
+                    onClick={() => void exportPdfReport()}
+                  >
+                    Скачать PDF-отчёт
+                  </button>
                 </div>
                 <label>
-                  Поколений в росписи
+                  Поколений в росписи и сводке
                   <select
                     aria-label="Поколений в росписи"
                     value={reportGenerations}
