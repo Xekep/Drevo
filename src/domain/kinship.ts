@@ -131,17 +131,6 @@ function bloodRole(
       completeParents(reference) &&
       subject.parents.length >= 2 &&
       reference.parents.length >= 2;
-    if (
-      differentOtherParents &&
-      [...subject.parents, ...reference.parents]
-        .filter((id) => !shared.includes(id))
-        .some((id) => map.get(id)?.sex !== (father ? "f" : "m"))
-    )
-      return {
-        term: `${female ? "неполнородная" : "неполнородный"} ${sibling}`,
-        description:
-          "Один общий родитель; остальные указанные родители различаются.",
-      };
     return differentOtherParents
       ? {
           term: `${father ? (female ? "единокровная" : "единокровный") : female ? "единоутробная" : "единоутробный"} ${sibling}`,
@@ -500,8 +489,15 @@ function analyzeBloodAndMarriage(
         b.parents.length >= 2 &&
         completeParents(a) &&
         completeParents(b)
-      )
-        title = "Неполнородные " + title.toLowerCase();
+      ) {
+        const sharedParent = map.get(shared[0]);
+        title =
+          sharedParent?.sex === "m"
+            ? "Единокровные " + title.toLowerCase()
+            : sharedParent?.sex === "f"
+              ? "Единоутробные " + title.toLowerCase()
+              : "Неполнородные " + title.toLowerCase();
+      }
     } else if (Math.min(da, db) === 1 && Math.max(da, db) === 2) {
       const aunt = da === 1 ? a : b,
         child = da === 1 ? b : a;

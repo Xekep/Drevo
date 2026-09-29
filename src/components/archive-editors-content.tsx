@@ -166,11 +166,26 @@ export function PersonEditor({
   const portraitPhotos = (family.photos || []).filter((photo) =>
     photo.tags.some((tag) => tag.personId === draft.id),
   );
+  const relativeSex = relativeTo
+      ? relativeTo.sex === "u"
+        ? guessSex(relativeTo)
+        : relativeTo.sex
+      : "u",
+    relationshipSex =
+      !person &&
+      relationship === "spouse" &&
+      relativeSex !== "u"
+        ? relativeSex === "m"
+          ? "f"
+          : "m"
+        : "u",
+    suggestedSex =
+      relationshipSex !== "u" ? relationshipSex : guessSex(draft);
   const hintDraft = {
     ...draft,
     birth: hintDate(birthText),
     death: hintDate(deathText) || undefined,
-    sex: autoSex ? guessSex(draft) : draft.sex,
+    sex: autoSex ? suggestedSex : draft.sex,
     parents:
       !person && relativeTo && relationship === "child"
         ? [...draft.parents, relativeTo.id]
@@ -279,7 +294,7 @@ export function PersonEditor({
             ? normalizeDateInput(event.endDate)
             : undefined,
         })),
-        sex: autoSex ? guessSex(draft) : draft.sex,
+        sex: autoSex ? suggestedSex : draft.sex,
         photo: portrait,
         name: draft.name.trim(),
         surname: draft.surname.trim(),
@@ -465,10 +480,10 @@ export function PersonEditor({
                 }}
               >
                 <option value="auto">
-                  {guessSex(draft) === "m"
-                    ? "Мужской · по ФИО"
-                    : guessSex(draft) === "f"
-                      ? "Женский · по ФИО"
+                  {suggestedSex === "m"
+                    ? `Мужской · ${relationshipSex !== "u" ? "по супругу" : "по ФИО"}`
+                    : suggestedSex === "f"
+                      ? `Женский · ${relationshipSex !== "u" ? "по супругу" : "по ФИО"}`
                       : "Определить по ФИО"}
                 </option>
                 <option value="m">Мужской</option>
