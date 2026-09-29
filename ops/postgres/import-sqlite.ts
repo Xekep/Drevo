@@ -76,6 +76,11 @@ const tables: Table[] = [
       "uploaded_by",
       "created_at",
       "annotations",
+      "document_type",
+      "document_date",
+      "place",
+      "description",
+      "provenance",
     ],
     order: "ordinal",
     numbers: ["ordinal", "file_size"],
@@ -178,7 +183,17 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
       .all()
       .map((row) => String(row.name));
     const imported = table.columns.filter((column) => column !== "ordinal");
-    if (!isDeepStrictEqual(columns, imported))
+    const optionalDocumentColumns = new Set([
+      "annotations", "document_type", "document_date", "place", "description", "provenance",
+    ]);
+    const expected = table.name === "documents"
+      ? imported.filter((column) => columns.includes(column))
+      : imported;
+    if (
+      !isDeepStrictEqual(columns, expected) ||
+      (table.name === "documents" && imported.some((column) =>
+        !optionalDocumentColumns.has(column) && !columns.includes(column)))
+    )
       throw new Error(`Столбцы ${table.name} отличаются от схемы импорта`);
   }
   const archiveColumns = db
@@ -233,15 +248,12 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
   )
     return [];
   const fields = table.columns.filter((column) => column !== "ordinal");
-  const hasAnnotations =
-    table.name !== "documents" ||
-    db
-      .prepare("PRAGMA table_info(documents)")
-      .all()
-      .some((row) => row.name === "annotations");
+  const documentColumns = table.name === "documents"
+    ? new Set(db.prepare("PRAGMA table_info(documents)").all().map((row) => String(row.name)))
+    : null;
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => (field === "annotations" && !hasAnnotations ? "'[]' AS annotations" : field)).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => documentColumns && !documentColumns.has(field) ? `'${field === "annotations" ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {
@@ -368,6 +380,9 @@ export async function importSqliteSnapshot(
     await client.query("SELECT pg_advisory_xact_lock(24050260927)");
     await client.query(schema);
     await client.query(serviceSchema);
+    await client.query(
+      readFileSync(new URL("./017_document_metadata.sql", import.meta.url), "utf8"),
+    );
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(
         "Целевая БД уже содержит архив; повторный импорт запрещён",

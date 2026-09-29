@@ -97,6 +97,11 @@ test("offline branch removes hidden people, tags, creator IDs, and unrelated doc
         title: "Запись",
         file_name: documentName,
         created_at: "2026-01-01",
+        document_type: "metrical record",
+        document_date: "1887",
+        place: "Rezh",
+        description: "Register page 12",
+        provenance: "GASO F6 Op13 D104",
       },
       {
         id: "hidden",
@@ -122,6 +127,7 @@ test("offline branch removes hidden people, tags, creator IDs, and unrelated doc
     documents.map((d) => d.id),
     ["visible"],
   );
+  assert.equal(documents[0].provenance, "GASO F6 Op13 D104");
 });
 
 test("offline ZIP contains verified original media and a syntactically valid standalone reader", async () => {

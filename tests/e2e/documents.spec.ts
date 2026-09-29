@@ -26,10 +26,18 @@ test("PDF без привязки остаётся в общем каталог�
     buffer: await samplePdf(1),
   });
   await form.getByLabel("Название").fill(title);
+  await form.getByText("Сведения о документе").click();
+  await form.getByLabel("Тип").fill("Метрическая запись");
+  await form.getByLabel("Дата или период").fill("1887 год");
+  await form.getByLabel("Место").fill("Реж");
+  await form.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.104");
+  await form.getByLabel("Описание").fill("Запись о рождении");
   await expect(form.getByRole("button", { name: "Добавить документ" })).toBeEnabled();
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
+  await reader.getByText("Сведения о документе").click();
+  await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   const group = page.locator(".documents-group").filter({
     has: page.getByRole("heading", { name: "Без привязки" }),

@@ -1017,4 +1017,18 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const documentExtension = "2026-09-document-metadata";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(documentExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const name of ["document_type", "document_date", "place", "description", "provenance"])
+        if (!tableHasColumn(db, "documents", name))
+          db.exec(`ALTER TABLE documents ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(documentExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
