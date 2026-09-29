@@ -11,6 +11,7 @@
 // DREVO_LAYOUT_MAX_ELK_CALLS=2 bounds candidate calls during a scale comparison.
 // DREVO_LAYOUT_PAIR_SCAN=1 compares production layouts with couple flips.
 // DREVO_LAYOUT_DISABLE_PAIR_FLIP=1 benchmarks the prior couple order.
+// DREVO_LAYOUT_PRODUCTION_SCAN=1 measures one production layout per fixture.
 // DREVO_ELK_BUNDLE can point to a local elkjs bundle without installed dependencies.
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
@@ -414,7 +415,18 @@ function orderMotion(before, after) {
   };
 }
 
-if (process.env.DREVO_LAYOUT_PAIR_SCAN) {
+if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
+  const limit = Number(process.env.DREVO_LAYOUT_LIMIT || 24);
+  for (let seed = 1; seed <= limit; seed++) {
+    const people = randomFamily(seed, process.env.DREVO_LAYOUT_LARGE ? 4 : 2);
+    const result = await measure(people, undefined, undefined, undefined,
+      false, undefined, undefined, treeNodeSize());
+    console.log(JSON.stringify({ seed, people: people.length,
+      contacts: result.contacts, crossings: result.crossings,
+      cardHits: result.cardHits, width: result.width,
+      elkCalls: result.elkCalls, totalMs: result.totalMs }));
+  }
+} else if (process.env.DREVO_LAYOUT_PAIR_SCAN) {
   const limit = Number(process.env.DREVO_LAYOUT_LIMIT || 24);
   for (let seed = 1; seed <= limit; seed++) {
     const people = randomFamily(seed, 2);
