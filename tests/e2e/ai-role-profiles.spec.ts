@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { AiRoleProfiles } from "../../src/shared/ai-role-profiles";
+import { openAdminSection } from "./admin-navigation";
 
 test("admin configures independent AI profiles and can restore inheritance", async ({
   page,
@@ -28,7 +29,7 @@ test("admin configures independent AI profiles and can restore inheritance", asy
     });
   });
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Yandex AI", exact: true }).click();
+  await openAdminSection(page, "ai", "Yandex AI");
   await expect(
     page.getByRole("checkbox", {
       name: "Использовать общие настройки",
@@ -84,7 +85,7 @@ test("admin configures independent AI profiles and can restore inheritance", asy
   expect(profiles.researcher?.pdfEnabled).toBe(false);
   expect(profiles.relative?.enabled).toBe(false);
   await page.reload();
-  await page.getByRole("button", { name: "Yandex AI", exact: true }).click();
+  await openAdminSection(page, "ai", "Yandex AI");
   await page
     .getByRole("button", { name: /Исследователь.*Свои настройки/ })
     .click();

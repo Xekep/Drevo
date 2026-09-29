@@ -5,10 +5,35 @@ import type { Family } from "../domain/types.ts";
 import type { ShareLink } from "../domain/shared-family.ts";
 import { auditStore } from "./audit.ts";
 const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const hash = (token: string) =>
   createHash("sha256").update(token).digest("hex");
 export function sharesStore(db: StoreDatabase) {
   const audit = auditStore(db);
+  async function cleanup(now = Date.now()) {
+    const current = new Date(now).toISOString();
+    const cutoff = new Date(now - RETENTION_MS).toISOString();
+    await db.transaction(async () => {
+      await db
+        .prepare(
+          "DELETE FROM share_link_activity WHERE share_id IN (SELECT id FROM share_links WHERE revoked_at IS NOT NULL OR expires_at<=?)",
+          "DELETE FROM share_link_activity WHERE share_id IN (SELECT id FROM share_links WHERE revoked_at IS NOT NULL OR expires_at<=?)",
+        )
+        .run(current);
+      await db
+        .prepare(
+          "DELETE FROM audit_entries WHERE entity='share' AND entity_id IN (SELECT id FROM share_links WHERE (revoked_at IS NOT NULL AND revoked_at<=?) OR expires_at<=?)",
+          "DELETE FROM archive_audit_entries WHERE entity='share' AND entity_id IN (SELECT id FROM share_links WHERE (revoked_at IS NOT NULL AND revoked_at<=?) OR expires_at<=?)",
+        )
+        .run(cutoff, cutoff);
+      await db
+        .prepare(
+          "DELETE FROM share_links WHERE (revoked_at IS NOT NULL AND revoked_at<=?) OR expires_at<=?",
+          "DELETE FROM share_links WHERE (revoked_at IS NOT NULL AND revoked_at<=?) OR expires_at<=?",
+        )
+        .run(cutoff, cutoff);
+    });
+  }
   const convert = (row: Record<string, unknown>): ShareLink => ({
     id: String(row.id),
     title: String(row.title),
@@ -19,8 +44,10 @@ export function sharesStore(db: StoreDatabase) {
     createdBy: String(row.created_by),
     createdName: String(row.created_name),
     revokedAt: row.revoked_at ? String(row.revoked_at) : null,
+    lastVisitedAt: row.last_visited_at ? String(row.last_visited_at) : null,
   });
   return {
+    cleanup,
     async create(
       input: {
         anchorId: string;
@@ -61,6 +88,7 @@ export function sharesStore(db: StoreDatabase) {
         createdBy: actor.id,
         createdName: actor.name,
         revokedAt: null,
+        lastVisitedAt: null,
       };
       await db.transaction(async () => {
         await db
@@ -104,18 +132,38 @@ export function sharesStore(db: StoreDatabase) {
       if (!shareTokenPattern.test(token)) return null;
       const row = await db
         .prepare(
-          "SELECT * FROM share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
-          "SELECT * FROM share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
+          "SELECT s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
+          "SELECT s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
         )
-        .get(hash(token), new Date(now).toISOString());
-      return row ? convert(row) : null;
+        .get(hash(token));
+      if (!row) return null;
+      if (
+        row.revoked_at ||
+        String(row.expires_at) <= new Date(now).toISOString()
+      ) {
+        await cleanup(now);
+        return null;
+      }
+      return convert(row);
     },
-    async list(before = "") {
+    async recordVisit(id: string, now = Date.now()) {
+      const at = new Date(now).toISOString();
+      const result = await db
+        .prepare(
+          "INSERT INTO share_link_activity(share_id,last_visited_at) SELECT id,? FROM share_links WHERE id=? AND revoked_at IS NULL AND expires_at>? ON CONFLICT(share_id) DO UPDATE SET last_visited_at=excluded.last_visited_at",
+          "INSERT INTO share_link_activity(share_id,last_visited_at) SELECT id,? FROM share_links WHERE id=? AND revoked_at IS NULL AND expires_at>? ON CONFLICT(archive_id,share_id) DO UPDATE SET last_visited_at=excluded.last_visited_at",
+        )
+        .run(at, id, at);
+      if (!result.changes) await cleanup(now);
+      return result.changes > 0;
+    },
+    async list(before = "", now = Date.now()) {
+      await cleanup(now);
       const cursor = Number(before || 0);
       const rows = await db
         .prepare(
-          "SELECT rowid AS cursor,* FROM share_links WHERE (?=0 OR rowid<?) ORDER BY rowid DESC LIMIT 101",
-          "SELECT ordinal AS cursor,* FROM share_links WHERE (?=0 OR ordinal<?) ORDER BY ordinal DESC LIMIT 101",
+          "SELECT s.rowid AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.rowid<?) ORDER BY s.rowid DESC LIMIT 101",
+          "SELECT s.ordinal AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.ordinal<?) ORDER BY s.ordinal DESC LIMIT 101",
         )
         .all(cursor, cursor);
       return {
@@ -123,7 +171,7 @@ export function sharesStore(db: StoreDatabase) {
         next: rows.length > 100 ? String(rows[99].cursor) : null,
       };
     },
-    async revoke(id: string, actor: ArchiveUser) {
+    async revoke(id: string, actor: ArchiveUser, now = Date.now()) {
       if (actor.role !== "admin")
         throw new Error("Ссылки отзывает администратор");
       const row = await db
@@ -141,7 +189,13 @@ export function sharesStore(db: StoreDatabase) {
             "UPDATE share_links SET revoked_at=? WHERE id=?",
             "UPDATE share_links SET revoked_at=? WHERE id=?",
           )
-          .run(new Date().toISOString(), id);
+          .run(new Date(now).toISOString(), id);
+        await db
+          .prepare(
+            "DELETE FROM share_link_activity WHERE share_id=?",
+            "DELETE FROM share_link_activity WHERE share_id=?",
+          )
+          .run(id);
         await audit.record(
           {
             action: "Отозвана ссылка",

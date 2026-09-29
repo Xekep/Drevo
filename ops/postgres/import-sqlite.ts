@@ -131,6 +131,7 @@ const serviceTables = [
   "research_resources",
   "research_suggestions",
   "share_links",
+  "share_link_activity",
   "tree_settings",
   "user_tree_preferences",
   "users",

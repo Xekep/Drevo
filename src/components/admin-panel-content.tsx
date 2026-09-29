@@ -45,23 +45,31 @@ type UsersPage = { users: ArchiveUser[]; next: string | null; total: number };
 const USERS_PAGE_SIZE = 20;
 const ADMIN_SECTIONS = [
   {
-    label: "Архив",
+    label: "Доступ",
     items: [
       { id: "users", label: "Участники", icon: Users },
       { id: "vk", label: "Вход через VK", icon: ShieldCheck },
+      { id: "shares", label: "Общий доступ", icon: Link2 },
+    ],
+  },
+  {
+    label: "ИИ и источники",
+    items: [
+      { id: "ai", label: "Yandex AI", icon: Bot },
+      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
+      { id: "mcp", label: "MCP-токены", icon: KeyRound },
+    ],
+  },
+  {
+    label: "Данные",
+    items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
       { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
   {
-    label: "Инструменты",
-    items: [
-      { id: "ai", label: "Yandex AI", icon: Bot },
-      { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
-      { id: "mcp", label: "MCP-токены", icon: KeyRound },
-      { id: "shares", label: "Общий доступ", icon: Link2 },
-      { id: "audit", label: "Журнал правок", icon: History },
-    ],
+    label: "История",
+    items: [{ id: "audit", label: "Журнал правок", icon: History }],
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
@@ -82,8 +90,8 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
     description: "Расписание, хранилище и восстановление семейного архива.",
   },
   ai: {
-    title: "Yandex AI",
-    description: "Подключение исследователя, лимиты и использование.",
+    title: "ИИ и поиск",
+    description: "Доступ по ролям, возможности и подключение провайдера.",
   },
   resources: {
     title: "Ресурсы поиска",
@@ -374,6 +382,27 @@ export function AdminPanel({
             <b>Управление архивом</b>
           </span>
         </div>
+        <label className="admin-mobile-section" htmlFor="admin-section-select">
+          Раздел
+          <select
+            id="admin-section-select"
+            value={section}
+            onChange={(event) => {
+              setSection(event.target.value);
+              setNotice("");
+            }}
+          >
+            {ADMIN_SECTIONS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.items.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
         <nav aria-label="Разделы админки">
           {ADMIN_SECTIONS.map((group) => (
             <div className="admin-nav-group" key={group.label}>
@@ -411,7 +440,6 @@ export function AdminPanel({
         {!settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && section === "users" && (
           <section className="admin-card archive-form">
-            <h2>Участники и роли</h2>
             <p>
               Новые пользователи ожидают одобрения. Читатель видит закрытый
               архив после допуска, родственник редактирует свои объекты,
@@ -527,6 +555,15 @@ export function AdminPanel({
             )}
           </section>
         )}
+        {section === "shares" && (
+          <section className="admin-card archive-form">
+            <h2>Название и описание архива</h2>
+            <button type="button" disabled={!canEdit} onClick={onSettings}>
+              Изменить название и описание
+            </button>
+            {!canEdit && <small>Редактирование доступно с компьютера.</small>}
+          </section>
+        )}
         {settings && section === "shares" && (
           <form
             className="admin-card archive-form"
@@ -581,16 +618,6 @@ export function AdminPanel({
             </footer>
           </form>
         )}
-        {section === "data" && (
-          <section className="admin-card archive-form">
-            <h2>Название и описание</h2>
-            <p>Эти сведения показываются участникам семейного архива.</p>
-            <button type="button" disabled={!canEdit} onClick={onSettings}>
-              Изменить название и описание
-            </button>
-            {!canEdit && <small>Редактирование доступно с компьютера.</small>}
-          </section>
-        )}
         {section === "ai" && <AiSettingsAdmin />}
         {section === "vk" && <VkAuthAdmin />}
         {section === "resources" && <ResearchResourcesAdmin />}
@@ -598,7 +625,6 @@ export function AdminPanel({
         {section === "shares" && <ShareCatalog />}
         {section === "audit" && (
           <section className="admin-card archive-form">
-            <h2>Журнал правок</h2>
             <label>
               Кто изменил
               <select

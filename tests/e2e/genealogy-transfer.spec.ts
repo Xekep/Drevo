@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 
 test("форматы экспорта и импорт GEDCOM с предпросмотром", async ({
   page,
@@ -32,9 +33,7 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     await route.fulfill({ json: { added: 1, photos: 0, documents: 0 } });
   });
   await page.goto("/admin");
-  await page
-    .getByRole("button", { name: "Экспорт и импорт", exact: true })
-    .click();
+  await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
   await expect(
     panel.getByRole("radio", { name: "GEDZIP 7", exact: true }),

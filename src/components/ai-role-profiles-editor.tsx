@@ -42,13 +42,7 @@ export function AiRoleProfilesEditor({
 
   return (
     <fieldset className="ai-role-profiles" disabled={disabled}>
-      <legend>AI по ролям</legend>
-      <div className="ai-role-profile-intro">
-        <p>
-          Выберите роль и настройте доступ к ИИ. Права на древо задаются
-          отдельно.
-        </p>
-      </div>
+      <legend>Доступ по ролям</legend>
       <div
         className="ai-role-choices"
         role="group"
@@ -70,8 +64,8 @@ export function AiRoleProfilesEditor({
                 {!accessible
                   ? "Нет доступа"
                   : configured
-                    ? "Свои настройки"
-                    : "Общие настройки"}
+                    ? "Доступ · Свои настройки"
+                    : "Доступ · Общие настройки"}
               </small>
             </button>
           );
@@ -84,11 +78,6 @@ export function AiRoleProfilesEditor({
       >
         <span>
           <b>Использовать общие настройки</b>
-          <small>
-            {inherited
-              ? "Модель и возможности берутся из общих настроек."
-              : "Для этой роли действует отдельный профиль."}
-          </small>
         </span>
         <input
           id="ai-profile-inherit"

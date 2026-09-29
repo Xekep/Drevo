@@ -89,6 +89,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
         ?.rows[0]?.data.size_bytes,
       5,
     );
+    assert.ok(
+      snapshot.services.some((table) => table.name === "share_link_activity"),
+    );
     assert.equal(
       snapshot.services.find((table) => table.name === "user_tree_preferences")
         ?.rows[0]?.data.card_variant,

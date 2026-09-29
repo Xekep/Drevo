@@ -28,6 +28,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT to_regclass('platform_admins') AS present",
       "016_platform_admins.sql",
     ],
+    [
+      "SELECT to_regclass('share_link_activity') AS present",
+      "017_share_link_activity.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

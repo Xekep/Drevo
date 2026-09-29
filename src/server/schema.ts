@@ -621,6 +621,29 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const shareActivityExtension = "2026-09-share-last-visit";
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(shareActivityExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS share_link_activity (
+          share_id TEXT PRIMARY KEY REFERENCES share_links(id) ON DELETE CASCADE,
+          last_visited_at TEXT NOT NULL
+        ) STRICT;
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        shareActivityExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const extension = "2026-09-access-media-index-face-provenance";
   if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(extension)) {
     db.exec("BEGIN IMMEDIATE");

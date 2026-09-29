@@ -34,7 +34,9 @@ export function ShareCatalog() {
       if (!r.ok) throw new Error((await r.json()).error);
       setItems((old) =>
         old.map((s) =>
-          s.id === id ? { ...s, revokedAt: new Date().toISOString() } : s,
+          s.id === id
+            ? { ...s, revokedAt: new Date().toISOString(), lastVisitedAt: null }
+            : s,
         ),
       );
     } catch (e) {
@@ -62,8 +64,8 @@ export function ShareCatalog() {
     <section className="admin-card share-catalog">
       <h2>Временные ссылки</h2>
       <p>
-        Создавайте ссылки на древе в режиме «Близкие». Здесь видны все
-        выдачи, включая истёкшие и отозванные.
+        Создавайте ссылки на древе в режиме «Близкие». Здесь видны все выдачи,
+        включая истёкшие и отозванные за последние 30 дней.
       </p>
       {!items.length && <p className="muted-copy">Выданных ссылок пока нет.</p>}
       {items.map((s) => {
@@ -79,6 +81,13 @@ export function ShareCatalog() {
                 Создана: {new Date(s.createdAt).toLocaleString("ru-RU")}
               </small>
               <small>До: {new Date(s.expiresAt).toLocaleString("ru-RU")}</small>
+              {active && (
+                <small>
+                  {s.lastVisitedAt
+                    ? `Последнее открытие: ${new Date(s.lastVisitedAt).toLocaleString("ru-RU")}`
+                    : "Нет данных об открытиях"}
+                </small>
+              )}
             </div>
             <span className={active ? "share-active" : "muted-copy"}>
               {s.revokedAt ? "Отозвана" : active ? "Действует" : "Истекла"}

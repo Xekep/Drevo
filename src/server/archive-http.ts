@@ -175,6 +175,14 @@ export async function archiveHttp({
       previewImage,
       shares,
     });
+  await shares.cleanup();
+  const shareCleanupTimer = setInterval(
+    () => {
+      void shares.cleanup().catch(() => console.error("share_cleanup_failed"));
+    },
+    6 * 60 * 60 * 1000,
+  );
+  shareCleanupTimer.unref();
   const restore = restoreHttp({
     restores,
     auth,
@@ -226,5 +234,10 @@ export async function archiveHttp({
     if (await publicSharing(req, res, url)) return true;
     return await serveStatic(req, res, url);
   };
-  return Object.assign(handle, { close: researchAi.close });
+  return Object.assign(handle, {
+    async close() {
+      clearInterval(shareCleanupTimer);
+      await researchAi.close();
+    },
+  });
 }

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 import type { BackupStatus } from "../../src/shared/backup-management";
 
 test("экспорт отделён от резервных копий; настройки и восстановление помещаются на экране", async ({
@@ -70,9 +71,7 @@ test("экспорт отделён от резервных копий; наст
     await route.fulfill({ json: { backupName: "before-import.sqlite" } });
   });
   await page.goto("/admin");
-  await page
-    .getByRole("button", { name: "Экспорт и импорт", exact: true })
-    .click();
+  await openAdminSection(page, "data", "Экспорт и импорт");
   await expect(
     page.getByRole("link", { name: "Экспорт JSON без фото" }),
   ).toBeVisible();
@@ -81,10 +80,13 @@ test("экспорт отделён от резервных копий; наст
   ).toHaveCount(0);
   await expect(page.getByText("Настройки и перенос данных")).toHaveCount(0);
   await expect(page.getByText("JSON Drevo", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Доступ и древо" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Общий доступ" }).click();
-  await expect(page.getByRole("heading", { name: "Публичный просмотр" })).toBeVisible();
-  await page.getByRole("button", { name: "Экспорт и импорт", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Доступ и древо" }),
+  ).toHaveCount(0);
+  await openAdminSection(page, "shares", "Общий доступ");
+  await expect(
+    page.getByRole("heading", { name: "Публичный просмотр" }),
+  ).toBeVisible();
   const archiveSettings = page.getByRole("button", {
     name: "Изменить название и описание",
   });
@@ -103,13 +105,13 @@ test("экспорт отделён от резервных копий; наст
       .getByRole("button", { name: "Закрыть" })
       .click();
   }
+  await openAdminSection(page, "data", "Экспорт и импорт");
+  await expect(archiveSettings).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Создать копию", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Резервные копии", exact: true })
-    .click();
-  await page.getByLabel("Период, часов").fill("12");
+  await openAdminSection(page, "backups", "Резервные копии");
+  await page.getByLabel("Как часто").selectOption("12");
   await page.getByLabel("Количество копий").fill("7");
   await expect(
     page.getByRole("button", { name: "Создать копию", exact: true }),

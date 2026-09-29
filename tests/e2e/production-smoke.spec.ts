@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 
 test("заставка закрывает архив до завершения загрузки после входа", async ({
   page,
@@ -519,10 +520,10 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   });
   await page.goto("/admin");
   await expect(page.locator(".admin-stats")).toHaveCount(0);
-  await page.getByRole("button", { name: "Yandex AI" }).click();
+  await openAdminSection(page, "ai", "Yandex AI");
 
   await expect(
-    page.getByRole("heading", { name: "Yandex AI Studio" }),
+    page.getByRole("heading", { name: "ИИ и поиск" }),
   ).toBeVisible();
   await page.getByText("Подключение Yandex, общие лимиты и контекст").click();
 
@@ -548,7 +549,7 @@ test("настройка AI Studio содержит ключ, Folder ID и сп�
   await expect(tokenPlot).toHaveAttribute("aria-label", /2.?700/);
   await expect(page.locator(".ai-token-model-legend")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "MCP-токены" }).click();
+  await openAdminSection(page, "mcp", "MCP-токены");
   const permissions = page.getByLabel("Разрешения");
   await expect(permissions).toHaveValue("all");
   await expect(permissions.locator("option")).toContainText([
@@ -917,7 +918,7 @@ test("мобильная админка доступна и не разъезж�
   await expect(
     page.getByRole("heading", { name: "Участники", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Участники" })).toBeVisible();
+  await expect(page.locator("#admin-section-select")).toHaveValue("users");
   const row = page.locator(".admin-user-row").first();
   await expect(row).toBeVisible();
   await expect(row.getByText("Роль", { exact: true })).toBeVisible();
@@ -929,7 +930,7 @@ test("мобильная админка доступна и не разъезж�
       element.querySelector(".admin-user-row")!.clientWidth + 1,
   }));
   expect(layout).toEqual({ pageOverflow: false, rowOverflow: false });
-  await page.getByRole("button", { name: "Журнал правок" }).click();
+  await openAdminSection(page, "audit", "Журнал правок");
   await expect(
     page.getByRole("heading", { level: 1, name: "Журнал правок" }),
   ).toBeVisible();

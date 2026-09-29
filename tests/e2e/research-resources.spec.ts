@@ -1,21 +1,30 @@
 import { expect, test } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 
 test("администратор редактирует каталог ресурсов для ИИ", async ({
   page,
 }, testInfo) => {
   const categoryName = `${testInfo.project.name} локальные архивы`;
   await page.goto("/admin");
-  await page.getByRole("button", { name: "Ресурсы поиска" }).click();
+  await openAdminSection(page, "resources", "Ресурсы поиска");
   await expect(
-    page.getByRole("heading", { name: "Сайты для поиска" }),
+    page.getByRole("heading", { name: "Ресурсы поиска" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: /Война/ })).toBeVisible();
+  if (testInfo.project.name === "mobile") {
+    await expect(page.locator("#research-category-select")).toContainText(
+      "Война",
+    );
+  } else {
+    await expect(page.getByRole("button", { name: /Война/ })).toBeVisible();
+  }
 
+  await page.getByText("Добавить категорию", { exact: true }).click();
   await page.getByLabel("Новая категория").fill(categoryName);
   await page.getByRole("button", { name: "Добавить категорию" }).click();
   await expect(
-    page.getByRole("heading", { name: "Ресурсы", exact: true }),
+    page.getByRole("heading", { name: "Ресурсы · 0" }),
   ).toBeVisible();
+  await page.getByText(`Изменить категорию «${categoryName}»`).click();
   await expect(page.locator("#research-category-name")).toHaveValue(
     categoryName,
   );

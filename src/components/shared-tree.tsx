@@ -50,14 +50,17 @@ export default function SharedTree({ token }: { token: string }) {
       setQuery("");
       setError(message);
     };
-    const refresh = async () => {
+    const refresh = async (revalidate = false) => {
       if (loading || controller.signal.aborted) return;
       loading = true;
       try {
-        const r = await fetch(`/api/shared/${token}`, {
-          signal: controller.signal,
-          cache: "no-store",
-        });
+        const r = await fetch(
+          `/api/shared/${token}${revalidate ? "?check=1" : ""}`,
+          {
+            signal: controller.signal,
+            cache: "no-store",
+          },
+        );
         const result = await r.json();
         if (!r.ok) {
           unavailable(result.error || "Ссылка недоступна");
@@ -92,9 +95,9 @@ export default function SharedTree({ token }: { token: string }) {
       }
     };
     void refresh();
-    const timer = setInterval(() => void refresh(), 30000);
+    const timer = setInterval(() => void refresh(true), 30000);
     const visible = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState === "visible") void refresh(true);
     };
     document.addEventListener("visibilitychange", visible);
     return () => {

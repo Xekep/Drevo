@@ -161,7 +161,6 @@ export function McpTokenAdmin() {
 
   return (
     <section className="admin-card archive-form mcp-token-admin">
-      <h2>MCP-токены</h2>
       <p>
         Токены дают внешним ИИ-клиентам доступ к исследовательским инструментам
         Drevo через <code>/mcp</code>. Каждый токен видит весь архив, а секрет
