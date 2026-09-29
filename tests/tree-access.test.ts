@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import sharp from "sharp";
+import { openPromise } from "yauzl";
 import { openArchive } from "../src/server/database.ts";
 import { startServer } from "../src/server/index.ts";
 import {
@@ -215,6 +216,33 @@ test("привязка аккаунта и область видимости д�
     );
     assert.equal(complete.family.people.length, 4);
     assert.deepEqual(complete.family.links, []);
+    assert.equal(
+      (
+        await request(
+          "/api/offline/export?scope=family&anchor=hidden",
+          relative,
+        )
+      ).status,
+      404,
+    );
+    const offline = await request("/api/offline/export?scope=all", relative);
+    assert.equal(offline.status, 200);
+    const offlinePath = join(dir, "scoped-offline.zip");
+    writeFileSync(offlinePath, Buffer.from(await offline.arrayBuffer()));
+    const zip = await openPromise(offlinePath);
+    let exportedFamily: Family | undefined;
+    for await (const entry of zip.eachEntry()) {
+      if (entry.fileName !== "family.json") continue;
+      const chunks: Buffer[] = [];
+      for await (const chunk of await zip.openReadStreamPromise(entry))
+        chunks.push(Buffer.from(chunk));
+      exportedFamily = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    }
+    assert.deepEqual(
+      exportedFamily?.people.map((p) => p.id),
+      ["ancestor", "me", "sibling", "niece"],
+    );
+    assert.ok(!JSON.stringify(exportedFamily).includes("hidden"));
     assert.equal(
       (
         await request("/api/people/search?q=hidden", relative).then((res) =>

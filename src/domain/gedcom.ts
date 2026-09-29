@@ -228,6 +228,37 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       warnings.add(
         `Запись ${node.tag} не перенесена. Сохраните исходный GEDCOM.`,
       );
+  const supportedExtensions = new Set([
+    "_DREVO",
+    "_DREVO_PARENT",
+    "_DREVO_UNMARRIED",
+    "_DREVO_MEDIA",
+    "_MAIDEN",
+    "_UID",
+    "_PATR",
+    "_TYPE",
+    "_URL",
+    "_PRIM",
+    ...Object.keys(eventTags).filter((tag) => tag.startsWith("_")),
+  ]);
+  for (const root of roots) {
+    const nested: Array<{ node: Node; parentTag: string }> = root.children.map(
+      (node) => ({ node, parentTag: root.tag }),
+    );
+    while (nested.length) {
+      const { node, parentTag } = nested.pop()!;
+      if (
+        node.tag.startsWith("_") &&
+        !supportedExtensions.has(node.tag) &&
+        !["INDI", "FAM"].includes(parentTag)
+      )
+        warnings.add(
+          `Поле ${node.tag} не перенесено. Сохраните исходный GEDCOM.`,
+        );
+      for (const child of node.children)
+        nested.push({ node: child, parentTag: node.tag });
+    }
+  }
   for (const n of roots)
     if (n.xref) {
       if (records.has(n.xref))
@@ -269,6 +300,36 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "";
       if (s.pointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
+      const data = child(s, "DATA"),
+        citationEvent = child(s, "EVEN"),
+        eventRole = citationEvent && child(citationEvent, "ROLE"),
+        citationDetails = [
+          data && value(data, "DATE")
+            ? `Дата сведений в источнике: ${value(data, "DATE")}`
+            : "",
+          ...(data ? children(data, "TEXT") : []).map((entry, index) =>
+            entry.value
+              ? `Текст свидетельства ${index + 1}: ${entry.value}`
+              : "",
+          ),
+          citationEvent?.value
+            ? `Тип события в цитате: ${citationEvent.value}`
+            : "",
+          citationEvent && value(citationEvent, "PHRASE")
+            ? `Пояснение события: ${value(citationEvent, "PHRASE")}`
+            : "",
+          eventRole?.value ? `Роль в событии: ${eventRole.value}` : "",
+          eventRole && value(eventRole, "PHRASE")
+            ? `Пояснение роли: ${value(eventRole, "PHRASE")}`
+            : "",
+          value(s, "QUAY")
+            ? `Оценка качества цитаты (QUAY): ${value(s, "QUAY")}`
+            : "",
+        ].filter(Boolean);
+      if (citationDetails.length)
+        warnings.add(
+          "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
+        );
       return {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
@@ -282,7 +343,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             record && value(record, "AUTH"),
             record && value(record, "PUBL"),
             notes(s),
-            child(s, "DATA") && value(child(s, "DATA")!, "TEXT"),
+            ...citationDetails,
           ]
             .filter(Boolean)
             .join("\n") || undefined,
@@ -342,9 +403,13 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       (value(name, "SURN") || /\/(.*?)\//.exec(name.value)?.[1] || "").trim();
     // BIRTH is explicit birth information; MAIDEN is a legacy fallback and
     // can differ from the birth surname after adoption or another name change.
-    const birthName = ["BIRTH", "MAIDEN"].flatMap((type) =>
-      names.filter((name) => value(name, "TYPE").trim().toUpperCase() === type),
-    ).find((name) => nameSurname(name));
+    const birthName = ["BIRTH", "MAIDEN"]
+      .flatMap((type) =>
+        names.filter(
+          (name) => value(name, "TYPE").trim().toUpperCase() === type,
+        ),
+      )
+      .find((name) => nameSurname(name));
     const nameNode = names[0],
       nameText = nameNode?.value || "",
       slash = /^(.*?)\/(.*?)\/(.*)$/.exec(nameText);
@@ -385,7 +450,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       biography: notes(n) || undefined,
       occupation: value(n, "OCCU") || undefined,
       maidenName:
-        (birthName && nameSurname(birthName)) || value(n, "_MAIDEN") || undefined,
+        (birthName && nameSurname(birthName)) ||
+        value(n, "_MAIDEN") ||
+        undefined,
       sources: [
         ...sources(n),
         ...(birth ? sources(birth) : []),
@@ -530,7 +597,16 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "Семьи с более чем двумя указанными родителями сохранены как записано; проверьте характер родства.",
       );
     const spousePair = uniqueParents.slice(0, 2);
-    if (spousePair.length === 2 && value(f, "_DREVO_UNMARRIED") !== "Y") {
+    // A FAM record can describe parenthood or cohabitation without a marriage.
+    // Only an explicit marriage (or its dissolution) establishes a spouse link.
+    const marriageRecorded = ["MARR", "DIV", "DIVF", "ANUL"].some((tag) =>
+      f.children.some((node) => node.tag === tag && node.value !== "N"),
+    );
+    if (
+      spousePair.length === 2 &&
+      value(f, "_DREVO_UNMARRIED") !== "Y" &&
+      marriageRecorded
+    ) {
       for (const p of spousePair)
         p.spouses = [
           ...new Set([
@@ -538,7 +614,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             ...spousePair.filter((s) => s.id !== p.id).map((s) => s.id),
           ]),
         ];
-    }
+    } else if (spousePair.length === 2 && value(f, "_DREVO_UNMARRIED") !== "Y")
+      warnings.add(
+        "У двух родителей не указано событие брака: связь супругов не создана. Проверьте её после импорта.",
+      );
     for (const c of children(f, "CHIL").filter((n) => n.value !== "@VOID@")) {
       const person = personRef(c.value),
         individual = records.get(c.value)!;

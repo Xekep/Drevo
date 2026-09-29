@@ -338,20 +338,26 @@ export async function exportMedia(
       "SELECT id,title,file_name FROM documents ORDER BY id",
     )
     .all();
+  const associations = await db
+    .prepare(
+      "SELECT document_id,person_id FROM document_people ORDER BY document_id,person_id",
+      "SELECT document_id,person_id FROM document_people ORDER BY document_id,person_id",
+    )
+    .all();
+  const peopleByDocument = new Map<string, string[]>();
+  for (const row of associations) {
+    const id = String(row.document_id);
+    const people = peopleByDocument.get(id) || [];
+    people.push(String(row.person_id));
+    peopleByDocument.set(id, people);
+  }
   for (const row of rows)
     media.push({
       id: String(row.id),
       file: `documents/${row.file_name}`,
       title: String(row.title),
       mime: "application/pdf",
-      personIds: (
-        await db
-          .prepare(
-            "SELECT person_id FROM document_people WHERE document_id=? ORDER BY person_id",
-            "SELECT person_id FROM document_people WHERE document_id=? ORDER BY person_id",
-          )
-          .all(String(row.id))
-      ).map((link) => String(link.person_id)),
+      personIds: peopleByDocument.get(String(row.id)) || [],
       portraitIds: [],
     });
   return media;

@@ -24,6 +24,7 @@ import {
   writeGenealogyPackage,
   decodeGedcom,
   packagePath,
+  exportMedia,
 } from "../src/server/genealogy-package.ts";
 import { openArchive } from "../src/server/database.ts";
 import { gedcomHttp } from "../src/server/gedcom-http.ts";
@@ -58,6 +59,44 @@ const seed = (): Family => ({
   photos: [],
   links: [],
 });
+
+test("GEDCOM media export reads document associations in two queries regardless of catalog size", async () => {
+  const queries: string[] = [];
+  const documents = Array.from({ length: 1000 }, (_, index) => ({
+    id: `doc-${index}`,
+    title: `Запись ${index}`,
+    file_name: `file-${index}.pdf`,
+  }));
+  const associations = [
+    { document_id: "doc-7", person_id: "child" },
+    { document_id: "doc-7", person_id: "parent" },
+  ];
+  const db = {
+    prepare(sql: string) {
+      queries.push(sql);
+      return {
+        all: async () =>
+          sql.includes("FROM document_people") ? associations : documents,
+      };
+    },
+  } as unknown as Parameters<typeof exportMedia>[0];
+  const result = await exportMedia(db, seed());
+  assert.equal(queries.length, 2);
+  assert.equal(result.length, 1000);
+  assert.deepEqual(result[7].personIds, ["child", "parent"]);
+  assert.deepEqual(result[8].personIds, []);
+});
+
+test("unknown GEDCOM 7 extensions are disclosed without turning hypotheses into facts", () => {
+  const input = external7.replace(
+    "2 DATE ABT 1900\n",
+    "2 DATE ABT 1900\n2 _HYPOTHESIS possible ancestor\n",
+  );
+  assert.notEqual(input, external7);
+  const parsed = importGedcom(input, "unknown-extension");
+  assert.ok(parsed.warnings.some((warning) => warning.includes("_HYPOTHESIS")));
+  assert.ok(!JSON.stringify(parsed.family).includes("possible ancestor"));
+});
 const external7 = `0 HEAD
 1 GEDC
 2 VERS 7.0.18
@@ -81,6 +120,58 @@ const external7 = `0 HEAD
 2 TITL Портрет
 0 TRLR
 `;
+
+test("GEDCOM FAM without marriage keeps shared parents but does not invent spouses", () => {
+  const familyRecord = `0 HEAD
+1 GEDC
+2 VERS 7.0
+0 @I1@ INDI
+1 NAME Олег /Тестов/
+0 @I2@ INDI
+1 NAME Ирина /Тестова/
+0 @I3@ INDI
+1 NAME Маша /Тестова/
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 CHIL @I3@
+0 TRLR
+`;
+  for (const version of ["7.0", "5.5.1"]) {
+    const text = familyRecord.replace("2 VERS 7.0", `2 VERS ${version}`);
+    const parsed = importGedcom(text, `parents-${version}`);
+    assert.equal(parsed.family.people[2].parents.length, 2);
+    assert.deepEqual(parsed.family.people[0].spouses, []);
+    assert.deepEqual(parsed.family.people[1].spouses, []);
+    assert.ok(
+      parsed.warnings.some((warning) =>
+        warning.includes("не указано событие брака"),
+      ),
+    );
+    const married = importGedcom(
+      text.replace("1 CHIL @I3@", "1 MARR Y\n1 CHIL @I3@"),
+      `married-${version}`,
+    );
+    assert.deepEqual(married.family.people[0].spouses, [
+      married.family.people[1].id,
+    ]);
+  }
+
+  const unmarried = seed();
+  unmarried.people[0].spouses = [];
+  unmarried.people[1].spouses = [];
+  const roundtrip = importGedcom(
+    exportGedcom(unmarried, { version: "7.0" }),
+    "unmarried-roundtrip",
+  );
+  assert.equal(roundtrip.family.people[2].parents.length, 2);
+  assert.deepEqual(roundtrip.family.people[0].spouses, []);
+  assert.ok(
+    !roundtrip.warnings.some((warning) =>
+      warning.includes("не указано событие брака"),
+    ),
+  );
+});
 
 test("GEDCOM 7 external SNOTE, ROLE, escapes, patch versions and media resolve", () => {
   const parsed = importGedcom(external7, "external");
@@ -290,6 +381,53 @@ for (const version of ["5.5.1", "7.0"] as const)
     );
   });
 
+for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version}: all citation transcripts and provenance remain visible`, () => {
+    const input = `0 HEAD
+1 GEDC
+2 VERS ${version}
+0 @I1@ INDI
+1 NAME Мария /Тестова/
+1 BIRT
+2 DATE 3 FEB 1900
+2 SOUR @S1@
+3 PAGE л. 7
+3 DATA
+4 DATE 4 FEB 1900
+4 TEXT Первая строка записи
+4 TEXT Вторая строка записи
+3 EVEN BIRT
+4 ROLE CHIL
+3 QUAY 3
+0 @S1@ SOUR
+1 TITL Метрическая книга
+0 TRLR
+`;
+    const parsed = importGedcom(input, `citation-${version}`);
+    const source = parsed.family.people[0].sources[0];
+    assert.equal(source.title, "Метрическая книга");
+    assert.equal(source.reference, "л. 7");
+    for (const detail of [
+      "Дата сведений в источнике: 4 FEB 1900",
+      "Текст свидетельства 1: Первая строка записи",
+      "Текст свидетельства 2: Вторая строка записи",
+      "Тип события в цитате: BIRT",
+      "Роль в событии: CHIL",
+      "Оценка качества цитаты (QUAY): 3",
+    ])
+      assert.ok(source.note?.includes(detail), detail);
+    assert.ok(
+      parsed.warnings.some((warning) =>
+        warning.includes("сохранены в примечании источника"),
+      ),
+    );
+    const roundtrip = importGedcom(
+      exportGedcom(parsed.family, { version }),
+      `citation-roundtrip-${version}`,
+    );
+    assert.equal(roundtrip.family.people[0].sources[0].note, source.note);
+  });
+
 const xml = `<?xml version="1.0" encoding="utf-8"?>
 <agelongtree lang="ru" dateformat="DD.MM.YYYY"><persons>
 <person id="a" sex="М" fn="Алексей" sn="Тестов" mn="Иванович" bdate="Около 1900"><comment>Текст &amp; &lt;заметка&gt;</comment><documents><document id="d" ismain="1" /></documents></person>
@@ -483,6 +621,59 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("GEDZIP preserves photos and PDF documents without person associations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-unlinked-media-"));
+  const uploads = join(directory, "uploads");
+  const stage = join(directory, "stage");
+  try {
+    await mkdir(uploads);
+    await mkdir(stage);
+    const image = await sharp({
+      create: { width: 4, height: 4, channels: 3, background: "blue" },
+    })
+      .png()
+      .toBuffer();
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+    await writeFile(join(uploads, "unlinked.png"), image);
+    await writeFile(join(uploads, "unlinked.pdf"), pdf);
+    const family = seed();
+    family.photos = [
+      {
+        id: "unlinked-photo",
+        url: "/media/unlinked.png",
+        title: "Без отметок",
+        tags: [],
+      },
+    ];
+    const media = [
+      ...familyMedia(family),
+      {
+        id: "unlinked-document",
+        file: "documents/unlinked.pdf",
+        title: "Документ без привязки",
+        mime: "application/pdf",
+        personIds: [],
+        portraitIds: [],
+      },
+    ];
+    const path = join(directory, "unlinked.gdz");
+    await writeGenealogyPackage(path, uploads, family, media);
+    const result = await prepareGenealogyImport(path, stage, "unlinked");
+    assert.equal(result.family.photos?.length, 1);
+    assert.equal(result.family.photos?.[0].title, "Без отметок");
+    assert.deepEqual(result.family.photos?.[0].tags, []);
+    assert.equal(result.files.length, 2);
+    const document = result.files.find((file) => file.documentId);
+    assert.equal(document?.title, "Документ без привязки");
+    assert.deepEqual(document?.personIds, []);
+    assert.deepEqual(await readFile(join(stage, document!.name)), pdf);
+    const photo = result.files.find((file) => !file.documentId);
+    assert.deepEqual(await readFile(join(stage, photo!.name)), image);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

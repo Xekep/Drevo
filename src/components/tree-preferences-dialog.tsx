@@ -17,6 +17,7 @@ import "../styles/tree-preferences.css";
 export function TreePreferencesDialog({
   preferences,
   canExportArchive = false,
+  canExportOffline = false,
   onChange,
   onClose,
   onExportPdf,
@@ -30,6 +31,7 @@ export function TreePreferencesDialog({
 }: {
   preferences: TreePreferences;
   canExportArchive?: boolean;
+  canExportOffline?: boolean;
   onChange: (value: TreePreferences) => Promise<TreePreferences>;
   onClose: () => void;
   onExportPdf: (
@@ -88,6 +90,9 @@ export function TreePreferencesDialog({
     useState<ArchiveReportKind>("person");
   const [genealogyFormat, setGenealogyFormat] =
     useState<Exclude<GenealogyExportFormat, "drevoArchive">>("gedzip7");
+  const [offlineScope, setOfflineScope] =
+    useState<Exclude<TreeExportScope, "current">>("all");
+  const [offlineGenerations, setOfflineGenerations] = useState(5);
   const exportController = useRef<AbortController | null>(null);
   useEffect(() => () => exportController.current?.abort(), []);
   const [error, setError] = useState("");
@@ -179,11 +184,19 @@ export function TreePreferencesDialog({
     setExported("");
     setError("");
     try {
-      await onExportPdfReport(pdfReportKind, reportGenerations, controller.signal);
+      await onExportPdfReport(
+        pdfReportKind,
+        reportGenerations,
+        controller.signal,
+      );
       if (!controller.signal.aborted) setExported("PDF-отчёт готов.");
     } catch (reason) {
       if (!controller.signal.aborted)
-        setError(reason instanceof Error ? reason.message : "Не удалось создать PDF-отчёт.");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Не удалось создать PDF-отчёт.",
+        );
     } finally {
       if (!controller.signal.aborted) setExporting(false);
     }
@@ -413,7 +426,9 @@ export function TreePreferencesDialog({
                     <option value="timeline">Хронология жизни · PDF</option>
                     <option value="ancestors">Список предков · PDF</option>
                     <option value="descendants">Список потомков · PDF</option>
-                    <option value="research">Исследовательская сводка · PDF</option>
+                    <option value="research">
+                      Исследовательская сводка · PDF
+                    </option>
                   </select>
                   <button
                     type="button"
@@ -692,6 +707,77 @@ export function TreePreferencesDialog({
                   Скачать
                 </a>
               </div>
+            )}
+            {canExportOffline && (
+              <details className="tree-export-options">
+                <summary>Офлайн-архив</summary>
+                <div className="tree-export-options-fields">
+                  <small>
+                    ZIP с просмотрщиком, GEDCOM, данными и оригиналами доступных
+                    фото и документов. Откройте index.html без интернета.
+                  </small>
+                  <label>
+                    Область
+                    <select
+                      aria-label="Область офлайн-архива"
+                      value={offlineScope}
+                      onChange={(event) =>
+                        setOfflineScope(
+                          event.target.value as typeof offlineScope,
+                        )
+                      }
+                    >
+                      <option value="all">Всё доступное древо</option>
+                      <option value="family">Близкие выбранного</option>
+                      <option value="ancestors">Предки выбранного</option>
+                      <option value="descendants">Потомки выбранного</option>
+                      <option value="blood">Кровные выбранного</option>
+                    </select>
+                  </label>
+                  {(offlineScope === "ancestors" ||
+                    offlineScope === "descendants") && (
+                    <label>
+                      Поколений
+                      <select
+                        aria-label="Поколений для офлайн-архива"
+                        value={offlineGenerations}
+                        onChange={(event) =>
+                          setOfflineGenerations(Number(event.target.value))
+                        }
+                      >
+                        {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                          <option key={count} value={count}>
+                            {count}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {offlineScope !== "all" && (
+                    <small>
+                      {anchorName
+                        ? `Опорный человек: ${anchorName}`
+                        : "Сначала выберите человека на древе."}
+                    </small>
+                  )}
+                  {(offlineScope === "all" || anchorId) && (
+                    <a
+                      href={`/api/offline/export?${new URLSearchParams({
+                        scope: offlineScope,
+                        ...(offlineScope !== "all" && anchorId
+                          ? { anchor: anchorId }
+                          : {}),
+                        generations: String(offlineGenerations),
+                      })}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Download size={16} aria-hidden="true" />
+                      Скачать офлайн-архив
+                    </a>
+                  )}
+                </div>
+              </details>
             )}
           </div>
         </div>

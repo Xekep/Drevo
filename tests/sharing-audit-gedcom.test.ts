@@ -395,6 +395,18 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     });
     family.people[2].photo = (await uploaded.json()).url;
     await app.archive.write(family, (await app.archive.read()).revision);
+    assert.equal(
+      (await request("/api/offline/export?scope=family&anchor=missing", admin))
+        .status,
+      404,
+    );
+    const offline = await request(
+      "/api/offline/export?scope=family&anchor=child",
+      admin,
+    );
+    assert.equal(offline.status, 200);
+    assert.equal(offline.headers.get("content-type"), "application/zip");
+    assert.ok((await offline.arrayBuffer()).byteLength > image.byteLength);
     const issue = async () =>
       request("/api/shares", admin, {
         method: "POST",
@@ -441,6 +453,7 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
       "/api/export.json",
       "/api/people/search?q=Иванов",
       "/api/gedcom/export",
+      "/api/offline/export",
     ])
       assert.equal(
         (
