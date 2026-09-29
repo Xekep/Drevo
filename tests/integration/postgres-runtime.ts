@@ -260,6 +260,7 @@ try {
       await live!.db
         .prepare("", "UPDATE archives SET description='rollback'")
         .run();
+      assert.equal((await live!.read()).family.description, "rollback");
       throw new Error("Intentional rollback");
     }),
     /Intentional rollback/,
@@ -312,6 +313,46 @@ try {
   ]) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, `${path}: ${await response.text()}`);
+  }
+  // A page must retain the revision from its REPEATABLE READ snapshot even
+  // when another connection commits between checking the token and reading rows.
+  const concurrent = await openArchive(source, family);
+  const pageBefore = await app.archive.read();
+  const overview = await fetch(base + "/api/family?projection=overview").then(
+    (r) => r.json(),
+  );
+  const peoplePage = app.archive.peoplePage;
+  let intervened = false;
+  app.archive.peoplePage = async (offset, limit) => {
+    if (!intervened) {
+      intervened = true;
+      const changed = structuredClone(pageBefore.family);
+      changed.people[0].biography = "Committed while the page was loading";
+      await concurrent.write(changed, pageBefore.revision, owner);
+    }
+    return await peoplePage(offset, limit);
+  };
+  try {
+    const path =
+      base +
+      "/api/family?projection=page&collection=people&offset=0&token=" +
+      encodeURIComponent(overview.pageToken);
+    const response = await fetch(path);
+    assert.equal(response.status, 200);
+    const page = await response.json();
+    assert.equal(
+      page.items[0].biography,
+      pageBefore.family.people[0].biography,
+    );
+    assert.equal(page.pageToken, overview.pageToken);
+    assert.equal((await fetch(path)).status, 409);
+    assert.equal(
+      (await app.archive.read()).family.people[0].biography,
+      "Committed while the page was loading",
+    );
+  } finally {
+    app.archive.peoplePage = peoplePage;
+    await concurrent.close();
   }
   const pdf = new PDFDocument();
   const chunks: Buffer[] = [];

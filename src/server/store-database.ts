@@ -38,6 +38,7 @@ export type StoreDatabase = {
   prepare(sqlite: string, postgres?: string): Statement;
   exec(sqlite: string, postgres?: string): Promise<void>;
   transaction<T>(work: () => Promise<T>, readOnly?: boolean): Promise<T>;
+  inTransaction(): boolean;
   close(): Promise<void>;
 };
 
@@ -99,6 +100,7 @@ export function storeDatabase(
   const database: StoreDatabase = {
     kind: "sqlite",
     file: String(main?.file || ""),
+    inTransaction: () => !!context.getStore()?.transaction,
     prepare(sql) {
       const statement = source.prepare(sql);
       return {
@@ -193,6 +195,7 @@ export async function openPostgresDatabase(
     kind: "postgres",
     archiveId,
     file,
+    inTransaction: () => !!context.getStore(),
     prepare(sqlite, postgres) {
       if (!postgres)
         throw new Error("Для PostgreSQL не задан явный SQL-запрос");

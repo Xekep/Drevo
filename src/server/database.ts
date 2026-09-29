@@ -22,6 +22,7 @@ import {
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
+import { archiveSnapshotReader } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
@@ -261,13 +262,18 @@ export async function openArchive(path: string, seed: Family) {
   }
 
   const audit = auditStore(db);
-  const read = () => db.transaction(() => readArchive(db), true),
+  const read = archiveSnapshotReader(db, () =>
+      db.transaction(() => readArchive(db), true),
+    ),
     meta = async () => await readArchiveMeta(db),
-    overview = async (includePortraits = true) =>
-      await db.transaction(
-        () => readArchiveOverview(db, includePortraits),
-        true,
-      ),
+    portraitOverview = archiveSnapshotReader(db, () =>
+      db.transaction(() => readArchiveOverview(db, true), true),
+    ),
+    anonymousOverview = archiveSnapshotReader(db, () =>
+      db.transaction(() => readArchiveOverview(db, false), true),
+    ),
+    overview = (includePortraits = true) =>
+      includePortraits ? portraitOverview() : anonymousOverview(),
     peoplePage = async (offset: number, limit: number) =>
       await readPeoplePage(db, offset, limit),
     photoPage = async (offset: number, limit: number) =>
