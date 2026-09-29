@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  unlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import { MediaTooLargeError, mediaStore } from "../src/server/media.ts";
+import { indexReferencedMediaOriginals } from "../src/server/media-originals.ts";
 
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-media-stream-"));
@@ -199,6 +201,16 @@ test("portrait size is recorded once and a referenced original is recovered on r
       .prepare("SELECT size_bytes FROM media_originals WHERE url=?")
       .get(url);
     assert.equal(recovered?.size_bytes, image.length);
+    const store = mediaStore(join(directory, "uploads"));
+    assert.deepEqual(
+      await indexReferencedMediaOriginals(app.archive.db, family, store),
+      { indexed: 0, missing: 0 },
+    );
+    unlinkSync(join(directory, "uploads", url.slice("/media/".length)));
+    assert.deepEqual(
+      await indexReferencedMediaOriginals(app.archive.db, family, store),
+      { indexed: 0, missing: 1 },
+    );
   } finally {
     await app?.close();
     rmSync(directory, { recursive: true, force: true });
