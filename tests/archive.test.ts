@@ -68,6 +68,18 @@ test("documented relationships preserve direction and coexist with blood kinship
     "крёстный отец",
   );
 });
+test("spouse links infer an unknown sex from the known partner", () => {
+  let data = seed();
+  data.people.find((p) => p.id === "other")!.sex = "u";
+  data = connectPeople(data, "father", "other", "spouse");
+  assert.equal(data.people.find((p) => p.id === "other")!.sex, "f");
+
+  data = seed();
+  data.people.find((p) => p.id === "child")!.sex = "u";
+  data = connectPeople(data, "mother", "child", "spouse");
+  assert.equal(data.people.find((p) => p.id === "child")!.sex, "m");
+});
+
 test("adoption, milk and sworn relationships do not invent blood parents", () => {
   let f = connectPeople(seed(), "mother", "child", "nurse");
   f = connectPeople(f, "mother", "other", "parent");
