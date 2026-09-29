@@ -20,6 +20,7 @@ import {
 import { auditStore } from "./audit.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { documentSearchText, parseDocumentDetails } from "../shared/document-details.ts";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
@@ -36,6 +37,11 @@ async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
 type Row = {
   id: string;
   title: string;
+  document_type: string;
+  document_date: string;
+  place: string;
+  description: string;
+  provenance: string;
   file_name: string;
   file_size: number;
   created_at: string;
@@ -52,6 +58,11 @@ function listedDocument(
   return {
     id: row.id,
     title: row.title,
+    documentType: row.document_type,
+    documentDate: row.document_date,
+    place: row.place,
+    description: row.description,
+    provenance: row.provenance,
     size: row.file_size,
     createdAt: row.created_at,
     canDelete,
@@ -497,18 +508,24 @@ export function documentsHttp({
         return json(res, 413, { error: "PDF должен быть не больше 20 МБ" });
       let metadata: { title?: unknown; personIds?: unknown };
       try {
-        metadata = JSON.parse(
-          decodeURIComponent(String(req.headers["x-document-metadata"] || "")),
-        );
+        const header = String(req.headers["x-document-metadata"] || "");
+        const raw = header.startsWith("base64:")
+          ? Buffer.from(header.slice(7), "base64").toString("utf8")
+          : decodeURIComponent(header);
+        metadata = JSON.parse(raw);
       } catch {
         return json(res, 400, { error: "Некорректное описание документа" });
       }
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+        return json(res, 400, { error: "Некорректное описание документа" });
       const title =
         typeof metadata.title === "string" ? metadata.title.trim() : "";
       const ids = metadata.personIds;
+      const details = parseDocumentDetails(metadata);
       if (
         !title ||
         title.length > 160 ||
+        !details ||
         !Array.isArray(ids) ||
         ids.length > 30 ||
         ids.some((id) => typeof id !== "string" || !id || id.length > 200) ||
@@ -595,17 +612,22 @@ export function documentsHttp({
             return false;
           await db
             .prepare(
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             )
             .run(
               id,
               title,
-              title.toLocaleLowerCase("ru"),
+              documentSearchText(title, details),
               name,
               size,
               uploader.id,
               new Date().toISOString(),
+              details.documentType,
+              details.documentDate,
+              details.place,
+              details.description,
+              details.provenance,
             );
           const link = db.prepare(
             "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",

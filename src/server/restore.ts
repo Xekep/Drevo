@@ -36,6 +36,7 @@ import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { documentSearchText, parseDocumentDetails, type DocumentDetails } from "../shared/document-details.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
@@ -264,7 +265,7 @@ type Stage = {
   documentFiles: Map<string, string>;
 };
 
-type StoredDocument = {
+type StoredDocument = Partial<DocumentDetails> & {
   id: string;
   title: string;
   fileName: string;
@@ -409,13 +410,15 @@ export function restoreStore(
             .get()
         ) {
           const people = new Set(family.people.map((person) => person.id));
-          const hasAnnotations = source
+          const documentColumns = new Set(source
             .prepare("PRAGMA table_info(documents)")
             .all()
-            .some((column) => column.name === "annotations");
+            .map((column) => String(column.name)));
+          const savedColumn = (name: string, fallback: string) =>
+            documentColumns.has(name) ? name : `'${fallback}' AS ${name}`;
           const rows = source
             .prepare(
-              `SELECT id,title,file_name,file_size,uploaded_by,created_at,${hasAnnotations ? "annotations" : "'[]' AS annotations"} FROM documents ORDER BY created_at,id`,
+              `SELECT id,title,file_name,file_size,uploaded_by,created_at,${savedColumn("annotations", "[]")},${["document_type", "document_date", "place", "description", "provenance"].map((name) => savedColumn(name, "")).join(",")} FROM documents ORDER BY created_at,id`,
             )
             .all();
           const links = source
@@ -438,6 +441,11 @@ export function restoreStore(
               uploadedBy: String(row.uploaded_by),
               createdAt: String(row.created_at),
               annotations: String(row.annotations || "[]"),
+              documentType: String(row.document_type || ""),
+              documentDate: String(row.document_date || ""),
+              place: String(row.place || ""),
+              description: String(row.description || ""),
+              provenance: String(row.provenance || ""),
               personIds: byDocument.get(String(row.id)) || [],
             };
             if (
@@ -445,6 +453,7 @@ export function restoreStore(
               !/^[a-f0-9-]{36}\.pdf$/.test(document.fileName) ||
               !document.title ||
               document.title.length > 160 ||
+              !parseDocumentDetails(document) ||
               document.fileSize < 1 ||
               document.fileSize > 20 * 1024 * 1024
             )
@@ -690,8 +699,8 @@ export function restoreStore(
               await recordMediaOriginal(db, file.url, file.size, actor.id);
             await db.exec("DELETE FROM documents", "DELETE FROM documents");
             const insert = db.prepare(
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations) VALUES(?,?,?,?,?,?,?,?)",
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations) VALUES(?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
             );
             const link = db.prepare(
               "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
@@ -701,12 +710,17 @@ export function restoreStore(
               await insert.run(
                 document.id,
                 document.title,
-                document.title.toLocaleLowerCase("ru"),
+                documentSearchText(document.title, parseDocumentDetails(document)!),
                 document.fileName,
                 document.fileSize,
                 document.uploadedBy,
                 document.createdAt,
                 document.annotations || "[]",
+                document.documentType || "",
+                document.documentDate || "",
+                document.place || "",
+                document.description || "",
+                document.provenance || "",
               );
               for (const personId of document.personIds)
                 await link.run(document.id, personId);

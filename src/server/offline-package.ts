@@ -94,6 +94,11 @@ export function offlineDocuments(
     title: string;
     file_name: string;
     created_at: string;
+    document_type?: string;
+    document_date?: string;
+    place?: string;
+    description?: string;
+    provenance?: string;
   }>,
   associations: Array<{ document_id: string; person_id: string }>,
   family: Family,
@@ -120,6 +125,11 @@ export function offlineDocuments(
         title: row.title,
         file: `media/${row.file_name}`,
         createdAt: row.created_at,
+        documentType: row.document_type || "",
+        documentDate: row.document_date || "",
+        place: row.place || "",
+        description: row.description || "",
+        provenance: row.provenance || "",
         personIds: links.get(row.id) || [],
       };
     });

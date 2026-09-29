@@ -132,11 +132,18 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     writeFileSync(join(uploads, "record.pdf"), "document");
     const oldSchema = new DatabaseSync(sqlite);
     oldSchema.exec("DROP TABLE person_comments");
+    for (const column of ["document_type", "document_date", "place", "description", "provenance"])
+      oldSchema.exec(`ALTER TABLE documents DROP COLUMN ${column}`);
     oldSchema.close();
     assert.deepEqual(
       inspectSqliteSnapshot(sqlite, uploads).rows.get("person_comments"),
       [],
       "копии до появления обсуждений остаются переносимыми",
+    );
+    assert.equal(
+      inspectSqliteSnapshot(sqlite, uploads).rows.get("documents")?.[0]?.provenance,
+      "",
+      "старые документы получают пустые дополнительные поля",
     );
     const futureSchema = new DatabaseSync(sqlite);
     futureSchema.exec(

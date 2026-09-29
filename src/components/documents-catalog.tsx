@@ -9,9 +9,10 @@ import {
 import { BookOpenText, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { PdfBookReader } from "./pdf-book-reader";
 import { fullName, type Person } from "../domain";
+import type { DocumentDetails } from "../shared/document-details";
 import "../styles/documents.css";
 
-export type ListedDocument = {
+export type ListedDocument = DocumentDetails & {
   id: string;
   title: string;
   url: string;
@@ -23,6 +24,13 @@ export type ListedDocument = {
 
 type DocumentPage = { items: ListedDocument[]; total: number };
 const PAGE_SIZE = 30;
+const EMPTY_DETAILS: DocumentDetails = {
+  documentType: "",
+  documentDate: "",
+  place: "",
+  description: "",
+  provenance: "",
+};
 
 type PersonOption = { id: string; label: string; detail: string };
 
@@ -58,6 +66,7 @@ export function DocumentsCatalog({
   const [uploadError, setUploadError] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
+  const [details, setDetails] = useState<DocumentDetails>(EMPTY_DETAILS);
   const [personQuery, setPersonQuery] = useState("");
   const [personResults, setPersonResults] = useState<PersonOption[]>([]);
   const [selectedPeople, setSelectedPeople] = useState<PersonOption[]>([]);
@@ -177,16 +186,16 @@ export function DocumentsCatalog({
     setUploading(true);
     setUploadError("");
     try {
+      const metadata = JSON.stringify({
+        title: title.trim(),
+        personIds: selectedPeople.map((person) => person.id),
+        ...details,
+      });
       const response = await fetch("/api/documents", {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
-          "X-Document-Metadata": encodeURIComponent(
-            JSON.stringify({
-              title: title.trim(),
-              personIds: selectedPeople.map((person) => person.id),
-            }),
-          ),
+          "X-Document-Metadata": `base64:${btoa(String.fromCharCode(...new TextEncoder().encode(metadata)))}`,
         },
         body: file,
       });
@@ -199,6 +208,7 @@ export function DocumentsCatalog({
       setSelected({
         id: created.id,
         title: title.trim(),
+        ...details,
         url: `/api/documents/${created.id}/file`,
         size: file.size,
         createdAt: new Date().toISOString(),
@@ -211,6 +221,7 @@ export function DocumentsCatalog({
       setUploadOpen(false);
       setFile(null);
       setTitle("");
+      setDetails(EMPTY_DETAILS);
       setPersonQuery("");
       setSelectedPeople([]);
       void load(0);
@@ -385,6 +396,65 @@ export function DocumentsCatalog({
               aria-label="Найти человека для документа"
             />
           </label>
+          <details className="documents-extra">
+            <summary>Сведения о документе</summary>
+            <div className="documents-extra-grid">
+              <label>
+                Тип
+                <input
+                  value={details.documentType}
+                  maxLength={80}
+                  placeholder="Например, метрическая запись"
+                  onChange={(event) =>
+                    setDetails((current) => ({ ...current, documentType: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Дата или период
+                <input
+                  value={details.documentDate}
+                  maxLength={80}
+                  placeholder="Например, 1887 год"
+                  onChange={(event) =>
+                    setDetails((current) => ({ ...current, documentDate: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Место
+                <input
+                  value={details.place}
+                  maxLength={200}
+                  onChange={(event) =>
+                    setDetails((current) => ({ ...current, place: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Происхождение
+                <input
+                  value={details.provenance}
+                  maxLength={500}
+                  placeholder="Архив, фонд, опись, дело или владелец оригинала"
+                  onChange={(event) =>
+                    setDetails((current) => ({ ...current, provenance: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="documents-extra-description">
+                Описание
+                <textarea
+                  value={details.description}
+                  maxLength={1000}
+                  rows={3}
+                  onChange={(event) =>
+                    setDetails((current) => ({ ...current, description: event.target.value }))
+                  }
+                />
+              </label>
+            </div>
+          </details>
           {personResults.length > 0 && personQuery.trim().length > 1 && (
             <div
               className="documents-person-results"

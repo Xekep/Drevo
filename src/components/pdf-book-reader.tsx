@@ -635,6 +635,18 @@ export function PdfBookReader({
             </button>
           </div>
         </header>
+        {(entry.documentType || entry.documentDate || entry.place || entry.description || entry.provenance) && (
+          <details className="pdf-book-details">
+            <summary>Сведения о документе</summary>
+            <div>
+              {entry.documentType && <p><strong>Тип:</strong> {entry.documentType}</p>}
+              {entry.documentDate && <p><strong>Дата:</strong> {entry.documentDate}</p>}
+              {entry.place && <p><strong>Место:</strong> {entry.place}</p>}
+              {entry.provenance && <p><strong>Происхождение:</strong> {entry.provenance}</p>}
+              {entry.description && <p><strong>Описание:</strong> {entry.description}</p>}
+            </div>
+          </details>
+        )}
         {deleteError && (
           <p className="pdf-book-delete-error" role="alert">
             {deleteError}
