@@ -80,6 +80,7 @@ test("PDF report models use recorded facts and the visible family projection", (
   assert.match(content("descendants"), /Вера/);
   assert.doesNotMatch(content("descendants"), /Чужой|\n1\. Мать/);
   assert.match(content("research"), /Мать: место рождения, источники карточки/);
+  assert.match(content("research"), /Анна: Метрическая запись · Ф\.1/);
   assert.doesNotMatch(content("research"), /Чужой|скрытый-родитель/);
   const oneGeneration = archiveReport(family, "research", root.id, 1)
     .sections.flatMap((section) => section.lines)

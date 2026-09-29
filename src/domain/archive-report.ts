@@ -215,8 +215,22 @@ export function archiveReport(
       ),
     );
     add(
-      "Источники опорного человека",
-      person.sources.map(sourceLine).filter(Boolean),
+      "Источники ветки",
+      [
+        ...new Set(
+          scope.people.flatMap((item) => [
+            ...item.sources.map(
+              (source) => `${fullName(item)}: ${sourceLine(source)}`,
+            ),
+            ...(item.events || []).flatMap((event) =>
+              (event.sources || []).map(
+                (source) =>
+                  `${fullName(item)} · ${eventTitle(event)}: ${sourceLine(source)}`,
+              ),
+            ),
+          ]),
+        ),
+      ].filter(Boolean),
     );
   }
 
