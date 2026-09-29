@@ -744,7 +744,18 @@ export async function unionGeometry(
     // ancestry improves the complete visible routes.
     let currentRoutes = geometryRoutingQuality(best);
     let cardContacts = routeCardContacts(best, W, H);
+    let currentPositions = new Map(best.positions);
+    const priorPositions = previous && new Map(previous.positions);
+    const blocksById = new Map((best.blocks || []).map((block) => [block.id, block]));
     for (const id of coupleBlocksWithContactedAncestry(best, W)) {
+      const members = blocksById.get(id)?.members;
+      if (priorPositions && members?.every((member) => priorPositions.has(member))) {
+        const [a, b] = members;
+        // An edit may restore the orientation the user already saw, but must
+        // not reverse an unchanged couple just to win a local contact.
+        if ((currentPositions.get(a)!.x < currentPositions.get(b)!.x) ===
+            (priorPositions.get(a)!.x < priorPositions.get(b)!.x)) continue;
+      }
       const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
       if (!candidate) continue;
       const next = branchContactCounts(candidate.branches || []);
@@ -763,6 +774,7 @@ export async function unionGeometry(
       contacts = next;
       currentRoutes = nextRoutes;
       cardContacts = nextCardContacts;
+      currentPositions = new Map(candidate.positions);
     }
   }
   return best;

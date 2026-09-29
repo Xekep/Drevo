@@ -123,6 +123,21 @@ test("adding a founder's parent preserves the previous horizontal family order",
     assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.1);
 });
 
+test("an ancestor edit keeps existing couples from flipping for a local gain", async () => {
+  const original = randomFamily(5, 2);
+  const before = await unionGeometry(original);
+  const edited = editedAncestorFamily(original, 5);
+  const after = await unionGeometry(edited, false, [], before);
+  const old = new Map(before.positions), next = new Map(after.positions);
+  const reversed = (before.blocks || []).filter((block) =>
+    block.members.length === 2 &&
+    block.members.every((id) => next.has(id)) &&
+    Math.sign(old.get(block.members[0])!.x - old.get(block.members[1])!.x) !==
+      Math.sign(next.get(block.members[0])!.x - next.get(block.members[1])!.x));
+  assert.ok(reversed.length <= 2);
+  verify(edited, after);
+});
+
 test("incremental ordering also protects edited families above one hundred people", async () => {
   for (const [seed, edit] of [
     [1, editedAncestorFamily],
