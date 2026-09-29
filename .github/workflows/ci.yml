@@ -72,6 +72,7 @@ jobs:
           done
       - name: Measure mixed HTTP profile across two backend processes
         run: |
+          set -euo pipefail
           node --input-type=module <<'NODE'
           import pg from 'pg';
           const client = new pg.Client();

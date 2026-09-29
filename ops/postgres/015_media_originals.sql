@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS media_originals (
 );
 ALTER TABLE media_originals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_originals FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS archive_scope ON media_originals;
 CREATE POLICY archive_scope ON media_originals
   USING (archive_id=current_setting('drevo.archive_id', true))
   WITH CHECK (archive_id=current_setting('drevo.archive_id', true));
