@@ -150,6 +150,30 @@ test("one documented parent uses neutral paternal or maternal wording until seco
   );
 });
 
+test("unknown secondary parent sex still preserves maternal and paternal half-sibling terms", () => {
+  const maternal = extendedFamily();
+  maternal.find((p) => p.id === "oldFather")!.sex = "u";
+  maternal.find((p) => p.id === "newFather")!.sex = "u";
+  const maternalResult = analyzeKinship(
+    maternal.find((p) => p.id === "halfMother")!,
+    maternal.find((p) => p.id === "son")!,
+    maternal,
+  );
+  assert.equal(maternalResult.roles?.[0].term, "единоутробная сестра");
+  assert.equal(maternalResult.title, "Единоутробные брат и сестра");
+
+  const paternal = extendedFamily();
+  paternal.find((p) => p.id === "mother")!.sex = "u";
+  paternal.find((p) => p.id === "otherMother")!.sex = "u";
+  const paternalResult = analyzeKinship(
+    paternal.find((p) => p.id === "halfFather")!,
+    paternal.find((p) => p.id === "son")!,
+    paternal,
+  );
+  assert.equal(paternalResult.roles?.[0].term, "единокровный брат");
+  assert.equal(paternalResult.title, "Единокровные братья");
+});
+
 test("a documented spouse of a known parent is a step-parent regardless of that parent's sex", () => {
   const data = extendedFamily();
   const mother = data.find((p) => p.id === "mother")!;
