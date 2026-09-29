@@ -5,6 +5,7 @@ import {
   ArrowRight,
   ExternalLink,
   MessageSquare,
+  Pencil,
   Trash2,
   X,
 } from "lucide-react";
@@ -34,6 +35,7 @@ export function PdfBookReader({
   document: entry,
   onClose,
   onDelete,
+  onEdit,
   mayAnnotate = false,
   annotateOnOpen = false,
   deleting = false,
@@ -42,6 +44,7 @@ export function PdfBookReader({
   document: ListedDocument;
   onClose: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
   mayAnnotate?: boolean;
   annotateOnOpen?: boolean;
   deleting?: boolean;
@@ -601,6 +604,11 @@ export function PdfBookReader({
             <strong>{entry.title}</strong>
           </div>
           <div className="pdf-book-actions">
+            {onEdit && (
+              <button type="button" onClick={onEdit} aria-label="Редактировать сведения о документе" title="Редактировать сведения">
+                <Pencil size={17} />
+              </button>
+            )}
             {onDelete && (
               <button
                 type="button"

@@ -20,15 +20,15 @@ import {
 import { auditStore } from "./audit.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
-import { documentSearchText, parseDocumentDetails } from "../shared/document-details.ts";
+import { documentSearchText, parseDocumentDetails, type DocumentDetails } from "../shared/document-details.ts";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
-async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
+async function readJsonBody(req: IncomingMessage, limit: number): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 4096) throw new Error("Комментарий слишком длинный");
+    if (size > limit) throw new Error("Слишком большой запрос");
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -48,6 +48,35 @@ type Row = {
   uploaded_by: string;
   annotations: string;
 };
+
+function rowDetails(row: Row): DocumentDetails {
+  return {
+    documentType: row.document_type,
+    documentDate: row.document_date,
+    place: row.place,
+    description: row.description,
+    provenance: row.provenance,
+  };
+}
+
+type DocumentVersion = DocumentDetails & { title: string };
+
+function parsedVersion(value: unknown): DocumentVersion | null {
+  if (!value || typeof value !== "object") return null;
+  const input = value as Record<string, unknown>;
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  const details = parseDocumentDetails(input);
+  return title && title.length <= 160 && details ? { title, ...details } : null;
+}
+
+const editableFields: Array<[keyof DocumentVersion, string]> = [
+  ["title", "Название"],
+  ["documentType", "Тип"],
+  ["documentDate", "Дата или период"],
+  ["place", "Место"],
+  ["description", "Описание"],
+  ["provenance", "Происхождение"],
+];
 
 function listedDocument(
   row: Row,
@@ -261,6 +290,67 @@ export function documentsHttp({
       );
     }
 
+    if (item && req.method === "PATCH") {
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!(await auth.canEdit(req)))
+        return json(res, 403, { error: "Нет прав на изменение документа" });
+      if (req.headers["content-type"]?.split(";")[0].trim() !== "application/json")
+        return json(res, 415, { error: "Ожидается JSON" });
+      let body: unknown;
+      try {
+        body = await readJsonBody(req, 32_768);
+      } catch {
+        return json(res, 400, { error: "Некорректные сведения о документе" });
+      }
+      const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
+      const expected = parsedVersion(input.expected);
+      const next = parsedVersion(input.next);
+      if (!expected || !next)
+        return json(res, 400, { error: "Проверьте название и сведения о документе" });
+      const result = await db.transaction(async () => {
+        const actor = await auth.currentUser(req);
+        if (!actor?.approved || !(await auth.canEdit(req)))
+          return { status: 403 as const, error: "Нет прав на изменение документа" };
+        const row = (await db.prepare(
+          "SELECT * FROM documents WHERE id=?",
+          "SELECT * FROM documents WHERE id=?",
+        ).get(item[1])) as Row | undefined;
+        if (!row) return { status: 404 as const, error: "Документ не найден" };
+        const access = await visible(req);
+        const personIds = (await associations([row.id])).get(row.id) || [];
+        if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+          return { status: 404 as const, error: "Документ не найден" };
+        if (!owns(actor, { createdBy: row.uploaded_by }))
+          return { status: 403 as const, error: "Изменить документ может его автор или администратор" };
+        const previous: DocumentVersion = { title: row.title, ...rowDetails(row) };
+        if (editableFields.some(([field]) => previous[field] !== expected[field]))
+          return { status: 409 as const, error: "Документ изменился. Откройте его заново" };
+        if (editableFields.every(([field]) => previous[field] === next[field]))
+          return { status: 200 as const, item: listedDocument(row, personIds, new Map(access.people.map((person) => [person.id, fullName(person)])), true) };
+        await db.prepare(
+          "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
+          "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
+        ).run(next.title, documentSearchText(next.title, next), next.documentType, next.documentDate, next.place, next.description, next.provenance, row.id);
+        await audit.record({
+          action: "Изменён документ",
+          entity: "document",
+          entityId: row.id,
+          label: next.title,
+          personIds,
+          details: editableFields.filter(([field]) => previous[field] !== next[field])
+            .map(([field, label]) => ({ field: label, before: previous[field], after: next[field] })),
+        }, actor);
+        const updated = { ...row, title: next.title, document_type: next.documentType,
+          document_date: next.documentDate, place: next.place, description: next.description,
+          provenance: next.provenance };
+        return { status: 200 as const, item: listedDocument(updated, personIds, new Map(access.people.map((person) => [person.id, fullName(person)])), true) };
+      });
+      return "error" in result
+        ? json(res, result.status, { error: result.error })
+        : json(res, result.status, result.item);
+    }
+
     if (annotations) {
       const row = (await db
         .prepare(
@@ -298,7 +388,7 @@ export function documentsHttp({
         try {
           if (req.headers["content-type"]?.split(";")[0] !== "application/json")
             return json(res, 415, { error: "Ожидается JSON" });
-          body = await readAnnotationBody(req);
+          body = await readJsonBody(req, 4096);
         } catch {
           return json(res, 400, { error: "Некорректный комментарий" });
         }

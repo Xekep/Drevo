@@ -76,7 +76,10 @@
 }
 .document-item:hover { border-color: #a8c4a4; box-shadow: 0 6px 18px #2c4b3014; transform: translateY(-2px); }
 .document-item-row { position: relative; min-width: 0; }
-.document-item-row .document-item { width: 100%; height: 100%; padding-right: 45px; }
+.document-item-row .document-item { width: 100%; height: 100%; padding-right: 16px; }
+.document-item-row.can-edit .document-item { padding-right: 84px; }
+.document-edit { position: absolute; right: 43px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #557961; cursor: pointer; }
+.document-edit:hover { background: #eaf2e9; color: #2e6540; }
 .document-delete { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 36px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #8b7169; cursor: pointer; }
 .document-delete:hover { background: #f8ece8; color: #963f31; }
 .document-delete:disabled { opacity: .45; cursor: default; }
@@ -106,6 +109,9 @@
 .documents-extra-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 12px 12px; }
 .documents-extra-description { grid-column: 1 / -1; }
 .documents-extra textarea { min-width: 0; width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid #d7e1d3; border-radius: 8px; font: inherit; font-size: 14px; }
+.documents-edit-title { grid-column: 1 / -1; }
+.documents-edit-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+.documents-edit-actions > button:last-child { min-height: 40px; padding: 0 12px; border: 1px solid #d7e1d3; border-radius: 9px; background: #fff; color: #49644d; font: inherit; cursor: pointer; }
 .documents-person-results { grid-column: 1 / -1; display: grid; max-height: 180px; overflow: auto; border: 1px solid #d7e1d3; border-radius: 8px; background: #fff; }
 .documents-person-results button { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 0; border-bottom: 1px solid #edf1ea; background: #fff; color: #344b37; text-align: left; cursor: pointer; }
 .documents-person-results button:hover { background: #f0f6ee; }
