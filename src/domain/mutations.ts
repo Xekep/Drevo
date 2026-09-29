@@ -41,6 +41,8 @@ export function connectPeople(
   } else if (type === "spouse") {
     if (a.spouses.includes(to) || b.spouses.includes(from))
       throw new Error("Этот брак уже указан");
+    if (a.sex === "u" && b.sex !== "u") a.sex = b.sex === "m" ? "f" : "m";
+    else if (b.sex === "u" && a.sex !== "u") b.sex = a.sex === "m" ? "f" : "m";
     a.spouses.push(to);
     b.spouses.push(from);
   } else {
