@@ -17,6 +17,7 @@ import type { researchCatalogStore } from "./research-catalog.ts";
 import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
@@ -155,6 +156,12 @@ export function aiResearchHttp({
         return json(res, 405, { error: "Ожидается GET" });
       if (!(await auth.canRead(req)))
         return json(res, 401, { error: "Войдите в архив" });
+      const fileUser = await auth.currentUser(req);
+      if (
+        !fileUser ||
+        !(await accountAiAccess(archive.db, fileUser.id, auth.local))
+      )
+        return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
       const id = path.slice("/api/ai/files/".length),
         file = pdfFiles.get(id);
       if (
@@ -187,6 +194,16 @@ export function aiResearchHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Войдите в архив для работы с ИИ-исследователем",
       });
+    const aiUser = (await auth.currentUser(req))!;
+    if (!(await accountAiAccess(archive.db, aiUser.id, auth.local))) {
+      if (path === "/api/ai/status")
+        return json(res, 200, {
+          enabled: false,
+          canPropose: false,
+          streaming: true,
+        });
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+    }
 
     if (path === "/api/ai/status") {
       if (req.method !== "GET")
@@ -389,8 +406,8 @@ export function aiResearchHttp({
     const lockRenewal = setInterval(() => {
       if (renewing) return;
       renewing = true;
-      void chats
-        .renew(chat.id, lockToken)
+      void accountAiAccess(archive.db, user.id, auth.local)
+        .then((allowed) => allowed && chats.renew(chat.id, lockToken))
         .then((held) => {
           if (!held) {
             leaseLost = true;
@@ -452,6 +469,8 @@ export function aiResearchHttp({
       });
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
+      if (!(await accountAiAccess(archive.db, user.id, auth.local)))
+        throw new DOMException("Доступ к ИИ отключён", "AbortError");
       await chats.append(chat.id, "assistant", result.answer, {
         references: result.references,
         suggestionIds: result.suggestionIds,

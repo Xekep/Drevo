@@ -18,6 +18,13 @@ export type FaceSuggestion = {
   match?: { personId: string; distance: number };
 };
 export const FACE_MODEL = "human-faceres-3.3.6";
+
+export async function faceRecognitionAvailable(signal?: AbortSignal) {
+  const response = await fetch("/api/faces/status", { signal });
+  if (!response.ok) return false;
+  const status = (await response.json()) as { enabled?: boolean };
+  return status.enabled === true;
+}
 const MODEL_URI = "/models/human-3.3.6";
 let engine:
   | Promise<InstanceType<(typeof import("@vladmandic/human"))["Human"]>>

@@ -10,6 +10,8 @@ import type { aiUsageStore } from "./ai-usage.ts";
 import { fetchAiStudioModels, type AiStudioModel } from "./ai-models.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
 import { ROLE_NAMES, type Role } from "../domain/access.ts";
+import type { StoreDatabase } from "./store-database.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -24,12 +26,14 @@ async function readJson(req: IncomingMessage) {
 
 export function adminAiHttp({
   auth,
+  db,
   settings,
   usage,
   publicOrigin,
   fetcher = fetch,
 }: {
   auth: Awaited<ReturnType<typeof createAuth>>;
+  db: StoreDatabase;
   settings: Awaited<ReturnType<typeof aiSettingsStore>>;
   usage: ReturnType<typeof aiUsageStore>;
   publicOrigin?: string;
@@ -85,6 +89,8 @@ export function adminAiHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
+    if (!(await accountAiAccess(db, (await auth.currentUser(req))!.id, auth.local)))
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (path === "/api/admin/ai" && req.method === "GET")
       return json(res, 200, await statusValue());

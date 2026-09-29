@@ -3,6 +3,8 @@ import type { createAuth } from "./auth.ts";
 import type { mcpTokenStore } from "./mcp-tokens.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { mcpUsageStore } from "./mcp-usage.ts";
+import type { StoreDatabase } from "./store-database.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -17,11 +19,13 @@ async function readJson(req: IncomingMessage) {
 
 export function adminMcpHttp({
   auth,
+  db,
   tokens,
   usage,
   publicOrigin,
 }: {
   auth: Awaited<ReturnType<typeof createAuth>>;
+  db: StoreDatabase;
   tokens: ReturnType<typeof mcpTokenStore>;
   usage: ReturnType<typeof mcpUsageStore>;
   publicOrigin?: string;
@@ -47,6 +51,8 @@ export function adminMcpHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять MCP-токенами",
       });
+    if (!(await accountAiAccess(db, (await auth.currentUser(req))!.id, auth.local)))
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (path === "/api/mcp/tokens" && req.method === "GET") {
       const items = await Promise.all(

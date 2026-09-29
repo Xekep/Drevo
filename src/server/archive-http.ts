@@ -80,6 +80,7 @@ export async function archiveHttp({
   const core = coreHttp({ archive, auth, publicOrigin });
   const adminMcp = adminMcpHttp({
     auth,
+    db: archive.db,
     tokens,
     usage: mcpUsage,
     publicOrigin,
@@ -110,6 +111,7 @@ export async function archiveHttp({
   });
   const adminAi = adminAiHttp({
     auth,
+    db: archive.db,
     settings: aiSettings,
     usage: aiUsage,
     publicOrigin,

@@ -21,6 +21,8 @@ import {
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
+import { accountAiAccess } from "../../src/server/account-ai-access.ts";
+import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
@@ -553,6 +555,110 @@ try {
     ).user.id,
     "reader",
   );
+  assert.equal(await accountAiAccess(app.archive.db, "reader"), false);
+  assert.equal(
+    (await fetch(securedBase + "/api/ai/status", { headers }).then((r) =>
+      r.json(),
+    )).enabled,
+    false,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/ai/chats", { headers })).status,
+    403,
+  );
+  const aiOwnerToken = newSessionToken();
+  await app.archive.db
+    .prepare(
+      "",
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
+    )
+    .run(sessionTokenHash(aiOwnerToken), Date.now() + 60000);
+  const ownerHeaders = {
+    ...headers,
+    Cookie: `drevo_session=${aiOwnerToken}`,
+  };
+  assert.equal(await accountAiAccess(app.archive.db, "vk:42"), true);
+  assert.equal(
+    (await fetch(securedBase + "/api/faces/status", { headers: ownerHeaders })
+      .then((r) => r.json())).enabled,
+    true,
+  );
+  const boundToken = await mcpTokenStore(app.archive.db).issue(owner, {
+    name: "Проверка уровня",
+    scopes: ["tree:read"],
+    boundUserId: "vk:42",
+  });
+  await app.archive.db
+    .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
+    .run("vk:42");
+  assert.equal(await accountAiAccess(app.archive.db, "vk:42"), false);
+  assert.equal(
+    (await fetch(securedBase + "/mcp", {
+      method: "POST",
+      headers: {
+        Origin: process.env.PUBLIC_ORIGIN,
+        Authorization: `Bearer ${boundToken.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })).status,
+    403,
+  );
+  await app.archive.db
+    .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
+    .run("vk:42");
+  await app.archive.db
+    .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
+    .run("owner");
+  assert.equal(
+    (await fetch(securedBase + "/api/faces/status", { headers: ownerHeaders })
+      .then((r) => r.json())).enabled,
+    false,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/faces/match", {
+      method: "POST",
+      headers: ownerHeaders,
+      body: "{}",
+    })).status,
+    403,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/ai/chats", { headers: ownerHeaders }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/admin/ai", { headers: ownerHeaders }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/mcp/tokens", { headers: ownerHeaders }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/research/suggestions", {
+      headers: ownerHeaders,
+    })).status,
+    403,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/mcp", {
+      method: "POST",
+      headers: {
+        Origin: process.env.PUBLIC_ORIGIN,
+        Authorization: `Bearer ${boundToken.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })).status,
+    403,
+  );
+  await app.archive.db
+    .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
+    .run("owner");
   assert.equal(
     (await fetch(securedBase + "/api/admin/ai", { headers })).status,
     403,

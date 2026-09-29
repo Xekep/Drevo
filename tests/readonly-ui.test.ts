@@ -245,7 +245,12 @@ test("reader UI keeps stories, albums and navigation while removing editor contr
       /disabled/,
       "navigation cannot discard an active editor",
     );
-    assert.match(editing, /Найти лица/);
+    assert.match(editing, /Отметить вручную/);
+    assert.doesNotMatch(
+      editing,
+      /Найти лица/,
+      "распознавание появляется только после проверки уровня аккаунта",
+    );
     const { PersonPhotoAlbum } = await server.ssrLoadModule(
       "/src/components/person-photo-album.tsx",
     );

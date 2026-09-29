@@ -8,6 +8,7 @@ import {
 } from "../domain/research-tools.ts";
 import { projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -120,6 +121,12 @@ export function mcpHttp({
       res.setHeader("WWW-Authenticate", 'Bearer realm="Drevo MCP"');
       return json(res, 401, { error: "Недействительный MCP-токен" });
     }
+    if (
+      !(await accountAiAccess(archive.db, grant.createdBy, !publicOrigin)) ||
+      (grant.boundUser &&
+        !(await accountAiAccess(archive.db, grant.boundUser.id, !publicOrigin)))
+    )
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
       return json(res, 405, { error: "MCP endpoint accepts POST only" });
