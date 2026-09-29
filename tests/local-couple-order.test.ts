@@ -4,6 +4,7 @@ import type { TreeGeometry } from "../src/domain/tree-layout.ts";
 import { branchContactCounts } from "../src/domain/union-layout.ts";
 import { routeRelationships } from "../src/domain/edge-routing.ts";
 import {
+  coupleBlocksWithContactedAncestry,
   invertedCoupleBlocks,
   locallyReverseCouples,
 } from "../src/domain/local-couple-order.ts";
@@ -85,6 +86,7 @@ test("a local couple swap reroutes ancestry without moving the surrounding block
     routes: [],
   };
   assert.deepEqual([...invertedCoupleBlocks(geometry, 220)], ["couple"]);
+  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), ["couple"]);
   const improved = locallyReverseCouples(geometry, [], [], {
     width: 220,
     height: 264,
@@ -173,4 +175,34 @@ test("a local couple swap reroutes ancestry without moving the surrounding block
       ?.route.points.at(-1)?.y,
     264,
   );
+});
+
+test("contacted ancestry remains eligible without an inverted origin order", () => {
+  const geometry: TreeGeometry = {
+    mode: "generations", reverse: false, start: 1700, offset: 0,
+    positions: [
+      ["A", { x: 0, y: 500 }],
+      ["B", { x: 252, y: 500 }],
+      ["C", { x: 700, y: 500 }],
+      ["D", { x: 952, y: 500 }],
+    ],
+    blocks: [
+      { id: "candidate", members: ["A", "B"], x: 0, y: 500, width: 472, height: 264 },
+      { id: "untouched", members: ["C", "D"], x: 700, y: 500, width: 472, height: 264 },
+    ],
+    branches: [
+      { id: 'child:"A"', source: "p", target: "A", union: "first", relations: [],
+        route: { sourceHandle: "bottom", targetHandle: "top", points: [
+          { x: -90, y: 264 }, { x: -90, y: 380 }, { x: 110, y: 380 }, { x: 110, y: 500 },
+        ] } },
+      { id: 'child:"B"', source: "q", target: "B", union: "second", relations: [],
+        route: { sourceHandle: "bottom", targetHandle: "top", points: [
+          { x: 500, y: 264 }, { x: 500, y: 450 }, { x: 0, y: 450 }, { x: 0, y: 480 },
+          { x: 362, y: 480 }, { x: 362, y: 500 },
+        ] } },
+    ],
+  };
+  assert.equal(invertedCoupleBlocks(geometry, 220).size, 0);
+  assert.ok(branchContactCounts(geometry.branches!).distinct > 0);
+  assert.deepEqual(coupleBlocksWithContactedAncestry(geometry, 220), ["candidate"]);
 });

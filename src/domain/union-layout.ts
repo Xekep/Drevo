@@ -19,7 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { routingQuality } from "./routing-quality.ts";
-import { invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
+import { coupleBlocksWithContactedAncestry, invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
 import { householdLevels } from "./household-levels.ts";
 import {
   alignGenerationBands,
@@ -739,7 +739,7 @@ export async function unionGeometry(
     // ancestry improves the complete visible routes.
     let currentRoutes = geometryRoutingQuality(best);
     let cardContacts = routeCardContacts(best, W, H);
-    for (const id of invertedCoupleBlocks(best, W)) {
+    for (const id of coupleBlocksWithContactedAncestry(best, W)) {
       const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
       if (!candidate) continue;
       const next = branchContactCounts(candidate.branches || []);
