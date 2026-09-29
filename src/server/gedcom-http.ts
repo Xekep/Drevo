@@ -26,10 +26,7 @@ import {
   installTransferFiles,
   type StagedMedia,
 } from "./genealogy-package.ts";
-import {
-  documentUploadQuota,
-  UploadQuotaError,
-} from "./document-upload-quota.ts";
+import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { mediaStore } from "./media.ts";
 
 export function gedcomHttp(
@@ -49,7 +46,7 @@ export function gedcomHttp(
     uploads = join(dirname(dbPath), "uploads");
   mkdirSync(stageRoot, { recursive: true });
   mkdirSync(uploads, { recursive: true });
-  const quota = documentUploadQuota(archive.db);
+  const quota = uploadQuota(archive.db);
   const stagePath = (token: string) => {
     if (!/^[a-f0-9-]{36}$/.test(token))
       throw new Error("Некорректный токен импорта");

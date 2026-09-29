@@ -18,10 +18,7 @@ import {
   type DocumentAnnotation,
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
-import {
-  documentUploadQuota,
-  UploadQuotaError,
-} from "./document-upload-quota.ts";
+import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 
 const MAX_PDF_BYTES = 20 * 1024 * 1024;
 async function readAnnotationBody(req: IncomingMessage): Promise<unknown> {
@@ -79,7 +76,7 @@ export function documentsHttp({
 }) {
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
-  const quota = documentUploadQuota(db);
+  const quota = uploadQuota(db);
   const audit = auditStore(db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {

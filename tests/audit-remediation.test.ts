@@ -8,10 +8,7 @@ import sharp from "sharp";
 import { openArchive, ConflictError } from "../src/server/database.ts";
 import { settingsStore } from "../src/server/settings.ts";
 import { startServer } from "../src/server/index.ts";
-import {
-  documentUploadQuota,
-  UploadQuotaError,
-} from "../src/server/document-upload-quota.ts";
+import { uploadQuota, UploadQuotaError } from "../src/server/upload-quota.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 import type { Family, Person } from "../src/domain/types.ts";
 import { registerMediaUpload } from "../src/server/media-access.ts";
@@ -268,7 +265,7 @@ test("card patches merge independent edits, reject conflicting dates/ownership a
   }
 });
 
-test("PDF reservations enforce disk headroom, total quota, concurrency and hourly limit across connections", async () => {
+test("upload reservations enforce disk headroom, total quota, concurrency and hourly limit across connections", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-quota-"));
   const first = await openArchive(join(dir, "db.sqlite"), family());
   const second = await openArchive(join(dir, "db.sqlite"), family());
@@ -281,8 +278,8 @@ test("PDF reservations enforce disk headroom, total quota, concurrency and hourl
       concurrent: 2,
       now: () => now,
     };
-    const a = documentUploadQuota(first.db, options),
-      b = documentUploadQuota(second.db, options);
+    const a = uploadQuota(first.db, options),
+      b = uploadQuota(second.db, options);
     await assert.rejects(
       async () => await a.acquire("u", 20, 1000, { files: 1, bytes: 90 }),
       (e) => e instanceof UploadQuotaError && e.status === 507,

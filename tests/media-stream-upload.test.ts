@@ -11,17 +11,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import sharp from "sharp";
-import {
-  MediaTooLargeError,
-  mediaStore,
-} from "../src/server/media.ts";
+import { startServer } from "../src/server/index.ts";
+import { MediaTooLargeError, mediaStore } from "../src/server/media.ts";
 
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-media-stream-"));
   try {
     const pngLike = await sharp({
       create: { width: 2, height: 2, channels: 3, background: "green" },
-    }).png().toBuffer();
+    })
+      .png()
+      .toBuffer();
     const media = mediaStore(directory);
     const file = await media.addStream(
       Readable.from([
@@ -77,4 +77,42 @@ test("upload HTTP handler does not collect the whole request in memory", () => {
 test("media store does not expose whole-file synchronous I/O", () => {
   const source = readFileSync("src/server/media.ts", "utf8");
   assert.doesNotMatch(source, /\b(?:readFileSync|writeFileSync)\b/);
+});
+
+test("photo upload reserves space shared with pending document uploads", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-shared-media-quota-"));
+  const app = await startServer(0, join(directory, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const now = Date.now();
+    await app.archive.db
+      .prepare(
+        "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
+      )
+      .run(
+        "pending-document",
+        "another-user",
+        now,
+        now + 60_000,
+        10 * 1024 ** 3 - 10 * 1024 ** 2,
+      );
+    const image = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "green" },
+    })
+      .png()
+      .toBuffer();
+    const response = await fetch(`${base}/api/photos`, {
+      method: "POST",
+      headers: {
+        "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision),
+      },
+      body: new Uint8Array(image).buffer,
+    });
+    assert.equal(response.status, 507, await response.clone().text());
+    assert.deepEqual(readdirSync(join(directory, "uploads")), []);
+  } finally {
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
