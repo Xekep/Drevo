@@ -9,11 +9,15 @@ import {
   bounds,
   routeRelationships,
   segmentContact,
+  segmentHitsBox,
   Spatial,
+  type Box,
   type EdgeRoute,
 } from "./edge-routing.ts";
 import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
+import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
+import { routingQuality } from "./routing-quality.ts";
 import { householdLevels } from "./household-levels.ts";
 import {
   alignGenerationBands,
@@ -77,6 +81,8 @@ async function geometryForSeed(
   links: Pick<FamilyLink, "type" | "from" | "to">[],
   seed: number,
   size: TreeNodeSize,
+  sift = false,
+  sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   const families = familyUnions(people);
@@ -303,7 +309,7 @@ async function geometryForSeed(
       sources: [`${primary.get(a.from)!.id}:adoption`],
       targets: [portId(primary.get(a.to)!, a.to)],
     });
-  const laidOut = await layout({
+  const baseGraph: ElkNode = {
     id: "family-layout",
     children: nodes,
     edges: elkEdges,
@@ -324,7 +330,11 @@ async function geometryForSeed(
       "elk.layered.thoroughness": "12",
       "elk.separateConnectedComponents": "true",
     },
-  });
+  };
+  const hinted = sketch && fromSketchUnionGraph(baseGraph, sketch, reverse);
+  if (sketch && !hinted) throw new Error("insufficient prior layout overlap");
+  const input = hinted || (sift ? siftUnionOrder(baseGraph) : baseGraph);
+  const laidOut = await layout(structuredClone(input));
   const { graph, bands, offsets } = alignGenerationBands(laidOut, size);
   const placed = new Map(
     graph.children!.map((n) => [
@@ -473,7 +483,7 @@ async function geometryForSeed(
   };
 }
 
-function mainRouteContacts(geometry: TreeGeometry) {
+export function branchContactCounts(branches: UnionBranch[]) {
   type Point = EdgeRoute["points"][number];
   type Segment = ReturnType<typeof bounds> & {
     a: Point;
@@ -481,22 +491,63 @@ function mainRouteContacts(geometry: TreeGeometry) {
     union: string;
   };
   const lines = new Spatial<Segment>();
-  let contacts = 0;
-  for (const branch of geometry.branches || [])
+  const distinct = new Set<string>();
+  let segments = 0;
+  for (const branch of branches)
     for (let i = 1; i < branch.route.points.length; i++) {
       const a = branch.route.points[i - 1],
         b = branch.route.points[i];
       if (a.x === b.x && a.y === b.y) continue;
       const box = bounds(a, b);
-      for (const previous of lines.query(box))
-        if (
-          previous.union !== branch.union &&
-          segmentContact(a, b, previous.a, previous.b)
-        )
-          contacts++;
+      for (const previous of lines.query(box)) {
+        if (previous.union === branch.union) continue;
+        const contact = segmentContact(a, b, previous.a, previous.b);
+        if (!contact) continue;
+        segments++;
+        distinct.add(JSON.stringify([[branch.union, previous.union].sort(), contact]));
+      }
       lines.add({ ...box, a, b, union: branch.union });
     }
+  return { distinct: distinct.size, segments };
+}
+
+function axisDisplacement(previous: TreeGeometry, current: TreeGeometry, axis: "x" | "y") {
+  const old = new Map(previous.positions);
+  const shifts = current.positions
+    .filter(([id]) => old.has(id))
+    .map(([id, point]) => point[axis] - old.get(id)![axis])
+    .sort((a, b) => a - b);
+  if (shifts.length < 3 || shifts.length < current.positions.length * 0.6)
+    return Infinity;
+  const offset = shifts[Math.floor(shifts.length / 2)];
+  return shifts.reduce((sum, shift) => sum + Math.abs(shift - offset), 0) / shifts.length;
+}
+
+function routeCardContacts(geometry: TreeGeometry, width: number, height: number) {
+  const cards = new Spatial<Box>();
+  for (const [, point] of geometry.positions)
+    cards.add({ left: point.x, right: point.x + width, top: point.y, bottom: point.y + height });
+  let contacts = 0;
+  const routes = [
+    ...(geometry.branches || []).map((branch) => branch.route),
+    ...(geometry.routes || []).map(([, route]) => route),
+  ];
+  for (const route of routes)
+    for (let index = 1; index < route.points.length; index++) {
+      const a = route.points[index - 1], b = route.points[index];
+      for (const card of cards.query(bounds(a, b)))
+        if (segmentHitsBox(a, b, card)) contacts++;
+    }
   return contacts;
+}
+
+function geometryRoutingQuality(geometry: TreeGeometry) {
+  return routingQuality([
+    ...(geometry.branches || []).map((branch) => ({
+      group: branch.union, route: branch.route,
+    })),
+    ...(geometry.routes || []).map(([id, route]) => ({ group: id, route })),
+  ]);
 }
 
 /** Сравниваем видимые маршруты после ELK и уплотнения полос поколений. */
@@ -506,11 +557,14 @@ export async function unionGeometry(
   reverse = false,
   links: Pick<FamilyLink, "type" | "from" | "to">[] = [],
   size: TreeNodeSize = { width: TREE_NODE_WIDTH, height: TREE_NODE_HEIGHT },
+  previous?: TreeGeometry,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);
-  let contacts = mainRouteContacts(best);
-  if (!contacts) return best;
+  let contacts = branchContactCounts(best.branches || []);
+  const seedCandidates = previous && people.length <= 100
+    ? [{ geometry: best, contacts }]
+    : [];
 
   const extent = (geometry: TreeGeometry) => {
     const xs = geometry.positions.map(([, p]) => p.x),
@@ -524,7 +578,7 @@ export async function unionGeometry(
   // На больших архивах ограничиваем число запусков ELK, сохраняя
   // детерминированный результат для одного и того же набора людей.
   const seeds =
-    people.length <= 300
+    !contacts.distinct ? [] : people.length <= 300
       ? [15, 20, 12, 4, 8]
       : people.length <= 2000
         ? [15, 20]
@@ -539,6 +593,7 @@ export async function unionGeometry(
         links,
         seed,
         size,
+        people.length <= 100 && seed === 8,
       );
     } catch {
       continue;
@@ -551,12 +606,96 @@ export async function unionGeometry(
         initial.width * initial.height * 1.5
     )
       continue;
-    const next = mainRouteContacts(candidate);
-    if (next < contacts) {
+    const next = branchContactCounts(candidate.branches || []);
+    if (seedCandidates.length) seedCandidates.push({ geometry: candidate, contacts: next });
+    if (
+      next.distinct < contacts.distinct ||
+      (next.distinct === contacts.distinct && next.segments < contacts.segments)
+    ) {
       best = candidate;
       contacts = next;
     }
-    if (!contacts) break;
+    if (!contacts.distinct) break;
+  }
+  if (
+    previous?.mode === "generations" &&
+    previous.reverse === reverse &&
+    (!previous.nodeSize ||
+      (previous.nodeSize.width === W && previous.nodeSize.height === H)) &&
+    people.length <= 100 &&
+    previous.positions.length
+  ) {
+    // Одна устранённая точка контакта не должна переставлять почти всё дерево.
+    // Рассматриваем только уже рассчитанные seed-варианты с небольшой разницей качества.
+    if (contacts.distinct > 0) {
+      const contactDisplacementCost = 3000;
+      const minimumContacts = contacts.distinct;
+      const oldSize = extent(previous);
+      let movement = axisDisplacement(previous, best, "x");
+      for (const item of seedCandidates) {
+        const delta = item.contacts.distinct - minimumContacts;
+        if (delta < 0 || delta > 1 || item.geometry === best) continue;
+        const nextMovement = axisDisplacement(previous, item.geometry, "x");
+        if (
+          !Number.isFinite(nextMovement) ||
+          movement - nextMovement < 100 ||
+          item.contacts.distinct * contactDisplacementCost + nextMovement >=
+            contacts.distinct * contactDisplacementCost + movement ||
+          item.contacts.segments > contacts.segments + (delta ? 2 : 0) ||
+          axisDisplacement(previous, item.geometry, "y") >
+            Math.max(axisDisplacement(previous, best, "y"), 32) + 64
+        ) continue;
+        const currentSize = extent(best), nextSize = extent(item.geometry);
+        const currentRoutes = geometryRoutingQuality(best);
+        const nextRoutes = geometryRoutingQuality(item.geometry);
+        if (
+          nextRoutes.contacts > currentRoutes.contacts + delta ||
+          nextRoutes.crossings > currentRoutes.crossings + delta ||
+          nextRoutes.length > currentRoutes.length * 1.15 ||
+          routeCardContacts(item.geometry, W, H) > routeCardContacts(best, W, H) ||
+          Math.max(nextSize.width, nextSize.height) >
+            Math.max(oldSize.width, oldSize.height, currentSize.width, currentSize.height) * 1.2 ||
+          nextSize.width * nextSize.height >
+            Math.max(oldSize.width * oldSize.height, currentSize.width * currentSize.height) * 1.5
+        ) continue;
+        best = item.geometry;
+        contacts = item.contacts;
+        movement = nextMovement;
+      }
+    }
+    const movement = axisDisplacement(previous, best, "x");
+    if (movement >= 150 && Number.isFinite(movement)) {
+      try {
+        const candidate = await geometryForSeed(
+          people, layout, reverse, links, 1, size, false, previous,
+        );
+        const next = branchContactCounts(candidate.branches || []);
+        const currentRoutes = geometryRoutingQuality(best);
+        const nextRoutes = geometryRoutingQuality(candidate);
+        const oldSize = extent(previous);
+        const currentSize = extent(best);
+        const nextSize = extent(candidate);
+        const nextMovement = axisDisplacement(previous, candidate, "x");
+        if (
+          next.distinct <= contacts.distinct &&
+          nextRoutes.contacts <= currentRoutes.contacts &&
+          nextRoutes.crossings <= currentRoutes.crossings &&
+          nextRoutes.length <= currentRoutes.length * 1.15 &&
+          nextRoutes.bends <= currentRoutes.bends * 1.15 + 2 &&
+          routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H) &&
+          Math.max(nextSize.width, nextSize.height) <=
+            Math.max(oldSize.width, oldSize.height, currentSize.width, currentSize.height) * 1.2 &&
+          nextSize.width * nextSize.height <=
+            Math.max(oldSize.width * oldSize.height, currentSize.width * currentSize.height) * 1.5 &&
+          nextMovement <= movement * 0.7 &&
+          movement - nextMovement >= 100 &&
+          axisDisplacement(previous, candidate, "y") <=
+            Math.max(axisDisplacement(previous, best, "y"), 32)
+        ) best = candidate;
+      } catch {
+        // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
+      }
+    }
   }
   return best;
 }

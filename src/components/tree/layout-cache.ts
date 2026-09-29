@@ -6,8 +6,8 @@ import {
 import type { LayoutWorkerRequest } from "./layout-worker-protocol.ts";
 
 // Bump when layout, packing or routing changes. Keep model order: ELK uses it.
-export const LAYOUT_CACHE_VERSION = 5;
-export function layoutCacheKey(input: Omit<LayoutWorkerRequest, "requestId">) {
+export const LAYOUT_CACHE_VERSION = 6;
+export function layoutCacheKey(input: Omit<LayoutWorkerRequest, "requestId" | "previousGeometry">) {
   return JSON.stringify({
     version: LAYOUT_CACHE_VERSION,
     width: TREE_NODE_WIDTH,
