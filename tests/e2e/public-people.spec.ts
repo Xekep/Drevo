@@ -35,17 +35,23 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
   await expect(page).toHaveURL(/\/discover\/person\/tree-a\/same$/);
 });
 
-test("admin publishes a person from the card menu and finds the limited public card", async ({ page, isMobile }) => {
-  test.skip(isMobile, "Card context menu currently requires a pointing device");
+test("admin changes a card's search privacy from the eye control", async ({ page, isMobile }) => {
+  test.skip(isMobile, "Публикация меняет общую тестовую базу; мобильное открытие проверяется отдельно");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
-  await page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person-content").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Публикация в поиске" }).click();
+  const card = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await card.hover();
+  const privacy = card.locator(".flow-privacy");
+  await expect(privacy).toBeVisible();
+  await expect(privacy).toHaveAttribute("data-publication-state", "hidden");
+  await privacy.click();
   const dialog = page.getByRole("dialog", { name: "Публикация человека в поиске" });
   await expect(dialog.getByRole("button", { name: "Опубликовать в поиске" })).toBeVisible();
+  await expect(privacy).toHaveAttribute("data-publication-state", "hidden");
   await dialog.getByRole("checkbox", { name: /Год рождения/ }).uncheck();
   await dialog.getByRole("button", { name: "Опубликовать в поиске" }).click();
   await expect(dialog.getByRole("button", { name: "Снять с поиска" })).toBeVisible();
+  await expect(privacy).toHaveAttribute("data-publication-state", "published");
   await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveAttribute(
     "href", /\/discover\/person\/e2e-memorial-person$/,
   );
@@ -55,13 +61,36 @@ test("admin publishes a person from the card menu and finds the limited public c
   await expect(page.locator(".public-person-card")).not.toContainText("биография");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
-  await page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person-content").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Публикация в поиске" }).click();
+  const publishedCard = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-person");
+  await publishedCard.hover();
+  const publishedPrivacy = publishedCard.locator(".flow-privacy");
+  await expect(publishedPrivacy).toHaveAttribute("data-publication-state", "published");
+  await publishedPrivacy.click();
+  await expect(publishedPrivacy).toHaveAttribute("data-publication-state", "published");
   await dialog.getByRole("button", { name: "Снять с поиска" }).click();
   await expect(dialog.getByRole("button", { name: "Опубликовать в поиске" })).toBeVisible();
+  await expect(publishedPrivacy).toHaveAttribute("data-publication-state", "hidden");
+});
+
+test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
+  test.skip(!isMobile);
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  const privacy = page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy");
+  await expect(privacy).toBeVisible();
+  await privacy.click();
+  await expect(page.getByRole("dialog", { name: "Публикация человека в поиске" })).toBeVisible();
+  await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
 });
 
 test("admin can review and revoke a selected discovery publication", async ({ page }) => {
+  let published = false;
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { fields: published ? { "e2e-memorial-person": {} } : {} } });
+    published = route.request().method() === "POST";
+    return route.fulfill({ json: { count: 1 } });
+  });
   await page.goto("/admin");
   await openAdminSection(page, "publications", "Можно найти");
   await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
@@ -82,7 +111,7 @@ test("publication status is not reported as hidden before the server answers", a
   const delayedStatus = new Promise<void>((resolve) => { releaseStatus = resolve; });
   await page.route((url) => url.pathname === "/api/admin/published-people/batch", async (route) => {
     await delayedStatus;
-    await route.continue();
+    await route.fulfill({ json: { fields: {} } });
   });
   try {
     await page.goto("/admin");

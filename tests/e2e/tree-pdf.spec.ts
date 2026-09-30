@@ -98,7 +98,7 @@ test("settings have no export; canvas menu offers visible and full tree", async 
   await expect(dialog.getByText("PNG", { exact: true })).toHaveCount(0);
 });
 
-test("person context menu shares only that person", async ({
+test("person cards have no context menu; tree sharing stays in the toolbar", async ({
   page,
   isMobile,
 }) => {
@@ -107,18 +107,13 @@ test("person context menu shares only that person", async ({
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
   );
-  await page
-    .getByTestId("rf__node-e2e-child")
-    .locator(".flow-person-content")
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Временная ссылка" }).click();
-  const dialog = page.getByRole("dialog", { name: "Поделиться человеком" });
-  await expect(
-    dialog.getByText("1 человек · просмотр без входа"),
-  ).toBeVisible();
-  await expect(
-    dialog.getByText(/Ссылка не публикует его в поиске/),
-  ).toBeVisible();
+  await page.getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content").click({ button: "right" });
+  await expect(page.locator(".tree-context-menu")).toHaveCount(0);
+  await page.getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content").click();
+  await page.getByRole("button", { name: "Близкие" }).click();
+  await expect(page.getByRole("button", { name: "Поделиться" })).toBeVisible();
 });
 
 test("AI file action downloads the configured tree PDF", async ({ page }) => {

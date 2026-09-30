@@ -21,9 +21,11 @@ type Status = {
 export function PublishPersonDialog({
   person,
   onClose,
+  onStatus,
 }: {
   person: Person;
   onClose: () => void;
+  onStatus: (published: boolean) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [fields, setFields] = useState<PublicationFields>(defaultPublicationFields);
@@ -37,6 +39,7 @@ export function PublishPersonDialog({
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
         setStatus(data);
+        onStatus(data.published);
         setFields({
           birthSurname: data.fields.birthSurname && Boolean(person.maidenName),
           birthYear: data.fields.birthYear && Boolean(person.birth?.match(/\b\d{4}\b/)),
@@ -50,7 +53,7 @@ export function PublishPersonDialog({
           setError(reason.message || "Не удалось загрузить публикацию");
       });
     return () => controller.abort();
-  }, [endpoint, person.maidenName, person.birth, person.death, person.birthPlace, person.deathPlace]);
+  }, [endpoint, person.maidenName, person.birth, person.death, person.birthPlace, person.deathPlace, onStatus]);
   async function update(publish: boolean) {
     setBusy(true);
     setError("");
@@ -63,6 +66,7 @@ export function PublishPersonDialog({
       if (!response.ok) throw new Error(data.error);
       setStatus(data);
       setFields(data.fields);
+      onStatus(data.published);
     } catch (reason) {
       setError((reason as Error).message || "Не удалось изменить публикацию");
     } finally {

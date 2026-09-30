@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useMemo } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Handle,
   Position,
@@ -6,8 +6,10 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, ChevronUp, Copy, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleHelp, Copy, Eye, EyeOff, LoaderCircle, Plus } from "lucide-react";
 import { fullName, years, type Person, type FamilyLink } from "../../domain";
+import { archiveFetch } from "../../data/archive-fetch.ts";
+import { archiveContextAt, archiveResourceUrl } from "../../domain/archive-context.ts";
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
@@ -22,6 +24,8 @@ export const TreeActions = createContext<{
   collapse: (id: string, occurrenceId?: string) => void;
   expand: (id: string, occurrenceId?: string) => void;
   reference: (personId: string, occurrenceId: string) => void;
+  publishPerson?: (personId: string) => void;
+  publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
   showRelationLabel: boolean;
   kinshipReference: Person | null;
   kinshipPeople: Person[];
@@ -32,12 +36,15 @@ export const TreeActions = createContext<{
   collapse: () => {},
   expand: () => {},
   reference: () => {},
+  publishPerson: undefined,
+  publicationUpdate: null,
   showRelationLabel: true,
   kinshipReference: null,
   kinshipPeople: [],
   kinshipLinks: [],
 });
 export type PersonNodeType = Node<PersonNodeData, "person">;
+type PublicationStatus = "unknown" | "loading" | "published" | "hidden" | "error";
 
 function samePersonNodeProps(
   a: NodeProps<PersonNodeType>,
@@ -70,11 +77,70 @@ export const PersonNode = memo(function PersonNode({
     collapse,
     expand,
     reference,
+    publishPerson,
+    publicationUpdate,
     showRelationLabel,
     kinshipReference,
     kinshipPeople,
     kinshipLinks,
   } = useContext(TreeActions);
+  const archiveId = archiveContextAt(window.location.pathname)?.id || null;
+  const publicationEndpoint = archiveResourceUrl(
+    `/api/admin/published-people/${encodeURIComponent(data.person.id)}`,
+  );
+  const [publicationState, setPublicationState] = useState<{
+    endpoint: string;
+    status: PublicationStatus;
+  }>({ endpoint: "", status: "unknown" });
+  const publicationStatus = publicationState.endpoint === publicationEndpoint
+    ? publicationState.status : "unknown";
+  const publicationRequest = useRef<AbortController | null>(null);
+  const lastPublicationCheck = useRef(0);
+  useEffect(() => () => {
+    publicationRequest.current?.abort();
+    publicationRequest.current = null;
+  }, [publicationEndpoint]);
+  useEffect(() => {
+    if (
+      publicationUpdate?.personId !== data.person.id ||
+      publicationUpdate.archiveId !== archiveId
+    ) return;
+    publicationRequest.current?.abort();
+    publicationRequest.current = null;
+    lastPublicationCheck.current = Date.now();
+    setPublicationState({
+      endpoint: publicationEndpoint,
+      status: publicationUpdate.published ? "published" : "hidden",
+    });
+  }, [publicationUpdate, data.person.id, archiveId, publicationEndpoint]);
+  function checkPublication() {
+    if (!publishPerson || publicationRequest.current) return;
+    if (
+      (publicationStatus === "published" || publicationStatus === "hidden") &&
+      Date.now() - lastPublicationCheck.current < 30_000
+    ) return;
+    const controller = new AbortController();
+    publicationRequest.current = controller;
+    setPublicationState({ endpoint: publicationEndpoint, status: "loading" });
+    void archiveFetch(publicationEndpoint, {
+      signal: controller.signal,
+      cache: "no-store",
+    }).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось проверить доступность");
+      if (controller.signal.aborted) return;
+      lastPublicationCheck.current = Date.now();
+      setPublicationState({
+        endpoint: publicationEndpoint,
+        status: body.published ? "published" : "hidden",
+      });
+    }).catch(() => {
+      if (!controller.signal.aborted)
+        setPublicationState({ endpoint: publicationEndpoint, status: "error" });
+    }).finally(() => {
+      if (publicationRequest.current === controller) publicationRequest.current = null;
+    });
+  }
   const longPress = useLongPress(() => selectOnly(data.person.id));
   const detail = useStore((s) =>
     s.transform[2] < 0.18
@@ -106,6 +172,11 @@ export const PersonNode = memo(function PersonNode({
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
+  const privacyLabel = publicationStatus === "published" ? "Доступен для поиска"
+    : publicationStatus === "hidden" ? "Недоступен для поиска"
+    : publicationStatus === "error" ? "Не удалось проверить доступность для поиска"
+    : publicationStatus === "loading" ? "Проверяем доступность для поиска"
+    : "Проверить доступность для поиска";
   return (
     <div
       className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.person.needsReview ? "is-needs-review" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
@@ -115,6 +186,8 @@ export const PersonNode = memo(function PersonNode({
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
       style={{ width, height }}
+      onMouseEnter={checkPublication}
+      onFocusCapture={checkPublication}
     >
       {[
         ["top", Position.Top],
@@ -165,6 +238,25 @@ export const PersonNode = memo(function PersonNode({
           {relationLabel && <small>{relationLabel}</small>}
         </span>
       </button>
+      {publishPerson && (
+        <button
+          type="button"
+          className="flow-privacy nodrag nopan"
+          data-publication-state={publicationStatus}
+          aria-label={`${privacyLabel}: ${fullName(data.person)}. Изменить приватность`}
+          title={`${privacyLabel} · изменить приватность`}
+          aria-haspopup="dialog"
+          onClick={(event) => {
+            event.stopPropagation();
+            publishPerson(data.person.id);
+          }}
+        >
+          {publicationStatus === "published" ? <Eye size={18} aria-hidden="true" />
+            : publicationStatus === "hidden" ? <EyeOff size={18} aria-hidden="true" />
+            : publicationStatus === "loading" ? <LoaderCircle size={18} aria-hidden="true" />
+            : <CircleHelp size={18} aria-hidden="true" />}
+        </button>
+      )}
       {(data.occurrences || 0) > 1 && (
         <button
           className="flow-reference nodrag nopan"
