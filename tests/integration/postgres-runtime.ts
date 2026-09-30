@@ -25,6 +25,7 @@ import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
+import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -161,6 +162,18 @@ try {
   ]);
   const other = await openPostgresDatabase("other-archive", source);
   try {
+    const primaryPublished = publishedPeopleStore(live.db);
+    const otherPublished = publishedPeopleStore(other);
+    await primaryPublished.publish("person-a", "owner");
+    assert.equal(await primaryPublished.has("person-a"), true);
+    assert.equal((await primaryPublished.ids()).has("person-a"), true);
+    assert.equal(await otherPublished.has("person-a"), false);
+    await otherPublished.publish("person-a", "owner");
+    assert.equal((await otherPublished.ids()).has("person-a"), true);
+    await primaryPublished.unpublish("person-a");
+    assert.equal(await primaryPublished.has("person-a"), false);
+    assert.equal(await otherPublished.has("person-a"), true);
+    await otherPublished.unpublish("person-a");
     // Explicit archive selection keeps same-ID people in separate snapshots.
     const otherArchive = await openArchive(source, family, "other-archive");
     try {
