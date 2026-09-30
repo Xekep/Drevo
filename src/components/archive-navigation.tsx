@@ -52,7 +52,8 @@ export function ArchiveNavigation({
   const [failedPortrait, setFailedPortrait] = useState<string>();
   const portrait = mediaPreview(safeUrl(accountPerson?.photo));
   const identity = user || account;
-  const initial = identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
+  const initial =
+    identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
     event: MouseEvent<HTMLAnchorElement>,
     next: ArchiveView,
@@ -249,6 +250,7 @@ export function ArchiveHeader({
   query,
   onQuery,
   onSelect,
+  onSelectDocument,
   busy,
   navigation,
 }: {
@@ -256,6 +258,7 @@ export function ArchiveHeader({
   query: string;
   onQuery: (query: string) => void;
   onSelect: (id: string) => void;
+  onSelectDocument?: (id: string) => void;
   busy: boolean;
   navigation: ReactNode;
 }) {
@@ -267,6 +270,7 @@ export function ArchiveHeader({
         query={query}
         onQuery={onQuery}
         onSelect={onSelect}
+        onSelectDocument={onSelectDocument}
       />
       <div className="archive-header-actions">
         {busy && <span role="status">Сохраняем…</span>}
