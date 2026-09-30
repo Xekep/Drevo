@@ -211,6 +211,15 @@
   color: #284e32;
   text-decoration: underline;
 }
+.account-export-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+.account-export-actions .account-row-action {
+  width: fit-content;
+  margin-top: 0;
+}
 .account-row-action:disabled {
   opacity: 0.55;
   cursor: wait;

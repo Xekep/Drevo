@@ -191,4 +191,19 @@ test("account cabinet shows the owner's current tier and quotas", async ({ page 
   await expect(page.getByText("Базовый", { exact: true })).toBeVisible();
   await expect(page.getByText("42 из 150")).toBeVisible();
   await expect(page.getByText("120 МБ из 500 МБ")).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Скачать дерево с фото и документами/ }),
+  ).toHaveAttribute("href", "/api/gedcom/export?format=gedzip7");
+  await expect(
+    page.getByRole("link", { name: /Скачать данные дерева/ }),
+  ).toHaveAttribute("href", "/api/gedcom/export?format=gedcom7");
+});
+
+test("account cabinet hides archive export from a non-owner", async ({ page }) => {
+  await page.route("**/api/account/capacity", (route) =>
+    route.fulfill({ json: { available: true, owned: false } }),
+  );
+  await page.goto("/account");
+  await expect(page.getByRole("link", { name: /Скачать дерево/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Скачать данные дерева/ })).toHaveCount(0);
 });
