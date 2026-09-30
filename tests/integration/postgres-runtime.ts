@@ -27,6 +27,7 @@ import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
+import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -1170,6 +1171,64 @@ try {
     "secondary",
   );
   assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
+  const originalClientId = process.env.YANDEX_CLIENT_ID;
+  const originalClientSecret = process.env.YANDEX_CLIENT_SECRET;
+  process.env.YANDEX_CLIENT_ID = "runtime-test-client";
+  process.env.YANDEX_CLIENT_SECRET = "runtime-test-secret";
+  const oauthFetch: typeof fetch = async (input, init) =>
+    String(input).includes("/token")
+      ? Response.json({ access_token: (init?.body as URLSearchParams).get("code") })
+      : Response.json({ id: "new-account-probe", display_name: "New account" });
+  const oauthApp = await startServer(0, source, true, oauthFetch);
+  try {
+    const oauthBase = `http://127.0.0.1:${(oauthApp.server.address() as { port: number }).port}`;
+    const start = await fetch(oauthBase + "/auth/yandex", { redirect: "manual" });
+    assert.equal(start.status, 302);
+    const state = new URL(start.headers.get("location")!).searchParams.get("state");
+    const callback = await fetch(
+      oauthBase + `/auth/yandex/callback?state=${state}&code=probe`,
+      {
+        headers: { Cookie: start.headers.getSetCookie()[0].split(";")[0] },
+        redirect: "manual",
+      },
+    );
+    assert.equal(callback.status, 303);
+    const location = callback.headers.get("location")!;
+    assert.match(location, /^\/a\/[a-f0-9-]{36}\/tree$/);
+    const sessionCookie = callback.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("drevo_session="))!
+      .split(";")[0];
+    const newAccountSession = await fetch(
+      oauthBase + location.replace(/\/tree$/, "/api/session"),
+      { headers: { Cookie: sessionCookie } },
+    ).then((response) => response.json());
+    assert.equal(newAccountSession.user.role, "admin");
+    assert.equal(newAccountSession.user.approved, true);
+    assert.equal(newAccountSession.user.fullAccess, false);
+    assert.deepEqual(
+      (await fetch(oauthBase + "/api/account/archives", {
+        headers: { Cookie: sessionCookie },
+      }).then((response) => response.json())).archives.map((row: { id: string }) => row.id),
+      [location.split("/")[2]],
+    );
+    const vkRegistration = await oauthApp.archive.db.postgresTransaction!((pgClient) =>
+      completePostgresOAuthLoginInTransaction(
+        pgClient,
+        "vk",
+        { id: "vk:987654321", name: "New VK account" },
+      ),
+    );
+    assert.equal(vkRegistration.accountCreated, true);
+    assert.equal(vkRegistration.archiveCreated, true);
+    assert.notEqual(vkRegistration.archiveId, location.split("/")[2]);
+  } finally {
+    await oauthApp.close();
+    if (originalClientId === undefined) delete process.env.YANDEX_CLIENT_ID;
+    else process.env.YANDEX_CLIENT_ID = originalClientId;
+    if (originalClientSecret === undefined) delete process.env.YANDEX_CLIENT_SECRET;
+    else process.env.YANDEX_CLIENT_SECRET = originalClientSecret;
+  }
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();
