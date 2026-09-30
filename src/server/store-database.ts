@@ -38,6 +38,10 @@ export type StoreDatabase = {
   prepare(sqlite: string, postgres?: string): Statement;
   exec(sqlite: string, postgres?: string): Promise<void>;
   transaction<T>(work: () => Promise<T>, readOnly?: boolean): Promise<T>;
+  /** Global OAuth work uses its own transaction, without locking one tree. */
+  postgresTransaction?<T>(
+    work: (client: pg.PoolClient) => Promise<T>,
+  ): Promise<T>;
   inTransaction(): boolean;
   close(): Promise<void>;
 };
@@ -247,6 +251,21 @@ export async function openPostgresDatabase(
         throw error;
       } finally {
         owner.active = false;
+        client.release();
+      }
+    },
+    async postgresTransaction(work) {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SET LOCAL lock_timeout='5s'");
+        const result = await work(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+      } finally {
         client.release();
       }
     },

@@ -4,31 +4,38 @@ import { ARCHIVE_SCHEMA_VERSION } from "./schema.ts";
 import { provisionPrivateArchiveInTransaction } from "./postgres-private-archive.ts";
 import { issuePostgresSessionInTransaction } from "./postgres-sessions.ts";
 
-type YandexProfile = { id: string; name: string };
+type OAuthProfile = { id: string; name: string };
+type Provider = "yandex" | "vk";
 
 /** The caller commits before sending the session cookie to the browser. */
-export async function completePostgresYandexLoginInTransaction(
+export async function completePostgresOAuthLoginInTransaction(
   client: pg.Client,
-  profile: YandexProfile,
+  provider: Provider,
+  profile: OAuthProfile,
   previousToken = "",
   now = Date.now(),
 ) {
-  const subject = profile.id.trim();
+  const subject =
+    provider === "vk" ? profile.id.replace(/^vk:/, "") : profile.id.trim();
   const name = profile.name.trim();
-  if (!/^[A-Za-z0-9_-]{1,100}$/.test(subject))
-    throw new Error("Некорректный идентификатор Яндекса");
+  if (
+    provider === "vk"
+      ? !/^vk:[0-9]{1,32}$/.test(profile.id)
+      : !/^[A-Za-z0-9_-]{1,100}$/.test(subject)
+  )
+    throw new Error("Некорректный идентификатор провайдера");
   if (!name || name.length > 160) throw new Error("Некорректное имя аккаунта");
 
   // A missing identity has no row to lock. Serialize concurrent callbacks for
   // this provider subject before deciding whether to create an account.
   await client.query("SELECT pg_advisory_xact_lock(2406,hashtext($1))", [
-    `yandex:${subject}`,
+    `${provider}:${subject}`,
   ]);
   const identity = await client.query<{ account_id: string }>(
     `SELECT i.account_id FROM account_identities i
        JOIN accounts a ON a.id=i.account_id
-      WHERE i.provider='yandex' AND i.subject=$1 FOR UPDATE OF a`,
-    [subject],
+      WHERE i.provider=$1 AND i.subject=$2 FOR UPDATE OF a`,
+    [provider, subject],
   );
   let accountId = identity.rows[0]?.account_id;
   const accountCreated = !accountId;
@@ -50,13 +57,18 @@ export async function completePostgresYandexLoginInTransaction(
       [accountId, name, new Date(now).toISOString()],
     );
     await client.query(
-      "INSERT INTO account_identities(provider,subject,account_id) VALUES('yandex',$1,$2)",
-      [subject, accountId],
+      "INSERT INTO account_identities(provider,subject,account_id) VALUES($1,$2,$3)",
+      [provider, subject, accountId],
     );
     await client.query("INSERT INTO account_tiers(account_id) VALUES($1)", [
       accountId,
     ]);
   }
+  // The account-scoped SELECT policies reveal only this account's memberships
+  // and owned archive. The setting expires with this transaction.
+  await client.query("SELECT set_config('drevo.account_id',$1,true)", [
+    accountId,
+  ]);
   // Existing invited members should return to their approved tree after the
   // migration. Creating an empty personal tree on every legacy login would
   // silently switch their default archive.
@@ -76,13 +88,20 @@ export async function completePostgresYandexLoginInTransaction(
       ).rows[0]?.archive_id;
   const archive = existingArchive
     ? { archiveId: existingArchive, created: false }
-    : await provisionPrivateArchiveInTransaction(
-        client,
-        accountId,
-        randomUUID(),
-        "Моё древо",
-        ARCHIVE_SCHEMA_VERSION,
-      );
+    : await (async () => {
+        const archiveId = randomUUID();
+        // The new tree's INSERT policies remain bound to archive_id.
+        await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
+          archiveId,
+        ]);
+        return await provisionPrivateArchiveInTransaction(
+          client,
+          accountId,
+          archiveId,
+          "Моё древо",
+          ARCHIVE_SCHEMA_VERSION,
+        );
+      })();
   const session = await issuePostgresSessionInTransaction(
     client,
     accountId,
@@ -96,4 +115,19 @@ export async function completePostgresYandexLoginInTransaction(
     archiveCreated: archive.created,
     session,
   };
+}
+
+export async function completePostgresYandexLoginInTransaction(
+  client: pg.Client,
+  profile: OAuthProfile,
+  previousToken = "",
+  now = Date.now(),
+) {
+  return await completePostgresOAuthLoginInTransaction(
+    client,
+    "yandex",
+    profile,
+    previousToken,
+    now,
+  );
 }

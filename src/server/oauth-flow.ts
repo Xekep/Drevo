@@ -14,7 +14,7 @@ export type OAuthOptions = {
     req: IncomingMessage,
     res: ServerResponse,
     profile: { id: string; name: string },
-  ) => void | Promise<void>;
+  ) => void | string | Promise<void | string>;
   fetcher?: typeof fetch;
   db?: StoreDatabase;
   transactions?: OAuthTransactions;
@@ -184,9 +184,9 @@ export function createOAuthFlow(
           url,
           signal: AbortSignal.timeout(15000),
         });
-        await options.issueSession(req, res, profile);
+        const destination = await options.issueSession(req, res, profile);
         res.writeHead(303, {
-          Location: "/",
+          Location: destination || "/",
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",
         });
