@@ -13,6 +13,7 @@ type Candidate = {
   deathPlace?: string;
 };
 type SuggestedCandidate = Candidate & { reasons: string[]; conflicts: string[] };
+type IgnoredArchive = { archiveId: string; exampleName?: string };
 type Match = {
   id: string;
   status: "pending" | "linked" | "rejected" | "revoked";
@@ -57,6 +58,10 @@ export function DiscoveryMatchesAdmin() {
   const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   const [suggestionsReload, setSuggestionsReload] = useState(0);
+  const [ignoredArchives, setIgnoredArchives] = useState<IgnoredArchive[]>([]);
+  const [ignoredArchivePage, setIgnoredArchivePage] = useState(0);
+  const [nextIgnoredArchivePage, setNextIgnoredArchivePage] = useState<number | null>(null);
+  const [ignoredArchiveReload, setIgnoredArchiveReload] = useState(0);
   const [source, setSource] = useState<Candidate | null>(null);
   const [target, setTarget] = useState<Candidate | null>(null);
   const [reason, setReason] = useState("");
@@ -117,6 +122,22 @@ export function DiscoveryMatchesAdmin() {
       .finally(() => { if (!controller.signal.aborted) setSuggestionsBusy(false); });
     return () => controller.abort();
   }, [source, reload, showIgnored, suggestionsReload]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    archiveFetch(`${endpoint}/ignored-archives?page=${ignoredArchivePage}`, {
+      signal: controller.signal, cache: "no-store",
+    }).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось загрузить скрытые деревья");
+      setIgnoredArchives((current) => ignoredArchivePage
+        ? [...current, ...body.archives.filter((item: IgnoredArchive) =>
+          !current.some((old) => old.archiveId === item.archiveId))]
+        : body.archives);
+      setNextIgnoredArchivePage(body.nextPage);
+    }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); });
+    return () => controller.abort();
+  }, [ignoredArchivePage, ignoredArchiveReload]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,6 +214,25 @@ export function DiscoveryMatchesAdmin() {
     finally { setBusy(false); }
   }
 
+  async function setIgnoredArchive(targetArchiveId: string, ignored: boolean) {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await archiveFetch(`${endpoint}/ignored-archives`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetArchiveId, ignored }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось изменить скрытое дерево");
+      if (target?.archiveId === targetArchiveId) setTarget(null);
+      setNotice(ignored ? "Подсказки этого дерева скрыты. Ручной поиск остаётся доступным."
+        : "Подсказки этого дерева снова доступны.");
+      setIgnoredArchivePage(0);
+      setIgnoredArchiveReload((value) => value + 1);
+      setSuggestionsReload((value) => value + 1);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
+
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
       <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет деревья и не открывает чужую ветку.</p>
@@ -255,12 +295,26 @@ export function DiscoveryMatchesAdmin() {
               <small>{item.reasons.join(" · ")}</small>
               {item.conflicts.length > 0 && <small className="match-conflicts">Расхождения: {item.conflicts.join("; ")}</small>}
             </button>}
-            <button type="button" className="match-ignore-action" disabled={busy}
-              onClick={() => void setIgnored(item, !showIgnored)}>{showIgnored ? "Вернуть" : "Не тот"}</button>
+            <div className="match-suggestion-actions">
+              <button type="button" className="match-ignore-action" disabled={busy}
+                onClick={() => void setIgnored(item, !showIgnored)}>{showIgnored ? "Вернуть" : "Не тот"}</button>
+              {!showIgnored && <button type="button" className="match-ignore-action" disabled={busy}
+                onClick={() => void setIgnoredArchive(item.archiveId, true)}>Скрыть дерево</button>}
+            </div>
           </div>)}
         </div>
         {suggestionsTruncated && <p>Показана часть похожих карточек. Для точного поиска введите ФИО справа.</p>}
       </div>}
+      <details className="match-ignored-archives">
+        <summary>Скрытые деревья{ignoredArchives.length ? ` · ${ignoredArchives.length}${nextIgnoredArchivePage !== null ? "+" : ""}` : ""}</summary>
+        {!ignoredArchives.length && <p>Нет скрытых деревьев.</p>}
+        {ignoredArchives.map((item) => <div className="match-ignored-archive" key={item.archiveId}>
+          <span>{item.exampleName ? `Дерево с карточкой «${item.exampleName}»` : "Дерево без опубликованных карточек"}</span>
+          <button type="button" disabled={busy} onClick={() => void setIgnoredArchive(item.archiveId, false)}>Вернуть дерево</button>
+        </div>)}
+        {nextIgnoredArchivePage !== null && <button type="button" disabled={busy}
+          onClick={() => setIgnoredArchivePage(nextIgnoredArchivePage)}>Показать ещё</button>}
+      </details>
       {source && target && <div className="match-review">
         <h2>Проверьте обе карточки</h2>
         <div className="match-pair"><CandidateCard candidate={source} /><CandidateCard candidate={target} /></div>

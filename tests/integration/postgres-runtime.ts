@@ -1564,6 +1564,45 @@ try {
   assert.deepEqual((await (await fetch(securedBase +
     "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
     .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
+  const ignoredArchivePath = "/api/discovery/matches/ignored-archives";
+  const archiveIgnoreBody = JSON.stringify({ targetArchiveId: "other-archive", ignored: true });
+  assert.equal((await fetch(securedBase + ignoredArchivePath, {
+    method: "POST", headers, body: archiveIgnoreBody,
+  })).status, 403, "a reader cannot hide another archive");
+  assert.equal((await fetch(securedBase + ignoredArchivePath, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ targetArchiveId: "unrelated-archive", ignored: true }),
+  })).status, 409, "a tree without published cards cannot be probed by hiding it");
+  assert.equal((await fetch(securedBase + ignoredArchivePath, {
+    method: "POST", headers: ownerHeaders, body: archiveIgnoreBody,
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates, [], "hiding an archive removes all its automatic suggestions");
+  assert.equal((await (await fetch(securedBase +
+    "/api/discovery/people?q=Иван", { headers: ownerHeaders }))
+    .json()).results.some((person: { archiveId: string }) =>
+    person.archiveId === "other-archive"), true,
+  "manual discovery remains available after hiding automatic suggestions");
+  assert.deepEqual((await (await fetch(securedBase + ignoredArchivePath, {
+    headers: ownerHeaders,
+  })).json()).archives.map((item: { archiveId: string }) => item.archiveId),
+  ["other-archive"]);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_ignored_archives WHERE archive_id='runtime-test'`).get())?.count, 0,
+    "another archive cannot inspect the private dismissal list");
+  }, true);
+  assert.equal((await fetch(securedBase + ignoredArchivePath, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ targetArchiveId: "other-archive", ignored: false }),
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"],
+  "restoring the archive returns its published candidates");
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
