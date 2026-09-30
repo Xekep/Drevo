@@ -55,6 +55,8 @@ export function DiscoveryMatchesAdmin() {
   const [suggestions, setSuggestions] = useState<SuggestedCandidate[]>([]);
   const [suggestionsBusy, setSuggestionsBusy] = useState(false);
   const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
+  const [showIgnored, setShowIgnored] = useState(false);
+  const [suggestionsReload, setSuggestionsReload] = useState(0);
   const [source, setSource] = useState<Candidate | null>(null);
   const [target, setTarget] = useState<Candidate | null>(null);
   const [reason, setReason] = useState("");
@@ -104,7 +106,7 @@ export function DiscoveryMatchesAdmin() {
   useEffect(() => {
     if (!source) return;
     const controller = new AbortController();
-    archiveFetch(`${endpoint}/candidates?sourcePersonId=${encodeURIComponent(source.id)}`, {
+    archiveFetch(`${endpoint}/candidates?sourcePersonId=${encodeURIComponent(source.id)}${showIgnored ? "&ignored=1" : ""}`, {
       signal: controller.signal, cache: "no-store",
     }).then(async (response) => {
       const body = await response.json();
@@ -114,7 +116,7 @@ export function DiscoveryMatchesAdmin() {
     }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
       .finally(() => { if (!controller.signal.aborted) setSuggestionsBusy(false); });
     return () => controller.abort();
-  }, [source, reload]);
+  }, [source, reload, showIgnored, suggestionsReload]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -146,6 +148,7 @@ export function DiscoveryMatchesAdmin() {
       setSource(null); setTarget(null); setCursor(null); setHistory([]);
       setReason("");
       setSuggestions([]); setSuggestionsBusy(false); setSuggestionsTruncated(false);
+      setShowIgnored(false);
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -170,6 +173,26 @@ export function DiscoveryMatchesAdmin() {
     finally { setBusy(false); }
   }
 
+  async function setIgnored(person: Candidate, ignored: boolean) {
+    if (!source) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await archiveFetch(`${endpoint}/ignored`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourcePersonId: source.id, targetArchiveId: person.archiveId,
+          targetPersonId: person.id, ignored }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось изменить подсказку");
+      setSuggestions((current) => current.filter((item) =>
+        item.archiveId !== person.archiveId || item.id !== person.id));
+      if (target?.archiveId === person.archiveId && target.id === person.id) setTarget(null);
+      setNotice(ignored ? "Подсказка скрыта. Её можно вернуть в списке скрытых." : "Подсказка восстановлена.");
+      setSuggestionsReload((value) => value + 1);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
+
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
       <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет деревья и не открывает чужую ветку.</p>
@@ -177,7 +200,7 @@ export function DiscoveryMatchesAdmin() {
         <div><label>Человек из этого дерева
           <input type="search" value={ownQuery} onChange={(event) => {
             setOwnQuery(event.target.value); setSource(null); setSuggestions([]);
-            setSuggestionsBusy(false); setSuggestionsTruncated(false);
+            setSuggestionsBusy(false); setSuggestionsTruncated(false); setShowIgnored(false);
           }} placeholder="Поиск среди опубликованных" />
         </label>
           <div className="match-options" aria-label="Свои опубликованные люди">
@@ -186,7 +209,7 @@ export function DiscoveryMatchesAdmin() {
               aria-pressed={source?.id === person.id}
               onClick={() => {
                 setSource(person); setTarget(null); setSuggestions([]);
-                setSuggestionsBusy(true); setSuggestionsTruncated(false);
+                setSuggestionsBusy(true); setSuggestionsTruncated(false); setShowIgnored(false);
               }}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
             {!ownPeople.length && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
           </div>
@@ -211,19 +234,30 @@ export function DiscoveryMatchesAdmin() {
         </div>
       </div>
       {source && <div className="match-suggestions">
-        <h2>Возможные совпадения</h2>
+        <div className="match-suggestions-heading">
+          <h2>{showIgnored ? "Скрытые подсказки" : "Возможные совпадения"}</h2>
+          <button type="button" onClick={() => {
+            setShowIgnored((value) => !value); setSuggestions([]); setSuggestionsBusy(true);
+          }}>{showIgnored ? "К предложениям" : "Скрытые"}</button>
+        </div>
         <p>Подсказки основаны только на опубликованных именах, годах и местах. Проверьте сведения перед отправкой запроса.</p>
         {suggestionsBusy && <p role="status">Ищем совпадения…</p>}
-        {!suggestionsBusy && !suggestions.length && <p>Пока совпадений нет. Можно найти карточку вручную.</p>}
+        {!suggestionsBusy && !suggestions.length && <p>{showIgnored ? "Скрытых подсказок нет." : "Пока совпадений нет. Можно найти карточку вручную."}</p>}
         <div className="match-suggestion-list">
-          {suggestions.map((item) => <button type="button" key={`${item.archiveId}:${item.id}`}
-            className={target?.archiveId === item.archiveId && target.id === item.id ? "is-selected" : ""}
-            aria-pressed={target?.archiveId === item.archiveId && target.id === item.id}
-            onClick={() => setTarget(item)}>
-            <strong>{item.name}</strong>
-            <small>{item.reasons.join(" · ")}</small>
-            {item.conflicts.length > 0 && <small className="match-conflicts">Расхождения: {item.conflicts.join("; ")}</small>}
-          </button>)}
+          {suggestions.map((item) => <div className="match-suggestion" key={`${item.archiveId}:${item.id}`}>
+            {showIgnored ? <div className="match-suggestion-summary">
+              <strong>{item.name}</strong><small>{item.reasons.join(" · ")}</small>
+            </div> : <button type="button"
+              className={target?.archiveId === item.archiveId && target.id === item.id ? "is-selected" : ""}
+              aria-pressed={target?.archiveId === item.archiveId && target.id === item.id}
+              onClick={() => setTarget(item)}>
+              <strong>{item.name}</strong>
+              <small>{item.reasons.join(" · ")}</small>
+              {item.conflicts.length > 0 && <small className="match-conflicts">Расхождения: {item.conflicts.join("; ")}</small>}
+            </button>}
+            <button type="button" className="match-ignore-action" disabled={busy}
+              onClick={() => void setIgnored(item, !showIgnored)}>{showIgnored ? "Вернуть" : "Не тот"}</button>
+          </div>)}
         </div>
         {suggestionsTruncated && <p>Показана часть похожих карточек. Для точного поиска введите ФИО справа.</p>}
       </div>}

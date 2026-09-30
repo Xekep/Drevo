@@ -1525,20 +1525,47 @@ try {
   const beforeCandidates = await otherApp.archive.read();
   const similarCandidate = structuredClone(beforeCandidates.family);
   similarCandidate.people[0].name = "Иван";
+  similarCandidate.people.push({ ...structuredClone(similarCandidate.people[0]),
+    id: "person-b", name: "Иван", column: 1 });
   await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
+  await otherPublication.publish("person-b", "owner");
   const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
     headers: ownerHeaders,
   });
   assert.equal(suggested.status, 200);
   const suggestedBody = await suggested.json();
   assert.deepEqual(suggestedBody.candidates.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["other-archive","person-a"]]);
+    [person.archiveId,person.id]), [["other-archive","person-b"]],
+  "a confirmed link must not be suggested again");
   assert.equal(suggestedBody.candidates[0].birthYear, undefined,
     "candidate evidence must not disclose a birth year hidden by publication consent");
   assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
     headers,
   })).status, 403);
+  const ignoredBody = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+    targetPersonId: "person-b", ignored: true });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers, body: ignoredBody,
+  })).status, 403);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: ownerHeaders, body: ignoredBody,
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates, []);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a&ignored=1", { headers: ownerHeaders }))
+    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-b", ignored: false }),
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
   await otherPublication.unpublish("person-a");
+  await otherPublication.unpublish("person-b");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
     headers,
   })).json()).linkedCards, [], "revoking either publication removes the transition");
