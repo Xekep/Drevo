@@ -2019,6 +2019,9 @@
     0 0 0 4px #5c8650,
     0 4px 14px #293e3424;
 }
+.flow-person.is-portrait-card.is-needs-review .person-avatar {
+  border-color: #d77b18;
+}
 .flow-person.is-portrait-card .portrait-card-info {
   display: grid;
   flex: none;

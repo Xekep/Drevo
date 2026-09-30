@@ -43,6 +43,7 @@ import {
   type TreeColorScheme,
 } from "../../domain";
 import { archiveContextAt } from "../../domain/archive-context.ts";
+import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
@@ -98,6 +99,9 @@ export type TreeFocus = {
   purpose?: "family";
   groupId?: string;
 };
+export type AssistantTreeFilter =
+  | { ids: string[]; label: string; token: number }
+  | { excludeNeedsReview: true; label: string; token: number };
 export type TreeCanvasHandle = {
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
@@ -129,7 +133,7 @@ type Props = {
   onAddRelative: (id: string, type: "parent" | "child" | "spouse") => void;
   onLink: () => void;
   focus: TreeFocus | null;
-  assistantFilter?: { ids: string[]; label: string; token: number } | null;
+  assistantFilter?: AssistantTreeFilter | null;
   onClearAssistantFilter?: () => void;
   zoomRequest?: { token: number; direction: "in" | "out" };
   preview: ConnectionDraft | null;
@@ -380,15 +384,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const showAllBranches = familyView.showAll;
   const filterToken = props.assistantFilter?.token;
   useEffect(() => {
-    if (filterToken) showAllBranches();
+    if (filterToken) {
+      showAllBranches();
+      setFanAnchor(null);
+    }
   }, [filterToken, showAllBranches]);
   const { anchor: root, collapsed, toggle: toggleView } = familyView;
   const visible = useMemo(() => {
     if (!props.assistantFilter) return familyView.visible;
+    if ("excludeNeedsReview" in props.assistantFilter)
+      return withoutReviewPeople(family.people, familyView.visible);
     return new Set(
       props.assistantFilter.ids.filter((id) => familyView.visible.has(id)),
     );
-  }, [familyView.visible, props.assistantFilter]);
+  }, [family.people, familyView.visible, props.assistantFilter]);
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
     [family.people, visible],

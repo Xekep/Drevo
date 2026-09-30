@@ -29,6 +29,7 @@ import {
   TreeCanvas,
   type ConnectionDraft,
   type TreeCanvasHandle,
+  type AssistantTreeFilter,
 } from "./components/tree/tree-canvas";
 import { InspectorDock } from "./components/inspector-dock";
 import { PersonInspector } from "./components/person-inspector";
@@ -161,11 +162,7 @@ export default function App() {
       token: number;
       direction: "in" | "out";
     }>({ token: 0, direction: "in" }),
-    [assistantFilter, setAssistantFilter] = useState<{
-      ids: string[];
-      label: string;
-      token: number;
-    } | null>(null),
+    [assistantFilter, setAssistantFilter] = useState<AssistantTreeFilter | null>(null),
     [pendingResearchPersonId, setPendingResearchPersonId] = useState<
       string | null
     >(null);
@@ -1108,6 +1105,14 @@ export default function App() {
             if (!ids.length) return;
             setView("tree");
             setAssistantFilter({ ids, label, token: Date.now() });
+          }}
+          onHideReview={() => {
+            setView("tree");
+            setAssistantFilter({
+              excludeNeedsReview: true,
+              label: "Без карточек на проверке",
+              token: Date.now(),
+            });
           }}
           onZoom={(direction) =>
             setAssistantZoom((previous) => ({

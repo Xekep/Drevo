@@ -76,6 +76,7 @@ import {
   CONTROL_VIEW_TOOL,
   CREATE_PDF_TOOL,
   explicitViewControlRequest,
+  hideReviewPeopleRequest,
   humanizeResearchAnswer,
   markedPeopleLabel,
   type ModelMessage,
@@ -297,7 +298,7 @@ export function createResearchRunner({
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
         "Если вопрос содержит «этот человек», «эта карточка», «это фото» или подобную отсылку без имени, используй открытую карточку или снимок из контекста интерфейса и проверь факты инструментами. Не подменяй явно названного в вопросе человека открытой карточкой.",
-        "Если пользователь просит оставить на древе только носителей фамилии (включая фамилию при рождении) и ближайших предков, вызови get_surname_group с фамилией, затем control_archive_view с action=filter_surname и surname. Если просит составить временное древо по другому критерию, собери точные personIds через инструменты архива и вызови action=filter_people с personIds и короткой label; связи между ними перестроятся. Не добавляй людей, не подтверждённых инструментами. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people: это лишь перемещает камеру. Если просит приблизить или отдалить, используй zoom_in или zoom_out.",
+        "Ручной признак needsReview означает «Требует проверки». Отсутствие признака не подтверждает достоверность карточки. Для списка таких людей используй list_review_people. Если пользователь просит временно скрыть их из древа, используй control_archive_view с action=hide_review_people; кнопка «Всё древо» восстановит показ. Если просит оставить на древе только носителей фамилии и ближайших предков, вызови get_surname_group, затем action=filter_surname. Для временного древа по другому критерию собери точные personIds инструментами архива и вызови action=filter_people. Не добавляй неподтверждённых людей. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people. Для изменения масштаба используй zoom_in или zoom_out.",
         "Для таблицы по фамилии включая фамилию при рождении вызови get_surname_group. У Markdown-таблицы отдельная строка заголовков с разделителями | между всеми столбцами, затем строка | --- | для каждого столбца. Для проверки источников используй get_evidence_coverage и find_evidence_gaps; источник карточки не подтверждает автоматически каждое поле.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
@@ -417,7 +418,9 @@ export function createResearchRunner({
     let verifiedSourceGapAnswer = "";
     const uiActions: UiAction[] = [],
       files: ResearchFile[] = [],
-      viewControlRequested = explicitViewControlRequest(message, view),
+      viewControlRequested =
+        explicitViewControlRequest(message, view) || hideReviewPeopleRequest(message),
+      reviewHideRequested = hideReviewPeopleRequest(message),
       filterSurnameRequested =
         viewControlRequested &&
         /(?:древ|дерев).{0,95}(?:только|остав|убер|скрой|предк)|(?:только|остав|убер|скрой).{0,95}(?:древ|дерев)/iu.test(
@@ -522,6 +525,21 @@ export function createResearchRunner({
         uiActions: [{ type: zoom }],
         files: [],
       };
+
+    if (reviewHideRequested && !availableAttachments.length) {
+      const count = family.people.filter((person) => person.needsReview).length;
+      const answer = count
+        ? `Скрыл на древе ${count} ${plural(count, "карточку", "карточки", "карточек")}, отмеченных «Требует проверки». Это временный фильтр; кнопка «Всё древо» восстановит показ.`
+        : "В доступном древе нет карточек с отметкой «Требует проверки».";
+      onDelta(answer);
+      return {
+        answer,
+        references: [],
+        suggestionIds: [],
+        uiActions: count ? [{ type: "hide_review_people" }] : [],
+        files: [],
+      };
+    }
 
     if (filterSurnameRequested && !availableAttachments.length) {
       const surname = surnameInTreeRequest(message);
@@ -1436,6 +1454,12 @@ export function createResearchRunner({
                 personIds: [...new Set(raw.personIds as string[])],
                 label,
               };
+              uiActions.push(action);
+              result = { scheduled: true, action };
+            } else if (raw.action === "hide_review_people") {
+              if (!reviewHideRequested)
+                throw new Error("Нужна явная просьба скрыть карточки на проверке");
+              const action: UiAction = { type: "hide_review_people" };
               uiActions.push(action);
               result = { scheduled: true, action };
             } else if (

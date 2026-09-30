@@ -515,6 +515,14 @@ export function PersonEditor({
             </label>
           </div>
         </div>
+        <label className="check-field person-review-status">
+          <input
+            type="checkbox"
+            checked={!!draft.needsReview}
+            onChange={(event) => field("needsReview", event.target.checked)}
+          />
+          Требует проверки
+        </label>
         <details className="form-details person-extra" open={!!person}>
           <summary>
             <CalendarDays size={17} aria-hidden="true" />

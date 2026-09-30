@@ -103,14 +103,15 @@ export const PersonNode = memo(function PersonNode({
     kinshipLinks,
   ]);
   const lifespan = years(data.person);
-  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}`;
+  const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
   const branchTitle = `${branchAction} ветвь`;
   return (
     <div
-      className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
+      className={`flow-person is-portrait-card ${selected ? "is-selected" : ""} ${data.spotlit ? "is-spotlit" : ""} ${data.person.needsReview ? "is-needs-review" : ""} ${data.outsideSpotlight ? "is-outside-spotlight" : ""} ${compact ? "is-compact" : ""} ${overview ? "is-overview" : ""} ${detail === "distant" ? "is-distant" : ""} ${data.dimmed ? "is-dimmed" : ""}`}
       data-readonly={!isConnectable}
       data-person-id={data.person.id}
+      data-needs-review={data.person.needsReview || undefined}
       data-household={data.household || undefined}
       data-anchor={data.anchor || undefined}
       style={{ width, height }}

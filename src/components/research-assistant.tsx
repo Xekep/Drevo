@@ -93,6 +93,7 @@ const fieldLabels: Record<string, string> = {
   birth: "Дата рождения",
   death: "Дата смерти",
   deceased: "Умер",
+  needsReview: "Требует проверки",
   birthPlace: "Место рождения",
   deathPlace: "Место смерти",
   maidenName: "Фамилия при рождении",
@@ -284,6 +285,7 @@ export function ResearchAssistant({
   onPhoto,
   onReveal,
   onFilter,
+  onHideReview,
   onZoom,
   onExportTreePdf,
 }: {
@@ -300,6 +302,7 @@ export function ResearchAssistant({
   onPhoto: (id: string) => void;
   onReveal: (ids: string[]) => void;
   onFilter: (ids: string[], label: string) => void;
+  onHideReview: () => void;
   onZoom: (direction: "in" | "out") => void;
   onExportTreePdf?: (scope: "current" | "all") => Promise<void>;
 }) {
@@ -684,6 +687,7 @@ export function ResearchAssistant({
       if (action.type === "focus_people") onReveal(action.personIds);
       else if (action.type === "filter_people")
         onFilter(action.personIds, action.label);
+      else if (action.type === "hide_review_people") onHideReview();
       else if (action.type === "open_person") onPerson(action.personId);
       else if (action.type === "open_photo") onPhoto(action.photoId);
       else if (action.type === "zoom_in") onZoom("in");

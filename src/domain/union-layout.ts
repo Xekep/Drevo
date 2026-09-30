@@ -92,6 +92,21 @@ async function geometryForSeed(
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
   flippedPairs?: ReadonlySet<string>,
 ): Promise<TreeGeometry> {
+  if (!people.length)
+    return {
+      nodeSize: size,
+      mode: "generations",
+      reverse,
+      positions: [],
+      start: 1700,
+      offset: 0,
+      routes: [],
+      occurrences: [],
+      blocks: [],
+      siblingGroups: [],
+      generationBands: [],
+      branches: [],
+    };
   const { width: W, height: H } = size;
   const families = familyUnions(people);
   const byId = new Map(people.map((p) => [p.id, p]));
