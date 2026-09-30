@@ -25,6 +25,7 @@ import { assertProductionOrigin } from "./runtime-config.ts";
 import { imagePreviews } from "./image-previews.ts";
 import { archiveHttp } from "./archive-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
+import { portableExportHttp } from "./portable-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
@@ -173,6 +174,11 @@ export async function startServer(
     serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
+  const portableExport = portableExportHttp(
+    archive,
+    auth,
+    resolve(dirname(dbPath), "uploads"),
+  );
   const yandex = createYandexOAuth({
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
@@ -260,6 +266,7 @@ export async function startServer(
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
+    if (await portableExport(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
     if (await vk.handle(req, res, parsedUrl)) return;
 

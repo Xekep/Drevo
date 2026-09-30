@@ -1830,6 +1830,17 @@ try {
       }).then((response) => response.json())).archives.map((row: { id: string }) => row.id),
       [location.split("/")[2]],
     );
+    const portablePath = location.replace(/\/tree$/, "/api/drevo/export");
+    const portable = await fetch(oauthBase + portablePath, {
+      headers: { Cookie: sessionCookie },
+    });
+    assert.equal(portable.status, 200);
+    assert.equal(Buffer.from(await portable.arrayBuffer()).subarray(0, 2).toString(), "PK");
+    assert.notEqual(
+      (await fetch(oauthBase + portablePath, { headers: ownerHeaders })).status,
+      200,
+      "another archive owner must not download this tree",
+    );
     const vkRegistration = await oauthApp.archive.db.postgresTransaction!((pgClient) =>
       completePostgresOAuthLoginInTransaction(
         pgClient,
