@@ -369,6 +369,79 @@
   padding-top: 11px;
   border-top: 1px solid #d9e2d6;
 }
+.account-owner-transfer {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #d9e2d6;
+}
+.account-owner-transfer > strong {
+  color: #314f3a;
+  font-size: 14px;
+}
+.account-owner-transfer p {
+  margin: 0;
+  color: #66776b;
+  line-height: 1.5;
+}
+.account-owner-transfer-form,
+.account-owner-transfer-pending {
+  display: grid;
+  width: 100%;
+  gap: 11px;
+}
+.account-owner-transfer label {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  font-size: 12px;
+  color: #526457;
+}
+.account-owner-transfer input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #ccd8ca;
+  border-radius: 9px;
+  background: #fff;
+  color: #263d2f;
+}
+.account-owner-transfer-candidates {
+  display: grid;
+  width: 100%;
+  max-height: 180px;
+  gap: 3px;
+  overflow: auto;
+}
+.account-owner-transfer button {
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid #cbd7c9;
+  border-radius: 9px;
+  background: #f0f4ee;
+  color: #294a35;
+  cursor: pointer;
+}
+.account-owner-transfer button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.account-owner-transfer-candidates button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+}
+.account-owner-transfer-candidates button[aria-pressed="true"] {
+  border-color: #6b8d70;
+  background: #e5eee3;
+}
+.account-owner-transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .account-note {
   color: #8a6b38;
 }
@@ -431,5 +504,9 @@
   .account-card {
     padding: 23px;
     border-radius: 17px;
+  }
+  .account-owner-transfer button,
+  .account-owner-transfer input {
+    min-height: 44px;
   }
 }

@@ -26,6 +26,7 @@ import { LoginButtons } from "./login-buttons";
 import { AccountAiHistory } from "./account-ai-history";
 import { AccountEmailLink } from "./account-email-link";
 import { PortableImport } from "./portable-import";
+import { AccountOwnerTransfer } from "./account-owner-transfer";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -566,6 +567,9 @@ export function AccountPage({
                     user.role === "admin" &&
                     user.approved &&
                     capacity.people === 0 && <PortableImport />}
+                  {capacity?.available && user.approved && (
+                    <AccountOwnerTransfer key={window.location.pathname} />
+                  )}
                   {user.role === "admin" && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}
