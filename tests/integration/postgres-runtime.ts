@@ -2216,6 +2216,81 @@ try {
     assert.equal((await fetch(oauthBase + `/a/${recreatedId}/api/session`, {
       headers: transferTargetHeaders,
     })).status, 200);
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [recreatedId]);
+    await client.query(
+      "INSERT INTO accounts(id,name,created_at) VALUES('deleting-account','Delete me',$1)",
+      [new Date().toISOString()],
+    );
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,'deleting-account','reader',true,'all')",
+      [recreatedId],
+    );
+    const deletingToken = newSessionToken();
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'deleting-account',$2)",
+      [sessionTokenHash(deletingToken), Date.now() + 600_000],
+    );
+    await client.query(
+      "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES($1,'delete-chat','deleting-account','all')",
+      [recreatedId],
+    );
+    await client.query(
+      "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES($1,987654,$2,'deleting-account','Delete me','update','archive',$1,'Test','[]'::jsonb)",
+      [recreatedId, new Date().toISOString()],
+    );
+    await client.query(
+      "INSERT INTO archive_invitations(archive_id,id,token_hash,role,created_by,created_at,expires_at) VALUES($1,'10000000-0000-4000-8000-000000000001','account-delete-invite','reader','deleting-account',$2,$3)",
+      [recreatedId, new Date().toISOString(), new Date(Date.now() + 600_000).toISOString()],
+    );
+    await client.query(
+      "INSERT INTO archive_owner_transfers(archive_id,from_user_id,to_user_id,created_ms,expires_ms) VALUES($1,'transfer-target','deleting-account',$2,$3)",
+      [recreatedId, Date.now(), Date.now() + 600_000],
+    );
+    const accountDeletionPath = "/api/account/deletion";
+    const deletingHeaders = {
+      Cookie: `drevo_session=${deletingToken}`,
+      "Content-Type": "application/json",
+      "X-Drevo-Account-Deletion": "1",
+    };
+    const accountDeletionPlan = await fetch(oauthBase + accountDeletionPath, {
+      headers: deletingHeaders,
+    }).then((response) => response.json());
+    assert.equal(accountDeletionPlan.name, "Delete me");
+    assert.equal(accountDeletionPlan.ownedArchives, 0);
+    assert.equal(accountDeletionPlan.sharedArchives, 1);
+    assert.equal((await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE", headers: { ...deletingHeaders, Origin: "https://other.test" },
+      body: JSON.stringify({ name: "Delete me", leaveSharedArchives: true }),
+    })).status, 403);
+    assert.equal((await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE", headers: deletingHeaders,
+      body: JSON.stringify({ name: "Wrong", leaveSharedArchives: true }),
+    })).status, 409);
+    assert.equal((await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE", headers: deletingHeaders,
+      body: JSON.stringify({ name: "Delete me", leaveSharedArchives: false }),
+    })).status, 409);
+    const ownerAccountPlan = await fetch(oauthBase + accountDeletionPath, {
+      headers: transferTargetHeaders,
+    }).then((response) => response.json());
+    assert.equal(ownerAccountPlan.ownedArchives, 1);
+    assert.equal((await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE", headers: { ...transferTargetHeaders, "X-Drevo-Account-Deletion": "1" },
+      body: JSON.stringify({ name: ownerAccountPlan.name, leaveSharedArchives: true }),
+    })).status, 409, "an owner must transfer or remove their tree first");
+    const removedAccount = await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE", headers: deletingHeaders,
+      body: JSON.stringify({ name: "Delete me", leaveSharedArchives: true }),
+    });
+    assert.equal(removedAccount.status, 200,
+      removedAccount.status === 200 ? "" : await removedAccount.text());
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
+    assert.equal((await client.query("SELECT actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0].actor_name, "Удалённый участник");
+    assert.equal((await fetch(oauthBase + accountDeletionPath, { headers: deletingHeaders })).status, 401);
     await client.query(
       "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );

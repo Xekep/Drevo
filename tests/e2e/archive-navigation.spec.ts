@@ -476,6 +476,55 @@ test("an account with no tree can create a new private tree", async ({
   await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
 });
 
+test("account deletion requires its exact name and shared-tree consent", async ({
+  page,
+}) => {
+  let deletionBody: { name: string; leaveSharedArchives: boolean } | null =
+    null;
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: null,
+        account: { id: "account-one", name: "Анна", fullAccess: false },
+      },
+    });
+  });
+  await page.route("**/api/account/archives", (route) =>
+    route.fulfill({ json: { archives: [] } }),
+  );
+  await page.route("**/api/account/deletion", async (route) => {
+    if (route.request().method() === "DELETE") {
+      deletionBody = route.request().postDataJSON();
+      return route.fulfill({ json: { deleted: true, sharedArchives: 1 } });
+    }
+    return route.fulfill({
+      json: { name: "Анна", ownedArchives: 0, sharedArchives: 1 },
+    });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Удалить аккаунт" }).click();
+  const confirm = page.getByRole("button", { name: "Удалить аккаунт" }).last();
+  await expect(confirm).toBeDisabled();
+  await page
+    .getByRole("textbox", { name: /Для подтверждения введите имя аккаунта/ })
+    .fill("Анна");
+  await expect(confirm).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect
+    .poll(() => deletionBody)
+    .toEqual({
+      name: "Анна",
+      leaveSharedArchives: true,
+    });
+});
+
 test("an invited member can create their own private tree", async ({
   page,
 }) => {
