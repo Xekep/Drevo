@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { Human } from "@vladmandic/human";
 
 const MODEL_URI = "/models/human-3.3.6";
@@ -27,7 +28,7 @@ function contains(
 }
 
 async function run() {
-  const photos = (await fetch("/__face_backfill/manifest").then((response) =>
+  const photos = (await archiveFetch("/__face_backfill/manifest").then((response) =>
     response.json(),
   )) as Photo[];
   const human = new Human({
@@ -104,7 +105,7 @@ async function run() {
       );
     }
   }
-  await fetch("/__face_backfill/result", {
+  await archiveFetch("/__face_backfill/result", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -122,7 +123,7 @@ async function run() {
 }
 
 void run().catch(async (error) => {
-  await fetch("/__face_backfill/result", {
+  await archiveFetch("/__face_backfill/result", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

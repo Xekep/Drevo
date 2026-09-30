@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useCallback,
   useEffect,
@@ -92,7 +93,7 @@ export function DocumentsCatalog({
       setLoading(true);
       setError("");
       try {
-        const response = await fetch(
+        const response = await archiveFetch(
           `/api/documents?offset=${offset}&limit=${PAGE_SIZE}&q=${encodeURIComponent(query.trim())}${personFilter !== null ? `&personId=${encodeURIComponent(personFilter)}` : ""}`,
           { signal: request.signal },
         );
@@ -132,7 +133,7 @@ export function DocumentsCatalog({
     const request = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(`/api/documents/${documentId}`, {
+        const response = await archiveFetch(`/api/documents/${documentId}`, {
           signal: request.signal,
         });
         if (!response.ok) throw new Error("Документ не найден или недоступен");
@@ -172,7 +173,7 @@ export function DocumentsCatalog({
     const request = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(
+        const response = await archiveFetch(
           `/api/people/search?q=${encodeURIComponent(personQuery.trim())}`,
           { signal: request.signal },
         );
@@ -201,7 +202,7 @@ export function DocumentsCatalog({
         personIds: selectedPeople.map((person) => person.id),
         ...details,
       });
-      const response = await fetch("/api/documents", {
+      const response = await archiveFetch("/api/documents", {
         method: "POST",
         headers: {
           "Content-Type": "application/pdf",
@@ -270,7 +271,7 @@ export function DocumentsCatalog({
     setSavingEdit(true);
     setEditError("");
     try {
-      const response = await fetch(`/api/documents/${editing.id}`, {
+      const response = await archiveFetch(`/api/documents/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -344,7 +345,7 @@ export function DocumentsCatalog({
     setDeleting(entry.id);
     setDeleteError("");
     try {
-      const response = await fetch(`/api/documents/${entry.id}`, {
+      const response = await archiveFetch(`/api/documents/${entry.id}`, {
         method: "DELETE",
       });
       if (!response.ok) {

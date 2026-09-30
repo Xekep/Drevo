@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -246,7 +247,7 @@ export default function PlacesMap({
         if (!active) break;
         if (place.location || resultRef.current[place.key]) continue;
         try {
-          const response = await fetch(
+          const response = await archiveFetch(
             `/api/places/locate?q=${encodeURIComponent(place.name)}`,
             { headers: { "X-Drevo-Map": "1" }, signal: controller.signal },
           );
@@ -365,7 +366,7 @@ export default function PlacesMap({
     setSearchNotice("");
     setError("");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
         `/api/places/locate?q=${encodeURIComponent(search.trim())}`,
         { headers: { "X-Drevo-Map": "1" } },
       );

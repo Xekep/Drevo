@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useId, useState } from "react";
 import { Search, X } from "lucide-react";
 import { fullName, type Person } from "../domain";
@@ -44,7 +45,7 @@ export function PersonSearch({
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(
+        const response = await archiveFetch(
           `/api/people/search?q=${encodeURIComponent(needle)}`,
           { signal: controller.signal },
         );

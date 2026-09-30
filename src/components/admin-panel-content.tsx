@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -309,7 +310,7 @@ export function AdminPanel({
   const [auditActor, setAuditActor] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/settings", { signal: controller.signal })
+    void archiveFetch("/api/settings", { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Нет доступа к управлению архивом");
         setSettings(await response.json());
@@ -323,7 +324,7 @@ export function AdminPanel({
     const controller = new AbortController();
     const query = new URLSearchParams({ limit: String(USERS_PAGE_SIZE) });
     if (usersCursor) query.set("cursor", usersCursor);
-    void fetch(`/api/users?${query}`, { signal: controller.signal })
+    void archiveFetch(`/api/users?${query}`, { signal: controller.signal })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok)
@@ -350,7 +351,7 @@ export function AdminPanel({
     setError("");
     setNotice("");
     try {
-      const response = await fetch(url, {
+      const response = await archiveFetch(url, {
         method,
         ...(body === undefined
           ? {}

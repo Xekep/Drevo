@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useEffect,
   useRef,
@@ -22,6 +23,7 @@ import {
 import { safeUrl, type Person, type ArchiveUser } from "../domain";
 import { mediaPreview } from "../domain/media-preview";
 import { archivePaths, type ArchiveView } from "../domain/archive-routes";
+import { scopedArchivePath } from "../domain/archive-context.ts";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import { TreeSearch } from "./tree-search";
 export type { ArchiveView } from "../domain/archive-routes";
@@ -86,7 +88,7 @@ export function ArchiveNavigation({
   const logout = async () => {
     if (menu.current) menu.current.open = false;
     try {
-      const response = await fetch("/auth/logout", { method: "POST" });
+      const response = await archiveFetch("/auth/logout", { method: "POST" });
       if (!response.ok) {
         window.location.reload();
         return;
@@ -101,7 +103,7 @@ export function ArchiveNavigation({
     <nav className="archive-nav" aria-label="Разделы архива">
       <a
         className="nav-brand"
-        href={archivePaths.tree}
+        href={scopedArchivePath(archivePaths.tree)}
         onClick={(event) => navigate(event, "tree")}
         aria-label="Древо"
       >
@@ -133,7 +135,7 @@ export function ArchiveNavigation({
           .map(([id, label, Icon]) => (
             <a
               key={id}
-              href={archivePaths[id]}
+              href={scopedArchivePath(archivePaths[id])}
               aria-current={view === id ? "page" : undefined}
               onClick={(event) => navigate(event, id)}
             >
@@ -145,7 +147,7 @@ export function ArchiveNavigation({
       {user && (
         <a
           className="nav-account"
-          href={archivePaths.account}
+          href={scopedArchivePath(archivePaths.account)}
           aria-label={`Личный кабинет: ${user.name}`}
           aria-current={view === "account" ? "page" : undefined}
           onClick={(event) => navigate(event, "account")}
@@ -194,7 +196,7 @@ export function ArchiveNavigation({
               .map(([id, label, Icon]) => (
                 <a
                   key={id}
-                  href={archivePaths[id]}
+                  href={scopedArchivePath(archivePaths[id])}
                   aria-current={view === id ? "page" : undefined}
                   onClick={(event) => navigate(event, id)}
                 >
@@ -219,7 +221,7 @@ export function ArchiveNavigation({
           </button>
           {user?.role === "admin" && (
             <a
-              href={archivePaths.admin}
+              href={scopedArchivePath(archivePaths.admin)}
               aria-current={view === "admin" ? "page" : undefined}
               onClick={(event) => navigate(event, "admin")}
               title="Админская панель"

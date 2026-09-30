@@ -67,6 +67,9 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/people",
       "/people/sample-id",
       "/photos/sample-id",
+      "/a/family-one/tree",
+      "/a/family-one/people/sample-id",
+      "/a/family-one/account",
     ]) {
       const response = await fetch(app.base + path);
       assert.equal(response.status, 200);

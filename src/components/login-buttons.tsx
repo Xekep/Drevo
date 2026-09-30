@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import { markEntrySequence } from "./entry-sequence";
 import "../styles/login-buttons.css";
@@ -8,7 +9,7 @@ export function LoginButtons() {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/session", { cache: "no-store", signal: controller.signal })
+    archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("Session unavailable");
         const data = await response.json();

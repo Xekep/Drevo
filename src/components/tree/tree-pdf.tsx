@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { safeUrl } from "../../domain";
+import { archiveResourceUrl } from "../../domain/archive-context.ts";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -224,7 +225,7 @@ async function exportTreeGraphic(
       const photos = new Map(
         tree.nodes.flatMap((node) =>
           node.type === "person"
-            ? [[node.data.person.id, safeUrl(node.data.person.photo)] as const]
+            ? [[node.data.person.id, archiveResourceUrl(safeUrl(node.data.person.photo) || "")] as const]
             : [],
         ),
       );

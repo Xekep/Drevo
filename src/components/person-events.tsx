@@ -3,6 +3,7 @@ import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import type { PersonEvent } from "../domain/types";
 import { EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 export function EventsEditor({
   events,
   onChange,
@@ -299,7 +300,7 @@ export function PersonEvents({ events }: { events?: PersonEvent[] }) {
                       {s.note && ` · ${s.note}`}
                       {safeUrl(s.url) && (
                         <a
-                          href={safeUrl(s.url)}
+                          href={archiveResourceUrl(safeUrl(s.url) || "")}
                           target="_blank"
                           rel="noopener noreferrer"
                         >

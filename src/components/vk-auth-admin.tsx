@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { VkAuthStatus } from "../shared/vk-auth-settings";
 import "../styles/vk-auth-admin.css";
@@ -9,7 +10,7 @@ export function VkAuthAdmin() {
   const [saved, setSaved] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/admin/auth/vk", {
+    archiveFetch("/api/admin/auth/vk", {
       signal: controller.signal,
       cache: "no-store",
     })
@@ -31,7 +32,7 @@ export function VkAuthAdmin() {
     setError("");
     setSaved(false);
     try {
-      const response = await fetch("/api/admin/auth/vk", {
+      const response = await archiveFetch("/api/admin/auth/vk", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

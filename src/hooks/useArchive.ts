@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveContextAt } from "../domain/archive-context.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   validateFamily,
@@ -80,7 +82,7 @@ export function useArchive() {
     const timeout = setTimeout(() => controller.abort(), 60000);
     async function load() {
       try {
-        const response = await fetch("/api/family?projection=overview", {
+        const response = await archiveFetch("/api/family?projection=overview", {
           signal: controller.signal,
           cache: "no-store",
         });
@@ -90,7 +92,7 @@ export function useArchive() {
         if (response.status === 401) {
           let signedIn: ArchiveUser | null = null;
           try {
-            const sessionResponse = await fetch("/api/session", {
+            const sessionResponse = await archiveFetch("/api/session", {
               signal: controller.signal,
               cache: "no-store",
             });
@@ -130,7 +132,7 @@ export function useArchive() {
           const result = await completeArchive(
             initial,
             (url) =>
-              fetch(url, { signal: controller.signal, cache: "no-store" }),
+              archiveFetch(url, { signal: controller.signal, cache: "no-store" }),
             (data) => {
               if (active) setFamily(data);
             },
@@ -152,7 +154,9 @@ export function useArchive() {
             setError("");
           }
         } else {
-          const fallback = await fetch("/data/family.json", {
+          if (archiveContextAt(window.location.pathname))
+            throw new Error("Выбранный архив недоступен");
+          const fallback = await archiveFetch("/data/family.json", {
             signal: controller.signal,
           });
           if (!fallback.ok) throw new Error("Не удалось загрузить архив");
@@ -451,7 +455,7 @@ export function useArchive() {
         setTreePreferences(value);
         return value;
       }
-      const response = await fetch("/api/tree-preferences", {
+      const response = await archiveFetch("/api/tree-preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(value),

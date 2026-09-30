@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { useState } from "react";
 import { Download, Upload } from "lucide-react";
 import type { Family } from "../domain";
@@ -44,7 +46,7 @@ export function GedcomTransfer({
     try {
       if (file.size > TRANSFER_PACKAGE_LIMIT)
         throw new Error("Максимальный размер пакета — 256 МБ");
-      const r = await fetch("/api/gedcom/preview", {
+      const r = await archiveFetch("/api/gedcom/preview", {
         method: "POST",
         headers: {
           "X-Drevo-Import": "1",
@@ -66,7 +68,7 @@ export function GedcomTransfer({
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/gedcom/import", {
+      const r = await archiveFetch("/api/gedcom/import", {
         method: "POST",
         headers: { "X-Drevo-Import": "1", "Content-Type": "application/json" },
         body: JSON.stringify({ token: preview.token, confirm: true }),
@@ -120,14 +122,14 @@ export function GedcomTransfer({
       </fieldset>
       <a
         className="primary-action"
-        href={`/api/gedcom/export?format=${format}`}
+        href={archiveResourceUrl(`/api/gedcom/export?format=${format}`)}
         download
       >
         <Download size={16} />
         Скачать выбранный формат
       </a>
       <div className="json-export">
-        <a href="/api/export.json?download=1" download="drevo-family.json">
+        <a href={archiveResourceUrl("/api/export.json?download=1")} download="drevo-family.json">
           <Download size={16} /> Экспорт JSON без фото
         </a>
         <p>Карточки и связи для анализа; файлы фотографий не включены.</p>

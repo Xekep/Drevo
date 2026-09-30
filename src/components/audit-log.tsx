@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { AuditEntry } from "../domain/audit";
 export function AuditLog({
@@ -14,7 +15,7 @@ export function AuditLog({
   const endpoint = `/api/audit?${new URLSearchParams({ ...(personId ? { personId } : {}), ...(actorId ? { actorId } : {}) })}`;
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(endpoint, { signal: controller.signal })
+    void archiveFetch(endpoint, { signal: controller.signal })
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error);
@@ -34,7 +35,7 @@ export function AuditLog({
     setBusy(true);
     setError("");
     try {
-      const r = await fetch(`${endpoint}&before=${next}`),
+      const r = await archiveFetch(`${endpoint}&before=${next}`),
         data = await r.json();
       if (!r.ok) throw new Error(data.error);
       setItems((old) => [...old, ...data.items]);

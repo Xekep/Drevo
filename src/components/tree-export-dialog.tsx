@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import type { TreeExportScope } from "../domain/tree-export-selection";
 import { EditorDialog } from "./editor-dialog";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import "../styles/tree-preferences.css";
 
 export function TreeExportDialog({
@@ -129,7 +130,7 @@ export function TreeExportDialog({
                   <option value="gedcom7">GEDCOM 7</option>
                   <option value="gedcom551">GEDCOM 5.5.1</option>
                 </select>
-                <a href={`/api/gedcom/export?format=${format}`} download>
+                <a href={archiveResourceUrl(`/api/gedcom/export?format=${format}`)} download>
                   <Download size={16} aria-hidden="true" /> Скачать
                 </a>
               </div>

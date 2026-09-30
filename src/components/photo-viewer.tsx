@@ -26,6 +26,7 @@ import { PersonSearch } from "./person-search";
 import { usePhotoSwipe } from "./use-photo-swipe";
 import { useDockSwipe } from "../hooks/useDockSwipe";
 import { mediaPreview } from "../domain/media-preview";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { PlaceField } from "./place-field";
 import { CopyArchiveLink } from "./copy-archive-link";
 import { PhotoPersonSidebar } from "./photo-person-sidebar";
@@ -501,7 +502,7 @@ function PhotoViewerContent({
             <span className="photo-counter" role="status" aria-live="polite">
               {index + 1} / {photos.length}
             </span>
-            <a className="photo-original" href={photo.url} download>
+            <a className="photo-original" href={archiveResourceUrl(photo.url)} download>
               <Download size={16} />
               Скачать оригинал
             </a>

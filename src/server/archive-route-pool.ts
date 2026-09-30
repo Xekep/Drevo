@@ -90,6 +90,18 @@ export function archiveRoutePool(
         res.end();
         return true;
       }
+      if (match[2] === "/api/shares" && req.method === "POST") {
+        res.writeHead(501, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(
+          JSON.stringify({
+            error: "Публичные ссылки для этого дерева пока недоступны.",
+          }),
+        );
+        return true;
+      }
       entry.active++;
       entry.usedAt = ++lastUse;
       let released = false;

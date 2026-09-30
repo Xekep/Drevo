@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Link2 } from "lucide-react";
 import { archiveTargetPath, type ArchiveTarget } from "../domain/archive-links";
+import { scopedArchivePath } from "../domain/archive-context.ts";
 
 export function CopyArchiveLink({
   target,
@@ -25,7 +26,7 @@ export function CopyArchiveLink({
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(
-            new URL(archiveTargetPath(target), window.location.origin).href,
+            new URL(scopedArchivePath(archiveTargetPath(target)), window.location.origin).href,
           );
           setStatus("copied");
         } catch {
