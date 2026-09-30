@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BookOpenText, Link2, Unlink } from "lucide-react";
 import { archiveFetch } from "../data/archive-fetch";
 import { scopedArchivePath } from "../domain/archive-context";
+import { archiveDocumentPath } from "../domain/archive-routes";
 import type { ListedDocument } from "./documents-catalog";
 import "../styles/documents.css";
 
@@ -170,9 +171,7 @@ export function PersonDocumentsEditor({
           {linked.map((entry) => (
             <div className="person-document-row" key={entry.id}>
               <a
-                href={scopedArchivePath(
-                  `/documents?documentId=${encodeURIComponent(entry.id)}`,
-                )}
+                href={scopedArchivePath(archiveDocumentPath(null, entry.id))}
                 target="_blank"
                 rel="noreferrer"
               >

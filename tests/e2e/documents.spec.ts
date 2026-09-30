@@ -40,8 +40,12 @@ test("PDF без привязки остаётся в общем каталог�
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
-  await expect(page).toHaveURL(/\/documents\?documentId=[a-f0-9-]{36}$/);
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const documentUrl = page.url();
+  const documentId = new URL(documentUrl).pathname.split("/").at(-1);
+  await page.goto(`/documents?documentId=${documentId}`);
+  await expect(page).toHaveURL(documentUrl);
+  await expect(reader).toBeVisible();
   await page.reload();
   await expect(reader).toBeVisible();
   await reader.getByText("Сведения о документе").click();
@@ -114,7 +118,7 @@ test("PDF можно перетащить, затем привязать из д
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
-  const id = new URL(page.url()).searchParams.get("documentId");
+  const id = new URL(page.url()).pathname.split("/").at(-1);
   await reader.getByText("Сведения о документе").click();
   await reader
     .getByRole("button", { name: "Редактировать сведения о документе" })
@@ -243,7 +247,7 @@ test("из карточки человека открываются только
     .getByRole("link", { name: "Открыть документ" });
   const linkedUrl = await documentLink.getAttribute("href");
   expect(linkedUrl).toMatch(
-    /^\/documents\?personId=e2e-child&documentId=[a-f0-9-]{36}$/,
+    /^\/documents\/person\/e2e-child\/[a-f0-9-]{36}$/,
   );
   await documentLink.click();
   await expect(page).toHaveURL(linkedUrl!);
@@ -255,7 +259,7 @@ test("из карточки человека открываются только
     page.getByRole("dialog", { name: `Документ: ${title}` }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Закрыть документ" }).click();
-  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
+  await expect(page).toHaveURL(/\/documents\/person\/e2e-child$/);
   await expect(
     page.locator(".document-item").filter({ hasText: title }),
   ).toBeVisible();
@@ -267,7 +271,7 @@ test("из карточки человека открываются только
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toBeVisible();
   await page.goBack();
-  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
+  await expect(page).toHaveURL(/\/documents\/person\/e2e-child$/);
   await expect(
     page.getByRole("dialog", { name: `Документ: ${title}` }),
   ).toHaveCount(0);
