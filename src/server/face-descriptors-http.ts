@@ -5,6 +5,7 @@ import type { openArchive } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { createRequestLimiter } from "./request-rate-limit.ts";
 
 const MODELS = {
   "face-api-1.7.15": { dimensions: 128, maxValue: 2 },
@@ -175,6 +176,10 @@ export function faceDescriptorsHttp({
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
 }) {
+  // Matching parses and compares up to 20,000 biometric vectors per request.
+  // A single photo is matched sequentially, so this budget still covers
+  // unusually large group photos without letting one account monopolize CPU.
+  const matchLimiter = createRequestLimiter({ windowMs: 60_000, limit: 120 });
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (url.pathname === "/api/faces/status") {
       if (req.method !== "GET")
@@ -239,9 +244,16 @@ export function faceDescriptorsHttp({
       const body = await readJson(req);
       if (matching) {
         const { descriptor, model } = parseMatchDescriptor(body);
-        const actor = (await auth.currentUser(req))!;
-        const visible = isScopedUser(actor)
-          ? visiblePersonIds((await archive.read()).family, actor)
+        const currentActor = await auth.currentUser(req);
+        if (!currentActor || !(await auth.canEdit(req)) ||
+            !(await accountAiAccess(archive.db, currentActor.id, auth.local)))
+          return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
+        if (!matchLimiter.allow(currentActor.id)) {
+          res.setHeader("Retry-After", "60");
+          return json(res, 429, { error: "Слишком много сравнений лиц. Повторите через минуту" });
+        }
+        const visible = isScopedUser(currentActor)
+          ? visiblePersonIds((await archive.read()).family, currentActor)
           : null;
         const rows = (
           await archive.db
@@ -256,7 +268,7 @@ export function faceDescriptorsHttp({
             error: "Слишком много образцов для интерактивного сравнения",
           });
         const match = closestMatch(descriptor, rows, model);
-        if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+        if (!(await accountAiAccess(archive.db, currentActor.id, auth.local)))
           return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
         return json(res, 200, { match });
       }
