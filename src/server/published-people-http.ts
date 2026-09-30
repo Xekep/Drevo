@@ -117,6 +117,7 @@ export function publishedPeopleHttp({
         return json(res, 405, { error: "Метод не поддерживается" });
       }
       return json(res, 200, {
+        archiveId: archive.db.kind === "postgres" ? archive.db.archiveId : null,
         published: await store.has(personId),
         publishable: publishablePerson(person),
         person: publicPerson(person),
