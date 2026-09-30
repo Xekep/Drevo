@@ -116,7 +116,13 @@ export function PublicationAdmin({ family }: { family: Family }) {
   return <section className="admin-card archive-form publication-admin">
     <p>В общий поиск попадают только подтверждённо умершие люди, которых вы выберете. Фото, связи, документы и точные даты останутся закрытыми.</p>
     <label>Найти человека
-      <input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="ФИО или фамилия при рождении" />
+      <input type="search" value={query} onChange={(event) => {
+        setQuery(event.target.value);
+        setPage(0);
+        setLoadedStatusKey("");
+        setFailedStatusKey("");
+        setReload((value) => value + 1);
+      }} placeholder="ФИО или фамилия при рождении" />
     </label>
     <div className="publication-admin-toolbar">
       <span>{filtered.length} человек · выбрано {chosen.length} из 50</span>
@@ -137,9 +143,9 @@ export function PublicationAdmin({ family }: { family: Family }) {
       {!pagePeople.length && <p>Подходящих людей нет.</p>}
     </div>
     {filtered.length > PAGE_SIZE && <nav className="publication-admin-pages" aria-label="Страницы людей">
-      <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>Назад</button>
+      <button type="button" disabled={page === 0} onClick={() => { setPage(page - 1); setLoadedStatusKey(""); setFailedStatusKey(""); }}>Назад</button>
       <span>Страница {page + 1} из {Math.ceil(filtered.length / PAGE_SIZE)}</span>
-      <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(page + 1)}>Далее</button>
+      <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => { setPage(page + 1); setLoadedStatusKey(""); setFailedStatusKey(""); }}>Далее</button>
     </nav>}
     {chosen.length > 0 && <div className="publication-admin-actions">
       <button type="button" disabled={busy || !statusesReady} onClick={() => setConfirm("publish")}>Опубликовать выбранных</button>
