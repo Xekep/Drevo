@@ -21,9 +21,20 @@ CREATE OR REPLACE FUNCTION refresh_discovery_person(
 ) RETURNS void LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE
   person_data jsonb;
-  publication published_people%ROWTYPE;
+  visible_birth_surname boolean;
+  visible_birth_year boolean;
+  visible_death_year boolean;
+  visible_birth_place boolean;
+  visible_death_place boolean;
+  published_version text;
 BEGIN
-  SELECT p.data, published INTO person_data, publication
+  SELECT p.data, published.birth_surname_visible,
+         published.birth_year_visible, published.death_year_visible,
+         published.birth_place_visible, published.death_place_visible,
+         published.published_at
+    INTO person_data, visible_birth_surname, visible_birth_year,
+         visible_death_year, visible_birth_place, visible_death_place,
+         published_version
     FROM published_people published
     JOIN people p ON p.archive_id=published.archive_id
                  AND p.id=published.person_id
@@ -46,12 +57,12 @@ BEGIN
     btrim(concat_ws(' ', nullif(btrim(person_data->>'surname'), ''),
                          nullif(btrim(person_data->>'name'), ''),
                          nullif(btrim(person_data->>'patronymic'), ''))),
-    CASE WHEN publication.birth_surname_visible THEN nullif(person_data->>'maidenName', '') END,
-    CASE WHEN publication.birth_year_visible THEN substring(person_data->>'birth' from '[0-9]{4}') END,
-    CASE WHEN publication.death_year_visible THEN substring(person_data->>'death' from '[0-9]{4}') END,
-    CASE WHEN publication.birth_place_visible THEN nullif(person_data->>'birthPlace', '') END,
-    CASE WHEN publication.death_place_visible THEN nullif(person_data->>'deathPlace', '') END,
-    publication.published_at
+    CASE WHEN visible_birth_surname THEN nullif(person_data->>'maidenName', '') END,
+    CASE WHEN visible_birth_year THEN substring(person_data->>'birth' from '[0-9]{4}') END,
+    CASE WHEN visible_death_year THEN substring(person_data->>'death' from '[0-9]{4}') END,
+    CASE WHEN visible_birth_place THEN nullif(person_data->>'birthPlace', '') END,
+    CASE WHEN visible_death_place THEN nullif(person_data->>'deathPlace', '') END,
+    published_version
   ) ON CONFLICT (archive_id, person_id) DO UPDATE SET
     name=excluded.name,
     birth_surname=excluded.birth_surname,
