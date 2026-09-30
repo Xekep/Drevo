@@ -18,6 +18,42 @@ export type ArchiveView = keyof typeof archivePaths;
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
 
+export function archiveDocumentPath(personId: string | null, documentId: string | null) {
+  const base = personId
+    ? `${archivePaths.documents}/person/${encodeURIComponent(personId)}`
+    : archivePaths.documents;
+  return documentId ? `${base}/${encodeURIComponent(documentId)}` : base;
+}
+
+export function archiveDocumentAt(pathname: string) {
+  const path = (archiveContextAt(pathname)?.innerPath || pathname).replace(/\/$/, "");
+  if (path === archivePaths.documents)
+    return { personId: null, documentId: null };
+  const direct = /^\/documents\/([a-f0-9-]{36})$/i.exec(path);
+  if (direct) return { personId: null, documentId: direct[1] };
+  const filtered = /^\/documents\/person\/([^/]+)(?:\/([a-f0-9-]{36}))?$/i.exec(path);
+  if (!filtered) return null;
+  let personId: string;
+  try {
+    personId = decodeURIComponent(filtered[1]);
+  } catch {
+    return null;
+  }
+  if (
+    !personId ||
+    personId.length > 200 ||
+    personId === "." ||
+    personId === ".." ||
+    [...personId].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+  )
+    return null;
+  const documentId = filtered[2] || null;
+  return { personId, documentId };
+}
+
 /** Один закодированный сегмент после /people или /photos. */
 export function archiveEntityAt(pathname: string): ArchiveEntity | null {
   const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(
@@ -48,6 +84,7 @@ export function archiveEntityAt(pathname: string): ArchiveEntity | null {
 export function archiveViewAt(pathname: string): ArchiveView | null {
   const entity = archiveEntityAt(pathname);
   if (entity) return entity.kind === "person" ? "tree" : "gallery";
+  if (archiveDocumentAt(pathname)) return "documents";
   const innerPath = archiveContextAt(pathname)?.innerPath || pathname;
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";

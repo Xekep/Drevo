@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { archivePaths, archiveViewAt } from "../src/domain/archive-routes.ts";
+import {
+  archiveDocumentAt,
+  archiveDocumentPath,
+  archivePaths,
+  archiveViewAt,
+} from "../src/domain/archive-routes.ts";
 import {
   archiveTargetAt,
   archiveTargetPath,
@@ -58,4 +63,30 @@ test("profile and photo links retain their entity without changing section route
   assert.equal(archiveTargetAt("/people", "?person=unknown"), null);
   assert.equal(archiveTargetAt("/photos", "?photo="), null);
   assert.equal(archiveTargetAt("/photos", `?photo=${"x".repeat(201)}`), null);
+});
+
+test("document routes preserve the optional person filter without query parameters", () => {
+  const id = "14a064a7-6947-4089-9ad2-570b87978914";
+  const personId = "gedcom-Иван 1";
+  for (const [person, document] of [
+    [null, null],
+    [null, id],
+    [personId, null],
+    [personId, id],
+  ] as const) {
+    const path = archiveDocumentPath(person, document);
+    assert.equal(new URL(path, "https://example.test").search, "");
+    assert.deepEqual(archiveDocumentAt(path), {
+      personId: person,
+      documentId: document,
+    });
+    assert.equal(archiveViewAt(path), "documents");
+    assert.deepEqual(archiveDocumentAt(`/a/other-tree${path}`), {
+      personId: person,
+      documentId: document,
+    });
+  }
+  assert.equal(archiveDocumentAt("/documents/not-a-document"), null);
+  assert.equal(archiveViewAt("/documents/not-a-document"), null);
+  assert.equal(archiveDocumentAt("/documents/person/%ZZ"), null);
 });

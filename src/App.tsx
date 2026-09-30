@@ -20,6 +20,7 @@ import {
   type ArchiveTarget,
 } from "./domain/archive-links";
 import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
+import { archiveDocumentAt, archiveDocumentPath } from "./domain/archive-routes.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -404,12 +405,31 @@ export default function App() {
   const selectDocument = useCallback(
     (id: string | null) => {
       const url = new URL(currentPath, window.location.origin);
-      if (id) url.searchParams.set("documentId", id);
-      else url.searchParams.delete("documentId");
-      setView("documents", `${url.pathname}${url.search}`, !id);
+      const personId = archiveDocumentAt(url.pathname)?.personId ||
+        url.searchParams.get("personId");
+      setView("documents", archiveDocumentPath(personId, id), !id);
     },
     [currentPath, setView],
   );
+  const documentUrl = useMemo(
+    () => new URL(currentPath, window.location.origin),
+    [currentPath],
+  );
+  const documentRoute = useMemo(
+    () => archiveDocumentAt(documentUrl.pathname),
+    [documentUrl],
+  );
+  const documentPersonFilter = documentRoute?.personId ||
+    documentUrl.searchParams.get("personId");
+  const documentId = documentRoute?.documentId ||
+    documentUrl.searchParams.get("documentId");
+  useEffect(() => {
+    if (!documentRoute ||
+        (!documentUrl.searchParams.has("documentId") &&
+         !documentUrl.searchParams.has("personId"))) return;
+    if (documentId && !/^[a-f0-9-]{36}$/i.test(documentId)) return;
+    setView("documents", archiveDocumentPath(documentPersonFilter, documentId), true);
+  }, [currentPath, documentId, documentPersonFilter, documentRoute, documentUrl, setView]);
   const chosen = useMemo(
     () => selected.flatMap((id) => (map.has(id) ? [map.get(id)!] : [])),
     [selected, map],
@@ -996,14 +1016,8 @@ export default function App() {
                   onPhoto={openPhotoUrl}
                   onAddPhoto={() => photoWorkspace.openUpload()}
                   onDropPhoto={(file) => photoWorkspace.openUpload(file)}
-                  documentPersonFilter={new URL(
-                    currentPath,
-                    window.location.origin,
-                  ).searchParams.get("personId")}
-                  documentId={new URL(
-                    currentPath,
-                    window.location.origin,
-                  ).searchParams.get("documentId")}
+                  documentPersonFilter={documentPersonFilter}
+                  documentId={documentId}
                   onSelectDocument={selectDocument}
                   personFilter={
                     view === "gallery"
