@@ -16,7 +16,6 @@ import type {
   ResearchResult,
   UiAction,
 } from "../shared/research-protocol.ts";
-import { randomUUID } from "node:crypto";
 import {
   CURRENT_TIME_TOOL,
   researchClock,
@@ -39,6 +38,7 @@ import {
   runCodeInterpreter,
   type GeneratedResearchFile,
 } from "./code-interpreter.ts";
+import { storeGeneratedResearchFile } from "./generated-research-files.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -1265,25 +1265,14 @@ export function createResearchRunner({
                 recordModelTokens(metrics, runtime.modelUri, input, output),
             });
             const links: Array<{ name: string; url: string }> = [];
-            for (const [key, item] of generatedFiles)
-              if (item.expires < Date.now()) generatedFiles.delete(key);
             for (const file of calculation.files) {
-              if (
-                [...generatedFiles.values()].reduce(
-                  (sum, item) => sum + item.bytes.length,
-                  0,
-                ) +
-                  file.bytes.length >
-                64 * 1024 * 1024
-              )
-                break;
-              const id = randomUUID();
-              generatedFiles.set(id, {
+              const id = storeGeneratedResearchFile(generatedFiles, {
                 ...file,
                 ownerId: user.id,
                 chatId,
                 expires: Date.now() + 30 * 60_000,
               });
+              if (!id) break;
               links.push({ name: file.name, url: `/api/ai/files/${id}` });
             }
             files.push(...links);
@@ -1311,12 +1300,8 @@ export function createResearchRunner({
                 content,
                 graphInPdfRequested ? archiveGraph(family) : undefined,
               ),
-              id = randomUUID(),
-              name = researchPdfFilename(title),
-              url = `/api/ai/files/${id}`;
-            for (const [key, item] of generatedFiles)
-              if (item.expires < Date.now()) generatedFiles.delete(key);
-            generatedFiles.set(id, {
+              name = researchPdfFilename(title);
+            const id = storeGeneratedResearchFile(generatedFiles, {
               ownerId: user.id,
               chatId,
               contentType: "application/pdf",
@@ -1324,6 +1309,9 @@ export function createResearchRunner({
               bytes,
               expires: Date.now() + 30 * 60_000,
             });
+            if (!id)
+              throw new Error("Временное хранилище файлов заполнено. Повторите позже.");
+            const url = `/api/ai/files/${id}`;
             files.push({ name, url });
             result = { created: true, file: { name, url } };
           } else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
