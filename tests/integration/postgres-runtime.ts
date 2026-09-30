@@ -1380,9 +1380,12 @@ try {
     503,
   );
   const otherPublication = publishedPeopleStore(otherApp.archive.db);
+  const livingDiscovery = await otherApp.archive.read();
+  assert.notEqual(livingDiscovery.family.people[0].deceased, true);
+  assert.equal(Boolean(livingDiscovery.family.people[0].death), false);
   await otherPublication.publish("person-a", "owner");
   assert.equal(
-    (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM discovery_people").get())?.count,
+    (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM discovery_people WHERE archive_id='other-archive' AND person_id='person-a'").get())?.count,
     0,
     "a living person cannot enter discovery even if a stale publication row exists",
   );
