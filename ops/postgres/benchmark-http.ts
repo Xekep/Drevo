@@ -102,11 +102,12 @@ try {
   const results = new Map<string, { durations: number[]; bytes: number; errors: number }>(
     routes.map(([name]) => [name, { durations: [], bytes: 0, errors: 0 }]),
   );
+  results.set("edit", { durations: [], bytes: 0, errors: 0 });
   const concurrency = 12;
   const until = performance.now() + seconds * 1000;
   let next = 0;
   const started = performance.now();
-  await Promise.all(Array.from({ length: concurrency }, async () => {
+  const readers = Array.from({ length: concurrency }, async () => {
     while (performance.now() < until) {
       const index = next++;
       const [name, path] = routes[index % routes.length];
@@ -121,7 +122,45 @@ try {
       } catch { metric.errors++; }
       metric.durations.push(performance.now() - began);
     }
-  }));
+  });
+  // A steady writer runs through both backends while readers use both caches.
+  // Each edit touches a different card, so a conflict is a benchmark failure.
+  const writer = (async () => {
+    const metric = results.get("edit")!;
+    let personIndex = 0;
+    while (performance.now() < until && personIndex < count) {
+      const base = bases[personIndex % bases.length];
+      const began = performance.now();
+      try {
+        const overview = await fetch(base + "/api/family?projection=overview", {
+          signal: AbortSignal.timeout(15000),
+        });
+        assert.equal(overview.status, 200);
+        const { revision } = await overview.json() as { revision: number };
+        const edited = await fetch(base + "/api/family/changes", {
+          method: "POST",
+          headers: { Origin: base, "Content-Type": "application/json",
+            "If-Match": String(revision), Prefer: "return=minimal" },
+          body: JSON.stringify({ changes: [{ collection: "people",
+            id: `person-${personIndex}`, field: "occupation",
+            after: `Проверка ${personIndex}` }] }),
+          signal: AbortSignal.timeout(15000),
+        });
+        const bytes = (await edited.arrayBuffer()).byteLength;
+        if (edited.status !== 200) metric.errors++;
+        else { metric.bytes += bytes; personIndex++; }
+      } catch { metric.errors++; }
+      metric.durations.push(performance.now() - began);
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
+    return personIndex;
+  })();
+  const [, writes] = await Promise.all([Promise.all(readers), writer]);
+  assert.ok(writes > 0, "No edits completed during mixed HTTP load");
+  const final = await fetch(bases[1] + "/api/family").then(r => r.json());
+  assert.equal(final.family.people.find((person: { id: string }) =>
+    person.id === `person-${writes - 1}`)?.occupation, `Проверка ${writes - 1}`,
+  "The other backend must observe the last edit");
   const elapsedMs = performance.now() - started;
   const processMetrics = await Promise.all(children.map(child => new Promise<unknown>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("Backend metrics timed out")), 5000);
