@@ -183,6 +183,19 @@ test("face matching stays server-side and saving still requires confirmation", a
     });
     assert.equal((await response.json()).match.personId, "first");
 
+    // The five successful matches above consume the same account budget.
+    for (let index = 5; index < 120; index++) {
+      response = await post("/api/faces/match", {
+        descriptor: Array(128).fill(0.19),
+      });
+      assert.equal(response.status, 200);
+    }
+    response = await post("/api/faces/match", {
+      descriptor: Array(128).fill(0.19),
+    });
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get("Retry-After"), "60");
+
     canEdit = false;
     response = await post("/api/faces/match", {
       descriptor: Array(128).fill(0),
