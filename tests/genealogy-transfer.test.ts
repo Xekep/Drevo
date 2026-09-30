@@ -7,6 +7,7 @@ import {
   writeFile,
   rm,
   readdir,
+  utimes,
 } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,7 +19,12 @@ import sharp from "sharp";
 import { createServer } from "node:http";
 import { importGedcom, exportGedcom } from "../src/domain/gedcom.ts";
 import { importAgelongXml } from "../src/domain/agelong-xml.ts";
-import { familyMedia } from "../src/domain/genealogy-transfer.ts";
+import {
+  familyMedia,
+  TRANSFER_PACKAGE_LIMIT,
+  TRANSFER_TEXT_LIMIT,
+} from "../src/domain/genealogy-transfer.ts";
+import { BASIC_MEDIA_BYTES } from "../src/server/postgres-media-quota.ts";
 import {
   prepareGenealogyImport,
   writeGenealogyPackage,
@@ -29,7 +35,11 @@ import {
 import { openArchive } from "../src/server/database.ts";
 import { gedcomHttp } from "../src/server/gedcom-http.ts";
 import type { createAuth } from "../src/server/auth.ts";
-import { EXTRA_LINK_TYPES, type Family, type Person } from "../src/domain/types.ts";
+import {
+  EXTRA_LINK_TYPES,
+  type Family,
+  type Person,
+} from "../src/domain/types.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 
 const person = (id: string, patch: Partial<Person> = {}): Person => ({
@@ -58,6 +68,10 @@ const seed = (): Family => ({
   ],
   photos: [],
   links: [],
+});
+
+test("GEDZIP package budget covers the entire basic-account media quota", () => {
+  assert.ok(TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT >= BASIC_MEDIA_BYTES);
 });
 
 test("GEDCOM media export reads document associations in two queries regardless of catalog size", async () => {
@@ -121,7 +135,10 @@ for (const version of ["5.5.1", "7.0"] as const) {
         ...(type === "twin" ? { twinKind: "fraternal" as const } : {}),
       })),
     };
-    const imported = importGedcom(exportGedcom(family, { version }), "extra-links");
+    const imported = importGedcom(
+      exportGedcom(family, { version }),
+      "extra-links",
+    );
     const byId = new Map(imported.family.people.map((item) => [item.id, item]));
     const links = (imported.family.links || []).map((link) => ({
       from: byId.get(link.from)?.name,
@@ -140,7 +157,9 @@ for (const version of ["5.5.1", "7.0"] as const) {
         twinKind: type === "twin" ? "fraternal" : undefined,
       })),
     );
-    assert.ok(imported.family.people.every((item) => item.parents.length === 0));
+    assert.ok(
+      imported.family.people.every((item) => item.parents.length === 0),
+    );
   });
   test(`GEDCOM ${version} preserves explicitly recorded twin type`, () => {
     const family = seed();
@@ -944,8 +963,18 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       ["media/photo.png", image],
       ["media/document.pdf", Buffer.from("%PDF-1.4\n%%EOF")],
     ]);
+    const expiredExport = join(dir, "staging", "genealogy", "export-ABC123");
+    await mkdir(expiredExport);
+    await writeFile(join(expiredExport, "export.gdz"), "abandoned");
+    const expiredAt = new Date(Date.now() - 25 * 60 * 60_000);
+    await utimes(expiredExport, expiredAt, expiredAt);
     const response = await request("/api/gedcom/preview", await readFile(path));
     assert.equal(response.status, 200);
+    assert.ok(
+      !(await readdir(join(dir, "staging", "genealogy"))).includes(
+        "export-ABC123",
+      ),
+    );
     const preview = await response.json();
     assert.equal(preview.photos, 1);
     assert.equal(preview.documents, 1);
@@ -1014,6 +1043,17 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     const exported = await request("/api/gedcom/export");
     assert.equal(exported.status, 200);
     assert.match(exported.headers.get("content-disposition")!, /drevo.gdz/);
+    const exportedBytes = Buffer.from(await exported.arrayBuffer());
+    assert.ok(exportedBytes.length > 0);
+    let temporaryExports: string[] = [];
+    for (let attempt = 0; attempt < 100; attempt++) {
+      temporaryExports = (
+        await readdir(join(dir, "staging", "genealogy"))
+      ).filter((name) => name.startsWith("export-"));
+      if (!temporaryExports.length) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(temporaryExports, []);
     for (const [format, version] of [
       ["gedcom551", "5.5.1"],
       ["gedcom7", "7.0"],
@@ -1034,7 +1074,6 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       (await request("/api/gedcom/export?format=agelongZip")).status,
       400,
     );
-    const exportedBytes = Buffer.from(await exported.arrayBuffer());
     const exportedPath = join(dir, "round.gdz");
     const exportedStage = join(dir, "round-stage");
     await writeFile(exportedPath, exportedBytes);

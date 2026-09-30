@@ -3,7 +3,7 @@ import type { Family, Person, PersonEvent } from "./types.ts";
 import { validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import {
-  TRANSFER_PACKAGE_LIMIT,
+  TRANSFER_XML_LIMIT,
   type GenealogyImport,
   type TransferMedia,
 } from "./genealogy-transfer.ts";
@@ -21,8 +21,8 @@ const many = (node: XmlNode | undefined, name: string) =>
 const textOf = (node: XmlNode, name: string) => one(node, name)?.text || "";
 
 function parseXml(text: string): XmlNode {
-  if (new TextEncoder().encode(text).length > TRANSFER_PACKAGE_LIMIT)
-    throw new Error("XML больше 256 МБ");
+  if (new TextEncoder().encode(text).length > TRANSFER_XML_LIMIT)
+    throw new Error("XML больше 256 МиБ");
   const parser = new SaxesParser({ xmlns: false });
   const stack: XmlNode[] = [];
   let root: XmlNode | undefined,

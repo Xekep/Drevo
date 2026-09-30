@@ -26,7 +26,10 @@ export type GedcomVersion = "5.5.1" | "7.0";
 export type GenealogyExportFormat = "gedcom551" | "gedcom7" | "gedzip7";
 
 export const TRANSFER_TEXT_LIMIT = 32 * 1024 * 1024;
-export const TRANSFER_PACKAGE_LIMIT = 256 * 1024 * 1024;
+// 480 MiB of originals plus up to 32 MiB of GEDCOM text covers the
+// 500 MB base-account media quota while retaining a bounded import.
+export const TRANSFER_PACKAGE_LIMIT = 512 * 1024 * 1024;
+export const TRANSFER_XML_LIMIT = 256 * 1024 * 1024;
 export const TRANSFER_FILE_LIMIT = 20 * 1024 * 1024;
 
 export function familyMedia(family: Family): TransferMedia[] {
