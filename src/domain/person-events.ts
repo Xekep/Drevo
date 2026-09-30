@@ -85,7 +85,12 @@ export function validateEvents(events: unknown): void {
               !safeUrl(s.url))) ||
           (s.documentId !== undefined &&
             (typeof s.documentId !== "string" ||
-              !/^[a-f0-9-]{36}$/i.test(s.documentId)))
+              !/^[a-f0-9-]{36}$/i.test(s.documentId))) ||
+          (s.documentPage !== undefined &&
+            (!s.documentId ||
+              !Number.isInteger(s.documentPage) ||
+              s.documentPage < 1 ||
+              s.documentPage > 2000))
         )
           throw new Error("Проверьте источник события");
     }

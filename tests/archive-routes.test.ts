@@ -89,4 +89,21 @@ test("document routes preserve the optional person filter without query paramete
   assert.equal(archiveDocumentAt("/documents/not-a-document"), null);
   assert.equal(archiveViewAt("/documents/not-a-document"), null);
   assert.equal(archiveDocumentAt("/documents/person/%ZZ"), null);
+  for (const person of [null, personId]) {
+    const path = archiveDocumentPath(person, id, 2);
+    assert.deepEqual(archiveDocumentAt(path), {
+      personId: person,
+      documentId: id,
+      pageNumber: 2,
+    });
+    assert.deepEqual(archiveDocumentAt(`/a/other-tree${path}`), {
+      personId: person,
+      documentId: id,
+      pageNumber: 2,
+    });
+    assert.equal(archiveViewAt(path), "documents");
+  }
+  assert.equal(archiveDocumentAt(`/documents/${id}/page/0`), null);
+  assert.equal(archiveDocumentAt(`/documents/${id}/page/2001`), null);
+  assert.equal(archiveDocumentAt(`/documents/${id}/page/01`), null);
 });

@@ -6,6 +6,8 @@ export type Source = {
   note?: string;
   /** PDF already present in this archive's document catalogue. */
   documentId?: string;
+  /** One-based page of the linked PDF. */
+  documentPage?: number;
 };
 export type PersonAward = {
   id: string;

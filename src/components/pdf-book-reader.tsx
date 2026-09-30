@@ -62,12 +62,14 @@ function pageBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 
 export function PdfBookReader({
   document: entry,
+  initialPage = 1,
   onClose,
   onEdit,
   mayAnnotate = false,
   annotateOnOpen = false,
 }: {
   document: ListedDocument;
+  initialPage?: number;
   onClose: () => void;
   onEdit?: () => void;
   mayAnnotate?: boolean;
@@ -81,7 +83,7 @@ export function PdfBookReader({
   const renderNearby = useRef<((index: number) => void) | null>(null);
   const dragStart = useRef<Point | null>(null);
   const [pageCount, setPageCount] = useState(0);
-  const [pageIndex, setPageIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(Math.max(0, initialPage - 1));
   const [pageUrls, setPageUrls] = useState<Record<number, string>>({});
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -233,7 +235,9 @@ export function PdfBookReader({
         if (!active) return;
         if (pdf.numPages < 1 || pdf.numPages > 2000)
           throw new Error("Документ должен содержать от 1 до 2000 страниц");
+        const firstPage = Math.min(pdf.numPages - 1, Math.max(0, initialPage - 1));
         setPageCount(pdf.numPages);
+        setPageIndex(firstPage);
         void (async () => {
           try {
             const bookmarks = await pdf!.getOutline();
@@ -263,10 +267,10 @@ export function PdfBookReader({
             // A damaged bookmark tree should not prevent reading valid pages.
           }
         })();
-        await render(0);
+        await render(firstPage);
         if (!active) return;
         setLoading(false);
-        renderNearby.current?.(0);
+        renderNearby.current?.(firstPage);
       } catch (reason) {
         if (active) {
           setError(
@@ -282,7 +286,7 @@ export function PdfBookReader({
       void loadingTask?.destroy();
       for (const url of urls.values()) URL.revokeObjectURL(url);
     };
-  }, [entry.url]);
+  }, [entry.url, initialPage]);
 
   useEffect(() => {
     renderNearby.current?.(pageIndex);

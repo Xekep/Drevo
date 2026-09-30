@@ -476,7 +476,7 @@ export function PersonPanel({
                     )
                   )}
                   {canLoadDocuments && s.documentId && (
-                    <a href={scopedArchivePath(archiveDocumentPath(null, s.documentId))}>
+                    <a href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}>
                       Открыть PDF
                       <ArrowUpRight size={12} />
                     </a>

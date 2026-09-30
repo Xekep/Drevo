@@ -106,7 +106,7 @@ test("источник карточки связывается с PDF без к�
         JSON.stringify({ title, personIds: ["e2e-child"] }),
       ),
     },
-    data: await samplePdf(1),
+    data: await samplePdf(3),
   });
   expect(uploaded.status()).toBe(201);
   const { id } = (await uploaded.json()) as { id: string };
@@ -118,9 +118,10 @@ test("источник карточки связывается с PDF без к�
   await source.getByRole("button", { name: "Связать с PDF" }).click();
   await source.getByLabel("Найти PDF человека").fill(title);
   await source.getByRole("button", { name: title, exact: true }).click();
+  await source.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
   await expect(source.getByRole("link", { name: "Открыть связанный PDF" })).toHaveAttribute(
     "href",
-    `/documents/${id}`,
+    `/documents/${id}/page/2`,
   );
   await page.locator(".event-editor > summary").click();
   await page.getByRole("button", { name: "Добавить событие" }).click();
@@ -131,16 +132,17 @@ test("источник карточки связывается с PDF без к�
   await eventSource.getByRole("button", { name: "Связать с PDF" }).click();
   await eventSource.getByLabel("Найти PDF человека").fill(title);
   await eventSource.getByRole("button", { name: title, exact: true }).click();
+  await eventSource.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await page.locator(".life-event").last().locator(".event-sources > summary").click();
   await expect(
     page.locator(".life-event").last().getByRole("link", { name: "Открыть PDF" }),
-  ).toHaveAttribute("href", `/documents/${id}`);
+  ).toHaveAttribute("href", `/documents/${id}/page/2`);
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });
   await expect(card.getByRole("link", { name: "Открыть PDF" })).toHaveAttribute(
     "href",
-    `/documents/${id}`,
+    `/documents/${id}/page/2`,
   );
   const unlinkBlocked = await page.request.patch(`/api/documents/${id}`, {
     data: { people: { expected: ["e2e-child"], next: [] } },
@@ -148,8 +150,11 @@ test("источник карточки связывается с PDF без к�
   expect(unlinkBlocked.status()).toBe(409);
   const blocked = await page.request.delete(`/api/documents/${id}`);
   expect(blocked.status()).toBe(409);
-  await page.goto(`/documents/${id}`);
+  await page.goto(`/documents/${id}/page/2`);
   await expect(page.getByRole("dialog", { name: `Документ: ${title}` })).toBeVisible();
+  await expect(page.locator(".pdf-book-footer")).toContainText("2 из 3");
+  await page.goto(`/documents/${id}/page/2000`);
+  await expect(page.locator(".pdf-book-footer")).toContainText("3 из 3");
 });
 
 async function samplePdf(count = 3, landscape = false) {

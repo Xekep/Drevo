@@ -9,7 +9,7 @@ function normalized(value?: string) {
 }
 
 function sourceKey(source: Source) {
-  if (source.documentId) return `document:${source.documentId}`;
+  if (source.documentId) return `document:${source.documentId}:${source.documentPage || 1}`;
   const url = normalized(source.url);
   if (url) return `url:${url}`;
   return `text:${normalized(source.title)}|${normalized(source.reference)}`;

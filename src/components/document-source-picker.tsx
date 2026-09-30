@@ -16,11 +16,15 @@ const PAGE_SIZE = 20;
 export function DocumentSourcePicker({
   personId,
   documentId,
+  pageNumber,
   onChange,
+  onPageChange,
 }: {
   personId?: string;
   documentId?: string;
+  pageNumber?: number;
   onChange: (document: DocumentOption | undefined) => void;
+  onPageChange: (page: number | undefined) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -81,7 +85,7 @@ export function DocumentSourcePicker({
       {documentId && (
         <span>
           <a
-            href={scopedArchivePath(archiveDocumentPath(null, documentId))}
+            href={scopedArchivePath(archiveDocumentPath(null, documentId, pageNumber))}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -91,6 +95,26 @@ export function DocumentSourcePicker({
             Убрать связь с PDF
           </button>
         </span>
+      )}
+      {documentId && (
+        <label className="document-source-page">
+          Страница PDF
+          <input
+            type="number"
+            min={1}
+            max={2000}
+            value={pageNumber ?? ""}
+            placeholder="Не указана"
+            onChange={(event) => {
+              const page = Number(event.target.value);
+              onPageChange(
+                event.target.value && Number.isInteger(page) && page >= 1 && page <= 2000
+                  ? page
+                  : undefined,
+              );
+            }}
+          />
+        </label>
       )}
       <button
         type="button"

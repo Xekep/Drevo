@@ -1021,6 +1021,7 @@ export default function App() {
                   onDropPhoto={(file) => photoWorkspace.openUpload(file)}
                   documentPersonFilter={documentPersonFilter}
                   documentId={documentId}
+                  documentPage={documentRoute?.pageNumber}
                   onSelectDocument={selectDocument}
                   personFilter={
                     view === "gallery"
