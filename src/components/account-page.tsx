@@ -25,6 +25,7 @@ import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
 import { AccountAiHistory } from "./account-ai-history";
 import { AccountEmailLink } from "./account-email-link";
+import { PortableImport } from "./portable-import";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -532,6 +533,14 @@ export function AccountPage({
                       <div className="account-export-actions">
                         <a
                           className="account-row-action"
+                          href={archiveResourceUrl("/api/drevo/export")}
+                          download="drevo.drevo"
+                        >
+                          Скачать полный переносимый архив (.drevo)
+                          <ExternalLink size={16} aria-hidden="true" />
+                        </a>
+                        <a
+                          className="account-row-action"
                           href={archiveResourceUrl(
                             "/api/gedcom/export?format=gedzip7",
                           )}
@@ -552,6 +561,11 @@ export function AccountPage({
                         </a>
                       </div>
                     )}
+                  {capacity?.available &&
+                    capacity.owned &&
+                    user.role === "admin" &&
+                    user.approved &&
+                    capacity.people === 0 && <PortableImport />}
                   {user.role === "admin" && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}

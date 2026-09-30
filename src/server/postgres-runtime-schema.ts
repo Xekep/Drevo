@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM pg_constraint WHERE conname='workflow_stages_kind_check' AND pg_get_constraintdef(oid) LIKE '%drevo%'",
+      "038_portable_stage.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='person_comments' AND column_name='author_name'",
       "037_comment_author_snapshot.sql",
     ],

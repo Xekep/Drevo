@@ -2,7 +2,7 @@ import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -46,6 +46,7 @@ import type { Family } from "../../src/domain/types.ts";
 import { planAdditions } from "../../src/domain/additions-import.ts";
 import { listAdditionBatches, planUndoAdditions } from "../../src/server/additions-undo.ts";
 import { auditStore } from "../../src/server/audit.ts";
+import { writePortablePackage } from "../../src/server/portable-package.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
   throw new Error("Use a NEW disposable drevo_migration_runtime_* database");
@@ -1841,6 +1842,42 @@ try {
       200,
       "another archive owner must not download this tree",
     );
+    const importFile = join(directory, "portable-runtime.drevo");
+    await writePortablePackage(createWriteStream(importFile), directory, {
+      family: {
+        title: "Transferred", description: "", demo: false,
+        people: [{ id: "pg-portable-person", name: "Portable", surname: "Person",
+          patronymic: "", sex: "u", birth: "1900", birthPlace: "",
+          parents: [], spouses: [], generation: 1, column: 0, sources: [] }],
+        photos: [],
+      },
+      documents: [],
+      comments: [{ id: 1, personId: "pg-portable-person", authorId: "remote",
+        authorName: "Historian", createdMs: 1000, text: "Verified" }],
+    }, async () => {});
+    const transferHeaders = {
+      Cookie: sessionCookie,
+      Origin: process.env.PUBLIC_ORIGIN!,
+      "X-Drevo-Import": "1",
+    };
+    const previewTransfer = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
+      method: "POST", headers: transferHeaders, body: readFileSync(importFile),
+    });
+    assert.equal(previewTransfer.status, 200,
+      previewTransfer.status === 200 ? "" : await previewTransfer.text());
+    const transferToken = (await previewTransfer.json()).token;
+    const applyTransfer = () => fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
+      method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ token: transferToken, confirm: true }),
+    });
+    const imported = await applyTransfer();
+    assert.equal(imported.status, 200,
+      imported.status === 200 ? "" : await imported.text());
+    assert.equal((await applyTransfer()).status, 409);
+    const transferred = await fetch(oauthBase + location.replace(/\/tree$/, "/api/family"), {
+      headers: { Cookie: sessionCookie },
+    }).then((response) => response.json());
+    assert.equal(transferred.family.people[0].id, "pg-portable-person");
     const vkRegistration = await oauthApp.archive.db.postgresTransaction!((pgClient) =>
       completePostgresOAuthLoginInTransaction(
         pgClient,

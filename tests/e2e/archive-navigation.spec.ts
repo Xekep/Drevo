@@ -164,13 +164,19 @@ test("account avatar uses the linked person's portrait when available", async ({
     .toBeGreaterThan(0);
 });
 
-test("account cabinet shows the owner's current tier and quotas", async ({ page }) => {
+test("account cabinet shows the owner's current tier and quotas", async ({
+  page,
+}) => {
   await page.route("**/api/session", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     await route.fulfill({
       response,
-      json: { ...data, local: false, user: { ...data.user, fullAccess: false } },
+      json: {
+        ...data,
+        local: false,
+        user: { ...data.user, fullAccess: false },
+      },
     });
   });
   await page.route("**/api/account/capacity", (route) =>
@@ -197,13 +203,79 @@ test("account cabinet shows the owner's current tier and quotas", async ({ page 
   await expect(
     page.getByRole("link", { name: /Скачать данные дерева/ }),
   ).toHaveAttribute("href", "/api/gedcom/export?format=gedcom7");
+  await expect(
+    page.getByRole("link", { name: /Скачать полный переносимый архив/ }),
+  ).toHaveAttribute("href", "/api/drevo/export");
 });
 
-test("account cabinet hides archive export from a non-owner", async ({ page }) => {
+test("empty archive owner previews a portable import before applying", async ({
+  page,
+}) => {
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: { ...data.user, fullAccess: false },
+      },
+    });
+  });
+  await page.route("**/api/account/capacity", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        owned: true,
+        fullAccess: false,
+        people: 0,
+        peopleLimit: 150,
+        mediaBytes: 0,
+        mediaLimitBytes: 500_000_000,
+      },
+    }),
+  );
+  await page.route("**/api/drevo/preview", (route) =>
+    route.fulfill({
+      json: {
+        token: "test-stage",
+        title: "Семейный архив",
+        people: 12,
+        photos: 3,
+        documents: 2,
+        comments: 1,
+        bytes: 2048,
+      },
+    }),
+  );
+  await page.goto("/account");
+  await expect(page.getByText("Перенести архив в пустое дерево")).toBeVisible();
+  await page.getByLabel("Файл .drevo").setInputFiles({
+    name: "family.drevo",
+    mimeType: "application/zip",
+    buffer: Buffer.from("PK"),
+  });
+  await page.getByRole("button", { name: "Проверить файл" }).click();
+  await expect(
+    page.locator(".account-portable-preview").getByText("Семейный архив"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Импортировать в это дерево" }),
+  ).toBeVisible();
+});
+
+test("account cabinet hides archive export from a non-owner", async ({
+  page,
+}) => {
   await page.route("**/api/account/capacity", (route) =>
     route.fulfill({ json: { available: true, owned: false } }),
   );
   await page.goto("/account");
-  await expect(page.getByRole("link", { name: /Скачать дерево/ })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Скачать данные дерева/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Скачать дерево/ })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("link", { name: /Скачать данные дерева/ }),
+  ).toHaveCount(0);
 });

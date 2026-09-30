@@ -26,6 +26,7 @@ import { imagePreviews } from "./image-previews.ts";
 import { archiveHttp } from "./archive-http.ts";
 import { gedcomHttp } from "./gedcom-http.ts";
 import { portableExportHttp } from "./portable-http.ts";
+import { portableImportHttp } from "./portable-import-http.ts";
 import { productionStaticHttp } from "./production-static-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
@@ -179,6 +180,12 @@ export async function startServer(
     auth,
     resolve(dirname(dbPath), "uploads"),
   );
+  const portableImport = portableImportHttp(
+    archive,
+    auth,
+    dbPath,
+    publicOrigin,
+  );
   const yandex = createYandexOAuth({
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
@@ -267,6 +274,7 @@ export async function startServer(
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await portableExport(req, res, parsedUrl)) return;
+    if (await portableImport.handle(req, res, parsedUrl)) return;
     if (await yandex.handle(req, res, parsedUrl)) return;
     if (await vk.handle(req, res, parsedUrl)) return;
 
@@ -363,6 +371,7 @@ export async function startServer(
       await backups.close();
       await restores.close();
       await gedcom.close();
+      await portableImport.close();
       geocoding.close();
       await archive.close();
     },
