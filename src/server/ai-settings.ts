@@ -11,6 +11,7 @@ import { decryptAiSecret, encryptAiSecret } from "./ai-secret.ts";
 export type AiSettings = {
   enabled: boolean;
   webSearchEnabled: boolean;
+  codeInterpreterEnabled: boolean;
   model: string;
   folderId: string;
   apiKeyStored: boolean;
@@ -27,6 +28,7 @@ export type AiSettings = {
 type AiSettingsRow = {
   enabled: unknown;
   web_search_enabled: unknown;
+  code_interpreter_enabled: unknown;
   model: unknown;
   folder_id: unknown;
   api_key_ciphertext: unknown;
@@ -105,7 +107,11 @@ function roleProfilesValue(value: unknown): AiRoleProfiles {
       if (!Object.hasOwn(defaults, key))
         throw new Error("Неизвестная настройка AI-профиля");
     for (const [key, fallback] of Object.entries(defaults))
-      if (typeof fallback === "boolean" && typeof raw[key] !== "boolean")
+      if (
+        typeof fallback === "boolean" &&
+        typeof raw[key] !== "boolean" &&
+        !(key === "codeInterpreterEnabled" && raw[key] === undefined)
+      )
         throw new Error(
           `Укажите настройку «${key}» для ${ROLE_NAMES[role as Role]}`,
         );
@@ -118,6 +124,7 @@ function roleProfilesValue(value: unknown): AiRoleProfiles {
       photoAnalysisEnabled: raw.photoAnalysisEnabled === true,
       proposalsEnabled: raw.proposalsEnabled === true,
       pdfEnabled: raw.pdfEnabled === true,
+      codeInterpreterEnabled: raw.codeInterpreterEnabled === true,
       requestsPerMinute: integerValue(
         raw.requestsPerMinute,
         "Запросов в минуту",
@@ -179,6 +186,7 @@ export function defaultAiRoleProfile(
     photoAnalysisEnabled: true,
     proposalsEnabled: true,
     pdfEnabled: true,
+    codeInterpreterEnabled: true,
     requestsPerMinute: settings.requestsPerMinute,
     dailyRequests: settings.dailyRequests,
     dailyTokens: settings.dailyTokens,
@@ -204,12 +212,12 @@ export async function aiSettingsStore(db: StoreDatabase) {
   async function row() {
     return (await db
       .prepare(
-        `SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,
+        `SELECT enabled,code_interpreter_enabled,web_search_enabled,model,folder_id,api_key_ciphertext,
                 requests_per_minute,daily_requests,daily_tokens,
                 compaction_enabled,compact_threshold_tokens,
                 automatic_truncation,max_tool_iterations,role_profiles
          FROM ai_settings WHERE id=1`,
-        "SELECT enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations,role_profiles\n         FROM ai_settings WHERE id=1",
+        "SELECT enabled,code_interpreter_enabled,web_search_enabled,model,folder_id,api_key_ciphertext,\n                requests_per_minute,daily_requests,daily_tokens,\n                compaction_enabled,compact_threshold_tokens,\n                automatic_truncation,max_tool_iterations,role_profiles\n         FROM ai_settings WHERE id=1",
       )
       .get()) as AiSettingsRow;
   }
@@ -218,6 +226,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
     const value = await row();
     return {
       enabled: !!value.enabled,
+      codeInterpreterEnabled: !!value.code_interpreter_enabled,
       webSearchEnabled:
         value.web_search_enabled === null
           ? process.env.AI_WEB_SEARCH_ENABLED === "true"
@@ -273,6 +282,11 @@ export async function aiSettingsStore(db: StoreDatabase) {
         throw new Error("Укажите, включён ли веб-поиск");
       if (typeof raw.enabled !== "boolean")
         throw new Error("Укажите, включён ли ИИ-исследователь");
+      if (
+        raw.codeInterpreterEnabled !== undefined &&
+        typeof raw.codeInterpreterEnabled !== "boolean"
+      )
+        throw new Error("Укажите, включён ли Code Interpreter");
       if (raw.clearApiKey !== undefined && typeof raw.clearApiKey !== "boolean")
         throw new Error("Некорректная команда удаления API-ключа");
       if (
@@ -297,6 +311,10 @@ export async function aiSettingsStore(db: StoreDatabase) {
             ? before.roleProfiles
             : roleProfilesValue(raw.roleProfiles),
         enabled: raw.enabled,
+        codeInterpreterEnabled:
+          raw.codeInterpreterEnabled === undefined
+            ? before.codeInterpreterEnabled
+            : raw.codeInterpreterEnabled,
         webSearchEnabled:
           raw.webSearchEnabled === undefined
             ? before.webSearchEnabled
@@ -347,15 +365,16 @@ export async function aiSettingsStore(db: StoreDatabase) {
       await db
         .prepare(
           `UPDATE ai_settings SET
-          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
+          enabled=?,code_interpreter_enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,
           requests_per_minute=?,daily_requests=?,daily_tokens=?,
           compaction_enabled=?,compact_threshold_tokens=?,
           automatic_truncation=?,max_tool_iterations=?,role_profiles=?
          WHERE id=1`,
-          "UPDATE ai_settings SET\n          enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?,role_profiles=?\n         WHERE id=1",
+          "UPDATE ai_settings SET\n          enabled=?,code_interpreter_enabled=?,web_search_enabled=?,model=?,folder_id=?,api_key_ciphertext=?,\n          requests_per_minute=?,daily_requests=?,daily_tokens=?,\n          compaction_enabled=?,compact_threshold_tokens=?,\n          automatic_truncation=?,max_tool_iterations=?,role_profiles=?\n         WHERE id=1",
         )
         .run(
           Number(afterInput.enabled),
+          Number(afterInput.codeInterpreterEnabled),
           Number(afterInput.webSearchEnabled),
           afterInput.model,
           afterInput.folderId,
@@ -425,6 +444,7 @@ export async function aiSettingsStore(db: StoreDatabase) {
             [
               ["requestsPerMinute", "Запросов в минуту"],
               ["webSearchEnabled", "Поиск в интернете"],
+              ["codeInterpreterEnabled", "Code Interpreter"],
               ["dailyRequests", "Запросов в день"],
               ["dailyTokens", "Токенов в день"],
             ] as const
@@ -495,9 +515,12 @@ export async function aiRuntimeConfig(
       photoAnalysis: capabilities.photoAnalysisEnabled,
       proposals: capabilities.proposalsEnabled,
       pdf: capabilities.pdfEnabled,
+      codeInterpreter:
+        common.codeInterpreterEnabled && capabilities.codeInterpreterEnabled,
     },
     visionModel: capabilities.visionModel,
     enabled: stored.enabled,
+    codeInterpreterEnabled: common.codeInterpreterEnabled,
     webSearchEnabled: stored.webSearchEnabled,
     webSearchProvider: process.env.AI_WEB_SEARCH_PROVIDER || "yandex",
     webSearchDefaultScope: "trusted" as const,
@@ -565,6 +588,7 @@ export async function publicAiStatus(
     },
     enabled: runtime.enabled,
     webSearchEnabled: runtime.webSearchEnabled,
+    codeInterpreterEnabled: runtime.codeInterpreterEnabled,
     webSearchProvider: runtime.webSearchProvider,
     webSearchDefaultScope: runtime.webSearchDefaultScope,
     active: runtime.active,

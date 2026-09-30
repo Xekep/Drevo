@@ -80,24 +80,9 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   await page.locator(".archive-more summary").click();
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  const genealogyFormat = dialog.getByRole("combobox", {
-    name: "Генеалогический формат",
-  });
-  await expect(genealogyFormat).toHaveValue("gedzip7");
-  await expect(dialog.getByRole("link", { name: "Скачать" })).toHaveAttribute(
-    "href",
-    "/api/gedcom/export?format=gedzip7",
-  );
-  await genealogyFormat.selectOption("gedcom7");
-  await expect(dialog.getByRole("link", { name: "Скачать" })).toHaveAttribute(
-    "href",
-    "/api/gedcom/export?format=gedcom7",
-  );
-  await genealogyFormat.selectOption("gedcom551");
-  await expect(dialog.getByRole("link", { name: "Скачать" })).toHaveAttribute(
-    "href",
-    "/api/gedcom/export?format=gedcom551",
-  );
+  await expect(
+    dialog.getByRole("combobox", { name: "Генеалогический формат" }),
+  ).toHaveCount(0);
   await dialog.getByRole("radio", { name: "Белая" }).check();
   await expect(page.locator(".tree-canvas")).toHaveClass(/theme-white/);
   await expect(page.locator(".tree-canvas")).toHaveCSS(

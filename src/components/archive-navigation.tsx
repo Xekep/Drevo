@@ -203,6 +203,10 @@ export function ArchiveNavigation({
                 </a>
               ))}
           </div>
+          <a href="/discover">
+            <Users size={18} />
+            <span>Поиск опубликованных людей</span>
+          </a>
           <button
             onClick={() => {
               if (menu.current) menu.current.open = false;

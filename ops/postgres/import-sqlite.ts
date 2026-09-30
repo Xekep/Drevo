@@ -132,6 +132,7 @@ const serviceTables = [
   "media_upload_grants",
   "migrations",
   "oauth_transactions",
+  "published_people",
   "research_categories",
   "research_resources",
   "research_suggestions",

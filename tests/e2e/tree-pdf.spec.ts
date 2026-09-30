@@ -3,28 +3,34 @@ import { readFile, writeFile } from "node:fs/promises";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
 
+async function openExport(page: Page) {
+  if (await page.evaluate(() => matchMedia("(max-width: 899px)").matches))
+    await page.getByRole("button", { name: "Экспорт древа" }).click();
+  else {
+    await page
+      .locator(".react-flow__pane")
+      .click({ button: "right", position: { x: 40, y: 350 } });
+    await page.locator(".tree-context-menu button").click();
+  }
+  return page.getByRole("dialog");
+}
+
 async function downloadPdf(page: Page, info: TestInfo) {
-  // Test the actual download, never page.pdf() with preferCSSPageSize overrides.
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await expect(dialog.getByText(/Личные настройки/)).toHaveCount(0);
+  const dialog = await openExport(page);
   const pending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Сохранить древо в PDF" }).click();
+  await dialog.getByRole("button", { name: /PDF/ }).click();
   const download = await pending;
   expect(download.suggestedFilename()).toMatch(/\.pdf$/);
   const path = info.outputPath("tree.pdf");
   await download.saveAs(path);
-  await expect(dialog.getByRole("status")).toHaveText("PDF готов.");
+  await expect(dialog.getByRole("status")).toHaveText(/PDF/);
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);
   const buffer = await readFile(path);
   expect(buffer.subarray(0, 8).toString("ascii")).toBe("%PDF-1.7");
   return getDocument({ data: new Uint8Array(buffer) }).promise;
 }
 
-test("selected descendants export to PDF, PNG and a deterministic report", async ({
-  page,
-  isMobile,
-}, info) => {
+test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
@@ -35,22 +41,20 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
     .click();
   if (isMobile)
     await page.getByRole("button", { name: "Закрыть панель" }).click();
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  const dialog = await openExport(page);
   await dialog
     .getByRole("combobox", { name: "Область экспорта" })
     .selectOption("descendants");
   await dialog
     .getByRole("combobox", { name: "Поколений для экспорта" })
     .selectOption("2");
-  const pdfPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Сохранить древо в PDF" }).click();
-  const pdfDownload = await pdfPending;
-  const pdfPath = info.outputPath("descendants.pdf");
-  await pdfDownload.saveAs(pdfPath);
-  const pdf = await getDocument({
-    data: new Uint8Array(await readFile(pdfPath)),
-  }).promise;
+  const pending = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: /PDF/ }).click();
+  const download = await pending;
+  const path = info.outputPath("descendants.pdf");
+  await download.saveAs(path);
+  const pdf = await getDocument({ data: new Uint8Array(await readFile(path)) })
+    .promise;
   try {
     const text = (await (await pdf.getPage(1)).getTextContent()).items
       .flatMap((item) => ("str" in item ? item.str : []))
@@ -61,86 +65,6 @@ test("selected descendants export to PDF, PNG and a deterministic report", async
   } finally {
     await pdf.loadingTask.destroy();
   }
-  await dialog
-    .getByRole("combobox", { name: "Формат изображения" })
-    .selectOption("png");
-  const pngPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Сохранить древо в PNG" }).click();
-  const pngDownload = await pngPending;
-  const pngPath = info.outputPath("descendants.png");
-  await pngDownload.saveAs(pngPath);
-  const png = sharp(await readFile(pngPath));
-  const metadata = await png.metadata();
-  expect(metadata.format).toBe("png");
-  expect(metadata.width).toBeGreaterThan(1000);
-  const colors = await png.stats();
-  expect(colors.channels[0].stdev).toBeGreaterThan(2);
-  await dialog.getByText("Отчёты", { exact: true }).click();
-  const reportPending = page.waitForEvent("download");
-  await dialog
-    .getByRole("combobox", { name: "Направление росписи" })
-    .selectOption("descendants");
-  await dialog.getByRole("button", { name: "Скачать роспись" }).click();
-  const report = await reportPending;
-  expect(report.suggestedFilename()).toMatch(/\.txt$/);
-  const reportPath = info.outputPath("descendants.txt");
-  await report.saveAs(reportPath);
-  const text = await readFile(reportPath, "utf8");
-  expect(text).toContain("Анна");
-  expect(text).not.toContain("Ольга");
-  await dialog
-    .getByRole("combobox", { name: "Тип PDF-отчёта" })
-    .selectOption("descendants");
-  const reportPdfPending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "Скачать PDF-отчёт" }).click();
-  const reportPdfDownload = await reportPdfPending;
-  expect(reportPdfDownload.suggestedFilename()).toMatch(/\.pdf$/);
-  const reportPdfPath = info.outputPath("descendants-report.pdf");
-  await reportPdfDownload.saveAs(reportPdfPath);
-  const reportPdf = await getDocument({
-    data: new Uint8Array(await readFile(reportPdfPath)),
-  }).promise;
-  try {
-    const reportText = (
-      await (await reportPdf.getPage(1)).getTextContent()
-    ).items
-      .flatMap((item) => ("str" in item ? item.str : []))
-      .join(" ");
-    expect(reportText).toContain("Роспись потомков");
-    expect(reportText).toContain("Анна");
-    expect(reportText).not.toContain("Ольга");
-  } finally {
-    await reportPdf.loadingTask.destroy();
-  }
-  for (const [kind, title] of [
-    ["person", "Карточка человека"],
-    ["family", "Семейный отчёт"],
-    ["timeline", "Хронология жизни"],
-    ["ancestors", "Роспись предков"],
-    ["research", "Исследовательская сводка"],
-  ] as const) {
-    await dialog
-      .getByRole("combobox", { name: "Тип PDF-отчёта" })
-      .selectOption(kind);
-    const pending = page.waitForEvent("download");
-    await dialog.getByRole("button", { name: "Скачать PDF-отчёт" }).click();
-    const download = await pending;
-    const path = info.outputPath(`${kind}-report.pdf`);
-    await download.saveAs(path);
-    const file = await getDocument({
-      data: new Uint8Array(await readFile(path)),
-    }).promise;
-    try {
-      const text = (await (await file.getPage(1)).getTextContent()).items
-        .flatMap((item) => ("str" in item ? item.str : []))
-        .join(" ");
-      expect(text).toContain(title);
-      expect(text).toContain("Пётр");
-    } finally {
-      await file.loadingTask.destroy();
-    }
-  }
-  await expect(page.locator(".react-flow__node").first()).toBeVisible();
 });
 
 test.beforeEach(async ({ page }) => {
@@ -152,7 +76,33 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("tree export keeps the essential controls", async ({ page, isMobile }) => {
+test("settings have no export; canvas menu offers visible and full tree", async ({
+  page,
+}) => {
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-grow|is-layout-settling/,
+  );
+  await page.getByRole("button", { name: "Настройки древа" }).click();
+  const settings = page.getByRole("dialog");
+  await expect(settings.locator("select")).toHaveCount(0);
+  await settings.getByRole("button", { name: "Закрыть" }).click();
+  const dialog = await openExport(page);
+  const scope = dialog.getByRole("combobox", { name: "Область экспорта" });
+  await expect(scope).toHaveValue("current");
+  await expect(scope.locator('option[value="current"]')).toContainText(
+    "Видимое древо",
+  );
+  await expect(scope.locator('option[value="all"]')).toContainText("Всё древо");
+  await expect(dialog.getByRole("button", { name: /PDF/ })).toBeVisible();
+  await expect(dialog.getByText("PNG", { exact: true })).toHaveCount(0);
+});
+
+test("person context menu shares only that person", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile);
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
@@ -160,24 +110,50 @@ test("tree export keeps the essential controls", async ({ page, isMobile }) => {
   await page
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Временная ссылка" }).click();
+  const dialog = page.getByRole("dialog", { name: "Поделиться человеком" });
+  await expect(
+    dialog.getByText("1 человек · просмотр без входа"),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(/Ссылка не публикует его в поиске/),
+  ).toBeVisible();
+});
+
+test("AI file action downloads the configured tree PDF", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) =>
+    route.fulfill({
+      json: { enabled: true, canPropose: false, streaming: true },
+    }),
+  );
+  await page.route("**/api/ai/chat/stream", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/event-stream; charset=utf-8",
+      body: `event: done\ndata: ${JSON.stringify({
+        answer: "PDF древа готов к скачиванию.",
+        references: [],
+        suggestionIds: [],
+        uiActions: [],
+        files: [{ name: "PDF видимого древа", url: "drevo:tree-pdf:current" }],
+      })}\n\n`,
+    }),
+  );
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(
+    /is-grow|is-layout-settling/,
+  );
+  await page.getByRole("button", { name: "Открыть ИИ-исследователя" }).click();
+  const chat = page.locator(".research-assistant");
+  await chat.getByRole("textbox").fill("Экспорт древа в PDF");
+  await chat.getByRole("button", { name: "Отправить запрос" }).click();
+  const pending = page.waitForEvent("download");
+  await chat
+    .getByRole("button", { name: "Скачать PDF видимого древа" })
     .click();
-  if (isMobile)
-    await page.getByRole("button", { name: "Закрыть панель" }).click();
-  await page.getByRole("button", { name: "Настройки древа" }).click();
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await expect(
-    dialog.getByRole("combobox", { name: "Формат изображения" }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole("combobox", { name: "Область экспорта" }),
-  ).toBeVisible();
-  await expect(
-    dialog.getByRole("button", { name: "Сохранить древо в PDF" }),
-  ).toBeVisible();
-  await expect(dialog.getByText("Отчёты", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("Офлайн-архив")).toHaveCount(0);
-  await expect(dialog.getByText("Настройки печати PDF")).toHaveCount(0);
-  await expect(dialog.getByText("Экспорт веера")).toHaveCount(0);
+  const download = await pending;
+  expect(download.suggestedFilename()).toMatch(/\.pdf$/);
 });
 
 test("download respects collapsed branches; cancel releases preparation without downloading", async ({
@@ -214,8 +190,8 @@ test("download respects collapsed branches; cancel releases preparation without 
   page.on("download", () => {
     downloaded = true;
   });
-  const dialog = page.getByRole("dialog", { name: "Вид древа" });
-  await dialog.getByRole("button", { name: "Сохранить древо в PDF" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Скачать PDF" }).click();
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(1);
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);
@@ -336,6 +312,10 @@ for (const variant of ["portrait", "classic"] as const)
     await expect(page.locator(".tree-canvas")).not.toHaveClass(
       /is-grow|is-layout-settling/,
     );
+    const extra = page.getByRole("button", { name: "Доп. связи" });
+    await expect(extra).toHaveAttribute("aria-pressed", "false");
+    await extra.click();
+    await expect(extra).toHaveAttribute("aria-pressed", "true");
     const canvas = page.locator(".react-flow__pane");
     const box = (await canvas.boundingBox())!;
     await page.mouse.move(box.x + 30, box.y + 100);

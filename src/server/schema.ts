@@ -1031,4 +1031,30 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  if (!tableHasColumn(db, "ai_settings", "code_interpreter_enabled"))
+    db.exec(
+      "ALTER TABLE ai_settings ADD COLUMN code_interpreter_enabled INTEGER NOT NULL DEFAULT 0 CHECK(code_interpreter_enabled IN (0,1))",
+    );
+  const publishedPeopleExtension = "2026-09-published-people";
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(publishedPeopleExtension)
+  ) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TABLE published_people (
+        person_id TEXT PRIMARY KEY REFERENCES people(id) ON DELETE CASCADE,
+        published_at TEXT NOT NULL,
+        published_by TEXT NOT NULL
+      ) STRICT;`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        publishedPeopleExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

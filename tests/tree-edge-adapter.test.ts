@@ -133,6 +133,44 @@ test("edge adapter preserves handles, highlighting, filters and draft preview", 
   assert.equal(withExtras[2].type, "smoothstep");
 });
 
+test("additional relation is visually diagonal while family routing and positions stay fixed", () => {
+  const positions = new Map([
+    ["a", { x: 0, y: 0 }],
+    ["b", { x: 360, y: 400 }],
+    ["c", { x: 700, y: 0 }],
+  ]);
+  const parentRoute = {
+    sourceHandle: "bottom" as const,
+    targetHandle: "top" as const,
+    points: [{ x: 110, y: 84 }, { x: 110, y: 600 }, { x: 470, y: 600 }, { x: 470, y: 400 }],
+  };
+  const extraRoute = {
+    ...parentRoute,
+    points: [{ x: 110, y: 84 }, { x: 110, y: 200 }, { x: 470, y: 200 }, { x: 470, y: 400 }],
+  };
+  const routedGeometry: TreeGeometry = {
+    ...geometry,
+    positions: [...positions],
+    routes: [
+      [JSON.stringify(["parent", "a", "b"]), parentRoute],
+      [JSON.stringify(["godparent", "a", "b"]), extraRoute],
+    ],
+  };
+  const edges = buildTreeEdges({
+    ...baseInput(),
+    positions,
+    geometry: routedGeometry,
+    extraVisible: true,
+  });
+  assert.deepEqual(edges[0].data?.route?.points, parentRoute.points);
+  assert.deepEqual(edges[1].data?.route?.points, [
+    extraRoute.points[0],
+    extraRoute.points[3],
+  ]);
+  assert.deepEqual(routedGeometry.routes?.[1][1].points, extraRoute.points);
+  assert.deepEqual([...positions], routedGeometry.positions);
+});
+
 test("family branch keeps real relations and delegates ambiguous selection", () => {
   const secondParent: GraphConnection = {
     from: "c",

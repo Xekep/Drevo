@@ -583,6 +583,14 @@ test("ИИ-исследователь не перекрывает навигац
     "| --- | --- |",
     "| Иван | 1900 |",
     "",
+    "Возраст: $a^2+b^2=c^2$ и \\(E=mc^2\\).",
+    "",
+    "\\[",
+    "\\frac{1}{2}+1=\\frac{3}{2}",
+    "\\]",
+    "",
+    "`\\(не формула\\)`",
+    "",
     "[[photo:photo-one|Семейный снимок]]",
     "",
     "![Ещё снимок](photo-two)",
@@ -702,6 +710,11 @@ test("ИИ-исследователь не перекрывает навигац
     panel.getByRole("heading", { name: "Тестов Иван Петрович" }),
   ).toBeVisible();
   await expect(panel.locator("table")).toBeVisible();
+  await expect(panel.locator(".research-markdown .katex")).toHaveCount(3);
+  await expect(panel.locator(".research-markdown .katex-display")).toBeVisible();
+  await expect(panel.locator(".research-markdown code")).toContainText(
+    "\\(не формула\\)",
+  );
   const graph = panel.locator(".research-visual canvas");
   await expect(graph).toBeVisible();
   await graph.evaluate((node) => {
@@ -1439,7 +1452,7 @@ test("the initial tree grows from roots toward descendants", async ({
   await expect(canvas).toHaveClass(/is-growing/);
   const nodes = page.locator(".tree-grow-node");
   await expect(nodes).toHaveCount(6);
-  await expect(page.locator(".tree-grow-edge")).toHaveCount(6);
+  await expect(page.locator(".tree-grow-edge")).toHaveCount(5);
   const delays = await nodes.evaluateAll((items) =>
     items
       .map((item) => getComputedStyle(item).animationDelay)
@@ -1494,14 +1507,7 @@ test("the initial tree grows from roots toward descendants", async ({
     "0.47s",
     "0.5s",
     "0.5s",
-    "0.87s",
   ]);
-  const godparent = page.getByRole("button", {
-    name: "Связь: Крёстный отец → крестница",
-  });
-  await expect(godparent).toHaveClass(/tree-grow-edge-label/);
-  await expect(godparent).toHaveCSS("animation-name", "tree-edge-label-reveal");
-  await expect(godparent).toHaveCSS("animation-delay", "1.11s");
 
   const pane = page.locator(".react-flow__pane");
   const box = await pane.boundingBox();
@@ -1594,6 +1600,14 @@ test("the initial tree grows from roots toward descendants", async ({
   await page
     .getByRole("button", { name: "Вписать видимую часть дерева" })
     .click();
+  const extra = page.getByRole("button", { name: "Доп. связи" });
+  await expect(extra).toHaveAttribute("aria-pressed", "false");
+  await extra.click();
+  await expect(extra).toHaveAttribute("aria-pressed", "true");
+  const godparent = page.getByRole("button", {
+    name: "Связь: Крёстный отец → крестница",
+  });
+  await expect(godparent).toHaveClass(/tree-grow-edge-label/);
   const finalPaths = page.locator(".tree-grow-edge .tree-edge-final-path");
   await expect(finalPaths).toHaveCount(6);
   expect(
@@ -1667,6 +1681,8 @@ test("the initial tree grows from roots toward descendants", async ({
   await page.reload();
   await expect(canvas).not.toHaveClass(/is-growing/, { timeout: 3_000 });
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS("animation-name", "none");
+  await expect(extra).toHaveAttribute("aria-pressed", "false");
+  await extra.click();
   await expect(godparent).toHaveCSS("animation-name", "none");
 });
 

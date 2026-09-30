@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_settings' AND column_name='code_interpreter_enabled'",
+      "020_code_interpreter.sql",
+    ],
+    [
       "SELECT to_regclass('vk_auth_settings') AS present",
       "011_vk_auth_settings.sql",
     ],
@@ -35,6 +39,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     [
       "SELECT to_regclass('share_link_activity') AS present",
       "018_share_link_activity.sql",
+    ],
+    [
+      "SELECT to_regclass('published_people') AS present",
+      "019_published_people.sql",
     ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;

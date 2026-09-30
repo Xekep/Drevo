@@ -5,11 +5,11 @@ import {
   RESIZE_DIRECTIONS,
 } from "./research/use-research-panel";
 import {
-  memo,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,123 +23,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { ResearchVisualChart } from "./charts/research-visual-chart";
-import ReactMarkdown, {
-  defaultUrlTransform,
-  type Components,
-} from "react-markdown";
-import remarkGfm from "remark-gfm";
-import {
-  linkResearchReferences,
-  normalizeResearchMarkdown,
-  type ResearchAnswerReference,
-} from "../domain/research-answer.ts";
+import type { ResearchMessage } from "./research/markdown-answer";
 
-type AnswerReference = ResearchAnswerReference;
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-  references?: AnswerReference[];
-  suggestionIds?: string[];
-  files?: Array<{ name: string; url: string }>;
-  activities?: string[];
-};
+type Message = ResearchMessage;
 type LauncherPosition = { left: number; top: number };
-
-const MarkdownAnswer = memo(function MarkdownAnswer({
-  message,
-  onPerson,
-  onChoosePerson,
-  onPhoto,
-}: {
-  message: Message;
-  onPerson: (id: string) => void;
-  onChoosePerson: (id: string, label: string) => void;
-  onPhoto: (id: string) => void;
-}) {
-  const components = useMemo<Components>(
-    () => ({
-      a: ({ href = "", children }) => {
-        const match = /^#drevo-(person|choose-person|photo)-(.+)$/.exec(href);
-        if (!match)
-          return (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          );
-        const id = decodeURIComponent(match[2]),
-          label = String(children);
-        return (
-          <button
-            type="button"
-            className="research-inline-reference"
-            onClick={() =>
-              match[1] === "photo"
-                ? onPhoto(id)
-                : match[1] === "choose-person"
-                  ? onChoosePerson(id, label)
-                  : onPerson(id)
-            }
-          >
-            {children}
-          </button>
-        );
-      },
-      code: ({ className, children, ...props }) =>
-        className === "language-mermaid" &&
-        !String(children).trim() ? null : className === "language-mermaid" ? (
-          <ResearchVisualChart source={String(children).trim()} />
-        ) : (
-          <code className={className} {...props}>
-            {children}
-          </code>
-        ),
-    }),
-    [onChoosePerson, onPerson, onPhoto],
-  );
-  return (
-    <div className="research-markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        urlTransform={(url) =>
-          url.startsWith("#drevo-") ? url : defaultUrlTransform(url)
-        }
-        components={components}
-      >
-        {linkResearchReferences(
-          message.role === "assistant"
-            ? normalizeResearchMarkdown(message.content)
-            : message.content,
-          message.references,
-        )}
-      </ReactMarkdown>
-      {message.references?.some((reference) => reference.kind === "web") && (
-        <details>
-          <summary>Найденные веб-источники</summary>
-          <ul>
-            {message.references
-              .filter((reference) => reference.kind === "web")
-              .map((reference) => (
-                <li key={reference.url}>
-                  <a
-                    href={reference.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {reference.label}
-                  </a>
-                  {" · "}
-                  {reference.sourceName || reference.domain}
-                  {reference.snippet && <p>{reference.snippet}</p>}
-                </li>
-              ))}
-          </ul>
-          <small>Результат поиска требует проверки исходной страницы.</small>
-        </details>
-      )}
-    </div>
-  );
-});
+const MarkdownAnswer = lazy(() => import("./research/markdown-answer"));
 type SuggestionValue = string | boolean | undefined;
 type SuggestionBase = {
   id: string;
@@ -383,6 +271,7 @@ export function ResearchAssistant({
   onReveal,
   onFilter,
   onZoom,
+  onExportTreePdf,
 }: {
   view: string;
   onOpenChange?: (open: boolean) => void;
@@ -398,6 +287,7 @@ export function ResearchAssistant({
   onReveal: (ids: string[]) => void;
   onFilter: (ids: string[], label: string) => void;
   onZoom: (direction: "in" | "out") => void;
+  onExportTreePdf?: (scope: "current" | "all") => Promise<void>;
 }) {
   const [enabled, setEnabled] = useState(false),
     [open, setOpen] = useState(false),
@@ -1373,26 +1263,52 @@ export function ResearchAssistant({
                   )}
                 <article className={`is-${message.role}`}>
                   {message.role === "assistant" ? (
-                    <MarkdownAnswer
-                      message={message}
-                      onPerson={onPerson}
-                      onChoosePerson={choosePerson}
-                      onPhoto={onPhoto}
-                    />
+                    <Suspense fallback={<p>Оформляем ответ…</p>}>
+                      <MarkdownAnswer
+                        message={message}
+                        onPerson={onPerson}
+                        onChoosePerson={choosePerson}
+                        onPhoto={onPhoto}
+                      />
+                    </Suspense>
                   ) : (
                     <p>{message.content}</p>
                   )}
                   {message.role === "assistant" &&
-                    message.files?.map((file) => (
-                      <a
-                        className="research-file"
-                        key={file.url}
-                        href={file.url}
-                        download={file.name}
-                      >
-                        Скачать {file.name}
-                      </a>
-                    ))}
+                    message.files?.map((file) =>
+                      file.url === "drevo:tree-pdf:current" ||
+                      file.url === "drevo:tree-pdf:all" ? (
+                        <button
+                          className="research-file"
+                          type="button"
+                          key={file.url}
+                          disabled={!onExportTreePdf}
+                          onClick={() => {
+                            if (!onExportTreePdf) return;
+                            void onExportTreePdf(
+                              file.url.endsWith(":all") ? "all" : "current",
+                            ).catch((reason: unknown) =>
+                              setError(
+                                reason instanceof Error
+                                  ? reason.message
+                                  : "Не удалось создать PDF древа.",
+                              ),
+                            );
+                          }}
+                        >
+                          Скачать {file.name}
+                        </button>
+                      ) : (
+                        <a
+                          className="research-file"
+                          key={file.url}
+                          href={file.url}
+                          download={file.name}
+                        >
+                          Скачать {file.name}
+                        </a>
+                      ),
+                    )}
                   {message.role === "assistant" &&
                     message.suggestionIds?.map((id) => {
                       const suggestion = suggestions.find(

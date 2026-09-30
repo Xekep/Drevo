@@ -479,6 +479,18 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   color: inherit;
   overflow: visible;
 }
+.research-markdown pre:has(.katex-display) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.research-markdown .katex-display {
+  max-width: 100%;
+  margin: 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 3px 0;
+}
 .research-visual {
   position: relative;
   height: 290px;
@@ -595,6 +607,8 @@ body:has(.tree-view:not(.is-hidden) .react-flow__pane.dragging)
   border-radius: 8px;
   color: #345a31;
   font-weight: 650;
+  background: #fff;
+  cursor: pointer;
 }
 .research-inline-reference {
   display: inline;

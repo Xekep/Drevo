@@ -5,6 +5,7 @@ import type pg from "pg";
 export const runtimeServiceTables = [
   "share_links",
   "share_link_activity",
+  "published_people",
   "geocode_cache",
   "migrations",
   "face_descriptors",
@@ -50,7 +51,19 @@ export async function backfillRuntimeServicesInTransaction(
       "utf8",
     ),
   );
+  await client.query(
+    readFileSync(
+      new URL("./019_published_people.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   const counts: Record<string, number> = {};
+  await client.query(
+    readFileSync(
+      new URL("./020_code_interpreter.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   await client.query(
     readFileSync(
       new URL("./012_ai_role_profiles.sql", import.meta.url),
