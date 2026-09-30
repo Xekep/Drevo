@@ -1,5 +1,50 @@
 import { expect, test } from "@playwright/test";
 
+test("ordinary tree loads portraits before the first growth frame", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.family.people.find((person: { id: string }) => person.id === "e2e-child")
+      .photo = "/media/growth-portrait.jpg";
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/media/growth-portrait.jpg?variant=thumb", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#688a70"/></svg>',
+    });
+  });
+  await page.addInitScript(() => {
+    const samples: Array<{ growing: boolean; loaded: boolean; image: boolean }> = [];
+    Object.assign(window, { __portraitGrowthSamples: samples });
+    const start = performance.now();
+    const tick = () => {
+      const canvas = document.querySelector(".tree-canvas");
+      const portrait = document.querySelector<HTMLImageElement>(
+        '[data-person-id="e2e-child"] .person-avatar img',
+      );
+      if (canvas) samples.push({
+        growing: canvas.classList.contains("is-growing"),
+        loaded: !!portrait?.complete && portrait.naturalWidth > 0,
+        image: !!portrait,
+      });
+      if (performance.now() - start < 5000) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
+  const samples = await page.evaluate(() => (
+    window as typeof window & { __portraitGrowthSamples: Array<{
+      growing: boolean; loaded: boolean; image: boolean;
+    }> }
+  ).__portraitGrowthSamples);
+  const firstGrowth = samples.find((sample) => sample.growing);
+  expect(firstGrowth).toEqual({ growing: true, loaded: true, image: true });
+});
+
 test("a direct person link skips tree growth and smoothly focuses the requested person", async ({
   page,
 }) => {
