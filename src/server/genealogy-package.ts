@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { crc32 } from "node:zlib";
 import { pipeline } from "node:stream/promises";
-import { Transform, type Readable } from "node:stream";
+import { Transform, type Readable, type Writable } from "node:stream";
 import { openPromise } from "yauzl";
 import { ZipFile } from "yazl";
 import sharp from "sharp";
@@ -385,56 +385,65 @@ export async function exportMedia(
   return media;
 }
 
-export async function writeGenealogyPackage(
-  destination: string,
+async function preparePackage(
   uploads: string,
   family: Family,
   media: TransferMedia[],
+  limited: boolean,
+) {
+  const used = new Set<string>();
+  const files: Array<{ source: string; name: string }> = [];
+  let size = 0;
+  const exported = media.map((m) => ({ ...m }));
+  for (const item of exported) {
+    const match =
+      /^(?:\/media\/|documents\/)([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf))$/.exec(
+        item.file,
+      );
+    if (!match)
+      throw new Error(
+        `Невозможно упаковать файл «${item.title}»: оригинал отсутствует в хранилище Drevo`,
+      );
+    const name = `media/${match[1]}`;
+    const source = join(uploads, match[1]);
+    item.file = name;
+    if (used.has(name)) continue;
+    const info = await lstat(source);
+    if (!info.isFile() || info.isSymbolicLink())
+      throw new Error(`Оригинал «${item.title}» не является обычным файлом`);
+    size += info.size;
+    if (
+      limited &&
+      (info.size >
+        (name.endsWith(".pdf") ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
+        size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT)
+    )
+      throw new Error(
+        "Слишком большой пакет обмена: GEDZIP поддерживает до 480 МиБ оригиналов. GEDCOM без файлов доступен отдельно.",
+      );
+    used.add(name);
+    files.push({ source, name });
+  }
+  const text = Buffer.from(
+    exportGedcom(family, { version: "7.0", media: exported }),
+  );
+  if (text.length > TRANSFER_TEXT_LIMIT)
+    throw new Error("Текст обмена больше 32 МБ");
+  return { files, text };
+}
+
+async function writePackage(
+  outputStream: Writable,
+  prepared: Awaited<ReturnType<typeof preparePackage>>,
 ) {
   const zip = new ZipFile();
-  const output = pipeline(
-    zip.outputStream,
-    createWriteStream(destination, { flags: "wx" }),
-  );
-  // Observe failure while checking input files, before awaiting the pipeline below.
+  const output = pipeline(zip.outputStream, outputStream);
   void output.catch(() => {});
   zip.on("error", (error) => (zip.outputStream as Readable).destroy(error));
   try {
-    const used = new Set<string>();
-    let size = 0;
-    const exported = media.map((m) => ({ ...m }));
-    for (const item of exported) {
-      const match =
-        /^(?:\/media\/|documents\/)([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf))$/.exec(
-          item.file,
-        );
-      if (!match)
-        throw new Error(
-          `Невозможно упаковать файл «${item.title}»: оригинал отсутствует в хранилище Drevo`,
-        );
-      const name = `media/${match[1]}`,
-        source = join(uploads, match[1]);
-      item.file = name;
-      if (used.has(item.file)) continue;
-      const info = await lstat(source);
-      if (!info.isFile() || info.isSymbolicLink())
-        throw new Error(`Оригинал «${item.title}» не является обычным файлом`);
-      size += info.size;
-      if (
-        info.size >
-          (item.file.endsWith(".pdf") ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
-        size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT
-      )
-        throw new Error(
-          "Слишком большой пакет обмена: GEDZIP поддерживает до 480 МиБ оригиналов. GEDCOM без файлов доступен отдельно.",
-        );
-      used.add(item.file);
-      zip.addFile(source, item.file, { compress: false });
-    }
-    const text = exportGedcom(family, { version: "7.0", media: exported });
-    if (Buffer.byteLength(text) > TRANSFER_TEXT_LIMIT)
-      throw new Error("Текст обмена больше 32 МБ");
-    zip.addBuffer(Buffer.from(text), "gedcom.ged");
+    for (const file of prepared.files)
+      zip.addFile(file.source, file.name, { compress: false });
+    zip.addBuffer(prepared.text, "gedcom.ged");
     zip.end();
     await output;
   } catch (error) {
@@ -442,6 +451,31 @@ export async function writeGenealogyPackage(
     await output.catch(() => {});
     throw error;
   }
+}
+
+export async function writeGenealogyPackage(
+  destination: string,
+  uploads: string,
+  family: Family,
+  media: TransferMedia[],
+) {
+  const prepared = await preparePackage(uploads, family, media, true);
+  await writePackage(createWriteStream(destination, { flags: "wx" }), prepared);
+}
+
+/** Large owner exports stream directly to the response without a second copy
+ * on the server. The GEDZIP import limit remains a separate safety boundary.
+ */
+export async function streamGenealogyPackage(
+  destination: Writable,
+  uploads: string,
+  family: Family,
+  media: TransferMedia[],
+  beforeStart: () => Promise<void>,
+) {
+  const prepared = await preparePackage(uploads, family, media, false);
+  await beforeStart();
+  await writePackage(destination, prepared);
 }
 
 export async function installTransferFiles(

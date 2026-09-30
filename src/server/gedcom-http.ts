@@ -1,18 +1,14 @@
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { randomUUID } from "node:crypto";
-import {
-  createReadStream,
-  createWriteStream,
-  mkdirSync,
-  rmSync,
-} from "node:fs";
-import { stat, statfs, mkdtemp, rm, readdir } from "node:fs/promises";
+import { createWriteStream, mkdirSync, rmSync } from "node:fs";
+import { stat, statfs, rm, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { ConflictError, type openArchive } from "./database.ts";
+import { ForbiddenError } from "./users.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
 import { TRANSFER_PACKAGE_LIMIT } from "../domain/genealogy-transfer.ts";
 import { writeDatabaseBackup } from "./backup.ts";
@@ -22,7 +18,7 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import {
   exportMedia,
   prepareGenealogyImport,
-  writeGenealogyPackage,
+  streamGenealogyPackage,
   installTransferFiles,
   type StagedMedia,
 } from "./genealogy-package.ts";
@@ -157,33 +153,23 @@ export function gedcomHttp(
               return json(429, { error: "Другой экспорт уже выполняется" });
             exporting = true;
             try {
-              const disk = await statfs(stageRoot);
-              if (
-                disk.bavail * disk.bsize <
-                TRANSFER_PACKAGE_LIMIT + 256 * 1024 ** 2
-              )
-                throw new UploadQuotaError(
-                  "Недостаточно места для экспорта",
-                  507,
-                );
-              const directory = await mkdtemp(join(stageRoot, "export-"));
-              try {
-                const path = join(directory, "export.gdz");
-                await writeGenealogyPackage(path, uploads, family, items);
-                if ((await auth.currentUser(req))?.role !== "admin")
-                  return json(403, { error: "Доступ администратора отозван" });
-                res.writeHead(200, {
-                  "Content-Type": "application/zip",
-                  "Content-Length": String((await stat(path)).size),
-                  "Content-Disposition": 'attachment; filename="drevo.gdz"',
-                  "Cache-Control": "no-store",
-                  "X-Content-Type-Options": "nosniff",
-                });
-                await pipeline(createReadStream(path), res);
-                return true;
-              } finally {
-                await rm(directory, { recursive: true, force: true });
-              }
+              await streamGenealogyPackage(
+                res,
+                uploads,
+                family,
+                items,
+                async () => {
+                  if ((await auth.currentUser(req))?.role !== "admin")
+                    throw new ForbiddenError("Доступ администратора отозван");
+                  res.writeHead(200, {
+                    "Content-Type": "application/zip",
+                    "Content-Disposition": 'attachment; filename="drevo.gdz"',
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                  });
+                },
+              );
+              return true;
             } finally {
               exporting = false;
             }
@@ -486,9 +472,11 @@ export function gedcomHttp(
         return json(
           error instanceof ConflictError
             ? 409
-            : error instanceof UploadQuotaError
-              ? error.status
-              : 400,
+            : error instanceof ForbiddenError
+              ? 403
+              : error instanceof UploadQuotaError
+                ? error.status
+                : 400,
           { error: (error as Error).message },
         );
       }
