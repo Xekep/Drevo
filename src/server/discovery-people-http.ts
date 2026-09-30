@@ -98,15 +98,19 @@ export function discoveryPeopleHttp(
     const terms = query.length >= 2 && query.length <= 100 ? searchTerms(query) : null;
     if (!terms)
       return json(res, 400, { error: "Введите от 2 до 100 символов для поиска" });
+    const excludeArchiveId = url.searchParams.get("excludeArchiveId") || "";
+    if (excludeArchiveId && !/^[A-Za-z0-9-]{3,64}$/.test(excludeArchiveId))
+      return json(res, 400, { error: "Некорректный архив для исключения" });
     const cursor = readCursor(url.searchParams.get("cursor"));
     if (!cursor) return json(res, 400, { error: "Некорректная страница поиска" });
     const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version
         FROM discovery_people
        WHERE search_vector @@ to_tsquery('simple', ?)
+         AND archive_id<>?
          AND (name,archive_id,person_id) > (?,?,?)
        ORDER BY name,archive_id,person_id LIMIT 31`).all(
-      terms, ...cursor,
+      terms, excludeArchiveId, ...cursor,
     );
     const items = rows.slice(0, 30).map(listedPerson);
     const last = rows.length > 30 ? items.at(-1) : undefined;

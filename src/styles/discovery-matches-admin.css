@@ -8,6 +8,7 @@
 }
 .match-options button.is-selected { border-color: var(--green); background: #edf3e9; }
 .match-options small { color: var(--muted); white-space: nowrap; }
+.match-more { margin-top: 8px; width: 100%; }
 .match-suggestions { display: grid; gap: 8px; }
 .match-suggestions > p { margin: 0; }
 .match-suggestion-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 8px; }
