@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
@@ -82,6 +82,7 @@ const family: Family = {
 };
 let live: Awaited<ReturnType<typeof openArchive>> | undefined;
 let app: Awaited<ReturnType<typeof startServer>> | undefined;
+let otherApp: Awaited<ReturnType<typeof startServer>> | undefined;
 try {
   delete process.env.DATABASE_BACKEND;
   const sqlite = await openArchive(source, family);
@@ -1000,8 +1001,55 @@ try {
   await client.query(
     "UPDATE account_tiers SET full_access=true WHERE account_id='owner'",
   );
+  // The same media URL must resolve inside the selected archive's storage root.
+  await client.query(
+    "SELECT set_config('drevo.archive_id','other-archive',false)",
+  );
+  await client.query(
+    "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES('other-archive','owner','admin',true,'all')",
+  );
+  await client.query(
+    "SELECT set_config('drevo.archive_id','runtime-test',false)",
+  );
+  otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
+  const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
+  assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  assert.equal(
+    (await fetch(otherBase + "/api/session", { headers: ownerHeaders }).then((r) => r.json())).user.id,
+    "owner",
+  );
+  assert.equal(
+    (await fetch(otherBase + "/api/session", { headers }).then((r) => r.json())).user,
+    null,
+    "a session alone does not grant membership in another archive",
+  );
+  const samePhoto = JSON.stringify({
+    id: "same-photo",
+    title: "Same path",
+    url: "/media/same.png",
+    tags: [],
+  });
+  for (const runtime of [app, otherApp])
+    await runtime.archive.db
+      .prepare("", "INSERT INTO photos(id,data) VALUES('same-photo',?::jsonb)")
+      .run(samePhoto);
+  writeFileSync(join(directory, "uploads", "same.png"), "primary");
+  writeFileSync(
+    join(directory, "archives", "other-archive", "uploads", "same.png"),
+    "secondary",
+  );
+  assert.equal(
+    await fetch(securedBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+    "primary",
+  );
+  assert.equal(
+    await fetch(otherBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+    "secondary",
+  );
+  assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
   console.log("runtime_http_and_backup_ok");
 } finally {
+  await otherApp?.close();
   await app?.close();
   await live?.close();
   await client.end();

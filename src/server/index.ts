@@ -5,7 +5,7 @@ import {
 } from "node:http";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openArchive } from "./database.ts";
 import { removeStarterFamily } from "./demo-cleanup.ts";
@@ -28,6 +28,7 @@ import { productionStaticHttp } from "./production-static-http.ts";
 import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 import { indexReferencedMediaOriginals } from "./media-originals.ts";
+import { configuredDatabaseBackend } from "./store-database.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -37,15 +38,31 @@ export async function startServer(
   production = process.argv.includes("--production"),
   oauthFetch?: typeof fetch,
   aiFetch?: typeof fetch,
+  archiveId?: string,
 ) {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
     process.env.PUBLIC_ORIGIN,
   );
-  const dbPath =
+  const configuredPath =
     databasePath ||
     process.env.DATABASE_PATH ||
     resolve(root, "data/drevo.sqlite");
+  if (archiveId && !/^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/.test(archiveId))
+    throw new Error("Некорректный archive_id");
+  if (archiveId && configuredDatabaseBackend(configuredPath) !== "postgres")
+    throw new Error("Явный archive_id поддерживается только PostgreSQL");
+  // Preserve the existing archive's paths; another archive gets its own media,
+  // previews, import staging and local backup directory on this host.
+  const dbPath =
+    archiveId && archiveId !== process.env.ARCHIVE_ID
+      ? resolve(
+          dirname(configuredPath),
+          "archives",
+          archiveId,
+          basename(configuredPath),
+        )
+      : configuredPath;
   const archive = await openArchive(
     dbPath,
     validateFamily(
@@ -53,6 +70,7 @@ export async function startServer(
         readFileSync(resolve(root, "public/data/family.json"), "utf8"),
       ),
     ),
+    archiveId,
   );
   await removeStarterFamily(archive);
 
