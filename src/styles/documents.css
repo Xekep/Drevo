@@ -121,60 +121,350 @@
 .documents-upload-error { grid-column: 1 / -1; margin: 0; color: #a34b42; }
 .documents-upload-submit { justify-self: start; }
 .pdf-book-backdrop {
-  position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center;
-  padding: 12px; background: #17211bdb;
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: rgb(8 11 10 / 88%);
 }
 .pdf-book-dialog {
-  display: flex; flex-direction: column; width: min(100%, 1760px); height: calc(100dvh - 24px);
-  box-sizing: border-box; min-height: 0; overflow: hidden; border: 1px solid #b8c2b8; border-radius: 3px;
-  background: #f5f6f3; color: #26352b; box-shadow: 0 16px 48px #0004;
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  color: #f1f3ee;
 }
-.pdf-book-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 0 12px; border-bottom: 1px solid #cbd3ca; background: #fff; }
-.pdf-book-toolbar-start, .pdf-book-actions { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.pdf-book-toolbar strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
-.pdf-book-toolbar button, .pdf-book-comments-heading button, .pdf-book-pagination button { display: inline-grid; place-items: center; flex: 0 0 auto; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: #445849; cursor: pointer; }
-.pdf-book-toolbar button:hover, .pdf-book-toolbar button.is-active, .pdf-book-comments-heading button:hover, .pdf-book-pagination button:hover:not(:disabled) { background: #e8eee7; }
-.pdf-book-toolbar button:focus-visible, .pdf-book-comments button:focus-visible, .pdf-book-footer a:focus-visible, .pdf-book-pagination button:focus-visible { outline: 2px solid #5b8061; outline-offset: 1px; }
-.pdf-book-content { position: relative; display: flex; flex: 1; min-height: 0; }
-.pdf-book-outline { flex: 0 0 230px; overflow: auto; padding: 16px 8px; border-right: 1px solid #d2d9d0; background: #fbfcfa; }
-.pdf-book-outline h2, .pdf-book-comments h2 { margin: 0; font-size: 14px; font-weight: 650; }
-.pdf-book-outline h2 { padding: 0 12px 12px; }
-.pdf-book-outline button { display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 9px 12px; border: 0; border-radius: 2px; background: transparent; color: #344d39; text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
-.pdf-book-outline button:hover, .pdf-book-comments-list article button:hover { background: #e8eee7; }
-.pdf-book-outline small { color: #758375; }
-.pdf-book-stage { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 12px; background: #e6e9e4; }
-.pdf-reader-sheet { position: relative; width: fit-content; max-width: 100%; background: #fff; box-shadow: 0 2px 12px #253b281f; }
-.pdf-reader-sheet img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 122px); }
-.pdf-reader-sheet.is-magnifying { cursor: none; }
-.pdf-book-message { max-width: 410px; margin: 0; padding: 18px; border: 1px solid #ced7cb; background: #fff; color: #314535; text-align: center; }
-.pdf-book-message a { color: #3e7249; }
-.pdf-book-comments { display: flex; flex-direction: column; flex: 0 0 270px; min-width: 0; border-left: 1px solid #cbd3ca; background: #fbfcfa; }
-.pdf-book-comments-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e1e6df; }
-.pdf-book-comments-empty, .pdf-book-comments-error { margin: 18px 14px; color: #718073; font-size: 13px; }
-.pdf-book-comments-error { color: #a23f34; }
-.pdf-book-comments-list { overflow: auto; min-height: 0; }
-.pdf-book-comments-list article { padding: 13px 14px; border-bottom: 1px solid #e1e6df; }
-.pdf-book-comments-list article button { padding: 3px 5px; border: 0; border-radius: 2px; background: transparent; color: #4d7355; font: inherit; font-size: 12px; cursor: pointer; }
-.pdf-book-comments-list article p { margin: 8px 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45; }
-.pdf-book-comments-list article small { color: #7c887c; font-size: 11px; }
-.pdf-book-comment-form { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid #e1e6df; }
-.pdf-book-comment-form label { font-size: 12px; color: #5f725f; }
-.pdf-book-comment-form textarea { min-height: 92px; resize: vertical; padding: 9px; border: 1px solid #c6d0c4; border-radius: 2px; background: #fff; color: #26352b; font: inherit; font-size: 13px; }
-.pdf-book-comment-form button { justify-self: end; padding: 7px 12px; border: 1px solid #456b4d; border-radius: 2px; background: #4f7658; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
-.pdf-book-comment-form button:disabled { opacity: .5; cursor: default; }
-.pdf-book-footer { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 24px; min-height: 48px; padding: 4px 12px; border-top: 1px solid #cbd3ca; background: #fff; }
-.pdf-book-pagination { display: flex; align-items: center; gap: 11px; }
-.pdf-book-pagination span { min-width: 70px; font-size: 13px; text-align: center; color: #4c5c4e; }
-.pdf-book-pagination button:disabled { opacity: .35; cursor: default; }
-.pdf-book-download { display: inline-flex; align-items: center; gap: 6px; padding: 6px; color: #456b4d; font-size: 12px; text-decoration: none; }
-.pdf-book-download:hover { text-decoration: underline; }
-.pdf-book-comments-toggle { display: none !important; }
+.pdf-book-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.pdf-book-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 20px 20px 74px;
+}
+.pdf-book-host {
+  position: absolute;
+  inset: 20px 20px 74px;
+}
+.pdf-book-pages {
+  width: 100%;
+  height: 100%;
+}
+.pdf-book-pages > .stf__wrapper { height: 100%; }
+.pdf-book-page {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #f7f5ed;
+  box-shadow: inset 0 0 16px #68605320;
+}
+.pdf-book-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.pdf-book-page > span { display: none; }
+.pdf-book-host.is-magnifying .pdf-book-page { cursor: none; }
+.pdf-book-overlay {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  touch-action: none;
+}
+.pdf-book-host.is-annotating .pdf-book-overlay {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.pdf-book-highlight, .pdf-book-draft {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid #a67932;
+  background: #e9c26155;
+}
+.pdf-book-highlight.is-active {
+  border-color: #e7b856;
+  background: #e7b85688;
+}
+.pdf-book-draft { border-style: dashed; }
+.pdf-book-message {
+  z-index: 2;
+  max-width: 360px;
+  margin: 0;
+  padding: 14px 18px;
+  background: #171c19ed;
+  color: #f1f3ee;
+  font-size: 13px;
+  text-align: center;
+}
+.pdf-book-message a { color: #d2e7d0; }
+.pdf-book-sidebar {
+  display: flex;
+  flex: 0 0 274px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: rgb(19 23 21 / 82%);
+  border-left: 1px solid rgb(255 255 255 / 9%);
+  backdrop-filter: blur(18px);
+}
+.pdf-book-sidebar-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 18px;
+  padding: 22px 18px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+.pdf-book-sidebar-tabs button {
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: #aab2aa;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pdf-book-sidebar-tabs button.is-active {
+  border-color: #dce5d9;
+  color: #f1f3ee;
+}
+.pdf-book-outline, .pdf-book-comments {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.pdf-book-outline { padding: 10px 0; }
+.pdf-book-outline button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: #e3e9e1;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.pdf-book-outline button:hover, .pdf-book-comments-list article:hover {
+  background: rgb(255 255 255 / 6%);
+}
+.pdf-book-outline small { flex: 0 0 auto; color: #89968b; }
+.pdf-book-add-comment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 36px);
+  margin: 16px 18px 6px;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: #d7e2d5;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pdf-book-add-comment:hover, .pdf-book-add-comment.is-active { color: #fff; }
+.pdf-book-comments-empty, .pdf-book-comments-error {
+  margin: 18px;
+  color: #9ca89e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pdf-book-comments-error { color: #f5b5a8; }
+.pdf-book-comments-list article {
+  position: relative;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+.pdf-book-comments-list article.is-active { background: rgb(195 161 100 / 12%); }
+.pdf-book-comments-list article > button:first-child {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 13px 38px 14px 18px;
+  border: 0;
+  background: none;
+  color: #eef1eb;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.pdf-book-comments-list article small {
+  color: #94a196;
+  font-size: 11px;
+}
+.pdf-book-comments-list article span {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pdf-book-comment-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: none;
+  color: #a8b1a9;
+  cursor: pointer;
+}
+.pdf-book-comment-form {
+  display: grid;
+  gap: 8px;
+  margin: 10px 18px 16px;
+}
+.pdf-book-comment-form label { color: #aab5aa; font-size: 11px; }
+.pdf-book-comment-form textarea {
+  min-height: 78px;
+  padding: 9px;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 2px;
+  outline: none;
+  resize: vertical;
+  background: rgb(255 255 255 / 7%);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+.pdf-book-comment-form textarea:focus { border-color: #b7cbb5; }
+.pdf-book-comment-form > div { display: flex; gap: 12px; }
+.pdf-book-comment-form button {
+  padding: 5px 0;
+  border: 0;
+  background: none;
+  color: #d9e7d7;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pdf-book-comment-form button:disabled { opacity: .4; cursor: default; }
+.pdf-book-controls {
+  position: absolute;
+  z-index: 5;
+  bottom: 16px;
+  left: calc((100% - 274px) / 2);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transform: translateX(-50%);
+  padding: 5px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(20 23 21 / 78%);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(18px);
+}
+.pdf-book-controls button, .pdf-book-controls a {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: #e6eae4;
+  text-decoration: none;
+  cursor: pointer;
+}
+.pdf-book-controls button:hover:not(:disabled), .pdf-book-controls a:hover,
+.pdf-book-controls button.is-active {
+  background: rgb(255 255 255 / 13%);
+}
+.pdf-book-controls button:disabled { opacity: .32; cursor: default; }
+.pdf-book-page-count {
+  min-width: 64px;
+  padding: 0 2px;
+  color: #c4ccc3;
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+}
+.pdf-book-control-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: rgb(255 255 255 / 17%);
+}
+.pdf-book-sidebar-toggle { display: none !important; }
+.pdf-book-info {
+  position: absolute;
+  z-index: 6;
+  bottom: 66px;
+  left: calc((100% - 274px) / 2);
+  width: min(300px, calc(100vw - 30px));
+  max-height: 45dvh;
+  box-sizing: border-box;
+  overflow: auto;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 5px;
+  background: rgb(20 23 21 / 93%);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(18px);
+}
+.pdf-book-info p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pdf-book-info p span { color: #91a094; font-size: 10px; }
+.pdf-book-info button {
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: #dbe8da;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pdf-book-controls :focus-visible, .pdf-book-sidebar :focus-visible,
+.pdf-book-info :focus-visible {
+  outline: 2px solid #c8dfc2;
+  outline-offset: 2px;
+}
 @media (max-width: 820px) {
-  .pdf-book-outline, .pdf-book-comments { position: absolute; top: 0; bottom: 0; z-index: 3; width: min(84vw, 290px); box-shadow: 0 5px 20px #263b2a30; }
-  .pdf-book-outline { left: 0; }
-  .pdf-book-comments { right: 0; display: none; }
-  .pdf-book-comments.is-open { display: flex; }
-  .pdf-book-comments-toggle { display: inline-grid !important; }
+  .pdf-book-sidebar {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: none;
+    width: min(82vw, 300px);
+    box-shadow: -12px 0 30px rgb(0 0 0 / 25%);
+  }
+  .pdf-book-sidebar.is-open { display: flex; }
+  .pdf-book-sidebar-toggle { display: grid !important; }
+  .pdf-book-controls, .pdf-book-info { left: 50%; }
 }
 @media (max-width: 680px) {
   .documents-catalog { padding: 19px 16px 35px; }
@@ -182,40 +472,16 @@
   .documents-upload { grid-template-columns: 1fr; }
   .documents-extra-grid { grid-template-columns: 1fr; }
   .documents-person-results, .documents-selected-people, .documents-upload-error, .documents-upload-heading { grid-column: 1; }
-  .pdf-book-backdrop { padding: 0; }
-  .pdf-book-dialog { height: 100dvh; border-radius: 0; }
-  .pdf-book-toolbar { padding: 0 6px; gap: 6px; }
-  .pdf-book-toolbar-start { flex: 1 1 0; overflow: hidden; }
-  .pdf-book-actions { flex: 0 0 auto; }
-  .pdf-book-toolbar button { width: 32px; }
-  .pdf-book-stage { padding: 6px; }
-  .pdf-reader-sheet img { max-height: calc(100dvh - 110px); }
-  .pdf-book-download { width: 38px; height: 36px; overflow: hidden; white-space: nowrap; font-size: 0; }
-  .pdf-book-download svg { flex: 0 0 auto; }
+  .pdf-book-stage { padding: 8px 8px 68px; }
+  .pdf-book-host { inset: 8px 8px 68px; }
+  .pdf-book-controls { bottom: 12px; gap: 1px; padding: 3px; }
+  .pdf-book-controls button, .pdf-book-controls a { width: 30px; height: 32px; }
+  .pdf-book-page-count { min-width: 54px; }
+  .pdf-book-control-divider { margin: 0 1px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .document-item { transition: none; }
 }
-
-.pdf-book-details { flex: 0 0 auto; border-bottom: 1px solid #d7ded4; background: #fbfcfa; font-size: 12px; }
-.pdf-book-details summary { padding: 8px 13px; color: #4d684f; cursor: pointer; }
-.pdf-book-details > div { display: grid; gap: 5px; max-height: 150px; overflow: auto; padding: 0 13px 10px; }
-.pdf-book-details p { margin: 0; overflow-wrap: anywhere; }
-.pdf-book-details button { justify-self: start; padding: 5px 0; border: 0; background: transparent; color: #456b4d; font: inherit; cursor: pointer; }
-.pdf-book-details button:hover { text-decoration: underline; }
-.pdf-book-overlay { position: absolute; inset: 0; z-index: 1; pointer-events: none; touch-action: none; }
-.pdf-reader-sheet.is-annotating .pdf-book-overlay { pointer-events: auto; cursor: crosshair; }
-.pdf-book-highlight, .pdf-book-draft { position: absolute; display: block; box-sizing: border-box; pointer-events: none; border: 2px solid #bf8d37; background: #f6cb654a; }
-.pdf-book-highlight.is-active { border-color: #ab6721; background: #f2b4447a; }
-.pdf-book-draft { border-style: dashed; }
-.pdf-book-comments-heading h2 span { margin-left: 4px; color: #788579; font-weight: 400; }
-.pdf-book-comments-heading button[aria-pressed="true"] { background: #e8eee7; }
-.pdf-book-comments-list article { position: relative; }
-.pdf-book-comments-list article.is-active { background: #f0f5ec; }
-.pdf-book-comments-list article > button:first-child { display: grid; gap: 7px; width: 100%; padding: 0 24px 0 0; text-align: left; }
-.pdf-book-comments-list article > button:first-child span { color: #26352b; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
-.pdf-book-comments-list .pdf-book-comment-delete { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; color: #8b7169; cursor: pointer; }
-.pdf-book-comment-form button + button { margin-left: 8px; border: 1px solid #c6d0c4; background: #fff; color: #456b4d; }
 
 .documents-drop-overlay {
   position: fixed;
