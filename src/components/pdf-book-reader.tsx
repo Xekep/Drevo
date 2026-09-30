@@ -484,7 +484,7 @@ export function PdfBookReader({
           if (root.style.transform === transform) return;
           root.style.transition =
             animate && !reducedMotion
-              ? `transform ${flipDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`
+              ? `transform ${flipDuration}ms cubic-bezier(0.37, 0, 0.63, 1)`
               : "none";
           root.style.transform = transform;
         };

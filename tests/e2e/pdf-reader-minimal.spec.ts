@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 
 async function samplePdf() {
@@ -116,7 +117,7 @@ test("cover and spread stay centered during both page turns", async ({
     info.project.name === "mobile",
     "Landscape spreads need a desktop viewport",
   );
-  const title = `Reader cover ${info.project.name}`;
+  const title = `Reader cover ${info.project.name} ${randomUUID()}`;
   const upload = await page.request.post("/api/documents", {
     headers: {
       "Content-Type": "application/pdf",
@@ -162,7 +163,10 @@ test("cover and spread stay centered during both page turns", async ({
         .map((offset, index) => Math.abs(offset - offsets[index])),
     );
     expect(distance).toBeGreaterThan(60);
-    expect(largestStep).toBeLessThan(distance * 0.25);
+    expect(
+      new Set(offsets.map((offset) => Math.round(offset))).size,
+    ).toBeGreaterThan(3);
+    expect(largestStep).toBeLessThan(distance * 0.5);
   }
   await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 3");
 });
