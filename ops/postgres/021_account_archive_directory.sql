@@ -14,3 +14,11 @@ CREATE POLICY account_archives_read ON archives
         AND m.user_id = current_setting('drevo.account_id', true)
     )
   );
+
+-- Account sessions are global. Losing one membership must not sign the
+-- account out of every other archive.
+CREATE OR REPLACE FUNCTION runtime_member_deleted() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ DELETE FROM ai_chats WHERE archive_id=OLD.archive_id AND user_id=OLD.user_id;
+ RETURN OLD;
+END $$;

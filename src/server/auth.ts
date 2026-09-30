@@ -121,6 +121,10 @@ export async function createAuth(
   return {
     local,
     currentUser,
+    async accountId(req: IncomingMessage) {
+      if (local) return null;
+      return (await sessionFor(req))?.userId || null;
+    },
     issueSession,
     async sessionSummary(req: IncomingMessage) {
       if (local) return { currentExpiresAt: null, otherCount: 0 };

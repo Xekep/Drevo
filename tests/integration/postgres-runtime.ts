@@ -1049,6 +1049,39 @@ try {
       .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,
     true,
   );
+  await client.query(
+    "INSERT INTO accounts(id,name,created_at) VALUES('other-only','Other only',$1)",
+    [new Date().toISOString()],
+  );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(
+    "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES('other-archive','other-only','reader',true,'all')",
+  );
+  const otherOnlyToken = newSessionToken();
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'other-only',$2)",
+    [sessionTokenHash(otherOnlyToken), Date.now() + 60_000],
+  );
+  const otherOnlyHeaders = { Cookie: `drevo_session=${otherOnlyToken}` };
+  assert.equal(
+    (await fetch(securedBase + "/api/session", { headers: otherOnlyHeaders }).then((r) => r.json())).user,
+    null,
+  );
+  assert.deepEqual(
+    (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
+      .then((r) => r.json())).archives.map((archive: { id: string }) => archive.id),
+    ["other-archive"],
+  );
+  await client.query(
+    "DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='other-only'",
+  );
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  assert.deepEqual(
+    (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
+      .then((r) => r.json())).archives,
+    [],
+    "removing one membership must preserve the global account session",
+  );
   const primaryDb = app.archive.db;
   assert.equal(
     (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,

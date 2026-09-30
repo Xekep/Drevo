@@ -18,10 +18,10 @@ export function accountArchivesHttp(
     };
     if (req.method !== "GET")
       return send(405, { error: "Метод не поддерживается" });
-    const user = await auth.currentUser(req);
-    if (!user || user.id === "local")
+    const accountId = await auth.accountId(req);
+    if (!accountId)
       return send(401, { error: "Войдите, чтобы увидеть свои деревья" });
-    const archives = await directory.list(user.id);
+    const archives = await directory.list(accountId);
     if (!archives)
       return send(501, { error: "Список деревьев доступен с PostgreSQL" });
     return send(200, { archives });
