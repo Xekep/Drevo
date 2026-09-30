@@ -236,6 +236,9 @@ test("empty archive owner previews a portable import before applying", async ({
       },
     }),
   );
+  await page.route("**/api/account/owner-transfer", (route) =>
+    route.fulfill({ json: { owner: false, incoming: null, outgoing: null } }),
+  );
   let overLimit = false;
   await page.route("**/api/drevo/preview", (route) =>
     route.fulfill({
@@ -299,4 +302,70 @@ test("account cabinet hides archive export from a non-owner", async ({
   await expect(
     page.getByRole("link", { name: /Скачать данные дерева/ }),
   ).toHaveCount(0);
+});
+
+test("owner can choose a member and propose a transfer in the account cabinet", async ({
+  page,
+}) => {
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: { ...data.user, fullAccess: true },
+      },
+    });
+  });
+  await page.route("**/api/account/capacity", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        owned: true,
+        fullAccess: true,
+        people: 12,
+        peopleLimit: 150,
+        mediaBytes: 1000,
+        mediaLimitBytes: 500_000_000,
+      },
+    }),
+  );
+  let offered = false;
+  await page.route("**/api/account/owner-transfer", (route) => {
+    if (route.request().method() === "POST") offered = true;
+    return route.fulfill({
+      json:
+        route.request().method() === "POST"
+          ? {
+              targetId: "member",
+              targetName: "Анна Иванова",
+              expiresAt: Date.now() + 1000,
+            }
+          : {
+              owner: true,
+              incoming: null,
+              outgoing: offered
+                ? {
+                    targetId: "member",
+                    targetName: "Анна Иванова",
+                    expiresAt: Date.now() + 1000,
+                  }
+                : null,
+            },
+    });
+  });
+  await page.route("**/api/account/owner-transfer/candidates**", (route) =>
+    route.fulfill({
+      json: [
+        { id: "member", name: "Анна Иванова", role: "reader", eligible: true },
+      ],
+    }),
+  );
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Передать владение" }).click();
+  await page.getByRole("button", { name: "Анна Иванова" }).click();
+  await page.getByRole("button", { name: "Предложить передачу" }).click();
+  await expect(page.getByText("Ожидаем согласия: Анна Иванова")).toBeVisible();
 });

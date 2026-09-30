@@ -34,6 +34,7 @@ import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
+import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
@@ -122,6 +123,11 @@ export async function startServer(
   const listAccountArchives = accountArchivesHttp(
     auth,
     accountArchiveDirectory(archive.db),
+  );
+  const transferArchiveOwner = archiveOwnerTransferHttp(
+    archive.db,
+    auth,
+    publicOrigin,
   );
   const searchPublishedPeople = discoveryPeopleHttp(archive.db, auth);
   const manageAccountInvitations = !archiveId
@@ -272,6 +278,7 @@ export async function startServer(
     if (await manageVkAuth(req, res, parsedUrl)) return;
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
+    if (await transferArchiveOwner(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await portableExport(req, res, parsedUrl)) return;
     if (await portableImport.handle(req, res, parsedUrl)) return;

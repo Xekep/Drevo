@@ -1911,6 +1911,209 @@ try {
     assert.equal(vkRegistration.accountCreated, true);
     assert.equal(vkRegistration.archiveCreated, true);
     assert.notEqual(vkRegistration.archiveId, location.split("/")[2]);
+    const personalArchiveId = location.split("/")[2];
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [
+      personalArchiveId,
+    ]);
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,$2,'reader',true,'all')",
+      [personalArchiveId, vkRegistration.accountId],
+    );
+    await client.query(
+      "INSERT INTO accounts(id,name,created_at) VALUES('transfer-target','New owner',$1)",
+      [new Date().toISOString()],
+    );
+    await client.query(
+      "INSERT INTO account_tiers(account_id,full_access) VALUES('transfer-target',false)",
+    );
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,'transfer-target','reader',true,'all')",
+      [personalArchiveId],
+    );
+    const newOwnerToken = newSessionToken();
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'transfer-target',$2)",
+      [sessionTokenHash(newOwnerToken), Date.now() + 10 * 60_000],
+    );
+    const ownerTransferPath = location.replace(
+      /\/tree$/,
+      "/api/account/owner-transfer",
+    );
+    const transferOwnerHeaders = {
+      Cookie: sessionCookie,
+      Origin: process.env.PUBLIC_ORIGIN!,
+      "Content-Type": "application/json",
+      "X-Drevo-Owner-Transfer": "1",
+    };
+    const transferTargetHeaders = {
+      ...transferOwnerHeaders,
+      Cookie: `drevo_session=${newOwnerToken}`,
+    };
+    const candidates = await fetch(
+      oauthBase + ownerTransferPath + "/candidates",
+      {
+        headers: transferOwnerHeaders,
+      },
+    ).then((response) => response.json());
+    assert.ok(
+      candidates.some(
+        (candidate: { id: string; eligible: boolean }) =>
+          candidate.id === "transfer-target" && candidate.eligible,
+      ),
+    );
+    assert.ok(
+      candidates.some(
+        (candidate: { id: string; eligible: boolean }) =>
+          candidate.id === vkRegistration.accountId && !candidate.eligible,
+      ),
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: transferOwnerHeaders,
+          body: JSON.stringify({ targetId: vkRegistration.accountId }),
+        })
+      ).status,
+      409,
+      "a current owner cannot own a second tree",
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: transferTargetHeaders,
+          body: JSON.stringify({ targetId: vkRegistration.accountId }),
+        })
+      ).status,
+      403,
+      "a member cannot initiate ownership transfer",
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: { ...transferOwnerHeaders, Origin: "https://other.test" },
+          body: JSON.stringify({ targetId: "transfer-target" }),
+        })
+      ).status,
+      403,
+      "cross-origin ownership proposals are rejected",
+    );
+    await client.query(
+      `INSERT INTO documents(archive_id,id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+       VALUES($1,'transfer-quota-check',(SELECT COALESCE(max(ordinal),0)+1 FROM documents WHERE archive_id=$1),
+         'Quota check','quota check','transfer-quota-check.pdf',500000001,$2,$3)`,
+      [personalArchiveId, newAccountSession.user.id, new Date().toISOString()],
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: transferOwnerHeaders,
+          body: JSON.stringify({ targetId: "transfer-target" }),
+        })
+      ).status,
+      409,
+      "a basic recipient cannot inherit an over-quota tree",
+    );
+    await client.query(
+      "DELETE FROM documents WHERE archive_id=$1 AND id='transfer-quota-check'",
+      [personalArchiveId],
+    );
+    const proposedOwner = await fetch(oauthBase + ownerTransferPath, {
+      method: "POST",
+      headers: transferOwnerHeaders,
+      body: JSON.stringify({ targetId: "transfer-target" }),
+    });
+    assert.equal(
+      proposedOwner.status,
+      200,
+      proposedOwner.status === 200 ? "" : await proposedOwner.text(),
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "DELETE",
+          headers: transferTargetHeaders,
+        })
+      ).status,
+      200,
+      "the recipient can decline the offer",
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath + "/accept", {
+          method: "POST",
+          headers: transferTargetHeaders,
+        })
+      ).status,
+      409,
+      "a declined offer cannot be accepted",
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath, {
+          method: "POST",
+          headers: transferOwnerHeaders,
+          body: JSON.stringify({ targetId: "transfer-target" }),
+        })
+      ).status,
+      200,
+    );
+    const incomingTransfer = await fetch(oauthBase + ownerTransferPath, {
+      headers: transferTargetHeaders,
+    }).then((response) => response.json());
+    assert.ok(incomingTransfer.incoming?.fromName);
+    const acceptedOwner = await fetch(
+      oauthBase + ownerTransferPath + "/accept",
+      {
+        method: "POST",
+        headers: transferTargetHeaders,
+      },
+    );
+    assert.equal(
+      acceptedOwner.status,
+      200,
+      acceptedOwner.status === 200 ? "" : await acceptedOwner.text(),
+    );
+    assert.equal(
+      (
+        await fetch(oauthBase + ownerTransferPath + "/accept", {
+          method: "POST",
+          headers: transferTargetHeaders,
+        })
+      ).status,
+      409,
+      "acceptance is one-use",
+    );
+    assert.equal(
+      (
+        await client.query(
+          "SELECT user_id FROM archive_owners WHERE archive_id=$1",
+          [personalArchiveId],
+        )
+      ).rows[0]?.user_id,
+      "transfer-target",
+    );
+    const transferRoles = (
+      await client.query(
+        "SELECT user_id,role FROM archive_memberships WHERE archive_id=$1 AND user_id IN ('transfer-target',$2)",
+        [personalArchiveId, newAccountSession.user.id],
+      )
+    ).rows;
+    assert.equal(
+      transferRoles.find((row) => row.user_id === "transfer-target")?.role,
+      "admin",
+    );
+    assert.equal(
+      transferRoles.find((row) => row.user_id === newAccountSession.user.id)
+        ?.role,
+      "relative",
+    );
+    await client.query(
+      "SELECT set_config('drevo.archive_id','runtime-test',false)",
+    );
   } finally {
     await oauthApp.close();
     if (originalClientId === undefined) delete process.env.YANDEX_CLIENT_ID;
