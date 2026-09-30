@@ -128,9 +128,7 @@ export async function startServer(
             if (shareToken) return await canOpenShared(id, shareToken);
             const accountId = await auth.accountId(req);
             if (!accountId) return false;
-            return !!(await directory.list(accountId))?.some(
-              (item) => item.id === id && item.approved,
-            );
+            return await directory.contains(accountId, id);
           },
           async (id) =>
             await startServer(

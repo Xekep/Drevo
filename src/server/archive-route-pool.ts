@@ -41,6 +41,8 @@ export function archiveRoutePool(
     }
   };
   const acquire = async (req: IncomingMessage, id: string, path: string) => {
+    // Authorization must not depend on whether another request warmed this runtime.
+    if (!(await permitted(req, id, path))) return null;
     const present = entries.get(id);
     if (present) {
       present.active++;
@@ -54,7 +56,6 @@ export function archiveRoutePool(
         existing.usedAt = ++lastUse;
         return existing;
       }
-      if (!(await permitted(req, id, path))) return null;
       if (entries.size >= MAX_OPEN_ARCHIVES) {
         const oldestIdle = () =>
           [...entries]

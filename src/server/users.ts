@@ -212,7 +212,9 @@ export async function userStore(
           "UPDATE archive_memberships SET approved=(?::integer<>0) WHERE user_id=?",
         )
         .run(Number(approved), id);
-      if (!approved)
+      // PostgreSQL sessions identify an account across archives. Revoking one
+      // membership must not sign it out of its other trees or account page.
+      if (!approved && db.kind === "sqlite")
         await db
           .prepare(
             "DELETE FROM auth_sessions WHERE user_id=?",
