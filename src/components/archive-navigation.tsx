@@ -31,6 +31,7 @@ export function ArchiveNavigation({
   view,
   onView,
   user,
+  account,
   accountPerson,
   local,
   readTree,
@@ -40,6 +41,7 @@ export function ArchiveNavigation({
   view: ArchiveView;
   onView: (view: ArchiveView) => void;
   user: ArchiveUser | null;
+  account?: { id: string; name: string } | null;
   accountPerson?: Person;
   local: boolean;
   readTree: boolean;
@@ -49,7 +51,8 @@ export function ArchiveNavigation({
   const menu = useRef<HTMLDetailsElement>(null);
   const [failedPortrait, setFailedPortrait] = useState<string>();
   const portrait = mediaPreview(safeUrl(accountPerson?.photo));
-  const initial = user?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
+  const identity = user || account;
+  const initial = identity?.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д";
   const navigate = (
     event: MouseEvent<HTMLAnchorElement>,
     next: ArchiveView,
@@ -144,11 +147,11 @@ export function ArchiveNavigation({
             </a>
           ))}
       </div>
-      {user && (
+      {identity && (
         <a
           className="nav-account"
           href={scopedArchivePath(archivePaths.account)}
-          aria-label={`Личный кабинет: ${user.name}`}
+          aria-label={`Личный кабинет: ${identity.name}`}
           aria-current={view === "account" ? "page" : undefined}
           onClick={(event) => navigate(event, "account")}
           title="Личный кабинет"
@@ -230,7 +233,7 @@ export function ArchiveNavigation({
               <span>Админка</span>
             </a>
           )}
-          {user && !local && (
+          {identity && !local && (
             <button title="Выйти" onClick={() => void logout()}>
               <LogOut size={20} />
               <span>Выйти</span>

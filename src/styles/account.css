@@ -145,10 +145,14 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+.account-archive-summary,
 .account-archive-list {
   margin-top: 22px;
 }
-.account-archive-list h3 {
+.account-archive-summary .account-archive-list {
+  margin-top: 0;
+}
+.account-archive-summary h3 {
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 700;
@@ -187,7 +191,9 @@
   font-size: 12px;
   font-weight: 700;
 }
-.account-archive-row a:hover { text-decoration: underline; }
+.account-archive-row a:hover {
+  text-decoration: underline;
+}
 .account-row-action,
 .account-signout {
   display: inline-flex;

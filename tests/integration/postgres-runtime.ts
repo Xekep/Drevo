@@ -1086,9 +1086,14 @@ try {
     [sessionTokenHash(otherOnlyToken), Date.now() + 60_000],
   );
   const otherOnlyHeaders = { Cookie: `drevo_session=${otherOnlyToken}` };
+  const otherOnlySession = await fetch(securedBase + "/api/session", {
+    headers: otherOnlyHeaders,
+  }).then((r) => r.json());
+  assert.equal(otherOnlySession.user, null);
+  assert.equal(otherOnlySession.account.id, "other-only");
   assert.equal(
-    (await fetch(securedBase + "/api/session", { headers: otherOnlyHeaders }).then((r) => r.json())).user,
-    null,
+    (await fetch(securedBase + "/api/account/sessions", { headers: otherOnlyHeaders })).status,
+    200,
   );
   assert.deepEqual(
     (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
@@ -1104,6 +1109,11 @@ try {
       .then((r) => r.json())).archives,
     [],
     "removing one membership must preserve the global account session",
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/session", { headers: otherOnlyHeaders })
+      .then((r) => r.json())).account.id,
+    "other-only",
   );
   const primaryDb = app.archive.db;
   assert.equal(

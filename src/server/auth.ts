@@ -41,7 +41,28 @@ export async function createAuth(
   );
   const platformAdmin =
     db.kind === "postgres"
-      ? db.prepare("", "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?")
+      ? db.prepare(
+          "",
+          "SELECT 1 AS allowed FROM platform_admins WHERE account_id=?",
+        )
+      : null;
+  const accountDetails =
+    db.kind === "postgres"
+      ? db.prepare(
+          "",
+          `SELECT a.id,a.name,a.created_at,a.last_visit_at,t.full_access,
+                  (SELECT provider FROM account_identities i
+                    WHERE i.account_id=a.id ORDER BY provider LIMIT 1) AS provider
+             FROM accounts a LEFT JOIN account_tiers t ON t.account_id=a.id
+            WHERE a.id=?`,
+        )
+      : null;
+  const globalVisit =
+    db.kind === "postgres"
+      ? db.prepare(
+          "",
+          "UPDATE accounts SET last_visit_at=? WHERE id=? AND (last_visit_at IS NULL OR last_visit_at<?)",
+        )
       : null;
   const cookie = (req: IncomingMessage) =>
     req.headers.cookie
@@ -125,11 +146,35 @@ export async function createAuth(
       if (local) return null;
       return (await sessionFor(req))?.userId || null;
     },
+    async accountProfile(req: IncomingMessage) {
+      if (!accountDetails || local) return null;
+      const session = await sessionFor(req);
+      if (!session) return null;
+      const row = await accountDetails.get(session.userId);
+      return row
+        ? {
+            id: String(row.id),
+            name: String(row.name),
+            createdAt: String(row.created_at),
+            fullAccess: row.full_access === true,
+            provider:
+              row.provider === "vk"
+                ? "vk"
+                : row.provider === "yandex"
+                  ? "yandex"
+                  : null,
+          }
+        : null;
+    },
     issueSession,
     async sessionSummary(req: IncomingMessage) {
       if (local) return { currentExpiresAt: null, otherCount: 0 };
       const session = await sessionFor(req);
-      if (!session || !(await users.get(session.userId))) return null;
+      if (
+        !session ||
+        (db.kind !== "postgres" && !(await users.get(session.userId)))
+      )
+        return null;
       return {
         currentExpiresAt: new Date(session.expires).toISOString(),
         otherCount: Number(
@@ -146,7 +191,11 @@ export async function createAuth(
     async revokeOtherSessions(req: IncomingMessage) {
       if (local) return 0;
       const session = await sessionFor(req);
-      if (!session || !(await users.get(session.userId))) return null;
+      if (
+        !session ||
+        (db.kind !== "postgres" && !(await users.get(session.userId)))
+      )
+        return null;
       return Number(
         (await revokeOthers.run(session.userId, session.tokenHash)).changes,
       );
@@ -156,15 +205,21 @@ export async function createAuth(
       const session = await sessionFor(req);
       if (!session) return;
       const user = await users.get(session.userId);
-      if (!user) return;
+      if (!user && db.kind !== "postgres") return;
       const now = Date.now();
       // Persist authenticated activity at most once per minute per account.
       // Reading a user in the admin list must never count as their visit.
       if (
-        !user.lastVisitAt ||
+        !user?.lastVisitAt ||
         Date.parse(user.lastVisitAt) <= now - VISIT_INTERVAL
       )
-        await users.recordVisit(user.id, now, VISIT_INTERVAL);
+        if (user) await users.recordVisit(user.id, now, VISIT_INTERVAL);
+        else
+          await globalVisit?.run(
+            new Date(now).toISOString(),
+            session.userId,
+            new Date(now - VISIT_INTERVAL).toISOString(),
+          );
       // Renew the session cookie at most once per day.
       if (
         session.expires >

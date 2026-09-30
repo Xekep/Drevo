@@ -25,6 +25,13 @@ import { LoginButtons } from "./login-buttons";
 
 export type AccountSession = {
   user: ArchiveUser | null;
+  account?: {
+    id: string;
+    name: string;
+    createdAt: string;
+    fullAccess: boolean;
+    provider: "vk" | "yandex" | null;
+  } | null;
   local: boolean;
   yandex: boolean;
   vk?: boolean;
@@ -37,6 +44,29 @@ type AccountArchive = {
   approved: boolean;
   current: boolean;
 };
+function ArchiveList({ archives }: { archives: AccountArchive[] }) {
+  return (
+    <div className="account-archive-list" aria-label="Доступные деревья">
+      {archives.map((item) => (
+        <div className="account-archive-row" key={item.id}>
+          <span className="account-archive-name">
+            <strong>{item.title}</strong>
+            <small>{ROLE_NAMES[item.role]}</small>
+          </span>
+          {item.current ? (
+            <span className="account-archive-current">Открыто</span>
+          ) : item.approved ? (
+            <a href={`/a/${encodeURIComponent(item.id)}/tree`}>
+              Открыть <ArrowRight size={15} />
+            </a>
+          ) : (
+            <span className="account-archive-current">Ожидает доступа</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 type Capacity =
   | { available: false }
   | { available: true; owned: false }
@@ -81,6 +111,8 @@ export function AccountPage({
   onAdmin: () => void;
 }) {
   const user = session?.user;
+  const identity = user || session?.account;
+  const accountId = identity?.id || "";
   const local = session?.local === true;
   const [sessions, setSessions] = useState<SessionSummary | null>(null);
   const [archives, setArchives] = useState<AccountArchive[] | null>(null);
@@ -94,7 +126,7 @@ export function AccountPage({
   const [sessionError, setSessionError] = useState("");
   const [revoking, setRevoking] = useState(false);
   useEffect(() => {
-    if (!user || local) return;
+    if (!accountId || local) return;
     const controller = new AbortController();
     archiveFetch("/api/account/sessions", {
       cache: "no-store",
@@ -110,9 +142,9 @@ export function AccountPage({
           setSessionError("Не удалось загрузить сеансы. Обновите страницу.");
       });
     return () => controller.abort();
-  }, [user, local]);
+  }, [accountId, local]);
   useEffect(() => {
-    if (!user || local) return;
+    if (!accountId || local) return;
     const controller = new AbortController();
     void archiveFetch("/api/account/archives", {
       cache: "no-store",
@@ -125,7 +157,7 @@ export function AccountPage({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [user, local]);
+  }, [accountId, local]);
   useEffect(() => {
     if (!user || local || user.fullAccess === undefined) return;
     const controller = new AbortController();
@@ -204,165 +236,188 @@ export function AccountPage({
               Обновить страницу <ArrowRight size={17} />
             </button>
           </div>
-        ) : !user ? (
+        ) : !identity ? (
           <div className="account-card account-empty">
             <UserRound aria-hidden="true" />
             <h2>Войдите в Drevo</h2>
             <p>После входа здесь появятся ваш профиль и доступ к архиву.</p>
             <LoginButtons />
           </div>
-        ) : user ? (
+        ) : identity ? (
           <>
             <section className="account-hero" aria-labelledby="account-name">
               <div className="account-avatar" aria-hidden="true">
-                {user.name.trim().charAt(0).toLocaleUpperCase("ru-RU") || "Д"}
+                {identity.name.trim().charAt(0).toLocaleUpperCase("ru-RU") ||
+                  "Д"}
               </div>
               <div className="account-identity">
                 <span className="account-eyebrow">Участник Drevo</span>
-                <h2 id="account-name">{user.name}</h2>
+                <h2 id="account-name">{identity.name}</h2>
                 <p>
                   {local
                     ? "Локальный доступ"
-                    : user.id.startsWith("vk:")
+                    : session?.account?.provider === "vk" ||
+                        identity.id.startsWith("vk:")
                       ? "Вход через VK"
                       : "Вход через Яндекс"}
-                  {date(user.createdAt) ? ` · с ${date(user.createdAt)}` : ""}
+                  {date(identity.createdAt)
+                    ? ` · с ${date(identity.createdAt)}`
+                    : ""}
                 </p>
               </div>
               <span
-                className={`account-status ${user.approved ? "is-active" : ""}`}
+                className={`account-status ${!user || user.approved ? "is-active" : ""}`}
               >
-                {user.approved ? <Check size={16} /> : <Clock3 size={16} />}
-                {user.approved ? "Доступ открыт" : "Ожидает подтверждения"}
+                {!user || user.approved ? (
+                  <Check size={16} />
+                ) : (
+                  <Clock3 size={16} />
+                )}
+                {!user
+                  ? "Аккаунт активен"
+                  : user.approved
+                    ? "Доступ открыт"
+                    : "Ожидает подтверждения"}
               </span>
             </section>
 
             <div className="account-grid">
-              <section
-                className="account-card"
-                aria-labelledby="account-access-title"
-              >
-                <div className="account-card-title">
-                  <span className="account-icon">
-                    <TreeDeciduous size={20} />
-                  </span>
-                  <div>
-                    <span className="account-eyebrow">Семейный архив</span>
-                    <h2 id="account-access-title">Доступ и роль</h2>
+              {user ? (
+                <section
+                  className="account-card"
+                  aria-labelledby="account-access-title"
+                >
+                  <div className="account-card-title">
+                    <span className="account-icon">
+                      <TreeDeciduous size={20} />
+                    </span>
+                    <div>
+                      <span className="account-eyebrow">Семейный архив</span>
+                      <h2 id="account-access-title">Доступ и роль</h2>
+                    </div>
                   </div>
-                </div>
-                <div className="account-facts">
-                  {user.fullAccess !== undefined && (
+                  <div className="account-facts">
+                    {user.fullAccess !== undefined && (
+                      <div>
+                        <span>Уровень аккаунта</span>
+                        <strong>
+                          {(
+                            capacity?.available && capacity.owned
+                              ? capacity.fullAccess
+                              : user.fullAccess
+                          )
+                            ? "Полный"
+                            : "Базовый"}
+                        </strong>
+                      </div>
+                    )}
+                    <div>
+                      <span>Роль</span>
+                      <strong>{ROLE_NAMES[user.role]}</strong>
+                    </div>
+                    {capacity?.available && capacity.owned && (
+                      <>
+                        <div>
+                          <span>Людей в этом дереве</span>
+                          <strong>
+                            {capacity.people.toLocaleString("ru-RU")}
+                            {capacity.fullAccess
+                              ? ""
+                              : ` из ${capacity.peopleLimit}`}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Фото и документы</span>
+                          <strong>
+                            {capacity.mediaBytes === null
+                              ? "Объём уточняется"
+                              : `${megabytes(capacity.mediaBytes)} МБ${capacity.fullAccess ? "" : ` из ${megabytes(capacity.mediaLimitBytes)} МБ`}`}
+                          </strong>
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <span>Доступ к древу</span>
+                      <strong>
+                        {!user.approved
+                          ? "Ожидает подтверждения"
+                          : family && !readTree
+                            ? "Нет доступа"
+                            : user.treeAccess === "common_ancestors"
+                              ? "Общие предки"
+                              : "По роли в архиве"}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Карточка в древе</span>
+                      <strong>
+                        {person
+                          ? fullName(person)
+                          : user.personId
+                            ? "Недоступна для просмотра"
+                            : "Не привязана"}
+                      </strong>
+                    </div>
+                  </div>
+                  {archives && archives.length > 1 && (
+                    <div className="account-archive-summary">
+                      <h3>Мои деревья</h3>
+                      <ArchiveList archives={archives} />
+                    </div>
+                  )}
+                  {!user.approved && (
+                    <p className="account-note">
+                      Администратор архива должен подтвердить ваш доступ.
+                      Профиль и управление сеансами уже доступны.
+                    </p>
+                  )}
+                  {person && (
+                    <button
+                      className="account-row-action"
+                      onClick={() => onPerson(person.id)}
+                    >
+                      Открыть мою карточку <ArrowRight size={17} />
+                    </button>
+                  )}
+                  {user.role === "admin" && user.approved && (
+                    <button className="account-row-action" onClick={onAdmin}>
+                      Управление архивом <ArrowRight size={17} />
+                    </button>
+                  )}
+                </section>
+              ) : (
+                <section
+                  className="account-card"
+                  aria-labelledby="account-archives-title"
+                >
+                  <div className="account-card-title">
+                    <span className="account-icon">
+                      <TreeDeciduous size={20} />
+                    </span>
+                    <div>
+                      <span className="account-eyebrow">Семейный архив</span>
+                      <h2 id="account-archives-title">Мои деревья</h2>
+                    </div>
+                  </div>
+                  <div className="account-facts">
                     <div>
                       <span>Уровень аккаунта</span>
                       <strong>
-                        {(
-                          capacity?.available && capacity.owned
-                            ? capacity.fullAccess
-                            : user.fullAccess
-                        )
-                          ? "Полный"
-                          : "Базовый"}
+                        {session?.account?.fullAccess ? "Полный" : "Базовый"}
                       </strong>
                     </div>
+                  </div>
+                  {archives === null ? (
+                    <p className="account-card-copy">Загружаем деревья…</p>
+                  ) : archives.length ? (
+                    <ArchiveList archives={archives} />
+                  ) : (
+                    <p className="account-card-copy">
+                      Пока нет доступных деревьев.
+                    </p>
                   )}
-                  <div>
-                    <span>Роль</span>
-                    <strong>{ROLE_NAMES[user.role]}</strong>
-                  </div>
-                  {capacity?.available && capacity.owned && (
-                    <>
-                      <div>
-                        <span>Людей в этом дереве</span>
-                        <strong>
-                          {capacity.people.toLocaleString("ru-RU")}
-                          {capacity.fullAccess
-                            ? ""
-                            : ` из ${capacity.peopleLimit}`}
-                        </strong>
-                      </div>
-                      <div>
-                        <span>Фото и документы</span>
-                        <strong>
-                          {capacity.mediaBytes === null
-                            ? "Объём уточняется"
-                            : `${megabytes(capacity.mediaBytes)} МБ${capacity.fullAccess ? "" : ` из ${megabytes(capacity.mediaLimitBytes)} МБ`}`}
-                        </strong>
-                      </div>
-                    </>
-                  )}
-                  <div>
-                    <span>Доступ к древу</span>
-                    <strong>
-                      {!user.approved
-                        ? "Ожидает подтверждения"
-                        : family && !readTree
-                          ? "Нет доступа"
-                          : user.treeAccess === "common_ancestors"
-                            ? "Общие предки"
-                            : "По роли в архиве"}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Карточка в древе</span>
-                    <strong>
-                      {person
-                        ? fullName(person)
-                        : user.personId
-                          ? "Недоступна для просмотра"
-                          : "Не привязана"}
-                    </strong>
-                  </div>
-                </div>
-                {archives && archives.length > 1 && (
-                  <div
-                    className="account-archive-list"
-                    aria-label="Доступные деревья"
-                  >
-                    <h3>Мои деревья</h3>
-                    {archives.map((item) => (
-                      <div className="account-archive-row" key={item.id}>
-                        <span className="account-archive-name">
-                          <strong>{item.title}</strong>
-                          <small>{ROLE_NAMES[item.role]}</small>
-                        </span>
-                        {item.current ? (
-                          <span className="account-archive-current">
-                            Открыто
-                          </span>
-                        ) : item.approved ? (
-                          <a href={`/a/${encodeURIComponent(item.id)}/tree`}>
-                            Открыть <ArrowRight size={15} />
-                          </a>
-                        ) : (
-                          <span className="account-archive-current">
-                            Ожидает доступа
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {!user.approved && (
-                  <p className="account-note">
-                    Администратор архива должен подтвердить ваш доступ. Профиль
-                    и управление сеансами уже доступны.
-                  </p>
-                )}
-                {person && (
-                  <button
-                    className="account-row-action"
-                    onClick={() => onPerson(person.id)}
-                  >
-                    Открыть мою карточку <ArrowRight size={17} />
-                  </button>
-                )}
-                {user.role === "admin" && user.approved && (
-                  <button className="account-row-action" onClick={onAdmin}>
-                    Управление архивом <ArrowRight size={17} />
-                  </button>
-                )}
-              </section>
+                </section>
+              )}
 
               <section
                 className="account-card"
@@ -388,7 +443,10 @@ export function AccountPage({
                       <div>
                         <span>Способ входа</span>
                         <strong>
-                          Яндекс ID{" "}
+                          {session?.account?.provider === "vk" ||
+                          identity.id.startsWith("vk:")
+                            ? "VK ID"
+                            : "Яндекс ID"}{" "}
                           <ExternalLink size={13} aria-hidden="true" />
                         </strong>
                       </div>
@@ -432,30 +490,32 @@ export function AccountPage({
                 )}
               </section>
 
-              <section
-                className="account-card"
-                aria-labelledby="account-data-title"
-              >
-                <div className="account-card-title">
-                  <span className="account-icon">
-                    <BookOpenText size={20} />
-                  </span>
-                  <div>
-                    <span className="account-eyebrow">Данные</span>
-                    <h2 id="account-data-title">Сведения архива</h2>
+              {user && (
+                <section
+                  className="account-card"
+                  aria-labelledby="account-data-title"
+                >
+                  <div className="account-card-title">
+                    <span className="account-icon">
+                      <BookOpenText size={20} />
+                    </span>
+                    <div>
+                      <span className="account-eyebrow">Данные</span>
+                      <h2 id="account-data-title">Сведения архива</h2>
+                    </div>
                   </div>
-                </div>
-                <p className="account-card-copy">
-                  Сейчас Drevo использует общий семейный архив. Личные деревья и
-                  экспорт своего дерева появятся после разделения архивов.
-                </p>
-                {user.role === "admin" && user.approved && (
-                  <button className="account-row-action" onClick={onAdmin}>
-                    <Users size={17} /> Управление и экспорт общего архива{" "}
-                    <ArrowRight size={17} />
-                  </button>
-                )}
-              </section>
+                  <p className="account-card-copy">
+                    Сведения и экспорт выбранного дерева доступны в пределах
+                    вашей роли.
+                  </p>
+                  {user.role === "admin" && user.approved && (
+                    <button className="account-row-action" onClick={onAdmin}>
+                      <Users size={17} /> Управление и экспорт общего архива{" "}
+                      <ArrowRight size={17} />
+                    </button>
+                  )}
+                </section>
+              )}
             </div>
           </>
         ) : null}
