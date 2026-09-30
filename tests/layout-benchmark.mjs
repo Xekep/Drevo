@@ -6,8 +6,9 @@
 // DREVO_LAYOUT_ANCESTOR_SCAN=1 checks movement when adding a founder's parent.
 // DREVO_LAYOUT_LARGE=1 adds two generations; DREVO_LAYOUT_LIMIT caps scans.
 // DREVO_LAYOUT_SCALE_SCAN=1 measures geometry with production card dimensions.
-// DREVO_LAYOUT_CASE selects a scale fixture (1-7) in scale mode.
+// DREVO_LAYOUT_CASE selects a scale fixture (1-10) in scale mode.
 // DREVO_LAYOUT_SEED_ONLY=1 measures only the first ELK candidate in scale mode.
+// DREVO_LAYOUT_THOROUGHNESS=4 compares an ELK sweep budget in scale mode.
 // DREVO_LAYOUT_MAX_ELK_CALLS=2 bounds candidate calls during a scale comparison.
 // DREVO_LAYOUT_PAIR_SCAN=1 compares production layouts with couple flips.
 // DREVO_LAYOUT_DISABLE_PAIR_FLIP=1 benchmarks the prior couple order.
@@ -445,13 +446,15 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       beforeMs: base.totalMs, afterMs: trial.totalMs }));
   }
 } else if (process.env.DREVO_LAYOUT_SCALE_SCAN) {
-  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8]];
+  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8], [2, 6], [3, 6], [4, 7]];
   for (const [index, [seed, generations]] of fixtures.entries()) {
     if (process.env.DREVO_LAYOUT_CASE && Number(process.env.DREVO_LAYOUT_CASE) !== index + 1) continue;
     const people = randomFamily(seed, generations);
     const selectedSeed = process.env.DREVO_LAYOUT_SEED_ONLY ? 1 : undefined;
     const skipPairFlip = process.env.DREVO_LAYOUT_DISABLE_PAIR_FLIP === "1";
-    const result = await measure(people, selectedSeed, undefined, undefined, false, undefined, undefined, treeNodeSize(), skipPairFlip);
+    const thoroughness = process.env.DREVO_LAYOUT_THOROUGHNESS
+      ? Number(process.env.DREVO_LAYOUT_THOROUGHNESS) : undefined;
+    const result = await measure(people, selectedSeed, undefined, thoroughness, false, undefined, undefined, treeNodeSize(), skipPairFlip);
     const geometry = result.geometry;
     const covered = new Set((geometry.occurrences || []).map((item) => item.personId));
     const positions = geometry.positions.map(([, point]) => point);

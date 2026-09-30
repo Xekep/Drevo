@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
 
-test("a roughly thousand-person tree completes worker layout and remains interactive", async ({ page }, testInfo) => {
+test("a large tree completes worker layout and remains interactive", async ({ page }, testInfo) => {
   test.skip(!process.env.DREVO_LAYOUT_SCALE_E2E || testInfo.project.name !== "desktop");
   test.setTimeout(240_000);
-  const people = randomFamily(5, 9);
+  const people = process.env.DREVO_LAYOUT_SCALE_PEOPLE === "500"
+    ? randomFamily(1, 6) : randomFamily(5, 9);
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -22,10 +23,10 @@ test("a roughly thousand-person tree completes worker layout and remains interac
     data.family.links = [];
     data.family.photos = [];
     data.partial = false;
-    data.user.personId = null;
+    data.user.personId = process.env.DREVO_LAYOUT_SCALE_KINSHIP ? people[0].id : null;
     await route.fulfill({ response, json: data });
   });
-  await page.addInitScript(() => {
+  await page.addInitScript((minimumPeople) => {
     const state = { requestedAt: 0, completedAt: 0, people: 0, occurrences: 0, branches: 0 };
     Object.assign(window, { __scaleLayout: state });
     const NativeWorker = window.Worker;
@@ -34,7 +35,7 @@ test("a roughly thousand-person tree completes worker layout and remains interac
         super(...args);
         this.addEventListener("message", (event: MessageEvent) => {
           const geometry = event.data?.geometry;
-          if (geometry?.occurrences?.length >= 900) {
+          if (geometry?.occurrences?.length >= minimumPeople) {
             state.completedAt = performance.now();
             state.occurrences = geometry.occurrences.length;
             state.branches = geometry.branches?.length || 0;
@@ -43,7 +44,7 @@ test("a roughly thousand-person tree completes worker layout and remains interac
       }
       postMessage(message: unknown, transfer: Transferable[] | StructuredSerializeOptions = []) {
         if (message && typeof message === "object" && "people" in message &&
-            Array.isArray(message.people) && message.people.length >= 900) {
+            Array.isArray(message.people) && message.people.length >= minimumPeople) {
           state.requestedAt = performance.now();
           state.people = message.people.length;
         }
@@ -51,11 +52,11 @@ test("a roughly thousand-person tree completes worker layout and remains interac
         else super.postMessage(message, transfer);
       }
     };
-  });
+  }, people.length);
   await page.goto("/tree");
   await expect.poll(() => page.evaluate(() =>
     (window as typeof window & { __scaleLayout: { occurrences: number } }).__scaleLayout.occurrences,
-  ), { timeout: 210_000 }).toBeGreaterThanOrEqual(900);
+  ), { timeout: 210_000 }).toBeGreaterThanOrEqual(people.length);
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/, { timeout: 30_000 });
   const result = await page.evaluate(() => {
     const state = (window as typeof window & { __scaleLayout: {
@@ -64,11 +65,17 @@ test("a roughly thousand-person tree completes worker layout and remains interac
     } }).__scaleLayout;
     return { ...state, workerMs: Math.round(state.completedAt - state.requestedAt),
       mountedCards: document.querySelectorAll(".react-flow__node").length,
-      mountedEdges: document.querySelectorAll(".react-flow__edge").length };
+      mountedEdges: document.querySelectorAll(".react-flow__edge").length,
+      distantCards: document.querySelectorAll(".flow-person.is-distant").length,
+      distantImages: document.querySelectorAll(".flow-person.is-distant .person-avatar img").length };
   });
   expect(result.people).toBe(people.length);
   expect(result.occurrences).toBeGreaterThanOrEqual(people.length);
   expect(result.mountedCards).toBeGreaterThan(0);
+  if (!process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
+    expect(result.distantCards).toBeGreaterThan(0);
+    expect(result.distantImages).toBe(0);
+  }
   console.log(`scale-browser ${JSON.stringify(result)}`);
   const pane = page.locator(".react-flow__pane");
   await expect(pane).toBeVisible();
