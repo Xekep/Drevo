@@ -6,11 +6,38 @@ import {
   emailCredentials,
   InvalidEmailCredential,
 } from "../../src/server/email-credentials.ts";
+import { postgresEmailRateLimit } from "../../src/server/postgres-email-rate-limit.ts";
 
 export async function verifyEmailAccounts(
   db: StoreDatabase,
   client: pg.Client,
 ) {
+  let clock = Date.now();
+  const firstLimit = postgresEmailRateLimit(db, () => clock);
+  const secondLimit = postgresEmailRateLimit(db, () => clock);
+  for (let attempt = 0; attempt < 8; attempt++)
+    assert.equal(
+      await firstLimit.allow("203.0.113.7", "limit@example.org"),
+      true,
+    );
+  assert.equal(
+    await secondLimit.allow("203.0.113.7", "limit@example.org"),
+    false,
+    "a second process must see the same email limit",
+  );
+  clock += 10 * 60 * 1000 + 1;
+  assert.equal(
+    await secondLimit.allow("203.0.113.7", "limit@example.org"),
+    true,
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM email_auth_rate_limits WHERE key_hash='limit@example.org'",
+      )
+    ).rows[0].n,
+    0,
+  );
   const sent: { to: string; text: string }[] = [];
   const accounts = emailCredentials(
     db,
