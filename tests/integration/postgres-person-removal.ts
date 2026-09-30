@@ -32,7 +32,7 @@ async function dependencies(client: pg.Client) {
     "INSERT INTO document_people VALUES('tree-a',0,'doc','child'),('tree-a',1,'doc','father')",
   );
   await client.query(
-    "INSERT INTO person_comments VALUES('tree-a',42,'child','relative',123456,'Обсуждение'),('tree-a',43,'father','admin',123457,'Другая запись')",
+    "INSERT INTO person_comments(archive_id,id,person_id,author_id,created_ms,text) VALUES('tree-a',42,'child','relative',123456,'Обсуждение'),('tree-a',43,'father','admin',123457,'Другая запись')",
   );
   await client.query(`UPDATE people SET data=data || '{"photo":"/media/portrait.png","sources":[{"title":"Источник","type":"document","reference":"Ф.1","url":"https://example.org","note":"Комментарий"}]}'::jsonb
     WHERE archive_id='tree-a' AND id='child'`);
@@ -316,7 +316,7 @@ for (const scenario of ["document", "comment", "photo", "tags"] as const)
       );
     if (scenario === "comment")
       await first.query(
-        "INSERT INTO person_comments VALUES('tree-a',42,'father','admin',999,'Не перезаписывать')",
+        "INSERT INTO person_comments(archive_id,id,person_id,author_id,created_ms,text) VALUES('tree-a',42,'father','admin',999,'Не перезаписывать')",
       );
     if (scenario === "photo")
       await first.query(
@@ -463,7 +463,7 @@ test("bulk restore retains other face tags, multiple documents and all discussio
     "INSERT INTO document_people VALUES('tree-a',2,'doc2','child')",
   );
   await first.query(
-    "INSERT INTO person_comments SELECT 'tree-a',i,'child','reader',123456,'Комментарий ' || i FROM generate_series(100,299) i",
+    "INSERT INTO person_comments(archive_id,id,person_id,author_id,created_ms,text) SELECT 'tree-a',i,'child','reader',123456,'Комментарий ' || i FROM generate_series(100,299) i",
   );
   const request = randomUUID();
   await remove(first, tokens.admin, "tree-a", "child", request, 0);

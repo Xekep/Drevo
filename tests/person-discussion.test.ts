@@ -110,6 +110,27 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       item: { id: number; text: string; canDelete: boolean };
     };
     assert.equal(adminComment.item.canDelete, true);
+    await db.prepare("UPDATE users SET name='Renamed' WHERE id='admin'").run();
+    const named = (await (await request(anna, admin.cookie)).json()) as {
+      items: Array<{ author: string }>;
+    };
+    assert.equal(named.items[0].author, admin.user.name);
+    await db
+      .prepare("UPDATE users SET name=? WHERE id='admin'")
+      .run(admin.user.name);
+    await db
+      .prepare(
+        "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text) VALUES(?,?,?,?,?)",
+      )
+      .run("anna", "imported:remote", "Remote Author", 1, "Archive note");
+    const imported = (await (await request(anna, admin.cookie)).json()) as {
+      items: Array<{ author: string; canDelete: boolean }>;
+    };
+    assert.equal(imported.items[0].author, "Remote Author");
+    assert.equal(imported.items[0].canDelete, true);
+    await db
+      .prepare("DELETE FROM person_comments WHERE author_id='imported:remote'")
+      .run();
     assert.equal(adminComment.item.text, "Кто знает дату рождения?");
     assert.equal((await request(anna, reader.cookie)).status, 404);
 
