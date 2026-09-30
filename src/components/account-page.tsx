@@ -28,6 +28,7 @@ import { AccountEmailLink } from "./account-email-link";
 import { PortableImport } from "./portable-import";
 import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
+import { CreatePersonalArchive } from "./create-personal-archive";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -430,9 +431,12 @@ export function AccountPage({
                   ) : archives.length ? (
                     <ArchiveList archives={archives} />
                   ) : (
-                    <p className="account-card-copy">
-                      Пока нет доступных деревьев.
-                    </p>
+                    <>
+                      <p className="account-card-copy">
+                        Пока нет доступных деревьев.
+                      </p>
+                      {!local && session?.account && <CreatePersonalArchive />}
+                    </>
                   )}
                 </section>
               )}

@@ -445,3 +445,33 @@ test("deleting a personal tree requires its name and collaborator consent", asyn
   await expect.poll(() => deleted).toBe(true);
   await expect(page).toHaveURL(/\/account$/);
 });
+
+test("an account with no tree can create a new private tree", async ({
+  page,
+}) => {
+  let created = false;
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: null,
+        account: { id: "account-one", name: "Анна", fullAccess: false },
+      },
+    });
+  });
+  await page.route("**/api/account/archives", (route) => {
+    if (route.request().method() === "POST") {
+      created = true;
+      return route.fulfill({ status: 201, json: { archiveId: "new-tree" } });
+    }
+    return route.fulfill({ json: { archives: [] } });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Создать новое дерево" }).click();
+  await expect.poll(() => created).toBe(true);
+  await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
+});

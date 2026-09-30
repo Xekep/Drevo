@@ -2189,6 +2189,28 @@ try {
     }).then((response) => response.json());
     assert.equal(sessionAfterArchiveDeletion.account.id, "transfer-target",
       "deleting one archive must not delete the account or its session");
+    const createArchiveHeaders = {
+      ...transferTargetHeaders,
+      "X-Drevo-New-Archive": "1",
+    };
+    assert.equal((await fetch(oauthBase + "/api/account/archives", {
+      method: "POST",
+      headers: { ...createArchiveHeaders, Origin: "https://other.test" },
+    })).status, 403);
+    const recreatedResponse = await fetch(oauthBase + "/api/account/archives", {
+      method: "POST",
+      headers: createArchiveHeaders,
+    });
+    assert.equal(recreatedResponse.status, 201,
+      recreatedResponse.status === 201 ? "" : await recreatedResponse.text());
+    const recreatedId = (await recreatedResponse.json()).archiveId;
+    assert.notEqual(recreatedId, personalArchiveId);
+    assert.equal((await fetch(oauthBase + "/api/account/archives", {
+      method: "POST", headers: createArchiveHeaders,
+    })).status, 409, "a repeated create request cannot make a second owned tree");
+    assert.equal((await fetch(oauthBase + `/a/${recreatedId}/api/session`, {
+      headers: transferTargetHeaders,
+    })).status, 200);
     await client.query(
       "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );

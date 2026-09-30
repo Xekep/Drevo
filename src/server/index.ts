@@ -137,6 +137,9 @@ export async function startServer(
   const listAccountArchives = accountArchivesHttp(
     auth,
     accountArchiveDirectory(archive.db),
+    archive.db,
+    publicOrigin,
+    !archiveId,
   );
   const transferArchiveOwner = archiveOwnerTransferHttp(
     archive.db,
