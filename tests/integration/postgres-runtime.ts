@@ -1427,12 +1427,64 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  const rootBeforeMatch = await app.archive.read();
+  const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
+  rootWithPublishedPerson.people[0].deceased = true;
+  await app.archive.write(rootWithPublishedPerson, rootBeforeMatch.revision);
+  const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive", targetPersonId: "person-a" });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders, body: proposedPair,
+  })).status, 409, "a private card cannot be used in a cross-archive match");
+  await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: proposedPair,
+  });
+  assert.equal(requestedMatch.status, 200);
+  const matchBody = await requestedMatch.json();
+  assert.equal(matchBody.match.status, "pending");
+  assert.equal([matchBody.match.left, matchBody.match.right]
+    .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
+    "Тестов Исправленный сосед");
+  assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
+  assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
+    headers: ownerHeaders,
+  })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
+  const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
+  });
+  assert.equal(duplicateFromOtherSide.status, 200);
+  assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
+    "reversing the proposal must not create a second match");
+  const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
+  assert.equal((await fetch(securedBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept" }),
+  })).status, 403, "an initiating archive cannot confirm its own request");
+  const acceptedMatch = await fetch(otherBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept" }),
+  });
+  assert.equal(acceptedMatch.status, 200);
+  assert.equal((await acceptedMatch.json()).match.status, "linked");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+    .then((response) => response.json())).matches[0].status, "linked");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
   await otherPublication.unpublish("person-a");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+    .then((response) => response.json())).matches[0].status, "revoked",
+    "revoking either publication closes a confirmed cross-archive match");
   assert.equal(
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     404,
     "revocation removes the global detail in the same transaction",
   );
+  await publishedPeopleStore(app.archive.db).unpublish("person-a");
+  const rootAfterMatch = await app.archive.read();
+  const restoredRoot = structuredClone(rootAfterMatch.family);
+  restoredRoot.people[0].deceased = false;
+  await app.archive.write(restoredRoot, rootAfterMatch.revision);
   const afterDiscovery = await otherApp.archive.read();
   const restoredFamily = structuredClone(afterDiscovery.family);
   restoredFamily.people[0].deceased = false;

@@ -64,6 +64,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_people' AND column_name='birth_surname'",
       "025_publication_fields.sql",
     ],
+    [
+      "SELECT to_regclass('discovery_match_requests') AS present",
+      "026_discovery_matches.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

@@ -42,6 +42,7 @@ import { treePreferencesStore } from "./tree-preferences.ts";
 import { treePreferencesHttp } from "./tree-preferences-http.ts";
 import { publishedPeopleStore } from "./published-people.ts";
 import { publishedPeopleHttp } from "./published-people-http.ts";
+import { discoveryMatchesHttp } from "./discovery-matches-http.ts";
 
 export async function archiveHttp({
   archive,
@@ -83,6 +84,7 @@ export async function archiveHttp({
     store: publishedPeopleStore(archive.db),
     publicOrigin,
   });
+  const discoveryMatches = discoveryMatchesHttp({ archive, auth, publicOrigin });
   const personalTreeSettings = treePreferencesHttp({
     auth,
     preferences: treePreferences,
@@ -238,6 +240,7 @@ export async function archiveHttp({
     if (await adminSharing(req, res, url)) return true;
     if (await invitations(req, res, url)) return true;
     if (await publishedPeople(req, res, url)) return true;
+    if (await discoveryMatches(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;

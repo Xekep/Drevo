@@ -1,0 +1,24 @@
+.discovery-matches-admin { display: grid; gap: 18px; }
+.match-search-grid, .match-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.match-search-grid > div { min-width: 0; }
+.match-options { display: grid; align-content: start; gap: 5px; max-height: 210px; overflow-y: auto; margin-top: 8px; }
+.archive-form .match-options button {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  min-height: 42px; text-align: left; padding: 7px 10px;
+}
+.match-options button.is-selected { border-color: var(--green); background: #edf3e9; }
+.match-options small { color: var(--muted); white-space: nowrap; }
+.match-review, .match-request { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.match-review h2, .discovery-matches-admin h2 { margin: 0; font-size: 16px; }
+.match-candidate-card { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 10px; background: #f4f7f1; border-radius: 8px; }
+.match-candidate-card a { overflow-wrap: anywhere; }
+.match-candidate-card small { color: var(--muted); }
+.match-request-heading, .match-request-actions, .match-pages { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.match-request-heading { justify-content: space-between; }
+.match-request-heading time { color: var(--muted); font-size: 12px; }
+.match-pages { justify-content: space-between; }
+@media (max-width: 700px) {
+  .match-search-grid, .match-pair { grid-template-columns: minmax(0,1fr); }
+  .match-review > button { width: 100%; }
+  .match-request-actions > button { flex: 1 1 auto; }
+}
