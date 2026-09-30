@@ -31,6 +31,7 @@ import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgr
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
+import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
 import {
   BASIC_MEDIA_BYTES,
   enforcePostgresMediaQuota,
@@ -685,7 +686,18 @@ try {
   // Production-style authentication and persisted sessions across restart.
   process.env.PUBLIC_ORIGIN = "https://migration-check.invalid";
   process.env.INITIAL_ADMIN_YANDEX_ID = "owner";
-  app = await startServer(0, source, true);
+  let releaseAiProvider: (() => void) | undefined;
+  let notifyAiProvider: (() => void) | undefined;
+  const aiProviderStarted = new Promise<void>((resolve) => { notifyAiProvider = resolve; });
+  const aiProviderGate = new Promise<void>((resolve) => { releaseAiProvider = resolve; });
+  app = await startServer(0, source, true, undefined, adaptLegacyAiFake(async () => {
+    notifyAiProvider?.();
+    await aiProviderGate;
+    return new Response(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "Недоступный ответ" } }] })}\n\ndata: [DONE]\n\n`,
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  }));
   const securedBase = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
   const token = newSessionToken();
   await app.archive.db
@@ -729,6 +741,44 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
+  const previousAiEnvironment = aiKeys.map((key) => process.env[key]);
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  try {
+    const startedAnswer = await fetch(securedBase + "/api/ai/chat/stream", {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ message: "Расскажи о родословной" }),
+    });
+    assert.equal(startedAnswer.status, 200);
+    await Promise.race([
+      aiProviderStarted,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI provider did not start")), 15_000)),
+    ]);
+    await app.archive.db
+      .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
+      .run("owner");
+    releaseAiProvider?.();
+    const frames = await startedAnswer.text();
+    assert.match(frames, /event: error/);
+    assert.match(frames, /Доступ к ИИ отключён/);
+    assert.doesNotMatch(frames, /event: done|Недоступный ответ/);
+    assert.equal(
+      (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM ai_chat_messages WHERE content=?").get("Недоступный ответ"))?.count,
+      0,
+    );
+    await app.archive.db
+      .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
+      .run("owner");
+  } finally {
+    releaseAiProvider?.();
+    aiKeys.forEach((key, index) => {
+      const value = previousAiEnvironment[index];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    });
+  }
   assert.equal(await accountAiAccess(app.archive.db, "vk:42"), true);
   assert.equal(
     (await fetch(securedBase + "/api/faces/status", { headers: ownerHeaders })
