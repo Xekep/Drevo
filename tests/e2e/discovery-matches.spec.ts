@@ -21,13 +21,16 @@ test("archive admin proposes a match using only two published cards", async ({ p
     if (route.request().method() === "POST") {
       expect(route.request().postDataJSON()).toEqual({
         sourcePersonId: "person-a", targetArchiveId: "tree-b", targetPersonId: "person-b",
+        reason: "Совпадает место рождения",
       });
       requested = true;
-      return route.fulfill({ json: { match: { id: "match-1", status: "pending" } } });
+      return route.fulfill({ json: { match: { id: "match-1", status: "pending",
+        reason: "Совпадает место рождения" } } });
     }
     return route.fulfill({ json: { archiveId: "tree-a", matches: requested ? [{
       id: "match-1", status: "pending", initiatedByArchiveId: "tree-a",
       requestedAt: "2026-09-30T00:00:00Z", left: own, right: target,
+      reason: "Совпадает место рождения",
     }] : [], nextCursor: null } });
   });
   await page.goto("/admin");
@@ -40,7 +43,9 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await expect(page.locator(".match-options").last()).toContainText("Иван Сидоров");
   await page.locator(".match-options").last().getByRole("button", { name: /Иван Петров.*1901/ }).click();
   await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
+  await page.getByRole("textbox", { name: /Почему это один человек/ }).fill("Совпадает место рождения");
   await page.getByRole("button", { name: "Предложить сопоставление" }).click();
   await expect(page.getByText("Ожидает подтверждения")).toBeVisible();
+  await expect(page.getByText("Основание: Совпадает место рождения")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить", exact: true })).toHaveCount(0);
 });

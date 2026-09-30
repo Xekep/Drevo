@@ -12,7 +12,7 @@ const matchPattern = /^[a-f0-9-]{36}$/;
 type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
-  m.initiated_by_archive_id,m.status,m.requested_at::text AS requested_at,
+  m.initiated_by_archive_id,m.status,m.reason,m.requested_at::text AS requested_at,
   m.responded_at::text AS responded_at,m.revoked_at::text AS revoked_at,
   l.name AS left_name,l.birth_surname AS left_birth_surname,
   l.birth_year AS left_birth_year,l.death_year AS left_death_year,
@@ -41,6 +41,7 @@ function match(row: Row) {
   return {
     id: String(row.id),
     status: String(row.status),
+    ...(row.reason ? { reason: String(row.reason) } : {}),
     initiatedByArchiveId: String(row.initiated_by_archive_id),
     requestedAt: String(row.requested_at),
     ...(row.responded_at ? { respondedAt: String(row.responded_at) } : {}),
@@ -199,10 +200,13 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       const sourceId = body?.sourcePersonId;
       const targetArchiveId = body?.targetArchiveId;
       const targetId = body?.targetPersonId;
+      const reason = body?.reason ?? "";
       if (typeof sourceId !== "string" || !idPattern.test(sourceId) ||
           typeof targetArchiveId !== "string" || !archivePattern.test(targetArchiveId) ||
           typeof targetId !== "string" || !idPattern.test(targetId) || targetArchiveId === archiveId)
         return json(res, 400, { error: "Выберите две опубликованные карточки из разных архивов" });
+      if (typeof reason !== "string" || reason.trim().length > 500)
+        return json(res, 400, { error: "Комментарий должен быть короче 500 символов" });
       const approved = await auth.currentUser(req);
       if (approved?.role !== "admin" || approved.approved !== true)
         return json(res, 403, { error: "Доступ отозван" });
@@ -216,9 +220,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         if (visible.length !== 2) return null;
         await db.prepare("", `INSERT INTO discovery_match_requests(
           id,left_archive_id,left_person_id,right_archive_id,right_person_id,
-          initiated_by_archive_id,requested_by)
-          VALUES(?,?,?,?,?,?,?) ON CONFLICT(left_archive_id,left_person_id,right_archive_id,right_person_id)
-          DO NOTHING`).run(randomUUID(),pair[0][0],pair[0][1],pair[1][0],pair[1][1],archiveId,approved.id);
+          initiated_by_archive_id,requested_by,reason)
+          VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(left_archive_id,left_person_id,right_archive_id,right_person_id)
+          DO NOTHING`).run(randomUUID(),pair[0][0],pair[0][1],pair[1][0],pair[1][1],archiveId,approved.id,
+          reason.trim() || null);
         return await db.prepare("", `${projection} WHERE m.left_archive_id=? AND m.left_person_id=?
           AND m.right_archive_id=? AND m.right_person_id=?`).get(pair[0][0],pair[0][1],pair[1][0],pair[1][1]);
       });
