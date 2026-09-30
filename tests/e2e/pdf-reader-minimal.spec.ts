@@ -108,3 +108,61 @@ test("PDF opens as a book with compact controls and an optional outline", async 
   await expect(reader.getByText("Важный фрагмент")).toBeVisible();
   await reader.screenshot({ path: info.outputPath("pdf-reader-minimal.png") });
 });
+
+test("cover and spread stay centered during both page turns", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name === "mobile",
+    "Landscape spreads need a desktop viewport",
+  );
+  const title = `Reader cover ${info.project.name}`;
+  const upload = await page.request.post("/api/documents", {
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title, personIds: [] }),
+      ),
+    },
+    data: await samplePdf(),
+  });
+  expect(upload.status()).toBe(201);
+  await page.goto("/documents");
+  await page.locator(".document-item").filter({ hasText: title }).click();
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  await expect(
+    reader.locator('.pdf-book-page[data-page="0"] img'),
+  ).toBeVisible();
+
+  for (const label of ["Следующая страница", "Предыдущая страница"]) {
+    const offsets = await reader.evaluate(async (dialog, buttonLabel) => {
+      const root = dialog.querySelector<HTMLElement>(".pdf-book-pages")!;
+      const button = dialog.querySelector<HTMLButtonElement>(
+        `[aria-label="${buttonLabel}"]`,
+      )!;
+      const samples: number[] = [];
+      const start = performance.now();
+      button.click();
+      await new Promise<void>((resolve) => {
+        const sample = () => {
+          samples.push(
+            new DOMMatrixReadOnly(getComputedStyle(root).transform).m41,
+          );
+          if (performance.now() - start < 800) requestAnimationFrame(sample);
+          else resolve();
+        };
+        requestAnimationFrame(sample);
+      });
+      return samples;
+    }, label);
+    const distance = Math.abs(offsets.at(-1)! - offsets[0]);
+    const largestStep = Math.max(
+      ...offsets
+        .slice(1)
+        .map((offset, index) => Math.abs(offset - offsets[index])),
+    );
+    expect(distance).toBeGreaterThan(60);
+    expect(largestStep).toBeLessThan(distance * 0.25);
+  }
+  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 3");
+});
