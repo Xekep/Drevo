@@ -16,6 +16,7 @@ type SuggestedCandidate = Candidate & { reasons: string[]; conflicts: string[] }
 type Match = {
   id: string;
   status: "pending" | "linked" | "rejected" | "revoked";
+  reason?: string;
   initiatedByArchiveId: string;
   requestedAt: string;
   left: Candidate;
@@ -55,6 +56,7 @@ export function DiscoveryMatchesAdmin() {
   const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
   const [source, setSource] = useState<Candidate | null>(null);
   const [target, setTarget] = useState<Candidate | null>(null);
+  const [reason, setReason] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -133,13 +135,15 @@ export function DiscoveryMatchesAdmin() {
     try {
       const response = await archiveFetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourcePersonId: source.id, targetArchiveId: target.archiveId, targetPersonId: target.id }),
+        body: JSON.stringify({ sourcePersonId: source.id, targetArchiveId: target.archiveId,
+          targetPersonId: target.id, reason: reason.trim() }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Не удалось отправить запрос");
       setNotice(body.match.status === "pending" ? "Запрос отправлен. Другая сторона должна подтвердить сопоставление." :
         "Этот запрос уже существует. Его текущий статус показан ниже.");
       setSource(null); setTarget(null); setCursor(null); setHistory([]);
+      setReason("");
       setSuggestions([]); setSuggestionsBusy(false); setSuggestionsTruncated(false);
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
@@ -222,6 +226,10 @@ export function DiscoveryMatchesAdmin() {
       {source && target && <div className="match-review">
         <h2>Проверьте обе карточки</h2>
         <div className="match-pair"><CandidateCard candidate={source} /><CandidateCard candidate={target} /></div>
+        <label>Почему это один человек? <small>Необязательно; сообщение увидит другое дерево</small>
+          <textarea value={reason} maxLength={500} rows={2} onChange={(event) => setReason(event.target.value)}
+            placeholder="Например: совпадают родители и место рождения" />
+        </label>
         <button type="button" className="primary-action" disabled={busy} onClick={() => void send()}>Предложить сопоставление</button>
       </div>}
     </section>
@@ -231,6 +239,7 @@ export function DiscoveryMatchesAdmin() {
       {matches.map((item) => <article key={item.id} className="match-request">
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
         <div className="match-pair"><CandidateCard candidate={item.left} /><CandidateCard candidate={item.right} /></div>
+        {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
         <div className="match-request-actions">
           {item.status === "pending" && item.initiatedByArchiveId !== archiveId && <>
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "accept")}>Подтвердить</button>

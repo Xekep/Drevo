@@ -1431,11 +1431,17 @@ try {
   const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
   rootWithPublishedPerson.people[0].deceased = true;
   await app.archive.write(rootWithPublishedPerson, rootBeforeMatch.revision);
-  const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive", targetPersonId: "person-a" });
+  const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+    targetPersonId: "person-a", reason: "Совпадают семейные записи" });
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders, body: proposedPair,
   })).status, 409, "a private card cannot be used in a cross-archive match");
   await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-a", reason: "x".repeat(501) }),
+  })).status, 400);
   const otherArchivesOnly = await fetch(securedBase +
     "/api/discovery/people?q=Тестов&excludeArchiveId=runtime-test", { headers });
   assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
@@ -1448,6 +1454,7 @@ try {
   assert.equal(requestedMatch.status, 200);
   const matchBody = await requestedMatch.json();
   assert.equal(matchBody.match.status, "pending");
+  assert.equal(matchBody.match.reason, "Совпадают семейные записи");
   const matchDb = app.archive.db;
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
@@ -1487,7 +1494,10 @@ try {
   const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
     headers,
   });
-  assert.deepEqual((await linkedPublicCard.json()).linkedCards.map((person: { archiveId: string; id: string }) =>
+  const linkedPublicBody = await linkedPublicCard.json();
+  assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
+    "the proposal note is visible to participant admins, not global discovery readers");
+  assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
     [person.archiveId,person.id]), [["runtime-test","person-a"]],
   "a signed-in reader can follow only the other published identity after both sides confirm");
   await matchDb.transaction(async () => {

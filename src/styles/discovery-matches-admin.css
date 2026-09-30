@@ -20,6 +20,10 @@
 .match-suggestion-list .match-conflicts { color: #96531f; }
 .match-review, .match-request { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .match-review h2, .discovery-matches-admin h2 { margin: 0; font-size: 16px; }
+.match-review label { display: grid; gap: 4px; }
+.match-review label small { color: var(--muted); font-weight: normal; }
+.match-review textarea { min-height: 66px; resize: vertical; }
+.match-reason { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .match-candidate-card { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 10px; background: #f4f7f1; border-radius: 8px; }
 .match-candidate-card a { overflow-wrap: anywhere; }
 .match-candidate-card small { color: var(--muted); }
