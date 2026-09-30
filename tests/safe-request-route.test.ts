@@ -19,4 +19,8 @@ test("share bearer tokens stay out of root and selected-archive request logs", (
     safeRequestRoute("/a/private-tree/api/session?secret=1"),
     "/a/private-tree/api/session",
   );
+  assert.equal(
+    safeRequestRoute("/join/private-tree/private-token"),
+    "/join/[redacted]",
+  );
 });

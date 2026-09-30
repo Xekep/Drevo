@@ -31,6 +31,7 @@ import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
+import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
@@ -115,6 +116,9 @@ export async function startServer(
     auth,
     accountArchiveDirectory(archive.db),
   );
+  const manageAccountInvitations = !archiveId
+    ? accountInvitationsHttp(archive.db, auth, publicOrigin)
+    : null;
   const directory = accountArchiveDirectory(archive.db);
   const canOpenShared = publicShareAccess(archive.db);
   const routedArchives =
@@ -239,6 +243,11 @@ export async function startServer(
       return;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
     if (await listAccountArchives(req, res, parsedUrl)) return;
+    if (
+      manageAccountInvitations &&
+      (await manageAccountInvitations(req, res, parsedUrl))
+    )
+      return;
     if (await manageVkAuth(req, res, parsedUrl)) return;
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;

@@ -1,4 +1,12 @@
-import { Component, StrictMode, lazy, Suspense, type ReactNode } from "react";
+import {
+  Component,
+  StrictMode,
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import "@xyflow/react/dist/style.css";
 import "./styles/app.css";
@@ -25,10 +33,64 @@ import { ArchiveLoading } from "./components/archive-loading";
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
 const PublicPeople = lazy(() => import("./components/public-people"));
+const JoinArchive = lazy(() =>
+  import("./components/join-archive").then((module) => ({
+    default: module.JoinArchive,
+  })),
+);
 const sharedToken =
   /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/([A-Za-z0-9_-]{43})$/.exec(
     location.pathname,
   )?.[1];
+const join =
+  /^\/join\/([A-Za-z0-9][A-Za-z0-9-]{2,63})\/([A-Za-z0-9_-]{43})$/.exec(
+    location.pathname,
+  );
+const pendingInvite = (() => {
+  try {
+    const path = sessionStorage.getItem("drevo_pending_invite") || "";
+    return /^\/join\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/[A-Za-z0-9_-]{43}$/.test(
+      path,
+    )
+      ? path
+      : "";
+  } catch {
+    return "";
+  }
+})();
+
+function Entry() {
+  const [ready, setReady] = useState(
+    !!join || !pendingInvite || pendingInvite === location.pathname,
+  );
+  useEffect(() => {
+    if (ready) return;
+    const controller = new AbortController();
+    void fetch("/api/session", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.json())
+      .then((session) => {
+        if (controller.signal.aborted) return;
+        if (session.account) {
+          sessionStorage.removeItem("drevo_pending_invite");
+          location.replace(pendingInvite);
+        } else setReady(true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setReady(true);
+      });
+    return () => controller.abort();
+  }, [ready]);
+  if (!ready) return <ArchiveLoading />;
+  return sharedToken ? (
+    <SharedTree token={sharedToken} />
+  ) : join ? (
+    <JoinArchive archiveId={join[1]} token={join[2]} />
+  ) : location.pathname === "/discover" ? (
+    <PublicPeople />
+  ) : (
+    <App />
+  );
+}
 
 class RootErrorBoundary extends Component<
   { children: ReactNode },
@@ -55,13 +117,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
       <Suspense fallback={<ArchiveLoading />}>
-        {sharedToken ? (
-          <SharedTree token={sharedToken} />
-        ) : location.pathname === "/discover" ? (
-          <PublicPeople />
-        ) : (
-          <App />
-        )}
+        <Entry />
       </Suspense>
     </RootErrorBoundary>
   </StrictMode>,

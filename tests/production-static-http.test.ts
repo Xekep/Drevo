@@ -108,6 +108,11 @@ test("production static streams SPA routes, files and shared page", async () => 
       assert.equal(await shared.text(), html);
     }
 
+    const invitation = await fetch(app.base + `/join/family-one/${token}`);
+    assert.equal(invitation.status, 200);
+    assert.equal(invitation.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(await invitation.text(), html);
+
     const head = await fetch(app.base + "/tree", { method: "HEAD" });
     assert.equal(head.status, 200);
     assert.equal(

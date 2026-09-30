@@ -1,0 +1,50 @@
+.join-archive-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--canvas, #f4f5ef);
+  color: var(--ink, #263b2a);
+}
+
+.join-archive-card {
+  width: min(100%, 430px);
+  padding: clamp(24px, 5vw, 38px);
+  border: 1px solid rgba(54, 90, 58, .15);
+  border-radius: 24px;
+  background: var(--surface, #fff);
+  box-shadow: 0 18px 60px rgba(31, 54, 35, .12);
+  display: grid;
+  gap: 16px;
+}
+
+.join-archive-icon {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #eaf1e6;
+  color: #345d38;
+}
+
+.join-archive-eyebrow {
+  font-size: .76rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #58705b;
+}
+
+.join-archive-card h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2rem);
+  line-height: 1.16;
+}
+
+.join-archive-card p { margin: 0; line-height: 1.5; }
+.join-archive-privacy { display: flex; align-items: center; gap: 9px; font-size: .9rem; color: #47644b; }
+.join-archive-account { font-size: .9rem; color: #57705b; }
+.join-archive-error { color: #a0342b; }
+.join-archive-home { color: inherit; justify-self: start; font-size: .9rem; }
+.join-archive-card .primary-action { justify-self: start; display: inline-flex; gap: 10px; align-items: center; }
+.join-archive-card .login-providers { display: grid; gap: 12px; }
