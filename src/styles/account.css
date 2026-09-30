@@ -194,6 +194,58 @@
 .account-archive-row a:hover {
   text-decoration: underline;
 }
+.account-ai-chat-list {
+  border-top: 1px solid #ecede7;
+}
+.account-ai-chat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #ecede7;
+}
+.account-ai-chat-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.account-ai-chat-name strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-ai-chat-name small {
+  color: #79877c;
+  font-size: 11px;
+}
+.account-ai-chat-delete,
+.account-ai-chat-actions button {
+  flex: none;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 6px;
+  border-radius: 8px;
+  color: #8a5e52;
+}
+.account-ai-chat-delete:hover,
+.account-ai-chat-actions button:hover {
+  background: #f9efec;
+}
+.account-ai-chat-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.account-ai-chat-actions button {
+  font-size: 12px;
+}
+.account-ai-chat-actions button:disabled {
+  opacity: 0.55;
+}
 .account-row-action,
 .account-signout {
   display: inline-flex;
