@@ -6,6 +6,7 @@ type PublicPerson = {
   archiveId?: string;
   id: string;
   name: string;
+  birthSurname?: string;
   birthYear?: string;
   deathYear?: string;
   birthPlace?: string;
@@ -30,6 +31,7 @@ function PersonCard({ person }: { person: PublicPerson }) {
   return (
     <article className="public-person-card">
       <h2>{person.name}</h2>
+      {person.birthSurname && <p>Фамилия при рождении: {person.birthSurname}</p>}
       {(person.birthYear || person.deathYear) && (
         <p>
           {person.birthYear || "?"}–{person.deathYear || "?"}

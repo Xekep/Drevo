@@ -3,11 +3,33 @@ import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import type { publishedPeopleStore } from "./published-people.ts";
 import { publicPerson, publishablePerson } from "./published-people.ts";
+import { defaultPublicationFields, type PublicationFields } from "../shared/publication.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import {
   createRequestLimiter,
   requestClientKey,
 } from "./request-rate-limit.ts";
+
+async function requestedFields(req: IncomingMessage): Promise<PublicationFields | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 2048) return null;
+    chunks.push(Buffer.from(chunk));
+  }
+  if (!size) return defaultPublicationFields; // Older clients used an empty PUT.
+  if (!req.headers["content-type"]?.startsWith("application/json")) return null;
+  try {
+    const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if (!value || typeof value !== "object" || !("fields" in value)) return null;
+    const fields = value.fields;
+    if (!fields || typeof fields !== "object") return null;
+    const names = ["birthSurname", "birthYear", "deathYear", "birthPlace", "deathPlace"] as const;
+    if (names.some((name) => typeof (fields as Record<string, unknown>)[name] !== "boolean")) return null;
+    return fields as PublicationFields;
+  } catch { return null; }
+}
 
 export function publishedPeopleHttp({
   archive,
@@ -70,17 +92,18 @@ export function publishedPeopleHttp({
         return json(res, 400, {
           error: "Введите от 2 до 100 символов для поиска",
         });
-      const ids = await store.ids();
+      const entries = await store.entries();
       const terms = query
         .toLocaleLowerCase("ru-RU")
         .split(/\s+/)
         .filter(Boolean);
       const results = snapshot.family.people
-        .filter((person) => ids.has(person.id) && publishablePerson(person))
-        .map(publicPerson)
+        .filter((person) => entries.has(person.id) && publishablePerson(person))
+        .map((person) => publicPerson(person, entries.get(person.id)))
         .filter((person) => {
           const searchable = [
             person.name,
+            person.birthSurname,
             person.birthYear,
             person.deathYear,
             person.birthPlace,
@@ -111,20 +134,31 @@ export function publishedPeopleHttp({
             return json(res, 400, {
               error: "Публикация доступна только для умерших людей",
             });
-          await store.publish(personId, user.id);
+          const fields = await requestedFields(req);
+          if (!fields) return json(res, 400, { error: "Некорректный выбор полей публикации" });
+          await store.publish(personId, user.id, {
+            birthSurname: fields.birthSurname && Boolean(person.maidenName),
+            birthYear: fields.birthYear && Boolean(person.birth?.match(/\b\d{4}\b/)),
+            deathYear: fields.deathYear && Boolean(person.death?.match(/\b\d{4}\b/)),
+            birthPlace: fields.birthPlace && Boolean(person.birthPlace),
+            deathPlace: fields.deathPlace && Boolean(person.deathPlace),
+          });
         } else await store.unpublish(personId);
       } else if (req.method !== "GET") {
         return json(res, 405, { error: "Метод не поддерживается" });
       }
+      const fields = await store.getFields(personId);
       return json(res, 200, {
         archiveId: archive.db.kind === "postgres" ? archive.db.archiveId : null,
-        published: await store.has(personId),
+        published: Boolean(fields),
         publishable: publishablePerson(person),
-        person: publicPerson(person),
+        fields: fields || defaultPublicationFields,
+        person: publicPerson(person, fields || defaultPublicationFields),
       });
     }
-    if (!publishablePerson(person) || !(await store.has(personId)))
+    const fields = await store.getFields(personId);
+    if (!publishablePerson(person) || !fields)
       return json(res, 404, { error: "Человек не найден" });
-    return json(res, 200, { person: publicPerson(person) });
+    return json(res, 200, { person: publicPerson(person, fields) });
   };
 }
