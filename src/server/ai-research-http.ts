@@ -527,9 +527,9 @@ export function aiResearchHttp({
         runtime,
         stream,
         metrics,
-        onDelta: (text) => {
-          if (stream) sse(res, "delta", { text });
-        },
+        // The browser does not consume deltas. Delivering them before the
+        // final access check would leak an answer after a tier downgrade.
+        onDelta: () => {},
         onStatus: (status) => {
           if (stream) sse(res, "status", { message: status });
         },
