@@ -52,6 +52,7 @@ export async function archiveHttp({
   serveStatic,
   aiFetch,
   uploadsDirectory,
+  selectedArchiveId,
   geocoding,
   restores,
 }: {
@@ -64,6 +65,7 @@ export async function archiveHttp({
   serveStatic: ReturnType<typeof productionStaticHttp>;
   aiFetch?: typeof fetch;
   uploadsDirectory: string;
+  selectedArchiveId?: string;
   geocoding: GeocodingStore;
   restores: RestoreStore;
 }) {
@@ -176,6 +178,7 @@ export async function archiveHttp({
       shares,
       audit,
       publicOrigin,
+      selectedArchiveId,
     }),
     publicSharing = publicSharingHttp({
       archive,

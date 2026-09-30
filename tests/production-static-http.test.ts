@@ -97,14 +97,16 @@ test("production static streams SPA routes, files and shared page", async () => 
     );
     assert.equal(await cachedModel.text(), model);
 
-    const shared = await fetch(app.base + `/s/${token}`);
-    assert.equal(shared.status, 200);
-    assert.equal(shared.headers.get("referrer-policy"), "no-referrer");
-    assert.equal(
-      shared.headers.get("x-robots-tag"),
-      "noindex, nofollow, noarchive",
-    );
-    assert.equal(await shared.text(), html);
+    for (const path of [`/s/${token}`, `/a/family-one/s/${token}`]) {
+      const shared = await fetch(app.base + path);
+      assert.equal(shared.status, 200);
+      assert.equal(shared.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(
+        shared.headers.get("x-robots-tag"),
+        "noindex, nofollow, noarchive",
+      );
+      assert.equal(await shared.text(), html);
+    }
 
     const head = await fetch(app.base + "/tree", { method: "HEAD" });
     assert.equal(head.status, 200);

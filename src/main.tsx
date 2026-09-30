@@ -25,7 +25,10 @@ import { ArchiveLoading } from "./components/archive-loading";
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
 const PublicPeople = lazy(() => import("./components/public-people"));
-const sharedToken = /^\/s\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1];
+const sharedToken =
+  /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/([A-Za-z0-9_-]{43})$/.exec(
+    location.pathname,
+  )?.[1];
 
 class RootErrorBoundary extends Component<
   { children: ReactNode },
@@ -52,7 +55,13 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
       <Suspense fallback={<ArchiveLoading />}>
-        {sharedToken ? <SharedTree token={sharedToken} /> : location.pathname === "/discover" ? <PublicPeople /> : <App />}
+        {sharedToken ? (
+          <SharedTree token={sharedToken} />
+        ) : location.pathname === "/discover" ? (
+          <PublicPeople />
+        ) : (
+          <App />
+        )}
       </Suspense>
     </RootErrorBoundary>
   </StrictMode>,

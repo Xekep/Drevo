@@ -11,12 +11,14 @@ export function adminSharingHttp({
   shares,
   audit,
   publicOrigin,
+  selectedArchiveId,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   shares: ReturnType<typeof sharesStore>;
   audit: ReturnType<typeof auditStore>;
   publicOrigin?: string;
+  selectedArchiveId?: string;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -111,7 +113,7 @@ export function adminSharingHttp({
         );
         return json(res, 201, {
           share: result.share,
-          path: `/s/${result.token}`,
+          path: `${selectedArchiveId ? `/a/${selectedArchiveId}` : ""}/s/${result.token}`,
         });
       }
 

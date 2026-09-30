@@ -72,7 +72,10 @@ export function productionStaticHttp(
     if (decoded.includes("\0"))
       return jsonError(res, 404, "Страница не найдена");
 
-    const shared = /^\/s\/[A-Za-z0-9_-]{43}$/.test(pathname);
+    const shared =
+      /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/[A-Za-z0-9_-]{43}$/.test(
+        pathname,
+      );
     const filePath =
       archiveViewAt(pathname) || shared || pathname === "/discover"
         ? resolve(root, "index.html")
