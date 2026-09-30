@@ -784,13 +784,6 @@ export function DocumentsCatalog({
               ? () => beginEdit(activeSelected)
               : undefined
           }
-          onDelete={
-            mayEdit && activeSelected.canDelete
-              ? () => void remove(activeSelected)
-              : undefined
-          }
-          deleting={deleting === activeSelected.id}
-          deleteError={deleteError}
         />
       )}
     </section>
