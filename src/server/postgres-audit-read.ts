@@ -26,7 +26,7 @@ export function postgresAuditReader(client: pg.Client, archiveId: string) {
       }>(
         `SELECT a.id,a.at,a.actor_id,a.actor_name,a.action,a.entity,
                 a.entity_id,a.label,a.revision,a.details
-           FROM archive_audit_entries a
+           FROM runtime_visible_audit_entries a
           WHERE a.archive_id=$1
             AND ($2::bigint=0 OR a.id<$2)
             AND ($3::text='' OR a.actor_id=$3)

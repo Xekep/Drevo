@@ -1,6 +1,7 @@
 import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,6 +27,8 @@ import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
+import { sharesStore } from "../../src/server/shares.ts";
+import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
@@ -2291,6 +2294,71 @@ try {
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0].actor_name, "Удалённый участник");
     assert.equal((await fetch(oauthBase + accountDeletionPath, { headers: deletingHeaders })).status, 401);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query(
+      "INSERT INTO accounts(id,name,created_at) VALUES('former-member','Former member',$1)",
+      [new Date().toISOString()],
+    );
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES('runtime-test','former-member','reader',true,'all')",
+    );
+    await client.query(
+      "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES('runtime-test',987655,$1,'former-member','Former member','update','archive','runtime-test','History','[]'::jsonb)",
+      [new Date().toISOString()],
+    );
+    await client.query(
+      "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text) VALUES('person-a','former-member','Former member',$1,'Historical comment')",
+      [Date.now()],
+    );
+    const oldShareToken = "A".repeat(43);
+    const oldMcpToken = `drevo_mcp_${"B".repeat(43)}`;
+    const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+    await client.query(
+      `INSERT INTO share_links(id,token_hash,title,anchor_id,person_ids,created_at,expires_at,created_by,created_name)
+       VALUES('former-share',$1,'Former link','person-a','["person-a"]'::jsonb,$2,$3,'former-member','Former member')`,
+      [tokenHash(oldShareToken), new Date().toISOString(), new Date(Date.now() + 600_000).toISOString()],
+    );
+    await client.query(
+      `INSERT INTO mcp_tokens(id,token_hash,token_hint,name,scopes,created_at,created_by)
+       VALUES('former-mcp',$1,'old','Former token','["tree:read"]'::jsonb,$2,'former-member')`,
+      [tokenHash(oldMcpToken), new Date().toISOString()],
+    );
+    await client.query(
+      `INSERT INTO research_suggestions(id,kind,status,person_id,payload,reason,evidence,base_revision,created_at,created_by)
+       VALUES('former-suggestion','person_update','accepted','person-a','{}'::jsonb,'History','[]'::jsonb,0,$1,'former-member')`,
+      [new Date().toISOString()],
+    );
+    await client.query(
+      "DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id='former-member'",
+    );
+    const formerToken = newSessionToken();
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'former-member',$2)",
+      [sessionTokenHash(formerToken), Date.now() + 600_000],
+    );
+    const formerDeletion = await fetch(oauthBase + accountDeletionPath, {
+      method: "DELETE",
+      headers: { Cookie: `drevo_session=${formerToken}`, "Content-Type": "application/json", "X-Drevo-Account-Deletion": "1" },
+      body: JSON.stringify({ name: "Former member", leaveSharedArchives: false }),
+    });
+    assert.equal(formerDeletion.status, 200,
+      formerDeletion.status === 200 ? "" : await formerDeletion.text());
+    assert.equal((await client.query("SELECT actor_name FROM archive_audit_entries WHERE id=987655")).rows[0].actor_name, "Former member",
+      "the past archive is not reopened by account deletion");
+    assert.equal((await client.query("SELECT actor_name FROM runtime_visible_audit_entries WHERE id=987655")).rows[0].actor_name, "Удалённый участник");
+    assert.equal((await client.query("SELECT author_name FROM runtime_visible_person_comments WHERE text='Historical comment'")).rows[0].author_name, "Удалённый участник");
+    const visibleComments = await fetch(securedBase + "/api/people/person-a/discussion", {
+      headers: ownerHeaders,
+    }).then((response) => response.json());
+    assert.equal(visibleComments.items.find((item: { text: string }) => item.text === "Historical comment")?.author, "Удалённый участник");
+    assert.equal((await client.query("SELECT created_by FROM runtime_visible_research_suggestions WHERE id='former-suggestion'")).rows[0].created_by, "deleted-account");
+    assert.equal((await sharesStore(app.archive.db).get(oldShareToken)), null,
+      "a share created by a former member stops working when their account is deleted");
+    assert.equal(await publicShareAccess(app.archive.db)("runtime-test", oldShareToken), false,
+      "a deleted creator cannot use a share to open the archive runtime");
+    assert.equal((await mcpTokenStore(app.archive.db).authenticate(`Bearer ${oldMcpToken}`)), null,
+      "an unbound MCP token from a deleted account stops working");
+    assert.equal((await auditStore(app.archive.db).list({ before: 987656 })).items.find((entry) => entry.id === 987655)?.actorName, "Удалённый участник");
     await client.query(
       "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );

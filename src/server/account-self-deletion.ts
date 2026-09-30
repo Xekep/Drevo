@@ -166,6 +166,10 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           );
         }
 
+        await client.query(
+          "INSERT INTO deleted_account_tombstones(id) VALUES($1) ON CONFLICT(id) DO NOTHING",
+          [accountId],
+        );
         const deleted = await client.query("DELETE FROM accounts WHERE id=$1", [
           accountId,
         ]);

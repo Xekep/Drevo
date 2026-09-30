@@ -121,6 +121,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitations_created_by_fkey' AND confdeltype='c'",
       "040_account_removal_references.sql",
     ],
+    [
+      "SELECT to_regclass('runtime_visible_person_comments') AS present",
+      "041_deleted_account_history.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

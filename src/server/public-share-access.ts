@@ -11,7 +11,7 @@ export function publicShareAccess(db: StoreDatabase) {
     db.kind === "postgres"
       ? db.prepare(
           "",
-          "SELECT 1 FROM share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
+          "SELECT 1 FROM runtime_visible_share_links WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
         )
       : null;
   return async (archiveId: string, token: string) => {
