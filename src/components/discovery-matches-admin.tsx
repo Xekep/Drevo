@@ -55,7 +55,8 @@ export function DiscoveryMatchesAdmin() {
   const [targetLoading, setTargetLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedCandidate[]>([]);
   const [suggestionsBusy, setSuggestionsBusy] = useState(false);
-  const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
+  const [suggestionsCursor, setSuggestionsCursor] = useState<string | null>(null);
+  const [suggestionsNextCursor, setSuggestionsNextCursor] = useState<string | null>(null);
   const [showIgnored, setShowIgnored] = useState(false);
   const [suggestionsReload, setSuggestionsReload] = useState(0);
   const [ignoredArchives, setIgnoredArchives] = useState<IgnoredArchive[]>([]);
@@ -111,17 +112,23 @@ export function DiscoveryMatchesAdmin() {
   useEffect(() => {
     if (!source) return;
     const controller = new AbortController();
-    archiveFetch(`${endpoint}/candidates?sourcePersonId=${encodeURIComponent(source.id)}${showIgnored ? "&ignored=1" : ""}`, {
+    const params = new URLSearchParams({ sourcePersonId: source.id });
+    if (showIgnored) params.set("ignored", "1");
+    if (suggestionsCursor) params.set("cursor", suggestionsCursor);
+    archiveFetch(`${endpoint}/candidates?${params}`, {
       signal: controller.signal, cache: "no-store",
     }).then(async (response) => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Не удалось найти возможные совпадения");
-      setSuggestions(body.candidates);
-      setSuggestionsTruncated(body.truncated);
+      setSuggestions((current) => suggestionsCursor
+        ? [...current, ...body.candidates.filter((item: SuggestedCandidate) =>
+          !current.some((old) => old.archiveId === item.archiveId && old.id === item.id))]
+        : body.candidates);
+      setSuggestionsNextCursor(body.nextCursor || null);
     }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
       .finally(() => { if (!controller.signal.aborted) setSuggestionsBusy(false); });
     return () => controller.abort();
-  }, [source, reload, showIgnored, suggestionsReload]);
+  }, [source, reload, showIgnored, suggestionsCursor, suggestionsReload]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -168,7 +175,7 @@ export function DiscoveryMatchesAdmin() {
         "Этот запрос уже существует. Его текущий статус показан ниже.");
       setSource(null); setTarget(null); setCursor(null); setHistory([]);
       setReason("");
-      setSuggestions([]); setSuggestionsBusy(false); setSuggestionsTruncated(false);
+      setSuggestions([]); setSuggestionsBusy(false); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
       setShowIgnored(false);
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
@@ -209,6 +216,7 @@ export function DiscoveryMatchesAdmin() {
         item.archiveId !== person.archiveId || item.id !== person.id));
       if (target?.archiveId === person.archiveId && target.id === person.id) setTarget(null);
       setNotice(ignored ? "Подсказка скрыта. Её можно вернуть в списке скрытых." : "Подсказка восстановлена.");
+      setSuggestionsCursor(null); setSuggestionsNextCursor(null);
       setSuggestionsReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -228,6 +236,7 @@ export function DiscoveryMatchesAdmin() {
         : "Подсказки этого дерева снова доступны.");
       setIgnoredArchivePage(0);
       setIgnoredArchiveReload((value) => value + 1);
+      setSuggestionsCursor(null); setSuggestionsNextCursor(null);
       setSuggestionsReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -240,7 +249,7 @@ export function DiscoveryMatchesAdmin() {
         <div><label>Человек из этого дерева
           <input type="search" value={ownQuery} onChange={(event) => {
             setOwnQuery(event.target.value); setSource(null); setSuggestions([]);
-            setSuggestionsBusy(false); setSuggestionsTruncated(false); setShowIgnored(false);
+            setSuggestionsBusy(false); setSuggestionsCursor(null); setSuggestionsNextCursor(null); setShowIgnored(false);
           }} placeholder="Поиск среди опубликованных" />
         </label>
           <div className="match-options" aria-label="Свои опубликованные люди">
@@ -249,7 +258,8 @@ export function DiscoveryMatchesAdmin() {
               aria-pressed={source?.id === person.id}
               onClick={() => {
                 setSource(person); setTarget(null); setSuggestions([]);
-                setSuggestionsBusy(true); setSuggestionsTruncated(false); setShowIgnored(false);
+                setSuggestionsBusy(true); setSuggestionsCursor(null); setSuggestionsNextCursor(null); setShowIgnored(false);
+                setSuggestionsReload((value) => value + 1);
               }}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
             {!ownPeople.length && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
           </div>
@@ -278,11 +288,12 @@ export function DiscoveryMatchesAdmin() {
           <h2>{showIgnored ? "Скрытые подсказки" : "Возможные совпадения"}</h2>
           <button type="button" onClick={() => {
             setShowIgnored((value) => !value); setSuggestions([]); setSuggestionsBusy(true);
+            setSuggestionsCursor(null); setSuggestionsNextCursor(null);
           }}>{showIgnored ? "К предложениям" : "Скрытые"}</button>
         </div>
         <p>Подсказки основаны только на опубликованных именах, годах и местах. Проверьте сведения перед отправкой запроса.</p>
         {suggestionsBusy && <p role="status">Ищем совпадения…</p>}
-        {!suggestionsBusy && !suggestions.length && <p>{showIgnored ? "Скрытых подсказок нет." : "Пока совпадений нет. Можно найти карточку вручную."}</p>}
+        {!suggestionsBusy && !suggestions.length && !suggestionsNextCursor && <p>{showIgnored ? "Скрытых подсказок нет." : "Пока совпадений нет. Можно найти карточку вручную."}</p>}
         <div className="match-suggestion-list">
           {suggestions.map((item) => <div className="match-suggestion" key={`${item.archiveId}:${item.id}`}>
             {showIgnored ? <div className="match-suggestion-summary">
@@ -303,7 +314,10 @@ export function DiscoveryMatchesAdmin() {
             </div>
           </div>)}
         </div>
-        {suggestionsTruncated && <p>Показана часть похожих карточек. Для точного поиска введите ФИО справа.</p>}
+        {suggestionsNextCursor && <button type="button" className="match-more" disabled={suggestionsBusy}
+          onClick={() => { setSuggestionsBusy(true); setSuggestionsCursor(suggestionsNextCursor); setSuggestionsReload((value) => value + 1); }}>
+          {suggestionsBusy ? "Ищем…" : "Показать ещё похожих"}
+        </button>}
       </div>}
       <details className="match-ignored-archives">
         <summary>Скрытые деревья{ignoredArchives.length ? ` · ${ignoredArchives.length}${nextIgnoredArchivePage !== null ? "+" : ""}` : ""}</summary>
