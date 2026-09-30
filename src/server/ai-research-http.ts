@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { aiAttachmentStore, validateAttachments } from "./ai-attachments.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import type { GeneratedResearchFile } from "./code-interpreter.ts";
+import { pruneGeneratedResearchFiles } from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import { createHash } from "node:crypto";
@@ -124,6 +125,11 @@ export function aiResearchHttp({
       (await accessScope(current)) === expectedScope;
   };
   const generatedFiles = new Map<string, GeneratedResearchFile>();
+  const generatedFileCleanup = setInterval(
+    () => pruneGeneratedResearchFiles(generatedFiles),
+    60_000,
+  );
+  generatedFileCleanup.unref();
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -856,6 +862,7 @@ export function aiResearchHttp({
   return Object.assign(handle, {
     async close() {
       closing = true;
+      clearInterval(generatedFileCleanup);
       const runs = [...activeRuns.values()];
       for (const run of runs) run.controller.abort();
       await Promise.all(runs.map((run) => run.done));

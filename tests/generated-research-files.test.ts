@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { storeGeneratedResearchFile } from "../src/server/generated-research-files.ts";
+import {
+  pruneGeneratedResearchFiles,
+  storeGeneratedResearchFile,
+} from "../src/server/generated-research-files.ts";
 import type { GeneratedResearchFile } from "../src/server/code-interpreter.ts";
 
 const file = (bytes: number, expires: number): GeneratedResearchFile => ({
@@ -22,4 +25,6 @@ test("PDF and calculation files share the same bounded cache", () => {
   assert.equal(files.size, 2);
   assert.ok(storeGeneratedResearchFile(files, file(8, 300), 200, 8));
   assert.equal(files.size, 1, "expired files release their budget");
+  pruneGeneratedResearchFiles(files, 300);
+  assert.equal(files.size, 0, "expired files leave memory without another upload");
 });
