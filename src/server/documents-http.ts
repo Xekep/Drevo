@@ -11,6 +11,7 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
 import { fullName } from "../domain/index.ts";
+import type { Person } from "../domain/types.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { owns } from "../domain/access.ts";
@@ -144,17 +145,32 @@ export function documentsHttp({
     res.end(JSON.stringify(value));
     return true;
   };
-  const visible = async (req: IncomingMessage) => {
+  const visible = async (req: IncomingMessage, includePeople = true) => {
     const user = await auth.currentUser(req);
-    const family = isScopedUser(user)
-      ? projectFamilyForUser((await archive.read()).family, user)
-      : (await archive.read()).family;
+    const scoped = isScopedUser(user);
+    const people = !scoped && !includePeople
+      ? []
+      : scoped
+        ? projectFamilyForUser((await archive.read()).family, user).people
+        : (await archive.read()).family.people;
     return {
       userId: user?.id,
-      scoped: isScopedUser(user),
-      people: family.people,
-      ids: family.people.map((person) => person.id),
+      scoped,
+      people,
+      ids: people.map((person) => person.id),
     };
+  };
+  const linkedPersonNames = async (ids: string[]) => {
+    if (!ids.length) return new Map<string, string>();
+    const rows = await db.prepare(
+      "SELECT id,data FROM people WHERE id IN (SELECT value FROM json_each(?))",
+      "SELECT id,data FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
+    ).all(JSON.stringify([...new Set(ids)]));
+    return new Map(rows.map((row) => {
+      const person = (typeof row.data === "string"
+        ? JSON.parse(row.data) : row.data) as Person;
+      return [String(row.id), fullName(person)] as const;
+    }));
   };
   const canSee = (
     access: Awaited<ReturnType<typeof visible>>,
@@ -218,7 +234,7 @@ export function documentsHttp({
         query.length > 100
       )
         return json(res, 400, { error: "Некорректная страница" });
-      const access = await visible(req);
+      const access = await visible(req, !!query);
       if (personId !== null && access.scoped && !access.ids.includes(personId))
         return json(res, 200, { total: 0, items: [] });
       const conditions: string[] = [];
@@ -270,9 +286,9 @@ export function documentsHttp({
         )
         .all(...args, limit, offset)) as Row[];
       const links = await associations(rows.map((row) => row.id));
-      const people = new Map(
-        access.people.map((person) => [person.id, fullName(person)]),
-      );
+      const people = access.scoped || query
+        ? new Map(access.people.map((person) => [person.id, fullName(person)]))
+        : await linkedPersonNames([...links.values()].flat());
       const actor = await auth.currentUser(req),
         mayEdit = await auth.canEdit(req);
       return json(res, 200, {

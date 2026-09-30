@@ -129,7 +129,15 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const created = await upload(pdf);
     assert.equal(created.status, 201, await created.clone().text());
     const { id } = (await created.json()) as { id: string };
-    const list = (await (await fetch(`${base}/api/documents`)).json()) as {
+    const originalRead = app.archive.read;
+    app.archive.read = async () => {
+      throw new Error("An unscoped document list must not load the full graph");
+    };
+    const listed = await fetch(`${base}/api/documents`).finally(() => {
+      app.archive.read = originalRead;
+    });
+    assert.equal(listed.status, 200, await listed.clone().text());
+    const list = (await listed.json()) as {
       total: number;
       items: Array<
         DocumentDetails & {
@@ -151,6 +159,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       list.items[0].people.map((person) => person.id),
       ["anna"],
     );
+    assert.equal(list.items[0].people[0].name, "Тестова Анна");
     const direct = await fetch(`${base}/api/documents/${id}`);
     assert.equal(direct.status, 200);
     assert.deepEqual(await direct.json(), list.items[0]);
