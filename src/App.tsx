@@ -712,6 +712,9 @@ export default function App() {
           query={query}
           onQuery={setQuery}
           onSelect={showPerson}
+          onSelectDocument={user?.approved || archive.local
+            ? (id) => setView("documents", archiveDocumentPath(null, id))
+            : undefined}
           busy={busy}
         />
         {addMenu && canEdit && (

@@ -70,6 +70,32 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.105")).toBeVisible();
 });
 
+test("верхний поиск находит PDF и открывает постоянную ссылку", async ({
+  page,
+}, testInfo) => {
+  const title = `Поисковый документ ${testInfo.project.name} ${Date.now()}`;
+  const uploaded = await page.request.post("/api/documents", {
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title, personIds: [] }),
+      ),
+    },
+    data: await samplePdf(1),
+  });
+  expect(uploaded.status()).toBe(201);
+  const { id } = (await uploaded.json()) as { id: string };
+  await page.goto("/documents");
+  await page
+    .getByRole("combobox", { name: "Найти человека или документ" })
+    .fill(title);
+  await page.getByRole("option", { name: new RegExp(title) }).click();
+  await expect(page).toHaveURL(new RegExp(`/documents/${id}$`));
+  await expect(
+    page.getByRole("dialog", { name: `Документ: ${title}` }),
+  ).toBeVisible();
+});
+
 async function samplePdf(count = 3, landscape = false) {
   const pdf = new PDFDocument({ autoFirstPage: false });
   const chunks: Buffer[] = [];
@@ -246,9 +272,7 @@ test("из карточки человека открываются только
     .locator("..")
     .getByRole("link", { name: "Открыть документ" });
   const linkedUrl = await documentLink.getAttribute("href");
-  expect(linkedUrl).toMatch(
-    /^\/documents\/person\/e2e-child\/[a-f0-9-]{36}$/,
-  );
+  expect(linkedUrl).toMatch(/^\/documents\/person\/e2e-child\/[a-f0-9-]{36}$/);
   await documentLink.click();
   await expect(page).toHaveURL(linkedUrl!);
   await expect(

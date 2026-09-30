@@ -1,22 +1,65 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Search, X } from "lucide-react";
+import { FileText, Search, X } from "lucide-react";
 import { fullName, years, matchesPerson, type Person } from "../domain";
+import { archiveFetch } from "../data/archive-fetch.ts";
+
+type DocumentMatch = { id: string; title: string };
+type DocumentResults = {
+  query: string;
+  items: DocumentMatch[];
+  failed: boolean;
+};
 
 export function TreeSearch({
   people,
   query,
   onQuery,
   onSelect,
+  onSelectDocument,
 }: {
   people: Person[];
   query: string;
   onQuery: (query: string) => void;
   onSelect: (id: string) => void;
+  onSelectDocument?: (id: string) => void;
 }) {
   const id = useId();
   const [open, setOpen] = useState(false),
     [active, setActive] = useState(0),
     ref = useRef<HTMLInputElement>(null);
+  const [documentResults, setDocumentResults] =
+    useState<DocumentResults | null>(null);
+  const search = query.trim();
+  const searchDocuments = !!onSelectDocument && search.length >= 2;
+  useEffect(() => {
+    if (!searchDocuments) return;
+    const request = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await archiveFetch(
+            `/api/documents?limit=6&q=${encodeURIComponent(search)}`,
+            { signal: request.signal },
+          );
+          if (!response.ok) throw new Error("Document search failed");
+          const page = (await response.json()) as { items: DocumentMatch[] };
+          if (!request.signal.aborted)
+            setDocumentResults({
+              query: search,
+              items: page.items,
+              failed: false,
+            });
+        } catch {
+          if (!request.signal.aborted)
+            setDocumentResults({ query: search, items: [], failed: true });
+        }
+      })();
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      request.abort();
+    };
+  }, [searchDocuments, search]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
@@ -45,9 +88,27 @@ export function TreeSearch({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onQuery]);
-  const matches = query.trim()
-    ? people.filter((p) => matchesPerson(p, query)).slice(0, 8)
+  const matches = search
+    ? people.filter((p) => matchesPerson(p, search)).slice(0, 8)
     : [];
+  const documents =
+    searchDocuments && documentResults?.query === search
+      ? documentResults.items
+      : [];
+  const options = [
+    ...matches.map((person) => ({ kind: "person" as const, person })),
+    ...documents.map((document) => ({ kind: "document" as const, document })),
+  ];
+  const activeIndex = options.length ? active % options.length : 0;
+  const choose = (option: (typeof options)[number]) => {
+    if (option.kind === "person") onSelect(option.person.id);
+    else {
+      onSelectDocument?.(option.document.id);
+      onQuery("");
+    }
+    setOpen(false);
+  };
+  const documentPending = searchDocuments && documentResults?.query !== search;
   const clearQuery = () => {
     onQuery("");
     setOpen(false);
@@ -75,16 +136,15 @@ export function TreeSearch({
             e.preventDefault();
             setOpen(true);
             setActive((index) =>
-              matches.length
-                ? (index + (e.key === "ArrowDown" ? 1 : matches.length - 1)) %
-                  matches.length
+              options.length
+                ? (index + (e.key === "ArrowDown" ? 1 : options.length - 1)) %
+                  options.length
                 : 0,
             );
           }
-          if (e.key === "Enter" && matches[active]) {
+          if (e.key === "Enter" && options[activeIndex]) {
             e.preventDefault();
-            onSelect(matches[active].id);
-            setOpen(false);
+            choose(options[activeIndex]);
           }
           if (e.key === "Escape") {
             e.stopPropagation();
@@ -92,14 +152,20 @@ export function TreeSearch({
             setOpen(false);
           }
         }}
-        placeholder="Найти человека…"
-        aria-label="Найти человека"
+        placeholder={
+          onSelectDocument ? "Найти человека или документ…" : "Найти человека…"
+        }
+        aria-label={
+          onSelectDocument ? "Найти человека или документ" : "Найти человека"
+        }
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={open && !!query.trim()}
         aria-controls={open && query.trim() ? `${id}-options` : undefined}
         aria-activedescendant={
-          open && matches[active] ? `${id}-option-${active}` : undefined
+          open && options[activeIndex]
+            ? `${id}-option-${activeIndex}`
+            : undefined
         }
       />
       <kbd>/</kbd>
@@ -120,28 +186,50 @@ export function TreeSearch({
           className="archive-search-results"
           id={`${id}-options`}
           role="listbox"
-          aria-label="Найденные люди"
+          aria-label={
+            onSelectDocument ? "Найденные люди и документы" : "Найденные люди"
+          }
         >
-          {matches.length ? (
-            matches.map((p, index) => (
-              <button
-                key={p.id}
-                id={`${id}-option-${index}`}
-                role="option"
-                aria-selected={active === index}
-                tabIndex={-1}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  onSelect(p.id);
-                  setOpen(false);
-                }}
-              >
-                <b>{fullName(p)}</b>
-                {years(p) && <small>{years(p)}</small>}
-              </button>
-            ))
-          ) : (
-            <p>Никого не нашли</p>
+          {options.map((option, index) => (
+            <button
+              key={
+                option.kind === "person"
+                  ? `person:${option.person.id}`
+                  : `document:${option.document.id}`
+              }
+              id={`${id}-option-${index}`}
+              role="option"
+              aria-selected={activeIndex === index}
+              tabIndex={-1}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => choose(option)}
+            >
+              {option.kind === "person" ? (
+                <>
+                  <b>{fullName(option.person)}</b>
+                  {years(option.person) && (
+                    <small>{years(option.person)}</small>
+                  )}
+                </>
+              ) : (
+                <>
+                  <b>
+                    <FileText size={15} aria-hidden="true" />
+                    {option.document.title}
+                  </b>
+                  <small>Документ · PDF</small>
+                </>
+              )}
+            </button>
+          ))}
+          {!options.length && (
+            <p role="status">
+              {documentPending
+                ? "Ищем документы…"
+                : documentResults?.query === search && documentResults.failed
+                  ? "Поиск документов сейчас недоступен"
+                  : onSelectDocument ? "Ничего не нашли" : "Никого не нашли"}
+            </p>
           )}
         </div>
       )}
