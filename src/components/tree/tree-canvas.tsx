@@ -88,6 +88,7 @@ export type ConnectionDraft = {
   type: GraphConnection["type"];
   original?: GraphConnection;
   note?: string;
+  twinKind?: GraphConnection["twinKind"];
   hint?: string;
 };
 export type TreeFocus = {
@@ -1268,6 +1269,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 type: edge.data.connection.type,
                 original: edge.data.connection,
                 note: edge.data.connection.note,
+                twinKind: edge.data.connection.twinKind,
               });
           }}
           onEdgeClick={(_, e) => {

@@ -1,4 +1,5 @@
 import type { ArchivePhoto, Family } from "./types.ts";
+import type { DocumentDetails } from "../shared/document-details.ts";
 
 /** Файлы остаются вне Family до проверки сервером. Пути не дают права читать диск. */
 export type TransferMedia = {
@@ -12,6 +13,7 @@ export type TransferMedia = {
     ArchivePhoto,
     "description" | "year" | "place" | "event" | "takenAt" | "tags"
   >;
+  document?: DocumentDetails;
   embedded?: string;
 };
 export type GenealogyImport = {

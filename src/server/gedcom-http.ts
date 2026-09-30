@@ -30,6 +30,7 @@ import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { mediaStore } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { documentSearchText } from "../shared/document-details.ts";
 
 export function gedcomHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -393,19 +394,31 @@ export function gedcomHttp(
                   );
               }
               for (const file of stage.files.filter((f) => f.documentId)) {
+                const details = file.document || {
+                  documentType: "",
+                  documentDate: "",
+                  place: "",
+                  description: "",
+                  provenance: "",
+                };
                 await db
                   .prepare(
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                   )
                   .run(
                     file.documentId!,
                     file.title,
-                    file.title.toLocaleLowerCase("ru"),
+                    documentSearchText(file.title, details),
                     file.name,
                     file.size,
                     actor.id,
                     new Date().toISOString(),
+                    details.documentType,
+                    details.documentDate,
+                    details.place,
+                    details.description,
+                    details.provenance,
                   );
                 for (const id of file.personIds)
                   await db

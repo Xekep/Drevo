@@ -47,6 +47,22 @@ test("adding a spouse offers the current person's child before saving", async ({
     page.locator(".name-suggestions").getByText(/Возможный ребёнок.*Ольга/),
   ).toBeVisible();
 });
+test("new relative asks for an explicit twin type", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
+  await page
+    .getByTestId("rf__node-e2e-sibling")
+    .locator(".flow-person-content")
+    .click();
+  await page.getByRole("button", { name: "Добавить родственника" }).click();
+  await page.getByLabel("Кого добавить").selectOption("spouse");
+  await page.getByRole("button", { name: "Новый человек" }).click();
+  await expect(page.getByLabel("Тип близнецов")).toHaveCount(0);
+  await page.getByLabel(/Кем новый человек приходится/).selectOption("twin");
+  await page.getByLabel("Тип близнецов").selectOption("fraternal");
+  await expect(page.getByLabel("Тип близнецов")).toHaveValue("fraternal");
+});
 
 test("an empty archive does not lock the first-person action", async ({
   page,

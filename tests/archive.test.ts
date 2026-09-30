@@ -15,6 +15,8 @@ import { writeDatabaseBackup } from "../src/server/backup.ts";
 import {
   analyzeKinship,
   connectPeople,
+  archiveConnections,
+  replaceConnection,
   removePerson,
   validateFamily,
   type Family,
@@ -44,6 +46,12 @@ const seed = (): Family => ({
     person("child", "1980"),
     person("other", "1981", "f"),
   ],
+});
+test("explicit archive selection cannot silently reuse a SQLite archive", async () => {
+  await assert.rejects(
+    openArchive(":memory:", seed(), "other-archive"),
+    /только PostgreSQL/,
+  );
 });
 test("documented relationships preserve direction and coexist with blood kinship", () => {
   let f = connectPeople(seed(), "father", "child", "parent");
@@ -96,6 +104,55 @@ test("adoption, milk and sworn relationships do not invent blood parents", () =>
   assert.throws(() => connectPeople(f, "child", "father", "adoptive_parent"));
   f = connectPeople(f, "child", "other", "sworn_sibling");
   assert.throws(() => connectPeople(f, "other", "child", "sworn_sibling"));
+});
+test("twins require an explicit symmetric record and retain their recorded type", () => {
+  let family = seed();
+  family.people[3].birth = "1980";
+  assert.equal(
+    analyzeKinship(
+      family.people[2],
+      family.people[3],
+      family.people,
+      family.links,
+    ).kind,
+    "unknown",
+  );
+  family = connectPeople(family, "child", "other", "twin", "", "unknown");
+  assert.equal(family.links?.[0].twinKind, "unknown");
+  assert.deepEqual(family.people[2].parents, []);
+  assert.throws(
+    () => connectPeople(family, "other", "child", "twin"),
+    /уже существует/,
+  );
+  const edge = archiveConnections(family).find((item) => item.type === "twin")!;
+  family = replaceConnection(family, edge, {
+    from: "other",
+    to: "child",
+    type: "twin",
+    twinKind: "fraternal",
+  });
+  assert.equal(family.links?.[0].twinKind, "fraternal");
+  assert.equal(family.links?.[0].id, edge.id);
+  assert.match(
+    analyzeKinship(
+      family.people[2],
+      family.people[3],
+      family.people,
+      family.links,
+    ).explanation,
+    /близнец/i,
+  );
+  assert.throws(() =>
+    validateFamily({
+      ...family,
+      links: [{ ...family.links![0], twinKind: "guess" }],
+    }),
+  );
+  const parentAndChild = connectPeople(seed(), "father", "child", "parent");
+  assert.throws(
+    () => connectPeople(parentAndChild, "father", "child", "twin"),
+    /не могут быть близнецами/,
+  );
 });
 
 test("explicit step-parent works with incomplete ancestry and never becomes a blood parent", () => {

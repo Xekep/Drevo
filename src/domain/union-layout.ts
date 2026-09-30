@@ -19,6 +19,7 @@ import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { routingQuality } from "./routing-quality.ts";
+import { coupleBlocksWithContactedAncestry, invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
 import { householdLevels } from "./household-levels.ts";
 import {
   alignGenerationBands,
@@ -84,6 +85,7 @@ async function geometryForSeed(
   size: TreeNodeSize,
   sift = false,
   sketch?: Pick<TreeGeometry, "positions" | "occurrences">,
+  flippedPairs?: ReadonlySet<string>,
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   const families = familyUnions(people);
@@ -102,6 +104,9 @@ async function geometryForSeed(
     people.map((p) => ({ ...p, parents: adoptedBy.get(p.id) || p.parents })),
   );
   const units = groupFamilyUnions(families, levels);
+  for (const unit of units)
+    if (unit.members.length === 2 && flippedPairs?.has(unit.id))
+      unit.members.reverse();
   const familyGroups = new Map(
     units.flatMap((u) => u.families.map((f) => [f.id, u] as const)),
   );
@@ -562,6 +567,7 @@ export async function unionGeometry(
 ): Promise<TreeGeometry> {
   const { width: W, height: H } = size;
   let best = await geometryForSeed(people, layout, reverse, links, 1, size);
+  let bestSeed = 1;
   let contacts = branchContactCounts(best.branches || []);
   const seedCandidates = previous && people.length <= MAX_INCREMENTAL_LAYOUT_PEOPLE
     ? [{ geometry: best, contacts }]
@@ -578,11 +584,14 @@ export async function unionGeometry(
   const initial = extent(best);
   // На больших архивах ограничиваем число запусков ELK, сохраняя
   // детерминированный результат для одного и того же набора людей.
+  // On scale fixtures the third ELK run helped at 782 people, but not at 977.
   const seeds =
     !contacts.distinct ? [] : people.length <= 300
       ? [15, 20, 12, 4, 8]
-      : people.length <= 2000
+      : people.length <= 900
         ? [15, 20]
+        : people.length <= 2000
+          ? [15]
         : [];
   for (const seed of seeds) {
     let candidate: TreeGeometry;
@@ -614,6 +623,7 @@ export async function unionGeometry(
       (next.distinct === contacts.distinct && next.segments < contacts.segments)
     ) {
       best = candidate;
+      bestSeed = seed;
       contacts = next;
     }
     if (!contacts.distinct) break;
@@ -696,6 +706,55 @@ export async function unionGeometry(
       } catch {
         // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
       }
+    }
+  }
+  if (!previous && people.length <= 300 && contacts.distinct) {
+    const flipped = invertedCoupleBlocks(best, W);
+    if (flipped.size) {
+      try {
+        const candidate = await geometryForSeed(
+          people, layout, reverse, links, bestSeed, size, false, undefined, flipped,
+        );
+        const next = branchContactCounts(candidate.branches || []);
+        const candidateExtent = extent(candidate);
+        const bestExtent = extent(best);
+        const currentRoutes = geometryRoutingQuality(best);
+        const nextRoutes = geometryRoutingQuality(candidate);
+        if (next.distinct < contacts.distinct &&
+            nextRoutes.crossings <= currentRoutes.crossings &&
+            nextRoutes.length <= currentRoutes.length * 1.15 &&
+            Math.max(candidateExtent.width, candidateExtent.height) <=
+              Math.max(bestExtent.width, bestExtent.height) * 1.2 &&
+            candidateExtent.width * candidateExtent.height <=
+              bestExtent.width * bestExtent.height * 1.35 &&
+            routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H))
+          best = candidate;
+      } catch {
+        // The original layout remains valid if ELK rejects the alternative order.
+      }
+    }
+  }
+  if (!previous && people.length > 300 && people.length <= 1200 && contacts.distinct) {
+    // Keep ELK block coordinates; reject each local spouse swap unless its rerouted
+    // ancestry improves the complete visible routes.
+    let currentRoutes = geometryRoutingQuality(best);
+    let cardContacts = routeCardContacts(best, W, H);
+    for (const id of coupleBlocksWithContactedAncestry(best, W)) {
+      const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
+      if (!candidate) continue;
+      const next = branchContactCounts(candidate.branches || []);
+      if (next.distinct >= contacts.distinct) continue;
+      const nextRoutes = geometryRoutingQuality(candidate);
+      if (nextRoutes.crossings > currentRoutes.crossings ||
+          nextRoutes.length > currentRoutes.length * 1.02 ||
+          nextRoutes.bends > currentRoutes.bends + 2)
+        continue;
+      const nextCardContacts = routeCardContacts(candidate, W, H);
+      if (nextCardContacts > cardContacts) continue;
+      best = candidate;
+      contacts = next;
+      currentRoutes = nextRoutes;
+      cardContacts = nextCardContacts;
     }
   }
   return best;

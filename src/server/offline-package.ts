@@ -188,6 +188,13 @@ export async function writeOfflinePackage(
       mime: "application/pdf",
       personIds: document.personIds,
       portraitIds: [],
+      document: {
+        documentType: document.documentType || "",
+        documentDate: document.documentDate || "",
+        place: document.place || "",
+        description: document.description || "",
+        provenance: document.provenance || "",
+      },
     })),
   ];
   const buffers = new Map([

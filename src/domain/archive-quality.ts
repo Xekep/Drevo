@@ -21,6 +21,7 @@ const linkNames: Record<ExtraLinkType, string> = {
   godparent: "крёстное родительство",
   nurse: "вскармливание",
   sworn_sibling: "названое братство",
+  twin: "близнецы",
   guardian: "опека",
 };
 
@@ -218,7 +219,7 @@ export function analyzeArchiveWarnings(family: Family): ArchiveWarning[] {
         personIds: [from.id],
       });
     const pair =
-      link.type === "sworn_sibling"
+      link.type === "sworn_sibling" || link.type === "twin"
         ? [link.from, link.to].sort().join(":")
         : `${link.from}:${link.to}`;
     const key = `${link.type}:${pair}`;

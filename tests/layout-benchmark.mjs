@@ -5,8 +5,13 @@
 // DREVO_LAYOUT_COMPONENT_SCAN=1 separates component drift from internal drift.
 // DREVO_LAYOUT_ANCESTOR_SCAN=1 checks movement when adding a founder's parent.
 // DREVO_LAYOUT_LARGE=1 adds two generations; DREVO_LAYOUT_LIMIT caps scans.
-// DREVO_LAYOUT_CASE selects one graph; DREVO_ELK_BUNDLE can point to a local
-// elkjs bundle when dependencies are not installed in this checkout.
+// DREVO_LAYOUT_SCALE_SCAN=1 measures geometry with production card dimensions.
+// DREVO_LAYOUT_CASE selects a scale fixture (1-7) in scale mode.
+// DREVO_LAYOUT_SEED_ONLY=1 measures only the first ELK candidate in scale mode.
+// DREVO_LAYOUT_MAX_ELK_CALLS=2 bounds candidate calls during a scale comparison.
+// DREVO_LAYOUT_PAIR_SCAN=1 compares production layouts with couple flips.
+// DREVO_LAYOUT_DISABLE_PAIR_FLIP=1 benchmarks the prior couple order.
+// DREVO_ELK_BUNDLE can point to a local elkjs bundle without installed dependencies.
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { unionGeometry } from "../src/domain/union-layout.ts";
@@ -18,7 +23,7 @@ import {
   segmentHitsBox,
   Spatial,
 } from "../src/domain/edge-routing.ts";
-import { TREE_NODE_HEIGHT, TREE_NODE_WIDTH } from "../src/domain/tree-layout-constants.ts";
+import { TREE_NODE_HEIGHT, TREE_NODE_WIDTH, treeNodeSize } from "../src/domain/tree-layout-constants.ts";
 import {
   editedAncestorFamily,
   editedFamily,
@@ -174,18 +179,22 @@ function orderedGraph(graph, influence) {
 }
 
 function quality(geometry) {
+  const { width: cardWidth, height: cardHeight } = geometry.nodeSize || {
+    width: TREE_NODE_WIDTH,
+    height: TREE_NODE_HEIGHT,
+  };
   const positions = geometry.positions.map(([, point]) => point);
   const left = Math.min(...positions.map((point) => point.x));
-  const right = Math.max(...positions.map((point) => point.x)) + TREE_NODE_WIDTH;
+  const right = Math.max(...positions.map((point) => point.x)) + cardWidth;
   const top = Math.min(...positions.map((point) => point.y));
-  const bottom = Math.max(...positions.map((point) => point.y)) + TREE_NODE_HEIGHT;
+  const bottom = Math.max(...positions.map((point) => point.y)) + cardHeight;
   const cards = new Spatial();
   for (const point of positions)
     cards.add({
       left: point.x,
-      right: point.x + TREE_NODE_WIDTH,
+      right: point.x + cardWidth,
       top: point.y,
-      bottom: point.y + TREE_NODE_HEIGHT,
+      bottom: point.y + cardHeight,
     });
   const routes = [
     ...(geometry.branches || []).map((branch) => ({
@@ -239,11 +248,12 @@ function quality(geometry) {
   };
 }
 
-async function measure(people, selectedSeed, influence, thoroughness, disableCompact = false, interactiveFrom, previousGeometry) {
+async function measure(people, selectedSeed, influence, thoroughness, disableCompact = false, interactiveFrom, previousGeometry, size, skipPairFlip = false) {
   const engine = new ELK({ algorithms: ["layered"] });
   let elkCalls = 0;
   let elkMs = 0;
   const trace = [];
+  const completedSeeds = new Set();
   const layout = async (graph) => {
     const seed = Number(graph.layoutOptions?.["elk.randomSeed"]);
     if (disableCompact && graph.layoutOptions?.["elk.layered.layering.strategy"] === "MIN_WIDTH")
@@ -251,6 +261,11 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
     // The benchmark's single-seed runs reject later candidates before ELK.
     if (selectedSeed !== undefined && seed !== 1)
       throw new Error("skip other benchmark seeds");
+    if (skipPairFlip && completedSeeds.has(seed))
+      throw new Error("skip pair flip benchmark candidate");
+    if (process.env.DREVO_LAYOUT_MAX_ELK_CALLS &&
+        elkCalls >= Number(process.env.DREVO_LAYOUT_MAX_ELK_CALLS))
+      throw new Error("skip later benchmark candidates");
     const input = selectedSeed === undefined
       ? graph
       : {
@@ -276,6 +291,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
     const started = performance.now();
     try {
       const result = await engine.layout(finalGraph);
+      completedSeeds.add(seed);
       trace.push({
         seed: finalGraph.layoutOptions?.["elk.randomSeed"],
         strategy: finalGraph.layoutOptions?.["elk.layered.layering.strategy"] || "default",
@@ -290,7 +306,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
     }
   };
   const started = performance.now();
-  const geometry = await unionGeometry(people, layout, false, [], undefined, previousGeometry);
+  const geometry = await unionGeometry(people, layout, false, [], size, previousGeometry);
   const result = {
     seed: thoroughness !== undefined
       ? `thoroughness ${thoroughness}`
@@ -398,7 +414,72 @@ function orderMotion(before, after) {
   };
 }
 
-if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR_SCAN) {
+if (process.env.DREVO_LAYOUT_PAIR_SCAN) {
+  const limit = Number(process.env.DREVO_LAYOUT_LIMIT || 24);
+  for (let seed = 1; seed <= limit; seed++) {
+    const people = randomFamily(seed, 2);
+    const base = await measure(people, undefined, undefined, undefined, false, undefined, undefined, treeNodeSize(), true);
+    const trial = await measure(people, undefined, undefined, undefined, false, undefined, undefined, treeNodeSize());
+    const before = new Map(base.geometry.positions);
+    const after = new Map(trial.geometry.positions);
+    const swapped = trial.geometry.blocks.filter((block) => block.members.length === 2 &&
+      block.members.every((id) => before.has(id)) &&
+      Math.sign(before.get(block.members[0]).x - before.get(block.members[1]).x) !==
+        Math.sign(after.get(block.members[0]).x - after.get(block.members[1]).x)).length;
+    console.log(JSON.stringify({ seed, people: people.length, swapped,
+      beforeContacts: base.contacts, afterContacts: trial.contacts,
+      beforeCrossings: base.crossings, afterCrossings: trial.crossings,
+      extraElkCalls: trial.elkCalls - base.elkCalls,
+      beforeMs: base.totalMs, afterMs: trial.totalMs }));
+  }
+} else if (process.env.DREVO_LAYOUT_SCALE_SCAN) {
+  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8]];
+  for (const [index, [seed, generations]] of fixtures.entries()) {
+    if (process.env.DREVO_LAYOUT_CASE && Number(process.env.DREVO_LAYOUT_CASE) !== index + 1) continue;
+    const people = randomFamily(seed, generations);
+    const selectedSeed = process.env.DREVO_LAYOUT_SEED_ONLY ? 1 : undefined;
+    const skipPairFlip = process.env.DREVO_LAYOUT_DISABLE_PAIR_FLIP === "1";
+    const result = await measure(people, selectedSeed, undefined, undefined, false, undefined, undefined, treeNodeSize(), skipPairFlip);
+    const geometry = result.geometry;
+    const covered = new Set((geometry.occurrences || []).map((item) => item.personId));
+    const positions = geometry.positions.map(([, point]) => point);
+    const { width: cardWidth, height: cardHeight } = geometry.nodeSize || treeNodeSize();
+    let cardOverlaps = 0;
+    for (let i = 0; i < positions.length; i++)
+      for (let j = 0; j < i; j++)
+        if (Math.abs(positions[i].x - positions[j].x) < cardWidth &&
+            Math.abs(positions[i].y - positions[j].y) < cardHeight)
+          cardOverlaps++;
+    const routes = [
+      ...(geometry.branches || []).map((branch) => branch.route),
+      ...(geometry.routes || []).map(([, route]) => route),
+    ];
+    const diagonalSegments = routes.reduce((count, route) => count +
+      route.points.slice(1).filter((point, index) => {
+        const previous = route.points[index];
+        return point.x !== previous.x && point.y !== previous.y;
+      }).length, 0);
+    console.log(JSON.stringify({
+      people: people.length,
+      seed,
+      generations,
+      occurrences: geometry.positions.length,
+      missingPeople: people.filter((person) => !covered.has(person.id)).length,
+      cardOverlaps,
+      diagonalSegments,
+      branches: geometry.branches?.length || 0,
+      contacts: result.contacts,
+      branchContacts: result.branchContacts,
+      crossings: result.crossings,
+      cardHits: result.cardHits,
+      width: result.width,
+      height: result.height,
+      elkCalls: result.elkCalls,
+      elkMs: result.elkMs,
+      totalMs: result.totalMs,
+    }));
+  }
+} else if (process.env.DREVO_LAYOUT_COMPONENT_SCAN || process.env.DREVO_LAYOUT_ANCESTOR_SCAN) {
   const summary = [];
   const selectedCase = Number(process.env.DREVO_LAYOUT_CASE || 0);
   const lastCase = selectedCase || Number(process.env.DREVO_LAYOUT_LIMIT || 24);

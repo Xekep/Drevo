@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { startServer } from "../src/server/index.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "drevo-e2e-"));
-const app = await startServer(4173, join(directory, "drevo.sqlite"), true);
+const port = Number(process.env.DREVO_E2E_PORT || 4173);
+const app = await startServer(port, join(directory, "drevo.sqlite"), true);
 const current = await app.archive.read();
 await app.archive.write(
   {
