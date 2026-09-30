@@ -60,7 +60,7 @@ export function backupManagementHttp({
     )
       return json(res, 403, { error: "Откройте резервные копии в админке." });
     try {
-      if (path === "/api/backups" && req.method === "GET") {
+      if ((path === "/api/backups" || path === "/api/backups/") && req.method === "GET") {
         const offset = Number(url.searchParams.get("offset") || 0);
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
           throw new BackupInputError("Некорректная страница.");

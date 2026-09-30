@@ -6,6 +6,7 @@ test("экспорт отделён от резервных копий; наст
   page,
 }, testInfo) => {
   let applied = false;
+  const listRequests: string[] = [];
   const state: BackupStatus = {
     settings: {
       enabled: true,
@@ -36,6 +37,8 @@ test("экспорт отделён от резервных копий; наст
   await page.route("**/api/backups**", async (route) => {
     const request = route.request(),
       url = new URL(request.url());
+    if (request.method() === "GET" && url.searchParams.has("offset"))
+      listRequests.push(url.pathname);
     if (url.pathname.endsWith("/settings")) {
       state.settings = request.postDataJSON();
       return route.fulfill({ json: state.settings });
@@ -111,6 +114,7 @@ test("экспорт отделён от резервных копий; наст
     page.getByRole("button", { name: "Создать копию", exact: true }),
   ).toHaveCount(0);
   await openAdminSection(page, "backups", "Резервные копии");
+  await expect.poll(() => listRequests).toContain("/api/backups/");
   await page.getByLabel("Как часто").selectOption("12");
   await page.getByLabel("Количество копий").fill("7");
   await expect(

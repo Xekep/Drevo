@@ -53,7 +53,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
     async function poll() {
       let delay = 15000;
       try {
-        const response = await archiveFetch("/api/backups?offset=" + offset, {
+        const response = await archiveFetch("/api/backups/?offset=" + offset, {
           signal: controller.signal,
         });
         const data = (await response.json()) as BackupStatus & {
