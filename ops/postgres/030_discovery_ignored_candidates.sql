@@ -1,4 +1,4 @@
-CREATE TABLE discovery_ignored_candidates (
+CREATE TABLE IF NOT EXISTS discovery_ignored_candidates (
   archive_id text NOT NULL,
   source_person_id text NOT NULL,
   target_archive_id text NOT NULL,
@@ -14,6 +14,7 @@ CREATE TABLE discovery_ignored_candidates (
 );
 ALTER TABLE discovery_ignored_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovery_ignored_candidates FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS owner_scope ON discovery_ignored_candidates;
 CREATE POLICY owner_scope ON discovery_ignored_candidates
   USING (archive_id=current_setting('drevo.archive_id',true))
   WITH CHECK (archive_id=current_setting('drevo.archive_id',true));
