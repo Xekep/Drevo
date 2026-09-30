@@ -1028,6 +1028,24 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
+    404,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/session", { headers: ownerHeaders })
+      .then((r) => r.json())).user.id,
+    "owner",
+  );
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/session", { headers })
+      .then((r) => r.json())).user,
+    null,
+  );
+  assert.equal(
+    (await fetch(securedBase + "/a/missing-archive/api/session", { headers: ownerHeaders })).status,
+    404,
+  );
   const ownerArchives = await fetch(securedBase + "/api/account/archives", {
     headers: ownerHeaders,
   }).then((r) => r.json());
@@ -1130,6 +1148,10 @@ try {
   );
   assert.equal(
     await fetch(otherBase + "/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
+    "secondary",
+  );
+  assert.equal(
+    await fetch(securedBase + "/a/other-archive/media/same.png", { headers: ownerHeaders }).then((r) => r.text()),
     "secondary",
   );
   assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
