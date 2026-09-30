@@ -6,6 +6,7 @@ test("archive admin proposes a match using only two published cards", async ({ p
   const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
   let requested = false;
   let ignored = false;
+  let archiveIgnored = false;
   await page.route("**/api/discovery/matches/own-people?**", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
   await page.route("**/api/discovery/people?**", (route) => {
@@ -17,9 +18,18 @@ test("archive admin proposes a match using only two published cards", async ({ p
   });
   await page.route("**/api/discovery/matches/candidates?**", (route) => {
     const showIgnored = new URL(route.request().url()).searchParams.get("ignored") === "1";
-    return route.fulfill({ json: { candidates: showIgnored === ignored ? [{ ...target,
+    return route.fulfill({ json: { candidates: !archiveIgnored && showIgnored === ignored ? [{ ...target,
       reasons: ["Совпадают имя и фамилия", "Год рождения близок (±2 года)"], conflicts: [],
     }] : [], truncated: false } });
+  });
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: archiveIgnored ? [{ archiveId: "tree-b",
+      exampleName: "Иван Петров" }] : [], nextPage: null } }));
+  await page.route("**/api/discovery/matches/ignored-archives", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.targetArchiveId).toBe("tree-b");
+    archiveIgnored = body.ignored;
+    return route.fulfill({ json: { ignored: archiveIgnored } });
   });
   await page.route("**/api/discovery/matches/ignored", (route) => {
     const body = route.request().postDataJSON();
@@ -53,6 +63,12 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await page.getByRole("button", { name: "Скрытые" }).click();
   await page.getByRole("button", { name: "Вернуть", exact: true }).click();
   await page.getByRole("button", { name: "К предложениям" }).click();
+  await expect(page.getByText(/Год рождения близок/)).toBeVisible();
+  await page.getByRole("button", { name: "Скрыть дерево" }).click();
+  await expect(page.getByText("Пока совпадений нет. Можно найти карточку вручную.")).toBeVisible();
+  await page.getByText("Скрытые деревья", { exact: false }).click();
+  await expect(page.getByText("Дерево с карточкой «Иван Петров»")).toBeVisible();
+  await page.getByRole("button", { name: "Вернуть дерево" }).click();
   await expect(page.getByText(/Год рождения близок/)).toBeVisible();
   await page.getByRole("searchbox", { name: "Карточка из другого дерева" }).fill("Иван");
   await page.getByRole("button", { name: "Показать ещё" }).click();

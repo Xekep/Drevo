@@ -128,8 +128,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
     const ownPeople = url.pathname === "/api/discovery/matches/own-people";
     const candidates = url.pathname === "/api/discovery/matches/candidates";
     const ignoredCandidates = url.pathname === "/api/discovery/matches/ignored";
+    const ignoredArchives = url.pathname === "/api/discovery/matches/ignored-archives";
     const detail = /^\/api\/discovery\/matches\/([a-f0-9-]{36})$/.exec(url.pathname);
-    if (!collection && !ownPeople && !candidates && !ignoredCandidates && !detail) return false;
+    if (!collection && !ownPeople && !candidates && !ignoredCandidates && !ignoredArchives && !detail) return false;
     if (db.kind !== "postgres" || !db.archiveId)
       return json(res, 501, { error: "Сопоставление деревьев доступно с PostgreSQL" });
     const user = await auth.currentUser(req);
@@ -139,6 +140,47 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     const archiveId = db.archiveId;
+
+    if (ignoredArchives) {
+      if (req.method === "GET") {
+        const page = Number(url.searchParams.get("page") || "0");
+        if (!Number.isInteger(page) || page < 0 || page > 1000)
+          return json(res, 400, { error: "Некорректная страница" });
+        const rows = await db.prepare("", `SELECT i.target_archive_id,
+          (SELECT d.name FROM discovery_people d WHERE d.archive_id=i.target_archive_id
+            ORDER BY d.name,d.person_id LIMIT 1) AS example_name
+          FROM discovery_ignored_archives i WHERE i.archive_id=?
+          ORDER BY i.ignored_at DESC,i.target_archive_id LIMIT 31 OFFSET ?`).all(archiveId,page*30);
+        return json(res, 200, { archives: rows.slice(0,30).map((row) => ({
+          archiveId: String(row.target_archive_id),
+          ...(row.example_name ? { exampleName: String(row.example_name) } : {}),
+        })), nextPage: rows.length > 30 ? page + 1 : null });
+      }
+      if (req.method !== "POST") return json(res, 405, { error: "Ожидается GET или POST" });
+      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+        return json(res, 429, { error: "Слишком много запросов" });
+      const body = await readBody(req);
+      const targetArchiveId = body?.targetArchiveId;
+      const ignored = body?.ignored;
+      if (typeof targetArchiveId !== "string" || !archivePattern.test(targetArchiveId) ||
+          targetArchiveId === archiveId || typeof ignored !== "boolean")
+        return json(res, 400, { error: "Выберите другое опубликованное дерево" });
+      const approved = await auth.currentUser(req);
+      if (approved?.role !== "admin" || approved.approved !== true)
+        return json(res, 403, { error: "Доступ отозван" });
+      if (!ignored) {
+        await db.prepare("", `DELETE FROM discovery_ignored_archives
+          WHERE archive_id=? AND target_archive_id=?`).run(archiveId,targetArchiveId);
+        return json(res, 200, { ignored: false });
+      }
+      const visible = await db.prepare("", `SELECT 1 FROM discovery_people
+        WHERE archive_id=? LIMIT 1`).get(targetArchiveId);
+      if (!visible) return json(res, 409, { error: "В этом дереве больше нет опубликованных карточек" });
+      await db.prepare("", `INSERT INTO discovery_ignored_archives(
+        archive_id,target_archive_id,ignored_by) VALUES(?,?,?) ON CONFLICT DO NOTHING`)
+        .run(archiveId,targetArchiveId,approved.id);
+      return json(res, 200, { ignored: true });
+    }
 
     if (ignoredCandidates) {
       if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });
@@ -197,6 +239,8 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       const rows = await db.prepare("", `SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place FROM discovery_people d
         WHERE d.archive_id<>? AND d.name_vector @@ to_tsquery('simple',?)
+          AND NOT EXISTS (SELECT 1 FROM discovery_ignored_archives a
+            WHERE a.archive_id=? AND a.target_archive_id=d.archive_id)
           AND ${showIgnored ? "EXISTS" : "NOT EXISTS"} (
             SELECT 1 FROM discovery_ignored_candidates i WHERE i.archive_id=?
               AND i.source_person_id=? AND i.target_archive_id=d.archive_id
@@ -208,7 +252,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
               OR (m.right_archive_id=? AND m.right_person_id=?
                 AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
         ORDER BY d.name,d.archive_id,d.person_id LIMIT 201`)
-        .all(archiveId,terms,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
+        .all(archiveId,terms,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
       const ranked = rows.map((row) => {
         const candidate = published(row);
         const evidence = candidateEvidence(source,candidate);
