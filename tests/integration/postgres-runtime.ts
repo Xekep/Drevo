@@ -640,6 +640,24 @@ try {
     pdfBytes,
   );
   const documentId = afterDocuments.items[0].id;
+  const linkedBefore = await app.archive.read();
+  const linkedFamily = structuredClone(linkedBefore.family);
+  linkedFamily.people.find((person) => person.id === "person-a")!.sources.push({
+    title: "Семейная запись",
+    type: "PDF",
+    reference: "",
+    documentId,
+  });
+  await app.archive.write(linkedFamily, linkedBefore.revision);
+  assert.equal(
+    (await fetch(base + "/api/documents/" + documentId, { method: "DELETE" })).status,
+    409,
+  );
+  const unlinkedBefore = await app.archive.read();
+  const unlinkedFamily = structuredClone(unlinkedBefore.family);
+  unlinkedFamily.people.find((person) => person.id === "person-a")!.sources =
+    linkedBefore.family.people.find((person) => person.id === "person-a")!.sources;
+  await app.archive.write(unlinkedFamily, unlinkedBefore.revision);
   const deleted = await Promise.all(
     [0, 1].map(() =>
       fetch(base + "/api/documents/" + documentId, { method: "DELETE" }),

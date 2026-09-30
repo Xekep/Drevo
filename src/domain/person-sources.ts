@@ -9,6 +9,7 @@ function normalized(value?: string) {
 }
 
 function sourceKey(source: Source) {
+  if (source.documentId) return `document:${source.documentId}`;
   const url = normalized(source.url);
   if (url) return `url:${url}`;
   return `text:${normalized(source.title)}|${normalized(source.reference)}`;
@@ -31,6 +32,7 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
       reference: source.reference.trim(),
       url: source.url?.trim() || undefined,
       note: source.note?.trim() || undefined,
+      documentId: source.documentId,
       origin,
     };
     const key = sourceKey(clean);

@@ -193,6 +193,22 @@ export function documentsHttp({
       return fullName(person).toLocaleLowerCase("ru").includes(query);
     }).map((row) => String(row.id));
   };
+  const referencingPeople = async (documentId: string) => {
+    // The citation lives inside person JSON until sources become first-class rows.
+    // Narrow the occasional delete check before inspecting nested sources.
+    const rows = await db.prepare(
+      "SELECT id,data FROM people WHERE data LIKE ?",
+      "SELECT id,data FROM people WHERE data::text LIKE ?",
+    ).all(`%${documentId}%`);
+    return rows.flatMap((row) => {
+      const person = (typeof row.data === "string"
+        ? JSON.parse(row.data) : row.data) as Person;
+      const linked = person.sources.some((source) => source.documentId === documentId) ||
+        (person.events || []).some((event) =>
+          (event.sources || []).some((source) => source.documentId === documentId));
+      return linked ? [String(row.id)] : [];
+    });
+  };
   const canSee = (
     access: Awaited<ReturnType<typeof visible>>,
     row: Row,
@@ -486,6 +502,12 @@ export function documentsHttp({
             ),
           };
         if (linksChanged) {
+          const citedBy = await referencingPeople(row.id);
+          if (citedBy.some((id) => personIds.includes(id) && !nextIds.includes(id)))
+            return {
+              status: 409 as const,
+              error: "Сначала уберите ссылку на PDF из источников этого человека или его событий.",
+            };
           await db
             .prepare(
               "DELETE FROM document_people WHERE document_id=?",
@@ -728,6 +750,11 @@ export function documentsHttp({
           return {
             status: 403 as const,
             error: "Удалить документ может его автор или администратор",
+          };
+        if ((await referencingPeople(row.id)).length)
+          return {
+            status: 409 as const,
+            error: "Документ используется как источник. Сначала уберите ссылки на него из карточек и событий.",
           };
         const deleted = await db
           .prepare(

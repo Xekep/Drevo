@@ -3,13 +3,17 @@ import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import type { PersonEvent } from "../domain/types";
 import { EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
-import { archiveResourceUrl } from "../domain/archive-context.ts";
+import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
+import { archiveDocumentPath } from "../domain/archive-routes.ts";
+import { DocumentSourcePicker } from "./document-source-picker.tsx";
 export function EventsEditor({
   events,
   onChange,
+  personId,
 }: {
   events: PersonEvent[];
   onChange: (events: PersonEvent[]) => void;
+  personId?: string;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const update = (id: string, patch: Partial<PersonEvent>) =>
@@ -211,6 +215,23 @@ export function EventsEditor({
                         }
                       />
                     </label>
+                    <DocumentSourcePicker
+                      personId={personId}
+                      documentId={source.documentId}
+                      onChange={(document) =>
+                        update(event.id, {
+                          sources: event.sources!.map((s, i) =>
+                            i === index
+                              ? {
+                                  ...s,
+                                  title: s.title || document?.title || "",
+                                  documentId: document?.id,
+                                }
+                              : s,
+                          ),
+                        })
+                      }
+                    />
                     <button
                       type="button"
                       onClick={() =>
@@ -263,7 +284,13 @@ export function EventsEditor({
     </details>
   );
 }
-export function PersonEvents({ events }: { events?: PersonEvent[] }) {
+export function PersonEvents({
+  events,
+  canLoadDocuments = false,
+}: {
+  events?: PersonEvent[];
+  canLoadDocuments?: boolean;
+}) {
   if (!events?.length) return null;
   return (
     <section className="person-events" aria-label="События жизни">
@@ -306,6 +333,13 @@ export function PersonEvents({ events }: { events?: PersonEvent[] }) {
                         >
                           {" "}
                           Открыть источник
+                        </a>
+                      )}
+                      {canLoadDocuments && s.documentId && (
+                        <a
+                          href={scopedArchivePath(archiveDocumentPath(null, s.documentId))}
+                        >
+                          {" "}Открыть PDF
                         </a>
                       )}
                     </p>

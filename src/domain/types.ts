@@ -4,6 +4,8 @@ export type Source = {
   reference: string;
   url?: string;
   note?: string;
+  /** PDF already present in this archive's document catalogue. */
+  documentId?: string;
 };
 export type PersonAward = {
   id: string;

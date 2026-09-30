@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import { PersonDocumentsEditor } from "./person-documents-editor";
+import { DocumentSourcePicker } from "./document-source-picker";
 import {
   Pencil,
   UserRound,
@@ -750,6 +751,7 @@ export function PersonEditor({
         <EventsEditor
           events={draft.events || []}
           onChange={(events) => field("events", events)}
+          personId={person?.id}
         />
         <details className="form-details">
           <summary>
@@ -784,6 +786,24 @@ export function PersonEditor({
                     />
                   </label>
                 ))}
+                <DocumentSourcePicker
+                  personId={person?.id}
+                  documentId={s.documentId}
+                  onChange={(document) =>
+                    field(
+                      "sources",
+                      draft.sources.map((source, index) =>
+                        i === index
+                          ? {
+                              ...source,
+                              title: source.title || document?.title || "",
+                              documentId: document?.id,
+                            }
+                          : source,
+                      ),
+                    )
+                  }
+                />
                 <button
                   type="button"
                   className="icon-button source-remove"

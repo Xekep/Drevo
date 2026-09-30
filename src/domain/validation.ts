@@ -78,7 +78,10 @@ export function validateFamily(value: unknown): Family {
         !s ||
         ![s.title, s.type, s.reference].every((v) => typeof v === "string") ||
         (s.url !== undefined && typeof s.url !== "string") ||
-        (s.note !== undefined && typeof s.note !== "string")
+        (s.note !== undefined && typeof s.note !== "string") ||
+        (s.documentId !== undefined &&
+          (typeof s.documentId !== "string" ||
+            !/^[a-f0-9-]{36}$/i.test(s.documentId)))
       )
         throw new Error("Некорректный источник");
     if (p.awards !== undefined) {

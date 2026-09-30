@@ -96,6 +96,62 @@ test("верхний поиск находит PDF и открывает пос�
   ).toBeVisible();
 });
 
+test("источник карточки связывается с PDF без копирования файла", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  const title = `Свидетельство для источника ${Date.now()}`;
+  const uploaded = await page.request.post("/api/documents", {
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({ title, personIds: ["e2e-child"] }),
+      ),
+    },
+    data: await samplePdf(1),
+  });
+  expect(uploaded.status()).toBe(201);
+  const { id } = (await uploaded.json()) as { id: string };
+  await page.goto("/people/e2e-child");
+  await page.getByRole("button", { name: "Изменить человека" }).click();
+  await page.locator(".form-details > summary").filter({ hasText: "Источники" }).click();
+  await page.getByRole("button", { name: "+ Источник" }).click();
+  const source = page.locator(".source-editor").last();
+  await source.getByRole("button", { name: "Связать с PDF" }).click();
+  await source.getByLabel("Найти PDF человека").fill(title);
+  await source.getByRole("button", { name: title, exact: true }).click();
+  await expect(source.getByRole("link", { name: "Открыть связанный PDF" })).toHaveAttribute(
+    "href",
+    `/documents/${id}`,
+  );
+  await page.locator(".event-editor > summary").click();
+  await page.getByRole("button", { name: "Добавить событие" }).click();
+  const event = page.locator(".life-event-editor").last();
+  await event.locator(".event-extra > summary").click();
+  await event.getByRole("button", { name: "Добавить источник" }).click();
+  const eventSource = event.locator(".event-source-editor").last();
+  await eventSource.getByRole("button", { name: "Связать с PDF" }).click();
+  await eventSource.getByLabel("Найти PDF человека").fill(title);
+  await eventSource.getByRole("button", { name: title, exact: true }).click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await page.locator(".life-event").last().locator(".event-sources > summary").click();
+  await expect(
+    page.locator(".life-event").last().getByRole("link", { name: "Открыть PDF" }),
+  ).toHaveAttribute("href", `/documents/${id}`);
+  await page.getByRole("tab", { name: /Источники/ }).click();
+  const card = page.locator(".source-card").filter({ hasText: title });
+  await expect(card.getByRole("link", { name: "Открыть PDF" })).toHaveAttribute(
+    "href",
+    `/documents/${id}`,
+  );
+  const unlinkBlocked = await page.request.patch(`/api/documents/${id}`, {
+    data: { people: { expected: ["e2e-child"], next: [] } },
+  });
+  expect(unlinkBlocked.status()).toBe(409);
+  const blocked = await page.request.delete(`/api/documents/${id}`);
+  expect(blocked.status()).toBe(409);
+  await page.goto(`/documents/${id}`);
+  await expect(page.getByRole("dialog", { name: `Документ: ${title}` })).toBeVisible();
+});
+
 async function samplePdf(count = 3, landscape = false) {
   const pdf = new PDFDocument({ autoFirstPage: false });
   const chunks: Buffer[] = [];
