@@ -5,6 +5,10 @@ body,
   height: 100%;
   margin: 0;
 }
+html,
+body {
+  overflow: hidden;
+}
 body {
   background: #1d211e;
 }
@@ -40,4 +44,81 @@ body {
 }
 .drevo-magnifying .BRpagecontainer {
   cursor: none;
+}
+.drevo-magnifier-lens {
+  position: fixed;
+  z-index: 3001;
+  box-sizing: border-box;
+  width: 180px;
+  height: 180px;
+  border: 2px solid rgb(255 255 255 / 85%);
+  border-radius: 50%;
+  background-color: #fff;
+  background-repeat: no-repeat;
+  box-shadow: 0 4px 24px rgb(0 0 0 / 38%);
+  pointer-events: none;
+}
+.BRtoolbar .BRtoolbarSectionInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.BRtoolbar .BRtoolbarSectionInfo > * {
+  margin-left: 0;
+}
+.BRtoolbar .drevo-toolbar-action {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+  text-decoration: none;
+}
+.BRtoolbar .drevo-toolbar-action:hover,
+.BRtoolbar .drevo-toolbar-action[aria-pressed="true"] {
+  background: rgb(255 255 255 / 18%);
+}
+.BRtoolbar .drevo-toolbar-action svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.BRtoolbar .drevo-toolbar-action:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.br-mode-2up__root,
+.br-mode-1up__root,
+.BRcontainer {
+  scrollbar-width: none;
+}
+.br-mode-2up__root::-webkit-scrollbar,
+.br-mode-1up__root::-webkit-scrollbar,
+.BRcontainer::-webkit-scrollbar {
+  display: none;
+}
+.br-mode-2up__leafs[side] .br-leaf-edges__label {
+  padding: 2px 3px;
+  font-size: 4px;
+  line-height: 1.2;
+}
+.br-mode-2up__leafs[side="right"] .br-leaf-edges__label {
+  transform: translate(-100%, -10px);
+}
+.br-mode-2up__leafs[side="left"] .br-leaf-edges__label {
+  transform: translate(100%, -10px);
+}
+@media (min-width: 821px) {
+  .BRtoolbar .drevo-toolbar-comments {
+    display: none;
+  }
 }

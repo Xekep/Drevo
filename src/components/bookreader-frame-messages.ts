@@ -9,6 +9,10 @@ export type ReaderCommand =
       type: "init";
       url: string;
       initialPage: number;
+      title: string;
+      downloadName: string;
+      metadata: { label: string; value: string }[];
+      canEdit: boolean;
     }
   | {
       source: "drevo-bookreader";
@@ -17,6 +21,7 @@ export type ReaderCommand =
       activeAnnotation: string;
       annotating: boolean;
       magnifier: boolean;
+      commentsOpen: boolean;
       selection: AnnotationSelection | null;
     }
   | { source: "drevo-bookreader"; type: "jump"; page: number };
@@ -26,6 +31,9 @@ export type ReaderEvent =
   | { source: "drevo-bookreader"; type: "loaded"; pageCount: number }
   | { source: "drevo-bookreader"; type: "page"; page: number }
   | { source: "drevo-bookreader"; type: "magnifier-off" }
+  | { source: "drevo-bookreader"; type: "toggle-magnifier" }
+  | { source: "drevo-bookreader"; type: "toggle-comments" }
+  | { source: "drevo-bookreader"; type: "edit" }
   | { source: "drevo-bookreader"; type: "close" }
   | {
       source: "drevo-bookreader";

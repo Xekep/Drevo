@@ -15,6 +15,10 @@ GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const source = "drevo-bookreader";
 const origin = window.location.origin;
 const send = (event: ReaderEvent) => window.parent.postMessage(event, origin);
+const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (character) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
+  );
 let reader: BookReaderInstance | null = null;
 let pendingState: Extract<ReaderCommand, { type: "state" }> | null = null;
 let opening = false;
@@ -139,7 +143,14 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     const data: ReaderPage[][] = [[dimensions[0]]];
     for (let index = 1; index < dimensions.length; index += 2)
       data.push(dimensions.slice(index, index + 2));
-    BookReader.registerPlugin("drevo", makeDrevoPlugin(send));
+    BookReader.registerPlugin(
+      "drevo",
+      makeDrevoPlugin(send, {
+        downloadUrl: command.url,
+        downloadName: command.downloadName,
+        canEdit: command.canEdit,
+      }),
+    );
     const initial = Math.min(
       pdf.numPages - 1,
       Math.max(0, command.initialPage - 1),
@@ -155,6 +166,10 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
         ? 1
         : 550,
       imagesBaseURL: "/bookreader/images/",
+      metadata: [
+        { label: "Название", value: command.title },
+        ...command.metadata,
+      ].map(({ label, value }) => ({ label, value: escapeHtml(value) })),
       getPageNum(index) {
         return String(index + 1);
       },
@@ -222,6 +237,8 @@ window.addEventListener("message", (event: MessageEvent<ReaderCommand>) => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  const nativeDialog = document.querySelector<HTMLElement>("#colorbox");
+  if (nativeDialog && getComputedStyle(nativeDialog).display !== "none") return;
   if (pendingState?.magnifier) {
     event.preventDefault();
     send({ source, type: "magnifier-off" });

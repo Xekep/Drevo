@@ -39,6 +39,7 @@ test("PDF без привязки остаётся в общем каталог�
   ).toBeEnabled();
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
   await expect(reader).toBeVisible();
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const documentUrl = page.url();
@@ -48,11 +49,10 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader).toBeVisible();
   await page.reload();
   await expect(reader).toBeVisible();
-  await reader.getByRole("button", { name: "Сведения о документе" }).click();
-  await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
-  await reader
-    .getByRole("button", { name: "Редактировать сведения о документе" })
-    .click();
+  await book.locator(".BRtoolbar .info").click();
+  await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.104");
+  await book.locator(".BRinfo .floatShut").click();
+  await book.getByRole("button", { name: "Редактировать сведения" }).click();
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await expect(edit).toBeVisible();
   await edit.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.105");
@@ -66,8 +66,8 @@ test("PDF без привязки остаётся в общем каталог�
   ).toBeVisible();
   await group.locator(".document-item").filter({ hasText: title }).click();
   await expect(page).toHaveURL(documentUrl);
-  await reader.getByRole("button", { name: "Сведения о документе" }).click();
-  await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.105")).toBeVisible();
+  await book.locator(".BRtoolbar .info").click();
+  await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.105");
 });
 
 test("верхний поиск находит PDF и открывает постоянную ссылку", async ({
@@ -225,9 +225,9 @@ test("PDF можно перетащить, затем привязать из д
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").at(-1);
-  await reader.getByRole("button", { name: "Сведения о документе" }).click();
   await reader
-    .getByRole("button", { name: "Редактировать сведения о документе" })
+    .frameLocator("iframe.pdf-book-frame")
+    .getByRole("button", { name: "Редактировать сведения" })
     .click();
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await edit.getByLabel("Найти человека для документа").fill("Пётр");
@@ -362,7 +362,10 @@ test("из карточки человека открываются только
   await expect(
     page.getByRole("dialog", { name: `Документ: ${title}` }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Закрыть документ" }).click();
+  await page
+    .frameLocator("iframe.pdf-book-frame")
+    .getByRole("button", { name: "Закрыть документ" })
+    .click();
   await expect(page).toHaveURL(/\/documents\/person\/e2e-child$/);
   await expect(
     page.locator(".document-item").filter({ hasText: title }),
@@ -420,7 +423,10 @@ test("участник загружает PDF и читает страницы �
   await expect(
     newReader.getByRole("button", { name: "Отменить выделение" }),
   ).toBeVisible();
-  await newReader.getByRole("button", { name: "Закрыть документ" }).click();
+  await newReader
+    .frameLocator("iframe.pdf-book-frame")
+    .getByRole("button", { name: "Закрыть документ" })
+    .click();
   const item = page.locator(".document-item").filter({ hasText: title });
   await expect(item).toBeVisible();
   await page
@@ -447,14 +453,14 @@ test("участник загружает PDF и читает страницы �
     )
     .toBeGreaterThan(0);
   await expect(
-    reader.getByRole("link", { name: "Скачать оригинал" }),
+    book.getByRole("link", { name: "Скачать оригинал" }),
   ).toBeVisible();
   if (testInfo.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-sidebar-tabs button").last().click();
   await reader.locator(".pdf-book-outline button").first().click();
   await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
-  await reader.locator('.pdf-book-controls button[aria-label="Лупа"]').click();
+  await book.getByRole("button", { name: "Лупа" }).click();
   await expect(book.locator("body.drevo-magnifying")).toHaveCount(1);
   await book.locator("body").press("Escape");
   await expect(book.locator("body.drevo-magnifying")).toHaveCount(0);
@@ -462,7 +468,7 @@ test("участник загружает PDF и читает страницы �
     await page.setViewportSize({ width: 320, height: 600 });
     await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
   }
-  await reader.getByRole("button", { name: "Закрыть документ" }).click();
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(reader).toBeHidden();
   page.once("dialog", (dialog) => dialog.accept());
   await page
@@ -528,7 +534,13 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
           reader.locator(".pdf-book-sidebar-tabs button"),
         ).toHaveCount(1);
     }
-    await reader.getByRole("button", { name: "Закрыть документ" }).click();
+    if (variant === "damaged")
+      await reader.getByRole("button", { name: "Закрыть документ" }).click();
+    else
+      await reader
+        .frameLocator("iframe.pdf-book-frame")
+        .getByRole("button", { name: "Закрыть документ" })
+        .click();
     page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", { name: `Удалить документ «${title}»` })
@@ -559,7 +571,7 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   const book = reader.frameLocator("iframe.pdf-book-frame");
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
   if (info.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-add-comment").click();
   const overlay = book
     .locator('.BRpage-visible[data-index="0"] .drevo-page-layer')
@@ -590,10 +602,10 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
     },
   });
   expect(second.status()).toBe(201);
-  await reader.getByRole("button", { name: "Закрыть документ" }).click();
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
   await page.locator(".document-item").filter({ hasText: title }).click();
   if (info.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await reader
     .locator(".pdf-book-comments-list article")
     .filter({ hasText: "Последняя страница" })
@@ -611,11 +623,11 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
         .evaluate((image: HTMLImageElement) => image.naturalWidth),
     )
     .toBeGreaterThan(0);
-  await reader.getByRole("button", { name: "Закрыть документ" }).click();
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
   if (info.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
 });
 

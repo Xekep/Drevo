@@ -24,6 +24,7 @@ export type BookReaderConstructor = {
     autoResize: boolean;
     flipSpeed: number;
     imagesBaseURL: string;
+    metadata: { label: string; value: string }[];
     getPageNum(index: number): string;
     getPageURI(index: number): string;
     renderPageURI(image: HTMLImageElement, uri: string): void;
