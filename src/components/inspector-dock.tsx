@@ -22,6 +22,7 @@ export function InspectorDock({
   children,
   onClose,
   editing = false,
+  label = "Выбранный объект",
   initialExpanded = true,
   suspended = false,
   allowExpand = true,
@@ -29,6 +30,7 @@ export function InspectorDock({
   children: ReactNode;
   onClose: () => void;
   editing?: boolean;
+  label?: string;
   initialExpanded?: boolean;
   suspended?: boolean;
   allowExpand?: boolean;
@@ -85,7 +87,7 @@ export function InspectorDock({
         ref={ref}
         className={`inspector-dock ${expanded ? "expanded" : ""}`}
         hidden={mobileSuspended}
-        aria-label="Выбранный объект"
+        aria-label={label}
         data-editing={editing || undefined}
         role={mobile && expanded && !mobileSuspended ? "dialog" : undefined}
         aria-modal={mobile && expanded && !mobileSuspended ? true : undefined}
@@ -110,35 +112,37 @@ export function InspectorDock({
           }
         }}
       >
-        <div
-          ref={heading}
-          className={`inspector-heading ${editing ? "is-editing" : ""}`}
-        >
-          <span>В СЕМЕЙНОМ АРХИВЕ</span>
-          <div className="inspector-actions-slot" ref={setActionsHost} />
-          {!expanded && allowExpand && (
-            <div className="dock-grip">
+        {!(mobile && editing) && (
+          <div
+            ref={heading}
+            className={`inspector-heading ${editing ? "is-editing" : ""}`}
+          >
+            <span>В СЕМЕЙНОМ АРХИВЕ</span>
+            <div className="inspector-actions-slot" ref={setActionsHost} />
+            {!expanded && allowExpand && (
+              <div className="dock-grip">
+                <button
+                  aria-label="Развернуть панель"
+                  aria-expanded={false}
+                  onClick={expand}
+                >
+                  <ChevronUp size={18} />
+                </button>
+              </div>
+            )}
+            {mobile && expanded && !editing && (
               <button
-                aria-label="Развернуть панель"
-                aria-expanded={false}
-                onClick={expand}
+                aria-label="Свернуть панель"
+                onClick={() => setExpanded(false)}
               >
-                <ChevronUp size={18} />
+                <ChevronDown size={20} />
               </button>
-            </div>
-          )}
-          {mobile && expanded && !editing && (
-            <button
-              aria-label="Свернуть панель"
-              onClick={() => setExpanded(false)}
-            >
-              <ChevronDown size={20} />
+            )}
+            <button aria-label="Закрыть панель" onClick={onClose}>
+              <X size={20} />
             </button>
-          )}
-          <button aria-label="Закрыть панель" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
+          </div>
+        )}
         {children}
       </aside>
     </ActionsHost.Provider>

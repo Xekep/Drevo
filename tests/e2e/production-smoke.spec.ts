@@ -1674,7 +1674,7 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await godparent.click();
   await expect(
-    page.getByRole("complementary", { name: "Выбранный объект" }),
+    page.getByRole("complementary", { name: "Редактировать связь" }),
   ).toBeVisible();
 
   await page.emulateMedia({ reducedMotion: "reduce" });
