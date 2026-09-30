@@ -175,8 +175,6 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
 
     async propose(actor: ArchiveUser, targetId: string) {
       await requirePostgres();
-      if (!targetId || targetId === actor.id)
-        throw new ConflictError("Выберите другого участника дерева");
       return await db.transaction(async () => {
         const transaction = db;
         await assertCurrentArchiveActor(transaction, actor);
@@ -184,6 +182,8 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
           throw new ForbiddenError(
             "Только владелец может предложить передачу дерева",
           );
+        if (!targetId || targetId === actor.id)
+          throw new ConflictError("Выберите другого участника дерева");
         const target = await assertCanOwn(transaction, actor.id, targetId);
         const now = Date.now();
         await transaction

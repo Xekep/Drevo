@@ -1983,7 +1983,7 @@ try {
         await fetch(oauthBase + ownerTransferPath, {
           method: "POST",
           headers: transferTargetHeaders,
-          body: JSON.stringify({ targetId: "transfer-target" }),
+          body: JSON.stringify({ targetId: vkRegistration.accountId }),
         })
       ).status,
       403,
