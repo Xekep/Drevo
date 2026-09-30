@@ -32,6 +32,8 @@ import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
+import { publicShareAccess } from "./public-share-access.ts";
+import { safeRequestRoute } from "./safe-request-route.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 type StartedServer = {
@@ -114,10 +116,16 @@ export async function startServer(
     accountArchiveDirectory(archive.db),
   );
   const directory = accountArchiveDirectory(archive.db);
+  const canOpenShared = publicShareAccess(archive.db);
   const routedArchives =
     archive.db.kind === "postgres" && !archiveId
       ? archiveRoutePool(
-          async (req, id) => {
+          async (req, id, path) => {
+            const shareToken =
+              /^\/api\/shared\/([A-Za-z0-9_-]{43})(?:\/portrait\/[^/]+)?$/.exec(
+                path,
+              )?.[1];
+            if (shareToken) return await canOpenShared(id, shareToken);
             const accountId = await auth.accountId(req);
             if (!accountId) return false;
             return !!(await directory.list(accountId))?.some(
@@ -153,6 +161,7 @@ export async function startServer(
     publicOrigin,
     aiFetch,
     uploadsDirectory: resolve(dirname(dbPath), "uploads"),
+    selectedArchiveId: archiveId,
     serveStatic,
   });
   const gedcom = gedcomHttp(archive, auth, dbPath, publicOrigin);
@@ -280,11 +289,7 @@ export async function startServer(
             event: "request_failed",
             requestId,
             method: req.method,
-            route: (req.url || "").startsWith("/s/")
-              ? "/s/[redacted]"
-              : (req.url || "").startsWith("/api/shared/")
-                ? "/api/shared/[redacted]"
-                : (req.url || "").split("?")[0],
+            route: safeRequestRoute(req.url || ""),
             error: error instanceof Error ? error.message : String(error),
           }),
         );
@@ -293,7 +298,6 @@ export async function startServer(
       })
       .finally(() => {
         activeRequests--;
-        const path = (req.url || "").split("?")[0];
         if (production)
           console.log(
             JSON.stringify({
@@ -301,11 +305,7 @@ export async function startServer(
               event: "request",
               requestId,
               method: req.method,
-              route: /^\/(?:s|api\/shared)\//.test(path)
-                ? path.startsWith("/s/")
-                  ? "/s/[redacted]"
-                  : "/api/shared/[redacted]"
-                : path,
+              route: safeRequestRoute(req.url || ""),
               status: res.statusCode,
               durationMs: Date.now() - started,
             }),

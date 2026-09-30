@@ -16,7 +16,11 @@ class ArchivePoolBusyError extends Error {}
 
 /** Keep explicitly selected archive runtimes bounded and never evict an active one. */
 export function archiveRoutePool(
-  permitted: (req: IncomingMessage, archiveId: string) => Promise<boolean>,
+  permitted: (
+    req: IncomingMessage,
+    archiveId: string,
+    path: string,
+  ) => Promise<boolean>,
   open: (archiveId: string) => Promise<RoutedArchive>,
 ) {
   const entries = new Map<string, Entry>();
@@ -36,7 +40,7 @@ export function archiveRoutePool(
       release();
     }
   };
-  const acquire = async (req: IncomingMessage, id: string) => {
+  const acquire = async (req: IncomingMessage, id: string, path: string) => {
     const present = entries.get(id);
     if (present) {
       present.active++;
@@ -50,7 +54,7 @@ export function archiveRoutePool(
         existing.usedAt = ++lastUse;
         return existing;
       }
-      if (!(await permitted(req, id))) return null;
+      if (!(await permitted(req, id, path))) return null;
       if (entries.size >= MAX_OPEN_ARCHIVES) {
         const oldestIdle = () =>
           [...entries]
@@ -89,7 +93,7 @@ export function archiveRoutePool(
       if (!match) return false;
       let entry: Entry | null;
       try {
-        entry = await acquire(req, match[1]);
+        entry = await acquire(req, match[1], match[2]);
       } catch (error) {
         if (!(error instanceof ArchivePoolBusyError)) throw error;
         res.writeHead(503, {
@@ -101,8 +105,20 @@ export function archiveRoutePool(
         return true;
       }
       if (!entry) {
-        res.writeHead(404, { "Cache-Control": "no-store" });
-        res.end();
+        const publicShare = match[2].startsWith("/api/shared/");
+        res.writeHead(publicShare ? 410 : 404, {
+          "Cache-Control": "no-store",
+          ...(publicShare
+            ? { "Content-Type": "application/json; charset=utf-8" }
+            : {}),
+        });
+        res.end(
+          publicShare
+            ? JSON.stringify({
+                error: "Ссылка недействительна или срок её действия истёк.",
+              })
+            : undefined,
+        );
         return true;
       }
       let released = false;
@@ -114,18 +130,6 @@ export function archiveRoutePool(
       };
       res.once("close", release);
       try {
-        if (match[2] === "/api/shares" && req.method === "POST") {
-          res.writeHead(501, {
-            "Content-Type": "application/json; charset=utf-8",
-            "Cache-Control": "no-store",
-          });
-          res.end(
-            JSON.stringify({
-              error: "Публичные ссылки для этого дерева пока недоступны.",
-            }),
-          );
-          return true;
-        }
         await entry.runtime.handle(req, res, match[2] + url.search);
       } finally {
         if (res.writableEnded || res.destroyed) release();

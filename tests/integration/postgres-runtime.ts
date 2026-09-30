@@ -1042,7 +1042,55 @@ try {
     headers: ownerHeaders,
   });
   assert.equal(selectedFamily.status, 200);
-  assert.equal((await selectedFamily.json()).family.people[0].name, "Исправленный сосед");
+  const selectedSnapshot = await selectedFamily.json();
+  assert.equal(selectedSnapshot.family.people[0].name, "Исправленный сосед");
+  const selectedShareResponse = await fetch(securedBase + "/a/other-archive/api/shares", {
+    method: "POST",
+    headers: { ...ownerHeaders, "If-Match": String(selectedSnapshot.revision) },
+    body: JSON.stringify({
+      title: "Selected archive share",
+      anchorId: "person-a",
+      personIds: ["person-a"],
+      durationHours: 1,
+    }),
+  });
+  const selectedShare = await selectedShareResponse.json();
+  assert.equal(selectedShareResponse.status, 201, JSON.stringify(selectedShare));
+  assert.match(selectedShare.path, /^\/a\/other-archive\/s\/[A-Za-z0-9_-]{43}$/);
+  const selectedShareToken = selectedShare.path.split("/").at(-1);
+  const publicSelectedShare = await fetch(
+    securedBase + `/a/other-archive/api/shared/${selectedShareToken}`,
+  );
+  const publicSelectedFamily = await publicSelectedShare.json();
+  assert.equal(publicSelectedShare.status, 200, JSON.stringify(publicSelectedFamily));
+  assert.equal(publicSelectedFamily.family.people[0].name, "Исправленный сосед");
+  assert.equal(
+    (await fetch(securedBase + `/a/runtime-test/api/shared/${selectedShareToken}`)).status,
+    410,
+    "a bearer token cannot open a different archive",
+  );
+  assert.equal(
+    (await fetch(securedBase + `/api/shared/${selectedShareToken}`)).status,
+    410,
+    "a selected archive token cannot open the original archive",
+  );
+  assert.equal(
+    (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`, {
+      method: "POST",
+    })).status,
+    405,
+  );
+  assert.equal(
+    (await fetch(securedBase + `/a/other-archive/api/shares/${selectedShare.share.id}`, {
+      method: "DELETE",
+      headers: ownerHeaders,
+    })).status,
+    200,
+  );
+  assert.equal(
+    (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`)).status,
+    410,
+  );
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })
       .then((r) => r.json())).user,
