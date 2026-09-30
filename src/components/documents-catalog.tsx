@@ -53,6 +53,7 @@ export function DocumentsCatalog({
   allowUnlinked,
   personFilter,
   documentId,
+  documentPage,
   onSelectDocument,
   people,
 }: {
@@ -60,6 +61,7 @@ export function DocumentsCatalog({
   allowUnlinked: boolean;
   personFilter: string | null;
   documentId: string | null;
+  documentPage?: number;
   onSelectDocument: (id: string | null) => void;
   people: Person[];
 }) {
@@ -773,6 +775,7 @@ export function DocumentsCatalog({
       {activeSelected && (
         <PdfBookReader
           document={activeSelected}
+          initialPage={documentPage}
           mayAnnotate={mayEdit}
           annotateOnOpen={annotateOnOpen}
           onClose={() => {

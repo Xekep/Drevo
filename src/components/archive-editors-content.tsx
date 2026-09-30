@@ -789,6 +789,7 @@ export function PersonEditor({
                 <DocumentSourcePicker
                   personId={person?.id}
                   documentId={s.documentId}
+                  pageNumber={s.documentPage}
                   onChange={(document) =>
                     field(
                       "sources",
@@ -798,8 +799,20 @@ export function PersonEditor({
                               ...source,
                               title: source.title || document?.title || "",
                               documentId: document?.id,
+                              documentPage:
+                                document?.id === source.documentId
+                                  ? source.documentPage
+                                  : undefined,
                             }
                           : source,
+                      ),
+                    )
+                  }
+                  onPageChange={(documentPage) =>
+                    field(
+                      "sources",
+                      draft.sources.map((source, index) =>
+                        i === index ? { ...source, documentPage } : source,
                       ),
                     )
                   }

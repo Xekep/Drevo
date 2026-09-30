@@ -240,3 +240,6 @@
   text-align: left;
   overflow-wrap: anywhere;
 }
+.document-source-page {
+  max-width: 160px;
+}

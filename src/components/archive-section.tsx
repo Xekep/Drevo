@@ -60,6 +60,7 @@ type Props = {
   onDropPhoto: (file: File) => void;
   documentPersonFilter: string | null;
   documentId: string | null;
+  documentPage?: number;
   onSelectDocument: (id: string | null) => void;
   personFilter: string | null;
   yearFilter: string | null;
@@ -158,6 +159,7 @@ export function ArchiveSection(props: Props) {
         allowUnlinked={props.documentPersonFilter === null}
         personFilter={props.documentPersonFilter}
         documentId={props.documentId}
+        documentPage={props.documentPage}
         onSelectDocument={props.onSelectDocument}
         people={props.people}
       />
