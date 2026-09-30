@@ -27,6 +27,7 @@ import { AccountAiHistory } from "./account-ai-history";
 import { AccountEmailLink } from "./account-email-link";
 import { PortableImport } from "./portable-import";
 import { AccountOwnerTransfer } from "./account-owner-transfer";
+import { AccountArchiveDeletion } from "./account-archive-deletion";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -570,6 +571,12 @@ export function AccountPage({
                   {capacity?.available && user.approved && (
                     <AccountOwnerTransfer key={window.location.pathname} />
                   )}
+                  {capacity?.available &&
+                    capacity.owned &&
+                    user.approved &&
+                    window.location.pathname.startsWith("/a/") && (
+                      <AccountArchiveDeletion key={window.location.pathname} />
+                    )}
                   {user.role === "admin" && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}
