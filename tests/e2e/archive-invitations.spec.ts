@@ -52,7 +52,7 @@ test("an archive admin creates and revokes a one-use invitation", async ({ page 
     id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     role: "reader",
     createdAt: "2026-09-30T08:00:00.000Z",
-    expiresAt: "2026-10-01T08:00:00.000Z",
+    expiresAt: "2099-01-01T08:00:00.000Z",
     usedAt: null,
     revokedAt: null as string | null,
   };
