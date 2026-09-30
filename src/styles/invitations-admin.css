@@ -1,0 +1,28 @@
+.invitations-admin { display: grid; gap: 18px; }
+.invitations-admin h2, .invitations-admin h3, .invitations-admin p { margin: 0; }
+.invitations-admin > p { max-width: 64ch; }
+.invitations-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.invitations-controls label, .invitations-created { display: grid; gap: 6px; font-size: .86rem; }
+.invitations-controls select { min-width: 140px; min-height: 42px; }
+.invitations-controls .primary-action { min-height: 42px; }
+.invitations-created { max-width: 100%; }
+.invitations-created input { width: 100%; min-width: 0; }
+.invitations-list { display: grid; gap: 8px; }
+.invitations-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1px solid rgba(67, 92, 65, .16);
+  border-radius: 12px;
+}
+.invitations-row > span:first-child { display: grid; gap: 2px; }
+.invitations-row small { color: #617064; }
+.invitations-status { color: #637063; font-size: .82rem; }
+.invitations-status.active { color: #37613a; }
+@media (max-width: 480px) {
+  .invitations-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .invitations-row button { grid-column: 1 / -1; justify-self: start; }
+  .invitations-controls > * { flex: 1 1 100%; }
+}

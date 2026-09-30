@@ -23,6 +23,7 @@ import {
 } from "../domain";
 import { BackupAdmin } from "./backup-admin";
 import { ShareCatalog } from "./share-catalog";
+import { InvitationsAdmin } from "./invitations-admin";
 import { AuditLog } from "./audit-log";
 import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
@@ -49,6 +50,7 @@ const ADMIN_SECTIONS = [
     label: "Доступ",
     items: [
       { id: "users", label: "Участники", icon: Users },
+      { id: "invitations", label: "Приглашения", icon: Link2 },
       { id: "vk", label: "Вход через VK", icon: ShieldCheck },
       { id: "shares", label: "Общий доступ", icon: Link2 },
     ],
@@ -81,6 +83,10 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   users: {
     title: "Участники",
     description: "Аккаунты, роли и доступ к семейному архиву.",
+  },
+  invitations: {
+    title: "Приглашения",
+    description: "Одноразовые ссылки для новых участников этого дерева.",
   },
   data: {
     title: "Экспорт и импорт",
@@ -477,7 +483,10 @@ export function AdminPanel({
                   <div className="admin-users-head" aria-hidden="true">
                     <span>Участник</span>
                     <span>Роль</span>
-                    {platformAdmin && users.some((user) => user.fullAccess !== undefined) && <span>Уровень</span>}
+                    {platformAdmin &&
+                      users.some((user) => user.fullAccess !== undefined) && (
+                        <span>Уровень</span>
+                      )}
                     <span>Кто это в древе</span>
                     <span>Показывать</span>
                     <span>Действия</span>
@@ -626,6 +635,7 @@ export function AdminPanel({
         {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
+        {section === "invitations" && <InvitationsAdmin />}
         {section === "audit" && (
           <section className="admin-card archive-form">
             <label>

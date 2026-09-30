@@ -9,6 +9,7 @@ import { sharesStore } from "./shares.ts";
 import { auditStore } from "./audit.ts";
 import { adminAccessHttp } from "./admin-access-http.ts";
 import { adminSharingHttp } from "./admin-sharing-http.ts";
+import { archiveInvitationsHttp } from "./archive-invitations-http.ts";
 import { archiveQueryHttp } from "./archive-query-http.ts";
 import { offlinePackageHttp } from "./offline-package-http.ts";
 import { coreHttp } from "./core-http.ts";
@@ -180,6 +181,7 @@ export async function archiveHttp({
       publicOrigin,
       selectedArchiveId,
     }),
+    invitations = archiveInvitationsHttp(archive.db, auth, publicOrigin),
     publicSharing = publicSharingHttp({
       archive,
       media,
@@ -234,6 +236,7 @@ export async function archiveHttp({
     if (await personDiscussion(req, res, url)) return true;
     if (await places(req, res, url)) return true;
     if (await adminSharing(req, res, url)) return true;
+    if (await invitations(req, res, url)) return true;
     if (await publishedPeople(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;

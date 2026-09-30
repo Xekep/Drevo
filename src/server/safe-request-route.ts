@@ -4,5 +4,6 @@ export function safeRequestRoute(url: string) {
   const inner = path.replace(/^\/a\/[^/]+(?=\/)/, "");
   if (inner.startsWith("/s/")) return "/s/[redacted]";
   if (inner.startsWith("/api/shared/")) return "/api/shared/[redacted]";
+  if (path.startsWith("/join/")) return "/join/[redacted]";
   return path;
 }

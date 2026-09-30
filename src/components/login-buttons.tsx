@@ -4,12 +4,17 @@ import { markEntrySequence } from "./entry-sequence";
 import "../styles/login-buttons.css";
 
 type Providers = { vk: boolean; yandex: boolean };
-export function LoginButtons() {
+export function LoginButtons({
+  onBeforeNavigate,
+}: { onBeforeNavigate?: () => void } = {}) {
   const [providers, setProviders] = useState<Providers | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
+    archiveFetch("/api/session", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error("Session unavailable");
         const data = await response.json();
@@ -40,6 +45,7 @@ export function LoginButtons() {
               aria-label={`Войти через ${label}`}
               title={`Войти через ${label}`}
               onClick={() => {
+                onBeforeNavigate?.();
                 markEntrySequence();
                 window.location.assign(`/auth/${provider}`);
               }}

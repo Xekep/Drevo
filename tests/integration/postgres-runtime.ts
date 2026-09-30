@@ -1096,6 +1096,78 @@ try {
     (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`)).status,
     410,
   );
+  const invitationResponse = await fetch(securedBase + "/a/other-archive/api/invitations", {
+    method: "POST",
+    headers: ownerHeaders,
+    body: JSON.stringify({ role: "reader", durationHours: 24 }),
+  });
+  const invitation = await invitationResponse.json();
+  assert.equal(invitationResponse.status, 201, JSON.stringify(invitation));
+  assert.match(invitation.path, /^\/join\/other-archive\/[A-Za-z0-9_-]{43}$/);
+  const inviteBody = JSON.stringify({
+    archiveId: "other-archive",
+    token: invitation.path.split("/").at(-1),
+  });
+  const invitationHeaders = {
+    Origin: process.env.PUBLIC_ORIGIN!,
+    "Content-Type": "application/json",
+  };
+  const previewInvitation = await fetch(securedBase + "/api/account/invitations/preview", {
+    method: "POST",
+    headers: invitationHeaders,
+    body: inviteBody,
+  });
+  assert.equal(previewInvitation.status, 200);
+  assert.equal((await previewInvitation.json()).role, "reader");
+  assert.equal((await fetch(securedBase + "/api/account/invitations/accept", {
+    method: "POST", headers: invitationHeaders, body: inviteBody,
+  })).status, 401);
+  await client.query(
+    "INSERT INTO accounts(id,name,created_at) VALUES('invitee','Invitee',$1)",
+    [new Date().toISOString()],
+  );
+  const inviteeToken = newSessionToken();
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'invitee',$2)",
+    [sessionTokenHash(inviteeToken), Date.now() + 60_000],
+  );
+  const inviteeHeaders = {
+    ...invitationHeaders,
+    Cookie: `drevo_session=${inviteeToken}`,
+  };
+  const acceptedInvitation = await fetch(securedBase + "/api/account/invitations/accept", {
+    method: "POST", headers: inviteeHeaders, body: inviteBody,
+  });
+  assert.equal(acceptedInvitation.status, 200, await acceptedInvitation.text());
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/session", { headers: inviteeHeaders })
+      .then((response) => response.json())).user.role,
+    "reader",
+  );
+  assert.equal((await fetch(securedBase + "/api/account/invitations/accept", {
+    method: "POST", headers: inviteeHeaders, body: inviteBody,
+  })).status, 200, "the same account can retry a completed acceptance");
+  assert.equal((await fetch(securedBase + "/api/account/invitations/accept", {
+    method: "POST", headers: ownerHeaders, body: inviteBody,
+  })).status, 410, "a one-use invitation cannot grant a second account");
+  assert.equal((await fetch(securedBase + "/api/account/invitations/preview", {
+    method: "POST",
+    headers: invitationHeaders,
+    body: JSON.stringify({ archiveId: "runtime-test", token: invitation.path.split("/").at(-1) }),
+  })).status, 410, "the bearer cannot name a different archive");
+  const revokedInviteResponse = await fetch(securedBase + "/a/other-archive/api/invitations", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ role: "relative", durationHours: 24 }),
+  });
+  assert.equal(revokedInviteResponse.status, 201);
+  const revokedInvite = await revokedInviteResponse.json();
+  assert.equal((await fetch(securedBase + `/a/other-archive/api/invitations/${revokedInvite.id}`, {
+    method: "DELETE", headers: ownerHeaders,
+  })).status, 200);
+  assert.equal((await fetch(securedBase + "/api/account/invitations/preview", {
+    method: "POST", headers: invitationHeaders,
+    body: JSON.stringify({ archiveId: "other-archive", token: revokedInvite.path.split("/").at(-1) }),
+  })).status, 410);
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
     404,
