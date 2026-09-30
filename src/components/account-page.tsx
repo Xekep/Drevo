@@ -27,6 +27,8 @@ import { AccountAiHistory } from "./account-ai-history";
 import { AccountEmailLink } from "./account-email-link";
 import { PortableImport } from "./portable-import";
 import { AccountOwnerTransfer } from "./account-owner-transfer";
+import { AccountArchiveDeletion } from "./account-archive-deletion";
+import { CreatePersonalArchive } from "./create-personal-archive";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -62,6 +64,7 @@ type AccountArchive = {
   title: string;
   role: Role;
   approved: boolean;
+  owned: boolean;
   current: boolean;
 };
 function ArchiveList({ archives }: { archives: AccountArchive[] }) {
@@ -382,6 +385,9 @@ export function AccountPage({
                       <ArchiveList archives={archives} />
                     </div>
                   )}
+                  {archives &&
+                    !archives.some((item) => item.owned) &&
+                    !local && <CreatePersonalArchive />}
                   {!user.approved && (
                     <p className="account-note">
                       Администратор архива должен подтвердить ваш доступ.
@@ -427,11 +433,19 @@ export function AccountPage({
                   {archives === null ? (
                     <p className="account-card-copy">Загружаем деревья…</p>
                   ) : archives.length ? (
-                    <ArchiveList archives={archives} />
+                    <>
+                      <ArchiveList archives={archives} />
+                      {!archives.some((item) => item.owned) && !local && (
+                        <CreatePersonalArchive />
+                      )}
+                    </>
                   ) : (
-                    <p className="account-card-copy">
-                      Пока нет доступных деревьев.
-                    </p>
+                    <>
+                      <p className="account-card-copy">
+                        Пока нет доступных деревьев.
+                      </p>
+                      {!local && session?.account && <CreatePersonalArchive />}
+                    </>
                   )}
                 </section>
               )}
@@ -570,6 +584,12 @@ export function AccountPage({
                   {capacity?.available && user.approved && (
                     <AccountOwnerTransfer key={window.location.pathname} />
                   )}
+                  {capacity?.available &&
+                    capacity.owned &&
+                    user.approved &&
+                    window.location.pathname.startsWith("/a/") && (
+                      <AccountArchiveDeletion key={window.location.pathname} />
+                    )}
                   {user.role === "admin" && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
                       <Users size={17} /> Управление архивом{" "}

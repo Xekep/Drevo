@@ -6,6 +6,7 @@ export type AccountArchive = {
   title: string;
   role: Role;
   approved: boolean;
+  owned: boolean;
   current: boolean;
 };
 
@@ -18,9 +19,10 @@ export function accountArchiveDirectory(db: StoreDatabase) {
     db.kind === "postgres"
       ? db.prepare(
           "",
-          `SELECT a.id,a.title,m.role,m.approved
+          `SELECT a.id,a.title,m.role,m.approved,(o.user_id IS NOT NULL) AS owned
          FROM archive_memberships m
          JOIN archives a ON a.id=m.archive_id
+         LEFT JOIN archive_owners o ON o.archive_id=m.archive_id AND o.user_id=m.user_id
          WHERE m.user_id=?
          ORDER BY lower(a.title),a.id`,
         )
@@ -52,6 +54,7 @@ export function accountArchiveDirectory(db: StoreDatabase) {
           title: String(row.title),
           role: String(row.role) as Role,
           approved: row.approved === true,
+          owned: row.owned === true,
           current: row.id === db.archiveId,
         }));
       }, true);

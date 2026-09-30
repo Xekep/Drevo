@@ -369,3 +369,153 @@ test("owner can choose a member and propose a transfer in the account cabinet", 
   await page.getByRole("button", { name: "Предложить передачу" }).click();
   await expect(page.getByText("Ожидаем согласия: Анна Иванова")).toBeVisible();
 });
+
+test("deleting a personal tree requires its name and collaborator consent", async ({
+  page,
+}) => {
+  let deleted = false;
+  await page.route("**/a/test-archive/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/a/test-archive", "");
+    if (path === "/api/session") {
+      const response = await route.fetch({
+        url: request.url().replace("/a/test-archive", ""),
+      });
+      const data = await response.json();
+      return route.fulfill({
+        response,
+        json: {
+          ...data,
+          local: false,
+          user: {
+            ...data.user,
+            role: "admin",
+            approved: true,
+            fullAccess: true,
+          },
+        },
+      });
+    }
+    if (path === "/api/account/capacity")
+      return route.fulfill({
+        json: {
+          available: true,
+          owned: true,
+          fullAccess: true,
+          people: 12,
+          peopleLimit: 150,
+          mediaBytes: 1000,
+          mediaLimitBytes: 500_000_000,
+        },
+      });
+    if (path === "/api/account/owner-transfer")
+      return route.fulfill({
+        json: { owner: true, incoming: null, outgoing: null },
+      });
+    if (path === "/api/account/archive-deletion") {
+      if (request.method() === "DELETE") {
+        deleted = true;
+        return route.fulfill({ json: { deleted: true, filesRemoved: true } });
+      }
+      return route.fulfill({
+        json: {
+          title: "Моё дерево",
+          people: 12,
+          photos: 3,
+          documents: 1,
+          otherMembers: 2,
+        },
+      });
+    }
+    return route
+      .fetch({ url: request.url().replace("/a/test-archive", "") })
+      .then((response) => route.fulfill({ response }));
+  });
+  await page.goto("/a/test-archive/account");
+  await page.getByRole("button", { name: "Удалить это дерево" }).click();
+  const confirm = page.getByRole("button", { name: "Удалить дерево и файлы" });
+  await expect(confirm).toBeDisabled();
+  await page
+    .getByLabel("Для подтверждения введите название дерева")
+    .fill("Моё дерево");
+  await expect(confirm).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect.poll(() => deleted).toBe(true);
+  await expect(page).toHaveURL(/\/account$/);
+});
+
+test("an account with no tree can create a new private tree", async ({
+  page,
+}) => {
+  let created = false;
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: null,
+        account: { id: "account-one", name: "Анна", fullAccess: false },
+      },
+    });
+  });
+  await page.route("**/api/account/archives", (route) => {
+    if (route.request().method() === "POST") {
+      created = true;
+      return route.fulfill({ status: 201, json: { archiveId: "new-tree" } });
+    }
+    return route.fulfill({ json: { archives: [] } });
+  });
+  await page.goto("/account");
+  await page.getByRole("button", { name: "Создать новое дерево" }).click();
+  await expect.poll(() => created).toBe(true);
+  await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
+});
+
+test("an invited member can create their own private tree", async ({
+  page,
+}) => {
+  let created = false;
+  await page.route("**/api/session", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        local: false,
+        user: null,
+        account: { id: "account-one", name: "Анна", fullAccess: false },
+      },
+    });
+  });
+  await page.route("**/api/account/archives", (route) => {
+    if (route.request().method() === "POST") {
+      created = true;
+      return route.fulfill({ status: 201, json: { archiveId: "new-tree" } });
+    }
+    return route.fulfill({
+      json: {
+        archives: [
+          {
+            id: "shared-tree",
+            title: "Дерево родственника",
+            role: "reader",
+            approved: true,
+            owned: false,
+            current: false,
+          },
+        ],
+      },
+    });
+  });
+  await page.goto("/account");
+  await expect(page.getByText("Дерево родственника")).toBeVisible();
+  await page.getByRole("button", { name: "Создать новое дерево" }).click();
+  await expect.poll(() => created).toBe(true);
+  await expect(page).toHaveURL(/\/a\/new-tree\/tree$/);
+});

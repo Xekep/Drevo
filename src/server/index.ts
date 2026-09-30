@@ -35,6 +35,8 @@ import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
 import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
+import { archiveDeletionHttp } from "./archive-deletion-http.ts";
+import { cleanupDeletedArchiveDirectories } from "./archive-deletion-files.ts";
 import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
@@ -93,6 +95,18 @@ export async function startServer(
     ),
     archiveId,
   );
+  const cleanupDeletedArchives =
+    !archiveId && archive.db.kind === "postgres"
+      ? () =>
+          cleanupDeletedArchiveDirectories(archive.db, configuredPath).catch(
+            (error) => console.error("archive_file_cleanup_failed", error),
+          )
+      : null;
+  await cleanupDeletedArchives?.();
+  const archiveCleanupTimer = cleanupDeletedArchives
+    ? setInterval(() => void cleanupDeletedArchives(), 60 * 60_000)
+    : null;
+  archiveCleanupTimer?.unref();
   await removeStarterFamily(archive);
 
   const media = mediaStore(resolve(dirname(dbPath), "uploads"));
@@ -123,10 +137,20 @@ export async function startServer(
   const listAccountArchives = accountArchivesHttp(
     auth,
     accountArchiveDirectory(archive.db),
+    archive.db,
+    publicOrigin,
+    !archiveId,
   );
   const transferArchiveOwner = archiveOwnerTransferHttp(
     archive.db,
     auth,
+    publicOrigin,
+  );
+  const deleteArchive = archiveDeletionHttp(
+    archive.db,
+    auth,
+    configuredPath,
+    archiveId && archiveId !== process.env.ARCHIVE_ID ? archiveId : undefined,
     publicOrigin,
   );
   const searchPublishedPeople = discoveryPeopleHttp(archive.db, auth);
@@ -279,6 +303,7 @@ export async function startServer(
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
     if (await transferArchiveOwner(req, res, parsedUrl)) return;
+    if (await deleteArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
     if (await portableExport(req, res, parsedUrl)) return;
     if (await portableImport.handle(req, res, parsedUrl)) return;
@@ -365,6 +390,7 @@ export async function startServer(
     archive,
     handle,
     close: async () => {
+      if (archiveCleanupTimer) clearInterval(archiveCleanupTimer);
       await vite?.close();
       const closed = new Promise<void>((done) => server.close(() => done()));
       server.closeIdleConnections();

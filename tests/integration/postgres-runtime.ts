@@ -2,9 +2,9 @@ import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
-import { createWriteStream, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import {
@@ -1408,10 +1408,15 @@ try {
     ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").current,
     true,
   );
+  assert.equal(
+    ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").owned,
+    true,
+  );
   const readerArchives = await fetch(securedBase + "/api/account/archives", {
     headers,
   }).then((r) => r.json());
   assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
+  assert.equal(readerArchives.archives[0].owned, false);
   assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
   assert.equal(
     (await fetch(otherBase + "/api/account/archives", { headers: ownerHeaders })
@@ -2142,6 +2147,75 @@ try {
         ?.role,
       "relative",
     );
+    const deletionPath = location.replace(/\/tree$/, "/api/account/archive-deletion");
+    assert.equal((await fetch(oauthBase + deletionPath, {
+      headers: transferOwnerHeaders,
+    })).status, 403, "the previous owner cannot delete the archive");
+    const deletionPlanResponse = await fetch(oauthBase + deletionPath, {
+      headers: transferTargetHeaders,
+    });
+    assert.equal(deletionPlanResponse.status, 200);
+    const deletionPlan = await deletionPlanResponse.json();
+    assert.ok(deletionPlan.otherMembers >= 1);
+    const deletionHeaders = {
+      ...transferTargetHeaders,
+      "X-Drevo-Archive-Deletion": "1",
+    };
+    assert.equal((await fetch(oauthBase + deletionPath, {
+      method: "DELETE",
+      headers: { ...deletionHeaders, Origin: "https://other.test" },
+      body: JSON.stringify({ title: deletionPlan.title, removeCollaborators: true }),
+    })).status, 403);
+    assert.equal((await fetch(oauthBase + deletionPath, {
+      method: "DELETE",
+      headers: deletionHeaders,
+      body: JSON.stringify({ title: "Wrong name", removeCollaborators: true }),
+    })).status, 409);
+    assert.equal((await fetch(oauthBase + deletionPath, {
+      method: "DELETE",
+      headers: deletionHeaders,
+      body: JSON.stringify({ title: deletionPlan.title, removeCollaborators: false }),
+    })).status, 409);
+    const deletedArchive = await fetch(oauthBase + deletionPath, {
+      method: "DELETE",
+      headers: deletionHeaders,
+      body: JSON.stringify({ title: deletionPlan.title, removeCollaborators: true }),
+    });
+    assert.equal(deletedArchive.status, 200,
+      deletedArchive.status === 200 ? "" : await deletedArchive.text());
+    assert.equal((await deletedArchive.json()).filesRemoved, true);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM archives WHERE id=$1", [personalArchiveId])).rows[0].n, 0);
+    assert.equal(existsSync(join(dirname(source), "archives", personalArchiveId)), false);
+    assert.equal((await fetch(oauthBase + location.replace(/\/tree$/, "/api/session"), {
+      headers: transferTargetHeaders,
+    })).status, 404, "deleted archive cannot be reopened through a warm route");
+    const sessionAfterArchiveDeletion = await fetch(oauthBase + "/api/session", {
+      headers: transferTargetHeaders,
+    }).then((response) => response.json());
+    assert.equal(sessionAfterArchiveDeletion.account.id, "transfer-target",
+      "deleting one archive must not delete the account or its session");
+    const createArchiveHeaders = {
+      ...transferTargetHeaders,
+      "X-Drevo-New-Archive": "1",
+    };
+    assert.equal((await fetch(oauthBase + "/api/account/archives", {
+      method: "POST",
+      headers: { ...createArchiveHeaders, Origin: "https://other.test" },
+    })).status, 403);
+    const recreatedResponse = await fetch(oauthBase + "/api/account/archives", {
+      method: "POST",
+      headers: createArchiveHeaders,
+    });
+    assert.equal(recreatedResponse.status, 201,
+      recreatedResponse.status === 201 ? "" : await recreatedResponse.text());
+    const recreatedId = (await recreatedResponse.json()).archiveId;
+    assert.notEqual(recreatedId, personalArchiveId);
+    assert.equal((await fetch(oauthBase + "/api/account/archives", {
+      method: "POST", headers: createArchiveHeaders,
+    })).status, 409, "a repeated create request cannot make a second owned tree");
+    assert.equal((await fetch(oauthBase + `/a/${recreatedId}/api/session`, {
+      headers: transferTargetHeaders,
+    })).status, 200);
     await client.query(
       "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );
