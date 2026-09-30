@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
+  safeUrl,
   type Family,
   type ArchiveUser,
   type GraphConnection,
@@ -44,6 +45,7 @@ import {
   type TreeColorScheme,
 } from "../../domain";
 import { archiveContextAt } from "../../domain/archive-context.ts";
+import { mediaPreview } from "../../domain/media-preview.ts";
 import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { personRelationLabel } from "./person-relation-label";
@@ -567,6 +569,38 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     : undefined;
   const introX = introPosition?.x;
   const introY = introPosition?.y;
+  const introPortraitsReady = useRef(true);
+  useEffect(() => {
+    if (!growing || !ready || introX === undefined || introY === undefined ||
+        !canvasWidth || !canvasHeight) {
+      introPortraitsReady.current = true;
+      return;
+    }
+    const nearby = displayNodes.flatMap((node) => {
+      if (node.type !== "person") return [];
+      const distance = Math.abs(node.position.x - introX) +
+        Math.abs(node.position.y - introY);
+      if (Math.abs(node.position.x - introX) > canvasWidth / PERSON_FOCUS_ZOOM ||
+          Math.abs(node.position.y - introY) > canvasHeight / PERSON_FOCUS_ZOOM)
+        return [];
+      const url = mediaPreview(safeUrl(node.data.person.photo));
+      return url ? [{ url, distance }] : [];
+    }).sort((a, b) => a.distance - b.distance).slice(0, 48);
+    if (!nearby.length) {
+      introPortraitsReady.current = true;
+      return;
+    }
+    introPortraitsReady.current = false;
+    let active = true;
+    void Promise.all(nearby.map(({ url }) => {
+      const image = new Image();
+      image.src = url;
+      return image.decode().catch(() => {});
+    })).then(() => {
+      if (active) introPortraitsReady.current = true;
+    });
+    return () => { active = false; };
+  }, [growing, ready, introX, introY, canvasWidth, canvasHeight, displayNodes]);
   const keepRequestedFocus =
     props.skipInitialGrowth || !!focus || selected.length > 0;
   useEffect(() => {
@@ -940,27 +974,33 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
       return;
     let frame = 0;
-    let attempts = 0;
+    let mountAttempts = 0;
+    const portraitDeadline = performance.now() + 3000;
     const startWhenMounted = () => {
       const element = container.current;
       if (!element) return;
       const mountedNodes = element.querySelectorAll(".react-flow__node").length;
       const mountedEdges = element.querySelectorAll(".react-flow__edge").length;
+      const portraits = element.querySelectorAll<HTMLImageElement>(
+        ".react-flow__node .person-avatar img",
+      );
+      const portraitsReady = Array.from(portraits).every((image) => image.complete);
       // React Flow measures nodes before rendering their edges. Give both a
       // shared animation start, or a late edge may follow its descendant card.
       const mounted =
         displayNodes.length <= 500
           ? mountedNodes >= displayNodes.length &&
             mountedEdges >= displayEdges.length
-          : attempts >= 2 &&
+          : mountAttempts >= 2 &&
             mountedNodes > 0 &&
             (!displayEdges.length || mountedEdges > 0);
-      if (mounted) {
+      if (mounted && ((portraitsReady && introPortraitsReady.current) ||
+          performance.now() >= portraitDeadline)) {
         setGrowthStarted(true);
-      } else if (++attempts < 30) {
-        frame = requestAnimationFrame(startWhenMounted);
+      } else if (!mounted && ++mountAttempts >= 30) {
+        setGrowthStarted(true);
       } else {
-        setGrowthStarted(true);
+        frame = requestAnimationFrame(startWhenMounted);
       }
     };
     frame = requestAnimationFrame(startWhenMounted);

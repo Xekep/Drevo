@@ -34,9 +34,11 @@ import { PersonDiscussion } from "./person-discussion";
 export function Avatar({
   person,
   large = false,
+  loading = "lazy",
 }: {
   person: Person;
   large?: boolean;
+  loading?: "eager" | "lazy";
 }) {
   const [failed, setFailed] = useState<string>();
   const src = mediaPreview(safeUrl(person.photo));
@@ -46,7 +48,7 @@ export function Avatar({
     >
       {/* Native image keeps optional archive photos independent of an image service. */}
       {src && failed !== src ? (
-        <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} />
+        <img src={src} alt="" loading={loading} onError={() => setFailed(src)} />
       ) : (
         <PortraitPlaceholder />
       )}
