@@ -85,7 +85,7 @@ function Entry() {
     <SharedTree token={sharedToken} />
   ) : join ? (
     <JoinArchive archiveId={join[1]} token={join[2]} />
-  ) : location.pathname === "/discover" ? (
+  ) : location.pathname === "/discover" || location.pathname.startsWith("/discover/") ? (
     <PublicPeople />
   ) : (
     <App />

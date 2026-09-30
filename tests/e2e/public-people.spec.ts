@@ -1,5 +1,31 @@
 import { expect, test } from "@playwright/test";
 
+test("discovery keeps same-ID cards from different archives distinct and paginates", async ({ page }) => {
+  await page.route((url) => url.pathname === "/api/discovery/people", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({ json: cursor
+      ? { results: [{ archiveId: "tree-c", id: "same", name: "Тестов Внук" }], nextCursor: null }
+      : { results: [
+          { archiveId: "tree-a", id: "same", name: "Тестов Иван" },
+          { archiveId: "tree-b", id: "same", name: "Тестов Павел" },
+        ], nextCursor: "next" },
+    });
+  });
+  await page.route("**/api/discovery/people/tree-b/same", (route) =>
+    route.fulfill({ json: { person: { archiveId: "tree-b", id: "same", name: "Тестов Павел", birthYear: "1901" } } }),
+  );
+  await page.goto("/discover");
+  await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Тестов");
+  await page.getByRole("button", { name: "Найти" }).click();
+  await expect(page).toHaveURL(/\/discover\/search\//);
+  await expect(page.locator(".public-person-card")).toHaveCount(2);
+  await page.getByRole("button", { name: "Показать ещё" }).click();
+  await expect(page.locator(".public-person-card")).toHaveCount(3);
+  await page.getByRole("link", { name: "Тестов Павел" }).click();
+  await expect(page.locator(".public-person-card")).toContainText("1901");
+  await expect(page).toHaveURL(/\/discover\/person\/tree-b\/same$/);
+});
+
 test("admin publishes a person from the card menu and finds the limited public card", async ({ page, isMobile }) => {
   test.skip(isMobile, "Card context menu currently requires a pointing device");
   await page.goto("/tree");

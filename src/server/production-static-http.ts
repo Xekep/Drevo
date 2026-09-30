@@ -80,11 +80,15 @@ export function productionStaticHttp(
       /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/[A-Za-z0-9_-]{43}$/.test(
         pathname,
       );
+    const discovery =
+      pathname === "/discover" ||
+      /^\/discover\/search\/[^/]{1,300}$/.test(pathname) ||
+      /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?[A-Za-z0-9_-]{1,100}$/.test(pathname);
     const filePath =
       archiveViewAt(pathname) ||
       shared ||
       invitation ||
-      pathname === "/discover"
+      discovery
         ? resolve(root, "index.html")
         : resolve(root, "." + decoded);
     if (filePath !== root && !filePath.startsWith(root + sep))

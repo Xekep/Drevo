@@ -1374,6 +1374,49 @@ try {
     "secondary",
   );
   assert.equal((await fetch(otherBase + "/media/same.png", { headers })).status, 401);
+  // Discovery reads a global projection, never another archive's private graph.
+  assert.equal(
+    (await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers })).status,
+    503,
+  );
+  const otherPublication = publishedPeopleStore(otherApp.archive.db);
+  const livingDiscovery = await otherApp.archive.read();
+  assert.notEqual(livingDiscovery.family.people[0].deceased, true);
+  assert.equal(Boolean(livingDiscovery.family.people[0].death), false);
+  await otherPublication.publish("person-a", "owner");
+  assert.equal(
+    (await app.archive.db.prepare("", "SELECT count(*)::int AS count FROM discovery_people WHERE archive_id='other-archive' AND person_id='person-a'").get())?.count,
+    0,
+    "a living person cannot enter discovery even if a stale publication row exists",
+  );
+  await otherPublication.unpublish("person-a");
+  const beforeDiscovery = await otherApp.archive.read();
+  const deceasedFamily = structuredClone(beforeDiscovery.family);
+  deceasedFamily.people[0].deceased = true;
+  await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
+  await otherPublication.publish("person-a", "owner");
+  await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
+  const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
+  assert.equal(found.status, 200);
+  assert.deepEqual(
+    (await found.json()).results.map((person: { archiveId: string; id: string }) => [person.archiveId,person.id]),
+    [["other-archive","person-a"]],
+    "a root-archive reader can find only the explicitly published projection from another archive",
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    200,
+  );
+  await otherPublication.unpublish("person-a");
+  assert.equal(
+    (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    404,
+    "revocation removes the global detail in the same transaction",
+  );
+  const afterDiscovery = await otherApp.archive.read();
+  const restoredFamily = structuredClone(afterDiscovery.family);
+  restoredFamily.people[0].deceased = false;
+  await otherApp.archive.write(restoredFamily, afterDiscovery.revision);
   const originalClientId = process.env.YANDEX_CLIENT_ID;
   const originalClientSecret = process.env.YANDEX_CLIENT_SECRET;
   process.env.YANDEX_CLIENT_ID = "runtime-test-client";
@@ -1432,6 +1475,12 @@ try {
     if (originalClientSecret === undefined) delete process.env.YANDEX_CLIENT_SECRET;
     else process.env.YANDEX_CLIENT_SECRET = originalClientSecret;
   }
+  const beforeBackfill = await otherApp.archive.read();
+  const backfillFamily = structuredClone(beforeBackfill.family);
+  backfillFamily.people[0].deceased = true;
+  await otherApp.archive.write(backfillFamily, beforeBackfill.revision);
+  await publishedPeopleStore(otherApp.archive.db).publish("person-a", "owner");
+  await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=false WHERE singleton=true").run();
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();
