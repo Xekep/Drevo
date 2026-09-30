@@ -423,6 +423,9 @@ export function aiResearchHttp({
     const user = await auth.currentUser(req);
     if (!user?.approved)
       return json(res, 403, { error: "Доступ к архиву отозван" });
+    // A large attachment may arrive after the owner's tier was downgraded.
+    if (!(await accountAiAccess(archive.db, user.id, auth.local)))
+      return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
     const runtime = await aiRuntimeConfig(aiSettings, user.role);
     if (!runtime.active)
       return json(res, 503, {
@@ -519,6 +522,10 @@ export function aiResearchHttp({
     let appended = false;
     try {
       if (closing) throw new Error("Сервер перезапускается");
+      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+        await chats.release(chat.id, lockToken);
+        return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+      }
       const oldFiles =
         (await chats.messages(chat.id, user.id))?.flatMap(
           (item) => item.attachments || [],
@@ -647,6 +654,10 @@ export function aiResearchHttp({
     }
 
     try {
+      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+        accessRevoked = true;
+        throw new DOMException("Доступ к ИИ отключён", "AbortError");
+      }
       const result = await runResearch({
         body: { ...body, message },
         user,
