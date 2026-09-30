@@ -28,6 +28,7 @@ import { AccountEmailLink } from "./account-email-link";
 import { PortableImport } from "./portable-import";
 import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
+import { AccountSelfDeletion } from "./account-self-deletion";
 import { CreatePersonalArchive } from "./create-personal-archive";
 
 export type AccountSession = {
@@ -519,6 +520,7 @@ export function AccountPage({
                     >
                       <LogOut size={17} /> Выйти из этого сеанса
                     </button>
+                    <AccountSelfDeletion />
                   </>
                 )}
               </section>

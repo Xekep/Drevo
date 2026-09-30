@@ -34,6 +34,7 @@ import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
+import { accountSelfDeletionHttp } from "./account-self-deletion-http.ts";
 import { archiveOwnerTransferHttp } from "./archive-owner-transfer-http.ts";
 import { archiveDeletionHttp } from "./archive-deletion-http.ts";
 import { cleanupDeletedArchiveDirectories } from "./archive-deletion-files.ts";
@@ -140,6 +141,12 @@ export async function startServer(
     archive.db,
     publicOrigin,
     !archiveId,
+  );
+  const deleteAccount = accountSelfDeletionHttp(
+    archive.db,
+    auth,
+    !archiveId,
+    publicOrigin,
   );
   const transferArchiveOwner = archiveOwnerTransferHttp(
     archive.db,
@@ -293,6 +300,7 @@ export async function startServer(
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
     if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
     if (await listAccountArchives(req, res, parsedUrl)) return;
+    if (await deleteAccount(req, res, parsedUrl)) return;
     if (await searchPublishedPeople(req, res, parsedUrl)) return;
     if (
       manageAccountInvitations &&
