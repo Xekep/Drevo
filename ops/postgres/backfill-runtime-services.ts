@@ -40,7 +40,7 @@ export async function backfillRuntimeServicesInTransaction(
   await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
     archiveId,
   ]);
-  await client.query(readFileSync(new URL("./031_upload_limits.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("./032_upload_limits.sql", import.meta.url), "utf8"));
   await client.query(
     readFileSync(
       new URL("./010_runtime_services.sql", import.meta.url),
