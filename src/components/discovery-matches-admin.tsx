@@ -47,6 +47,9 @@ export function DiscoveryMatchesAdmin() {
   const [targetQuery, setTargetQuery] = useState("");
   const [ownPeople, setOwnPeople] = useState<Candidate[]>([]);
   const [targets, setTargets] = useState<Candidate[]>([]);
+  const [targetCursor, setTargetCursor] = useState<string | null>(null);
+  const [targetNextCursor, setTargetNextCursor] = useState<string | null>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SuggestedCandidate[]>([]);
   const [suggestionsBusy, setSuggestionsBusy] = useState(false);
   const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
@@ -77,19 +80,23 @@ export function DiscoveryMatchesAdmin() {
   }, [ownQuery, reload]);
 
   useEffect(() => {
-    if (targetQuery.trim().length < 2) return;
+    if (!archiveId || targetQuery.trim().length < 2) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      archiveFetch(`/api/discovery/people?q=${encodeURIComponent(targetQuery.trim())}`, {
+      const params = new URLSearchParams({ q: targetQuery.trim(), excludeArchiveId: archiveId });
+      if (targetCursor) params.set("cursor", targetCursor);
+      archiveFetch(`/api/discovery/people?${params}`, {
         signal: controller.signal, cache: "no-store",
       }).then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Не удалось найти карточки");
-        setTargets(body.results);
-      }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); });
+        setTargets((current) => targetCursor ? [...current, ...body.results] : body.results);
+        setTargetNextCursor(body.nextCursor);
+      }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
+        .finally(() => { if (!controller.signal.aborted) setTargetLoading(false); });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [targetQuery]);
+  }, [targetQuery, archiveId, targetCursor]);
 
   useEffect(() => {
     if (!source) return;
@@ -177,15 +184,22 @@ export function DiscoveryMatchesAdmin() {
           </div>
         </div>
         <div><label>Карточка из другого дерева
-          <input type="search" value={targetQuery} onChange={(event) => { setTargetQuery(event.target.value); setTarget(null); setTargets([]); }} placeholder="Введите ФИО (от 2 символов)" />
+          <input type="search" value={targetQuery} onChange={(event) => {
+            setTargetQuery(event.target.value); setTarget(null); setTargets([]);
+            setTargetCursor(null); setTargetNextCursor(null);
+            setTargetLoading(event.target.value.trim().length >= 2);
+          }} placeholder="Введите ФИО (от 2 символов)" />
         </label>
           <div className="match-options" aria-label="Найденные люди в других деревьях">
             {targets.filter((person) => person.archiveId !== archiveId).map((person) => <button type="button"
               key={`${person.archiveId}:${person.id}`} className={target?.archiveId === person.archiveId && target.id === person.id ? "is-selected" : ""}
               aria-pressed={target?.archiveId === person.archiveId && target.id === person.id}
               onClick={() => setTarget(person)}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
-            {targetQuery.trim().length >= 2 && !targets.some((person) => person.archiveId !== archiveId) && <p>Карточек в других деревьях не найдено.</p>}
+            {targetLoading && <p role="status">Ищем…</p>}
+            {targetQuery.trim().length >= 2 && !targetLoading && !targets.some((person) => person.archiveId !== archiveId) && <p>Карточек в других деревьях не найдено.</p>}
           </div>
+          {targetNextCursor && <button type="button" className="match-more" disabled={targetLoading}
+            onClick={() => { setTargetLoading(true); setTargetCursor(targetNextCursor); }}>Показать ещё</button>}
         </div>
       </div>
       {source && <div className="match-suggestions">

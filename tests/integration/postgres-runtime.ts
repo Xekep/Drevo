@@ -1436,6 +1436,11 @@ try {
     method: "POST", headers: ownerHeaders, body: proposedPair,
   })).status, 409, "a private card cannot be used in a cross-archive match");
   await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  const otherArchivesOnly = await fetch(securedBase +
+    "/api/discovery/people?q=Тестов&excludeArchiveId=runtime-test", { headers });
+  assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
+    person.archiveId), ["other-archive"],
+  "candidate search must exclude this archive before paginating, not after the client receives a page");
   const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: ownerHeaders,
     body: proposedPair,
