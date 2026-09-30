@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useRef, useState } from "react";
 import { FileUp, RotateCcw } from "lucide-react";
 import type { RestorePreview } from "../shared/backup-management";
@@ -27,7 +28,7 @@ export function BackupRestore({
     try {
       if (file && file.size > 12 * 1024 * 1024 * 1024)
         throw new Error("Максимальный размер — 12 ГиБ");
-      const response = await fetch(
+      const response = await archiveFetch(
         `/api/restore/${apply ? "apply" : "preview"}`,
         {
           method: "POST",

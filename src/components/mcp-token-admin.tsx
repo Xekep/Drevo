@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
 
@@ -85,7 +86,7 @@ export function McpTokenAdmin() {
     [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/mcp/tokens", { cache: "no-store" }),
+    const response = await archiveFetch("/api/mcp/tokens", { cache: "no-store" }),
       data = await response.json();
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить MCP-токены");
@@ -115,7 +116,7 @@ export function McpTokenAdmin() {
     setError("");
     setSecret("");
     try {
-      const response = await fetch("/api/mcp/tokens", {
+      const response = await archiveFetch("/api/mcp/tokens", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -144,7 +145,7 @@ export function McpTokenAdmin() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
           `/api/mcp/tokens/${encodeURIComponent(id)}`,
           { method: "DELETE" },
         ),

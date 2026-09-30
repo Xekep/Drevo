@@ -1,3 +1,4 @@
+import { archiveFetch } from "./data/archive-fetch.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirmDiscardChanges } from "./hooks/useUnsavedChanges";
 import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
@@ -18,6 +19,7 @@ import {
   archiveTargetPath,
   type ArchiveTarget,
 } from "./domain/archive-links";
+import { archiveContextAt, scopedArchivePath } from "./domain/archive-context.ts";
 import {
   ArchiveNavigation,
   ArchiveHeader,
@@ -169,7 +171,7 @@ export default function App() {
   useEffect(() => {
     if (view !== "account") return;
     const controller = new AbortController();
-    fetch("/api/session", { cache: "no-store", signal: controller.signal })
+    archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error("Не удалось загрузить профиль");
         return response.json();
@@ -285,7 +287,7 @@ export default function App() {
       if (
         target &&
         window.location.pathname + window.location.search !==
-          archiveTargetPath(target)
+          scopedArchivePath(archiveTargetPath(target))
       )
         setView(target.kind === "person" ? "tree" : "gallery", target, true);
       if (
@@ -752,7 +754,8 @@ export default function App() {
                         </div>
                       }
                       onShare={
-                        user?.role === "admin" && canEdit
+                        user?.role === "admin" && canEdit &&
+                        !archiveContextAt(window.location.pathname)
                           ? (anchorId, ids) => {
                               const anchor = map.get(anchorId);
                               if (anchor)

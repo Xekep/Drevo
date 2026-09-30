@@ -14,6 +14,7 @@ import {
   type ResearchAnswerReference,
 } from "../../domain/research-answer.ts";
 import { normalizeResearchMath } from "../../domain/research-math.ts";
+import { archiveResourceUrl } from "../../domain/archive-context.ts";
 
 export type ResearchMessage = {
   role: "user" | "assistant";
@@ -81,7 +82,9 @@ const MarkdownAnswer = memo(function MarkdownAnswer({
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { trust: false }]]}
         urlTransform={(url) =>
-          url.startsWith("#drevo-") ? url : defaultUrlTransform(url)
+          url.startsWith("#drevo-")
+            ? url
+            : archiveResourceUrl(defaultUrlTransform(url))
         }
         components={components}
       >

@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 type FaceRect = { x: number; y: number; width: number; height: number };
 type FaceSample = { box: FaceRect; descriptor: number[] };
 function containsFace(tag: FaceRect, face: FaceRect) {
@@ -20,7 +22,7 @@ export type FaceSuggestion = {
 export const FACE_MODEL = "human-faceres-3.3.6";
 
 export async function faceRecognitionAvailable(signal?: AbortSignal) {
-  const response = await fetch("/api/faces/status", { signal });
+  const response = await archiveFetch("/api/faces/status", { signal });
   if (!response.ok) return false;
   const status = (await response.json()) as { enabled?: boolean };
   return status.enabled === true;
@@ -87,12 +89,13 @@ async function detect(
   precise: boolean,
   onProgress: (message: string) => void,
 ): Promise<FaceSample[]> {
-  const key = `${precise ? "precise" : "quick"}:${url}`;
+  const imageUrl = archiveResourceUrl(url);
+  const key = `${precise ? "precise" : "quick"}:${imageUrl}`;
   if (cache.has(key)) return cache.get(key)!;
   const work = (async () => {
     const human = await loadApi();
     const image = new Image();
-    image.src = url;
+    image.src = imageUrl;
     await image.decode();
     const canvas = imageCanvas(image, precise ? 1800 : 1200);
     if (human.config.face.detector)
@@ -131,7 +134,7 @@ async function matchFaceDescriptor(
   descriptor: number[],
   signal: AbortSignal,
 ): Promise<{ personId: string; distance: number } | undefined> {
-  const response = await fetch("/api/faces/match", {
+  const response = await archiveFetch("/api/faces/match", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
@@ -162,7 +165,7 @@ export async function saveFaceDescriptor(
   sourcePhotoId: string,
   sourceTagId: string,
 ) {
-  const response = await fetch("/api/faces/descriptors", {
+  const response = await archiveFetch("/api/faces/descriptors", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },

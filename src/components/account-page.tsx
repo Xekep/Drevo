@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
@@ -11,7 +12,13 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { ROLE_NAMES, fullName, type ArchiveUser, type Family } from "../domain";
+import {
+  ROLE_NAMES,
+  fullName,
+  type ArchiveUser,
+  type Family,
+  type Role,
+} from "../domain";
 import { clearLayoutStorage } from "./tree/layout-storage";
 import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
@@ -23,6 +30,13 @@ export type AccountSession = {
   vk?: boolean;
 };
 type SessionSummary = { currentExpiresAt: string | null; otherCount: number };
+type AccountArchive = {
+  id: string;
+  title: string;
+  role: Role;
+  approved: boolean;
+  current: boolean;
+};
 type Capacity =
   | { available: false }
   | { available: true; owned: false }
@@ -69,6 +83,7 @@ export function AccountPage({
   const user = session?.user;
   const local = session?.local === true;
   const [sessions, setSessions] = useState<SessionSummary | null>(null);
+  const [archives, setArchives] = useState<AccountArchive[] | null>(null);
   const [capacityState, setCapacityState] = useState<{
     key: string;
     result: Capacity;
@@ -81,7 +96,7 @@ export function AccountPage({
   useEffect(() => {
     if (!user || local) return;
     const controller = new AbortController();
-    fetch("/api/account/sessions", {
+    archiveFetch("/api/account/sessions", {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -97,10 +112,25 @@ export function AccountPage({
     return () => controller.abort();
   }, [user, local]);
   useEffect(() => {
+    if (!user || local) return;
+    const controller = new AbortController();
+    void archiveFetch("/api/account/archives", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result: { archives?: AccountArchive[] } | null) => {
+        if (result && Array.isArray(result.archives))
+          setArchives(result.archives);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [user, local]);
+  useEffect(() => {
     if (!user || local || user.fullAccess === undefined) return;
     const controller = new AbortController();
     const key = `${user.id}:${String(user.fullAccess)}`;
-    void fetch("/api/account/capacity", {
+    void archiveFetch("/api/account/capacity", {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -119,9 +149,12 @@ export function AccountPage({
     setRevoking(true);
     setSessionError("");
     try {
-      const response = await fetch("/api/account/sessions/revoke-others", {
-        method: "POST",
-      });
+      const response = await archiveFetch(
+        "/api/account/sessions/revoke-others",
+        {
+          method: "POST",
+        },
+      );
       if (!response.ok) throw new Error("Не удалось завершить другие сеансы");
       setSessions((previous) =>
         previous ? { ...previous, otherCount: 0 } : previous,
@@ -136,7 +169,7 @@ export function AccountPage({
   };
   const logout = async () => {
     try {
-      const response = await fetch("/auth/logout", { method: "POST" });
+      const response = await archiveFetch("/auth/logout", { method: "POST" });
       if (response.ok) await clearLayoutStorage();
     } finally {
       window.location.replace("/");
@@ -223,9 +256,11 @@ export function AccountPage({
                     <div>
                       <span>Уровень аккаунта</span>
                       <strong>
-                        {(capacity?.available && capacity.owned
-                          ? capacity.fullAccess
-                          : user.fullAccess)
+                        {(
+                          capacity?.available && capacity.owned
+                            ? capacity.fullAccess
+                            : user.fullAccess
+                        )
                           ? "Полный"
                           : "Базовый"}
                       </strong>
@@ -279,6 +314,35 @@ export function AccountPage({
                     </strong>
                   </div>
                 </div>
+                {archives && archives.length > 1 && (
+                  <div
+                    className="account-archive-list"
+                    aria-label="Доступные деревья"
+                  >
+                    <h3>Мои деревья</h3>
+                    {archives.map((item) => (
+                      <div className="account-archive-row" key={item.id}>
+                        <span className="account-archive-name">
+                          <strong>{item.title}</strong>
+                          <small>{ROLE_NAMES[item.role]}</small>
+                        </span>
+                        {item.current ? (
+                          <span className="account-archive-current">
+                            Открыто
+                          </span>
+                        ) : item.approved ? (
+                          <a href={`/a/${encodeURIComponent(item.id)}/tree`}>
+                            Открыть <ArrowRight size={15} />
+                          </a>
+                        ) : (
+                          <span className="account-archive-current">
+                            Ожидает доступа
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {!user.approved && (
                   <p className="account-note">
                     Администратор архива должен подтвердить ваш доступ. Профиль

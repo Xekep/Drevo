@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { EditorDialog } from "./editor-dialog";
 import { portraitCrop } from "../domain/portrait-crop";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 
 export function PortraitCropper({
   src,
@@ -111,7 +112,7 @@ export function PortraitCropper({
         >
           <img
             ref={image}
-            src={src}
+            src={archiveResourceUrl(src)}
             alt=""
             draggable={false}
             onLoad={(event) => {

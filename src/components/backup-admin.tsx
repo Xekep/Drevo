@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import { useEffect, useState } from "react";
 import {
   DatabaseBackup,
@@ -15,7 +17,7 @@ import type {
 import { BackupRestore } from "./backup-restore";
 
 async function request(path: string, method = "GET", body?: unknown) {
-  const response = await fetch("/api/backups" + path, {
+  const response = await archiveFetch("/api/backups" + path, {
     method,
     headers: { "Content-Type": "application/json", "X-Drevo-Backup": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -51,7 +53,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
     async function poll() {
       let delay = 15000;
       try {
-        const response = await fetch("/api/backups?offset=" + offset, {
+        const response = await archiveFetch("/api/backups?offset=" + offset, {
           signal: controller.signal,
         });
         const data = (await response.json()) as BackupStatus & {
@@ -377,7 +379,7 @@ export function BackupAdmin({ onRestored }: { onRestored: () => void }) {
               </div>
               <div className="backup-list-actions">
                 <a
-                  href={"/api/backups/" + item.id + "/download"}
+                  href={archiveResourceUrl("/api/backups/" + item.id + "/download")}
                   download
                   aria-label={"Скачать копию от " + date(item.createdAt)}
                   title="Скачать"

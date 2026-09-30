@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { Person } from "../domain/types";
 import { EditorDialog } from "./editor-dialog";
@@ -27,7 +28,7 @@ export function PublishPersonDialog({
   const endpoint = `/api/admin/published-people/${encodeURIComponent(person.id)}`;
   useEffect(() => {
     const controller = new AbortController();
-    fetch(endpoint, { signal: controller.signal, cache: "no-store" })
+    archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
@@ -43,7 +44,7 @@ export function PublishPersonDialog({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(endpoint, {
+      const response = await archiveFetch(endpoint, {
         method: publish ? "PUT" : "DELETE",
       });
       const data = await response.json();

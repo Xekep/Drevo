@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { ArrowUpRight, Check, Medal, Plus, Trash2, X } from "lucide-react";
 import type { PersonAward } from "../domain/types";
 import { safeUrl } from "../domain";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import {
   activeInYear,
   getAwardDefinition,
@@ -589,7 +590,7 @@ export function PersonAwards({ awards }: { awards?: PersonAward[] }) {
             <div className="award-focus-source">
               {active.award.source?.title && <p>{active.award.source.title}</p>}
               {active.url && (
-                <a href={active.url} target="_blank" rel="noopener noreferrer">
+                <a href={archiveResourceUrl(active.url)} target="_blank" rel="noopener noreferrer">
                   Открыть источник <ArrowUpRight size={13} />
                 </a>
               )}

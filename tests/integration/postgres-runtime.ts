@@ -1037,6 +1037,16 @@ try {
       .then((r) => r.json())).user.id,
     "owner",
   );
+  const selectedPage = await fetch(securedBase + "/a/other-archive/tree", {
+    headers: ownerHeaders,
+  });
+  assert.equal(selectedPage.status, 200);
+  assert.match(await selectedPage.text(), /<html|<!doctype html/i);
+  const selectedFamily = await fetch(securedBase + "/a/other-archive/api/family", {
+    headers: ownerHeaders,
+  });
+  assert.equal(selectedFamily.status, 200);
+  assert.equal((await selectedFamily.json()).family.people[0].name, "Исправленный сосед");
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })
       .then((r) => r.json())).user,

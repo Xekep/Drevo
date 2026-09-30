@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3 } from "lucide-react";
 import type { Family } from "../domain/types";
@@ -55,7 +56,7 @@ export default function SharedTree({ token }: { token: string }) {
       if (loading || controller.signal.aborted) return;
       loading = true;
       try {
-        const r = await fetch(
+        const r = await archiveFetch(
           `/api/shared/${token}${revalidate ? "?check=1" : ""}`,
           {
             signal: controller.signal,

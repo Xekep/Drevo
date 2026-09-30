@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState } from "react";
 import { Send, Trash2 } from "lucide-react";
 
@@ -24,7 +25,7 @@ export function PersonDiscussion({ personId }: { personId: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(endpoint, { signal: controller.signal, cache: "no-store" })
+    void archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Не удалось загрузить обсуждение");
         return (await response.json()) as Page;
@@ -50,7 +51,7 @@ export function PersonDiscussion({ personId }: { personId: string }) {
     method: "POST" | "DELETE",
     body?: unknown,
   ) {
-    const response = await fetch(url, {
+    const response = await archiveFetch(url, {
       method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -109,7 +110,7 @@ export function PersonDiscussion({ personId }: { personId: string }) {
     setPending(true);
     setError("");
     try {
-      const response = await fetch(`${endpoint}?before=${nextBefore}`, {
+      const response = await archiveFetch(`${endpoint}?before=${nextBefore}`, {
         cache: "no-store",
       });
       if (!response.ok)

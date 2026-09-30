@@ -42,6 +42,7 @@ import {
   type TreeMode,
   type TreeColorScheme,
 } from "../../domain";
+import { archiveContextAt } from "../../domain/archive-context.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
@@ -410,7 +411,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       layoutMode,
       reverse,
       user
-        ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
+        ? JSON.stringify([
+            archiveContextAt(window.location.pathname)?.id || "default",
+            user.id,
+            user.role,
+            user.treeAccess,
+            user.personId,
+          ])
         : null,
     );
   const nodeWidth = geometry?.nodeSize?.width ?? treeNodeSize().width;

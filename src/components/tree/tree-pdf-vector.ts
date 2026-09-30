@@ -1,3 +1,4 @@
+import { archiveFetch } from "../../data/archive-fetch.ts";
 import { jsPDF } from "jspdf";
 import "svg2pdf.js";
 import fontUrl from "../../../assets/DejaVuSans.ttf?url";
@@ -82,7 +83,7 @@ export async function downloadTreePng(
 }
 
 export async function loadPdfFontBytes(signal?: AbortSignal) {
-  const response = await fetch(fontUrl, { signal });
+  const response = await archiveFetch(fontUrl, { signal });
   if (!response.ok) throw new Error("Не удалось загрузить шрифт PDF.");
   return new Uint8Array(await response.arrayBuffer());
 }

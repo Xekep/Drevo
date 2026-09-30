@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import type { ResearchSearchSettings } from "../shared/web-search.ts";
 import type {
   ResearchCategory as Category,
@@ -56,7 +57,7 @@ export function ResearchResourcesAdmin() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(endpoint, { signal: controller.signal, cache: "no-store" })
+    void archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Каталог недоступен");
@@ -79,7 +80,7 @@ export function ResearchResourcesAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`${endpoint}${path}`, {
+      const response = await archiveFetch(`${endpoint}${path}`, {
         method,
         ...(body === undefined
           ? {}

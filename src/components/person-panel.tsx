@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
@@ -134,7 +136,7 @@ export function PersonPanel({
     const request = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(
+        const response = await archiveFetch(
           `/api/documents?personId=${encodeURIComponent(person.id)}&limit=1`,
           { signal: request.signal },
         );
@@ -160,7 +162,7 @@ export function PersonPanel({
         const items: Array<{ id: string; title: string }> = [];
         let total = 0;
         do {
-          const response = await fetch(
+          const response = await archiveFetch(
             `/api/documents?personId=${encodeURIComponent(person.id)}&offset=${items.length}&limit=100`,
             { signal: request.signal },
           );
@@ -432,7 +434,7 @@ export function PersonPanel({
                 </div>
                 <h3>{document.title}</h3>
                 <a
-                  href={`/documents?personId=${encodeURIComponent(person.id)}&documentId=${encodeURIComponent(document.id)}`}
+                  href={scopedArchivePath(`/documents?personId=${encodeURIComponent(person.id)}&documentId=${encodeURIComponent(document.id)}`)}
                 >
                   Открыть документ
                   <ArrowUpRight size={12} />
@@ -458,7 +460,7 @@ export function PersonPanel({
                   )}
                   {safeUrl(s.url) ? (
                     <a
-                      href={safeUrl(s.url)}
+                      href={archiveResourceUrl(safeUrl(s.url) || "")}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

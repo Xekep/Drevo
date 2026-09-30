@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -13,6 +14,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { PageFlip } from "page-flip";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { ListedDocument } from "./documents-catalog";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import type {
   AnnotationSelection,
   DocumentAnnotation,
@@ -77,7 +79,7 @@ export function PdfBookReader({
 
   useEffect(() => {
     const request = new AbortController();
-    void fetch(`/api/documents/${entry.id}/annotations`, {
+    void archiveFetch(`/api/documents/${entry.id}/annotations`, {
       signal: request.signal,
     })
       .then(async (response) => {
@@ -297,7 +299,7 @@ export function PdfBookReader({
         if (!active) return;
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
         loadingTask = pdfjs.getDocument({
-          url: entry.url,
+          url: archiveResourceUrl(entry.url),
           withCredentials: entry.url.startsWith("/"),
         });
         pdf = await loadingTask.promise;
@@ -492,7 +494,7 @@ export function PdfBookReader({
     setSaving(true);
     setAnnotationError("");
     try {
-      const response = await fetch(`/api/documents/${entry.id}/annotations`, {
+      const response = await archiveFetch(`/api/documents/${entry.id}/annotations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...selection, text: comment.trim() }),
@@ -522,7 +524,7 @@ export function PdfBookReader({
   const removeAnnotation = async (id: string) => {
     setAnnotationError("");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
         `/api/documents/${entry.id}/annotations/${id}`,
         { method: "DELETE" },
       );
@@ -621,7 +623,7 @@ export function PdfBookReader({
               </button>
             )}
             <a
-              href={entry.url}
+              href={archiveResourceUrl(entry.url)}
               target="_blank"
               rel="noopener noreferrer"
               title="Открыть оригинал"
@@ -678,7 +680,7 @@ export function PdfBookReader({
               <div className="pdf-book-message" role="alert">
                 <p>{error}</p>
                 <p>Попробуйте открыть исходный PDF, чтобы проверить файл.</p>
-                <a href={entry.url} target="_blank" rel="noopener noreferrer">
+                <a href={archiveResourceUrl(entry.url)} target="_blank" rel="noopener noreferrer">
                   Открыть оригинал
                 </a>
               </div>

@@ -7,6 +7,7 @@ import {
   years,
   type Family,
 } from "../../domain";
+import { mediaPreview } from "../../domain/media-preview.ts";
 
 const DEFAULT_GENERATIONS = 5;
 const ROOT_RADIUS = 78;
@@ -149,7 +150,7 @@ export function FanChart({
           if (!person && !showUnknown) return null;
           const portrait =
             showPortraits && slot.generation <= 2 && person?.photo
-              ? safeUrl(person.photo)
+              ? mediaPreview(safeUrl(person.photo))
               : undefined;
           const portraitRadius = slot.generation === 0 ? 14 : 17;
           const portraitCenterY = label.y - (slot.generation === 0 ? 20 : 13);

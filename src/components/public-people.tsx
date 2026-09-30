@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoginButtons } from "./login-buttons";
 
@@ -36,7 +37,7 @@ export default function PublicPeople() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(url, { cache: "no-store" });
+      const response = await archiveFetch(url, { cache: "no-store" });
       const data = await response.json();
       if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error || "Поиск недоступен");
@@ -60,7 +61,7 @@ export default function PublicPeople() {
         : "";
     if (!url) return;
     const controller = new AbortController();
-    fetch(url, { cache: "no-store", signal: controller.signal })
+    archiveFetch(url, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const data = await response.json();
         if (response.status === 401) setNeedsLogin(true);

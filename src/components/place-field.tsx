@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useRef, useState } from "react";
 import type { PlaceLocation } from "../domain/types";
 import type { PlaceResult } from "../domain/places";
@@ -22,7 +23,7 @@ export function PlaceField({
     const request = ++sequence.current;
     setNotice("Ищем место на карте…");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
         `/api/places/locate?q=${encodeURIComponent(value.trim())}`,
         { headers: { "X-Drevo-Map": "1" } },
       );

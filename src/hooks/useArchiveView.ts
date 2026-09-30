@@ -5,6 +5,7 @@ import {
   type ArchiveView,
 } from "../domain/archive-routes";
 import { archiveTargetPath, type ArchiveTarget } from "../domain/archive-links";
+import { scopedArchivePath } from "../domain/archive-context.ts";
 
 export function useArchiveView(canLeave: () => boolean = () => true) {
   const currentUrl = useRef(window.location.pathname + window.location.search);
@@ -16,12 +17,13 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
   );
   const navigate = useCallback(
     (next: ArchiveView, target?: ArchiveTarget | string, replace = false) => {
-      const path =
+      const path = scopedArchivePath(
         typeof target === "string"
           ? target
           : target
             ? archiveTargetPath(target)
-            : archivePaths[next];
+            : archivePaths[next],
+      );
       const fullscreen = Boolean(window.history.state?.drevoTreeFullscreen);
       if (window.location.pathname + window.location.search !== path)
         window.history[replace || fullscreen ? "replaceState" : "pushState"](

@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useState } from "react";
 import { Copy, Link2, Check } from "lucide-react";
 import { EditorDialog } from "./editor-dialog";
@@ -41,7 +42,7 @@ export function ShareDialog({
         await copy(url);
         return;
       }
-      const response = await fetch("/api/shares", {
+      const response = await archiveFetch("/api/shares", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

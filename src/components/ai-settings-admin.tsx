@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   Bot,
@@ -144,7 +145,7 @@ export function AiSettingsAdmin() {
   }, []);
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/admin/ai", { cache: "no-store" }),
+    const response = await archiveFetch("/api/admin/ai", { cache: "no-store" }),
       data = await response.json();
     if (!response.ok)
       throw new Error(data.error || "Не удалось загрузить настройки AI Studio");
@@ -170,7 +171,7 @@ export function AiSettingsAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/admin/ai", {
+      const response = await archiveFetch("/api/admin/ai", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -210,7 +211,7 @@ export function AiSettingsAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
           `/api/admin/ai/test${role ? `?role=${role}` : ""}`,
           { method: "POST" },
         ),
@@ -231,7 +232,7 @@ export function AiSettingsAdmin() {
     setError("");
     setNotice("");
     try {
-      const response = await fetch("/api/admin/ai/models", {
+      const response = await archiveFetch("/api/admin/ai/models", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

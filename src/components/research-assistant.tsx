@@ -1,3 +1,5 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import type { ResearchResult, UiAction } from "../shared/research-protocol.ts";
 import { browserTimeZone } from "../data/browser-time-zone";
 import {
@@ -401,7 +403,7 @@ export function ResearchAssistant({
     if (!enabled) return;
     let active = true;
     const selection = chatSelection.current;
-    void fetch("/api/ai/chats", { credentials: "same-origin" })
+    void archiveFetch("/api/ai/chats", { credentials: "same-origin" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Не удалось загрузить диалоги");
         return (await response.json()) as { chats: typeof chats };
@@ -410,7 +412,7 @@ export function ResearchAssistant({
         if (!active) return;
         setChats(data.chats);
         if (data.chats[0]) {
-          const response = await fetch(`/api/ai/chats/${data.chats[0].id}`);
+          const response = await archiveFetch(`/api/ai/chats/${data.chats[0].id}`);
           if (!response.ok) return;
           const detail = (await response.json()) as { messages: Message[] };
           if (active && selection === chatSelection.current) {
@@ -441,7 +443,7 @@ export function ResearchAssistant({
     const refresh = async () => {
       try {
         if (!activeRequests.current.has(chatId)) {
-          const response = await fetch(`/api/ai/chats/${chatId}`, {
+          const response = await archiveFetch(`/api/ai/chats/${chatId}`, {
             signal: controller.signal,
             cache: "no-store",
           });
@@ -565,7 +567,7 @@ export function ResearchAssistant({
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/ai/status", {
+    void archiveFetch("/api/ai/status", {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -578,7 +580,7 @@ export function ResearchAssistant({
 
   const loadSuggestions = useCallback(async () => {
     if (!canEdit) return;
-    const response = await fetch("/api/research/suggestions", {
+    const response = await archiveFetch("/api/research/suggestions", {
         cache: "no-store",
       }),
       data = await response.json();
@@ -624,7 +626,7 @@ export function ResearchAssistant({
     });
     if (key.startsWith("new:")) return;
     try {
-      const response = await fetch(`/api/ai/chats/${key}/stop`, {
+      const response = await archiveFetch(`/api/ai/chats/${key}/stop`, {
         method: "POST",
       });
       const data = await response.json();
@@ -676,7 +678,7 @@ export function ResearchAssistant({
     setMessages(cached || []);
     setError(chatErrors.current.get(id) || "");
     try {
-      const response = await fetch(`/api/ai/chats/${id}`);
+      const response = await archiveFetch(`/api/ai/chats/${id}`);
       if (!response.ok) throw new Error("Не удалось открыть диалог");
       const data = (await response.json()) as { messages: Message[] };
       if (selection !== chatSelection.current) return;
@@ -713,7 +715,7 @@ export function ResearchAssistant({
       let response: Response | undefined;
       try {
         for (let attempt = 0; attempt < 10; attempt++) {
-          response = await fetch(`/api/ai/chats/${chatId}`, {
+          response = await archiveFetch(`/api/ai/chats/${chatId}`, {
             method: "DELETE",
           });
           if (response.status !== 409) break;
@@ -791,7 +793,7 @@ export function ResearchAssistant({
     }));
     setError("");
     try {
-      const response = await fetch("/api/ai/chat/stream", {
+      const response = await archiveFetch("/api/ai/chat/stream", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json" },
@@ -982,7 +984,7 @@ export function ResearchAssistant({
     setReviewBusy(id);
     setError("");
     try {
-      const response = await fetch(
+      const response = await archiveFetch(
           `/api/research/suggestions/${encodeURIComponent(id)}/${action}`,
           { method: "POST" },
         ),
@@ -1302,7 +1304,7 @@ export function ResearchAssistant({
                         <a
                           className="research-file"
                           key={file.url}
-                          href={file.url}
+                          href={archiveResourceUrl(file.url)}
                           download={file.name}
                         >
                           Скачать {file.name}

@@ -1,3 +1,5 @@
+import { archiveContextAt } from "./archive-context.ts";
+
 export const archivePaths = {
   tree: "/tree",
   list: "/people",
@@ -18,7 +20,9 @@ export type ArchiveEntity =
 
 /** Один закодированный сегмент после /people или /photos. */
 export function archiveEntityAt(pathname: string): ArchiveEntity | null {
-  const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(pathname);
+  const match = /^\/(people|photos)\/([^/]+)\/?$/.exec(
+    archiveContextAt(pathname)?.innerPath || pathname,
+  );
   if (!match) return null;
   let id: string;
   try {
@@ -44,7 +48,8 @@ export function archiveEntityAt(pathname: string): ArchiveEntity | null {
 export function archiveViewAt(pathname: string): ArchiveView | null {
   const entity = archiveEntityAt(pathname);
   if (entity) return entity.kind === "person" ? "tree" : "gallery";
-  const path = pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
+  const innerPath = archiveContextAt(pathname)?.innerPath || pathname;
+  const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
   return (
     (Object.keys(archivePaths) as ArchiveView[]).find(

@@ -145,6 +145,49 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+.account-archive-list {
+  margin-top: 22px;
+}
+.account-archive-list h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.account-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 0;
+  border-top: 1px solid #ecede7;
+}
+.account-archive-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.account-archive-name strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-archive-name small,
+.account-archive-current {
+  color: #79877c;
+  font-size: 11px;
+}
+.account-archive-row a {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: #496f50;
+  font-size: 12px;
+  font-weight: 700;
+}
+.account-archive-row a:hover { text-decoration: underline; }
 .account-row-action,
 .account-signout {
   display: inline-flex;

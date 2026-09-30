@@ -1,3 +1,4 @@
+import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { ShareLink } from "../domain/shared-family";
 export function ShareCatalog() {
@@ -8,7 +9,7 @@ export function ShareCatalog() {
     [now, setNow] = useState(Date.now);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/shares", { signal: controller.signal })
+    void archiveFetch("/api/shares", { signal: controller.signal })
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error);
@@ -28,7 +29,7 @@ export function ShareCatalog() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch(`/api/shares/${encodeURIComponent(id)}`, {
+      const r = await archiveFetch(`/api/shares/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
       if (!r.ok) throw new Error((await r.json()).error);
@@ -49,7 +50,7 @@ export function ShareCatalog() {
     setBusy(true);
     setError("");
     try {
-      const r = await fetch(`/api/shares?before=${encodeURIComponent(next!)}`),
+      const r = await archiveFetch(`/api/shares?before=${encodeURIComponent(next!)}`),
         data = await r.json();
       if (!r.ok) throw new Error(data.error);
       setItems((old) => [...old, ...data.items]);
