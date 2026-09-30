@@ -816,7 +816,9 @@ export function documentsHttp({
           return json(res, 403, { error: "Право загрузки отозвано" });
         release = await quota.acquire(
           uploader.id,
-          Number(req.headers["content-length"]) > 0 ? Math.min(Number(req.headers["content-length"]), MAX_PDF_BYTES) : MAX_PDF_BYTES,
+          Number(req.headers["content-length"]) > 0
+            ? Math.min(Number(req.headers["content-length"]), MAX_PDF_BYTES)
+            : MAX_PDF_BYTES,
           disk.bavail * disk.bsize,
           images,
         );

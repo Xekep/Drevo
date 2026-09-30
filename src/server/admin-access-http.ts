@@ -65,23 +65,45 @@ export function adminAccessHttp({
       });
 
     if (path === "/api/settings/storage") {
-      if (req.method === "GET") return json(res, 200, await readStorageLimits(db));
-      if (req.method !== "PUT") return json(res, 405, { error: "Ожидается PUT" });
-      if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Недопустимый источник запроса" });
-      if (!req.headers["content-type"]?.startsWith("application/json")) return json(res, 415, { error: "Ожидается JSON" });
+      if (req.method === "GET")
+        return json(res, 200, await readStorageLimits(db));
+      if (req.method !== "PUT")
+        return json(res, 405, { error: "Ожидается PUT" });
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!req.headers["content-type"]?.startsWith("application/json"))
+        return json(res, 415, { error: "Ожидается JSON" });
       try {
         const body = await readJson(req);
-        const expected = parseStorageLimits(body?.expected), next = parseStorageLimits(body?.next);
-        if (!expected || !next) return json(res, 400, { error: "Укажите лимиты от 0 до 10240 МБ или оставьте поле пустым" });
+        const expected = parseStorageLimits(body?.expected),
+          next = parseStorageLimits(body?.next);
+        if (!expected || !next)
+          return json(res, 400, {
+            error: "Укажите лимиты от 0 до 10240 МБ или оставьте поле пустым",
+          });
         const result = await db.transaction(async () => {
-          if (!(await auth.isAdmin(req))) return { status: 403, error: "Нет прав на настройку хранилища" };
-          if (JSON.stringify(await readStorageLimits(db)) !== JSON.stringify(expected)) return { status: 409, error: "Лимиты изменились. Обновите страницу перед сохранением" };
+          if (!(await auth.isAdmin(req)))
+            return { status: 403, error: "Нет прав на настройку хранилища" };
+          if (
+            JSON.stringify(await readStorageLimits(db)) !==
+            JSON.stringify(expected)
+          )
+            return {
+              status: 409,
+              error: "Лимиты изменились. Обновите страницу перед сохранением",
+            };
           await writeStorageLimits(db, next, (await auth.currentUser(req))!);
           return { status: 200 };
         });
-        return json(res, result.status, result.error ? { error: result.error } : next);
+        return json(
+          res,
+          result.status,
+          result.error ? { error: result.error } : next,
+        );
       } catch (error) {
-        return json(res, error instanceof RangeError ? 413 : 400, { error: "Не удалось сохранить лимиты хранилища" });
+        return json(res, error instanceof RangeError ? 413 : 400, {
+          error: "Не удалось сохранить лимиты хранилища",
+        });
       }
     }
 
@@ -115,14 +137,17 @@ export function adminAccessHttp({
           body.personId !== undefined || body.treeAccess !== undefined;
         if (
           (body.approved !== undefined && typeof body.approved !== "boolean") ||
-          (body.fullAccess !== undefined && typeof body.fullAccess !== "boolean") ||
+          (body.fullAccess !== undefined &&
+            typeof body.fullAccess !== "boolean") ||
           Number(body.approved !== undefined) +
             Number(body.role !== undefined) +
             Number(identity) +
             Number(body.fullAccess !== undefined) !==
             1
         )
-          throw new Error("Изменяйте допуск, роль, привязку или уровень отдельно");
+          throw new Error(
+            "Изменяйте допуск, роль, привязку или уровень отдельно",
+          );
         if (body.fullAccess !== undefined) {
           if (!(await auth.isPlatformAdmin(req)))
             return json(res, 403, {

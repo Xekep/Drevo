@@ -1,3 +1,5 @@
+import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
+import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -303,12 +305,17 @@ try {
     /владельца/,
   );
   const preferences = treePreferencesStore(live.db);
+  await live.db.transaction(() => writeStorageLimits(live!.db, { ...DEFAULT_STORAGE_LIMITS, admin: 0 }, owner));
+  assert.equal((await readStorageLimits(live.db)).admin, 0);
+  await assert.rejects(enforceUserStorageLimit(live.db, "owner", 1), UploadQuotaError);
   const vkSettings = vkAuthSettingsStore(live.db, "https://archive.invalid");
   assert.equal((await vkSettings.read()).available, false);
   await vkSettings.write({ enabled: true, clientId: "12345" }, owner);
   assert.equal((await vkSettings.read()).available, true);
   const isolatedVk = await openPostgresDatabase("other-archive", source);
   try {
+    assert.deepEqual(await readStorageLimits(isolatedVk), DEFAULT_STORAGE_LIMITS);
+    await assert.rejects(isolatedVk.prepare("", "INSERT INTO upload_limits(archive_id,id,data) VALUES('runtime-test',1,'{}')").run(), /row-level security/);
     const isolatedAi = await aiSettingsStore(isolatedVk);
     assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
     await assert.rejects(
@@ -337,6 +344,7 @@ try {
   } finally {
     await isolatedVk.close();
   }
+  await live.db.transaction(() => writeStorageLimits(live!.db, DEFAULT_STORAGE_LIMITS, owner));
   await preferences.write("owner", {
     reverseTimeline: false,
     cardVariant: "portrait",

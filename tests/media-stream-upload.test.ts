@@ -98,7 +98,7 @@ test("photo upload reserves space shared with pending document uploads", async (
         "another-user",
         now,
         now + 60_000,
-        10 * 1024 ** 3 - 10 * 1024 ** 2,
+        10 * 1024 ** 3 - 1,
       );
     const image = await sharp({
       create: { width: 2, height: 2, channels: 3, background: "green" },
@@ -115,6 +115,24 @@ test("photo upload reserves space shared with pending document uploads", async (
     });
     assert.equal(response.status, 507, await response.clone().text());
     assert.deepEqual(readdirSync(join(directory, "uploads")), []);
+    await app.archive.db
+      .prepare(
+        "UPDATE document_upload_requests SET reserved_bytes=? WHERE id='pending-document'",
+      )
+      .run(10 * 1024 ** 3 - image.length);
+    const fitsExactly = await fetch(`${base}/api/photos`, {
+      method: "POST",
+      headers: {
+        "X-Drevo-Upload": "1",
+        "If-Match": String((await app.archive.meta()).revision),
+      },
+      body: new Uint8Array(image).buffer,
+    });
+    assert.equal(
+      fitsExactly.status,
+      201,
+      "known-size uploads reserve their actual bytes",
+    );
   } finally {
     await app.close();
     rmSync(directory, { recursive: true, force: true });

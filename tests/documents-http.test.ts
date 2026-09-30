@@ -97,7 +97,8 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal((await fetch(`${base}/api/documents`)).status, 200);
     assert.equal((await upload(Buffer.from("not a pdf"))).status, 415);
     assert.deepEqual(readdirSync(join(dir, "uploads")), []);
-    const pdf = await samplePdf();
+    const pdf = Buffer.alloc(21 * 1024 * 1024, 32);
+    (await samplePdf()).copy(pdf);
     assert.equal(
       (
         await upload(pdf, {

@@ -84,7 +84,10 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
-  storage: { title: "Хранилище", description: "Лимиты фотографий и документов по ролям участников." },
+  storage: {
+    title: "Хранилище",
+    description: "Лимиты фотографий и документов по ролям участников.",
+  },
   vk: {
     title: "Вход через VK",
     description: "Подключение VK ID для входа в архив.",
@@ -124,11 +127,13 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   },
   publications: {
     title: "Можно найти в Drevo",
-    description: "Выберите людей и точные поля, доступные другим участникам через поиск.",
+    description:
+      "Выберите людей и точные поля, доступные другим участникам через поиск.",
   },
   matches: {
     title: "Связи деревьев",
-    description: "Сопоставление опубликованных людей между разными семейными архивами.",
+    description:
+      "Сопоставление опубликованных людей между разными семейными архивами.",
   },
   audit: {
     title: "Журнал правок",
