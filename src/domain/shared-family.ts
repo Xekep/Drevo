@@ -1,4 +1,9 @@
-import type { Family } from "./types.ts";
+import type { Family, Source } from "./types.ts";
+const publicSource = (source: Source): Source => {
+  const copy = { ...source };
+  delete copy.documentId;
+  return copy;
+};
 export type ShareLink = {
   id: string;
   title: string;
@@ -40,8 +45,11 @@ export function sharedFamily(
         occupation: p.occupation,
         biography: p.biography,
         awards: p.awards,
-        events: p.events,
-        sources: p.sources,
+        events: p.events?.map((event) => ({
+          ...event,
+          sources: event.sources?.map(publicSource),
+        })),
+        sources: p.sources.map(publicSource),
         photo: p.photo?.startsWith("/media/")
           ? `/api/shared/${token}/portrait/${encodeURIComponent(p.id)}`
           : undefined,

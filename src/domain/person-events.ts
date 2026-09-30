@@ -82,7 +82,10 @@ export function validateEvents(events: unknown): void {
           (s.url !== undefined &&
             (typeof s.url !== "string" ||
               !/^https?:\/\//i.test(s.url) ||
-              !safeUrl(s.url)))
+              !safeUrl(s.url))) ||
+          (s.documentId !== undefined &&
+            (typeof s.documentId !== "string" ||
+              !/^[a-f0-9-]{36}$/i.test(s.documentId)))
         )
           throw new Error("Проверьте источник события");
     }

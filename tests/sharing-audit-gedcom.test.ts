@@ -97,7 +97,35 @@ test("share membership is fixed, excludes outside edges and metadata, token is h
     );
     const family = (await archive.read()).family;
     family.people.push(person("new"));
+    const privateDocumentId = "d6688201-4f30-47a2-a99b-39d0bb5ec2cf";
+    family.people
+      .find((item) => item.id === "child")!
+      .sources.push({
+        title: "Свидетельство",
+        type: "PDF",
+        reference: "",
+        documentId: privateDocumentId,
+      });
+    family.people.find((item) => item.id === "child")!.events = [
+      {
+        id: "event-1",
+        type: "other",
+        sources: [
+          {
+            title: "Запись",
+            type: "PDF",
+            reference: "",
+            documentId: privateDocumentId,
+          },
+        ],
+      },
+    ];
     const projection = sharedFamily(family, result.share, result.token);
+    assert.ok(!JSON.stringify(projection).includes(privateDocumentId));
+    assert.equal(
+      family.people.find((item) => item.id === "child")!.sources[0].documentId,
+      privateDocumentId,
+    );
     assert.deepEqual(
       projection.people.map((p) => p.id),
       ["mother", "child"],

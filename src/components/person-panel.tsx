@@ -372,7 +372,7 @@ export function PersonPanel({
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}
-            <PersonEvents events={person.events} />
+            <PersonEvents events={person.events} canLoadDocuments={canLoadDocuments} />
             <div className="relatives">
               <h3>
                 Семейные связи <span>{relatives.length}</span>
@@ -469,9 +469,17 @@ export function PersonPanel({
                       <ArrowUpRight size={12} />
                     </a>
                   ) : (
-                    <span className="source-unavailable">
-                      Ссылка пока не добавлена
-                    </span>
+                    !s.documentId && (
+                      <span className="source-unavailable">
+                        Ссылка пока не добавлена
+                      </span>
+                    )
+                  )}
+                  {canLoadDocuments && s.documentId && (
+                    <a href={scopedArchivePath(archiveDocumentPath(null, s.documentId))}>
+                      Открыть PDF
+                      <ArrowUpRight size={12} />
+                    </a>
                   )}
                 </div>
               ))
