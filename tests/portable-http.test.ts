@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openPromise } from "yauzl";
 import { openArchive } from "../src/server/database.ts";
 import { portableExportHttp } from "../src/server/portable-http.ts";
+import { portableImportHttp } from "../src/server/portable-import-http.ts";
+import { userStore } from "../src/server/users.ts";
+import sharp from "sharp";
 import type { createAuth } from "../src/server/auth.ts";
 import type { ArchiveUser } from "../src/domain/access.ts";
 
@@ -14,7 +17,12 @@ test("portable export requires an archive administrator and streams a private pa
   const dir = await mkdtemp(join(tmpdir(), "drevo-portable-http-"));
   const uploads = join(dir, "uploads");
   await mkdir(uploads);
-  await writeFile(join(uploads, "portrait.png"), Buffer.from("photo bytes"));
+  const portrait = await sharp({
+    create: { width: 1, height: 1, channels: 4, background: "#ffffff" },
+  })
+    .png()
+    .toBuffer();
+  await writeFile(join(uploads, "portrait.png"), portrait);
   await writeFile(join(uploads, "record.pdf"), Buffer.from("%PDF-1.4\nrecord"));
   const archive = await openArchive(join(dir, "archive.sqlite"), {
     title: "Archive",
@@ -109,6 +117,91 @@ test("portable export requires an archive administrator and streams a private pa
     assert.equal(data?.family.people[0].id, "p1");
     assert.deepEqual(data?.documents[0].personIds, ["p1"]);
     assert.equal(data?.comments[0].text, "Проверено");
+    const targetPath = join(dir, "restored", "archive.sqlite");
+    await mkdir(join(dir, "restored"));
+    const target = await openArchive(targetPath, {
+      title: "Empty",
+      description: "",
+      demo: false,
+      people: [],
+      photos: [],
+    });
+    const targetActor = await (
+      await userStore(target.db, { requireInitialAdmin: false })
+    ).register("owner", "Owner");
+    const targetAuth = {
+      local: true,
+      currentUser: async () => targetActor,
+    } as unknown as Awaited<ReturnType<typeof createAuth>>;
+    const importer = portableImportHttp(target, targetAuth, targetPath);
+    const targetServer = createServer((req, res) => {
+      void importer.handle(
+        req,
+        res,
+        new URL(req.url!, `http://${req.headers.host}`),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      targetServer.listen(0, "127.0.0.1", resolve),
+    );
+    const base = `http://127.0.0.1:${(targetServer.address() as { port: number }).port}`;
+    try {
+      const preview = await fetch(`${base}/api/drevo/preview`, {
+        method: "POST",
+        headers: { Origin: base, "X-Drevo-Import": "1" },
+        body: bytes,
+      });
+      assert.equal(
+        preview.status,
+        200,
+        preview.status === 200 ? "" : await preview.text(),
+      );
+      const token = JSON.parse(await preview.text()).token;
+      const imported = await fetch(`${base}/api/drevo/import`, {
+        method: "POST",
+        headers: {
+          Origin: base,
+          "X-Drevo-Import": "1",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token, confirm: true }),
+      });
+      assert.equal(
+        imported.status,
+        200,
+        imported.status === 200 ? "" : await imported.text(),
+      );
+      const restored = await target.read();
+      assert.equal(restored.family.people[0].id, "p1");
+      assert.equal(
+        restored.family.people[0].photo?.startsWith("/media/"),
+        true,
+      );
+      assert.deepEqual(
+        await readFile(
+          join(
+            dir,
+            "restored",
+            "uploads",
+            restored.family.people[0].photo!.slice(7),
+          ),
+        ),
+        portrait,
+      );
+      const document = await target.db
+        .prepare("SELECT id FROM documents")
+        .get();
+      assert.equal(document?.id, "d1");
+      assert.equal(
+        (await target.db.prepare("SELECT text FROM person_comments").get())
+          ?.text,
+        "Проверено",
+      );
+    } finally {
+      await new Promise<void>((resolve) => targetServer.close(() => resolve()));
+      await importer.close();
+      await target.close();
+    }
     actor = { ...actor!, role: "reader" };
     assert.equal((await fetch(url)).status, 403);
     actor = null;

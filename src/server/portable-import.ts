@@ -24,7 +24,9 @@ const MAX_ENTRIES = 50_000;
 const MAX_MANIFEST = 8 * 1024 ** 2;
 const MAX_ARCHIVE_JSON = 128 * 1024 ** 2;
 const MAX_ORIGINAL = 1024 ** 3;
-const uuid = /^[a-f0-9-]{36}$/i;
+// Earlier Drevo archives can contain short document/annotation IDs. The ZIP
+// manifest constrains file names separately; IDs only identify database rows.
+const portableId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const mediaPath = /^media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
 const digest = /^[a-f0-9]{64}$/;
 
@@ -87,7 +89,7 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     const document = object(raw);
     if (
       typeof document.id !== "string" ||
-      !uuid.test(document.id) ||
+      !portableId.test(document.id) ||
       documentIds.has(document.id) ||
       typeof document.fileName !== "string" ||
       !/^[a-zA-Z0-9-]+\.pdf$/.test(document.fileName) ||
@@ -125,7 +127,7 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       if (
         !validAnnotationSelection(annotation) ||
         typeof metadata.id !== "string" ||
-        !uuid.test(metadata.id) ||
+        !portableId.test(metadata.id) ||
         typeof metadata.authorId !== "string" ||
         metadata.authorId.length > 200 ||
         typeof metadata.authorName !== "string" ||
