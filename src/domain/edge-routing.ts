@@ -24,6 +24,9 @@ export const routeKey = (e: Relation) => JSON.stringify([e.type, e.from, e.to]);
 /** Пространственный индекс: стоимость короткой связи не зависит от размера архива. */
 export class Spatial<T extends Box> {
   cells = new Map<string, T[]>();
+  // Long segments occupy many cells; reuse query marks instead of allocating a Set per lookup.
+  private seen = new Map<T, number>();
+  private queryId = 0;
   add(item: T) {
     this.visit(item, (key) => {
       const list = this.cells.get(key) || [];
@@ -32,17 +35,17 @@ export class Spatial<T extends Box> {
     });
   }
   query(box: Box) {
-    const found = new Set<T>();
+    const found: T[] = [];
+    const queryId = ++this.queryId;
     this.visit(box, (key) => {
-      for (const item of this.cells.get(key) || []) found.add(item);
+      for (const item of this.cells.get(key) || []) {
+        if (this.seen.get(item) === queryId) continue;
+        this.seen.set(item, queryId);
+        if (item.left <= box.right && item.right >= box.left &&
+            item.top <= box.bottom && item.bottom >= box.top) found.push(item);
+      }
     });
-    return [...found].filter(
-      (b) =>
-        b.left <= box.right &&
-        b.right >= box.left &&
-        b.top <= box.bottom &&
-        b.bottom >= box.top,
-    );
+    return found;
   }
   visit(box: Box, fn: (key: string) => void) {
     for (
