@@ -20,6 +20,7 @@ const fields = new Set([
   "birth",
   "death",
   "deceased",
+  "needsReview",
   "birthPlace",
   "deathPlace",
   "birthLocation",

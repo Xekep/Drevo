@@ -185,7 +185,7 @@ export function resourceMarkdown(resource: {
 export const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять интерфейсом только по явной просьбе пользователя. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из проверенных personIds, собранных другими инструментами по произвольному критерию пользователя. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
+    "Управлять интерфейсом только по явной просьбе пользователя. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из проверенных personIds; hide_review_people временно скрывает на древе карточки с ручным признаком needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
   inputSchema: {
     type: "object",
     properties: {
@@ -195,6 +195,7 @@ export const CONTROL_VIEW_TOOL = {
           "focus_people",
           "filter_surname",
           "filter_people",
+          "hide_review_people",
           "open_person",
           "open_photo",
           "zoom_in",
@@ -221,6 +222,10 @@ export function treeSubsetRequest(message: string) {
   return /(?:древ|дерев).{0,120}(?:только|остав|сформир|постро|из\s+(?:людей|родственник))|(?:только|остав|сформир|постро).{0,120}(?:древ|дерев)/iu.test(
     message,
   );
+}
+
+export function hideReviewPeopleRequest(message: string) {
+  return /(?:скро[йиь]?|скрыть|убер[ииь]?|исключ|не\s+показывай|отфильтруй).{0,100}(?:требу.{0,20}проверк|на\s+проверк|непроверенн)|(?:требу.{0,20}проверк|на\s+проверк|непроверенн).{0,100}(?:скро[йиь]?|скрыть|убер[ииь]?|исключ|не\s+показывай|отфильтруй)/iu.test(message);
 }
 
 export function surnameInTreeRequest(message: string) {

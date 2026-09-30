@@ -51,6 +51,8 @@ export type Person = {
   birth: string;
   death?: string;
   deceased?: boolean;
+  /** Manual research marker; absence does not mean the card is verified. */
+  needsReview?: boolean;
   birthPlace: string;
   deathPlace?: string;
   /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */

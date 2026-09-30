@@ -1,4 +1,4 @@
-import type { Family } from "./types.ts";
+import type { Family, Person } from "./types.ts";
 
 type Archive = Pick<Family, "people" | "links">;
 /** Индекс только записанных связей. По именам или возрасту родство не достраивается. */
@@ -182,4 +182,15 @@ export function projectTree(family: Archive, visible: ReadonlySet<string>) {
       .filter((l) => visible.has(l.from) && visible.has(l.to))
       .map(({ type, from, to }) => ({ type, from, to })),
   };
+}
+
+/** Temporary display filter; the archive and its relationship records stay intact. */
+export function withoutReviewPeople(
+  people: readonly Person[],
+  visible: ReadonlySet<string>,
+) {
+  const flagged = new Set(
+    people.filter((person) => person.needsReview).map((person) => person.id),
+  );
+  return new Set([...visible].filter((id) => !flagged.has(id)));
 }

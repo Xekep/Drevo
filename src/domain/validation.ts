@@ -19,6 +19,8 @@ export function validateFamily(value: unknown): Family {
     validateEvents(p?.events);
     if (p?.deceased !== undefined && typeof p.deceased !== "boolean")
       throw new Error("Некорректный признак смерти");
+    if (p?.needsReview !== undefined && typeof p.needsReview !== "boolean")
+      throw new Error("Некорректный признак проверки карточки");
     if (
       !p ||
       typeof p.id !== "string" ||

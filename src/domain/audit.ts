@@ -67,6 +67,7 @@ const fields: Record<string, string> = {
   endDate: "Конец периода",
   dateText: "Исходная дата",
   deceased: "Известно, что человек умер",
+  needsReview: "Требует проверки",
   location: "Точка на карте",
 };
 const hidden = new Set([

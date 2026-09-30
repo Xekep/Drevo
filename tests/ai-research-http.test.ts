@@ -296,6 +296,74 @@ test("surname-only tree request builds a verified temporary subset without a mod
   }
 });
 
+test("explicit review hide request returns a scoped tree action without a model call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-review-"));
+  process.env.YANDEX_AI_API_KEY = "test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "folder-1";
+  process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
+  let providerCalls = 0;
+  const app = await startServer(
+    0,
+    join(dir, "drevo.sqlite"),
+    true,
+    undefined,
+    adaptLegacyAiFake(async () => {
+      providerCalls++;
+      throw new Error("Review filtering should not require a model call");
+    }),
+  );
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const current = await app.archive.read();
+    await app.archive.write(
+      {
+        ...current.family,
+        people: [
+          ...current.family.people,
+          {
+            id: "needs-review-test",
+            surname: "Иванов",
+            name: "Иван",
+            patronymic: "",
+            sex: "m",
+            birth: "1900",
+            birthPlace: "",
+            parents: [],
+            spouses: [],
+            generation: 1,
+            column: 0,
+            sources: [],
+            needsReview: true,
+          },
+        ],
+      },
+      current.revision,
+    );
+    const response = await fetch(`${base}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "Скрой карточки, требующие проверки, из древа",
+        context: { view: "tree" },
+      }),
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(providerCalls, 0);
+    assert.deepEqual(data.uiActions, [{ type: "hide_review_people" }]);
+    assert.match(data.answer, /Скрыл на древе 1 карточку/);
+  } finally {
+    await app.close();
+    for (const key of [
+      "YANDEX_AI_API_KEY",
+      "YANDEX_AI_FOLDER_ID",
+      "YANDEX_AI_MODEL",
+    ])
+      delete process.env[key];
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("textual model tool call is recovered instead of being shown as Arduino code", () => {
   assert.deepEqual(
     recoverTextToolCalls(

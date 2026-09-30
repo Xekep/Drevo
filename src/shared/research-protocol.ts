@@ -4,6 +4,7 @@ import type { ResearchAnswerReference } from "../domain/research-answer.ts";
 export type UiAction =
   | { type: "focus_people"; personIds: string[] }
   | { type: "filter_people"; personIds: string[]; label: string }
+  | { type: "hide_review_people" }
   | { type: "open_person"; personId: string }
   | { type: "open_photo"; photoId: string }
   | { type: "zoom_in" | "zoom_out" };

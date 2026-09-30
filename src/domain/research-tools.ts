@@ -195,6 +195,16 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
     ),
   },
   {
+    name: "list_review_people",
+    description:
+      "Посчитать карточки с ручной отметкой «Требует проверки» и получить страницу их списка. Отсутствие отметки не доказывает достоверность карточки.",
+    scope: "tree:read",
+    inputSchema: objectSchema({
+      offset: { type: "integer", minimum: 0, default: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+    }),
+  },
+  {
     name: "get_surname_group",
     description:
       "Получить всех людей с указанной текущей фамилией или фамилией при рождении, включая грамматические формы, и проверенную схему связей с их ближайшими известными родителями. Используй для сводной таблицы по роду и показа ветви на древе. personIds — точный набор для фильтра дерева.",
@@ -1211,6 +1221,22 @@ export function executeResearchTool(
     };
   }
 
+  if (name === "list_review_people") {
+    const offset = numberArg(args, "offset", 0, 0, 1_000_000);
+    const limit = numberArg(args, "limit", 50, 1, 100);
+    const marked = family.people.filter((person) => person.needsReview);
+    return {
+      people: marked.slice(offset, offset + limit).map((person) => ({
+        id: person.id,
+        name: fullName(person),
+        birth: person.birth,
+        death: person.death,
+      })),
+      total: marked.length,
+      hasMore: offset + limit < marked.length,
+    };
+  }
+
   if (name === "search_people") {
     const query = normalized(stringArg(args, "query")),
       searchablePeople = family.people.map((person) => {
@@ -1296,6 +1322,7 @@ export function executeResearchTool(
       birth: person.birth,
       death: person.death,
       birthPlace: person.birthPlace,
+      needsReview: person.needsReview === true,
     }));
     return {
       people: matches,
