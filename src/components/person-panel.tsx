@@ -1,5 +1,6 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
+import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
@@ -434,7 +435,7 @@ export function PersonPanel({
                 </div>
                 <h3>{document.title}</h3>
                 <a
-                  href={scopedArchivePath(`/documents?personId=${encodeURIComponent(person.id)}&documentId=${encodeURIComponent(document.id)}`)}
+                  href={scopedArchivePath(archiveDocumentPath(person.id, document.id))}
                 >
                   Открыть документ
                   <ArrowUpRight size={12} />
