@@ -76,3 +76,25 @@ test("admin can review and revoke a selected discovery publication", async ({ pa
   await page.getByRole("button", { name: "Подтвердить отзыв 1" }).click();
   await expect(page.getByRole("status")).toContainText("Снято с поиска: 1");
 });
+
+test("publication status is not reported as hidden before the server answers", async ({ page }) => {
+  let releaseStatus!: () => void;
+  const delayedStatus = new Promise<void>((resolve) => { releaseStatus = resolve; });
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch", async (route) => {
+    await delayedStatus;
+    await route.continue();
+  });
+  try {
+    await page.goto("/admin");
+    await openAdminSection(page, "publications", "Можно найти");
+    await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
+    const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
+    await expect(row).toContainText("Проверяем…");
+    await expect(row.getByRole("checkbox")).toBeDisabled();
+    releaseStatus();
+    await expect(row).toContainText("Скрыт");
+    await expect(row.getByRole("checkbox")).toBeEnabled();
+  } finally {
+    releaseStatus();
+  }
+});

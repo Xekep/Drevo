@@ -15,6 +15,9 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Record<string, PublicationFields>>({});
+  const [loadedStatusKey, setLoadedStatusKey] = useState("");
+  const [failedStatusKey, setFailedStatusKey] = useState("");
+  const [statusError, setStatusError] = useState("");
   const [fields, setFields] = useState<PublicationFields>(defaultPublicationFields);
   const [confirm, setConfirm] = useState<"publish" | "unpublish" | null>(null);
   const [reload, setReload] = useState(0);
@@ -33,6 +36,11 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const chosen = [...selected].map((id) => peopleById.get(id)).filter((person): person is Person => Boolean(person));
   const pageIds = pagePeople.map((person) => person.id);
   const pageKey = pageIds.join("\0");
+  const statusKey = `${reload}:${pageKey}`;
+  const statusesReady = !pageKey || loadedStatusKey === statusKey;
+  const statusFor = (id: string) => !statusesReady
+    ? failedStatusKey === statusKey ? "Не удалось проверить" : "Проверяем…"
+    : statuses[id] ? "Можно найти" : "Скрыт";
 
   useEffect(() => {
     if (!pageKey) return;
@@ -48,10 +56,17 @@ export function PublicationAdmin({ family }: { family: Family }) {
           pageKey.split("\0").forEach((id) => delete next[id]);
           return { ...next, ...body.fields };
         });
+        setLoadedStatusKey(statusKey);
+        setFailedStatusKey("");
       })
-      .catch((reason) => { if (!controller.signal.aborted) setError(reason.message); });
+      .catch((reason) => {
+        if (!controller.signal.aborted) {
+          setFailedStatusKey(statusKey);
+          setStatusError(reason.message);
+        }
+      });
     return () => controller.abort();
-  }, [pageKey, reload]);
+  }, [pageKey, reload, statusKey]);
 
   function select(id: string, checked: boolean) {
     setSelected((current) => {
@@ -63,7 +78,7 @@ export function PublicationAdmin({ family }: { family: Family }) {
   }
 
   async function apply() {
-    if (!confirm || !chosen.length) return;
+    if (!confirm || !chosen.length || !statusesReady) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -105,18 +120,19 @@ export function PublicationAdmin({ family }: { family: Family }) {
     </label>
     <div className="publication-admin-toolbar">
       <span>{filtered.length} человек · выбрано {chosen.length} из 50</span>
-      <button type="button" disabled={!pagePeople.length || chosen.length + pageIds.filter((id) => !selected.has(id)).length > 50}
+      <button type="button" disabled={!statusesReady || !pagePeople.length || chosen.length + pageIds.filter((id) => !selected.has(id)).length > 50}
         onClick={() => { setSelected((current) => new Set([...current, ...pageIds])); setConfirm(null); }}>
         Выбрать страницу
       </button>
       <button type="button" disabled={!chosen.length} onClick={() => { setSelected(new Set()); setConfirm(null); }}>Сбросить</button>
+      {failedStatusKey === statusKey && <button type="button" onClick={() => setReload((value) => value + 1)}>Повторить проверку</button>}
     </div>
     <div className="publication-admin-list" aria-label="Люди для публикации">
       {pagePeople.map((person) => <label key={person.id} className="publication-admin-row">
-        <input type="checkbox" checked={selected.has(person.id)} disabled={busy || (!selected.has(person.id) && chosen.length >= 50)}
+        <input type="checkbox" checked={selected.has(person.id)} disabled={busy || !statusesReady || (!selected.has(person.id) && chosen.length >= 50)}
           onChange={(event) => select(person.id, event.target.checked)} />
         <span><strong>{fullName(person)}</strong><small>{[year(person.birth), year(person.death)].filter(Boolean).join("–") || "Годы не указаны"}</small></span>
-        <span className="publication-admin-state">{statuses[person.id] ? "Можно найти" : "Скрыт"}</span>
+        <span className="publication-admin-state">{statusFor(person.id)}</span>
       </label>)}
       {!pagePeople.length && <p>Подходящих людей нет.</p>}
     </div>
@@ -126,8 +142,8 @@ export function PublicationAdmin({ family }: { family: Family }) {
       <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => setPage(page + 1)}>Далее</button>
     </nav>}
     {chosen.length > 0 && <div className="publication-admin-actions">
-      <button type="button" disabled={busy} onClick={() => setConfirm("publish")}>Опубликовать выбранных</button>
-      <button type="button" disabled={busy} onClick={() => setConfirm("unpublish")}>Снять выбранных с поиска</button>
+      <button type="button" disabled={busy || !statusesReady} onClick={() => setConfirm("publish")}>Опубликовать выбранных</button>
+      <button type="button" disabled={busy || !statusesReady} onClick={() => setConfirm("unpublish")}>Снять выбранных с поиска</button>
     </div>}
     {confirm && <section className="publication-admin-confirm" aria-label="Проверка публикации">
       <h2>{confirm === "publish" ? "Проверьте публикацию" : "Проверьте отзыв публикации"}</h2>
@@ -148,13 +164,14 @@ export function PublicationAdmin({ family }: { family: Family }) {
         ].filter(Boolean).join(" · ")}</span>}
       </li>)}</ul>
       <div className="publication-admin-actions">
-        <button type="button" className="primary-action" disabled={busy} onClick={() => void apply()}>
+        <button type="button" className="primary-action" disabled={busy || !statusesReady} onClick={() => void apply()}>
           {busy ? "Сохраняем…" : confirm === "publish" ? `Подтвердить публикацию ${chosen.length}` : `Подтвердить отзыв ${chosen.length}`}
         </button>
         <button type="button" disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
       </div>
     </section>}
     {error && <p role="alert" className="form-error">{error}</p>}
+    {failedStatusKey === statusKey && <p role="alert" className="form-error">{statusError}</p>}
     {notice && <p role="status">{notice}</p>}
   </section>;
 }
