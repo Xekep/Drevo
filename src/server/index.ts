@@ -31,8 +31,19 @@ import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
+import { archiveRoutePool } from "./archive-route-pool.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+type StartedServer = {
+  server: ReturnType<typeof createServer>;
+  archive: Awaited<ReturnType<typeof openArchive>>;
+  handle: (
+    req: IncomingMessage,
+    res: ServerResponse,
+    path?: string,
+  ) => Promise<void>;
+  close: () => Promise<void>;
+};
 
 export async function startServer(
   port = Number(process.env.PORT || 3000),
@@ -41,7 +52,7 @@ export async function startServer(
   oauthFetch?: typeof fetch,
   aiFetch?: typeof fetch,
   archiveId?: string,
-) {
+): Promise<StartedServer> {
   assertProductionOrigin(
     process.env.NODE_ENV === "production",
     process.env.PUBLIC_ORIGIN,
@@ -102,6 +113,28 @@ export async function startServer(
     auth,
     accountArchiveDirectory(archive.db),
   );
+  const directory = accountArchiveDirectory(archive.db);
+  const routedArchives =
+    archive.db.kind === "postgres" && !archiveId
+      ? archiveRoutePool(
+          async (req, id) => {
+            const accountId = await auth.accountId(req);
+            if (!accountId) return false;
+            return !!(await directory.list(accountId))?.some(
+              (item) => item.id === id && item.approved,
+            );
+          },
+          async (id) =>
+            await startServer(
+              0,
+              configuredPath,
+              production,
+              oauthFetch,
+              aiFetch,
+              id,
+            ),
+        )
+      : null;
   const backups = await backupCoordinator(archive.db, dbPath);
   const manageBackups = backupManagementHttp({
     backups,
@@ -179,7 +212,11 @@ export async function startServer(
     res.end(JSON.stringify(data));
   };
 
-  async function handle(req: IncomingMessage, res: ServerResponse) {
+  async function handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+    overridePath?: string,
+  ) {
     const host = req.headers.host || "";
     if (
       !/^(127\.0\.0\.1|localhost):\d+$/.test(host) &&
@@ -187,8 +224,10 @@ export async function startServer(
     )
       return json(res, 403, { error: "Неизвестный адрес архива" });
 
-    const parsedUrl = new URL(req.url || "/", `http://${host}`),
+    const parsedUrl = new URL(overridePath || req.url || "/", `http://${host}`),
       path = parsedUrl.pathname;
+    if (routedArchives && (await routedArchives.route(req, res, parsedUrl)))
+      return;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
     if (await listAccountArchives(req, res, parsedUrl)) return;
     if (await manageVkAuth(req, res, parsedUrl)) return;
@@ -283,6 +322,7 @@ export async function startServer(
   return {
     server,
     archive,
+    handle,
     close: async () => {
       await vite?.close();
       const closed = new Promise<void>((done) => server.close(() => done()));
@@ -293,6 +333,7 @@ export async function startServer(
         await new Promise((done) => setTimeout(done, 25));
       if (activeRequests > 0) server.closeAllConnections();
       await closed;
+      await routedArchives?.close();
       await backups.close();
       await restores.close();
       await gedcom.close();
