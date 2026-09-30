@@ -12,6 +12,7 @@ import {
   segmentHitsBox,
   roundedRoute,
   relaxAdditionalRoute,
+  Spatial,
   type EdgeRoute,
 } from "../src/domain/edge-routing.ts";
 import { segmentsCross, type Point } from "../src/domain/layout-order.ts";
@@ -23,6 +24,17 @@ const person = (
   spouses: string[] = [],
   birth = "",
 ): LayoutPerson => ({ id, birth, parents, spouses });
+
+test("spatial queries return a long item once and see items added after earlier queries", () => {
+  const index = new Spatial<{ left: number; right: number; top: number; bottom: number; id: string }>();
+  index.add({ left: 0, right: 1200, top: 0, bottom: 20, id: "long" });
+  const area = { left: 200, right: 900, top: 5, bottom: 10 };
+  assert.deepEqual(index.query(area).map((item) => item.id), ["long"]);
+  assert.deepEqual(index.query(area).map((item) => item.id), ["long"]);
+  index.add({ left: 400, right: 500, top: 6, bottom: 8, id: "new" });
+  assert.deepEqual(index.query(area).map((item) => item.id), ["long", "new"]);
+  assert.deepEqual(index.query({ left: 200, right: 900, top: 30, bottom: 40 }), []);
+});
 
 test("couples with unequal known ancestry stay one household without borrowing each other's parents", () => {
   const people = [

@@ -11,6 +11,7 @@ function listedPerson(row: DiscoveryRow) {
     archiveId: String(row.archive_id),
     id: String(row.person_id),
     name: String(row.name),
+    ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
     ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
     ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
     ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
@@ -57,6 +58,18 @@ export function discoveryPeopleHttp(
     res.end(JSON.stringify(value));
     return true;
   };
+  const linkedPeople = async (archiveId: string, personId: string) => {
+    const columns = "other.archive_id,other.person_id,other.name,other.birth_surname,other.birth_year,other.death_year,other.birth_place,other.death_place,other.publication_version";
+    const rows = await db.prepare("", `SELECT ${columns} FROM discovery_match_requests m
+      JOIN discovery_people other ON other.archive_id=m.right_archive_id AND other.person_id=m.right_person_id
+      WHERE m.status='linked' AND m.left_archive_id=? AND m.left_person_id=?
+      UNION ALL
+      SELECT ${columns} FROM discovery_match_requests m
+      JOIN discovery_people other ON other.archive_id=m.left_archive_id AND other.person_id=m.left_person_id
+      WHERE m.status='linked' AND m.right_archive_id=? AND m.right_person_id=?
+      ORDER BY name,archive_id,person_id LIMIT 51`).all(archiveId,personId,archiveId,personId);
+    return { cards: rows.slice(0,50).map(listedPerson), truncated: rows.length > 50 };
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = /^\/api\/discovery\/people\/([A-Za-z0-9-]{3,64})\/([A-Za-z0-9_-]{1,100})$/.exec(url.pathname);
     if (url.pathname !== "/api/discovery/people" && !detail) return false;
@@ -73,25 +86,31 @@ export function discoveryPeopleHttp(
     if (state?.ready !== true)
       return json(res, 503, { error: "Поисковый каталог подготавливается" });
     if (detail) {
-      const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_year,death_year,
+      const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version FROM discovery_people
              WHERE archive_id=? AND person_id=?`).get(detail[1], detail[2]);
-      return row ? json(res, 200, { person: listedPerson(row) })
-        : json(res, 404, { error: "Человек не найден" });
+      if (!row) return json(res, 404, { error: "Человек не найден" });
+      const linked = await linkedPeople(detail[1],detail[2]);
+      return json(res, 200, { person: listedPerson(row), linkedCards: linked.cards,
+        linkedCardsTruncated: linked.truncated });
     }
     const query = (url.searchParams.get("q") || "").trim();
     const terms = query.length >= 2 && query.length <= 100 ? searchTerms(query) : null;
     if (!terms)
       return json(res, 400, { error: "Введите от 2 до 100 символов для поиска" });
+    const excludeArchiveId = url.searchParams.get("excludeArchiveId") || "";
+    if (excludeArchiveId && !/^[A-Za-z0-9-]{3,64}$/.test(excludeArchiveId))
+      return json(res, 400, { error: "Некорректный архив для исключения" });
     const cursor = readCursor(url.searchParams.get("cursor"));
     if (!cursor) return json(res, 400, { error: "Некорректная страница поиска" });
-    const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_year,death_year,
+    const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version
         FROM discovery_people
        WHERE search_vector @@ to_tsquery('simple', ?)
+         AND archive_id<>?
          AND (name,archive_id,person_id) > (?,?,?)
        ORDER BY name,archive_id,person_id LIMIT 31`).all(
-      terms, ...cursor,
+      terms, excludeArchiveId, ...cursor,
     );
     const items = rows.slice(0, 30).map(listedPerson);
     const last = rows.length > 30 ? items.at(-1) : undefined;

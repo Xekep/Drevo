@@ -78,6 +78,9 @@ test("routing quality distinguishes unrelated T-junctions and counts a shared fa
   const repeated = routingQuality([...Array(5).fill(rail), cross, touch]);
   assert.equal(normal.contacts, 2);
   assert.equal(normal.crossings, 1);
+  assert.deepEqual(normal.groups, new Map([
+    ["family", 2], ["other", 1], ["third", 1],
+  ]));
   assert.equal(repeated.contacts, normal.contacts);
   assert.equal(repeated.crossings, normal.crossings);
   assert.equal(

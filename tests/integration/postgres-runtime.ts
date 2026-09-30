@@ -168,14 +168,14 @@ try {
     const primaryPublished = publishedPeopleStore(live.db);
     const otherPublished = publishedPeopleStore(other);
     await primaryPublished.publish("person-a", "owner");
-    assert.equal(await primaryPublished.has("person-a"), true);
-    assert.equal((await primaryPublished.ids()).has("person-a"), true);
-    assert.equal(await otherPublished.has("person-a"), false);
+    assert.equal(Boolean(await primaryPublished.getFields("person-a")), true);
+    assert.equal((await primaryPublished.entries()).has("person-a"), true);
+    assert.equal(Boolean(await otherPublished.getFields("person-a")), false);
     await otherPublished.publish("person-a", "owner");
-    assert.equal((await otherPublished.ids()).has("person-a"), true);
+    assert.equal((await otherPublished.entries()).has("person-a"), true);
     await primaryPublished.unpublish("person-a");
-    assert.equal(await primaryPublished.has("person-a"), false);
-    assert.equal(await otherPublished.has("person-a"), true);
+    assert.equal(Boolean(await primaryPublished.getFields("person-a")), false);
+    assert.equal(Boolean(await otherPublished.getFields("person-a")), true);
     await otherPublished.unpublish("person-a");
     // Explicit archive selection keeps same-ID people in separate snapshots.
     const otherArchive = await openArchive(source, family, "other-archive");
@@ -1414,8 +1414,19 @@ try {
   const beforeDiscovery = await otherApp.archive.read();
   const deceasedFamily = structuredClone(beforeDiscovery.family);
   deceasedFamily.people[0].deceased = true;
+  deceasedFamily.people[0].maidenName = "ПоискРождения";
   await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
-  await otherPublication.publish("person-a", "owner");
+  const selectedDiscoveryFields = {
+    birthSurname: true, birthYear: false, deathYear: false,
+    birthPlace: false, deathPlace: false,
+  };
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
+    headers: ownerHeaders,
+  })).json()).fields["person-a"], selectedDiscoveryFields);
   await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
   const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
   assert.equal(found.status, 200);
@@ -1424,16 +1435,172 @@ try {
     [["other-archive","person-a"]],
     "a root-archive reader can find only the explicitly published projection from another archive",
   );
+  const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
+  assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
+    ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
+  assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
   assert.equal(
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  const rootBeforeMatch = await app.archive.read();
+  const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
+  rootWithPublishedPerson.people[0].deceased = true;
+  await app.archive.write(rootWithPublishedPerson, rootBeforeMatch.revision);
+  const proposedPair = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+    targetPersonId: "person-a", reason: "Совпадают семейные записи" });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders, body: proposedPair,
+  })).status, 409, "a private card cannot be used in a cross-archive match");
+  await publishedPeopleStore(app.archive.db).publish("person-a", "owner");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-a", reason: "x".repeat(501) }),
+  })).status, 400);
+  const otherArchivesOnly = await fetch(securedBase +
+    "/api/discovery/people?q=Тестов&excludeArchiveId=runtime-test", { headers });
+  assert.deepEqual((await otherArchivesOnly.json()).results.map((person: { archiveId: string }) =>
+    person.archiveId), ["other-archive"],
+  "candidate search must exclude this archive before paginating, not after the client receives a page");
+  const requestedMatch = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: proposedPair,
+  });
+  assert.equal(requestedMatch.status, 200);
+  const matchBody = await requestedMatch.json();
+  assert.equal(matchBody.match.status, "pending");
+  assert.equal(matchBody.match.reason, "Совпадают семейные записи");
+  const matchDb = app.archive.db;
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
+    "pending requests stay hidden outside the participating archives");
+  }, true);
+  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+    headers,
+  })).json()).linkedCards, [], "a pending request must not appear on a published card");
+  assert.equal([matchBody.match.left, matchBody.match.right]
+    .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
+    "Тестов Исправленный сосед");
+  assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
+  assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
+    headers: ownerHeaders,
+  })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
+  const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
+  });
+  assert.equal(duplicateFromOtherSide.status, 200);
+  assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
+    "reversing the proposal must not create a second match");
+  const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
+  const beforeReviewChange = await otherApp.archive.read();
+  const changedBeforeReview = structuredClone(beforeReviewChange.family);
+  changedBeforeReview.people[0].name = "Исправленный кандидат";
+  await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
+  assert.equal((await fetch(otherBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken }),
+  })).status, 409, "a changed published identity cannot be accepted using a stale review token");
+  const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
+    headers: ownerHeaders,
+  })).json()).matches[0];
+  assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
+  assert.equal((await fetch(securedBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept" }),
+  })).status, 403, "an initiating archive cannot confirm its own request");
+  const acceptedMatch = await fetch(otherBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
+  });
+  assert.equal(acceptedMatch.status, 200);
+  assert.equal((await acceptedMatch.json()).match.status, "linked");
+  const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+    headers,
+  });
+  const linkedPublicBody = await linkedPublicCard.json();
+  assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
+    "the proposal note is visible to participant admins, not global discovery readers");
+  assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["runtime-test","person-a"]],
+  "a signed-in reader can follow only the other published identity after both sides confirm");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 1,
+    "only confirmed matches can be read from an unrelated archive context");
+  }, true);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+    .then((response) => response.json())).matches[0].status, "linked");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
+  const beforeCandidates = await otherApp.archive.read();
+  const similarCandidate = structuredClone(beforeCandidates.family);
+  similarCandidate.people[0].name = "Иван";
+  similarCandidate.people.push({ ...structuredClone(similarCandidate.people[0]),
+    id: "person-b", name: "Иван", column: 1 });
+  await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
+  await otherPublication.publish("person-b", "owner", selectedDiscoveryFields);
+  const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+    headers: ownerHeaders,
+  });
+  assert.equal(suggested.status, 200);
+  const suggestedBody = await suggested.json();
+  assert.deepEqual(suggestedBody.candidates.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["other-archive","person-b"]],
+  "a confirmed link must not be suggested again");
+  assert.equal(suggestedBody.candidates[0].birthYear, undefined,
+    "candidate evidence must not disclose a birth year hidden by publication consent");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+    headers,
+  })).status, 403);
+  const ignoredBody = JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+    targetPersonId: "person-b", ignored: true });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers, body: ignoredBody,
+  })).status, 403);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: ownerHeaders, body: ignoredBody,
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates, []);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a&ignored=1", { headers: ownerHeaders }))
+    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-b", ignored: false }),
+  })).status, 200);
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates.map((person: { id: string }) => person.id), ["person-b"]);
   await otherPublication.unpublish("person-a");
+  await otherPublication.unpublish("person-b");
+  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
+    headers,
+  })).json()).linkedCards, [], "revoking either publication removes the transition");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
+    .then((response) => response.json())).matches[0].status, "revoked",
+    "revoking either publication closes a confirmed cross-archive match");
   assert.equal(
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     404,
     "revocation removes the global detail in the same transaction",
   );
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates, [], "revocation must remove the candidate immediately");
+  await publishedPeopleStore(app.archive.db).unpublish("person-a");
+  const rootAfterMatch = await app.archive.read();
+  const restoredRoot = structuredClone(rootAfterMatch.family);
+  restoredRoot.people[0].deceased = false;
+  await app.archive.write(restoredRoot, rootAfterMatch.revision);
   const afterDiscovery = await otherApp.archive.read();
   const restoredFamily = structuredClone(afterDiscovery.family);
   restoredFamily.people[0].deceased = false;

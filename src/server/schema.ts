@@ -1062,4 +1062,19 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const publicationFieldsExtension = "2026-09-publication-fields";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(publicationFieldsExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const field of ["birth_year_visible", "death_year_visible", "birth_place_visible", "death_place_visible", "birth_surname_visible"] as const) {
+        const defaultValue = field === "birth_surname_visible" ? 0 : 1;
+        db.exec(`ALTER TABLE published_people ADD COLUMN ${field} INTEGER NOT NULL DEFAULT ${defaultValue} CHECK(${field} IN (0,1))`);
+      }
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(publicationFieldsExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

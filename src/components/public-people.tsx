@@ -6,6 +6,7 @@ type PublicPerson = {
   archiveId?: string;
   id: string;
   name: string;
+  birthSurname?: string;
   birthYear?: string;
   deathYear?: string;
   birthPlace?: string;
@@ -30,6 +31,7 @@ function PersonCard({ person }: { person: PublicPerson }) {
   return (
     <article className="public-person-card">
       <h2>{person.name}</h2>
+      {person.birthSurname && <p>Фамилия при рождении: {person.birthSurname}</p>}
       {(person.birthYear || person.deathYear) && (
         <p>
           {person.birthYear || "?"}–{person.deathYear || "?"}
@@ -46,6 +48,8 @@ export default function PublicPeople() {
   const [results, setResults] = useState<PublicPerson[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [detail, setDetail] = useState<PublicPerson | null>(null);
+  const [linkedCards, setLinkedCards] = useState<PublicPerson[]>([]);
+  const [linkedCardsTruncated, setLinkedCardsTruncated] = useState(false);
   const [error, setError] = useState("");
   const [needsLogin, setNeedsLogin] = useState(false);
   const [busy, setBusy] = useState(() => Boolean(discoveryLocation().query || discoveryLocation().personId));
@@ -89,7 +93,11 @@ export default function PublicPeople() {
         const data = await response.json();
         if (response.status === 401) setNeedsLogin(true);
         if (!response.ok) throw new Error(data.error || "Поиск недоступен");
-        if (personId) setDetail(data.person || null);
+        if (personId) {
+          setDetail(data.person || null);
+          setLinkedCards(data.linkedCards || []);
+          setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
+        }
         else {
           setResults(data.results || []);
           setNextCursor(data.nextCursor || null);
@@ -112,6 +120,8 @@ export default function PublicPeople() {
     }
     history.replaceState(null, "", `/discover/search/${encodeURIComponent(value)}`);
     setDetail(null);
+    setLinkedCards([]);
+    setLinkedCardsTruncated(false);
     void read(
       `/api/discovery/people?q=${encodeURIComponent(value)}`,
     ).then((data) => {
@@ -155,6 +165,18 @@ export default function PublicPeople() {
       {needsLogin && <LoginButtons />}
       {busy && <p role="status">Ищем…</p>}
       {detail && <PersonCard person={detail} />}
+      {detail && linkedCards.length > 0 && <section className="public-people-linked">
+        <h2>Этот человек в других деревьях</h2>
+        <p>Владельцы обоих деревьев подтвердили соответствие карточек. Доступны только опубликованные сведения.</p>
+        <div className="public-people-results">
+          {linkedCards.map((person) => <a key={`${person.archiveId}:${person.id}`}
+            href={`/discover/person/${encodeURIComponent(person.archiveId || "")}/${encodeURIComponent(person.id)}`}
+            aria-label={person.name}>
+            <PersonCard person={person} />
+          </a>)}
+        </div>
+        {linkedCardsTruncated && <p>Показаны первые 50 связанных карточек.</p>}
+      </section>}
       {!detail && results.length > 0 && (
         <div className="public-people-results">
           {results.map((person) => (

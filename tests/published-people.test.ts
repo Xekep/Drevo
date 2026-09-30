@@ -20,6 +20,7 @@ test("only explicitly published people are searchable without tree access, and u
       surname: "Иванов",
       name: "Павел",
       patronymic: "Петрович",
+      maidenName: "Сидоров",
       sex: "m",
       birth: "1908-01-01",
       death: "1980-01-01",
@@ -44,6 +45,7 @@ test("only explicitly published people are searchable without tree access, and u
             birth: "1988-01-01",
             death: undefined,
           },
+          { ...person, id: "second-person", surname: "Петров", name: "Анна" },
         ],
       },
       initial.revision,
@@ -69,10 +71,11 @@ test("only explicitly published people are searchable without tree access, and u
     const admin = await cookie("admin");
     const reader = await cookie("reader");
     const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
-    const request = (path: string, session = reader, method = "GET") =>
+    const request = (path: string, session = reader, method = "GET", body?: unknown) =>
       fetch(base + path, {
         method,
-        headers: { Cookie: session, Origin: "http://localhost" },
+        headers: { Cookie: session, Origin: "http://localhost", ...(body ? { "Content-Type": "application/json" } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
     const query =
       "/api/published-people/search?q=%D0%98%D0%B2%D0%B0%D0%BD%D0%BE%D0%B2";
@@ -121,6 +124,41 @@ test("only explicitly published people are searchable without tree access, and u
       (await request("/api/published-people/published-person")).status,
       200,
     );
+    const chosenFields = {
+      birthSurname: true,
+      birthYear: false,
+      deathYear: true,
+      birthPlace: false,
+      deathPlace: false,
+    };
+    assert.equal((await request(
+      "/api/admin/published-people/published-person", admin, "PUT", { fields: chosenFields },
+    )).status, 200);
+    assert.deepEqual((await (await request("/api/published-people/published-person")).json()).person, {
+      id: person.id,
+      name: "Иванов Павел Петрович",
+      birthSurname: "Сидоров",
+      deathYear: "1980",
+    });
+    assert.deepEqual((await (await request("/api/published-people/search?q=Тверь")).json()).results, []);
+    assert.equal((await (await request("/api/published-people/search?q=Сидоров")).json()).results.length, 1);
+    assert.equal((await request(
+      "/api/admin/published-people/published-person", admin, "PUT", { fields: { birthYear: true } },
+    )).status, 400);
+    const batch = "/api/admin/published-people/batch";
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "living-person"], fields: chosenFields,
+    })).status, 409);
+    assert.equal((await request("/api/published-people/living-person")).status, 404);
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "second-person"], fields: chosenFields,
+    })).status, 200);
+    const statuses = await (await request(`${batch}?id=${person.id}&id=second-person`, admin)).json();
+    assert.deepEqual(statuses.fields[person.id], chosenFields);
+    assert.deepEqual(statuses.fields["second-person"], chosenFields);
+    assert.equal((await request("/api/published-people/second-person")).status, 200);
+    assert.equal((await request(batch, admin, "DELETE", { personIds: ["second-person"] })).status, 200);
+    assert.equal((await request("/api/published-people/second-person")).status, 404);
     const beforeStatusChange = await app.archive.read();
     await app.archive.write(
       {
