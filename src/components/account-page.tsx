@@ -32,7 +32,7 @@ export type AccountSession = {
     name: string;
     createdAt: string;
     fullAccess: boolean;
-    provider: "vk" | "yandex" | null;
+    provider: "vk" | "yandex" | "email" | null;
   } | null;
   local: boolean;
   yandex: boolean;
@@ -258,10 +258,12 @@ export function AccountPage({
                 <p>
                   {local
                     ? "Локальный доступ"
-                    : session?.account?.provider === "vk" ||
-                        identity.id.startsWith("vk:")
-                      ? "Вход через VK"
-                      : "Вход через Яндекс"}
+                    : session?.account?.provider === "email"
+                      ? "Вход по почте"
+                      : session?.account?.provider === "vk" ||
+                          identity.id.startsWith("vk:")
+                        ? "Вход через VK"
+                        : "Вход через Яндекс"}
                   {date(identity.createdAt)
                     ? ` · с ${date(identity.createdAt)}`
                     : ""}
@@ -445,11 +447,15 @@ export function AccountPage({
                       <div>
                         <span>Способ входа</span>
                         <strong>
-                          {session?.account?.provider === "vk" ||
-                          identity.id.startsWith("vk:")
-                            ? "VK ID"
-                            : "Яндекс ID"}{" "}
-                          <ExternalLink size={13} aria-hidden="true" />
+                          {session?.account?.provider === "email"
+                            ? "Почта"
+                            : session?.account?.provider === "vk" ||
+                                identity.id.startsWith("vk:")
+                              ? "VK ID"
+                              : "Яндекс ID"}{" "}
+                          {session?.account?.provider !== "email" && (
+                            <ExternalLink size={13} aria-hidden="true" />
+                          )}
                         </strong>
                       </div>
                       <div>
@@ -546,7 +552,9 @@ export function AccountPage({
                   )}
                 </section>
               )}
-              {user?.approved && <AccountAiHistory key={accountId} accountId={accountId} />}
+              {user?.approved && (
+                <AccountAiHistory key={accountId} accountId={accountId} />
+              )}
             </div>
           </>
         ) : null}

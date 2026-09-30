@@ -102,7 +102,7 @@ export function productionStaticHttp(
         await handle.close();
         return jsonError(res, 404, "Страница не найдена");
       }
-      if (shared || invitation) {
+      if (shared || invitation || pathname === "/account") {
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
       }

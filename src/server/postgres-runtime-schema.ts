@@ -4,6 +4,10 @@ import type { StoreDatabase } from "./store-database.ts";
 /** Additive extension: the preceding release can still run after deployment. */
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
+    [
+      "SELECT to_regclass('account_email_credentials') AS present",
+      "033_email_accounts.sql",
+    ],
     ["SELECT to_regclass('upload_limits') AS present", "032_upload_limits.sql"],
     [
       "SELECT to_regclass('archive_invitations') AS present",

@@ -31,6 +31,66 @@
   color: #fc3f1d;
   border-color: #e4e7df;
 }
+.login-providers .login-provider-email {
+  background: #e9f1e8;
+  color: #315e41;
+  border-color: #cbdccb;
+}
+.login-provider-email svg {
+  width: 26px;
+  height: 26px;
+}
+.login-email-form {
+  display: grid;
+  gap: 10px;
+  width: min(360px, 100%);
+  padding: 18px;
+  border: 1px solid #d8e1d4;
+  border-radius: 16px;
+  background: #fff;
+}
+.login-email-form h3 {
+  margin: 0 0 2px;
+  font-size: 17px;
+}
+.login-email-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+.login-email-form input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #cad6c8;
+  border-radius: 9px;
+  font: inherit;
+}
+.login-email-form > button {
+  min-height: 40px;
+  border-radius: 9px;
+  background: #315e41;
+  color: #fff;
+}
+.login-email-form > p {
+  margin: 0;
+  font-size: 13px;
+}
+.login-email-form > p[role="alert"] {
+  color: #a83838;
+}
+.login-email-options {
+  display: flex;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+}
+.login-email-options button {
+  padding: 0;
+  background: none;
+  color: #315e41;
+  font-size: 12px;
+  text-decoration: underline;
+}
 .login-provider svg {
   width: 44px;
   height: 44px;
