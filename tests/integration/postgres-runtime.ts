@@ -1528,7 +1528,7 @@ try {
   similarCandidate.people.push({ ...structuredClone(similarCandidate.people[0]),
     id: "person-b", name: "Иван", column: 1 });
   await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
-  await otherPublication.publish("person-b", "owner");
+  await otherPublication.publish("person-b", "owner", selectedDiscoveryFields);
   const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
     headers: ownerHeaders,
   });
