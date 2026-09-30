@@ -169,7 +169,7 @@ export default function App() {
       string | null
     >(null);
   useEffect(() => {
-    if (view !== "account") return;
+    if (view !== "account" && !archive.needsLogin) return;
     const controller = new AbortController();
     archiveFetch("/api/session", { cache: "no-store", signal: controller.signal })
       .then((response) => {
@@ -189,7 +189,7 @@ export default function App() {
         }
       });
     return () => controller.abort();
-  }, [view]);
+  }, [view, archive.needsLogin]);
   const [entryPending, setEntryPending] = useState(shouldPlayEntrySequence);
   useEffect(() => {
     const preventPageZoom = (event: WheelEvent) => {
@@ -641,6 +641,7 @@ export default function App() {
               view={view}
               onView={navigate}
               user={navigationUser}
+              account={accountSession?.account}
               accountPerson={accountPerson}
               local={archive.local || accountSession?.local === true}
               readTree={readTree}
@@ -989,7 +990,7 @@ export default function App() {
           <main className="archive-status">
             <h1>Семейный архив</h1>
             <p>{archive.error}</p>
-            {user ? (
+            {user || accountSession?.account ? (
               <button
                 className="primary-action"
                 onClick={() => navigate("account")}

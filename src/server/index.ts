@@ -244,6 +244,7 @@ export async function startServer(
         local: auth.local,
         yandex: yandex.enabled,
         vk: await vk.isEnabled(),
+        account: await auth.accountProfile(req),
         user: sessionUser
           ? {
               ...sessionUser,
