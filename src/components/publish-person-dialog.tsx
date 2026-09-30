@@ -1,12 +1,14 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import type { Person } from "../domain/types";
+import { defaultPublicationFields, type PublicationFields } from "../shared/publication";
 import { EditorDialog } from "./editor-dialog";
 
 type Status = {
   archiveId?: string | null;
   published: boolean;
   publishable: boolean;
+  fields: PublicationFields;
   person: {
     name: string;
     birthYear?: string;
@@ -24,6 +26,7 @@ export function PublishPersonDialog({
   onClose: () => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
+  const [fields, setFields] = useState<PublicationFields>(defaultPublicationFields);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const endpoint = `/api/admin/published-people/${encodeURIComponent(person.id)}`;
@@ -34,23 +37,32 @@ export function PublishPersonDialog({
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
         setStatus(data);
+        setFields({
+          birthSurname: data.fields.birthSurname && Boolean(person.maidenName),
+          birthYear: data.fields.birthYear && Boolean(person.birth?.match(/\b\d{4}\b/)),
+          deathYear: data.fields.deathYear && Boolean(person.death?.match(/\b\d{4}\b/)),
+          birthPlace: data.fields.birthPlace && Boolean(person.birthPlace),
+          deathPlace: data.fields.deathPlace && Boolean(person.deathPlace),
+        });
       })
       .catch((reason) => {
         if (!controller.signal.aborted)
           setError(reason.message || "Не удалось загрузить публикацию");
       });
     return () => controller.abort();
-  }, [endpoint]);
+  }, [endpoint, person.maidenName, person.birth, person.death, person.birthPlace, person.deathPlace]);
   async function update(publish: boolean) {
     setBusy(true);
     setError("");
     try {
       const response = await archiveFetch(endpoint, {
         method: publish ? "PUT" : "DELETE",
+        ...(publish ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields }) } : {}),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       setStatus(data);
+      setFields(data.fields);
     } catch (reason) {
       setError((reason as Error).message || "Не удалось изменить публикацию");
     } finally {
@@ -61,6 +73,14 @@ export function PublishPersonDialog({
     `/discover/person/${status?.archiveId ? `${encodeURIComponent(status.archiveId)}/` : ""}${encodeURIComponent(person.id)}`,
     location.origin,
   ).href;
+  const possibleFields = [
+    { key: "birthSurname", label: "Фамилия при рождении", value: person.maidenName },
+    { key: "birthYear", label: "Год рождения", value: person.birth?.match(/\b\d{4}\b/)?.[0] },
+    { key: "deathYear", label: "Год смерти", value: person.death?.match(/\b\d{4}\b/)?.[0] },
+    { key: "birthPlace", label: "Место рождения", value: person.birthPlace },
+    { key: "deathPlace", label: "Место смерти", value: person.deathPlace },
+  ] as const;
+  const changed = status && possibleFields.some(({ key }) => fields[key] !== status.fields[key]);
   return (
     <EditorDialog title="Публикация человека в поиске" onClose={onClose}>
       <div className="archive-form">
@@ -73,10 +93,18 @@ export function PublishPersonDialog({
             {status?.person.name || `${person.surname} ${person.name}`}
           </strong>
         </p>
-        <p>
-          В поиске видны только ФИО, годы и места рождения/смерти. Родственные
-          связи, фото и документы не раскрываются.
-        </p>
+        <fieldset disabled={busy || !status?.publishable}>
+          <legend>Что будет видно в поиске</legend>
+          <p>ФИО — обязательно. Остальные поля выбираются отдельно.</p>
+          {possibleFields.map(({ key, label, value }) => value ? (
+            <label key={key} className="publication-field">
+              <input type="checkbox" checked={fields[key]}
+                onChange={(event) => setFields((current) => ({ ...current, [key]: event.target.checked }))} />
+              <span>{label}: {value}</span>
+            </label>
+          ) : null)}
+        </fieldset>
+        <p>Родственные связи, фото и документы не раскрываются.</p>
         {status && !status.publishable && (
           <p>
             Опубликовать можно только человека, для которого подтверждена
@@ -95,13 +123,16 @@ export function PublishPersonDialog({
         {!status && !error && <p role="status">Загружаем статус…</p>}
         {status && (status.published || status.publishable) && (
           <div className="form-actions">
-            <button
+            {status.publishable && (!status.published || changed) && <button
               type="button"
               disabled={busy}
-              onClick={() => update(!status.published)}
+              onClick={() => update(true)}
             >
-              {status.published ? "Снять с поиска" : "Опубликовать в поиске"}
-            </button>
+              {status.published ? "Сохранить видимые поля" : "Опубликовать в поиске"}
+            </button>}
+            {status.published && <button type="button" disabled={busy} onClick={() => update(false)}>
+              Снять с поиска
+            </button>}
           </div>
         )}
       </div>
