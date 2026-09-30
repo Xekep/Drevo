@@ -105,6 +105,8 @@ export type TreeCanvasHandle = {
 type Props = {
   onPreferences?: () => void;
   onExport?: () => void;
+  onRename?: () => void;
+  onAddSelf?: () => void;
   comparisonAction?: ReactNode;
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
@@ -1402,10 +1404,26 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <h1>С чего начинается ваша история?</h1>
             <p>Добавьте человека, а затем его родителей, детей и близких.</p>
             {props.canEdit && (
-              <button className="primary-action" onClick={props.onAdd}>
-                <Plus size={18} />
-                Добавить первого человека
-              </button>
+              <div className="flow-empty-actions">
+                {props.onAddSelf && (
+                  <button className="primary-action" onClick={props.onAddSelf}>
+                    <Plus size={18} />
+                    Добавить себя
+                  </button>
+                )}
+                <button
+                  className={props.onAddSelf ? "flow-empty-secondary" : "primary-action"}
+                  onClick={props.onAdd}
+                >
+                  <Plus size={18} />
+                  Добавить первого человека
+                </button>
+                {props.onRename && (
+                  <button className="flow-empty-rename" onClick={props.onRename}>
+                    Назвать дерево
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

@@ -60,6 +60,7 @@ type PersonDraft = {
   person?: Person;
   relative?: Person;
   type?: "child" | ConnectionType;
+  bindSelf?: boolean;
   key: string;
 };
 const targetKey = (target: ArchiveTarget | null) =>
@@ -553,14 +554,16 @@ export default function App() {
     lastUrlTarget.current = "";
     setView("tree", undefined, true);
   }, [setView]);
-  const newPerson = useCallback(() => {
+  const openNewPerson = useCallback((bindSelf = false) => {
     if (!canEdit) return;
     if (!closeConnection()) return;
-    if (!setPersonDraft({ key: crypto.randomUUID() })) return;
+    if (!setPersonDraft({ key: crypto.randomUUID(), bindSelf })) return;
     setAddMenu(false);
     lastUrlTarget.current = "";
     setView("tree");
   }, [canEdit, closeConnection, setView, setPersonDraft]);
+  const newPerson = useCallback(() => openNewPerson(), [openNewPerson]);
+  const newSelf = useCallback(() => openNewPerson(true), [openNewPerson]);
   const startLink = useCallback(() => {
     if (!canEdit) return;
     if (!closeConnection()) return;
@@ -611,7 +614,25 @@ export default function App() {
         save={save}
         busy={busy}
         onClose={closeEditor}
-        onSaved={showPerson}
+        onSaved={(id) => {
+          showPerson(id);
+          if (!personDraft.bindSelf || !user) return;
+          void archiveFetch(`/api/users/${encodeURIComponent(user.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ personId: id }),
+          })
+            .then(async (response) => {
+              if (!response.ok) {
+                const result = await response.json().catch(() => null);
+                throw new Error(result?.error || "Не удалось связать карточку с аккаунтом.");
+              }
+              archive.reload();
+            })
+            .catch((error) =>
+              setNotice(`Человек добавлен, но отметка «Это вы» не сохранилась: ${(error as Error).message}`),
+            );
+        }}
         onDirtyChange={onPersonDirtyChange}
       />
     </div>
@@ -734,6 +755,8 @@ export default function App() {
                       ref={treeCanvas}
                       onPreferences={() => setTreePreferencesOpen(true)}
                       onExport={() => setTreeExportOpen(true)}
+                      onRename={canEdit && user?.role === "admin" ? () => setSettings(true) : undefined}
+                      onAddSelf={canEdit && user?.role === "admin" && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={

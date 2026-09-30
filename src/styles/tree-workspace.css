@@ -783,6 +783,34 @@
 .flow-empty button {
   padding: 13px 20px;
 }
+.flow-empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.flow-empty-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.flow-empty .flow-empty-secondary {
+  border: 1px solid #adc497;
+  border-radius: 10px;
+  background: #fff;
+  color: #365339;
+}
+.flow-empty .flow-empty-rename {
+  flex-basis: 100%;
+  border: 0;
+  background: transparent;
+  color: #48694a;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .link-instruction,
 .tree-notice {
   position: absolute;
