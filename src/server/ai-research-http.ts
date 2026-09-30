@@ -349,11 +349,23 @@ export function aiResearchHttp({
 
     if (path === "/api/ai/chats" && req.method === "GET") {
       const user = (await auth.currentUser(req))!;
+      const scope = await accessScope(user);
+      const chatsForScope = await chats.list(
+        user.id,
+        aiAvailable ? scope : "history-cleanup-only",
+      );
+      const currentUser = await auth.currentUser(req);
+      if (!currentUser?.approved || currentUser.id !== user.id)
+        return json(res, 403, { error: "Доступ к диалогам изменился" });
+      const canShowTitles = aiAvailable &&
+        (await accountAiAccess(archive.db, user.id, auth.local)) &&
+        (await accessScope(currentUser)) === scope;
       return json(res, 200, {
-        chats: await chats.list(
-          user.id,
-          aiAvailable ? await accessScope(user) : "history-cleanup-only",
-        ),
+        chats: canShowTitles
+          ? chatsForScope
+          : aiAvailable
+            ? await chats.list(user.id, "history-cleanup-only")
+            : chatsForScope,
       });
     }
     if (path.startsWith("/api/ai/chats/")) {
