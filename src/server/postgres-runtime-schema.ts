@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM pg_policies WHERE schemaname=current_schema() AND tablename='archive_memberships' AND policyname='account_memberships_read'",
+      "021_account_archive_directory.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ai_settings' AND column_name='code_interpreter_enabled'",
       "020_code_interpreter.sql",
     ],

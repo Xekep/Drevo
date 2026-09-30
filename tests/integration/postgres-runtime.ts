@@ -26,6 +26,7 @@ import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
+import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -1027,6 +1028,78 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  const ownerArchives = await fetch(securedBase + "/api/account/archives", {
+    headers: ownerHeaders,
+  }).then((r) => r.json());
+  assert.deepEqual(
+    new Set(ownerArchives.archives.map((archive: { id: string }) => archive.id)),
+    new Set(["runtime-test", "other-archive"]),
+  );
+  assert.equal(
+    ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").current,
+    true,
+  );
+  const readerArchives = await fetch(securedBase + "/api/account/archives", {
+    headers,
+  }).then((r) => r.json());
+  assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
+  assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
+  assert.equal(
+    (await fetch(otherBase + "/api/account/archives", { headers: ownerHeaders })
+      .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,
+    true,
+  );
+  await client.query(
+    "INSERT INTO accounts(id,name,created_at) VALUES('other-only','Other only',$1)",
+    [new Date().toISOString()],
+  );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(
+    "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES('other-archive','other-only','reader',true,'all')",
+  );
+  const otherOnlyToken = newSessionToken();
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'other-only',$2)",
+    [sessionTokenHash(otherOnlyToken), Date.now() + 60_000],
+  );
+  const otherOnlyHeaders = { Cookie: `drevo_session=${otherOnlyToken}` };
+  assert.equal(
+    (await fetch(securedBase + "/api/session", { headers: otherOnlyHeaders }).then((r) => r.json())).user,
+    null,
+  );
+  assert.deepEqual(
+    (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
+      .then((r) => r.json())).archives.map((archive: { id: string }) => archive.id),
+    ["other-archive"],
+  );
+  await client.query(
+    "DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='other-only'",
+  );
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  assert.deepEqual(
+    (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
+      .then((r) => r.json())).archives,
+    [],
+    "removing one membership must preserve the global account session",
+  );
+  const primaryDb = app.archive.db;
+  assert.equal(
+    (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
+    1,
+    "account context must not leak outside the listing transaction",
+  );
+  assert.deepEqual(
+    (await accountArchiveDirectory(primaryDb).list("reader"))?.map((archive) => archive.id),
+    ["runtime-test"],
+  );
+  await primaryDb.transaction(async () => {
+    await primaryDb.prepare("", "SELECT set_config('drevo.account_id',?,true)").get("owner");
+    assert.equal(
+      (await primaryDb.prepare("", "UPDATE archive_memberships SET role='reader' WHERE archive_id='other-archive' AND user_id='owner'").run()).changes,
+      0,
+      "the extra read policy must not permit cross-archive writes",
+    );
+  });
   assert.equal(
     (await fetch(otherBase + "/api/session", { headers: ownerHeaders }).then((r) => r.json())).user.id,
     "owner",

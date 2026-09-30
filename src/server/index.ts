@@ -29,6 +29,8 @@ import { backupCoordinator } from "./backup-coordinator.ts";
 import { backupManagementHttp } from "./backup-management-http.ts";
 import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
+import { accountArchiveDirectory } from "./account-archives.ts";
+import { accountArchivesHttp } from "./account-archives-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -96,6 +98,10 @@ export async function startServer(
   const visibility = await settingsStore(archive.db);
   const users = await userStore(archive.db);
   const auth = await createAuth(users, archive.db, publicOrigin);
+  const listAccountArchives = accountArchivesHttp(
+    auth,
+    accountArchiveDirectory(archive.db),
+  );
   const backups = await backupCoordinator(archive.db, dbPath);
   const manageBackups = backupManagementHttp({
     backups,
@@ -184,6 +190,7 @@ export async function startServer(
     const parsedUrl = new URL(req.url || "/", `http://${host}`),
       path = parsedUrl.pathname;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
+    if (await listAccountArchives(req, res, parsedUrl)) return;
     if (await manageVkAuth(req, res, parsedUrl)) return;
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
