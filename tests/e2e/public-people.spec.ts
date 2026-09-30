@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openAdminSection } from "./admin-navigation";
 
 test("discovery keeps same-ID cards from different archives distinct and paginates", async ({ page }) => {
   await page.route((url) => url.pathname === "/api/discovery/people", (route) => {
@@ -50,4 +51,20 @@ test("admin publishes a person from the card menu and finds the limited public c
   await page.getByRole("menuitem", { name: "Публикация в поиске" }).click();
   await dialog.getByRole("button", { name: "Снять с поиска" }).click();
   await expect(dialog.getByRole("button", { name: "Опубликовать в поиске" })).toBeVisible();
+});
+
+test("admin can review and revoke a selected discovery publication", async ({ page }) => {
+  await page.goto("/admin");
+  await openAdminSection(page, "publications", "Можно найти");
+  await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
+  const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
+  await row.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
+  await expect(page.getByRole("region", { name: "Проверка публикации" })).toContainText("Тестов Иван");
+  await page.getByRole("button", { name: "Подтвердить публикацию 1" }).click();
+  await expect(page.getByRole("status")).toContainText("Опубликовано карточек: 1");
+  await row.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Снять выбранных с поиска" }).click();
+  await page.getByRole("button", { name: "Подтвердить отзыв 1" }).click();
+  await expect(page.getByRole("status")).toContainText("Снято с поиска: 1");
 });

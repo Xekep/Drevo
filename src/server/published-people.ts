@@ -42,14 +42,21 @@ export function publicPerson(person: Person, fields: PublicationFields = default
 }
 
 export function publishedPeopleStore(db: StoreDatabase) {
+  const columns = "person_id,birth_surname_visible,birth_year_visible,death_year_visible,birth_place_visible,death_place_visible";
   return {
     async entries() {
       const rows = await db
         .prepare(
-          "SELECT person_id,birth_surname_visible,birth_year_visible,death_year_visible,birth_place_visible,death_place_visible FROM published_people",
-          "SELECT person_id,birth_surname_visible,birth_year_visible,death_year_visible,birth_place_visible,death_place_visible FROM published_people",
+          `SELECT ${columns} FROM published_people`,
+          `SELECT ${columns} FROM published_people`,
         )
         .all();
+      return new Map(rows.map((row) => [String(row.person_id), fieldsFromRow(row)]));
+    },
+    async fieldsForIds(ids: string[]) {
+      if (!ids.length) return new Map<string, PublicationFields>();
+      const sql = `SELECT ${columns} FROM published_people WHERE person_id IN (${ids.map(() => "?").join(",")})`;
+      const rows = await db.prepare(sql, sql).all(...ids);
       return new Map(rows.map((row) => [String(row.person_id), fieldsFromRow(row)]));
     },
     async getFields(personId: string) {
