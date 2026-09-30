@@ -353,7 +353,7 @@ async function geometryForSeed(
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
-      "elk.layered.thoroughness": "12",
+      "elk.layered.thoroughness": people.length > 900 ? "1" : "12",
       "elk.separateConnectedComponents": "true",
     },
   };
@@ -628,7 +628,7 @@ export async function unionGeometry(
   // На больших архивах ограничиваем число запусков ELK, сохраняя
   // детерминированный результат для одного и того же набора людей.
   // On 423-556 person fixtures the third ELK run did not improve quality,
-  // while it helped at 782 people. Keep two candidates through 700 people.
+  // while it helped at 782 people. Keep one alternate seed through 2000.
   const seeds =
     !contacts.distinct ? [] : people.length <= 300
       ? [15, 20, 12, 4, 8]
@@ -638,7 +638,7 @@ export async function unionGeometry(
           ? [15, 20]
         : people.length <= 2000
           ? [15]
-        : [];
+          : [];
   for (const seed of seeds) {
     let candidate: TreeGeometry;
     try {
@@ -793,7 +793,9 @@ export async function unionGeometry(
     let currentPositions = new Map(best.positions);
     const priorPositions = previous && new Map(previous.positions);
     const blocksById = new Map((best.blocks || []).map((block) => [block.id, block]));
-    for (const id of coupleBlocksWithContactedAncestry(best, W)) {
+    for (const id of coupleBlocksWithContactedAncestry(best, W).slice(
+      0, people.length > 900 ? 50 : undefined,
+    )) {
       const members = blocksById.get(id)?.members;
       if (priorPositions && members?.every((member) => priorPositions.has(member))) {
         const [a, b] = members;
@@ -833,7 +835,7 @@ export async function unionGeometry(
       .sort(([a, b], [c, d]) =>
         (scores.get(c) || 0) + (scores.get(d) || 0) -
         (scores.get(a) || 0) - (scores.get(b) || 0))
-      .slice(0, 200);
+      .slice(0, people.length > 900 ? 50 : 200);
     let adjacent = new Set(adjacentFamilyBlocks(best, size).map(pairKey));
     let currentRoutes = geometryRoutingQuality(best);
     const originalLength = currentRoutes.length;

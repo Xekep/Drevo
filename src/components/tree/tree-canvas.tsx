@@ -311,6 +311,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     !selected.length && !manualCameraOverride;
   const canvasWidth = useStore((state) => state.width);
   const canvasHeight = useStore((state) => state.height);
+  const distantZoom = useStore((state) => state.transform[2] < 0.18);
   const [growthStarted, setGrowthStarted] = useState(false);
   const [growthRevealed, setGrowthRevealed] = useState(false);
   const markInitialCameraReady = useCallback(
@@ -1390,7 +1391,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           // Culling uses final coordinates, not the CSS-interpolated position.
           // Keep nodes mounted while they move, even across the viewport edge.
           onlyRenderVisibleElements={
-            !layoutSettling && (!growing || displayNodes.length > 500)
+            !layoutSettling && (!growing || displayNodes.length > 500) &&
+            !(distantZoom && displayNodes.length <= 2000)
           }
           fitView={false}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}

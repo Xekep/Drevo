@@ -446,7 +446,7 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       beforeMs: base.totalMs, afterMs: trial.totalMs }));
   }
 } else if (process.env.DREVO_LAYOUT_SCALE_SCAN) {
-  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8], [2, 6], [3, 6], [4, 7]];
+  const fixtures = [[1, 2], [1, 4], [1, 5], [1, 6], [1, 7], [5, 9], [1, 8], [2, 6], [3, 6], [4, 7], [10, 9], [8, 9]];
   for (const [index, [seed, generations]] of fixtures.entries()) {
     if (process.env.DREVO_LAYOUT_CASE && Number(process.env.DREVO_LAYOUT_CASE) !== index + 1) continue;
     const people = randomFamily(seed, generations);
