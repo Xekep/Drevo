@@ -702,7 +702,10 @@ export async function unionGeometry(
           movement - nextMovement >= 100 &&
           axisDisplacement(previous, candidate, "y") <=
             Math.max(axisDisplacement(previous, best, "y"), 32) + 32
-        ) best = candidate;
+        ) {
+          best = candidate;
+          contacts = next;
+        }
       } catch {
         // Если инкрементальный ELK не смог построить вариант, остаётся обычная раскладка.
       }
@@ -727,25 +730,41 @@ export async function unionGeometry(
               Math.max(bestExtent.width, bestExtent.height) * 1.2 &&
             candidateExtent.width * candidateExtent.height <=
               bestExtent.width * bestExtent.height * 1.35 &&
-            routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H))
+            routeCardContacts(candidate, W, H) <= routeCardContacts(best, W, H)) {
           best = candidate;
+          contacts = next;
+        }
       } catch {
         // The original layout remains valid if ELK rejects the alternative order.
       }
     }
   }
-  if (!previous && people.length > 300 && people.length <= 1200 && contacts.distinct) {
+  if (people.length <= 1200 && contacts.distinct) {
     // Keep ELK block coordinates; reject each local spouse swap unless its rerouted
     // ancestry improves the complete visible routes.
     let currentRoutes = geometryRoutingQuality(best);
     let cardContacts = routeCardContacts(best, W, H);
+    let currentPositions = new Map(best.positions);
+    const priorPositions = previous && new Map(previous.positions);
+    const blocksById = new Map((best.blocks || []).map((block) => [block.id, block]));
     for (const id of coupleBlocksWithContactedAncestry(best, W)) {
+      const members = blocksById.get(id)?.members;
+      if (priorPositions && members?.every((member) => priorPositions.has(member))) {
+        const [a, b] = members;
+        // An edit may restore the orientation the user already saw, but must
+        // not reverse an unchanged couple just to win a local contact.
+        if ((currentPositions.get(a)!.x < currentPositions.get(b)!.x) ===
+            (priorPositions.get(a)!.x < priorPositions.get(b)!.x)) continue;
+      }
       const candidate = locallyReverseCouples(best, people, links, size, new Set([id]));
       if (!candidate) continue;
       const next = branchContactCounts(candidate.branches || []);
-      if (next.distinct >= contacts.distinct) continue;
+      if (next.distinct > contacts.distinct) continue;
       const nextRoutes = geometryRoutingQuality(candidate);
-      if (nextRoutes.crossings > currentRoutes.crossings ||
+      if ((next.distinct === contacts.distinct &&
+           nextRoutes.crossings >= currentRoutes.crossings) ||
+          nextRoutes.contacts > currentRoutes.contacts ||
+          nextRoutes.crossings > currentRoutes.crossings ||
           nextRoutes.length > currentRoutes.length * 1.02 ||
           nextRoutes.bends > currentRoutes.bends + 2)
         continue;
@@ -755,6 +774,7 @@ export async function unionGeometry(
       contacts = next;
       currentRoutes = nextRoutes;
       cardContacts = nextCardContacts;
+      currentPositions = new Map(candidate.positions);
     }
   }
   return best;
