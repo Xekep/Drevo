@@ -3,8 +3,59 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { request as httpRequest, type ClientRequest } from "node:http";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
+
+test("revoking an MCP token while its request body arrives prevents tool output", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-midrequest-"));
+  const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  let pendingRequest: ClientRequest | undefined;
+  try {
+    const issuedResponse = await fetch(base + "/api/mcp/tokens", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Отзыв во время запроса", scopes: ["tree:read"] }),
+    });
+    assert.equal(issuedResponse.status, 201);
+    const issued = await issuedResponse.json();
+    const payload = Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: 1,
+      method: "tools/call", params: { name: "search_people", arguments: { query: "Иван" } } }));
+    const responsePromise = new Promise<{ status: number; body: string }>((resolve, reject) => {
+      pendingRequest = httpRequest(base + "/mcp", { method: "POST", headers: {
+        Authorization: `Bearer ${issued.token}`, "Content-Type": "application/json",
+        "Content-Length": payload.length,
+      } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => resolve({ status: res.statusCode || 0,
+          body: Buffer.concat(chunks).toString("utf8") }));
+        res.on("error", reject);
+      });
+      pendingRequest.on("error", reject);
+      pendingRequest.write(payload.subarray(0,20));
+    });
+    let firstAuthenticationFinished = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const row = await app.archive.db.prepare(
+        "SELECT last_used_at FROM mcp_tokens WHERE id=?",
+      ).get(issued.item.id);
+      if (row?.last_used_at) { firstAuthenticationFinished = true; break; }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(firstAuthenticationFinished, true);
+    await app.archive.db.prepare("UPDATE mcp_tokens SET revoked_at=? WHERE id=?")
+      .run(new Date().toISOString(), issued.item.id);
+    pendingRequest!.end(payload.subarray(20));
+    const result = await responsePromise;
+    assert.equal(result.status, 401);
+    assert.doesNotMatch(result.body, /structuredContent|people/);
+  } finally {
+    pendingRequest?.destroy();
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("admin-issued MCP token exposes only granted read-only tools", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-mcp-"));

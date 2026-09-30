@@ -116,11 +116,12 @@ export function mcpHttp({
         error: "Invalid origin",
       });
 
-    const grant = await tokens.authenticate(req.headers.authorization);
-    if (!grant) {
+    const initialGrant = await tokens.authenticate(req.headers.authorization);
+    if (!initialGrant) {
       res.setHeader("WWW-Authenticate", 'Bearer realm="Drevo MCP"');
       return json(res, 401, { error: "Недействительный MCP-токен" });
     }
+    let grant = initialGrant;
     const hasAiAccess = async () =>
       (await accountAiAccess(archive.db, grant.createdBy, !publicOrigin)) &&
       (!grant.boundUser ||
@@ -146,6 +147,10 @@ export function mcpHttp({
     const id = request.id ?? null;
     if (request.jsonrpc !== "2.0" || typeof request.method !== "string")
       return json(res, 400, error(id, -32600, "Invalid Request"));
+    const currentGrant = await tokens.authenticate(req.headers.authorization);
+    if (!currentGrant)
+      return json(res, 401, { error: "Недействительный MCP-токен" });
+    grant = currentGrant;
     if (!(await hasAiAccess()))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
@@ -343,6 +348,10 @@ export function mcpHttp({
       }
       try {
         const sourceFamily = (await archive.read()).family;
+        const latestGrant = await tokens.authenticate(req.headers.authorization);
+        if (!latestGrant)
+          return json(res, 401, { error: "Недействительный MCP-токен" });
+        grant = latestGrant;
         if (!(await hasAiAccess()))
           return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
         const family = grant.boundUser
