@@ -242,10 +242,8 @@ export function emailCredentials(
             await client.query<{
               account_id: string;
               password_hash: string;
-              archive_id: string;
             }>(
-              `SELECT c.account_id,c.password_hash,o.archive_id FROM account_email_credentials c
-             JOIN archive_owners o ON o.user_id=c.account_id WHERE c.email=$1`,
+              `SELECT account_id,password_hash FROM account_email_credentials WHERE email=$1`,
               [email],
             )
           ).rows[0],
@@ -256,7 +254,15 @@ export function emailCredentials(
       );
       if (!row || !valid)
         throw new InvalidEmailCredential("Неверная почта или пароль.");
-      return { accountId: row.account_id, archiveId: row.archive_id };
+      const archiveId = await transact(async (client) => {
+        await client.query("SELECT set_config('drevo.account_id',$1,true)", [row.account_id]);
+        return (await client.query<{ archive_id: string }>(
+          "SELECT archive_id FROM archive_owners WHERE user_id=$1 LIMIT 1",
+          [row.account_id],
+        )).rows[0]?.archive_id;
+      });
+      if (!archiveId) throw new InvalidEmailCredential("Личный архив недоступен.");
+      return { accountId: row.account_id, archiveId };
     },
 
     async requestReset(value: unknown) {
