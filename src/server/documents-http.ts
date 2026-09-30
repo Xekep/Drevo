@@ -312,13 +312,13 @@ export function documentsHttp({
         )
         .get(item[1])) as Row | undefined;
       if (!row) return json(res, 404, { error: "Документ не найден" });
-      const access = await visible(req);
+      const access = await visible(req, false);
       const linkedIds = (await associations([row.id])).get(row.id) || [];
       if (!canSee(access, row, linkedIds))
         return json(res, 404, { error: "Документ не найден" });
-      const people = new Map(
-        access.people.map((person) => [person.id, fullName(person)]),
-      );
+      const people = access.scoped
+        ? new Map(access.people.map((person) => [person.id, fullName(person)]))
+        : await linkedPersonNames(linkedIds);
       return json(
         res,
         200,
@@ -554,7 +554,7 @@ export function documentsHttp({
         )
         .get(annotations[1])) as Row | undefined;
       if (!row) return json(res, 404, { error: "Документ не найден" });
-      const access = await visible(req);
+      const access = await visible(req, false);
       const personIds = (await associations([row.id])).get(row.id) || [];
       if (!canSee(access, row, personIds))
         return json(res, 404, { error: "Документ не найден" });
@@ -605,7 +605,7 @@ export function documentsHttp({
         const latest = await auth.currentUser(req);
         if (!latest?.approved || !(await auth.canEdit(req)))
           return { status: 403, error: "Нет прав на комментарии" };
-        const latestAccess = await visible(req);
+        const latestAccess = await visible(req, false);
         const linked = (await associations([row.id])).get(row.id) || [];
         if (!canSee(latestAccess, current, linked))
           return { status: 404, error: "Документ не найден" };
@@ -688,7 +688,7 @@ export function documentsHttp({
           )
           .get(item[1])) as Row | undefined;
         if (!row) return { status: 404 as const, error: "Документ не найден" };
-        const access = await visible(req);
+        const access = await visible(req, false);
         const personIds = (await associations([row.id])).get(row.id) || [];
         if (!canSee(access, row, personIds))
           return { status: 404 as const, error: "Документ не найден" };
@@ -748,7 +748,7 @@ export function documentsHttp({
       if (!row) return json(res, 404, { error: "Документ не найден" });
       if (!/^[a-f0-9-]{36}\.pdf$/.test(row.file_name))
         return json(res, 404, { error: "Файл документа не найден" });
-      const access = await visible(req);
+      const access = await visible(req, false);
       if (
         !canSee(access, row, (await associations([row.id])).get(row.id) || [])
       )

@@ -35,6 +35,17 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
   const dir = mkdtempSync(join(tmpdir(), "drevo-documents-"));
   const app = await startServer(0, join(dir, "drevo.sqlite"), true);
   const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  const withoutFullRead = async <T>(work: () => Promise<T>) => {
+    const originalRead = app.archive.read;
+    app.archive.read = async () => {
+      throw new Error("An unscoped document read must not load the full graph");
+    };
+    try {
+      return await work();
+    } finally {
+      app.archive.read = originalRead;
+    }
+  };
   const family: Family = {
     title: "Документы",
     description: "",
@@ -129,13 +140,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const created = await upload(pdf);
     assert.equal(created.status, 201, await created.clone().text());
     const { id } = (await created.json()) as { id: string };
-    const originalRead = app.archive.read;
-    app.archive.read = async () => {
-      throw new Error("An unscoped document list must not load the full graph");
-    };
-    const listed = await fetch(`${base}/api/documents`).finally(() => {
-      app.archive.read = originalRead;
-    });
+    const listed = await withoutFullRead(() => fetch(`${base}/api/documents`));
     assert.equal(listed.status, 200, await listed.clone().text());
     const list = (await listed.json()) as {
       total: number;
@@ -160,7 +165,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       ["anna"],
     );
     assert.equal(list.items[0].people[0].name, "Тестова Анна");
-    const direct = await fetch(`${base}/api/documents/${id}`);
+    const direct = await withoutFullRead(() => fetch(`${base}/api/documents/${id}`));
     assert.equal(direct.status, 200);
     assert.deepEqual(await direct.json(), list.items[0]);
     const byTitle = (await (
@@ -204,7 +209,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       (await (await fetch(`${base}/api/documents/${id}`)).json()).provenance,
       next.provenance,
     );
-    const file = await fetch(`${base}/api/documents/${id}/file`);
+    const file = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`));
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
     assert.deepEqual(Buffer.from(await file.arrayBuffer()), pdf);
@@ -250,7 +255,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       400,
     );
     assert.equal(
-      ((await (await fetch(annotationUrl)).json()) as { items: unknown[] })
+      ((await (await withoutFullRead(() => fetch(annotationUrl))).json()) as { items: unknown[] })
         .items.length,
       1,
     );
