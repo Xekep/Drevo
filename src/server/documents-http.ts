@@ -182,6 +182,17 @@ export function documentsHttp({
       return [String(row.id), fullName(person)] as const;
     }));
   };
+  const matchingPersonIds = async (query: string) => {
+    const rows = await db.prepare(
+      "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
+      "SELECT p.id,p.data FROM (SELECT DISTINCT person_id FROM document_people) dp JOIN people p ON p.id=dp.person_id",
+    ).all();
+    return rows.filter((row) => {
+      const person = (typeof row.data === "string"
+        ? JSON.parse(row.data) : row.data) as Person;
+      return fullName(person).toLocaleLowerCase("ru").includes(query);
+    }).map((row) => String(row.id));
+  };
   const canSee = (
     access: Awaited<ReturnType<typeof visible>>,
     row: Row,
@@ -246,7 +257,7 @@ export function documentsHttp({
         query.length > 100
       )
         return json(res, 400, { error: "Некорректная страница" });
-      const access = await visible(req, !!query);
+      const access = await visible(req, false);
       if (!access.scope)
         return json(res, 403, { error: "Доступ к документам изменился" });
       if (personId !== null && access.scoped && !access.ids.includes(personId))
@@ -268,11 +279,11 @@ export function documentsHttp({
         args.push(JSON.stringify(access.ids), access.userId || "");
       }
       if (query) {
-        const peopleIds = access.people
-          .filter((person) =>
-            fullName(person).toLocaleLowerCase("ru").includes(query),
-          )
-          .map((person) => person.id);
+        const peopleIds = access.scoped
+          ? access.people
+            .filter((person) => fullName(person).toLocaleLowerCase("ru").includes(query))
+            .map((person) => person.id)
+          : await matchingPersonIds(query);
         conditions.push(
           db.kind === "postgres"
             ? "(strpos(d.title_search, ?) > 0 OR EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))))"
@@ -300,7 +311,7 @@ export function documentsHttp({
         )
         .all(...args, limit, offset)) as Row[];
       const links = await associations(rows.map((row) => row.id));
-      const people = access.scoped || query
+      const people = access.scoped
         ? new Map(access.people.map((person) => [person.id, fullName(person)]))
         : await linkedPersonNames([...links.values()].flat());
       const actor = await auth.currentUser(req),
