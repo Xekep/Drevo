@@ -2022,6 +2022,57 @@
 .flow-person.is-portrait-card.is-needs-review .person-avatar {
   border-color: #d77b18;
 }
+.flow-person.is-portrait-card .flow-privacy {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 42px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #cdd9c9;
+  border-radius: 50%;
+  background: #fffefa;
+  color: #506455;
+  box-shadow: 0 2px 8px #293e3433;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.flow-person.is-portrait-card:hover .flow-privacy,
+.flow-person.is-portrait-card:focus-within .flow-privacy,
+.flow-person.is-portrait-card .flow-privacy:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.flow-person.is-portrait-card .flow-privacy[data-publication-state="published"] {
+  color: #2d7148;
+}
+.flow-person.is-portrait-card .flow-privacy:hover,
+.flow-person.is-portrait-card .flow-privacy:focus-visible {
+  background: #eaf3e7;
+  border-color: #6e996f;
+}
+.flow-person.is-portrait-card .flow-privacy:focus-visible {
+  outline: 2px solid #315d3b;
+  outline-offset: 2px;
+}
+.flow-person.is-portrait-card .flow-privacy[data-publication-state="loading"] svg {
+  animation: archive-loader-spin 760ms linear infinite;
+}
+@media (max-width: 899px), (pointer: coarse) {
+  .flow-person.is-portrait-card .flow-privacy {
+    top: 3px;
+    left: 35px;
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .flow-person.is-portrait-card .portrait-card-info {
   display: grid;
   flex: none;

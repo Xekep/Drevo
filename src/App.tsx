@@ -238,6 +238,18 @@ export default function App() {
     revision: number;
   } | null>(null);
   const [publishPerson, setPublishPerson] = useState<Person | null>(null);
+  const [publicationUpdate, setPublicationUpdate] = useState<{
+    personId: string;
+    published: boolean;
+    archiveId: string | null;
+  } | null>(null);
+  const onPublicationStatus = useCallback((published: boolean) => {
+    if (publishPerson) setPublicationUpdate({
+      personId: publishPerson.id,
+      published,
+      archiveId: archiveContextAt(window.location.pathname)?.id || null,
+    });
+  }, [publishPerson]);
   const [personDraft, setPersonDraftState] = useState<PersonDraft | null>(null),
     [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(
       null,
@@ -274,6 +286,9 @@ export default function App() {
   const photoReturnPath = useRef("/photos");
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+  const openPersonPublication = useCallback((personId: string) => {
+    setPublishPerson(map.get(personId) || null);
+  }, [map]);
   const { openPhoto, navigatePhoto, closePhoto, uploaded } = photoWorkspace;
   useEffect(() => {
     if (!family || archive.loadingDetails) return;
@@ -652,7 +667,11 @@ export default function App() {
         <ShareDialog {...shareDraft} onClose={() => setShareDraft(null)} />
       )}
       {publishPerson && (
-        <PublishPersonDialog person={publishPerson} onClose={() => setPublishPerson(null)} />
+        <PublishPersonDialog
+          person={publishPerson}
+          onClose={() => setPublishPerson(null)}
+          onStatus={onPublicationStatus}
+        />
       )}
       <div className="archive-main">
         <ArchiveHeader
@@ -794,10 +813,11 @@ export default function App() {
                           : undefined
                       }
                       onPublishPerson={
-                        user?.role === "admin" && canEdit && desktop
-                          ? (personId) => setPublishPerson(map.get(personId) || null)
+                        user?.role === "admin" && canEdit
+                          ? openPersonPublication
                           : undefined
                       }
+                      publicationUpdate={publicationUpdate}
                       onAddRelative={(id, type) => {
                         if (!closeConnection()) return;
                         relative(type, false, id);

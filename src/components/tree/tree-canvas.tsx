@@ -32,7 +32,6 @@ import {
   Settings,
   Download,
   Upload,
-  Share2,
   TreeDeciduous,
 } from "lucide-react";
 import {
@@ -117,6 +116,7 @@ type Props = {
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
   onPublishPerson?: (personId: string) => void;
+  publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
@@ -170,11 +170,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const screen = useTreeFullscreen(container);
   const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
   const [createAt, setCreateAt] = useState<TreeCreateAtDraft | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    personId?: string;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   useEffect(() => {
     if (!contextMenu) return;
     const dismiss = (event: PointerEvent) => {
@@ -694,6 +690,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         family.people.find((person) => person.id === user?.personId) || null,
       kinshipPeople: family.people,
       kinshipLinks: family.links || [],
+      publishPerson: props.onPublishPerson,
+      publicationUpdate: props.publicationUpdate,
       choose: (id: string, additive: boolean) => {
         setEdgeChoices([]);
         setManualCameraOverride(true);
@@ -734,6 +732,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       family.links,
       user?.id,
       user?.personId,
+      props.onPublishPerson,
+      props.publicationUpdate,
     ],
   );
   const connections = useMemo(() => archiveConnections(family), [family]);
@@ -1037,16 +1037,17 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             return;
           }
           const target = event.target as Element;
-          const personId = target.closest<HTMLElement>(".flow-person")?.dataset.personId;
-          if (personId ? !props.onShare && !props.onPublishPerson : narrow || (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane"))
+          if (target.closest(".flow-person")) {
+            event.preventDefault();
             return;
+          }
+          if (narrow || (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane")) return;
           event.preventDefault();
           const bounds = container.current?.getBoundingClientRect();
           if (!bounds) return;
           setContextMenu({
             x: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 205)),
-            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (personId || props.onImport ? 110 : 70))),
-            personId,
+            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (props.onImport ? 110 : 70))),
           });
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
@@ -1438,21 +1439,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             )}
           </div>
         )}
-        {contextMenu && (contextMenu.personId || !narrow) && (
-          <div className="tree-context-menu" role="menu" aria-label={contextMenu.personId ? "Действия с человеком" : "Действия с древом"}
+        {contextMenu && !narrow && (
+          <div className="tree-context-menu" role="menu" aria-label="Действия с древом"
             style={{ left: contextMenu.x, top: contextMenu.y }}>
-            {contextMenu.personId ? (<>
-              {props.onShare && <button type="button" role="menuitem" onClick={() => {
-                props.onShare?.(contextMenu.personId!, [contextMenu.personId!]);
-                setContextMenu(null);
-              }}>
-                <Share2 size={16} aria-hidden="true" /> Временная ссылка
-              </button>}
-              {props.onPublishPerson && <button type="button" role="menuitem" onClick={() => {
-                props.onPublishPerson?.(contextMenu.personId!);
-                setContextMenu(null);
-              }}><Share2 size={16} aria-hidden="true" /> Публикация в поиске</button>}
-            </>) : (<>
               {props.onExport && <button type="button" role="menuitem" onClick={() => {
                 props.onExport?.();
                 setContextMenu(null);
@@ -1465,7 +1454,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               }}>
                 <Upload size={16} aria-hidden="true" /> Импорт
               </button>}
-            </>)}
           </div>
         )}
       </div>
