@@ -5,6 +5,7 @@ test("archive admin proposes a match using only two published cards", async ({ p
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров", birthYear: "1900" };
   const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
   let requested = false;
+  let ignored = false;
   await page.route("**/api/discovery/matches/own-people?**", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
   await page.route("**/api/discovery/people?**", (route) => {
@@ -14,9 +15,19 @@ test("archive admin proposes a match using only two published cards", async ({ p
       ? { results: [{ archiveId: "tree-c", id: "person-c", name: "Иван Сидоров" }], nextCursor: null }
       : { results: [target], nextCursor: "page2" } });
   });
-  await page.route("**/api/discovery/matches/candidates?**", (route) =>
-    route.fulfill({ json: { candidates: [{ ...target, reasons: ["Совпадают имя и фамилия",
-      "Год рождения близок (±2 года)"], conflicts: [] }], truncated: false } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) => {
+    const showIgnored = new URL(route.request().url()).searchParams.get("ignored") === "1";
+    return route.fulfill({ json: { candidates: showIgnored === ignored ? [{ ...target,
+      reasons: ["Совпадают имя и фамилия", "Год рождения близок (±2 года)"], conflicts: [],
+    }] : [], truncated: false } });
+  });
+  await page.route("**/api/discovery/matches/ignored", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.sourcePersonId).toBe("person-a");
+    expect(body.targetPersonId).toBe("person-b");
+    ignored = body.ignored;
+    return route.fulfill({ json: { ignored } });
+  });
   await page.route("**/api/discovery/matches", async (route) => {
     if (route.request().method() === "POST") {
       expect(route.request().postDataJSON()).toEqual({
@@ -37,6 +48,11 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров.*1900/ }).click();
+  await expect(page.getByText(/Год рождения близок/)).toBeVisible();
+  await page.getByRole("button", { name: "Не тот" }).click();
+  await page.getByRole("button", { name: "Скрытые" }).click();
+  await page.getByRole("button", { name: "Вернуть", exact: true }).click();
+  await page.getByRole("button", { name: "К предложениям" }).click();
   await expect(page.getByText(/Год рождения близок/)).toBeVisible();
   await page.getByRole("searchbox", { name: "Карточка из другого дерева" }).fill("Иван");
   await page.getByRole("button", { name: "Показать ещё" }).click();
