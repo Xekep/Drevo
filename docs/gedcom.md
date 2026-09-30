@@ -67,6 +67,7 @@ GEDCOM служит для обмена генеалогическими све�
 ## API и реализация
 
 - `GET /api/gedcom/export` — GEDZIP 7 по умолчанию.
+- GEDZIP выгружается потоком без создания второй полной копии на сервере. Перед отправкой проверяется наличие оригиналов. Обратный импорт в Drevo принимает пакет до 512 МиБ; большой экспорт может потребовать другой программы или будущего переносимого формата Drevo.
 - `?format=gedcom551`, `gedcom7`, `gedzip7` — явный формат.
 - `GET /api/backup/full` — Drevo Archive.
 - `GET /api/offline/export?scope=all|family|ancestors|descendants|blood&anchor=ID&generations=5` — ZIP для офлайн-просмотра; `anchor` нужен для ветки, `generations` используется для предков и потомков.

@@ -45,7 +45,15 @@ function loginMethods(account: AccountSession["account"], identityId: string) {
   const providers = account?.providers?.length
     ? account.providers
     : [account?.provider || (identityId.startsWith("vk:") ? "vk" : "yandex")];
-  return providers.map((provider) => provider === "email" ? "Почта" : provider === "vk" ? "VK ID" : "Яндекс ID").join(" · ");
+  return providers
+    .map((provider) =>
+      provider === "email"
+        ? "Почта"
+        : provider === "vk"
+          ? "VK ID"
+          : "Яндекс ID",
+    )
+    .join(" · ");
 }
 type AccountArchive = {
   id: string;
@@ -264,7 +272,9 @@ export function AccountPage({
                 <span className="account-eyebrow">Участник Drevo</span>
                 <h2 id="account-name">{identity.name}</h2>
                 <p>
-                  {local ? "Локальный доступ" : loginMethods(session?.account, identity.id)}
+                  {local
+                    ? "Локальный доступ"
+                    : loginMethods(session?.account, identity.id)}
                   {date(identity.createdAt)
                     ? ` · с ${date(identity.createdAt)}`
                     : ""}
@@ -481,7 +491,12 @@ export function AccountPage({
                         {sessionError}
                       </p>
                     )}
-                    <AccountEmailLink linked={session?.account?.providers?.includes("email") === true || session?.account?.provider === "email"} />
+                    <AccountEmailLink
+                      linked={
+                        session?.account?.providers?.includes("email") ===
+                          true || session?.account?.provider === "email"
+                      }
+                    />
                     <button
                       className="account-signout"
                       onClick={() => void logout()}
@@ -522,8 +537,7 @@ export function AccountPage({
                           )}
                           download="drevo.gdz"
                         >
-                          Скачать дерево с фото и документами (GEDZIP, до 480
-                          МиБ)
+                          Скачать дерево с фото и документами (GEDZIP)
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
                         <a

@@ -8,11 +8,14 @@ import {
   rm,
   readdir,
   utimes,
+  open,
+  stat,
 } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { PassThrough } from "node:stream";
 import { ZipFile } from "yazl";
 import { openPromise } from "yauzl";
 import sharp from "sharp";
@@ -21,6 +24,7 @@ import { importGedcom, exportGedcom } from "../src/domain/gedcom.ts";
 import { importAgelongXml } from "../src/domain/agelong-xml.ts";
 import {
   familyMedia,
+  TRANSFER_FILE_LIMIT,
   TRANSFER_PACKAGE_LIMIT,
   TRANSFER_TEXT_LIMIT,
 } from "../src/domain/genealogy-transfer.ts";
@@ -28,6 +32,7 @@ import { BASIC_MEDIA_BYTES } from "../src/server/postgres-media-quota.ts";
 import {
   prepareGenealogyImport,
   writeGenealogyPackage,
+  streamGenealogyPackage,
   decodeGedcom,
   packagePath,
   exportMedia,
@@ -735,6 +740,80 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("streamed GEDZIP validates originals before starting the response", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-stream-export-"));
+  const uploads = join(directory, "uploads");
+  try {
+    await mkdir(uploads);
+    await writeFile(join(uploads, "photo.png"), Buffer.from("original bytes"));
+    const family: Family = {
+      title: "Archive",
+      description: "",
+      demo: false,
+      people: [],
+      photos: [
+        { id: "photo", url: "/media/photo.png", title: "Photo", tags: [] },
+      ],
+    };
+    const packageFile = join(directory, "stream.gdz");
+    let ready = false;
+    await streamGenealogyPackage(
+      createWriteStream(packageFile),
+      uploads,
+      family,
+      familyMedia(family),
+      async () => {
+        ready = true;
+      },
+    );
+    assert.equal(ready, true);
+    const zip = await openPromise(packageFile);
+    const names: string[] = [];
+    for await (const entry of zip.eachEntry()) names.push(entry.fileName);
+    assert.deepEqual(names.sort(), ["gedcom.ged", "media/photo.png"]);
+
+    const original = await open(join(uploads, "photo.png"), "r+");
+    try {
+      await original.truncate(TRANSFER_FILE_LIMIT + 1);
+    } finally {
+      await original.close();
+    }
+    const largePackage = join(directory, "large.gdz");
+    await streamGenealogyPackage(
+      createWriteStream(largePackage),
+      uploads,
+      family,
+      familyMedia(family),
+      async () => {},
+    );
+    assert.ok((await stat(largePackage)).size > TRANSFER_FILE_LIMIT);
+
+    const output = new PassThrough();
+    let bytes = 0;
+    output.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+    });
+    ready = false;
+    await assert.rejects(
+      streamGenealogyPackage(
+        output,
+        uploads,
+        family,
+        [{ ...familyMedia(family)[0], file: "/media/missing.png" }],
+        async () => {
+          ready = true;
+        },
+      ),
+      /ENOENT/,
+    );
+    assert.equal(ready, false);
+    assert.equal(bytes, 0);
+    output.destroy();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
