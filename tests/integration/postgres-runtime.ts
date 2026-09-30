@@ -1097,9 +1097,9 @@ try {
     410,
   );
   assert.equal(
-    (await fetch(securedBase + "/a/other-archive/api/session", { headers })
-      .then((r) => r.json())).user,
-    null,
+    (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
+    404,
+    "a nonmember cannot enter a selected archive after its runtime is warm",
   );
   assert.equal(
     (await fetch(securedBase + "/a/missing-archive/api/session", { headers: ownerHeaders })).status,
