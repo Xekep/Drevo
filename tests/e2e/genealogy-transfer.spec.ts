@@ -58,7 +58,9 @@ test("форматы экспорта и импорт GEDCOM с предпрос
       `/api/gedcom/export?format=${format}`,
     );
   }
-  await expect(panel.getByRole("radio", { name: "Drevo Archive" })).toHaveCount(0);
+  await expect(panel.getByRole("radio", { name: "Drevo Archive" })).toHaveCount(
+    0,
+  );
   await expect(
     panel.getByRole("radio", { name: "XML «Древа Жизни 6»" }),
   ).toHaveCount(0);
@@ -90,6 +92,9 @@ test("форматы экспорта и импорт GEDCOM с предпрос
     .getByRole("button", { name: "Подтвердить добавление 1 человек" })
     .click();
   await expect(panel.getByRole("status")).toContainText("Добавлено людей: 1");
+  await panel
+    .getByText("Полная замена архива из JSON", { exact: true })
+    .click();
   const jsonInput = panel.getByLabel("Выберите экспорт архива");
   if (testInfo.project.name === "mobile") {
     await expect(jsonInput).toBeDisabled();

@@ -4,14 +4,10 @@ import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
 
 async function openExport(page: Page) {
-  if (await page.evaluate(() => matchMedia("(max-width: 899px)").matches))
-    await page.getByRole("button", { name: "Экспорт древа" }).click();
-  else {
-    await page
-      .locator(".react-flow__pane")
-      .click({ button: "right", position: { x: 40, y: 350 } });
-    await page.locator(".tree-context-menu button").click();
-  }
+  await page
+    .locator(".react-flow__pane")
+    .click({ button: "right", position: { x: 40, y: 350 } });
+  await page.getByRole("menuitem", { name: "Экспорт древа" }).click();
   return page.getByRole("dialog");
 }
 
@@ -31,6 +27,7 @@ async function downloadPdf(page: Page, info: TestInfo) {
 }
 
 test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
+  test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
@@ -39,8 +36,6 @@ test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
     .getByTestId("rf__node-e2e-child")
     .locator(".flow-person-content")
     .click();
-  if (isMobile)
-    await page.getByRole("button", { name: "Закрыть панель" }).click();
   const dialog = await openExport(page);
   await dialog
     .getByRole("combobox", { name: "Область экспорта" })
@@ -78,7 +73,9 @@ test.beforeEach(async ({ page }) => {
 
 test("settings have no export; canvas menu offers visible and full tree", async ({
   page,
+  isMobile,
 }) => {
+  test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
@@ -153,7 +150,9 @@ test("AI file action downloads the configured tree PDF", async ({ page }) => {
 
 test("download respects collapsed branches; cancel releases preparation without downloading", async ({
   page,
+  isMobile,
 }, info) => {
+  test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-grow|is-layout-settling/,
@@ -263,6 +262,7 @@ for (const variant of ["portrait", "classic"] as const)
     context,
     isMobile,
   }, info) => {
+    test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
     const data = await (await page.request.get("/api/family")).json();
     const portrait = await sharp({
       create: { width: 800, height: 800, channels: 3, background: "#31779a" },
@@ -299,11 +299,6 @@ for (const variant of ["portrait", "classic"] as const)
     );
     await page.goto(`/s/${token}`);
     await expect(page.getByTestId("rf__node-e2e-child")).toBeVisible();
-    if (isMobile)
-      await expect(page.locator(".react-flow__viewport")).not.toHaveAttribute(
-        "style",
-        /scale\(1\)/,
-      );
     await expect(page.locator(".tree-canvas")).not.toHaveClass(
       /is-grow|is-layout-settling/,
     );

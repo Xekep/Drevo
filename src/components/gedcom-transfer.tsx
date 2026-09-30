@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Download, Upload } from "lucide-react";
 import type { Family } from "../domain";
 import { JsonArchiveImport } from "./json-archive-import";
+import { JsonAdditionsImport } from "./json-additions-import";
 import {
   TRANSFER_PACKAGE_LIMIT,
   TRANSFER_XML_LIMIT,
@@ -236,7 +237,11 @@ export function GedcomTransfer({
       )}
       {done && <p role="status">{done}</p>}
       <hr />
-      <JsonArchiveImport save={save} canEdit={canEdit} />
+      <JsonAdditionsImport canEdit={canEdit} onImported={onImported} />
+      <details>
+        <summary>Полная замена архива из JSON</summary>
+        <JsonArchiveImport save={save} canEdit={canEdit} />
+      </details>
     </section>
   );
 }

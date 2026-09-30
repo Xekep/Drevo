@@ -31,6 +31,7 @@ import {
   RotateCcw,
   Settings,
   Download,
+  Upload,
   TreeDeciduous,
 } from "lucide-react";
 import {
@@ -108,6 +109,7 @@ export type TreeCanvasHandle = {
 type Props = {
   onPreferences?: () => void;
   onExport?: () => void;
+  onImport?: () => void;
   onRename?: () => void;
   onAddSelf?: () => void;
   comparisonAction?: ReactNode;
@@ -1039,13 +1041,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             event.preventDefault();
             return;
           }
-          if (!props.onExport || !target.closest(".react-flow__pane")) return;
+          if (narrow || (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane")) return;
           event.preventDefault();
           const bounds = container.current?.getBoundingClientRect();
           if (!bounds) return;
           setContextMenu({
             x: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 205)),
-            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - 70)),
+            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (props.onImport ? 110 : 70))),
           });
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
@@ -1221,12 +1223,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 familyView.reset();
               }}
             />
-          )}
-          {narrow && props.onExport && (
-            <button type="button" className="tree-preferences-trigger tree-export-trigger"
-              aria-label="Экспорт древа" title="Экспорт древа" onClick={props.onExport}>
-              <Download size={19} aria-hidden="true" />
-            </button>
           )}
           {narrow && preferencesAction}
         </div>
@@ -1443,15 +1439,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             )}
           </div>
         )}
-        {contextMenu && (
+        {contextMenu && !narrow && (
           <div className="tree-context-menu" role="menu" aria-label="Действия с древом"
             style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button type="button" role="menuitem" onClick={() => {
-              props.onExport?.();
-              setContextMenu(null);
-            }}>
-              <Download size={16} aria-hidden="true" /> Экспорт древа
-            </button>
+              {props.onExport && <button type="button" role="menuitem" onClick={() => {
+                props.onExport?.();
+                setContextMenu(null);
+              }}>
+                <Download size={16} aria-hidden="true" /> Экспорт древа
+              </button>}
+              {props.onImport && <button type="button" role="menuitem" onClick={() => {
+                props.onImport?.();
+                setContextMenu(null);
+              }}>
+                <Upload size={16} aria-hidden="true" /> Импорт
+              </button>}
           </div>
         )}
       </div>
