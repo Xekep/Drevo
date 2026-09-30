@@ -46,3 +46,6 @@
 .public-people-results > a:hover .public-person-card {
   border-color: currentColor;
 }
+.public-people-linked { margin-top: 28px; }
+.public-people-linked > h2 { margin-bottom: 6px; }
+.public-people-linked > p { color: var(--muted); }
