@@ -17,6 +17,7 @@ type Match = {
   id: string;
   status: "pending" | "linked" | "rejected" | "revoked";
   reason?: string;
+  reviewToken?: string;
   initiatedByArchiveId: string;
   requestedAt: string;
   left: Candidate;
@@ -150,15 +151,18 @@ export function DiscoveryMatchesAdmin() {
     finally { setBusy(false); }
   }
 
-  async function decide(id: string, decision: "accept" | "reject" | "revoke") {
+  async function decide(id: string, decision: "accept" | "reject" | "revoke", reviewToken?: string) {
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await archiveFetch(`${endpoint}/${id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify({ decision, ...(decision === "accept" ? { reviewToken } : {}) }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Не удалось изменить решение");
+      if (!response.ok) {
+        if (decision === "accept" && response.status === 409) setReload((value) => value + 1);
+        throw new Error(body.error || "Не удалось изменить решение");
+      }
       setNotice(decision === "accept" ? "Сопоставление подтверждено." :
         decision === "reject" ? "Запрос отклонён." : "Связь отозвана.");
       setReload((value) => value + 1);
@@ -242,7 +246,9 @@ export function DiscoveryMatchesAdmin() {
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
         <div className="match-request-actions">
           {item.status === "pending" && item.initiatedByArchiveId !== archiveId && <>
-            <button type="button" disabled={busy} onClick={() => void decide(item.id, "accept")}>Подтвердить</button>
+            <button type="button" disabled={busy || !item.reviewToken}
+              data-review-token={item.reviewToken}
+              onClick={() => void decide(item.id, "accept", item.reviewToken)}>Подтвердить</button>
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "reject")}>Не тот человек</button>
           </>}
           {(item.status === "pending" || item.status === "linked") &&
