@@ -18,20 +18,37 @@ export type ArchiveView = keyof typeof archivePaths;
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
 
-export function archiveDocumentPath(personId: string | null, documentId: string | null) {
+export function archiveDocumentPath(
+  personId: string | null,
+  documentId: string | null,
+  pageNumber?: number,
+) {
   const base = personId
     ? `${archivePaths.documents}/person/${encodeURIComponent(personId)}`
     : archivePaths.documents;
-  return documentId ? `${base}/${encodeURIComponent(documentId)}` : base;
+  if (!documentId) return base;
+  const path = `${base}/${encodeURIComponent(documentId)}`;
+  return pageNumber && Number.isInteger(pageNumber) && pageNumber >= 1 && pageNumber <= 2000
+    ? `${path}/page/${pageNumber}`
+    : path;
 }
 
-export function archiveDocumentAt(pathname: string) {
+type ArchiveDocumentRoute = {
+  personId: string | null;
+  documentId: string | null;
+  pageNumber?: number;
+};
+export function archiveDocumentAt(pathname: string): ArchiveDocumentRoute | null {
   const path = (archiveContextAt(pathname)?.innerPath || pathname).replace(/\/$/, "");
   if (path === archivePaths.documents)
     return { personId: null, documentId: null };
-  const direct = /^\/documents\/([a-f0-9-]{36})$/i.exec(path);
-  if (direct) return { personId: null, documentId: direct[1] };
-  const filtered = /^\/documents\/person\/([^/]+)(?:\/([a-f0-9-]{36}))?$/i.exec(path);
+  const direct = /^\/documents\/([a-f0-9-]{36})(?:\/page\/([1-9]\d{0,3}))?$/i.exec(path);
+  if (direct) {
+    const pageNumber = direct[2] ? Number(direct[2]) : undefined;
+    if (pageNumber && pageNumber > 2000) return null;
+    return { personId: null, documentId: direct[1], ...(pageNumber ? { pageNumber } : {}) };
+  }
+  const filtered = /^\/documents\/person\/([^/]+)(?:\/([a-f0-9-]{36})(?:\/page\/([1-9]\d{0,3}))?)?$/i.exec(path);
   if (!filtered) return null;
   let personId: string;
   try {
@@ -51,7 +68,9 @@ export function archiveDocumentAt(pathname: string) {
   )
     return null;
   const documentId = filtered[2] || null;
-  return { personId, documentId };
+  const pageNumber = filtered[3] ? Number(filtered[3]) : undefined;
+  if (pageNumber && pageNumber > 2000) return null;
+  return { personId, documentId, ...(pageNumber ? { pageNumber } : {}) };
 }
 
 /** Один закодированный сегмент после /people или /photos. */

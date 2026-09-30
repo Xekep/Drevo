@@ -218,6 +218,7 @@ export function EventsEditor({
                     <DocumentSourcePicker
                       personId={personId}
                       documentId={source.documentId}
+                      pageNumber={source.documentPage}
                       onChange={(document) =>
                         update(event.id, {
                           sources: event.sources!.map((s, i) =>
@@ -226,8 +227,19 @@ export function EventsEditor({
                                   ...s,
                                   title: s.title || document?.title || "",
                                   documentId: document?.id,
+                                  documentPage:
+                                    document?.id === s.documentId
+                                      ? s.documentPage
+                                      : undefined,
                                 }
                               : s,
+                          ),
+                        })
+                      }
+                      onPageChange={(documentPage) =>
+                        update(event.id, {
+                          sources: event.sources!.map((s, i) =>
+                            i === index ? { ...s, documentPage } : s,
                           ),
                         })
                       }
@@ -337,7 +349,7 @@ export function PersonEvents({
                       )}
                       {canLoadDocuments && s.documentId && (
                         <a
-                          href={scopedArchivePath(archiveDocumentPath(null, s.documentId))}
+                          href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}
                         >
                           {" "}Открыть PDF
                         </a>

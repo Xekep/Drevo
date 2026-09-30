@@ -2,6 +2,7 @@ import type { Family, Source } from "./types.ts";
 const publicSource = (source: Source): Source => {
   const copy = { ...source };
   delete copy.documentId;
+  delete copy.documentPage;
   return copy;
 };
 export type ShareLink = {
