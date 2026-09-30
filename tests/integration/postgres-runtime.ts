@@ -1445,7 +1445,7 @@ try {
   assert.equal(matchBody.match.status, "pending");
   assert.equal([matchBody.match.left, matchBody.match.right]
     .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
-    "Исправленный сосед");
+    "Тестов Исправленный сосед");
   assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
   assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
     headers: ownerHeaders,
