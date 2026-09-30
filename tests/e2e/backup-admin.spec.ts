@@ -82,6 +82,10 @@ test("экспорт отделён от резервных копий; наст
     page.getByRole("link", { name: "Скачать базу SQLite" }),
   ).toHaveCount(0);
   await expect(page.getByText("Настройки и перенос данных")).toHaveCount(0);
+  await expect(
+    page.getByText("Добавить новые карточки из JSON", { exact: true }),
+  ).toBeVisible();
+  await page.getByText("Полная замена архива из JSON", { exact: true }).click();
   await expect(page.getByText("JSON Drevo", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Доступ и древо" }),
