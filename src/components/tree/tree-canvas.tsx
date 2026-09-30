@@ -1038,7 +1038,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }
           const target = event.target as Element;
           const personId = target.closest<HTMLElement>(".flow-person")?.dataset.personId;
-          if (personId ? !props.onShare && !props.onPublishPerson : (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane"))
+          if (personId ? !props.onShare && !props.onPublishPerson : narrow || (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane"))
             return;
           event.preventDefault();
           const bounds = container.current?.getBoundingClientRect();
@@ -1222,18 +1222,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 familyView.reset();
               }}
             />
-          )}
-          {narrow && props.onExport && (
-            <button type="button" className="tree-preferences-trigger tree-export-trigger"
-              aria-label="Экспорт древа" title="Экспорт древа" onClick={props.onExport}>
-              <Download size={19} aria-hidden="true" />
-            </button>
-          )}
-          {narrow && props.onImport && (
-            <button type="button" className="tree-preferences-trigger"
-              aria-label="Импорт" title="Импорт" onClick={props.onImport}>
-              <Upload size={19} aria-hidden="true" />
-            </button>
           )}
           {narrow && preferencesAction}
         </div>
@@ -1450,7 +1438,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             )}
           </div>
         )}
-        {contextMenu && (
+        {contextMenu && (contextMenu.personId || !narrow) && (
           <div className="tree-context-menu" role="menu" aria-label={contextMenu.personId ? "Действия с человеком" : "Действия с древом"}
             style={{ left: contextMenu.x, top: contextMenu.y }}>
             {contextMenu.personId ? (<>

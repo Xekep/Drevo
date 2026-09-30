@@ -1,10 +1,55 @@
 import { expect, test } from "@playwright/test";
 import type { Family } from "../../src/domain/types.ts";
 
+for (const shared of [false, true])
+  test(`mobile ${shared ? "shared" : "own"} tree hides import and export`, async ({
+    page,
+    request,
+    isMobile,
+  }) => {
+    test.skip(!isMobile);
+    const token = "i".repeat(43);
+    if (shared) {
+      const { family } = await (await request.get("/api/family")).json();
+      await page.route(`**/api/shared/${token}`, (route) =>
+        route.fulfill({
+          json: {
+            family,
+            reverseTimeline: false,
+            serverTime: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          },
+        }),
+      );
+    }
+    await page.goto(shared ? `/s/${token}` : "/tree");
+    await expect(
+      page.getByRole("button", { name: "Настройки древа" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Импорт", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Экспорт древа" }),
+    ).toHaveCount(0);
+    await page.locator(".react-flow__pane").click({
+      button: "right",
+      position: { x: 20, y: 350 },
+    });
+    await expect(
+      page.getByRole("menuitem", { name: "Импорт", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("menuitem", { name: "Экспорт древа" }),
+    ).toHaveCount(0);
+  });
+
 test("tree import previews a JSON batch and preserves every existing card", async ({
   page,
   request,
+  isMobile,
 }, info) => {
+  test.skip(isMobile, "Пакетный импорт с полотна доступен на десктопе");
   const original = await (await request.get("/api/family")).json();
   const newId = `batch-e2e-${info.project.name}`;
   const packet = {
@@ -27,17 +72,13 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
   };
   try {
     await page.goto("/tree");
-    if (info.project.name === "mobile")
-      await page.getByRole("button", { name: "Импорт", exact: true }).click();
-    else {
-      await page
-        .locator(".react-flow__pane")
-        .click({ button: "right", position: { x: 40, y: 350 } });
-      await expect(
-        page.getByRole("menuitem", { name: "Экспорт древа" }),
-      ).toBeVisible();
-      await page.getByRole("menuitem", { name: "Импорт", exact: true }).click();
-    }
+    await page
+      .locator(".react-flow__pane")
+      .click({ button: "right", position: { x: 40, y: 350 } });
+    await expect(
+      page.getByRole("menuitem", { name: "Экспорт древа" }),
+    ).toBeVisible();
+    await page.getByRole("menuitem", { name: "Импорт", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Импорт в древо" });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("JSON с новыми карточками").setInputFiles({
