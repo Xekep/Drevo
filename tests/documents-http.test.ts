@@ -169,19 +169,23 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal(direct.status, 200);
     assert.deepEqual(await direct.json(), list.items[0]);
     const byTitle = (await (
-      await fetch(`${base}/api/documents?q=${encodeURIComponent("семейная")}`)
+      await withoutFullRead(() => fetch(`${base}/api/documents?q=${encodeURIComponent("семейная")}`))
     ).json()) as { total: number };
     const byPerson = (await (
-      await fetch(`${base}/api/documents?q=${encodeURIComponent("тестова")}`)
+      await withoutFullRead(() => fetch(`${base}/api/documents?q=${encodeURIComponent("тестова")}`))
     ).json()) as { total: number };
     const noMatch = (await (
-      await fetch(`${base}/api/documents?q=missing`)
+      await withoutFullRead(() => fetch(`${base}/api/documents?q=missing`))
+    ).json()) as { total: number };
+    const unlinkedPerson = (await (
+      await withoutFullRead(() => fetch(`${base}/api/documents?q=${encodeURIComponent("борис")}`))
     ).json()) as { total: number };
     assert.equal(byTitle.total, 1);
     assert.equal(byPerson.total, 1);
     assert.equal(noMatch.total, 0);
+    assert.equal(unlinkedPerson.total, 0);
     const byProvenance = (await (
-      await fetch(`${base}/api/documents?q=GASO`)
+      await withoutFullRead(() => fetch(`${base}/api/documents?q=GASO`))
     ).json()) as { total: number };
     assert.equal(byProvenance.total, 1);
     const expected = {
