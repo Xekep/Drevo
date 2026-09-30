@@ -64,6 +64,7 @@ type AccountArchive = {
   title: string;
   role: Role;
   approved: boolean;
+  owned: boolean;
   current: boolean;
 };
 function ArchiveList({ archives }: { archives: AccountArchive[] }) {
@@ -384,6 +385,9 @@ export function AccountPage({
                       <ArchiveList archives={archives} />
                     </div>
                   )}
+                  {archives &&
+                    !archives.some((item) => item.owned) &&
+                    !local && <CreatePersonalArchive />}
                   {!user.approved && (
                     <p className="account-note">
                       Администратор архива должен подтвердить ваш доступ.
@@ -429,7 +433,12 @@ export function AccountPage({
                   {archives === null ? (
                     <p className="account-card-copy">Загружаем деревья…</p>
                   ) : archives.length ? (
-                    <ArchiveList archives={archives} />
+                    <>
+                      <ArchiveList archives={archives} />
+                      {!archives.some((item) => item.owned) && !local && (
+                        <CreatePersonalArchive />
+                      )}
+                    </>
                   ) : (
                     <>
                       <p className="account-card-copy">

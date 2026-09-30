@@ -1408,10 +1408,15 @@ try {
     ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").current,
     true,
   );
+  assert.equal(
+    ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").owned,
+    true,
+  );
   const readerArchives = await fetch(securedBase + "/api/account/archives", {
     headers,
   }).then((r) => r.json());
   assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
+  assert.equal(readerArchives.archives[0].owned, false);
   assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
   assert.equal(
     (await fetch(otherBase + "/api/account/archives", { headers: ownerHeaders })
