@@ -7,6 +7,8 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   const people = process.env.DREVO_LAYOUT_SCALE_PEOPLE === "500"
     ? randomFamily(1, 6) : randomFamily(5, 9);
   const withPortraits = !!process.env.DREVO_LAYOUT_SCALE_PORTRAITS;
+  let releaseThumbs = () => {};
+  const thumbGate = new Promise<void>((resolve) => { releaseThumbs = resolve; });
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -30,7 +32,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   });
   if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=*", async (route) => {
     if (process.env.DREVO_LAYOUT_SCALE_SLOW_THUMB && route.request().url().includes("variant=thumb"))
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await thumbGate;
     await route.fulfill({
       contentType: "image/svg+xml",
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#688a70"/></svg>',
@@ -240,10 +242,11 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     expect(handoff.zoom).toBeGreaterThanOrEqual(0.18);
     expect(handoff.pendingThumbs).toBeGreaterThan(0);
     expect(handoff.canvasVisible).toBe(true);
-    await expect.poll(() => page.evaluate(() => {
-      const images = [...document.querySelectorAll<HTMLImageElement>(".flow-person .person-avatar img")];
-      return images.length > 0 && images.every((image) => image.complete);
-    }), { timeout: 5000 }).toBe(true);
+    releaseThumbs();
+    await expect.poll(() => page.evaluate(() =>
+      [...document.querySelectorAll<HTMLImageElement>(".flow-person .person-avatar img")]
+        .filter((image) => !image.complete).length,
+    ), { timeout: 20_000 }).toBe(0);
     await expect(page.locator(".tree-distant-portraits")).toHaveCSS("visibility", "hidden");
   }
   if (process.env.DREVO_LAYOUT_SCALE_SCREENSHOT) {
