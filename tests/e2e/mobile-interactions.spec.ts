@@ -78,6 +78,19 @@ test("long press selects a card without opening a profile or relationship mode",
   await expect(page).toHaveURL(/\/tree$/);
 });
 
+test("mobile relationship form has one close action and a named dialog", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.goto("/tree");
+  await page.getByTestId("rf__node-e2e-child").locator(".flow-person-content").tap();
+  await page.getByRole("button", { name: "Добавить родственника" }).click();
+  await page.getByRole("button", { name: "Уже в древе" }).click();
+  const dialog = page.getByRole("dialog", { name: "Новая связь" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Закрыть связь" })).toHaveCount(1);
+});
+
 test("downward swipes dismiss mobile photo details and a person's card", async ({
   page,
 }, testInfo) => {

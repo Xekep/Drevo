@@ -114,6 +114,7 @@ type Props = {
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
+  allowDragConnect?: boolean;
   busy: boolean;
   reverse: boolean;
   colorScheme?: TreeColorScheme;
@@ -1244,6 +1245,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           onConnectEnd={(event, state) => {
             if (
               !props.canEdit ||
+              props.allowDragConnect === false ||
               props.busy ||
               state.isValid ||
               !state.fromNode ||
@@ -1307,9 +1309,13 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             props.onClear();
           }}
           nodesDraggable={false}
-          nodesConnectable={props.canEdit && !props.busy}
+          nodesConnectable={
+            props.canEdit && props.allowDragConnect !== false && !props.busy
+          }
           nodesFocusable={false}
-          edgesReconnectable={props.canEdit && !props.busy}
+          edgesReconnectable={
+            props.canEdit && props.allowDragConnect !== false && !props.busy
+          }
           deleteKeyCode={null}
           panOnScroll={!cameraLocked}
           zoomOnScroll={false}

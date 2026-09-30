@@ -91,12 +91,12 @@ export default function App() {
       upload: uploadArchive,
     } = archive;
   const desktop = useDesktopEditing(),
-    canEdit = allowedEdit && desktop;
+    canEdit = allowedEdit;
   const save = useCallback<typeof archive.save>(
     (data) => {
       if (!canEdit)
         return Promise.reject(
-          new Error("Редактирование доступно с компьютера."),
+          new Error("Недостаточно прав для редактирования архива."),
         );
       return saveArchive(data);
     },
@@ -105,7 +105,7 @@ export default function App() {
   const upload = useCallback<typeof archive.upload>(
     (...args) => {
       if (!canEdit)
-        return Promise.reject(new Error("Загрузка доступна с компьютера."));
+        return Promise.reject(new Error("Недостаточно прав для загрузки файла."));
       return uploadArchive(...args);
     },
     [canEdit, uploadArchive],
@@ -732,7 +732,7 @@ export default function App() {
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}
                   save={save}
-                  canEdit={canEdit}
+                  canEdit={canEdit && desktop}
                 />
               ) : (
                 <div className="archive-status">
@@ -778,7 +778,7 @@ export default function App() {
                         </div>
                       }
                       onShare={
-                        user?.role === "admin" && canEdit &&
+                        user?.role === "admin" && canEdit && desktop &&
                         !archiveContextAt(window.location.pathname)
                           ? (anchorId, ids) => {
                               const anchor = map.get(anchorId);
@@ -794,7 +794,7 @@ export default function App() {
                           : undefined
                       }
                       onPublishPerson={
-                        user?.role === "admin" && canEdit
+                        user?.role === "admin" && canEdit && desktop
                           ? (personId) => setPublishPerson(map.get(personId) || null)
                           : undefined
                       }
@@ -805,6 +805,7 @@ export default function App() {
                       family={family}
                       user={user}
                       canEdit={canEdit}
+                      allowDragConnect={desktop}
                       busy={busy}
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
@@ -859,14 +860,9 @@ export default function App() {
                         key={personDraft.key}
                         onClose={closeEditor}
                         editing
+                        label={personDraft.person ? "Редактировать человека" : "Новый человек"}
                         suspended={assistantOpen}
                       >
-                        {!canEdit && (
-                          <p className="desktop-edit-notice">
-                            Черновик сохранён в этой вкладке. Продолжить
-                            редактирование можно в окне компьютера.
-                          </p>
-                        )}
                         {personEditor}
                       </InspectorDock>
                     ) : connectionDraft ? (
@@ -874,6 +870,7 @@ export default function App() {
                         key={connectionDraft.original?.key || "new-connection"}
                         onClose={closeConnection}
                         editing={canEdit}
+                        label={connectionDraft.original ? "Редактировать связь" : "Новая связь"}
                         suspended={assistantOpen}
                       >
                         <ConnectionInspector
@@ -964,7 +961,7 @@ export default function App() {
                   people={people}
                   query={query}
                   user={user}
-                  canEdit={canEdit}
+                  canEdit={canEdit && desktop}
                   mayEdit={allowedEdit}
                   busy={busy}
                   loadingDetails={archive.loadingDetails}
@@ -1068,7 +1065,7 @@ export default function App() {
           onDirtyChange={(dirty) => {
             navigationDirty.current = dirty;
           }}
-          canEdit={canEdit}
+          canEdit={canEdit && desktop}
           busy={busy}
           save={save}
           upload={upload}
