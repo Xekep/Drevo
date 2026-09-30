@@ -516,15 +516,20 @@ export function AccountPage({
                       <div className="account-export-actions">
                         <a
                           className="account-row-action"
-                          href={archiveResourceUrl("/api/gedcom/export?format=gedzip7")}
+                          href={archiveResourceUrl(
+                            "/api/gedcom/export?format=gedzip7",
+                          )}
                           download="drevo.gdz"
                         >
-                          Скачать дерево с фото и документами (GEDZIP, до 224 МБ)
+                          Скачать дерево с фото и документами (GEDZIP, до 480
+                          МиБ)
                           <ExternalLink size={16} aria-hidden="true" />
                         </a>
                         <a
                           className="account-row-action"
-                          href={archiveResourceUrl("/api/gedcom/export?format=gedcom7")}
+                          href={archiveResourceUrl(
+                            "/api/gedcom/export?format=gedcom7",
+                          )}
                           download="drevo-7.ged"
                         >
                           Скачать данные дерева (GEDCOM 7)

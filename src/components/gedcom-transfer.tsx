@@ -6,6 +6,7 @@ import type { Family } from "../domain";
 import { JsonArchiveImport } from "./json-archive-import";
 import {
   TRANSFER_PACKAGE_LIMIT,
+  TRANSFER_XML_LIMIT,
   type GenealogyExportFormat,
 } from "../domain/genealogy-transfer";
 type Preview = {
@@ -44,8 +45,11 @@ export function GedcomTransfer({
     setPreview(null);
     setDone("");
     try {
-      if (file.size > TRANSFER_PACKAGE_LIMIT)
-        throw new Error("Максимальный размер пакета — 256 МБ");
+      const xmlFile = /\.xml$/i.test(file.name);
+      if (file.size > (xmlFile ? TRANSFER_XML_LIMIT : TRANSFER_PACKAGE_LIMIT))
+        throw new Error(
+          `Максимальный размер ${xmlFile ? "XML" : "пакета"} — ${xmlFile ? "256" : "512"} МиБ`,
+        );
       const r = await archiveFetch("/api/gedcom/preview", {
         method: "POST",
         headers: {
@@ -129,7 +133,10 @@ export function GedcomTransfer({
         Скачать выбранный формат
       </a>
       <div className="json-export">
-        <a href={archiveResourceUrl("/api/export.json?download=1")} download="drevo-family.json">
+        <a
+          href={archiveResourceUrl("/api/export.json?download=1")}
+          download="drevo-family.json"
+        >
           <Download size={16} /> Экспорт JSON без фото
         </a>
         <p>Карточки и связи для анализа; файлы фотографий не включены.</p>
@@ -137,8 +144,9 @@ export function GedcomTransfer({
       <hr />
       <h2>Импорт</h2>
       <p>
-        GEDCOM 5.5.1 / 7 — до 32 МБ. GEDZIP или XML с вложениями — до 256 МБ;
-        каждый файл — до 20 МБ. XML с папкой .files упакуйте в один ZIP.
+        GEDCOM 5.5.1 / 7 — до 32 МиБ, GEDZIP — до 512 МиБ, XML с вложениями — до
+        256 МиБ; каждый файл — до 20 МБ. XML с папкой .files упакуйте в один
+        ZIP.
       </p>
       <label>
         Файл GEDCOM, GEDZIP или XML «Древа Жизни 6»

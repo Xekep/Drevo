@@ -25,6 +25,7 @@ import {
   TRANSFER_FILE_LIMIT,
   TRANSFER_TEXT_LIMIT,
   TRANSFER_PACKAGE_LIMIT,
+  TRANSFER_XML_LIMIT,
   type GenealogyImport,
   type TransferMedia,
 } from "../domain/genealogy-transfer.ts";
@@ -147,7 +148,7 @@ async function unpack(
         : TRANSFER_FILE_LIMIT;
       if (entry.uncompressedSize > limit || total > TRANSFER_PACKAGE_LIMIT)
         throw new Error(
-          "Превышен размер распакованного пакета (256 МБ; вложение 20 МБ)",
+          "Превышен размер распакованного пакета (512 МиБ; вложение 20 МиБ)",
         );
       const destination = join(directory, randomUUID());
       let size = 0,
@@ -185,7 +186,7 @@ export async function prepareGenealogyImport(
   const signature = Buffer.alloc(2);
   try {
     if ((await handle.stat()).size > TRANSFER_PACKAGE_LIMIT)
-      throw new Error("Пакет больше 256 МБ");
+      throw new Error("Пакет больше 512 МиБ");
     await handle.read(signature, 0, 2, 0);
   } finally {
     await handle.close();
@@ -214,6 +215,13 @@ export async function prepareGenealogyImport(
     }
   } else textBytes = await readFile(input);
   const xml = /^\s*</.test(textBytes.toString("utf8").replace(/^\uFEFF/, ""));
+  if (xml && entries.size) {
+    let xmlPackageBytes = 0;
+    for (const file of entries.values())
+      xmlPackageBytes += (await lstat(file)).size;
+    if (xmlPackageBytes > TRANSFER_XML_LIMIT)
+      throw new Error("XML с вложениями больше 256 МиБ");
+  }
   const parsed = xml
     ? importAgelongXml(
         new TextDecoder("utf-8", { fatal: true }).decode(textBytes),
@@ -243,8 +251,8 @@ export async function prepareGenealogyImport(
           );
         const data = Buffer.from(encoded, "base64");
         embeddedTotal += data.length;
-        if (embeddedTotal > TRANSFER_PACKAGE_LIMIT)
-          throw new Error("Вложения XML больше 256 МБ");
+        if (embeddedTotal > TRANSFER_XML_LIMIT)
+          throw new Error("Вложения XML больше 256 МиБ");
         source = join(directory, randomUUID());
         await writeFile(source, data, { flag: "wx" });
       } else if (/^(?:https?|ftp):\/\//i.test(item.file)) {
@@ -415,7 +423,7 @@ export async function writeGenealogyPackage(
         size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT
       )
         throw new Error(
-          "Слишком большой пакет обмена. Используйте Drevo Archive.",
+          "Слишком большой пакет обмена: GEDZIP поддерживает до 480 МиБ оригиналов. GEDCOM без файлов доступен отдельно.",
         );
       used.add(item.file);
       zip.addFile(source, item.file, { compress: false });

@@ -5,8 +5,7 @@ import {
   mkdirSync,
   rmSync,
 } from "node:fs";
-import { stat, statfs, mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { stat, statfs, mkdtemp, rm, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -50,6 +49,7 @@ export function gedcomHttp(
   mkdirSync(stageRoot, { recursive: true });
   mkdirSync(uploads, { recursive: true });
   const quota = uploadQuota(archive.db);
+  let exporting = false;
   const stagePath = (token: string) => {
     if (!/^[a-f0-9-]{36}$/.test(token))
       throw new Error("Некорректный токен импорта");
@@ -75,6 +75,17 @@ export function gedcomHttp(
         await removeStage(String(row.token));
       } catch {
         /* Retry on next sweep. */
+      }
+    }
+    for (const entry of await readdir(stageRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^export-[A-Za-z0-9]{6}$/.test(entry.name))
+        continue;
+      const directory = join(stageRoot, entry.name);
+      try {
+        if ((await stat(directory)).mtimeMs < Date.now() - 24 * 60 * 60_000)
+          await rm(directory, { recursive: true, force: true });
+      } catch {
+        // Another process may have removed the temporary export already.
       }
     }
   };
@@ -141,23 +152,39 @@ export function gedcomHttp(
           const family = (await archive.read()).family,
             items = await exportMedia(archive.db, family);
           if (format === "gedzip7") {
-            const directory = await mkdtemp(join(tmpdir(), "drevo-transfer-"));
+            if (exporting)
+              return json(429, { error: "Другой экспорт уже выполняется" });
+            exporting = true;
             try {
-              const path = join(directory, "export.gdz");
-              await writeGenealogyPackage(path, uploads, family, items);
-              if ((await auth.currentUser(req))?.role !== "admin")
-                return json(403, { error: "Доступ администратора отозван" });
-              res.writeHead(200, {
-                "Content-Type": "application/zip",
-                "Content-Length": String((await stat(path)).size),
-                "Content-Disposition": 'attachment; filename="drevo.gdz"',
-                "Cache-Control": "no-store",
-                "X-Content-Type-Options": "nosniff",
-              });
-              await pipeline(createReadStream(path), res);
-              return true;
+              const disk = await statfs(stageRoot);
+              if (
+                disk.bavail * disk.bsize <
+                TRANSFER_PACKAGE_LIMIT + 256 * 1024 ** 2
+              )
+                throw new UploadQuotaError(
+                  "Недостаточно места для экспорта",
+                  507,
+                );
+              const directory = await mkdtemp(join(stageRoot, "export-"));
+              try {
+                const path = join(directory, "export.gdz");
+                await writeGenealogyPackage(path, uploads, family, items);
+                if ((await auth.currentUser(req))?.role !== "admin")
+                  return json(403, { error: "Доступ администратора отозван" });
+                res.writeHead(200, {
+                  "Content-Type": "application/zip",
+                  "Content-Length": String((await stat(path)).size),
+                  "Content-Disposition": 'attachment; filename="drevo.gdz"',
+                  "Cache-Control": "no-store",
+                  "X-Content-Type-Options": "nosniff",
+                });
+                await pipeline(createReadStream(path), res);
+                return true;
+              } finally {
+                await rm(directory, { recursive: true, force: true });
+              }
             } finally {
-              await rm(directory, { recursive: true, force: true });
+              exporting = false;
             }
           }
           const text = exportGedcom(family, {
@@ -226,7 +253,7 @@ export function gedcomHttp(
                 size += chunk.length;
                 if (size > TRANSFER_PACKAGE_LIMIT)
                   return callback(
-                    new Error("Максимальный размер пакета — 256 МБ"),
+                    new Error("Максимальный размер пакета — 512 МиБ"),
                   );
                 callback(null, chunk);
               },
@@ -235,7 +262,7 @@ export function gedcomHttp(
               req,
               guard,
               createWriteStream(input, { flags: "wx" }),
-              { signal: AbortSignal.timeout(120000) },
+              { signal: AbortSignal.timeout(15 * 60_000) },
             );
             const parsed = await prepareGenealogyImport(
               input,
