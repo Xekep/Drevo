@@ -914,6 +914,24 @@ try {
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
     .run("owner");
+  const originalArchiveRead = app.archive.read;
+  let downgradeDuringExport = true;
+  app.archive.read = async () => {
+    const snapshot = await originalArchiveRead();
+    if (downgradeDuringExport) {
+      downgradeDuringExport = false;
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    }
+    return snapshot;
+  };
+  try {
+    assert.equal((await fetch(securedBase + "/api/ai/export/gedcom?format=gedcom7", {
+      headers: ownerHeaders,
+    })).status, 403, "a downgrade during export must stop delivery of the prepared file");
+  } finally {
+    app.archive.read = originalArchiveRead;
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+  }
   assert.equal(
     (await fetch(securedBase + "/api/admin/ai", { headers })).status,
     403,

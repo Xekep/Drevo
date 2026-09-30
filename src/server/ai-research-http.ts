@@ -117,6 +117,12 @@ export function aiResearchHttp({
       .digest("hex");
     return JSON.stringify([...identity, fingerprint]);
   };
+  const canDeliverAiData = async (req: IncomingMessage, expectedScope: string) => {
+    const current = await auth.currentUser(req);
+    return !!current && (await auth.canRead(req)) &&
+      (await accountAiAccess(archive.db, current.id, auth.local)) &&
+      (await accessScope(current)) === expectedScope;
+  };
   const generatedFiles = new Map<string, GeneratedResearchFile>();
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -176,6 +182,7 @@ export function aiResearchHttp({
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
+      const requestedScope = await accessScope(actor);
       const source = (await archive.read()).family;
       const family = isScopedUser(actor)
         ? projectFamilyForUser(source, actor)
@@ -208,6 +215,8 @@ export function aiResearchHttp({
         contentType = "text/plain; charset=utf-8";
       } else return json(res, 404, { error: "Формат экспорта не найден" });
       const bytes = Buffer.from(content);
+      if (!(await canDeliverAiData(req, requestedScope)))
+        return json(res, 403, { error: "Доступ к данным изменился" });
       res.writeHead(200, {
         "Content-Type": contentType,
         "Content-Length": bytes.length,
@@ -233,16 +242,18 @@ export function aiResearchHttp({
         });
       const id = path.slice("/api/ai/files/".length),
         file = generatedFiles.get(id);
+      const chat = file && await chats.read(file.chatId, fileUser.id);
       if (
         !file ||
         file.expires < Date.now() ||
         file.ownerId !== fileUser.id ||
-        (await chats.read(file.chatId, fileUser.id))?.accessScope !==
-          (await accessScope(fileUser))
+        !chat || chat.accessScope !== (await accessScope(fileUser))
       )
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
         });
+      if (!(await canDeliverAiData(req, chat.accessScope)))
+        return json(res, 403, { error: "Доступ к данным изменился" });
       res.writeHead(200, {
         "Content-Type": file.contentType,
         "Content-Length": file.bytes.length,
@@ -312,6 +323,8 @@ export function aiResearchHttp({
         .download(chat.id, aiUser.id, path)
         .catch(() => null);
       if (!item) return json(res, 404, { error: "Вложение не найдено" });
+      if (!(await canDeliverAiData(req, chat.accessScope)))
+        return json(res, 403, { error: "Доступ к данным изменился" });
       res.writeHead(200, {
         "Content-Type": item.file.type,
         "Content-Length": item.bytes.length,
