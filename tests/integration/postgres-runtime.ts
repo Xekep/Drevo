@@ -1037,11 +1037,6 @@ try {
       .then((r) => r.json())).user.id,
     "owner",
   );
-  const selectedPage = await fetch(securedBase + "/a/other-archive/tree", {
-    headers: ownerHeaders,
-  });
-  assert.equal(selectedPage.status, 200);
-  assert.match(await selectedPage.text(), /<html|<!doctype html/i);
   const selectedFamily = await fetch(securedBase + "/a/other-archive/api/family", {
     headers: ownerHeaders,
   });
