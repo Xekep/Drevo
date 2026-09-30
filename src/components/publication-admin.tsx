@@ -43,7 +43,11 @@ export function PublicationAdmin({ family }: { family: Family }) {
       .then(async (response) => {
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Не удалось загрузить публикации");
-        setStatuses((current) => ({ ...current, ...body.fields }));
+        setStatuses((current) => {
+          const next = { ...current };
+          pageKey.split("\0").forEach((id) => delete next[id]);
+          return { ...next, ...body.fields };
+        });
       })
       .catch((reason) => { if (!controller.signal.aborted) setError(reason.message); });
     return () => controller.abort();
