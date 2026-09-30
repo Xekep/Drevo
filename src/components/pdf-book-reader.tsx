@@ -1,15 +1,10 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowRight,
+  CircleAlert,
   Download,
-  List,
   MessageSquare,
   MessageSquarePlus,
   Search,
@@ -18,6 +13,7 @@ import {
 } from "lucide-react";
 import { LensZoom } from "@jojovms/lens-zoom-core";
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PageFlip } from "page-flip";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { ListedDocument } from "./documents-catalog";
 import { archiveFetch } from "../data/archive-fetch.ts";
@@ -28,24 +24,6 @@ import type {
 } from "../shared/document-annotations";
 
 type OutlineEntry = { title: string; page: number; depth: number };
-type Point = { x: number; y: number };
-
-function position(event: ReactPointerEvent<HTMLElement>): Point {
-  const bounds = event.currentTarget.getBoundingClientRect();
-  return {
-    x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
-    y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)),
-  };
-}
-
-function rectangle(start: Point, end: Point) {
-  return {
-    x: Math.min(start.x, end.x),
-    y: Math.min(start.y, end.y),
-    width: Math.abs(start.x - end.x),
-    height: Math.abs(start.y - end.y),
-  };
-}
 
 function pageBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) =>
@@ -77,16 +55,25 @@ export function PdfBookReader({
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLElement>(null);
-  const sheet = useRef<HTMLDivElement>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const book = useRef<PageFlip | null>(null);
   const closeLatest = useRef(onClose);
   const magnifierLatest = useRef(false);
-  const renderNearby = useRef<((index: number) => void) | null>(null);
-  const dragStart = useRef<Point | null>(null);
+  const annotationMode = useRef(annotateOnOpen);
+  const renderPage = useRef<(index: number) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
+  const navigateToPage = useRef<((index: number) => void) | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [pageIndex, setPageIndex] = useState(Math.max(0, initialPage - 1));
-  const [pageUrls, setPageUrls] = useState<Record<number, string>>({});
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+    "portrait",
+  );
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
-  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"comments" | "outline">(
+    "comments",
+  );
+  const [infoOpen, setInfoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [magnifier, setMagnifier] = useState(false);
@@ -95,7 +82,6 @@ export function PdfBookReader({
   const [commentsOpen, setCommentsOpen] = useState(annotateOnOpen);
   const [annotating, setAnnotating] = useState(annotateOnOpen);
   const [selection, setSelection] = useState<AnnotationSelection | null>(null);
-  const [draft, setDraft] = useState<ReturnType<typeof rectangle> | null>(null);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState("");
@@ -105,7 +91,50 @@ export function PdfBookReader({
   }, [onClose]);
   useEffect(() => {
     magnifierLatest.current = magnifier;
+    host.current?.classList.toggle("is-magnifying", magnifier);
   }, [magnifier]);
+  useEffect(() => {
+    annotationMode.current = annotating;
+    host.current?.classList.toggle("is-annotating", annotating);
+  }, [annotating, loading]);
+  useEffect(() => {
+    const root = host.current?.querySelector(".pdf-book-pages");
+    if (!root) return;
+    root
+      .querySelectorAll(".pdf-book-highlight, .pdf-book-draft")
+      .forEach((node) => node.remove());
+    for (const item of annotations) {
+      const overlay = root.querySelector<HTMLElement>(
+        `.pdf-book-page[data-page="${item.page - 1}"] .pdf-book-overlay`,
+      );
+      if (!overlay) continue;
+      const mark = document.createElement("span");
+      mark.className = `pdf-book-highlight${item.id === activeAnnotation ? " is-active" : ""}`;
+      Object.assign(mark.style, {
+        left: `${item.x * 100}%`,
+        top: `${item.y * 100}%`,
+        width: `${item.width * 100}%`,
+        height: `${item.height * 100}%`,
+      });
+      overlay.append(mark);
+    }
+    if (selection) {
+      const overlay = root.querySelector<HTMLElement>(
+        `.pdf-book-page[data-page="${selection.page - 1}"] .pdf-book-overlay`,
+      );
+      if (overlay) {
+        const mark = document.createElement("span");
+        mark.className = "pdf-book-draft";
+        Object.assign(mark.style, {
+          left: `${selection.x * 100}%`,
+          top: `${selection.y * 100}%`,
+          width: `${selection.width * 100}%`,
+          height: `${selection.height * 100}%`,
+        });
+        overlay.append(mark);
+      }
+    }
+  }, [annotations, activeAnnotation, selection, loading]);
 
   useEffect(() => {
     const previousFocus =
@@ -127,17 +156,20 @@ export function PdfBookReader({
           event.preventDefault();
           magnifierLatest.current = false;
           setMagnifier(false);
-        } else closeLatest.current();
+        } else if (infoOpen) setInfoOpen(false);
+        else closeLatest.current();
       } else if (
         event.key === "ArrowRight" &&
-        !(event.target instanceof HTMLTextAreaElement)
+        !(event.target instanceof HTMLTextAreaElement) &&
+        !(event.target instanceof HTMLInputElement)
       ) {
-        setPageIndex((index) => Math.min(pageCount - 1, index + 1));
+        book.current?.flipNext();
       } else if (
         event.key === "ArrowLeft" &&
-        !(event.target instanceof HTMLTextAreaElement)
+        !(event.target instanceof HTMLTextAreaElement) &&
+        !(event.target instanceof HTMLInputElement)
       ) {
-        setPageIndex((index) => Math.max(0, index - 1));
+        book.current?.flipPrev();
       } else if (event.key === "Tab") {
         const controls = [
           ...(dialog.current?.querySelectorAll<HTMLElement>(
@@ -157,17 +189,48 @@ export function PdfBookReader({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [pageCount]);
+  }, [infoOpen]);
 
   useEffect(() => {
     let active = true;
     let pdf: PDFDocumentProxy | null = null;
+    let flip: PageFlip | null = null;
     let loadingTask: ReturnType<
       (typeof import("pdfjs-dist"))["getDocument"]
     > | null = null;
+    let resize: ResizeObserver | null = null;
     const urls = new Map<number, string>();
     const pending = new Map<number, Promise<void>>();
-    let currentPage = 0;
+    const root = document.createElement("div");
+    root.className = "pdf-book-pages";
+    host.current?.append(root);
+
+    const alignOverlay = (index: number) => {
+      for (const page of root.querySelectorAll<HTMLElement>(
+        `[data-page="${index}"]`,
+      )) {
+        const image = page.querySelector("img");
+        const overlay = page.querySelector<HTMLElement>(".pdf-book-overlay");
+        if (!image?.naturalWidth || !image.naturalHeight || !overlay) continue;
+        const fit = Math.min(
+          page.clientWidth / image.naturalWidth,
+          page.clientHeight / image.naturalHeight,
+        );
+        const width = image.naturalWidth * fit;
+        const height = image.naturalHeight * fit;
+        overlay.style.width = `${width}px`;
+        overlay.style.height = `${height}px`;
+        overlay.style.left = `${(page.clientWidth - width) / 2}px`;
+        overlay.style.top = `${(page.clientHeight - height) / 2}px`;
+      }
+    };
+
+    const showPage = (index: number, url: string) => {
+      for (const image of root.querySelectorAll<HTMLImageElement>(
+        `[data-page="${index}"] img`,
+      ))
+        image.src = url;
+    };
     const render = (index: number): Promise<void> => {
       if (!pdf || index < 0 || index >= pdf.numPages || urls.has(index))
         return Promise.resolve();
@@ -175,8 +238,11 @@ export function PdfBookReader({
       if (existing) return existing;
       const task = (async () => {
         const page = await pdf!.getPage(index + 1);
-        const base = page.getViewport({ scale: 1 });
-        const scale = Math.min(2.5, 2200 / Math.max(base.width, base.height));
+        const original = page.getViewport({ scale: 1 });
+        const scale = Math.min(
+          2,
+          1600 / Math.max(original.width, original.height),
+        );
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);
@@ -188,43 +254,44 @@ export function PdfBookReader({
         page.cleanup();
         if (!active) return;
         const url = URL.createObjectURL(blob);
-        if (Math.abs(index - currentPage) > 3) {
-          URL.revokeObjectURL(url);
-          return;
-        }
         urls.set(index, url);
-        setPageUrls((current) => ({ ...current, [index]: url }));
+        showPage(index, url);
+        // Loading/parsing a PDF is not enough: CSP or decoding can still block
+        // its rendered images. Report that instead of showing an empty book.
+        await Promise.all(
+          [
+            ...root.querySelectorAll<HTMLImageElement>(
+              `[data-page="${index}"] img`,
+            ),
+          ].map((image) => image.decode()),
+        );
+        alignOverlay(index);
       })().finally(() => pending.delete(index));
       pending.set(index, task);
       return task;
     };
-    renderNearby.current = (index) => {
-      currentPage = index;
-      const removed: number[] = [];
+    const renderNearby = (index: number) => {
       for (const [page, url] of urls) {
-        if (Math.abs(page - index) <= 3) continue;
+        if (Math.abs(page - index) <= 5) continue;
+        for (const image of root.querySelectorAll<HTMLImageElement>(
+          `[data-page="${page}"] img`,
+        ))
+          image.removeAttribute("src");
         URL.revokeObjectURL(url);
         urls.delete(page);
-        removed.push(page);
       }
-      if (removed.length)
-        setPageUrls((current) => {
-          const next = { ...current };
-          for (const page of removed) delete next[page];
-          return next;
-        });
-      for (
-        let page = Math.max(0, index - 1);
-        page <= Math.min(index + 2, (pdf?.numPages || 0) - 1);
-        page++
-      )
+      for (const page of [index + 1, index + 2, index + 3, index, index - 1])
         void render(page).catch(() => {
           if (active) setError("Не удалось загрузить страницу PDF");
         });
     };
+
     void (async () => {
       try {
-        const pdfjs = await import("pdfjs-dist");
+        const [pdfjs, pageFlip] = await Promise.all([
+          import("pdfjs-dist"),
+          import("page-flip"),
+        ]);
         if (!active) return;
         pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
         loadingTask = pdfjs.getDocument({
@@ -235,9 +302,11 @@ export function PdfBookReader({
         if (!active) return;
         if (pdf.numPages < 1 || pdf.numPages > 2000)
           throw new Error("Документ должен содержать от 1 до 2000 страниц");
-        const firstPage = Math.min(pdf.numPages - 1, Math.max(0, initialPage - 1));
         setPageCount(pdf.numPages);
-        setPageIndex(firstPage);
+        const firstIndex = Math.min(
+          pdf.numPages - 1,
+          Math.max(0, initialPage - 1),
+        );
         void (async () => {
           try {
             const bookmarks = await pdf!.getOutline();
@@ -264,13 +333,188 @@ export function PdfBookReader({
             await collect(bookmarks, 0);
             if (active) setOutline(entries);
           } catch {
-            // A damaged bookmark tree should not prevent reading valid pages.
+            // A damaged outline must not stop valid pages from opening.
           }
         })();
-        await render(firstPage);
+        const pages = Array.from({ length: pdf.numPages }, (_, index) => {
+          const item = document.createElement("div");
+          item.className = "pdf-book-page";
+          item.dataset.page = String(index);
+          const image = document.createElement("img");
+          image.alt = `Страница ${index + 1}`;
+          image.onerror = () => {
+            if (active) setError("Не удалось отобразить страницу PDF");
+          };
+          const number = document.createElement("span");
+          number.textContent = String(index + 1);
+          const overlay = document.createElement("div");
+          overlay.className = "pdf-book-overlay";
+          let start: { x: number; y: number } | null = null;
+          const position = (event: PointerEvent) => {
+            const bounds = overlay.getBoundingClientRect();
+            return {
+              x: Math.max(
+                0,
+                Math.min(1, (event.clientX - bounds.left) / bounds.width),
+              ),
+              y: Math.max(
+                0,
+                Math.min(1, (event.clientY - bounds.top) / bounds.height),
+              ),
+            };
+          };
+          overlay.addEventListener("pointerdown", (event) => {
+            if (!annotationMode.current || event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            start = position(event);
+            overlay.setPointerCapture(event.pointerId);
+            overlay.querySelector(".pdf-book-draft")?.remove();
+            const draft = document.createElement("span");
+            draft.className = "pdf-book-draft";
+            overlay.append(draft);
+          });
+          overlay.addEventListener("mousedown", (event) => {
+            if (annotationMode.current) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          });
+          overlay.addEventListener(
+            "touchstart",
+            (event) => {
+              if (annotationMode.current) {
+                event.stopPropagation();
+              }
+            },
+            { passive: true },
+          );
+          overlay.addEventListener("pointermove", (event) => {
+            if (!start) return;
+            const end = position(event);
+            const draft = overlay.querySelector<HTMLElement>(".pdf-book-draft");
+            if (!draft) return;
+            draft.style.left = `${Math.min(start.x, end.x) * 100}%`;
+            draft.style.top = `${Math.min(start.y, end.y) * 100}%`;
+            draft.style.width = `${Math.abs(start.x - end.x) * 100}%`;
+            draft.style.height = `${Math.abs(start.y - end.y) * 100}%`;
+          });
+          overlay.addEventListener("pointerup", (event) => {
+            if (!start) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const end = position(event);
+            const next = {
+              page: index + 1,
+              x: Math.min(start.x, end.x),
+              y: Math.min(start.y, end.y),
+              width: Math.abs(start.x - end.x),
+              height: Math.abs(start.y - end.y),
+              text: "",
+            };
+            start = null;
+            if (next.width >= 0.006 && next.height >= 0.006) {
+              setSelection(next);
+              setSidebarTab("comments");
+              setCommentsOpen(true);
+            } else overlay.querySelector(".pdf-book-draft")?.remove();
+          });
+          overlay.addEventListener("pointercancel", () => {
+            start = null;
+            overlay.querySelector(".pdf-book-draft")?.remove();
+          });
+          item.append(image, overlay, number);
+          root.append(item);
+          return item;
+        });
+        await Promise.all([
+          render(firstIndex),
+          render(firstIndex + 1),
+          render(firstIndex + 2),
+        ]);
         if (!active) return;
+        const firstPage = await pdf.getPage(1);
+        if (!active) return;
+        const pageSize = firstPage.getViewport({ scale: 1 });
+        flip = new pageFlip.PageFlip(root, {
+          width: pageSize.width,
+          height: pageSize.height,
+          size: "stretch",
+          minWidth: 300,
+          maxWidth: 1600,
+          minHeight: 100,
+          maxHeight: 2400,
+          showCover: true,
+          usePortrait: true,
+          autoSize: false,
+          flippingTime: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? 1
+            : 550,
+          maxShadowOpacity: 0.32,
+          mobileScrollSupport: false,
+        });
+        book.current = flip;
+        renderPage.current = render;
+        navigateToPage.current = (index) => {
+          if (!flip || !pdf || index < 0 || index >= pdf.numPages) return;
+          void render(index)
+            .then(() => {
+              if (!active || !flip) return;
+              flip.turnToPage(index);
+              renderNearby(index);
+            })
+            .catch(() => {
+              if (active) setError("Не удалось загрузить страницу PDF");
+            });
+        };
+        const centerBook = () => {
+          if (!flip || !pdf) return;
+          const index = flip.getCurrentPageIndex();
+          const shift =
+            flip.getOrientation() !== "landscape"
+              ? 0
+              : index === pdf.numPages - 1 &&
+                  (pdf.numPages === 1 || pdf.numPages % 2 === 0)
+                ? 0.5
+                : index === 0
+                  ? -0.5
+                  : 0;
+          root.style.transform = `translateX(${shift * flip.getBoundsRect().pageWidth}px)`;
+        };
+        flip.on("flip", ({ data }) => {
+          if (!active) return;
+          setPageIndex(data);
+          renderNearby(data);
+          centerBook();
+          requestAnimationFrame(() => {
+            if (!active) return;
+            alignOverlay(data);
+            alignOverlay(data + 1);
+          });
+        });
+        flip.on("changeOrientation", ({ data }) => {
+          if (!active) return;
+          setOrientation(data);
+          for (const [index, url] of urls) showPage(index, url);
+          centerBook();
+          requestAnimationFrame(() => {
+            if (active) for (const index of urls.keys()) alignOverlay(index);
+          });
+        });
+        flip.loadFromHTML(pages);
+        if (firstIndex > 0) flip.turnToPage(firstIndex);
+        resize = new ResizeObserver(() => {
+          if (active) {
+            flip?.update();
+            centerBook();
+            for (const index of urls.keys()) alignOverlay(index);
+          }
+        });
+        if (host.current) resize.observe(host.current);
+        setOrientation(flip.getOrientation());
         setLoading(false);
-        renderNearby.current?.(firstPage);
+        renderNearby(firstIndex);
       } catch (reason) {
         if (active) {
           setError(
@@ -282,26 +526,39 @@ export function PdfBookReader({
     })();
     return () => {
       active = false;
-      renderNearby.current = null;
+      book.current = null;
+      navigateToPage.current = null;
+      renderPage.current = () => Promise.resolve();
+      resize?.disconnect();
+      flip?.destroy();
       void loadingTask?.destroy();
       for (const url of urls.values()) URL.revokeObjectURL(url);
+      root.remove();
     };
   }, [entry.url, initialPage]);
 
   useEffect(() => {
-    renderNearby.current?.(pageIndex);
-  }, [pageIndex]);
-  useEffect(() => {
-    if (!magnifier || !pageUrls[pageIndex] || !sheet.current) return;
-    const lens = new LensZoom(sheet.current, {
-      zoom: 2.5,
-      lensSize: 180,
-      lensColor: "#fff",
-      borderColor: "#818981",
+    if (!magnifier || loading || error) return;
+    const pages = [pageIndex, orientation === "landscape" ? pageIndex + 1 : -1]
+      .map((index) =>
+        host.current?.querySelector<HTMLElement>(
+          `.pdf-book-page[data-page="${index}"]`,
+        ),
+      )
+      .filter((page): page is HTMLElement => !!page);
+    const lenses = pages.map((page) => {
+      const lens = new LensZoom(page, {
+        zoom: 2.5,
+        lensSize: 180,
+        lensColor: "#fff",
+        borderColor: "#a9a9a9",
+      });
+      lens.init();
+      return lens;
     });
-    lens.init();
-    return () => lens.cleanup();
-  }, [magnifier, pageIndex, pageUrls]);
+    return () => lenses.forEach((lens) => lens.cleanup());
+  }, [magnifier, pageIndex, orientation, loading, error]);
+
   useEffect(() => {
     const request = new AbortController();
     void (async () => {
@@ -388,32 +645,15 @@ export function PdfBookReader({
     }
   };
 
-  const startSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!annotating || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    dragStart.current = position(event);
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDraft(rectangle(dragStart.current, dragStart.current));
-    setSelection(null);
-  };
-  const moveSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragStart.current)
-      setDraft(rectangle(dragStart.current, position(event)));
-  };
-  const finishSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragStart.current) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const area = rectangle(dragStart.current, position(event));
-    dragStart.current = null;
-    setDraft(null);
-    if (area.width >= 0.006 && area.height >= 0.006) {
-      setSelection({ page: pageIndex + 1, ...area, text: "" });
-      setCommentsOpen(true);
-    }
-  };
-
+  const end =
+    orientation === "landscape" && pageIndex > 0
+      ? Math.min(pageCount, pageIndex + 2)
+      : pageIndex + 1;
+  const pageLabel = !pageCount
+    ? "?"
+    : pageIndex + 1 === end
+      ? end + " / " + pageCount
+      : pageIndex + 1 + "?" + end + " / " + pageCount;
   return createPortal(
     <div
       className="pdf-book-backdrop"
@@ -427,130 +667,20 @@ export function PdfBookReader({
         className="pdf-book-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`Документ: ${entry.title}`}
+        aria-label={"Документ: " + entry.title}
       >
-        <header className="pdf-book-toolbar">
-          <div className="pdf-book-toolbar-start">
-            {outline.length > 0 && (
-              <button
-                type="button"
-                className={outlineOpen ? "is-active" : ""}
-                onClick={() => setOutlineOpen((open) => !open)}
-                aria-label="Оглавление"
-                aria-expanded={outlineOpen}
-                title="Оглавление"
-              >
-                <List size={19} />
-              </button>
-            )}
-            <strong>{entry.title}</strong>
-          </div>
-          <div className="pdf-book-actions">
-            {!loading && !error && (
-              <button
-                type="button"
-                className={magnifier ? "is-active" : ""}
-                onClick={() => {
-                  setAnnotating(false);
-                  setSelection(null);
-                  setMagnifier((value) => !value);
-                }}
-                aria-label="Лупа"
-                aria-pressed={magnifier}
-                title="Лупа: Escape для выхода"
-              >
-                <Search size={19} />
-              </button>
-            )}
-            <button
-              type="button"
-              className="pdf-book-comments-toggle"
-              onClick={() => setCommentsOpen((open) => !open)}
-              aria-label="Комментарии"
-              aria-expanded={commentsOpen}
-            >
-              <MessageSquare size={19} />
-            </button>
-            <button
-              ref={closeButton}
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть документ"
-              title="Закрыть"
-            >
-              <X size={21} />
-            </button>
-          </div>
-        </header>
-        {(entry.documentType ||
-          entry.documentDate ||
-          entry.place ||
-          entry.description ||
-          entry.provenance ||
-          onEdit) && (
-          <details className="pdf-book-details">
-            <summary>Сведения о документе</summary>
-            <div>
-              {entry.documentType && (
-                <p>
-                  <strong>Тип:</strong> {entry.documentType}
-                </p>
-              )}
-              {entry.documentDate && (
-                <p>
-                  <strong>Дата:</strong> {entry.documentDate}
-                </p>
-              )}
-              {entry.place && (
-                <p>
-                  <strong>Место:</strong> {entry.place}
-                </p>
-              )}
-              {entry.provenance && (
-                <p>
-                  <strong>Происхождение:</strong> {entry.provenance}
-                </p>
-              )}
-              {entry.description && (
-                <p>
-                  <strong>Описание:</strong> {entry.description}
-                </p>
-              )}
-              {onEdit && (
-                <button
-                  type="button"
-                  onClick={onEdit}
-                  aria-label="Редактировать сведения о документе"
-                >
-                  Редактировать сведения
-                </button>
-              )}
-            </div>
-          </details>
-        )}
         <div className="pdf-book-content">
-          {outlineOpen && outline.length > 0 && (
-            <nav className="pdf-book-outline" aria-label="Оглавление документа">
-              <h2>Оглавление</h2>
-              {outline.map((item, index) => (
-                <button
-                  type="button"
-                  key={`${item.page}-${index}`}
-                  style={{
-                    paddingLeft: `${12 + Math.min(item.depth, 3) * 14}px`,
-                  }}
-                  onClick={() => {
-                    setPageIndex(item.page);
-                    setOutlineOpen(false);
-                  }}
-                >
-                  <span>{item.title}</span>
-                  <small>{item.page + 1}</small>
-                </button>
-              ))}
-            </nav>
-          )}
           <div className="pdf-book-stage">
+            <div
+              ref={host}
+              className="pdf-book-host"
+              aria-label="Страницы PDF"
+              aria-busy={loading}
+              onMouseDownCapture={(event) => {
+                if (magnifier) event.stopPropagation();
+              }}
+              style={{ visibility: loading || !!error ? "hidden" : "visible" }}
+            />
             {loading && (
               <p className="pdf-book-message" role="status">
                 Открываем документ…
@@ -568,227 +698,312 @@ export function PdfBookReader({
                 </a>
               </div>
             )}
-            {!loading && !error && (
-              <div
-                ref={sheet}
-                data-page={pageIndex}
-                className={`pdf-reader-sheet${magnifier ? " is-magnifying" : ""}${annotating ? " is-annotating" : ""}`}
-                onPointerDownCapture={(event) => {
-                  if (magnifier) event.stopPropagation();
-                }}
-              >
-                {pageUrls[pageIndex] ? (
-                  <>
-                    <img
-                      src={pageUrls[pageIndex]}
-                      alt={`Страница ${pageIndex + 1}`}
-                    />
-                    <div
-                      className="pdf-book-overlay"
-                      onPointerDown={startSelection}
-                      onPointerMove={moveSelection}
-                      onPointerUp={finishSelection}
-                      onPointerCancel={() => {
-                        dragStart.current = null;
-                        setDraft(null);
-                      }}
-                    >
-                      {annotations
-                        .filter((item) => item.page === pageIndex + 1)
-                        .map((item) => (
-                          <span
-                            key={item.id}
-                            className={`pdf-book-highlight${item.id === activeAnnotation ? " is-active" : ""}`}
-                            style={{
-                              left: `${item.x * 100}%`,
-                              top: `${item.y * 100}%`,
-                              width: `${item.width * 100}%`,
-                              height: `${item.height * 100}%`,
-                            }}
-                          />
-                        ))}
-                      {draft && (
-                        <span
-                          className="pdf-book-draft"
-                          style={{
-                            left: `${draft.x * 100}%`,
-                            top: `${draft.y * 100}%`,
-                            width: `${draft.width * 100}%`,
-                            height: `${draft.height * 100}%`,
-                          }}
-                        />
-                      )}
-                      {selection?.page === pageIndex + 1 && (
-                        <span
-                          className="pdf-book-draft"
-                          style={{
-                            left: `${selection.x * 100}%`,
-                            top: `${selection.y * 100}%`,
-                            width: `${selection.width * 100}%`,
-                            height: `${selection.height * 100}%`,
-                          }}
-                        />
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p role="status">Загружаем страницу…</p>
-                )}
-              </div>
-            )}
           </div>
           <aside
-            className={`pdf-book-comments${commentsOpen ? " is-open" : ""}`}
-            aria-label="Комментарии к документу"
+            className={"pdf-book-sidebar" + (commentsOpen ? " is-open" : "")}
+            aria-label="Комментарии и оглавление"
           >
-            <div className="pdf-book-comments-heading">
-              <h2>
-                Комментарии <span>{annotations.length}</span>
-              </h2>
-              {mayAnnotate && !loading && !error && (
+            <div className="pdf-book-sidebar-tabs">
+              <button
+                type="button"
+                className={sidebarTab === "comments" ? "is-active" : ""}
+                onClick={() => setSidebarTab("comments")}
+                aria-pressed={sidebarTab === "comments"}
+              >
+                Комментарии{annotations.length ? " " + annotations.length : ""}
+              </button>
+              {outline.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setMagnifier(false);
-                    setSelection(null);
-                    setDraft(null);
-                    setComment("");
-                    setAnnotating((mode) => !mode);
-                    setCommentsOpen(false);
-                  }}
-                  aria-label={
-                    annotating ? "Отменить выделение" : "Выделить фрагмент"
-                  }
-                  aria-pressed={annotating}
-                  title={
-                    annotating ? "Отменить выделение" : "Выделить фрагмент"
-                  }
+                  className={sidebarTab === "outline" ? "is-active" : ""}
+                  onClick={() => setSidebarTab("outline")}
+                  aria-pressed={sidebarTab === "outline"}
                 >
-                  <MessageSquarePlus size={18} />
+                  Оглавление
                 </button>
               )}
             </div>
-            {annotating && !selection && (
-              <p className="pdf-book-comments-empty">
-                Проведите по фрагменту страницы, чтобы оставить комментарий.
-              </p>
-            )}
-            {selection && (
-              <div className="pdf-book-comment-form">
-                <label htmlFor="pdf-comment-text">
-                  Страница {selection.page} · выделенный фрагмент
-                </label>
-                <textarea
-                  id="pdf-comment-text"
-                  aria-label="Комментарий к фрагменту"
-                  maxLength={2000}
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  placeholder="Что важно в этом фрагменте?"
-                />
-                <div>
+            {sidebarTab === "outline" && outline.length > 0 ? (
+              <nav
+                className="pdf-book-outline"
+                aria-label="Оглавление документа"
+              >
+                {outline.map((item, index) => (
                   <button
                     type="button"
-                    onClick={() => void saveAnnotation()}
-                    disabled={saving || !comment.trim()}
-                  >
-                    {saving ? "Сохраняем…" : "Сохранить комментарий"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelection(null);
-                      setComment("");
+                    key={item.page + "-" + index}
+                    style={{
+                      paddingLeft: 14 + Math.min(item.depth, 3) * 14 + "px",
                     }}
-                  >
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            )}
-            {annotationError && (
-              <p role="alert" className="pdf-book-comments-error">
-                {annotationError}
-              </p>
-            )}
-            {!annotations.length &&
-              !annotationError &&
-              !selection &&
-              !annotating && (
-                <p className="pdf-book-comments-empty">
-                  Комментариев пока нет.
-                </p>
-              )}
-            <div className="pdf-book-comments-list">
-              {annotations.map((item) => (
-                <article
-                  key={item.id}
-                  className={item.id === activeAnnotation ? "is-active" : ""}
-                >
-                  <button
-                    type="button"
-                    disabled={loading || !!error}
                     onClick={() => {
-                      setPageIndex(item.page - 1);
-                      setActiveAnnotation(item.id);
-                      setAnnotating(false);
-                      setSelection(null);
-                      setComment("");
+                      navigateToPage.current?.(item.page);
                       setCommentsOpen(false);
                     }}
                   >
-                    <small>
-                      Страница {item.page} · {item.authorName}
-                    </small>
-                    <span>{item.text}</span>
+                    <span>{item.title}</span>
+                    <small>{item.page + 1}</small>
                   </button>
-                  {item.canDelete && (
-                    <button
-                      type="button"
-                      className="pdf-book-comment-delete"
-                      aria-label={`Удалить комментарий на странице ${item.page}`}
-                      onClick={() => void removeAnnotation(item.id)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                ))}
+              </nav>
+            ) : (
+              <div className="pdf-book-comments">
+                {mayAnnotate && !loading && !error && (
+                  <button
+                    type="button"
+                    className={
+                      "pdf-book-add-comment" + (annotating ? " is-active" : "")
+                    }
+                    onClick={() => {
+                      setMagnifier(false);
+                      setSelection(null);
+                      setComment("");
+                      setAnnotating((mode) => !mode);
+                      setCommentsOpen(false);
+                    }}
+                    aria-label={
+                      annotating ? "Отменить выделение" : "Выделить фрагмент"
+                    }
+                    aria-pressed={annotating}
+                  >
+                    <MessageSquarePlus size={16} />
+                    <span>
+                      {annotating
+                        ? "Отменить выделение"
+                        : "Добавить комментарий"}
+                    </span>
+                  </button>
+                )}
+                {annotating && !selection && (
+                  <p className="pdf-book-comments-empty">
+                    Выделите фрагмент на странице.
+                  </p>
+                )}
+                {selection && (
+                  <div className="pdf-book-comment-form">
+                    <label htmlFor="pdf-comment-text">
+                      Страница {selection.page}
+                    </label>
+                    <textarea
+                      id="pdf-comment-text"
+                      aria-label="Комментарий к фрагменту"
+                      maxLength={2000}
+                      value={comment}
+                      onChange={(event) => setComment(event.target.value)}
+                      placeholder="Комментарий"
+                    />
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => void saveAnnotation()}
+                        disabled={saving || !comment.trim()}
+                      >
+                        {saving ? "Сохраняем…" : "Сохранить"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelection(null);
+                          setComment("");
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {annotationError && (
+                  <p role="alert" className="pdf-book-comments-error">
+                    {annotationError}
+                  </p>
+                )}
+                {!annotations.length &&
+                  !selection &&
+                  !annotating &&
+                  !annotationError && (
+                    <p className="pdf-book-comments-empty">
+                      Комментариев пока нет.
+                    </p>
                   )}
-                </article>
-              ))}
-            </div>
+                <div className="pdf-book-comments-list">
+                  {annotations.map((item) => (
+                    <article
+                      key={item.id}
+                      className={
+                        item.id === activeAnnotation ? "is-active" : ""
+                      }
+                    >
+                      <button
+                        type="button"
+                        disabled={loading || !!error}
+                        onClick={() => {
+                          navigateToPage.current?.(item.page - 1);
+                          setActiveAnnotation(item.id);
+                          setAnnotating(false);
+                          setSelection(null);
+                          setComment("");
+                          setCommentsOpen(false);
+                        }}
+                      >
+                        <small>
+                          Страница {item.page} · {item.authorName}
+                        </small>
+                        <span>{item.text}</span>
+                      </button>
+                      {item.canDelete && (
+                        <button
+                          type="button"
+                          className="pdf-book-comment-delete"
+                          aria-label={
+                            "Удалить комментарий на странице " + item.page
+                          }
+                          onClick={() => void removeAnnotation(item.id)}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
           </aside>
         </div>
-        <footer className="pdf-book-footer">
-          <div className="pdf-book-pagination">
-            <button
-              type="button"
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-              disabled={loading || !!error || pageIndex === 0}
-              aria-label="Предыдущая страница"
-            >
-              <ArrowLeft size={19} />
-            </button>
-            <span aria-live="polite">
-              {pageCount ? `${pageIndex + 1} из ${pageCount}` : "—"}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                setPageIndex((index) => Math.min(pageCount - 1, index + 1))
-              }
-              disabled={loading || !!error || pageIndex >= pageCount - 1}
-              aria-label="Следующая страница"
-            >
-              <ArrowRight size={19} />
-            </button>
+        {infoOpen && (
+          <div
+            className="pdf-book-info"
+            role="group"
+            aria-label="Сведения о документе"
+          >
+            <p>
+              <span>Документ</span>
+              {entry.title}
+            </p>
+            {entry.documentType && (
+              <p>
+                <span>Тип</span>
+                {entry.documentType}
+              </p>
+            )}
+            {entry.documentDate && (
+              <p>
+                <span>Дата</span>
+                {entry.documentDate}
+              </p>
+            )}
+            {entry.place && (
+              <p>
+                <span>Место</span>
+                {entry.place}
+              </p>
+            )}
+            {entry.provenance && (
+              <p>
+                <span>Источник</span>
+                {entry.provenance}
+              </p>
+            )}
+            {entry.description && (
+              <p>
+                <span>Описание</span>
+                {entry.description}
+              </p>
+            )}
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label="Редактировать сведения о документе"
+              >
+                Редактировать
+              </button>
+            )}
           </div>
+        )}
+        <footer
+          className="pdf-book-controls"
+          aria-label="Управление документом"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              void renderPage.current(Math.max(0, pageIndex - 1));
+              book.current?.flipPrev();
+            }}
+            disabled={loading || !!error || pageIndex === 0}
+            aria-label="Предыдущая страница"
+            title="Предыдущая страница"
+          >
+            <ArrowLeft size={19} />
+          </button>
+          <span className="pdf-book-page-count" aria-live="polite">
+            {pageLabel}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              void renderPage.current(pageIndex + 1);
+              void renderPage.current(pageIndex + 2);
+              book.current?.flipNext();
+            }}
+            disabled={loading || !!error || end >= pageCount}
+            aria-label="Следующая страница"
+            title="Следующая страница"
+          >
+            <ArrowRight size={19} />
+          </button>
+          <span className="pdf-book-control-divider" />
+          <button
+            type="button"
+            className={magnifier ? "is-active" : ""}
+            onClick={() => {
+              setAnnotating(false);
+              setSelection(null);
+              setMagnifier((value) => !value);
+            }}
+            disabled={loading || !!error}
+            aria-label="Лупа"
+            aria-pressed={magnifier}
+            title="Лупа · Escape для выхода"
+          >
+            <Search size={19} />
+          </button>
+          <button
+            type="button"
+            className={infoOpen ? "is-active" : ""}
+            onClick={() => setInfoOpen((value) => !value)}
+            aria-label="Сведения о документе"
+            aria-expanded={infoOpen}
+            title="Сведения о документе"
+          >
+            <CircleAlert size={18} />
+          </button>
           <a
             href={archiveResourceUrl(entry.url)}
-            download={`${entry.title}.pdf`}
-            className="pdf-book-download"
+            download={entry.title + ".pdf"}
+            aria-label="Скачать оригинал"
+            title="Скачать оригинал"
           >
-            <Download size={16} />
-            Скачать оригинал
+            <Download size={18} />
           </a>
+          <button
+            type="button"
+            className="pdf-book-sidebar-toggle"
+            onClick={() => setCommentsOpen((value) => !value)}
+            aria-label="Комментарии"
+            aria-expanded={commentsOpen}
+            title="Комментарии"
+          >
+            <MessageSquare size={18} />
+          </button>
+          <button
+            ref={closeButton}
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть документ"
+            title="Закрыть"
+          >
+            <X size={19} />
+          </button>
         </footer>
       </section>
     </div>,

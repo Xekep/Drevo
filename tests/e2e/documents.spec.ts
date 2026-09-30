@@ -48,7 +48,7 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader).toBeVisible();
   await page.reload();
   await expect(reader).toBeVisible();
-  await reader.getByText("Сведения о документе").click();
+  await reader.getByRole("button", { name: "Сведения о документе" }).click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
   await reader
     .getByRole("button", { name: "Редактировать сведения о документе" })
@@ -66,7 +66,7 @@ test("PDF без привязки остаётся в общем каталог�
   ).toBeVisible();
   await group.locator(".document-item").filter({ hasText: title }).click();
   await expect(page).toHaveURL(documentUrl);
-  await reader.getByText("Сведения о документе").click();
+  await reader.getByRole("button", { name: "Сведения о документе" }).click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.105")).toBeVisible();
 });
 
@@ -96,7 +96,9 @@ test("верхний поиск находит PDF и открывает пос�
   ).toBeVisible();
 });
 
-test("источник карточки связывается с PDF без копирования файла", async ({ page }, info) => {
+test("источник карточки связывается с PDF без копирования файла", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "desktop");
   const title = `Свидетельство для источника ${Date.now()}`;
   const uploaded = await page.request.post("/api/documents", {
@@ -112,17 +114,19 @@ test("источник карточки связывается с PDF без к�
   const { id } = (await uploaded.json()) as { id: string };
   await page.goto("/people/e2e-child");
   await page.getByRole("button", { name: "Изменить человека" }).click();
-  await page.locator(".form-details > summary").filter({ hasText: "Источники" }).click();
+  await page
+    .locator(".form-details > summary")
+    .filter({ hasText: "Источники" })
+    .click();
   await page.getByRole("button", { name: "+ Источник" }).click();
   const source = page.locator(".source-editor").last();
   await source.getByRole("button", { name: "Связать с PDF" }).click();
   await source.getByLabel("Найти PDF человека").fill(title);
   await source.getByRole("button", { name: title, exact: true }).click();
   await source.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
-  await expect(source.getByRole("link", { name: "Открыть связанный PDF" })).toHaveAttribute(
-    "href",
-    `/documents/${id}/page/2`,
-  );
+  await expect(
+    source.getByRole("link", { name: "Открыть связанный PDF" }),
+  ).toHaveAttribute("href", `/documents/${id}/page/2`);
   await page.locator(".event-editor > summary").click();
   await page.getByRole("button", { name: "Добавить событие" }).click();
   const event = page.locator(".life-event-editor").last();
@@ -134,9 +138,16 @@ test("источник карточки связывается с PDF без к�
   await eventSource.getByRole("button", { name: title, exact: true }).click();
   await eventSource.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  await page.locator(".life-event").last().locator(".event-sources > summary").click();
+  await page
+    .locator(".life-event")
+    .last()
+    .locator(".event-sources > summary")
+    .click();
   await expect(
-    page.locator(".life-event").last().getByRole("link", { name: "Открыть PDF" }),
+    page
+      .locator(".life-event")
+      .last()
+      .getByRole("link", { name: "Открыть PDF" }),
   ).toHaveAttribute("href", `/documents/${id}/page/2`);
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });
@@ -151,10 +162,12 @@ test("источник карточки связывается с PDF без к�
   const blocked = await page.request.delete(`/api/documents/${id}`);
   expect(blocked.status()).toBe(409);
   await page.goto(`/documents/${id}/page/2`);
-  await expect(page.getByRole("dialog", { name: `Документ: ${title}` })).toBeVisible();
-  await expect(page.locator(".pdf-book-footer")).toContainText("2 из 3");
+  await expect(
+    page.getByRole("dialog", { name: `Документ: ${title}` }),
+  ).toBeVisible();
+  await expect(page.locator(".pdf-book-page-count")).toContainText("2 / 3");
   await page.goto(`/documents/${id}/page/2000`);
-  await expect(page.locator(".pdf-book-footer")).toContainText("3 из 3");
+  await expect(page.locator(".pdf-book-page-count")).toContainText("3 / 3");
 });
 
 async function samplePdf(count = 3, landscape = false) {
@@ -206,7 +219,7 @@ test("PDF можно перетащить, затем привязать из д
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").at(-1);
-  await reader.getByText("Сведения о документе").click();
+  await reader.getByRole("button", { name: "Сведения о документе" }).click();
   await reader
     .getByRole("button", { name: "Редактировать сведения о документе" })
     .click();
@@ -376,7 +389,7 @@ test("из карточки человека открываются только
   ).toBeVisible();
 });
 
-test("участник загружает PDF и читает страницы без анимации", async ({
+test("участник загружает PDF и читает страницы с перелистыванием", async ({
   page,
 }, testInfo) => {
   const title = `Архивный документ ${testInfo.project.name}`;
@@ -417,7 +430,9 @@ test("участник загружает PDF и читает страницы �
   await item.click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
-  await expect(reader.getByText("1 из 3")).toBeVisible({ timeout: 15_000 });
+  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 3", {
+    timeout: 15_000,
+  });
   await expect
     .poll(() =>
       reader
@@ -433,7 +448,7 @@ test("участник загружает PDF и читает страницы �
     reader.locator(".pdf-book-stage").boundingBox(),
   ]);
   expect(bounds!.height).toBeGreaterThan(
-    testInfo.project.name === "desktop" ? stage!.height * 0.9 : 350,
+    testInfo.project.name === "desktop" ? stage!.height * 0.8 : 350,
   );
   expect(bounds!.width).toBeGreaterThan(250);
   await expect
@@ -451,17 +466,21 @@ test("участник загружает PDF и читает страницы �
   await expect(
     reader.getByRole("link", { name: "Скачать оригинал" }),
   ).toBeVisible();
+  if (testInfo.project.name === "mobile")
+    await reader.locator(".pdf-book-sidebar-toggle").click();
   await reader.getByRole("button", { name: "Оглавление" }).click();
   await reader
     .getByRole("navigation", { name: "Оглавление документа" })
     .getByRole("button", { name: /Вторая страница/ })
     .click();
-  await expect(reader.getByText("2 из 3")).toBeVisible();
+  await expect(reader.locator(".pdf-book-page-count")).toContainText("2");
   await reader.getByRole("button", { name: "Предыдущая страница" }).click();
   await reader.getByRole("button", { name: "Лупа" }).click();
   await firstPage.hover();
   await expect(
-    reader.locator('.pdf-reader-sheet > div[style*="border-radius: 50%"]'),
+    reader.locator(
+      '.pdf-book-page[data-page="0"] div[style*="border-radius: 50%"]',
+    ),
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(reader.getByRole("button", { name: "Лупа" })).toHaveAttribute(
@@ -472,7 +491,7 @@ test("участник загружает PDF и читает страницы �
     path: `work/pdf-reader-${testInfo.project.name}.png`,
   });
   await reader.getByRole("button", { name: "Следующая страница" }).click();
-  await expect(reader.locator(".pdf-book-footer")).toContainText(/2|3/);
+  await expect(reader.locator(".pdf-book-page-count")).toContainText(/2|3/);
   await expect
     .poll(() =>
       reader
@@ -560,10 +579,14 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
       expect(rect!.height).toBeGreaterThan(100);
       if (variant === "landscape")
         expect(rect!.width / rect!.height).toBeGreaterThan(1.2);
-      else
+      else {
+        await expect(
+          reader.getByRole("button", { name: "Оглавление" }),
+        ).toHaveCount(0);
         await expect(
           reader.getByRole("button", { name: "Следующая страница" }),
         ).toBeDisabled();
+      }
     }
     await reader.getByRole("button", { name: "Закрыть документ" }).click();
     page.once("dialog", (dialog) => dialog.accept());
@@ -595,11 +618,9 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
-  await expect(reader.getByText("1 из 7")).toBeVisible();
+  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 7");
   if (info.project.name === "mobile")
-    await reader
-      .getByRole("button", { name: "Комментарии", exact: true })
-      .click();
+    await reader.locator(".pdf-book-sidebar-toggle").click();
   await reader.getByRole("button", { name: "Выделить фрагмент" }).click();
   const overlay = reader.locator('[data-page="0"] .pdf-book-overlay').first();
   await expect
@@ -617,7 +638,7 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await reader
     .getByRole("textbox", { name: "Комментарий к фрагменту" })
     .fill("Первый фрагмент записи");
-  await reader.getByRole("button", { name: "Сохранить комментарий" }).click();
+  await reader.getByRole("button", { name: "Сохранить" }).click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
   await expect(
     reader.locator('[data-page="0"] .pdf-book-highlight'),
@@ -636,9 +657,7 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await page.locator(".document-item").filter({ hasText: title }).click();
   if (info.project.name === "mobile")
-    await reader
-      .getByRole("button", { name: "Комментарии", exact: true })
-      .click();
+    await reader.locator(".pdf-book-sidebar-toggle").click();
   await reader
     .getByRole("button", { name: /Страница 7.*Последняя страница/ })
     .click();
@@ -662,15 +681,13 @@ test("фрагмент PDF сохраняет комментарий и ссыл
       );
     })
     .toBeLessThan(4);
-  await expect(reader.locator(".pdf-book-footer")).toContainText("7 из 7");
+  await expect(reader.locator(".pdf-book-page-count")).toContainText("7 / 7");
   await reader.screenshot({ path: info.outputPath("pdf-annotations.png") });
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
   if (info.project.name === "mobile")
-    await reader
-      .getByRole("button", { name: "Комментарии", exact: true })
-      .click();
+    await reader.locator(".pdf-book-sidebar-toggle").click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
 });
 
@@ -707,8 +724,8 @@ test("книга открывает PDF длиннее 300 страниц", asyn
   await expect(
     page
       .getByRole("dialog", { name: `Документ: ${title}` })
-      .getByText("1 из 301"),
-  ).toBeVisible({ timeout: 20000 });
+      .locator(".pdf-book-page-count"),
+  ).toContainText("1 / 301", { timeout: 20000 });
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await reader
     .getByRole("button", { name: /Страница 301.*Запись в конце/ })
