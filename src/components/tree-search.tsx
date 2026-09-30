@@ -102,8 +102,10 @@ export function TreeSearch({
   const activeIndex = options.length ? active % options.length : 0;
   const choose = (option: (typeof options)[number]) => {
     if (option.kind === "person") onSelect(option.person.id);
-    else onSelectDocument?.(option.document.id);
-    onQuery("");
+    else {
+      onSelectDocument?.(option.document.id);
+      onQuery("");
+    }
     setOpen(false);
   };
   const documentPending = searchDocuments && documentResults?.query !== search;
@@ -226,7 +228,7 @@ export function TreeSearch({
                 ? "Ищем документы…"
                 : documentResults?.query === search && documentResults.failed
                   ? "Поиск документов сейчас недоступен"
-                  : "Ничего не нашли"}
+                  : onSelectDocument ? "Ничего не нашли" : "Никого не нашли"}
             </p>
           )}
         </div>
