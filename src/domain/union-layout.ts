@@ -20,6 +20,11 @@ import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
 import { routingQuality } from "./routing-quality.ts";
 import { coupleBlocksWithContactedAncestry, invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
+import {
+  adjacentFamilyBlocks,
+  familyBlockContactScores,
+  locallySwapFamilyBlocks,
+} from "./local-family-order.ts";
 import { householdLevels } from "./household-levels.ts";
 import {
   alignGenerationBands,
@@ -547,6 +552,20 @@ function routeCardContacts(geometry: TreeGeometry, width: number, height: number
   return contacts;
 }
 
+function cardOverlapCount(geometry: TreeGeometry, width: number, height: number) {
+  const cards = new Spatial<Box>();
+  let overlaps = 0;
+  for (const [, point] of geometry.positions) {
+    const box = { left: point.x, right: point.x + width,
+      top: point.y, bottom: point.y + height };
+    for (const other of cards.query(box))
+      if (box.left < other.right && box.right > other.left &&
+          box.top < other.bottom && box.bottom > other.top) overlaps++;
+    cards.add(box);
+  }
+  return overlaps;
+}
+
 function geometryRoutingQuality(geometry: TreeGeometry) {
   return routingQuality([
     ...(geometry.branches || []).map((branch) => ({
@@ -775,6 +794,46 @@ export async function unionGeometry(
       currentRoutes = nextRoutes;
       cardContacts = nextCardContacts;
       currentPositions = new Map(candidate.positions);
+    }
+  }
+  if (!previous && people.length > 300 && people.length <= 1200 && contacts.distinct) {
+    // Exchange equal-width neighboring union slots without another ELK pass.
+    // Prioritize blocks whose routes already touch foreign family routes.
+    const scores = familyBlockContactScores(best);
+    const pairKey = ([left, right]: [string, string]) => `${left}\0${right}`;
+    const candidates = adjacentFamilyBlocks(best, size)
+      .filter(([left, right]) => (scores.get(left) || 0) + (scores.get(right) || 0) > 0)
+      .sort(([a, b], [c, d]) =>
+        (scores.get(c) || 0) + (scores.get(d) || 0) -
+        (scores.get(a) || 0) - (scores.get(b) || 0))
+      .slice(0, 200);
+    let adjacent = new Set(adjacentFamilyBlocks(best, size).map(pairKey));
+    let currentRoutes = geometryRoutingQuality(best);
+    const originalLength = currentRoutes.length;
+    let cardContacts = routeCardContacts(best, W, H);
+    let cardOverlaps = cardOverlapCount(best, W, H);
+    for (const [left, right] of candidates) {
+      if (!adjacent.has(pairKey([left, right]))) continue;
+      const candidate = locallySwapFamilyBlocks(best, left, right, people, links, size);
+      if (!candidate) continue;
+      const next = branchContactCounts(candidate.branches || []);
+      if (next.distinct >= contacts.distinct) continue;
+      const nextRoutes = geometryRoutingQuality(candidate);
+      if (nextRoutes.contacts > currentRoutes.contacts ||
+          nextRoutes.crossings > currentRoutes.crossings ||
+          nextRoutes.length > currentRoutes.length * 1.01 ||
+          nextRoutes.length > originalLength * 1.01 ||
+          nextRoutes.bends > currentRoutes.bends + 4) continue;
+      const nextCardContacts = routeCardContacts(candidate, W, H);
+      if (nextCardContacts > cardContacts) continue;
+      const nextCardOverlaps = cardOverlapCount(candidate, W, H);
+      if (nextCardOverlaps > cardOverlaps) continue;
+      best = candidate;
+      contacts = next;
+      currentRoutes = nextRoutes;
+      cardContacts = nextCardContacts;
+      cardOverlaps = nextCardOverlaps;
+      adjacent = new Set(adjacentFamilyBlocks(best, size).map(pairKey));
     }
   }
   return best;
