@@ -130,4 +130,70 @@ export async function verifyEmailAccounts(
     ),
     [account.archiveId],
   );
+  await accounts.requestLink("owner", {
+    email: "linked@example.org",
+    password: "a separate strong password",
+  });
+  const linkToken = sent[2].text.match(/#email-link=([A-Za-z0-9_-]{43})/)?.[1];
+  assert.ok(linkToken);
+  await assert.rejects(
+    accounts.verifyLink(account.accountId, linkToken),
+    InvalidEmailCredential,
+    "the verified mailbox alone cannot attach a login to another account",
+  );
+  await accounts.verifyLink("owner", linkToken);
+  assert.equal(
+    (
+      await accounts.login({
+        email: "linked@example.org",
+        password: "a separate strong password",
+      })
+    ).archiveId,
+    "runtime-test",
+  );
+  await assert.rejects(
+    accounts.verifyLink("owner", linkToken),
+    InvalidEmailCredential,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT provider FROM account_identities WHERE account_id='owner' AND provider IN ('email','yandex') ORDER BY provider",
+      )
+    ).rows.map((row) => row.provider),
+    ["email", "yandex"],
+  );
+
+  let raceClock = Date.now();
+  const raceAccounts = emailCredentials(
+    db,
+    async (to, _subject, text) => {
+      sent.push({ to, text });
+    },
+    "https://mydrevo.org",
+    () => raceClock,
+  );
+  await raceAccounts.requestRegistration({
+    email: "race@example.org",
+    name: "Concurrent registration",
+    password: "a sufficiently long password",
+  });
+  const raceToken = sent.at(-1)?.text.match(/#email-verify=([A-Za-z0-9_-]{43})/)?.[1];
+  assert.ok(raceToken);
+  raceClock += 61_000;
+  const concurrent = await Promise.allSettled([
+    raceAccounts.verifyRegistration(raceToken),
+    raceAccounts.requestRegistration({
+      email: "race@example.org",
+      name: "Concurrent registration",
+      password: "a sufficiently long password",
+    }),
+  ]);
+  for (const result of concurrent) {
+    if (result.status === "rejected")
+      assert.ok(
+        result.reason instanceof InvalidEmailCredential,
+        "concurrent verification and resend must not deadlock",
+      );
+  }
 }

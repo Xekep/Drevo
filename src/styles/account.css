@@ -280,6 +280,19 @@
   display: flex;
   color: #8a5e52;
 }
+.account-email-link form {
+  display: grid;
+  gap: 10px;
+  max-width: 380px;
+  margin-top: 16px;
+}
+.account-email-link form p { margin: 0; font-size: 13px; line-height: 1.45; }
+.account-email-link form p[role="alert"] { color: #a83838; }
+.account-email-link label { display: grid; gap: 5px; font-size: 13px; }
+.account-email-link input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #cad6c8; border-radius: 9px; font: inherit; }
+.account-email-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.account-email-actions button { min-height: 38px; padding: 8px 13px; border-radius: 9px; }
+.account-email-actions button:first-child { background: #315e41; color: #fff; }
 .account-note,
 .account-error {
   margin: 15px 0 0;

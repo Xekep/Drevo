@@ -24,6 +24,7 @@ import { archiveResourceUrl } from "../domain/archive-context.ts";
 import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
 import { AccountAiHistory } from "./account-ai-history";
+import { AccountEmailLink } from "./account-email-link";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -33,12 +34,19 @@ export type AccountSession = {
     createdAt: string;
     fullAccess: boolean;
     provider: "vk" | "yandex" | "email" | null;
+    providers?: ("vk" | "yandex" | "email")[];
   } | null;
   local: boolean;
   yandex: boolean;
   vk?: boolean;
 };
 type SessionSummary = { currentExpiresAt: string | null; otherCount: number };
+function loginMethods(account: AccountSession["account"], identityId: string) {
+  const providers = account?.providers?.length
+    ? account.providers
+    : [account?.provider || (identityId.startsWith("vk:") ? "vk" : "yandex")];
+  return providers.map((provider) => provider === "email" ? "Почта" : provider === "vk" ? "VK ID" : "Яндекс ID").join(" · ");
+}
 type AccountArchive = {
   id: string;
   title: string;
@@ -256,14 +264,7 @@ export function AccountPage({
                 <span className="account-eyebrow">Участник Drevo</span>
                 <h2 id="account-name">{identity.name}</h2>
                 <p>
-                  {local
-                    ? "Локальный доступ"
-                    : session?.account?.provider === "email"
-                      ? "Вход по почте"
-                      : session?.account?.provider === "vk" ||
-                          identity.id.startsWith("vk:")
-                        ? "Вход через VK"
-                        : "Вход через Яндекс"}
+                  {local ? "Локальный доступ" : loginMethods(session?.account, identity.id)}
                   {date(identity.createdAt)
                     ? ` · с ${date(identity.createdAt)}`
                     : ""}
@@ -445,17 +446,9 @@ export function AccountPage({
                   <>
                     <div className="account-facts">
                       <div>
-                        <span>Способ входа</span>
+                        <span>Способы входа</span>
                         <strong>
-                          {session?.account?.provider === "email"
-                            ? "Почта"
-                            : session?.account?.provider === "vk" ||
-                                identity.id.startsWith("vk:")
-                              ? "VK ID"
-                              : "Яндекс ID"}{" "}
-                          {session?.account?.provider !== "email" && (
-                            <ExternalLink size={13} aria-hidden="true" />
-                          )}
+                          {loginMethods(session?.account, identity.id)}
                         </strong>
                       </div>
                       <div>
@@ -488,6 +481,7 @@ export function AccountPage({
                         {sessionError}
                       </p>
                     )}
+                    <AccountEmailLink linked={session?.account?.providers?.includes("email") === true || session?.account?.provider === "email"} />
                     <button
                       className="account-signout"
                       onClick={() => void logout()}

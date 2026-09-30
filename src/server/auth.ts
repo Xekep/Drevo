@@ -54,11 +54,16 @@ export async function createAuth(
           "",
           `SELECT a.id,a.name,a.created_at,a.last_visit_at,t.full_access,
                   (SELECT provider FROM account_identities i
-                    WHERE i.account_id=a.id ORDER BY provider LIMIT 1) AS provider
+                    WHERE i.account_id=a.id ORDER BY provider LIMIT 1) AS provider,
+                  (SELECT array_agg(provider ORDER BY provider) FROM account_identities i
+                    WHERE i.account_id=a.id) AS providers
              FROM accounts a LEFT JOIN account_tiers t ON t.account_id=a.id
             WHERE a.id=?`,
         )
       : null;
+  const oauthProof = db.kind === "postgres"
+    ? db.prepare("", "SELECT authenticated_at FROM account_oauth_session_proofs WHERE token_hash=?")
+    : null;
   const globalVisit =
     db.kind === "postgres"
       ? db.prepare(
@@ -148,6 +153,15 @@ export async function createAuth(
       if (local) return null;
       return (await sessionFor(req))?.userId || null;
     },
+    async recentOAuthSession(req: IncomingMessage) {
+      if (!oauthProof || local) return false;
+      const session = await sessionFor(req);
+      if (!session) return false;
+      const proof = await oauthProof.get(session.tokenHash);
+      const authenticatedAt = Number(proof?.authenticated_at);
+      const elapsed = Date.now() - authenticatedAt;
+      return Number.isFinite(authenticatedAt) && elapsed >= 0 && elapsed <= 10 * 60 * 1000;
+    },
     async accountProfile(req: IncomingMessage) {
       if (!accountDetails || local) return null;
       const session = await sessionFor(req);
@@ -167,6 +181,9 @@ export async function createAuth(
                   : row.provider === "yandex"
                     ? "yandex"
                     : null,
+            providers: Array.isArray(row.providers)
+              ? row.providers.filter((value) => ["email", "vk", "yandex"].includes(value))
+              : [],
           }
         : null;
     },
@@ -195,14 +212,19 @@ export async function createAuth(
       }
       if (!db.postgresTransaction)
         throw new Error("Глобальная транзакция PostgreSQL недоступна");
-      const result = await db.postgresTransaction((client) =>
-        completePostgresOAuthLoginInTransaction(
+      const result = await db.postgresTransaction(async (client) => {
+        const login = await completePostgresOAuthLoginInTransaction(
           client,
           provider,
           profile,
           cookie(req),
-        ),
-      );
+        );
+        await client.query(
+          "INSERT INTO account_oauth_session_proofs(token_hash,provider,authenticated_at) VALUES($1,$2,$3)",
+          [sessionTokenHash(login.session.token), provider, Date.now()],
+        );
+        return login;
+      });
       setCookie(res, result.session.token);
       return `/a/${result.archiveId}/tree`;
     },

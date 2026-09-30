@@ -92,11 +92,21 @@ export function emailCredentials(
 
   async function cleanup(client: pg.PoolClient, time: number) {
     await client.query(
-      "DELETE FROM pending_email_registrations WHERE expires_at<=$1",
+      `DELETE FROM pending_email_registrations WHERE ctid IN
+        (SELECT ctid FROM pending_email_registrations WHERE expires_at<=$1
+          ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`,
       [time],
     );
     await client.query(
-      "DELETE FROM email_password_resets WHERE expires_at<=$1",
+      `DELETE FROM email_password_resets WHERE ctid IN
+        (SELECT ctid FROM email_password_resets WHERE expires_at<=$1
+          ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`,
+      [time],
+    );
+    await client.query(
+      `DELETE FROM pending_email_links WHERE ctid IN
+        (SELECT ctid FROM pending_email_links WHERE expires_at<=$1
+          ORDER BY expires_at LIMIT 100 FOR UPDATE SKIP LOCKED)`,
       [time],
     );
   }
@@ -115,8 +125,8 @@ export function emailCredentials(
       const hash = await hashAccountPassword(password);
       const token = newToken();
       const time = now();
+      await transact((client) => cleanup(client, time));
       const queued = await transact(async (client) => {
-        await cleanup(client, time);
         await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
           email,
         ]);
@@ -169,6 +179,15 @@ export function emailCredentials(
         );
       const time = now();
       return await transact(async (client) => {
+        const found = await client.query<{ email: string }>(
+          "SELECT email FROM pending_email_registrations WHERE token_hash=$1",
+          [tokenHash(token)],
+        );
+        if (!found.rows[0])
+          throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
+        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
+          found.rows[0].email,
+        ]);
         const pending = await client.query<{
           email: string;
           name: string;
@@ -181,9 +200,6 @@ export function emailCredentials(
         const row = pending.rows[0];
         if (!row || Number(row.expires_at) <= time)
           throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
-        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
-          row.email,
-        ]);
         if (
           (
             await client.query(
@@ -255,13 +271,18 @@ export function emailCredentials(
       if (!row || !valid)
         throw new InvalidEmailCredential("Неверная почта или пароль.");
       const archiveId = await transact(async (client) => {
-        await client.query("SELECT set_config('drevo.account_id',$1,true)", [row.account_id]);
-        return (await client.query<{ archive_id: string }>(
-          "SELECT archive_id FROM archive_owners WHERE user_id=$1 LIMIT 1",
-          [row.account_id],
-        )).rows[0]?.archive_id;
+        await client.query("SELECT set_config('drevo.account_id',$1,true)", [
+          row.account_id,
+        ]);
+        return (
+          await client.query<{ archive_id: string }>(
+            "SELECT archive_id FROM archive_owners WHERE user_id=$1 LIMIT 1",
+            [row.account_id],
+          )
+        ).rows[0]?.archive_id;
       });
-      if (!archiveId) throw new InvalidEmailCredential("Личный архив недоступен.");
+      if (!archiveId)
+        throw new InvalidEmailCredential("Личный архив недоступен.");
       return { accountId: row.account_id, archiveId };
     },
 
@@ -269,8 +290,8 @@ export function emailCredentials(
       const email = normalizeAccountEmail(value);
       const token = newToken();
       const time = now();
+      await transact((client) => cleanup(client, time));
       const queued = await transact(async (client) => {
-        await cleanup(client, time);
         await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
           email,
         ]);
@@ -316,6 +337,149 @@ export function emailCredentials(
           throw new Error("Не удалось отправить письмо. Попробуйте позднее.");
         }
       }
+    },
+
+    async requestLink(
+      accountId: string,
+      input: { email: unknown; password: unknown },
+    ) {
+      const email = normalizeAccountEmail(input.email);
+      const password = validateAccountPassword(input.password);
+      const hash = await hashAccountPassword(password);
+      const token = newToken();
+      const time = now();
+      await transact((client) => cleanup(client, time));
+      const queued = await transact(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
+          email,
+        ]);
+        if (
+          !(
+            await client.query("SELECT 1 FROM accounts WHERE id=$1", [
+              accountId,
+            ])
+          ).rowCount
+        )
+          throw new InvalidEmailCredential("Аккаунт недоступен.");
+        if (
+          (
+            await client.query(
+              "SELECT 1 FROM account_email_credentials WHERE account_id=$1",
+              [accountId],
+            )
+          ).rowCount
+        )
+          throw new InvalidEmailCredential("Почта уже привязана к аккаунту.");
+        if (
+          (
+            await client.query(
+              "SELECT 1 FROM account_email_credentials WHERE email=$1",
+              [email],
+            )
+          ).rowCount ||
+          (
+            await client.query(
+              "SELECT 1 FROM pending_email_links WHERE email=$1 AND account_id<>$2",
+              [email, accountId],
+            )
+          ).rowCount
+        )
+          return false;
+        const pending = await client.query<{ sent_at: string }>(
+          "SELECT sent_at FROM pending_email_links WHERE account_id=$1 FOR UPDATE",
+          [accountId],
+        );
+        if (
+          pending.rows[0] &&
+          Number(pending.rows[0].sent_at) > time - EMAIL_COOLDOWN
+        )
+          return false;
+        await client.query(
+          `INSERT INTO pending_email_links(account_id,email,password_hash,token_hash,expires_at,sent_at)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(account_id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,
+             token_hash=excluded.token_hash,expires_at=excluded.expires_at,sent_at=excluded.sent_at`,
+          [
+            accountId,
+            email,
+            hash,
+            tokenHash(token),
+            time + REGISTER_LIFETIME,
+            time,
+          ],
+        );
+        return true;
+      });
+      if (queued) {
+        try {
+          await send(
+            email,
+            "Подключение почты к Drevo",
+            `Вы запросили вход по почте для существующего аккаунта Drevo. Откройте ссылку в том же браузере, где вы вошли в этот аккаунт:\n${origin}/account#email-link=${token}\n\nСсылка действует 24 часа. Если с последнего входа через Яндекс или VK прошло больше 10 минут, войдите снова и повторно откройте ссылку. Если это были не вы, проигнорируйте письмо.`,
+          );
+        } catch {
+          await transact((client) =>
+            client.query(
+              "DELETE FROM pending_email_links WHERE account_id=$1 AND token_hash=$2",
+              [accountId, tokenHash(token)],
+            ),
+          );
+          throw new Error("Не удалось отправить письмо. Попробуйте позднее.");
+        }
+      }
+    },
+
+    async verifyLink(accountId: string, token: unknown) {
+      if (!validToken(token))
+        throw new InvalidEmailCredential(
+          "Ссылка подтверждения недействительна.",
+        );
+      const time = now();
+      await transact(async (client) => {
+        const found = await client.query<{ email: string; account_id: string }>(
+          "SELECT email,account_id FROM pending_email_links WHERE token_hash=$1",
+          [tokenHash(token)],
+        );
+        if (!found.rows[0] || found.rows[0].account_id !== accountId)
+          throw new InvalidEmailCredential(
+            "Ссылка предназначена для другого аккаунта или устарела.",
+          );
+        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
+          found.rows[0].email,
+        ]);
+        const pending = await client.query<{
+          email: string;
+          password_hash: string;
+          expires_at: string;
+        }>(
+          "SELECT email,password_hash,expires_at FROM pending_email_links WHERE account_id=$1 AND token_hash=$2 FOR UPDATE",
+          [accountId, tokenHash(token)],
+        );
+        const row = pending.rows[0];
+        if (!row || Number(row.expires_at) <= time)
+          throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
+        if (
+          (
+            await client.query(
+              "SELECT 1 FROM account_email_credentials WHERE email=$1 OR account_id=$2",
+              [row.email, accountId],
+            )
+          ).rowCount
+        )
+          throw new InvalidEmailCredential("Почта уже привязана к аккаунту.");
+        await client.query(
+          "INSERT INTO account_email_credentials(account_id,email,password_hash) VALUES($1,$2,$3)",
+          [accountId, row.email, row.password_hash],
+        );
+        await client.query(
+          "INSERT INTO account_identities(provider,subject,account_id) VALUES('email',$1,$2)",
+          [row.email, accountId],
+        );
+        await client.query(
+          "DELETE FROM pending_email_links WHERE account_id=$1",
+          [accountId],
+        );
+      });
     },
 
     async resetPassword(token: unknown, value: unknown) {
