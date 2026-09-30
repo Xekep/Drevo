@@ -11,6 +11,7 @@ export type RoutedArchive = {
 
 type Entry = { runtime: RoutedArchive; active: number; usedAt: number };
 const MAX_OPEN_ARCHIVES = 4;
+const WAIT_FOR_IDLE_MS = 5000;
 class ArchivePoolBusyError extends Error {}
 
 /** Keep explicitly selected archive runtimes bounded and never evict an active one. */
@@ -19,7 +20,7 @@ export function archiveRoutePool(
   open: (archiveId: string) => Promise<RoutedArchive>,
 ) {
   const entries = new Map<string, Entry>();
-  const opening = new Map<string, Promise<Entry | null>>();
+  const idleWaiters = new Set<() => void>();
   let lastUse = 0;
   let queue = Promise.resolve();
   const exclusive = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -35,35 +36,49 @@ export function archiveRoutePool(
       release();
     }
   };
-  const get = async (req: IncomingMessage, id: string) => {
+  const acquire = async (req: IncomingMessage, id: string) => {
     const present = entries.get(id);
-    if (present) return present;
-    let pending = opening.get(id);
-    if (!pending) {
-      pending = exclusive(async () => {
-        const existing = entries.get(id);
-        if (existing) return existing;
-        if (!(await permitted(req, id))) return null;
-        if (entries.size >= MAX_OPEN_ARCHIVES) {
-          const idle = [...entries]
+    if (present) {
+      present.active++;
+      present.usedAt = ++lastUse;
+      return present;
+    }
+    return await exclusive(async () => {
+      const existing = entries.get(id);
+      if (existing) {
+        existing.active++;
+        existing.usedAt = ++lastUse;
+        return existing;
+      }
+      if (!(await permitted(req, id))) return null;
+      if (entries.size >= MAX_OPEN_ARCHIVES) {
+        const oldestIdle = () =>
+          [...entries]
             .filter(([, entry]) => entry.active === 0)
             .sort((left, right) => left[1].usedAt - right[1].usedAt)[0];
-          if (!idle) throw new ArchivePoolBusyError();
-          entries.delete(idle[0]);
-          await idle[1].runtime.close();
-        }
-        const entry: Entry = {
-          runtime: await open(id),
-          active: 0,
-          usedAt: ++lastUse,
-        };
-        entries.set(id, entry);
-        return entry;
-      });
-      opening.set(id, pending);
-      void pending.finally(() => opening.delete(id)).catch(() => {});
-    }
-    return await pending;
+        if (!oldestIdle())
+          await new Promise<void>((resolve) => {
+            const wake = () => {
+              clearTimeout(timer);
+              idleWaiters.delete(wake);
+              resolve();
+            };
+            const timer = setTimeout(wake, WAIT_FOR_IDLE_MS);
+            idleWaiters.add(wake);
+          });
+        const idle = oldestIdle();
+        if (!idle) throw new ArchivePoolBusyError();
+        entries.delete(idle[0]);
+        await idle[1].runtime.close();
+      }
+      const entry: Entry = {
+        runtime: await open(id),
+        active: 1,
+        usedAt: ++lastUse,
+      };
+      entries.set(id, entry);
+      return entry;
+    });
   };
   return {
     async route(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -74,7 +89,7 @@ export function archiveRoutePool(
       if (!match) return false;
       let entry: Entry | null;
       try {
-        entry = await get(req, match[1]);
+        entry = await acquire(req, match[1]);
       } catch (error) {
         if (!(error instanceof ArchivePoolBusyError)) throw error;
         res.writeHead(503, {
@@ -90,28 +105,27 @@ export function archiveRoutePool(
         res.end();
         return true;
       }
-      if (match[2] === "/api/shares" && req.method === "POST") {
-        res.writeHead(501, {
-          "Content-Type": "application/json; charset=utf-8",
-          "Cache-Control": "no-store",
-        });
-        res.end(
-          JSON.stringify({
-            error: "Публичные ссылки для этого дерева пока недоступны.",
-          }),
-        );
-        return true;
-      }
-      entry.active++;
-      entry.usedAt = ++lastUse;
       let released = false;
       const release = () => {
         if (released) return;
         released = true;
         entry.active--;
+        if (entry.active === 0) for (const wake of idleWaiters) wake();
       };
       res.once("close", release);
       try {
+        if (match[2] === "/api/shares" && req.method === "POST") {
+          res.writeHead(501, {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+          });
+          res.end(
+            JSON.stringify({
+              error: "Публичные ссылки для этого дерева пока недоступны.",
+            }),
+          );
+          return true;
+        }
         await entry.runtime.handle(req, res, match[2] + url.search);
       } finally {
         if (res.writableEnded || res.destroyed) release();
