@@ -20,6 +20,7 @@ import { publicSharingHttp } from "./public-sharing-http.ts";
 import { mediaHttp } from "./media-http.ts";
 import { mediaUploadHttp } from "./media-upload-http.ts";
 import { familyChangesHttp } from "./family-changes-http.ts";
+import { additionsImportHttp } from "./additions-import-http.ts";
 import type { productionStaticHttp } from "./production-static-http.ts";
 import { restoreHttp } from "./restore-http.ts";
 import type { RestoreStore } from "./restore.ts";
@@ -206,6 +207,7 @@ export async function archiveHttp({
     publicOrigin,
   });
   const saveChanges = familyChangesHttp({ archive, auth, publicOrigin });
+  const importAdditions = additionsImportHttp({ archive, auth, publicOrigin });
   const uploadMedia = mediaUploadHttp({
     archive,
     auth,
@@ -245,6 +247,7 @@ export async function archiveHttp({
     if (await discoveryMatches(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;
+    if (await importAdditions(req, res, url)) return true;
     if (await uploadMedia(req, res, url)) return true;
     if (await faceDescriptors(req, res, url)) return true;
     if (await researchAi(req, res, url)) return true;

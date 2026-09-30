@@ -31,6 +31,7 @@ import {
   RotateCcw,
   Settings,
   Download,
+  Upload,
   Share2,
   TreeDeciduous,
 } from "lucide-react";
@@ -109,6 +110,7 @@ export type TreeCanvasHandle = {
 type Props = {
   onPreferences?: () => void;
   onExport?: () => void;
+  onImport?: () => void;
   onRename?: () => void;
   onAddSelf?: () => void;
   comparisonAction?: ReactNode;
@@ -1036,14 +1038,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           }
           const target = event.target as Element;
           const personId = target.closest<HTMLElement>(".flow-person")?.dataset.personId;
-          if (personId ? !props.onShare && !props.onPublishPerson : !props.onExport || !target.closest(".react-flow__pane"))
+          if (personId ? !props.onShare && !props.onPublishPerson : (!props.onExport && !props.onImport) || !target.closest(".react-flow__pane"))
             return;
           event.preventDefault();
           const bounds = container.current?.getBoundingClientRect();
           if (!bounds) return;
           setContextMenu({
             x: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 205)),
-            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (personId ? 100 : 70))),
+            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (personId || props.onImport ? 110 : 70))),
             personId,
           });
         }}
@@ -1225,6 +1227,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <button type="button" className="tree-preferences-trigger tree-export-trigger"
               aria-label="Экспорт древа" title="Экспорт древа" onClick={props.onExport}>
               <Download size={19} aria-hidden="true" />
+            </button>
+          )}
+          {narrow && props.onImport && (
+            <button type="button" className="tree-preferences-trigger"
+              aria-label="Импорт" title="Импорт" onClick={props.onImport}>
+              <Upload size={19} aria-hidden="true" />
             </button>
           )}
           {narrow && preferencesAction}
@@ -1456,14 +1464,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 props.onPublishPerson?.(contextMenu.personId!);
                 setContextMenu(null);
               }}><Share2 size={16} aria-hidden="true" /> Публикация в поиске</button>}
-            </>) : (
-              <button type="button" role="menuitem" onClick={() => {
+            </>) : (<>
+              {props.onExport && <button type="button" role="menuitem" onClick={() => {
                 props.onExport?.();
                 setContextMenu(null);
               }}>
                 <Download size={16} aria-hidden="true" /> Экспорт древа
-              </button>
-            )}
+              </button>}
+              {props.onImport && <button type="button" role="menuitem" onClick={() => {
+                props.onImport?.();
+                setContextMenu(null);
+              }}>
+                <Upload size={16} aria-hidden="true" /> Импорт
+              </button>}
+            </>)}
           </div>
         )}
       </div>

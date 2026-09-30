@@ -10,7 +10,7 @@ async function openExport(page: Page) {
     await page
       .locator(".react-flow__pane")
       .click({ button: "right", position: { x: 40, y: 350 } });
-    await page.locator(".tree-context-menu button").click();
+    await page.getByRole("menuitem", { name: "Экспорт древа" }).click();
   }
   return page.getByRole("dialog");
 }

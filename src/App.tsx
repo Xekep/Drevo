@@ -43,6 +43,7 @@ import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
 import { TreeExportDialog } from "./components/tree-export-dialog";
+import { TreeImportDialog } from "./components/tree-import-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
@@ -154,6 +155,7 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [treePreferencesOpen, setTreePreferencesOpen] = useState(false),
     [treeExportOpen, setTreeExportOpen] = useState(false),
+    [treeImportOpen, setTreeImportOpen] = useState(false),
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
     [assistantOpen, setAssistantOpen] = useState(false),
@@ -752,6 +754,7 @@ export default function App() {
                       ref={treeCanvas}
                       onPreferences={() => setTreePreferencesOpen(true)}
                       onExport={() => setTreeExportOpen(true)}
+                      onImport={canEdit && user?.role === "admin" ? () => setTreeImportOpen(true) : undefined}
                       onRename={canEdit && user?.role === "admin" ? () => setSettings(true) : undefined}
                       onAddSelf={canEdit && user?.role === "admin" && !user.personId ? newSelf : undefined}
                       skipInitialGrowth={initialPersonLink}
@@ -1151,6 +1154,13 @@ export default function App() {
           }
           canExportArchive={user?.role === "admin"}
           onClose={() => setTreeExportOpen(false)}
+        />
+      )}
+      {treeImportOpen && family && user?.role === "admin" && (
+        <TreeImportDialog
+          canEdit={canEdit}
+          onClose={() => setTreeImportOpen(false)}
+          onImported={archive.reload}
         />
       )}
       {help && <AboutProject onClose={() => setHelp(false)} />}

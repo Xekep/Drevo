@@ -224,6 +224,10 @@
   border-radius: 12px;
   margin: 16px 0;
 }
+.json-additions-people {
+  max-height: 22rem;
+  overflow: auto;
+}
 
 .genealogy-formats {
   border: 0;
