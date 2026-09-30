@@ -451,6 +451,13 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
     assert.fail("Backup timed out");
   }
   try {
+    // Nginx's /api/backups/ proxy location redirects the slashless URI.
+    // Both addresses must serve the list, including browsers that cached the 301.
+    for (const path of ["/api/backups", "/api/backups/"]) {
+      const response = await fetch(base + path + "?offset=0");
+      assert.equal(response.status, 200, path);
+      assert.equal((await response.json()).total, 0);
+    }
     await app.archive.write(seed, (await app.archive.read()).revision);
     assert.equal(
       (await fetch(base + "/api/backups/create", { method: "POST" })).status,
@@ -527,4 +534,11 @@ test("HTTP selected-backup preview requires explicit restore confirmation and re
     await app.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("Nginx proxies the slashless backup list without a permanent redirect", () => {
+  assert.match(
+    readFileSync("ops/nginx.conf", "utf8"),
+    /location = \/api\/backups \{[\s\S]*?proxy_pass http:\/\/127\.0\.0\.1:3107;/,
+  );
 });
