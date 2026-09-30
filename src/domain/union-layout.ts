@@ -499,26 +499,35 @@ export function branchContactCounts(branches: UnionBranch[]) {
   type Segment = ReturnType<typeof bounds> & {
     a: Point;
     b: Point;
-    union: string;
+    union: number;
   };
   const lines = new Spatial<Segment>();
   const distinct = new Set<string>();
+  const unionIds = new Map<string, number>();
   let segments = 0;
-  for (const branch of branches)
+  for (const branch of branches) {
+    let union = unionIds.get(branch.union);
+    if (union === undefined) {
+      union = unionIds.size;
+      unionIds.set(branch.union, union);
+    }
     for (let i = 1; i < branch.route.points.length; i++) {
       const a = branch.route.points[i - 1],
         b = branch.route.points[i];
       if (a.x === b.x && a.y === b.y) continue;
       const box = bounds(a, b);
       for (const previous of lines.query(box)) {
-        if (previous.union === branch.union) continue;
+        if (previous.union === union) continue;
         const contact = segmentContact(a, b, previous.a, previous.b);
         if (!contact) continue;
         segments++;
-        distinct.add(JSON.stringify([[branch.union, previous.union].sort(), contact]));
+        const first = Math.min(union, previous.union);
+        const second = Math.max(union, previous.union);
+        distinct.add(`${first}:${second}:${contact}`);
       }
-      lines.add({ ...box, a, b, union: branch.union });
+      lines.add({ ...box, a, b, union });
     }
+  }
   return { distinct: distinct.size, segments };
 }
 

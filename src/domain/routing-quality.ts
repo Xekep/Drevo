@@ -10,13 +10,21 @@ import { segmentsCross, type Point } from "./layout-order.ts";
 export type RoutedGroup = { group: string; route: EdgeRoute };
 /** Общая семейная шина считается один раз, Т-касания чужой линии — конфликтом. */
 export function routingQuality(edges: RoutedGroup[]) {
-  const lines = new Spatial<Box & { a: Point; b: Point; group: string }>();
+  const lines = new Spatial<Box & { a: Point; b: Point; group: number }>();
   const contacts = new Set<string>(),
     crossings = new Set<string>(),
     groups = new Map<string, number>();
+  const groupIds = new Map<string, number>();
+  const groupNames: string[] = [];
   let length = 0,
     bends = 0;
   for (const edge of edges) {
+    let group = groupIds.get(edge.group);
+    if (group === undefined) {
+      group = groupIds.size;
+      groupIds.set(edge.group, group);
+      groupNames.push(edge.group);
+    }
     const points = edge.route.points;
     let previous = "";
     for (let i = 1; i < points.length; i++) {
@@ -29,18 +37,21 @@ export function routingQuality(edges: RoutedGroup[]) {
       if (previous && previous !== direction) bends++;
       previous = direction;
       for (const line of lines.query(bounds(a, b))) {
-        if (line.group === edge.group) continue;
+        if (line.group === group) continue;
         const contact = segmentContact(a, b, line.a, line.b);
         if (!contact) continue;
-        const key = JSON.stringify([[edge.group, line.group].sort(), contact]);
+        const first = Math.min(group, line.group);
+        const second = Math.max(group, line.group);
+        const key = `${first}:${second}:${contact}`;
         if (!contacts.has(key)) {
           contacts.add(key);
-          for (const group of [edge.group, line.group])
-            groups.set(group, (groups.get(group) || 0) + 1);
+          groups.set(edge.group, (groups.get(edge.group) || 0) + 1);
+          const other = groupNames[line.group];
+          groups.set(other, (groups.get(other) || 0) + 1);
         }
         if (segmentsCross([a, b], [line.a, line.b])) crossings.add(key);
       }
-      lines.add({ ...bounds(a, b), a, b, group: edge.group });
+      lines.add({ ...bounds(a, b), a, b, group });
     }
   }
   return {
