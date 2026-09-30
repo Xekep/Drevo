@@ -82,12 +82,11 @@ test("мобильная панель помещается в один ряд и
   await expect(mode).toBeChecked();
   await expectSingleRow(page, 320);
   const extra = page.getByRole("button", { name: "Доп. связи" });
-  const pressed = await extra.getAttribute("aria-pressed");
+  await expect(extra).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".relationship-godparent")).toHaveCount(0);
   await extra.click();
-  await expect(extra).toHaveAttribute(
-    "aria-pressed",
-    pressed === "true" ? "false" : "true",
-  );
+  await expect(extra).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".relationship-godparent")).toBeAttached();
   await page.screenshot({ path: testInfo.outputPath("toolbar-320.png") });
   await page.getByRole("button", { name: "Родство", exact: true }).click();
   await expect(

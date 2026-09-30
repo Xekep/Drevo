@@ -117,6 +117,44 @@ test("a reader's edit request returns permissions without a model call or data c
     assert.deepEqual(result.suggestionIds, []);
     assert.equal(calls, 0);
     assert.deepEqual(await app.archive.read(), before);
+    const privateExport = await fetch(
+      `${base}/api/ai/export/gedcom?format=gedcom7`,
+    );
+    assert.equal(privateExport.status, 401);
+    const gedcom = await fetch(`${base}/api/ai/export/gedcom?format=gedcom7`, {
+      headers: { Cookie: `drevo_session=${token}` },
+    });
+    assert.equal(gedcom.status, 200);
+    assert.match(
+      gedcom.headers.get("content-disposition") || "",
+      /drevo-7\.ged/,
+    );
+    assert.match(await gedcom.text(), /GEDC/);
+    const invalidPerson = await fetch(
+      `${base}/api/ai/export/lineage?personId=unknown&direction=ancestors`,
+      {
+        headers: { Cookie: `drevo_session=${token}` },
+      },
+    );
+    assert.equal(invalidPerson.status, 404);
+    const exportChat = await fetch(`${base}/api/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost",
+        Cookie: `drevo_session=${token}`,
+      },
+      body: JSON.stringify({ message: "Сделай экспорт" }),
+    });
+    assert.equal(exportChat.status, 200);
+    const exportResult = await exportChat.json();
+    assert.ok(
+      exportResult.files.some(
+        (file: { url: string }) =>
+          file.url === "/api/ai/export/gedcom?format=gedcom7",
+      ),
+    );
+    assert.equal(calls, 0);
   } finally {
     await app.close();
     keys.forEach((key, index) => {

@@ -10,7 +10,6 @@ import {
   type ConnectionType,
 } from "./domain";
 import { useArchive } from "./hooks/useArchive";
-import { downloadLineageReport } from "./components/tree/download-lineage-report";
 import { useArchiveView } from "./hooks/useArchiveView";
 import { useWorkspaceSelection } from "./hooks/useWorkspaceSelection";
 import { usePhotoWorkspace } from "./hooks/usePhotoWorkspace";
@@ -40,10 +39,12 @@ import { LoginButtons } from "./components/login-buttons";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
+import { TreeExportDialog } from "./components/tree-export-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
 import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
+import { PublishPersonDialog } from "./components/publish-person-dialog";
 import { ArchiveLoading } from "./components/archive-loading";
 import { ResearchAssistant } from "./components/research-assistant";
 import { AccountPage, type AccountSession } from "./components/account-page";
@@ -61,6 +62,12 @@ type PersonDraft = {
 };
 const targetKey = (target: ArchiveTarget | null) =>
   target ? `${target.kind}:${target.id}` : "";
+const galleryAlbumPath = (personId: string | null, year: string | null) => {
+  const params = new URLSearchParams();
+  if (personId) params.set("personId", personId);
+  if (year) params.set("year", year);
+  return `/photos${params.size ? `?${params}` : ""}`;
+};
 
 export default function App() {
   const [initialPersonLink] = useState(
@@ -142,6 +149,7 @@ export default function App() {
     [help, setHelp] = useState(false),
     [settings, setSettings] = useState(false),
     [treePreferencesOpen, setTreePreferencesOpen] = useState(false),
+    [treeExportOpen, setTreeExportOpen] = useState(false),
     [addMenu, setAddMenu] = useState(false),
     [notice, setNotice] = useState(""),
     [assistantOpen, setAssistantOpen] = useState(false),
@@ -227,6 +235,7 @@ export default function App() {
     people: Person[];
     revision: number;
   } | null>(null);
+  const [publishPerson, setPublishPerson] = useState<Person | null>(null);
   const [personDraft, setPersonDraftState] = useState<PersonDraft | null>(null),
     [connectionDraft, setConnectionDraft] = useState<ConnectionDraft | null>(
       null,
@@ -260,6 +269,7 @@ export default function App() {
     { clearFilter } = photoWorkspace;
   const [urlVersion, setUrlVersion] = useState(0);
   const lastUrlTarget = useRef("");
+  const photoReturnPath = useRef("/photos");
   const people = useMemo(() => family?.people || [], [family]);
   const map = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
   const { openPhoto, navigatePhoto, closePhoto, uploaded } = photoWorkspace;
@@ -324,11 +334,14 @@ export default function App() {
   const openPhotoUrl = useCallback(
     (id: string, ids?: string[]) => {
       const target: ArchiveTarget = { kind: "photo", id };
+      photoReturnPath.current = currentPath.startsWith("/photos?")
+        ? currentPath
+        : "/photos";
       lastUrlTarget.current = targetKey(target);
       setView("gallery", target);
       openPhoto(id, ids);
     },
-    [openPhoto, setView],
+    [currentPath, openPhoto, setView],
   );
   const navigatePhotoUrl = useCallback(
     (id: string) => {
@@ -341,17 +354,21 @@ export default function App() {
   );
   const closePhotoUrl = useCallback(() => {
     lastUrlTarget.current = "";
-    setView("gallery", undefined, true);
+    setView("gallery", photoReturnPath.current, true);
+    photoReturnPath.current = "/photos";
     closePhoto();
   }, [closePhoto, setView]);
   const uploadedPhoto = useCallback(
     (id: string) => {
       const target: ArchiveTarget = { kind: "photo", id };
+      photoReturnPath.current = currentPath.startsWith("/photos?")
+        ? currentPath
+        : "/photos";
       lastUrlTarget.current = targetKey(target);
       setView("gallery", target);
       uploaded(id);
     },
-    [setView, uploaded],
+    [currentPath, setView, uploaded],
   );
   const linkedPhotoWorkspace = {
     ...photoWorkspace,
@@ -360,6 +377,22 @@ export default function App() {
     closePhoto: closePhotoUrl,
     uploaded: uploadedPhoto,
   };
+  const selectGalleryAlbum = useCallback(
+    (personId: string | null, year: string | null, replace = false) => {
+      lastUrlTarget.current = "";
+      setView("gallery", galleryAlbumPath(personId, year), replace);
+    },
+    [setView],
+  );
+  const selectDocument = useCallback(
+    (id: string | null) => {
+      const url = new URL(currentPath, window.location.origin);
+      if (id) url.searchParams.set("documentId", id);
+      else url.searchParams.delete("documentId");
+      setView("documents", `${url.pathname}${url.search}`, !id);
+    },
+    [currentPath, setView],
+  );
   const chosen = useMemo(
     () => selected.flatMap((id) => (map.has(id) ? [map.get(id)!] : [])),
     [selected, map],
@@ -596,6 +629,9 @@ export default function App() {
       {shareDraft && (
         <ShareDialog {...shareDraft} onClose={() => setShareDraft(null)} />
       )}
+      {publishPerson && (
+        <PublishPersonDialog person={publishPerson} onClose={() => setPublishPerson(null)} />
+      )}
       <div className="archive-main">
         <ArchiveHeader
           navigation={
@@ -694,6 +730,7 @@ export default function App() {
                     <TreeCanvas
                       ref={treeCanvas}
                       onPreferences={() => setTreePreferencesOpen(true)}
+                      onExport={() => setTreeExportOpen(true)}
                       skipInitialGrowth={initialPersonLink}
                       onGrowthChange={setTreeGrowing}
                       comparisonAction={
@@ -727,6 +764,11 @@ export default function App() {
                                   revision: archive.getRevision(),
                                 });
                             }
+                          : undefined
+                      }
+                      onPublishPerson={
+                        user?.role === "admin" && canEdit
+                          ? (personId) => setPublishPerson(map.get(personId) || null)
                           : undefined
                       }
                       onAddRelative={(id, type) => {
@@ -880,9 +922,7 @@ export default function App() {
                                 relative(type, true)
                               }
                               onAlbum={(id) => {
-                                photoWorkspace.filterPerson(id);
-                                lastUrlTarget.current = "";
-                                setView("gallery");
+                                selectGalleryAlbum(id, null);
                               }}
                             />
                           )
@@ -920,8 +960,24 @@ export default function App() {
                     currentPath,
                     window.location.origin,
                   ).searchParams.get("documentId")}
-                  personFilter={photoWorkspace.personFilter}
-                  onClearPhotoFilter={photoWorkspace.clearFilter}
+                  onSelectDocument={selectDocument}
+                  personFilter={
+                    view === "gallery"
+                      ? new URL(
+                          currentPath,
+                          window.location.origin,
+                        ).searchParams.get("personId")
+                      : null
+                  }
+                  yearFilter={
+                    view === "gallery"
+                      ? new URL(
+                          currentPath,
+                          window.location.origin,
+                        ).searchParams.get("year")
+                      : null
+                  }
+                  onSelectPhotoAlbum={selectGalleryAlbum}
                 />
               </main>
             )}
@@ -1035,6 +1091,11 @@ export default function App() {
               direction,
             }))
           }
+          onExportTreePdf={async (scope) => {
+            if (!treeCanvas.current)
+              throw new Error("Откройте древо, чтобы сохранить его в PDF.");
+            await treeCanvas.current.exportPdf(undefined, scope);
+          }}
         />
       )}
       {settings && canEdit && family && user?.role === "admin" && (
@@ -1047,37 +1108,20 @@ export default function App() {
       )}
       {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
+          preferences={archive.treePreferences}
+          onChange={archive.saveTreePreferences}
+          onClose={() => setTreePreferencesOpen(false)}
+        />
+      )}
+      {treeExportOpen && family && readTree && (
+        <TreeExportDialog
           anchorId={treeExportAnchor?.id}
           anchorName={treeExportAnchor && fullName(treeExportAnchor)}
           onExportPdf={(signal, scope, anchorId, generations) =>
             treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
           }
-          onExportPng={(signal, scope, anchorId, generations) =>
-            treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
-          }
-          onExportReport={(direction, generations) => {
-            downloadLineageReport(
-              family,
-              treeExportAnchor?.id,
-              direction,
-              generations,
-            );
-          }}
-          onExportPdfReport={async (kind, generations, signal) => {
-            const { downloadArchiveReport } =
-              await import("./components/tree/download-archive-report");
-            await downloadArchiveReport(
-              family,
-              treeExportAnchor?.id,
-              kind,
-              generations,
-              signal,
-            );
-          }}
           canExportArchive={user?.role === "admin"}
-          preferences={archive.treePreferences}
-          onChange={archive.saveTreePreferences}
-          onClose={() => setTreePreferencesOpen(false)}
+          onClose={() => setTreeExportOpen(false)}
         />
       )}
       {help && <AboutProject onClose={() => setHelp(false)} />}

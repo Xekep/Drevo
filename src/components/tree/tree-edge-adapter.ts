@@ -8,9 +8,17 @@ import {
 } from "../../domain/connections.ts";
 import { fullName } from "../../domain/dates.ts";
 import { connectionPairName } from "../../domain/connection-labels.ts";
-import { routeKey } from "../../domain/edge-routing.ts";
+import {
+  relaxAdditionalRoute,
+  routeKey,
+} from "../../domain/edge-routing.ts";
 import { crossingPaths } from "../../domain/route-crossings.ts";
-import type { TreeGeometry, TreeMode } from "../../domain/tree-layout.ts";
+import {
+  TREE_NODE_HEIGHT,
+  TREE_NODE_WIDTH,
+  type TreeGeometry,
+  type TreeMode,
+} from "../../domain/tree-layout.ts";
 import type { Family, Person } from "../../domain/types.ts";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
 import { treeConnectionGrowthStyle } from "./tree-growth.ts";
@@ -102,6 +110,27 @@ export function buildTreeEdges({
   growthDelays,
 }: EdgeAdapterInput): RelationshipEdgeType[] {
   const routes = new Map(geometry?.routes || []);
+  const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
+    nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
+  const cards = extraVisible
+    ? [...positions]
+        .filter(([id]) => occurrencePeople.has(id))
+        .map(([, point]) => ({
+          left: point.x,
+          right: point.x + nodeWidth,
+          top: point.y,
+          bottom: point.y + nodeHeight,
+        }))
+    : [];
+  const familyRoutes = extraVisible
+    ? [
+        ...connections
+          .filter((edge) => ["parent", "spouse"].includes(edge.type))
+          .map((edge) => routes.get(routeKey(edge)))
+          .filter((route) => route !== undefined),
+        ...(geometry?.branches || []).map((branch) => branch.route),
+      ]
+    : [];
   const edges: RelationshipEdgeType[] = connections
     .filter(
       (edge) =>
@@ -119,7 +148,11 @@ export function buildTreeEdges({
       const from = positions.get(edge.from),
         to = positions.get(edge.to),
         side = ["spouse", "sworn_sibling"].includes(edge.type),
-        route = routes.get(routeKey(edge)),
+        originalRoute = routes.get(routeKey(edge)),
+        route =
+          originalRoute && !["parent", "spouse"].includes(edge.type)
+            ? relaxAdditionalRoute(originalRoute, cards, familyRoutes)
+            : originalRoute,
         active = isHighlighted(highlighted, edge),
         select = () => onEdge(edge);
       return {

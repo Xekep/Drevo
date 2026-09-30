@@ -30,6 +30,8 @@ import {
   Link2,
   RotateCcw,
   Settings,
+  Download,
+  Share2,
   TreeDeciduous,
 } from "lucide-react";
 import {
@@ -100,9 +102,11 @@ export type TreeCanvasHandle = {
 };
 type Props = {
   onPreferences?: () => void;
+  onExport?: () => void;
   comparisonAction?: ReactNode;
   restricted?: boolean;
   onShare?: (anchorId: string, personIds: string[]) => void;
+  onPublishPerson?: (personId: string) => void;
   family: Family;
   user: ArchiveUser | null;
   canEdit: boolean;
@@ -155,6 +159,27 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const screen = useTreeFullscreen(container);
   const lastPaneTap = useRef({ time: 0, x: 0, y: 0 });
   const [createAt, setCreateAt] = useState<TreeCreateAtDraft | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    personId?: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!contextMenu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!(event.target as Element)?.closest(".tree-context-menu"))
+        setContextMenu(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextMenu(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [contextMenu]);
   useEffect(() => {
     if (!createAt) return;
     const dismiss = (event: PointerEvent) => {
@@ -323,7 +348,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     exitingNodes: Array<PersonNodeType | HouseholdNodeType>;
     exitingEdges: RelationshipEdgeType[];
   } | null>(null);
-  const [extraVisible, setExtraVisible] = useState(true);
+  const [extraVisible, setExtraVisible] = useState(false);
   const [edgeChoices, setEdgeChoices] = useState<GraphConnection[]>([]);
   const choiceClose = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -811,6 +836,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     layoutBusy,
     family,
     reverse,
+    extraVisible,
     tree: {
       nodes: displayNodes,
       edges: displayEdges,
@@ -825,6 +851,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       layoutBusy,
       family,
       reverse,
+      extraVisible,
       tree: {
         nodes: displayNodes,
         edges: displayEdges,
@@ -833,7 +860,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         white: props.colorScheme === "white",
       },
     };
-  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family, reverse, props.colorScheme]);
+  }, [ready, layoutBusy, displayNodes, displayEdges, actions, family, reverse, extraVisible, props.colorScheme]);
   useImperativeHandle(
     exportRef,
     () => {
@@ -862,6 +889,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           current.tree.white,
           current.tree.actions,
           signal,
+          current.extraVisible,
         );
       };
       return {
@@ -982,7 +1010,22 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         tabIndex={-1}
         aria-busy={growthPreparing || growthActive}
         onContextMenu={(event) => {
-          if (growthActive) event.preventDefault();
+          if (growthActive || layoutBusy) {
+            event.preventDefault();
+            return;
+          }
+          const target = event.target as Element;
+          const personId = target.closest<HTMLElement>(".flow-person")?.dataset.personId;
+          if (personId ? !props.onShare && !props.onPublishPerson : !props.onExport || !target.closest(".react-flow__pane"))
+            return;
+          event.preventDefault();
+          const bounds = container.current?.getBoundingClientRect();
+          if (!bounds) return;
+          setContextMenu({
+            x: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 205)),
+            y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - (personId ? 100 : 70))),
+            personId,
+          });
         }}
         aria-label="Полотно древа. Для выхода из полного экрана дважды коснитесь фона или нажмите Назад."
       >
@@ -1157,6 +1200,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 familyView.reset();
               }}
             />
+          )}
+          {narrow && props.onExport && (
+            <button type="button" className="tree-preferences-trigger tree-export-trigger"
+              aria-label="Экспорт древа" title="Экспорт древа" onClick={props.onExport}>
+              <Download size={19} aria-hidden="true" />
+            </button>
           )}
           {narrow && preferencesAction}
         </div>
@@ -1347,6 +1396,30 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               <button className="primary-action" onClick={props.onAdd}>
                 <Plus size={18} />
                 Добавить первого человека
+              </button>
+            )}
+          </div>
+        )}
+        {contextMenu && (
+          <div className="tree-context-menu" role="menu" aria-label={contextMenu.personId ? "Действия с человеком" : "Действия с древом"}
+            style={{ left: contextMenu.x, top: contextMenu.y }}>
+            {contextMenu.personId ? (<>
+              {props.onShare && <button type="button" role="menuitem" onClick={() => {
+                props.onShare?.(contextMenu.personId!, [contextMenu.personId!]);
+                setContextMenu(null);
+              }}>
+                <Share2 size={16} aria-hidden="true" /> Временная ссылка
+              </button>}
+              {props.onPublishPerson && <button type="button" role="menuitem" onClick={() => {
+                props.onPublishPerson?.(contextMenu.personId!);
+                setContextMenu(null);
+              }}><Share2 size={16} aria-hidden="true" /> Публикация в поиске</button>}
+            </>) : (
+              <button type="button" role="menuitem" onClick={() => {
+                props.onExport?.();
+                setContextMenu(null);
+              }}>
+                <Download size={16} aria-hidden="true" /> Экспорт древа
               </button>
             )}
           </div>

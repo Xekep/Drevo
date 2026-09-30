@@ -101,6 +101,8 @@ for (const failure of [
   "broken-stream",
   "forbidden",
   "retry-fails",
+  "token-limit",
+  "token-limit-retry-fails",
 ] as const)
   test(`agent ${failure}: bounded recovery preserves history without duplicate input`, async () => {
     const dir = mkdtempSync(join(tmpdir(), "drevo-ai-recovery-"));
@@ -130,8 +132,21 @@ for (const failure of [
         });
       if (
         requests.length === 2 ||
-        (failure === "retry-fails" && requests.length === 3)
+        (["retry-fails", "token-limit-retry-fails"].includes(failure) &&
+          requests.length === 3)
       ) {
+        if (failure.startsWith("token-limit")) {
+          const limited = {
+            id: "limited",
+            status: "incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+          };
+          return body.stream
+            ? new Response(
+                `data: ${JSON.stringify({ type: "response.incomplete", response: limited })}\n\n`,
+              )
+            : Response.json(limited);
+        }
         if (failure === "forbidden")
           return Response.json(
             { error: { message: "private provider diagnostic" } },
@@ -187,14 +202,18 @@ for (const failure of [
         assert.equal(requests.length, 3);
         assert.equal(requests[2].conversation, "conv-2");
         assert.equal(requests[2].stream, undefined);
+        if (failure.startsWith("token-limit"))
+          assert.equal(requests[2].max_output_tokens, 16000);
         const input = JSON.stringify(requests[2].input);
         assert.match(input, /Ф\.6, Оп\.13, Д\.104/);
         assert.match(input, /Уточните архив/);
         assert.equal((input.match(/да ищи в гасо/g) || []).length, 1);
         assert.match(
           text,
-          failure === "retry-fails" ? /event: error/ : /event: done/,
+          failure.endsWith("retry-fails") ? /event: error/ : /event: done/,
         );
+        if (failure === "token-limit-retry-fails")
+          assert.match(text, /исчерпал лимит/);
       }
       const chat = await fetch(base + `/api/ai/chats/${first.chatId}`).then(
         (res) => res.json(),
@@ -204,6 +223,21 @@ for (const failure of [
           .length,
         failure === "timeout" ? 14 : 2,
       );
+      if (failure === "forbidden" || failure.endsWith("retry-fails")) {
+        assert.doesNotMatch(JSON.stringify(chat.messages), /Служебный статус/);
+        const followup = await fetch(base + "/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chatId: first.chatId,
+            message: "Почему ответ оборвался?",
+          }),
+        });
+        assert.equal(followup.status, 200);
+        const restored = JSON.stringify(requests.at(-1)?.input);
+        assert.match(restored, /Служебный статус предыдущего ответа/);
+        assert.doesNotMatch(restored, /private provider diagnostic|test-key/);
+      }
     } finally {
       await app.close();
       keys.forEach((key, i) => {
@@ -214,70 +248,121 @@ for (const failure of [
     }
   });
 
-test("a timeout after a tool result does not replay the turn", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "drevo-ai-after-tool-"));
-  const env = {
-    YANDEX_AI_API_KEY: "test-key",
-    YANDEX_AI_FOLDER_ID: "folder",
-    YANDEX_AI_MODEL: "model",
-  };
-  const previous = Object.fromEntries(
-    Object.keys(env).map((key) => [key, process.env[key]]),
-  );
-  Object.assign(process.env, env);
-  let conversations = 0,
-    calls = 0;
-  const fake: typeof fetch = async (url, init) => {
-    if (String(url).endsWith("/conversations")) {
-      conversations++;
-      return Response.json({ id: "conv" });
-    }
-    calls++;
-    if (calls === 1)
-      return Response.json({
-        id: "tools",
-        status: "completed",
-        output: [
-          {
-            type: "function_call",
-            call_id: "lookup",
-            name: "get_archive_insights",
-            arguments: "{}",
-          },
-        ],
-      });
-    const body = JSON.parse(String(init?.body));
-    assert.equal(body.input[0].call_id, "lookup");
-    throw new DOMException("Provider timed out", "TimeoutError");
-  };
-  const app = await startServer(
-    0,
-    join(dir, "drevo.sqlite"),
-    true,
-    undefined,
-    fake,
-  );
-  try {
-    const result = await fetch(
-      `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/ai/chat`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "Посчитай людей в архиве" }),
-      },
+for (const failure of [
+  "timeout",
+  "token-limit",
+  "repeated-tool",
+  "empty-recovery",
+] as const)
+  test(`after-tool ${failure}: recovery synthesizes results and never replays tools`, async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drevo-ai-after-tool-"));
+    const env = {
+      YANDEX_AI_API_KEY: "test-key",
+      YANDEX_AI_FOLDER_ID: "folder",
+      YANDEX_AI_MODEL: "model",
+    };
+    const previous = Object.fromEntries(
+      Object.keys(env).map((key) => [key, process.env[key]]),
     );
-    assert.equal(result.status, 502);
-    assert.equal(conversations, 1);
-    assert.equal(calls, 2);
-  } finally {
-    await app.close();
-    for (const key of Object.keys(env)) {
-      if (previous[key] === undefined) delete process.env[key];
-      else process.env[key] = previous[key];
+    Object.assign(process.env, env);
+    let conversations = 0,
+      calls = 0;
+    const fake: typeof fetch = async (url, init) => {
+      if (String(url).endsWith("/conversations")) {
+        conversations++;
+        return Response.json({ id: "conv" });
+      }
+      calls++;
+      if (calls === 1)
+        return Response.json({
+          id: "tools",
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              call_id: "lookup",
+              name: "get_archive_insights",
+              arguments: "{}",
+            },
+          ],
+        });
+      const body = JSON.parse(String(init?.body));
+      if (calls === 3) {
+        assert.deepEqual(body.tools, []);
+        assert.equal(body.tool_choice, "none");
+        assert.match(JSON.stringify(body.input), /get_archive_insights/);
+        assert.match(JSON.stringify(body.input), /completeness/);
+        if (failure === "token-limit")
+          assert.equal(body.max_output_tokens, 16000);
+        if (failure === "repeated-tool")
+          return Response.json({
+            id: "ignored-disabled-tools",
+            status: "completed",
+            output: [
+              {
+                type: "function_call",
+                call_id: "again",
+                name: "get_archive_insights",
+                arguments: "{}",
+              },
+            ],
+          });
+        return Response.json({
+          id: "recovered",
+          status: "completed",
+          output_text:
+            failure === "empty-recovery"
+              ? ""
+              : "Обзор составлен по сохранённым данным.",
+        });
+      }
+      assert.equal(body.input[0].call_id, "lookup");
+      if (failure === "token-limit")
+        return Response.json({
+          id: "limited",
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+        });
+      throw new DOMException("Provider timed out", "TimeoutError");
+    };
+    const app = await startServer(
+      0,
+      join(dir, "drevo.sqlite"),
+      true,
+      undefined,
+      fake,
+    );
+    try {
+      const result = await fetch(
+        `http://127.0.0.1:${(app.server.address() as { port: number }).port}/api/ai/chat`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Посчитай людей в архиве" }),
+        },
+      );
+      assert.equal(result.status, failure === "repeated-tool" ? 502 : 200);
+      assert.equal(conversations, 2);
+      assert.equal(calls, 3);
+      const payload = await result.json();
+      if (failure === "repeated-tool")
+        assert.match(payload.error, /Повторные действия не выполнялись/);
+      else
+        assert.match(
+          payload.answer,
+          failure === "empty-recovery"
+            ? /Не удалось завершить ответ/
+            : /сохранённым данным/,
+        );
+    } finally {
+      await app.close();
+      for (const key of Object.keys(env)) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+      rmSync(dir, { recursive: true, force: true });
     }
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  });
 
 for (const exhausted of [false, true])
   test(`external search budget retains sources (agent exhausted: ${exhausted})`, async () => {
@@ -326,6 +411,10 @@ for (const exhausted of [false, true])
         });
       }
       agentCalls++;
+      if (agentCalls === 9) {
+        assert.deepEqual(body.tools, []);
+        assert.equal(body.tool_choice, "none");
+      }
       if (agentCalls >= 4)
         assert.equal(
           body.tools.some(

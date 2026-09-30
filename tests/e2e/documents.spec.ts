@@ -36,6 +36,10 @@ test("PDF без привязки остаётся в общем каталог�
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
+  await expect(page).toHaveURL(/\/documents\?documentId=[a-f0-9-]{36}$/);
+  const documentUrl = page.url();
+  await page.reload();
+  await expect(reader).toBeVisible();
   await reader.getByText("Сведения о документе").click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
   await reader.getByRole("button", { name: "Редактировать сведения о документе" }).click();
@@ -49,6 +53,7 @@ test("PDF без привязки остаётся в общем каталог�
   });
   await expect(group.locator(".document-item").filter({ hasText: title })).toBeVisible();
   await group.locator(".document-item").filter({ hasText: title }).click();
+  await expect(page).toHaveURL(documentUrl);
   await reader.getByText("Сведения о документе").click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.105")).toBeVisible();
 });
@@ -128,6 +133,7 @@ test("из карточки человека открываются только
     page.getByRole("dialog", { name: `Документ: ${title}` }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Закрыть документ" }).click();
+  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
   await expect(
     page.locator(".document-item").filter({ hasText: title }),
   ).toBeVisible();
@@ -139,7 +145,8 @@ test("из карточки человека открываются только
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toBeVisible();
   await page.goBack();
-  await page.getByRole("button", { name: "Закрыть документ" }).click();
+  await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
+  await expect(page.getByRole("dialog", { name: `Документ: ${title}` })).toHaveCount(0);
   await expect(
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toHaveCount(0);

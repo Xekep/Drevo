@@ -51,7 +51,11 @@ export function ShareDialog({
           anchorId: anchor.id,
           personIds: people.map((p) => p.id),
           durationHours: hours,
-          title: `Семья: ${anchor.name} ${anchor.surname}`.slice(0, 200),
+          title:
+            `${people.length === 1 ? "Человек" : "Семья"}: ${anchor.name} ${anchor.surname}`.slice(
+              0,
+              200,
+            ),
         }),
       });
       const data = await response.json();
@@ -68,7 +72,7 @@ export function ShareDialog({
   }
   return (
     <EditorDialog
-      title="Поделиться семьёй"
+      title={people.length === 1 ? "Поделиться человеком" : "Поделиться семьёй"}
       className="share-dialog"
       onClose={() => {
         if (!busy) onClose();
@@ -103,7 +107,9 @@ export function ShareDialog({
           </select>
         </label>
         <p className="field-hint">
-          Только выбранная семья. Ссылку можно отозвать в админке.
+          {people.length === 1
+            ? "По ссылке доступен только этот человек. Ссылка не публикует его в поиске."
+            : "Только выбранная семья. Ссылку можно отозвать в админке."}
         </p>
         <button className="primary-action" disabled={busy}>
           {copied ? (

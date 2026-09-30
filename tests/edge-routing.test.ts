@@ -11,6 +11,7 @@ import {
   routeKey,
   segmentHitsBox,
   roundedRoute,
+  relaxAdditionalRoute,
   type EdgeRoute,
 } from "../src/domain/edge-routing.ts";
 import { segmentsCross, type Point } from "../src/domain/layout-order.ts";
@@ -339,4 +340,53 @@ test("exhausting optional optimization cannot suppress a mandatory route through
   );
   verifyRoutes(positions, routes);
   assert.equal(searchBudget.remaining, 0);
+});
+
+test("additional relation can use a diagonal without crossing cards", () => {
+  const route: EdgeRoute = {
+    sourceHandle: "bottom",
+    targetHandle: "top",
+    points: [
+      { x: 110, y: 84 },
+      { x: 110, y: 180 },
+      { x: 410, y: 180 },
+      { x: 410, y: 400 },
+    ],
+  };
+  const cards = [
+    { left: 0, right: 220, top: 0, bottom: 84 },
+    { left: 300, right: 520, top: 400, bottom: 484 },
+  ];
+  assert.deepEqual(relaxAdditionalRoute(route, cards).points, [
+    route.points[0],
+    route.points[3],
+  ]);
+  const familyRail: EdgeRoute = {
+    sourceHandle: "bottom",
+    targetHandle: "top",
+    points: [{ x: 150, y: 250 }, { x: 300, y: 250 }],
+  };
+  assert.deepEqual(relaxAdditionalRoute(route, cards, [familyRail]).points, [
+    route.points[0],
+    route.points[2],
+    route.points[3],
+  ]);
+  assert.deepEqual(route.points, [
+    { x: 110, y: 84 },
+    { x: 110, y: 180 },
+    { x: 410, y: 180 },
+    { x: 410, y: 400 },
+  ]);
+
+  const obstacle = { left: 240, right: 280, top: 205, bottom: 285 };
+  assert.deepEqual(relaxAdditionalRoute(route, [...cards, obstacle]).points, [
+    route.points[0],
+    route.points[2],
+    route.points[3],
+  ]);
+  const wall = { left: 200, right: 300, top: 100, bottom: 170 };
+  assert.deepEqual(
+    relaxAdditionalRoute(route, [...cards, obstacle, wall]).points,
+    route.points,
+  );
 });

@@ -10,6 +10,7 @@ export type AiRoleProfile = {
   photoAnalysisEnabled: boolean;
   proposalsEnabled: boolean;
   pdfEnabled: boolean;
+  codeInterpreterEnabled: boolean;
   requestsPerMinute: number;
   dailyRequests: number;
   dailyTokens: number;
@@ -27,6 +28,7 @@ export const AI_CAPABILITY_LABELS = {
   photoAnalysisEnabled: "Анализ фотографий",
   proposalsEnabled: "Предложения изменений в архиве",
   pdfEnabled: "Создание PDF-отчётов",
+  codeInterpreterEnabled: "Вычисления Python и файлы",
 } as const;
 
 export function inheritedAiRoleProfiles(): AiRoleProfiles {

@@ -56,6 +56,7 @@ export async function prepareTreeExport(
   white: boolean,
   actions: ContextType<typeof TreeActions>,
   signal?: AbortSignal,
+  extraVisible = false,
 ): Promise<ExportTree> {
   if (!visible.size) throw new Error("В выбранной области нет людей.");
   const geometry = await exportGeometry(family, visible, reverse, signal);
@@ -87,7 +88,7 @@ export async function prepareTreeExport(
     highlighted: [],
     canEdit: false,
     busy: false,
-    extraVisible: true,
+    extraVisible,
     preview: null,
     onEdge: () => {},
     onChoices: () => {},

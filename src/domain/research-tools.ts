@@ -1,6 +1,11 @@
 import { ageLabel, dateBound, fullName, hasRecordedDeath } from "./dates.ts";
 import { analyzeFamilyInsights } from "./family-insights.ts";
 import { lifespanStatistics } from "./lifespan-statistics.ts";
+import {
+  DISTRIBUTION_DIMENSIONS,
+  distributionStatistics,
+  type DistributionDimension,
+} from "./distribution-statistics.ts";
 import { analyzeKinship } from "./kinship-analysis.ts";
 import { findPossibleDuplicates } from "./duplicate-analysis.ts";
 import { archiveConnections } from "./connections.ts";
@@ -150,6 +155,23 @@ const objectSchema = (
 
 export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
+    name: "get_distribution_statistics",
+    description:
+      "Точно посчитать частоты и энтропию Шеннона в битах по всей доступной выборке. Выбери признак: фамилия, поколение, пол, десятилетие рождения, место рождения, число известных родителей. Для неоднозначной «энтропии древа» объясни выбранное определение или уточни его. Это не оценка документальных доказательств. Не считай по усечённой странице list_people.",
+    scope: "analysis:read",
+    inputSchema: objectSchema(
+      {
+        dimension: {
+          type: "string",
+          enum: [...DISTRIBUTION_DIMENSIONS],
+          description:
+            "Признак распределения; неизвестные значения исключаются с явным счётчиком missing.",
+        },
+      },
+      ["dimension"],
+    ),
+  },
+  {
     name: "list_people",
     description:
       "Получить одну страницу людей, доступных пользователю в архиве. hasMore=true означает, что страница неполная; для исчерпывающего списка запрашивай следующие страницы. Используй для просьб перечислить людей; для подсчётов по датам используй get_birth_statistics, для конкретного человека — search_people.",
@@ -185,11 +207,12 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   {
     name: "get_evidence_coverage",
     description:
-      "Оценить покрытие источниками карточек, событий и наград человека или фамильной группы. Источник карточки связан с карточкой целиком и не доказывает отдельно каждую дату или родство.",
+      "Оценить покрытие источниками всего доступного архива, человека или фамильной группы. summary охватывает всю выборку; records — страница. Источник карточки не доказывает каждую дату или родство. Содержимое PDF этот инструмент не проверяет, итоговую доказанность исследования по счётчикам не устанавливай.",
     scope: "sources:read",
     inputSchema: objectSchema({
       personId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
+      offset: { type: "integer", minimum: 0, default: 0 },
       limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
     }),
   },
@@ -449,9 +472,12 @@ export const RESEARCH_TOOL_DEFINITIONS: ResearchToolDefinition[] = [
   },
   {
     name: "get_lifespan_statistics",
-    description: "Рассчитать среднюю продолжительность завершённых жизней по поколениям с размером выборки, пропусками и точностью дат. По умолчанию включает детские смерти. Возвращает готовый mermaid для диаграммы; вставляй его без изменения чисел в блок ```mermaid. Живые люди не считаются умершими, неполная страница list_people не нужна.",
+    description:
+      "Рассчитать среднюю продолжительность завершённых жизней по поколениям с размером выборки, пропусками и точностью дат. По умолчанию включает детские смерти. Возвращает готовый mermaid для диаграммы; вставляй его без изменения чисел в блок ```mermaid. Живые люди не считаются умершими, неполная страница list_people не нужна.",
     scope: "analysis:read",
-    inputSchema: objectSchema({ adultsOnly: { type: "boolean", default: false } }),
+    inputSchema: objectSchema({
+      adultsOnly: { type: "boolean", default: false },
+    }),
   },
 ];
 
@@ -1053,6 +1079,12 @@ export function executeResearchTool(
       ? (rawArgs as Record<string, unknown>)
       : {};
 
+  if (name === "get_distribution_statistics")
+    return distributionStatistics(
+      family,
+      stringArg(args, "dimension") as DistributionDimension,
+    );
+
   if (name === "get_surname_group")
     return surnameGroup(family, stringArg(args, "surname"));
 
@@ -1095,12 +1127,37 @@ export function executeResearchTool(
         sourceCount: award.source ? 1 : 0,
       })),
     }));
-    if (name === "get_evidence_coverage")
+    if (name === "get_evidence_coverage") {
+      const offset = numberArg(args, "offset", 0, 0, 1_000_000);
+      const events = records.flatMap((record) => record.events);
+      const awards = records.flatMap((record) => record.awards);
       return {
         total: records.length,
-        records: records.slice(0, limit),
-        note: "Источники карточки не привязаны к отдельным полям; автоматически подтвердить конкретный факт по ним нельзя.",
+        summary: {
+          peopleWithCardSources: records.filter(
+            (record) => record.cardSourceCount > 0,
+          ).length,
+          peopleWithoutCardSources: records.filter(
+            (record) => record.cardSourceCount === 0,
+          ).length,
+          cardSourceCount: records.reduce(
+            (sum, record) => sum + record.cardSourceCount,
+            0,
+          ),
+          events: events.length,
+          eventsWithSources: events.filter((event) => event.sourceCount > 0)
+            .length,
+          awards: awards.length,
+          awardsWithSources: awards.filter((award) => award.sourceCount > 0)
+            .length,
+        },
+        offset,
+        records: records.slice(offset, offset + limit),
+        hasMore: offset + limit < records.length,
+        documentContentInspected: false,
+        note: "Источники карточки не привязаны к отдельным полям; автоматически подтвердить конкретный факт по ним нельзя. Сводка охватывает всю выборку, records — только страницу. Отдельный каталог PDF и содержимое документов здесь не проверены: отсутствие источников в карточке не означает отсутствие документов или недостаточность исследования.",
       };
+    }
     const gaps = records.flatMap((record) => [
       ...(!record.cardSourceCount && record.knownFacts.length
         ? [{ person: record.person, kind: "card", facts: record.knownFacts }]
@@ -1284,9 +1341,10 @@ export function executeResearchTool(
             person: cleanPerson(candidate),
             sharedParentIds,
             kind: sharedParentIds.length >= 2 ? "full" : "half_or_unknown",
-            description: sharedParentIds.length >= 2
-              ? "Известны как минимум два общих родителя."
-              : "Известен один общий родитель. Не называй их полнородными без сведений о втором родителе.",
+            description:
+              sharedParentIds.length >= 2
+                ? "Известны как минимум два общих родителя."
+                : "Известен один общий родитель. Не называй их полнородными без сведений о втором родителе.",
           },
         ];
       });
@@ -1958,7 +2016,8 @@ export function executeResearchTool(
       totals: insights.totals,
       completeness: insights.completeness,
       generationDistribution: insights.generations,
-      averageLifespanMethod: "averageLifespan в generationDistribution — историческая метрика только умерших не младше 18 лет, по разнице годов. Для анализа продолжительности жизни используй get_lifespan_statistics с явной выборкой и точностью дат.",
+      averageLifespanMethod:
+        "averageLifespan в generationDistribution — историческая метрика только умерших не младше 18 лет, по разнице годов. Для анализа продолжительности жизни используй get_lifespan_statistics с явной выборкой и точностью дат.",
       facts: insights.facts,
       topSurnames: insights.topSurnames,
       topNames: insights.topNames,

@@ -61,8 +61,14 @@ type Props = {
   onDropPhoto: (file: File) => void;
   documentPersonFilter: string | null;
   documentId: string | null;
+  onSelectDocument: (id: string | null) => void;
   personFilter: string | null;
-  onClearPhotoFilter: () => void;
+  yearFilter: string | null;
+  onSelectPhotoAlbum: (
+    personId: string | null,
+    year: string | null,
+    replace?: boolean,
+  ) => void;
 };
 
 type BoundaryProps = { children: ReactNode };
@@ -134,6 +140,7 @@ export function ArchiveSection(props: Props) {
   else if (props.view === "gallery")
     content = (
       <Gallery
+        key={props.personFilter ? `person:${props.personFilter}` : "all"}
         family={props.family}
         canEdit={props.canEdit}
         mayEdit={props.mayEdit}
@@ -141,7 +148,8 @@ export function ArchiveSection(props: Props) {
         onDropPhoto={props.onDropPhoto}
         onOpen={props.onPhoto}
         personFilter={props.personFilter}
-        onClearFilter={props.onClearPhotoFilter}
+        yearFilter={props.yearFilter}
+        onSelectAlbum={props.onSelectPhotoAlbum}
       />
     );
   else if (props.view === "documents")
@@ -153,6 +161,7 @@ export function ArchiveSection(props: Props) {
         }
         personFilter={props.documentPersonFilter}
         documentId={props.documentId}
+        onSelectDocument={props.onSelectDocument}
         people={props.people}
       />
     );

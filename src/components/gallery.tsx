@@ -19,7 +19,8 @@ export function Gallery({
   onOpen,
   onDropPhoto,
   personFilter,
-  onClearFilter,
+  yearFilter,
+  onSelectAlbum,
 }: {
   family: Family;
   canEdit: boolean;
@@ -28,12 +29,16 @@ export function Gallery({
   onOpen: (id: string, photoIds: string[]) => void;
   onDropPhoto: (file: File) => void;
   personFilter?: string | null;
-  onClearFilter: () => void;
+  yearFilter?: string | null;
+  onSelectAlbum: (
+    personId: string | null,
+    year: string | null,
+    replace?: boolean,
+  ) => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState("");
   const [mode, setMode] = useState<"all" | "people" | "years">("people"),
-    [albumId, setAlbumId] = useState(""),
     [limit, setLimit] = useState(30);
   useEffect(() => {
     if (!canEdit) return;
@@ -112,11 +117,18 @@ export function Gallery({
     (photo) =>
       !personFilter || photo.tags.some((t) => t.personId === personFilter),
   );
+  const activeMode = yearFilter
+    ? "years"
+    : personFilter && mode === "people"
+      ? "all"
+      : mode;
   const albums =
-    mode === "all" ? [] : photoAlbums(available, family.people, mode);
-  const album = albums.find((item) => item.id === albumId);
+    activeMode === "all" ? [] : photoAlbums(available, family.people, activeMode);
+  const album = yearFilter
+    ? albums.find((item) => item.id === yearFilter)
+    : null;
   const photos = album ? album.photos : newestPhotos(available);
-  const browsingAlbums = mode !== "all" && !album;
+  const browsingAlbums = activeMode !== "all" && !album;
   const filterPerson = family.people.find((p) => p.id === personFilter);
   return (
     <section className="gallery-view" aria-label="Галерея семейных фотографий">
@@ -148,7 +160,15 @@ export function Gallery({
             )}
           </h1>
           {personFilter && (
-            <button onClick={onClearFilter}>Показать все фотографии</button>
+            <button
+              onClick={() => {
+                setMode("people");
+                setLimit(30);
+                onSelectAlbum(null, null);
+              }}
+            >
+              Показать все фотографии
+            </button>
           )}
           <p>
             На фотографиях отмечены родственники. Откройте снимок, чтобы
@@ -163,18 +183,21 @@ export function Gallery({
             {(
               [
                 ["all", "Все · по добавлению", "Все"],
-                ["people", "По людям", "Люди"],
+                ...(!personFilter
+                  ? [["people", "По людям", "Люди"] as const]
+                  : []),
                 ["years", "По годам", "Годы"],
               ] as const
             ).map(([value, label, compactLabel]) => (
               <button
                 key={value}
                 aria-label={label}
-                aria-pressed={mode === value}
+                aria-pressed={activeMode === value}
                 onClick={() => {
                   setMode(value);
-                  setAlbumId("");
                   setLimit(30);
+                  if (yearFilter)
+                    onSelectAlbum(personFilter || null, null, true);
                 }}
               >
                 <span className="gallery-mode-label">{label}</span>
@@ -196,7 +219,8 @@ export function Gallery({
         <div className="album-heading">
           <button
             onClick={() => {
-              setAlbumId("");
+              setMode("years");
+              onSelectAlbum(personFilter || null, null, true);
               setLimit(30);
             }}
           >
@@ -225,7 +249,12 @@ export function Gallery({
             <button
               key={item.id}
               onClick={() => {
-                setAlbumId(item.id);
+                if (activeMode === "people") {
+                  setMode("all");
+                  onSelectAlbum(item.id, null);
+                } else {
+                  onSelectAlbum(personFilter || null, item.id);
+                }
                 setLimit(30);
               }}
             >

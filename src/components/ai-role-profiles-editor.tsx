@@ -132,6 +132,13 @@ export function AiRoleProfilesEditor({
                 >
                   <span>
                     <b>{label}</b>
+                    {capability === "codeInterpreterEnabled" && (
+                      <small>
+                        Расчёты и графики в изолированной среде Yandex, на
+                        модели этой роли. Используются только доступные человеку
+                        данные; расходуется бюджет ИИ.
+                      </small>
+                    )}
                     {capability === "proposalsEnabled" && (
                       <small>
                         Только в пределах прав пользователя; каждое изменение

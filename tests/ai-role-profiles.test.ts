@@ -41,7 +41,23 @@ test("role profiles inherit old settings, override models and capabilities, vali
       const runtime = await aiRuntimeConfig(settings, role);
       assert.equal(runtime.modelUri, "gpt://folder/base");
       assert.equal(runtime.userLimits, null);
+      assert.equal(runtime.capabilities.codeInterpreter, false);
     }
+    const legacy = { ...defaultAiRoleProfile(common) };
+    delete (legacy as Partial<typeof legacy>).codeInterpreterEnabled;
+    await settings.write(
+      {
+        ...common,
+        codeInterpreterEnabled: true,
+        roleProfiles: { ...common.roleProfiles, researcher: legacy },
+      },
+      admin,
+    );
+    assert.equal(
+      (await aiRuntimeConfig(settings, "researcher")).capabilities
+        .codeInterpreter,
+      false,
+    );
     const profile = {
       ...defaultAiRoleProfile(common),
       model: "research-model",
@@ -49,11 +65,13 @@ test("role profiles inherit old settings, override models and capabilities, vali
       webSearchEnabled: true,
       globalSearchEnabled: false,
       pdfEnabled: false,
+      codeInterpreterEnabled: false,
       dailyRequests: 30,
     };
     await settings.write(
       {
         ...common,
+        codeInterpreterEnabled: true,
         roleProfiles: { ...common.roleProfiles, researcher: profile },
       },
       admin,
@@ -63,6 +81,12 @@ test("role profiles inherit old settings, override models and capabilities, vali
     assert.equal(runtime.webSearchEnabled, true);
     assert.equal(runtime.capabilities.globalSearch, false);
     assert.equal(runtime.capabilities.pdf, false);
+    assert.equal(runtime.capabilities.codeInterpreter, false);
+    assert.equal(
+      (await aiRuntimeConfig(settings, "relative")).capabilities
+        .codeInterpreter,
+      true,
+    );
     assert.equal(runtime.userLimits?.dailyRequests, 30);
     assert.equal(runtime.limits.dailyRequests, 100);
     assert.equal(
@@ -88,6 +112,7 @@ test("role profiles inherit old settings, override models and capabilities, vali
       { researcher: { ...profile, apiKey: "must-not-be-stored" } },
       { researcher: { ...profile, dailyRequests: -1 } },
       { researcher: { ...profile, pdfEnabled: "false" } },
+      { researcher: { ...profile, codeInterpreterEnabled: "false" } },
       { researcher: { ...profile, model: "bad model" } },
     ]) {
       await assert.rejects(

@@ -19,6 +19,7 @@ for (const failStream of [false, true])
     );
     Object.assign(process.env, env);
     let calls = 0,
+      searchCalls = 0,
       cancelled = false;
     let enter = () => {},
       release = () => {};
@@ -34,14 +35,29 @@ for (const failStream of [false, true])
       const body = JSON.parse(String(init?.body));
       if (
         body.tools.some((tool: { type: string }) => tool.type === "web_search")
-      )
+      ) {
+        searchCalls++;
         return Response.json({
           status: "incomplete",
           incomplete_details: { reason: "max_output_tokens" },
           output: [],
           usage: { input_tokens: 10, output_tokens: 2000 },
         });
+      }
       calls++;
+      if (calls === 3 && failStream) {
+        assert.deepEqual(body.tools, []);
+        assert.equal(body.tool_choice, "none");
+        assert.match(JSON.stringify(body.input), /WEB_SEARCH_INCOMPLETE/);
+        return Response.json(
+          {
+            error: {
+              message: "Error in input stream " + env.YANDEX_AI_API_KEY,
+            },
+          },
+          { status: 502 },
+        );
+      }
       if (calls === 2) {
         const result = JSON.parse(body.input[0].output);
         assert.equal(result.error, "WEB_SEARCH_INCOMPLETE");
@@ -144,9 +160,10 @@ for (const failStream of [false, true])
       );
       assert.equal(
         calls,
-        2,
-        "do not replay tool outputs or duplicate the turn on upstream failure",
+        failStream ? 3 : 2,
+        "allow one synthesis recovery without repeating the search",
       );
+      assert.equal(searchCalls, 1);
       const frame = text
         .split("\n\n")
         .find((frame) => frame.startsWith("event: chat"))!;
