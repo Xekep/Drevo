@@ -7,6 +7,8 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   const people = process.env.DREVO_LAYOUT_SCALE_PEOPLE === "500"
     ? randomFamily(1, 6) : randomFamily(5, 9);
   const withPortraits = !!process.env.DREVO_LAYOUT_SCALE_PORTRAITS;
+  let releaseThumbs = () => {};
+  const thumbGate = new Promise<void>((resolve) => { releaseThumbs = resolve; });
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -28,12 +30,14 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     data.user.personId = process.env.DREVO_LAYOUT_SCALE_KINSHIP ? people[0].id : null;
     await route.fulfill({ response, json: data });
   });
-  if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=*", (route) =>
-    route.fulfill({
+  if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=*", async (route) => {
+    if (process.env.DREVO_LAYOUT_SCALE_SLOW_THUMB && route.request().url().includes("variant=thumb"))
+      await thumbGate;
+    await route.fulfill({
       contentType: "image/svg+xml",
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#688a70"/></svg>',
-    }),
-  );
+    });
+  });
   if (withPortraits && process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
     await page.addInitScript((personId) => {
       const state: { first: { loaded: boolean; zoom: number } | null } = { first: null };
@@ -116,6 +120,44 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     else expect(result.distantPortraits).toBe(0);
   }
   console.log(`scale-browser ${JSON.stringify(result)}`);
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT) {
+    await expect.poll(() => page.evaluate(() => Number(
+      document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0,
+    ))).toBeGreaterThan(100);
+    const initial = await page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")!;
+      const context = canvas.getContext("2d")!;
+      const matches = (avatar: Element) => {
+        const box = avatar.getBoundingClientRect();
+        const canvasBox = canvas.getBoundingClientRect();
+        const x = Math.round((box.x + box.width / 2 - canvasBox.x) * canvas.width / canvasBox.width);
+        const y = Math.round((box.y + box.height / 2 - canvasBox.y) * canvas.height / canvasBox.height);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return false;
+        const color = context.getImageData(x, y, 1, 1).data;
+        return color[0] >= 95 && color[0] <= 115 &&
+          color[1] >= 128 && color[1] <= 148 &&
+          color[2] >= 102 && color[2] <= 122;
+      };
+      const candidates = [...document.querySelectorAll(".flow-person.is-distant .person-avatar")];
+      const avatar = candidates.find((item) => {
+        const box = item.getBoundingClientRect();
+        return box.x > 80 && box.right < innerWidth - 200 &&
+          box.y > 80 && box.bottom < innerHeight - 120 && matches(item);
+      });
+      if (!avatar) return false;
+      const state = { active: true, samples: 0, matched: 0 };
+      const sample = () => {
+        if (!state.active) return;
+        state.samples++;
+        if (matches(avatar)) state.matched++;
+        requestAnimationFrame(sample);
+      };
+      Object.assign(window, { __portraitAlignment: state, __portraitTick: sample });
+      requestAnimationFrame(sample);
+      return true;
+    });
+    expect(initial).toBe(true);
+  }
   const pane = page.locator(".react-flow__pane");
   await expect(pane).toBeVisible();
   const box = await pane.boundingBox();
@@ -148,6 +190,64 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     });
     console.log(`scale-pan ${JSON.stringify(frames)}`);
     expect(frames.count).toBeGreaterThan(0);
+    if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT) {
+      const alignment = await page.evaluate(() => {
+        const state = (window as typeof window & { __portraitAlignment: {
+          active: boolean; samples: number; matched: number;
+        } }).__portraitAlignment;
+        state.active = false;
+        return { samples: state.samples, matched: state.matched };
+      });
+      console.log(`scale-portrait-alignment ${JSON.stringify(alignment)}`);
+      expect(alignment.samples).toBeGreaterThan(10);
+      expect(alignment.matched / alignment.samples).toBeGreaterThan(0.8);
+    }
+  }
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT) {
+    await page.evaluate(() => {
+      const tracker = window as typeof window & { __portraitAlignment: {
+        active: boolean; samples: number; matched: number;
+      }; __portraitTick: () => void };
+      Object.assign(tracker.__portraitAlignment, { active: true, samples: 0, matched: 0 });
+      requestAnimationFrame(tracker.__portraitTick);
+    });
+    await page.locator(".flow-camera-tools button").nth(1).click();
+    await page.waitForTimeout(200);
+    const zoomAlignment = await page.evaluate(() => {
+      const state = (window as typeof window & { __portraitAlignment: {
+        active: boolean; samples: number; matched: number;
+      } }).__portraitAlignment;
+      state.active = false;
+      return { samples: state.samples, matched: state.matched };
+    });
+    console.log(`scale-portrait-zoom-alignment ${JSON.stringify(zoomAlignment)}`);
+    expect(zoomAlignment.samples).toBeGreaterThan(5);
+    expect(zoomAlignment.matched / zoomAlignment.samples).toBeGreaterThan(0.8);
+  }
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_SLOW_THUMB) {
+    const zoomIn = page.locator(".flow-camera-tools button").nth(1);
+    for (let index = 0; index < 16; index++) {
+      const zoom = await page.locator(".react-flow__viewport").evaluate((element) =>
+        new DOMMatrix(getComputedStyle(element).transform).a);
+      if (zoom >= 0.18) break;
+      await zoomIn.click();
+    }
+    const handoff = await page.evaluate(() => ({
+      zoom: new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")!).transform).a,
+      canvasVisible: getComputedStyle(document.querySelector(".tree-distant-portraits")!).visibility === "visible",
+      pendingThumbs: [...document.querySelectorAll<HTMLImageElement>(".flow-person .person-avatar img")]
+        .filter((image) => !image.complete).length,
+    }));
+    console.log(`scale-portrait-handoff ${JSON.stringify(handoff)}`);
+    expect(handoff.zoom).toBeGreaterThanOrEqual(0.18);
+    expect(handoff.pendingThumbs).toBeGreaterThan(0);
+    expect(handoff.canvasVisible).toBe(true);
+    releaseThumbs();
+    await expect.poll(() => page.evaluate(() =>
+      [...document.querySelectorAll<HTMLImageElement>(".flow-person .person-avatar img")]
+        .filter((image) => !image.complete).length,
+    ), { timeout: 20_000 }).toBe(0);
+    await expect(page.locator(".tree-distant-portraits")).toHaveCSS("visibility", "hidden");
   }
   if (process.env.DREVO_LAYOUT_SCALE_SCREENSHOT) {
     const zoomIn = page.locator(".flow-camera-tools button").nth(1);

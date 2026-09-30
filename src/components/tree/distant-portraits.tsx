@@ -95,10 +95,36 @@ export function DistantPortraits({
     let frame = 0;
     let settleTimer = 0;
     let base = store.getState().transform;
+    let handingOff = false;
+    const normalPortraitsReady = () => {
+      const root = canvas.closest(".tree-canvas");
+      if (!root?.querySelector(".flow-person:not(.is-distant)")) return false;
+      const images = root.querySelectorAll<HTMLImageElement>(
+        ".flow-person:not(.is-distant) .person-avatar img",
+      );
+      return [...images].every((image) => image.complete);
+    };
+    const transformTo = ([x, y, zoom]: number[]) => {
+      const scale = zoom / base[2];
+      const dx = x - base[0] * scale + OVERSCAN * (1 - scale);
+      const dy = y - base[1] * scale + OVERSCAN * (1 - scale);
+      canvas.style.transform = `matrix(${scale}, 0, 0, ${scale}, ${dx}, ${dy})`;
+    };
     const draw = () => {
       frame = 0;
       window.clearTimeout(settleTimer);
-      base = store.getState().transform;
+      const transform = store.getState().transform;
+      if (transform[2] >= 0.18 && handingOff) {
+        if (!normalPortraitsReady()) {
+          settleTimer = window.setTimeout(schedule, 60);
+          return;
+        }
+        handingOff = false;
+        canvas.style.visibility = "hidden";
+        base = transform;
+        return;
+      }
+      base = transform;
       canvas.style.transform = "";
       context.clearRect(0, 0, canvas.width, canvas.height);
       const [tx, ty, zoom] = base;
@@ -148,19 +174,25 @@ export function DistantPortraits({
       }
       const [x, y, zoom] = state.transform;
       if (zoom >= 0.18) {
-        canvas.style.visibility = "hidden";
-        base = state.transform;
+        if (base[2] < 0.18 && Number(canvas.dataset.portraitCount) > 0) {
+          handingOff = true;
+          canvas.style.visibility = "visible";
+          transformTo(state.transform);
+          window.clearTimeout(settleTimer);
+          settleTimer = window.setTimeout(schedule, 60);
+        } else {
+          canvas.style.visibility = "hidden";
+          base = state.transform;
+        }
         return;
       }
+      handingOff = false;
       canvas.style.visibility = "visible";
       if (base[2] >= 0.18) {
         schedule();
         return;
       }
-      const scale = zoom / base[2];
-      const dx = x - base[0] * scale + OVERSCAN * (1 - scale);
-      const dy = y - base[1] * scale + OVERSCAN * (1 - scale);
-      canvas.style.transform = `matrix(${scale}, 0, 0, ${scale}, ${dx}, ${dy})`;
+      transformTo([x, y, zoom]);
       window.clearTimeout(settleTimer);
       settleTimer = window.setTimeout(schedule, 120);
     });
