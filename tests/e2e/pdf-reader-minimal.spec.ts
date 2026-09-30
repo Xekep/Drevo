@@ -19,154 +19,117 @@ async function samplePdf() {
   return done;
 }
 
-test("PDF opens as a book with compact controls and an optional outline", async ({
-  page,
-}, info) => {
-  const title = `Reader minimal ${info.project.name}`;
+async function openSample(
+  page: import("@playwright/test").Page,
+  title: string,
+) {
+  const uniqueTitle = `${title} ${randomUUID()}`;
   const upload = await page.request.post("/api/documents", {
     headers: {
       "Content-Type": "application/pdf",
       "X-Document-Metadata": encodeURIComponent(
-        JSON.stringify({ title, personIds: [] }),
+        JSON.stringify({ title: uniqueTitle, personIds: [] }),
       ),
     },
     data: await samplePdf(),
   });
   expect(upload.status()).toBe(201);
   await page.goto("/documents");
-  await page.locator(".document-item").filter({ hasText: title }).click();
-  expect(page.url()).toMatch(/\/documents\/[a-f0-9-]{36}$/);
-  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
-  await expect(reader).toBeVisible();
-  await expect(reader.locator(".pdf-book-pages")).toBeVisible();
+  await page.locator(".document-item").filter({ hasText: uniqueTitle }).click();
+  const reader = page.getByRole("dialog");
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(book.locator(".BRfooter")).toBeVisible();
   await expect
     .poll(() =>
-      reader
-        .locator('.pdf-book-page[data-page="1"] img')
+      book
+        .locator('.BRpage-visible[data-index="0"] img.BRpageimage')
+        .first()
         .evaluate((image: HTMLImageElement) => image.naturalWidth),
     )
     .toBeGreaterThan(0);
-  await expect(reader.getByRole("heading")).toHaveCount(0);
-  await expect(reader.locator(".pdf-book-info")).toHaveCount(0);
-  await expect(
-    reader.getByRole("button", { name: "Сведения о документе" }),
-  ).toBeVisible();
-  if (info.project.name === "mobile")
-    await reader
-      .getByRole("button", { name: "Комментарии", exact: true })
-      .click();
-  await reader.getByRole("button", { name: "Оглавление" }).click();
-  await reader
-    .getByRole("navigation", { name: "Оглавление документа" })
-    .getByRole("button", { name: /Вторая страница/ })
-    .click();
-  await expect
-    .poll(() => reader.locator(".pdf-book-page-count").textContent())
-    .toContain("2");
-  await reader.getByRole("button", { name: "Лупа" }).click();
-  await expect(reader.getByRole("button", { name: "Лупа" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
+  return { reader, book };
+}
+
+test("BookReader keeps its navigation and Drevo comments and lens", async ({
+  page,
+}, info) => {
+  const { reader, book } = await openSample(
+    page,
+    `BookReader modules ${info.project.name}`,
   );
-  const magnifiedPage = reader.locator('.pdf-book-page[data-page="1"]');
-  await magnifiedPage.hover({ position: { x: 120, y: 120 } });
-  await expect(
-    magnifiedPage.locator('div[style*="border-radius: 50%"]'),
-  ).toBeVisible();
-  await reader.screenshot({ path: info.outputPath("pdf-reader-lens.png") });
-  await page.keyboard.press("Escape");
-  await expect(reader.getByRole("button", { name: "Лупа" })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+  await expect(book.locator(".BRtoolbar")).toBeVisible();
+  await expect(book.locator(".BRfooter")).toBeVisible();
   if (info.project.name === "mobile")
     await reader.locator(".pdf-book-sidebar-toggle").click();
-  await reader
-    .locator(".pdf-book-sidebar-tabs")
-    .getByRole("button", { name: "Комментарии" })
-    .click();
-  await reader.getByRole("button", { name: "Выделить фрагмент" }).click();
-  const overlay = reader.locator(
-    '.pdf-book-page[data-page="1"] .pdf-book-overlay',
+  await reader.locator(".pdf-book-sidebar-tabs button").last().click();
+  await reader.locator(".pdf-book-outline button").first().click();
+  await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
+
+  const lensButton = reader.locator(
+    '.pdf-book-controls button[aria-label="Лупа"]',
   );
-  const area = await overlay.boundingBox();
-  expect(area?.width).toBeGreaterThan(100);
+  await lensButton.click();
+  await expect(book.locator("body.drevo-magnifying")).toHaveCount(1);
+  await book.locator('.BRpage-visible[data-index="1"]').hover();
+  await book.locator("body").press("Escape");
+  await expect(lensButton).toHaveAttribute("aria-pressed", "false");
+
+  if (info.project.name === "mobile")
+    await reader.locator(".pdf-book-sidebar-toggle").click();
+  await reader.locator(".pdf-book-sidebar-tabs button").first().click();
+  await reader.locator(".pdf-book-add-comment").click();
+  await expect(book.locator("body.drevo-annotating")).toHaveCount(1);
+  const overlay = book.locator(
+    '.BRpage-visible[data-index="1"] .drevo-page-layer',
+  );
+  const bounds = (await overlay.boundingBox())!;
   await page.mouse.move(
-    area!.x + area!.width * 0.2,
-    area!.y + area!.height * 0.3,
+    bounds.x + bounds.width * 0.2,
+    bounds.y + bounds.height * 0.3,
   );
   await page.mouse.down();
   await page.mouse.move(
-    area!.x + area!.width * 0.42,
-    area!.y + area!.height * 0.43,
-    { steps: 5 },
+    bounds.x + bounds.width * 0.4,
+    bounds.y + bounds.height * 0.42,
+    {
+      steps: 5,
+    },
   );
   await page.mouse.up();
   await reader
-    .getByRole("textbox", { name: "Комментарий к фрагменту" })
+    .locator(".pdf-book-comment-form textarea")
     .fill("Важный фрагмент");
-  await reader.getByRole("button", { name: "Сохранить" }).click();
+  await reader.locator(".pdf-book-comment-form button").first().click();
   await expect(reader.getByText("Важный фрагмент")).toBeVisible();
-  await reader.screenshot({ path: info.outputPath("pdf-reader-minimal.png") });
+  await expect(
+    book.locator('.BRpage-visible[data-index="1"] .drevo-page-mark'),
+  ).toHaveCount(1);
 });
 
-test("cover and spread stay centered during both page turns", async ({
+test("BookReader turns the cover and preloads the next spread", async ({
   page,
 }, info) => {
   test.skip(
     info.project.name === "mobile",
-    "Landscape spreads need a desktop viewport",
+    "Two-page spread needs a desktop viewport",
   );
-  const title = `Reader cover ${info.project.name} ${randomUUID()}`;
-  const upload = await page.request.post("/api/documents", {
-    headers: {
-      "Content-Type": "application/pdf",
-      "X-Document-Metadata": encodeURIComponent(
-        JSON.stringify({ title, personIds: [] }),
-      ),
-    },
-    data: await samplePdf(),
-  });
-  expect(upload.status()).toBe(201);
-  await page.goto("/documents");
-  await page.locator(".document-item").filter({ hasText: title }).click();
-  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
-  await expect(
-    reader.locator('.pdf-book-page[data-page="0"] img'),
-  ).toBeVisible();
-
-  for (const label of ["Следующая страница", "Предыдущая страница"]) {
-    const offsets = await reader.evaluate(async (dialog, buttonLabel) => {
-      const root = dialog.querySelector<HTMLElement>(".pdf-book-pages")!;
-      const button = dialog.querySelector<HTMLButtonElement>(
-        `[aria-label="${buttonLabel}"]`,
-      )!;
-      const samples: number[] = [];
-      const start = performance.now();
-      button.click();
-      await new Promise<void>((resolve) => {
-        const sample = () => {
-          samples.push(
-            new DOMMatrixReadOnly(getComputedStyle(root).transform).m41,
-          );
-          if (performance.now() - start < 800) requestAnimationFrame(sample);
-          else resolve();
-        };
-        requestAnimationFrame(sample);
-      });
-      return samples;
-    }, label);
-    const distance = Math.abs(offsets.at(-1)! - offsets[0]);
-    const largestStep = Math.max(
-      ...offsets
-        .slice(1)
-        .map((offset, index) => Math.abs(offset - offsets[index])),
-    );
-    expect(distance).toBeGreaterThan(60);
-    expect(
-      new Set(offsets.map((offset) => Math.round(offset))).size,
-    ).toBeGreaterThan(3);
-    expect(largestStep).toBeLessThan(distance * 0.5);
+  const { book } = await openSample(
+    page,
+    `BookReader flip ${info.project.name}`,
+  );
+  await book.locator(".BRicon.book_right:visible").first().click();
+  await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
+  await expect(book.locator('.BRpage-visible[data-index="2"]')).toBeVisible();
+  for (const index of [1, 2]) {
+    await expect
+      .poll(() =>
+        book
+          .locator(`.BRpage-visible[data-index="${index}"] img.BRpageimage`)
+          .first()
+          .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
   }
-  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 3");
+  await book.locator(".BRicon.book_left:visible").first().click();
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
 });

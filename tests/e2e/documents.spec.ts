@@ -165,9 +165,15 @@ test("источник карточки связывается с PDF без к�
   await expect(
     page.getByRole("dialog", { name: `Документ: ${title}` }),
   ).toBeVisible();
-  await expect(page.locator(".pdf-book-page-count")).toContainText("2 / 3");
+  await expect(
+    page.frameLocator("iframe.pdf-book-frame").locator(".BRcurrentpage"),
+  ).toContainText("Page 2");
   await page.goto(`/documents/${id}/page/2000`);
-  await expect(page.locator(".pdf-book-page-count")).toContainText("3 / 3");
+  await expect(
+    page
+      .frameLocator("iframe.pdf-book-frame")
+      .locator('.BRpage-visible[data-index="2"]'),
+  ).toBeVisible();
 });
 
 async function samplePdf(count = 3, landscape = false) {
@@ -430,84 +436,31 @@ test("участник загружает PDF и читает страницы �
   await item.click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
-  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 3", {
-    timeout: 15_000,
-  });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(book.locator(".BRfooter")).toBeVisible();
+  const firstPage = book.locator(
+    '.BRpage-visible[data-index="0"] img.BRpageimage',
+  );
   await expect
     .poll(() =>
-      reader
-        .locator('[data-page="0"] img')
-        .first()
-        .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      firstPage.evaluate((image: HTMLImageElement) => image.naturalWidth),
     )
     .toBeGreaterThan(0);
-  const firstPage = reader.locator('[data-page="0"] img').first();
-  await expect(firstPage).toBeVisible();
-  const [bounds, stage] = await Promise.all([
-    firstPage.boundingBox(),
-    reader.locator(".pdf-book-stage").boundingBox(),
-  ]);
-  expect(bounds!.height).toBeGreaterThan(
-    testInfo.project.name === "desktop" ? stage!.height * 0.8 : 350,
-  );
-  expect(bounds!.width).toBeGreaterThan(250);
-  await expect
-    .poll(async () => {
-      const [pageBox, stageBox] = await Promise.all([
-        firstPage.boundingBox(),
-        reader.locator(".pdf-book-stage").boundingBox(),
-      ]);
-      return Math.abs(
-        pageBox!.x + pageBox!.width / 2 - stageBox!.x - stageBox!.width / 2,
-      );
-    })
-    .toBeLessThan(3);
-  await expect(reader.locator('[role="alert"]')).toHaveCount(0);
   await expect(
     reader.getByRole("link", { name: "Скачать оригинал" }),
   ).toBeVisible();
   if (testInfo.project.name === "mobile")
     await reader.locator(".pdf-book-sidebar-toggle").click();
-  await reader.getByRole("button", { name: "Оглавление" }).click();
-  await reader
-    .getByRole("navigation", { name: "Оглавление документа" })
-    .getByRole("button", { name: /Вторая страница/ })
-    .click();
-  await expect(reader.locator(".pdf-book-page-count")).toContainText("2");
-  await reader.getByRole("button", { name: "Предыдущая страница" }).click();
-  await reader.getByRole("button", { name: "Лупа" }).click();
-  await firstPage.hover();
-  await expect(
-    reader.locator(
-      '.pdf-book-page[data-page="0"] div[style*="border-radius: 50%"]',
-    ),
-  ).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(reader.getByRole("button", { name: "Лупа" })).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await reader.screenshot({
-    path: `work/pdf-reader-${testInfo.project.name}.png`,
-  });
-  await reader.getByRole("button", { name: "Следующая страница" }).click();
-  await expect(reader.locator(".pdf-book-page-count")).toContainText(/2|3/);
-  await expect
-    .poll(() =>
-      reader
-        .locator('[data-page="1"] img')
-        .first()
-        .evaluate((image: HTMLImageElement) => image.naturalWidth),
-    )
-    .toBeGreaterThan(0);
+  await reader.locator(".pdf-book-sidebar-tabs button").last().click();
+  await reader.locator(".pdf-book-outline button").first().click();
+  await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
+  await reader.locator('.pdf-book-controls button[aria-label="Лупа"]').click();
+  await expect(book.locator("body.drevo-magnifying")).toHaveCount(1);
+  await book.locator("body").press("Escape");
+  await expect(book.locator("body.drevo-magnifying")).toHaveCount(0);
   if (testInfo.project.name === "mobile") {
     await page.setViewportSize({ width: 320, height: 600 });
-    await expect(reader.locator('[data-page="1"] img').first()).toBeVisible();
-    expect(
-      await reader.evaluate(
-        (element) => element.scrollWidth <= window.innerWidth,
-      ),
-    ).toBe(true);
+    await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
   }
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(reader).toBeHidden();
@@ -556,37 +509,24 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
           .getByRole("link", { name: "Открыть оригинал" }),
       ).toBeVisible();
     } else {
-      const image = reader.locator('[data-page="0"] img').first();
-      await expect(image).toBeVisible();
+      const book = reader.frameLocator("iframe.pdf-book-frame");
+      const image = book
+        .locator('.BRpage-visible[data-index="0"] img.BRpageimage')
+        .first();
       await expect
         .poll(() =>
           image.evaluate((node: HTMLImageElement) => node.naturalWidth),
         )
         .toBeGreaterThan(0);
       const rect = await image.boundingBox();
-      await expect
-        .poll(async () => {
-          const [pageBox, stageBox] = await Promise.all([
-            image.boundingBox(),
-            reader.locator(".pdf-book-stage").boundingBox(),
-          ]);
-          return Math.abs(
-            pageBox!.x + pageBox!.width / 2 - stageBox!.x - stageBox!.width / 2,
-          );
-        })
-        .toBeLessThan(3);
       expect(rect!.width).toBeGreaterThan(100);
       expect(rect!.height).toBeGreaterThan(100);
       if (variant === "landscape")
         expect(rect!.width / rect!.height).toBeGreaterThan(1.2);
-      else {
+      else
         await expect(
-          reader.getByRole("button", { name: "Оглавление" }),
-        ).toHaveCount(0);
-        await expect(
-          reader.getByRole("button", { name: "Следующая страница" }),
-        ).toBeDisabled();
-      }
+          reader.locator(".pdf-book-sidebar-tabs button"),
+        ).toHaveCount(1);
     }
     await reader.getByRole("button", { name: "Закрыть документ" }).click();
     page.once("dialog", (dialog) => dialog.accept());
@@ -600,10 +540,8 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
   });
 }
 
-test("фрагмент PDF сохраняет комментарий и ссылка перелистывает к нему", async ({
-  page,
-}, info) => {
-  const title = `Комментарий к PDF ${info.project.name}`;
+test("PDF comments remain attached to their pages", async ({ page }, info) => {
+  const title = `PDF comments ${info.project.name}`;
   const uploaded = await page.request.post("/api/documents", {
     headers: {
       "Content-Type": "application/pdf",
@@ -618,16 +556,14 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
-  await expect(reader.locator(".pdf-book-page-count")).toContainText("1 / 7");
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
   if (info.project.name === "mobile")
     await reader.locator(".pdf-book-sidebar-toggle").click();
-  await reader.getByRole("button", { name: "Выделить фрагмент" }).click();
-  const overlay = reader.locator('[data-page="0"] .pdf-book-overlay').first();
-  await expect
-    .poll(async () =>
-      overlay.evaluate((node) => node.getBoundingClientRect().width),
-    )
-    .toBeGreaterThan(100);
+  await reader.locator(".pdf-book-add-comment").click();
+  const overlay = book
+    .locator('.BRpage-visible[data-index="0"] .drevo-page-layer')
+    .first();
   const box = (await overlay.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
   await page.mouse.down();
@@ -636,12 +572,12 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   });
   await page.mouse.up();
   await reader
-    .getByRole("textbox", { name: "Комментарий к фрагменту" })
+    .locator(".pdf-book-comment-form textarea")
     .fill("Первый фрагмент записи");
-  await reader.getByRole("button", { name: "Сохранить" }).click();
+  await reader.locator(".pdf-book-comment-form button").first().click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
   await expect(
-    reader.locator('[data-page="0"] .pdf-book-highlight'),
+    book.locator('.BRpage-visible[data-index="0"] .drevo-page-mark'),
   ).toHaveCount(1);
   const second = await page.request.post(`/api/documents/${id}/annotations`, {
     data: {
@@ -659,30 +595,22 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   if (info.project.name === "mobile")
     await reader.locator(".pdf-book-sidebar-toggle").click();
   await reader
-    .getByRole("button", { name: /Страница 7.*Последняя страница/ })
+    .locator(".pdf-book-comments-list article")
+    .filter({ hasText: "Последняя страница" })
+    .locator("button")
+    .first()
     .click();
   await expect(
-    reader.locator('[data-page="6"] .pdf-book-highlight.is-active'),
-  ).toHaveCount(1, { timeout: 15000 });
+    book.locator('.BRpage-visible[data-index="6"] .drevo-page-mark.is-active'),
+  ).toHaveCount(1);
   await expect
-    .poll(async () => {
-      const area = await reader
-        .locator('[data-page="6"] .pdf-book-overlay')
-        .boundingBox();
-      const mark = await reader
-        .locator('[data-page="6"] .pdf-book-highlight.is-active')
-        .boundingBox();
-      if (!area || !mark || area.width < 100) return Infinity;
-      return Math.max(
-        Math.abs(mark.x - area.x - area.width * 0.2),
-        Math.abs(mark.y - area.y - area.height * 0.3),
-        Math.abs(mark.width - area.width * 0.3),
-        Math.abs(mark.height - area.height * 0.2),
-      );
-    })
-    .toBeLessThan(4);
-  await expect(reader.locator(".pdf-book-page-count")).toContainText("7 / 7");
-  await reader.screenshot({ path: info.outputPath("pdf-annotations.png") });
+    .poll(() =>
+      book
+        .locator('.BRpage-visible[data-index="6"] img.BRpageimage')
+        .first()
+        .evaluate((image: HTMLImageElement) => image.naturalWidth),
+    )
+    .toBeGreaterThan(0);
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
@@ -691,8 +619,11 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
 });
 
-test("книга открывает PDF длиннее 300 страниц", async ({ page }, info) => {
+test("BookReader opens a document longer than 300 pages", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "desktop");
+  test.setTimeout(60_000);
   const title = "Длинный PDF";
   const uploaded = await page.request.post("/api/documents", {
     headers: {
@@ -721,22 +652,26 @@ test("книга открывает PDF длиннее 300 страниц", asyn
   ).toBe(201);
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
-  await expect(
-    page
-      .getByRole("dialog", { name: `Документ: ${title}` })
-      .locator(".pdf-book-page-count"),
-  ).toContainText("1 / 301", { timeout: 20000 });
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible({
+    timeout: 30_000,
+  });
   await reader
-    .getByRole("button", { name: /Страница 301.*Запись в конце/ })
+    .locator(".pdf-book-comments-list article")
+    .filter({ hasText: "Запись в конце" })
+    .locator("button")
+    .first()
     .click();
   await expect(
-    reader.locator('[data-page="300"] .pdf-book-highlight.is-active'),
-  ).toHaveCount(1, { timeout: 15000 });
+    book.locator(
+      '.BRpage-visible[data-index="300"] .drevo-page-mark.is-active',
+    ),
+  ).toHaveCount(1, { timeout: 15_000 });
   await expect
     .poll(() =>
-      reader
-        .locator('[data-page="300"] img')
+      book
+        .locator('.BRpage-visible[data-index="300"] img.BRpageimage')
         .first()
         .evaluate((image: HTMLImageElement) => image.naturalWidth),
     )

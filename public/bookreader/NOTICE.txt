@@ -1,0 +1,3 @@
+BookReader image assets are distributed with @internetarchive/bookreader 5.0.0-117.
+Source: https://github.com/internetarchive/bookreader
+License: AGPL-3.0 (see LICENSE in this directory).

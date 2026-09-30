@@ -24,6 +24,7 @@
     "prebuild": "npm run prepare:models"
   },
   "dependencies": {
+    "@internetarchive/bookreader": "5.0.0-117",
     "@jojovms/lens-zoom-core": "^0.0.1",
     "@vladmandic/human": "3.3.6",
     "@xyflow/react": "^12.11.6",
@@ -34,7 +35,6 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.42.0",
     "nodemailer": "^10.0.13",
-    "page-flip": "^2.0.7",
     "pdfjs-dist": "^6.3.289",
     "pdfkit": "^0.20.2",
     "pg": "8.23.0",
