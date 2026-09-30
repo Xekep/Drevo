@@ -1912,6 +1912,9 @@ try {
     assert.equal(vkRegistration.archiveCreated, true);
     assert.notEqual(vkRegistration.archiveId, location.split("/")[2]);
     const personalArchiveId = location.split("/")[2];
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [
+      personalArchiveId,
+    ]);
     await client.query(
       "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,$2,'reader',true,'all')",
       [personalArchiveId, vkRegistration.accountId],
@@ -2107,6 +2110,9 @@ try {
       transferRoles.find((row) => row.user_id === newAccountSession.user.id)
         ?.role,
       "relative",
+    );
+    await client.query(
+      "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );
   } finally {
     await oauthApp.close();
