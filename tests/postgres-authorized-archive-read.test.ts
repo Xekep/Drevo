@@ -57,7 +57,7 @@ function mockClient(
             { data: { id: "person-b", name: "Закрытый" } },
           ],
         };
-      if (sql.includes("FROM archive_audit_entries a"))
+      if (sql.includes("FROM runtime_visible_audit_entries a"))
         return {
           rows: [
             {
@@ -191,7 +191,7 @@ test("audit requires archive admin rights and remains archive-scoped", async () 
   );
   assert.equal(
     reader.calls.some(({ sql }) =>
-      sql.includes("FROM archive_audit_entries a"),
+      sql.includes("FROM runtime_visible_audit_entries a"),
     ),
     false,
   );
@@ -210,7 +210,7 @@ test("audit requires archive admin rights and remains archive-scoped", async () 
   );
   assert.equal(result?.items[0].id, 9);
   const auditQuery = admin.calls.find(({ sql }) =>
-    sql.includes("FROM archive_audit_entries a"),
+    sql.includes("FROM runtime_visible_audit_entries a"),
   );
   assert.deepEqual(auditQuery?.values, [archiveId, 10, "", "person-a"]);
   assert.match(auditQuery?.sql || "", /a\.archive_id=\$1/);

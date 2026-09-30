@@ -119,6 +119,14 @@ export async function fixture(t: TestContext) {
         "utf8",
       ),
     );
+  // This focused fixture omits share and research tables. Install the audit
+  // portion of migration 041 so its read path uses the production view.
+  await first.query(
+    readFileSync(
+      new URL("../../ops/postgres/041_deleted_account_history.sql", import.meta.url),
+      "utf8",
+    ).split("CREATE OR REPLACE VIEW runtime_visible_person_comments")[0],
+  );
   for (const [id, token] of Object.entries(tokens)) {
     await first.query(
       "INSERT INTO accounts(id,name,created_at) VALUES($1,$2,$3)",

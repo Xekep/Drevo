@@ -132,8 +132,8 @@ export function sharesStore(db: StoreDatabase) {
       if (!shareTokenPattern.test(token)) return null;
       const row = await db
         .prepare(
-          "SELECT s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
           "SELECT s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
+          "SELECT s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
         )
         .get(hash(token));
       if (!row) return null;
