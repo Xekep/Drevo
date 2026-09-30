@@ -16,6 +16,7 @@ import { adminVkAuthHttp } from "./admin-vk-auth-http.ts";
 import { createYandexOAuth } from "./yandex-oauth.ts";
 import { userStore } from "./users.ts";
 import { createAuth } from "./auth.ts";
+import { emailAuthHttp } from "./email-auth-http.ts";
 import { settingsStore } from "./settings.ts";
 import { mediaStore } from "./media.ts";
 import { restoreStore } from "./restore.ts";
@@ -113,6 +114,9 @@ export async function startServer(
   const visibility = await settingsStore(archive.db);
   const users = await userStore(archive.db);
   const auth = await createAuth(users, archive.db, publicOrigin);
+  const emailAuth = !archiveId
+    ? emailAuthHttp(archive.db, auth, publicOrigin)
+    : null;
   const listAccountArchives = accountArchivesHttp(
     auth,
     accountArchiveDirectory(archive.db),
@@ -244,6 +248,7 @@ export async function startServer(
     if (routedArchives && (await routedArchives.route(req, res, parsedUrl)))
       return;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
+    if (emailAuth && (await emailAuth.handle(req, res, parsedUrl))) return;
     if (await listAccountArchives(req, res, parsedUrl)) return;
     if (await searchPublishedPeople(req, res, parsedUrl)) return;
     if (
@@ -265,6 +270,7 @@ export async function startServer(
         local: auth.local,
         yandex: yandex.enabled,
         vk: await vk.isEnabled(),
+        email: emailAuth?.enabled === true,
         account: await auth.accountProfile(req),
         user: sessionUser
           ? {

@@ -76,6 +76,9 @@ const galleryAlbumPath = (personId: string | null, year: string | null) => {
 };
 
 export default function App() {
+  const [emailAuthLink] = useState(() =>
+    /^#email-(verify|reset)=[A-Za-z0-9_-]{43}$/.test(window.location.hash),
+  );
   const [initialPersonLink] = useState(
     () =>
       archiveTargetAt(window.location.pathname, window.location.search)
@@ -751,7 +754,11 @@ export default function App() {
             </button>
           </div>
         )}
-        {view === "account" ? (
+        {emailAuthLink ? (
+          <main className="archive-status">
+            <LoginButtons />
+          </main>
+        ) : view === "account" ? (
           <AccountPage
             session={accountSession}
             loading={accountLoading}

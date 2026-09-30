@@ -30,6 +30,7 @@ import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
+import { verifyEmailAccounts } from "./postgres-email.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -1845,6 +1846,7 @@ try {
     if (originalClientSecret === undefined) delete process.env.YANDEX_CLIENT_SECRET;
     else process.env.YANDEX_CLIENT_SECRET = originalClientSecret;
   }
+  await verifyEmailAccounts(app.archive.db, client);
   // Audit provenance and undo stay inside the selected archive under non-superuser RLS.
   const beforeBatch = await app.archive.read();
   const batchPlan = planAdditions(beforeBatch.family, {
