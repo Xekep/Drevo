@@ -350,6 +350,8 @@ body,
   top: 0;
   flex: 0 0 246px;
   height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   box-sizing: border-box;
   border-right: 1px solid #e4e9e2;
   padding: 26px 14px 18px;

@@ -1,3 +1,4 @@
+import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { authorizeArchive } from "./permissions.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
 import { authorizeMediaReferences } from "./media-access.ts";
@@ -418,6 +419,7 @@ export async function openArchive(
       if (actor && previous && addsMediaReference(previous, family)) {
         await releaseAttachedMediaGrants(db);
         await enforcePostgresMediaQuota(db);
+        await enforceUserStorageLimit(db, actor.id);
       }
       await finishWrite();
       return { family, revision: expected + 1 };
@@ -470,6 +472,7 @@ export async function openArchive(
         .run(expected + 1);
       await releaseAttachedMediaGrants(db);
       await enforcePostgresMediaQuota(db);
+      await enforceUserStorageLimit(db, actor.id);
       await finishWrite();
       return { family, revision: expected + 1 };
     });

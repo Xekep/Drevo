@@ -492,12 +492,13 @@
 }
 .tree-canvas.is-growing .tree-grow-edge-junction {
   opacity: 0;
-  animation: tree-edge-label-reveal 160ms ease-out var(--tree-edge-label-delay)
-    both;
+  animation: tree-edge-label-reveal var(--tree-growth-label-duration, 160ms)
+    ease-out var(--tree-edge-label-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-edge-label {
   opacity: 0;
-  animation: tree-edge-label-reveal 160ms ease-out var(--tree-growth-delay) both;
+  animation: tree-edge-label-reveal var(--tree-growth-label-duration, 160ms)
+    ease-out var(--tree-growth-delay) both;
 }
 .tree-canvas.is-growing .tree-grow-node .flow-person {
   transform-origin: 50% 100%;
@@ -1234,7 +1235,9 @@
   border: 1px solid #dce6d8;
   border-radius: 50%;
   background: #f7faf3;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .nav-account-avatar {
   display: grid;
@@ -2191,7 +2194,8 @@
     height: 44px;
     margin-left: auto;
   }
-  .tree-mode-bar:has(.tree-export-trigger) .tree-preferences-trigger:not(.tree-export-trigger) {
+  .tree-mode-bar:has(.tree-export-trigger)
+    .tree-preferences-trigger:not(.tree-export-trigger) {
     margin-left: 0;
   }
   .tree-mode-switch > span {

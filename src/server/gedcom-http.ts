@@ -1,3 +1,4 @@
+import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { randomUUID } from "node:crypto";
 import {
   createReadStream,
@@ -455,7 +456,10 @@ export function gedcomHttp(
                     )
                     .run(file.documentId!, id);
               }
-              if (stage.files.length) await enforcePostgresMediaQuota(db);
+              if (stage.files.length) {
+                await enforcePostgresMediaQuota(db);
+                await enforceUserStorageLimit(db, actor.id);
+              }
             },
           );
           undo = undefined;

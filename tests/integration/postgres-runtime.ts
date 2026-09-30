@@ -1,3 +1,5 @@
+import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
+import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -19,7 +21,7 @@ import {
   aiRuntimeConfig,
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
-import { aiChatStore } from "../../src/server/ai-chats.ts";
+import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
@@ -303,12 +305,17 @@ try {
     /владельца/,
   );
   const preferences = treePreferencesStore(live.db);
+  await live.db.transaction(() => writeStorageLimits(live!.db, { ...DEFAULT_STORAGE_LIMITS, admin: 0 }, owner));
+  assert.equal((await readStorageLimits(live.db)).admin, 0);
+  await assert.rejects(enforceUserStorageLimit(live.db, "owner", 1), UploadQuotaError);
   const vkSettings = vkAuthSettingsStore(live.db, "https://archive.invalid");
   assert.equal((await vkSettings.read()).available, false);
   await vkSettings.write({ enabled: true, clientId: "12345" }, owner);
   assert.equal((await vkSettings.read()).available, true);
   const isolatedVk = await openPostgresDatabase("other-archive", source);
   try {
+    assert.deepEqual(await readStorageLimits(isolatedVk), DEFAULT_STORAGE_LIMITS);
+    await assert.rejects(isolatedVk.prepare("", "INSERT INTO upload_limits(archive_id,id,data) VALUES('runtime-test',1,'{}')").run(), /row-level security/);
     const isolatedAi = await aiSettingsStore(isolatedVk);
     assert.equal((await isolatedAi.read()).roleProfiles.researcher, null);
     await assert.rejects(
@@ -337,6 +344,7 @@ try {
   } finally {
     await isolatedVk.close();
   }
+  await live.db.transaction(() => writeStorageLimits(live!.db, DEFAULT_STORAGE_LIMITS, owner));
   await preferences.write("owner", {
     reverseTimeline: false,
     cardVariant: "portrait",
@@ -353,6 +361,22 @@ try {
   ]);
   assert.equal([lease1, lease2].filter(Boolean).length, 1);
   await chats.release(chat.id, (lease1 || lease2)!);
+  const chatAttempts = await Promise.allSettled(
+    Array.from({ length: 10 }, () => chats.create("owner", "all")),
+  );
+  const createdChats = chatAttempts.filter(
+    (item) => item.status === "fulfilled",
+  );
+  assert.equal(
+    createdChats.length,
+    9,
+    "concurrent PostgreSQL requests cannot exceed ten chats",
+  );
+  const rejectedChat = chatAttempts.find(
+    (item) => item.status === "rejected",
+  ) as PromiseRejectedResult;
+  assert.ok(rejectedChat.reason instanceof AiChatLimitError);
+  for (const item of createdChats) await chats.delete(item.value.id, "owner");
   const usage = aiUsageStore(live.db),
     turn = await usage.begin("owner", "test-model");
   await usage.finish(turn.id, turn.started, {

@@ -1,3 +1,4 @@
+import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
 import { createWriteStream } from "node:fs";
 import {
   lstat,
@@ -145,10 +146,10 @@ async function unpack(
       total += entry.uncompressedSize;
       const limit = /\.(ged|gedcom|xml)$/i.test(name)
         ? TRANSFER_TEXT_LIMIT
-        : TRANSFER_FILE_LIMIT;
+        : MAX_PDF_BYTES;
       if (entry.uncompressedSize > limit || total > TRANSFER_PACKAGE_LIMIT)
         throw new Error(
-          "Превышен размер распакованного пакета (512 МиБ; вложение 20 МиБ)",
+          "Превышен размер распакованного пакета (512 МиБ; PDF 50 МиБ, фото 20 МиБ)",
         );
       const destination = join(directory, randomUUID());
       let size = 0,
@@ -244,7 +245,7 @@ export async function prepareGenealogyImport(
           !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
             encoded,
           ) ||
-          encoded.length > Math.ceil(TRANSFER_FILE_LIMIT / 3) * 4
+          encoded.length > Math.ceil(MAX_PDF_BYTES / 3) * 4
         )
           throw new Error(
             "Некорректное или слишком большое base64-вложение XML",
@@ -273,11 +274,12 @@ export async function prepareGenealogyImport(
         continue;
       }
       const data = await readFile(source);
-      if (data.length > TRANSFER_FILE_LIMIT)
-        throw new Error("Вложение больше 20 МБ");
+      if (data.length > MAX_PDF_BYTES) throw new Error("Вложение больше 50 МБ");
       let extension: string;
       if (data.subarray(0, 5).toString("ascii") === "%PDF-") extension = "pdf";
       else {
+        if (data.length > TRANSFER_FILE_LIMIT)
+          throw new Error("Фотография больше 20 МБ");
         try {
           extension = imageExtension(data);
         } catch {
@@ -419,7 +421,8 @@ export async function writeGenealogyPackage(
         throw new Error(`Оригинал «${item.title}» не является обычным файлом`);
       size += info.size;
       if (
-        info.size > TRANSFER_FILE_LIMIT ||
+        info.size >
+          (item.file.endsWith(".pdf") ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
         size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT
       )
         throw new Error(

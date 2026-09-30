@@ -15,7 +15,9 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("PDF без привязки остаётся в общем каталоге", async ({ page }, testInfo) => {
+test("PDF без привязки остаётся в общем каталоге", async ({
+  page,
+}, testInfo) => {
   const title = `Неизвестная метрическая запись ${testInfo.project.name}`;
   await page.goto("/documents");
   await page.getByRole("button", { name: "Добавить PDF" }).click();
@@ -32,7 +34,9 @@ test("PDF без привязки остаётся в общем каталог�
   await form.getByLabel("Место").fill("Реж");
   await form.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.104");
   await form.getByLabel("Описание").fill("Запись о рождении");
-  await expect(form.getByRole("button", { name: "Добавить документ" })).toBeEnabled();
+  await expect(
+    form.getByRole("button", { name: "Добавить документ" }),
+  ).toBeEnabled();
   await form.getByRole("button", { name: "Добавить документ" }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
@@ -42,7 +46,9 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader).toBeVisible();
   await reader.getByText("Сведения о документе").click();
   await expect(reader.getByText("ГАСО Ф.6 Оп.13 Д.104")).toBeVisible();
-  await reader.getByRole("button", { name: "Редактировать сведения о документе" }).click();
+  await reader
+    .getByRole("button", { name: "Редактировать сведения о документе" })
+    .click();
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await expect(edit).toBeVisible();
   await edit.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.105");
@@ -51,7 +57,9 @@ test("PDF без привязки остаётся в общем каталог�
   const group = page.locator(".documents-group").filter({
     has: page.getByRole("heading", { name: "Без привязки" }),
   });
-  await expect(group.locator(".document-item").filter({ hasText: title })).toBeVisible();
+  await expect(
+    group.locator(".document-item").filter({ hasText: title }),
+  ).toBeVisible();
   await group.locator(".document-item").filter({ hasText: title }).click();
   await expect(page).toHaveURL(documentUrl);
   await reader.getByText("Сведения о документе").click();
@@ -73,6 +81,118 @@ async function samplePdf(count = 3, landscape = false) {
   pdf.end();
   return done;
 }
+
+test("PDF можно перетащить, затем привязать из документа и редактора человека", async ({
+  page,
+}, testInfo) => {
+  const title = `Перетащенный PDF ${testInfo.project.name}`;
+  await page.goto("/documents");
+  await expect(page.locator(".documents-add")).toBeVisible();
+  const transfer = await page.evaluateHandle(
+    (bytes) => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File([new Uint8Array(bytes)], "record.pdf", {
+          type: "application/pdf",
+        }),
+      );
+      return data;
+    },
+    [...(await samplePdf(1))],
+  );
+  await page
+    .locator("body")
+    .dispatchEvent("dragenter", { dataTransfer: transfer });
+  await expect(page.getByText("Перетащите PDF сюда")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("documents-drop.png") });
+  await page.locator("body").dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(page.locator(".documents-drop-overlay")).toHaveCount(0);
+  const form = page.locator(".documents-upload");
+  await expect(form.getByText("record.pdf", { exact: true })).toBeVisible();
+  await form.getByLabel("Название").fill(title);
+  await form.getByRole("button", { name: "Добавить документ" }).click();
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  await expect(reader).toBeVisible();
+  const id = new URL(page.url()).searchParams.get("documentId");
+  await reader
+    .getByRole("button", { name: "Редактировать сведения о документе" })
+    .click();
+  const edit = page.getByRole("form", { name: "Редактировать документ" });
+  await edit.getByLabel("Найти человека для документа").fill("Пётр");
+  await edit
+    .locator(".documents-person-results")
+    .getByRole("button", { name: /Пётр/ })
+    .click();
+  await edit.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(edit).toBeHidden();
+  expect(
+    (await (await page.request.get(`/api/documents/${id}`)).json()).people.map(
+      (person: { id: string }) => person.id,
+    ),
+  ).toEqual(["e2e-child"]);
+
+  await page.goto("/people/e2e-spouse");
+  await page.getByRole("button", { name: "Изменить человека" }).click();
+  await page
+    .locator(".form-details > summary")
+    .filter({ hasText: "Источники" })
+    .click();
+  const documents = page.getByRole("region", { name: "Документы человека" });
+  await documents
+    .getByRole("button", { name: "Привязать PDF из каталога" })
+    .click();
+  await documents.getByLabel("Найти PDF").fill(title);
+  await documents
+    .locator(".person-document-picker .person-document-row")
+    .filter({ hasText: title })
+    .getByRole("button", { name: "Привязать", exact: true })
+    .click();
+  const unlink = documents.getByRole("button", {
+    name: `Отвязать ${title}`,
+    exact: true,
+  });
+  await expect(unlink).toBeVisible();
+  await expect(unlink).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath("person-documents.png") });
+  expect(
+    (await (await page.request.get(`/api/documents/${id}`)).json()).people
+      .map((person: { id: string }) => person.id)
+      .sort(),
+  ).toEqual(["e2e-child", "e2e-spouse"]);
+  await unlink.click();
+  await expect(unlink).toHaveCount(0);
+  expect(
+    (await (await page.request.get(`/api/documents/${id}`)).json()).people.map(
+      (person: { id: string }) => person.id,
+    ),
+  ).toEqual(["e2e-child"]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+});
+
+test("каталог документов отклоняет перетаскивание файлов других форматов", async ({
+  page,
+}) => {
+  await page.goto("/documents");
+  await expect(page.locator(".documents-add")).toBeVisible();
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["image"], "image.png", { type: "image/png" }));
+    return data;
+  });
+  await page.locator("body").dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Можно загрузить только PDF-файл" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Добавить документ" }),
+  ).toBeDisabled();
+});
 
 test("из карточки человека открываются только его PDF-документы", async ({
   page,
@@ -146,7 +266,9 @@ test("из карточки человека открываются только
   ).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(/\/documents\?personId=e2e-child$/);
-  await expect(page.getByRole("dialog", { name: `Документ: ${title}` })).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: `Документ: ${title}` }),
+  ).toHaveCount(0);
   await expect(
     page.locator(".document-item").filter({ hasText: otherTitle }),
   ).toHaveCount(0);

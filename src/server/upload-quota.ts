@@ -1,13 +1,9 @@
 import type { StoreDatabase } from "./store-database.ts";
 import { randomUUID } from "node:crypto";
 
-export class UploadQuotaError extends Error {
-  readonly status: 429 | 507;
-  constructor(message: string, status: 429 | 507) {
-    super(message);
-    this.status = status;
-  }
-}
+import { UploadQuotaError } from "./upload-quota-error.ts";
+import { enforceUserStorageLimit } from "./storage-limits.ts";
+export { UploadQuotaError } from "./upload-quota-error.ts";
 
 /** Reservations count unfinished uploads, including requests in other processes. */
 export function uploadQuota(
@@ -81,6 +77,7 @@ export function uploadQuota(
             "Недостаточно места. Лимит хранилища достигнут.",
             507,
           );
+        await enforceUserStorageLimit(db, userId, maximumBytes, true, time);
         await db
           .prepare(
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",

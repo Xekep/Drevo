@@ -97,12 +97,17 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal((await fetch(`${base}/api/documents`)).status, 200);
     assert.equal((await upload(Buffer.from("not a pdf"))).status, 415);
     assert.deepEqual(readdirSync(join(dir, "uploads")), []);
-    const pdf = await samplePdf();
+    const pdf = Buffer.alloc(21 * 1024 * 1024, 32);
+    (await samplePdf()).copy(pdf);
     assert.equal(
       (
         await upload(pdf, {
           "X-Document-Metadata": encodeURIComponent(
-            JSON.stringify({ title: "Неверные сведения", personIds: ["anna"], documentType: 42 }),
+            JSON.stringify({
+              title: "Неверные сведения",
+              personIds: ["anna"],
+              documentType: 42,
+            }),
           ),
         })
       ).status,
@@ -126,11 +131,13 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const { id } = (await created.json()) as { id: string };
     const list = (await (await fetch(`${base}/api/documents`)).json()) as {
       total: number;
-      items: Array<DocumentDetails & {
-        id: string;
-        title: string;
-        people: Array<{ id: string; name: string }>;
-      }>;
+      items: Array<
+        DocumentDetails & {
+          id: string;
+          title: string;
+          people: Array<{ id: string; name: string }>;
+        }
+      >;
     };
     assert.equal(list.total, 1);
     assert.equal(list.items[0].id, id);
@@ -172,14 +179,22 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       provenance: list.items[0].provenance,
     };
     const next = { ...expected, provenance: "GASO F6 Op13 D105" };
-    const edit = () => fetch(`${base}/api/documents/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expected, next }),
-    });
+    const edit = () =>
+      fetch(`${base}/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expected, next }),
+      });
     assert.equal((await edit()).status, 200);
-    assert.equal((await edit()).status, 409, "устаревшая правка не затирает новый текст");
-    assert.equal((await (await fetch(`${base}/api/documents/${id}`)).json()).provenance, next.provenance);
+    assert.equal(
+      (await edit()).status,
+      409,
+      "устаревшая правка не затирает новый текст",
+    );
+    assert.equal(
+      (await (await fetch(`${base}/api/documents/${id}`)).json()).provenance,
+      next.provenance,
+    );
     const file = await fetch(`${base}/api/documents/${id}/file`);
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -252,7 +267,13 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     });
     assert.equal(restored.status, 200, await restored.clone().text());
     const after = (await (await fetch(`${base}/api/documents`)).json()) as {
-      items: Array<DocumentDetails & { id: string; url: string; people: Array<{ id: string }> }>;
+      items: Array<
+        DocumentDetails & {
+          id: string;
+          url: string;
+          people: Array<{ id: string }>;
+        }
+      >;
     };
     assert.equal(after.items.length, 1);
     assert.equal(after.items[0].provenance, "GASO F6 Op13 D105");
@@ -319,7 +340,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         title: "Test",
         description: "",
         demo: false,
-        people: ["anna", "hidden"].map((id) => ({
+        people: ["anna", "hidden", "outsider"].map((id) => ({
           id,
           name: id,
           surname: "Test",
@@ -391,7 +412,11 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     const edit = (user: string, origin = "https://archive.test") =>
       fetch(base + path, {
         method: "PATCH",
-        headers: { Cookie: cookies.get(user) || "", Origin: origin, "Content-Type": "application/json" },
+        headers: {
+          Cookie: cookies.get(user) || "",
+          Origin: origin,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           expected: { title: "Record" },
           next: { title: "Record", provenance: "GASO" },
@@ -400,6 +425,81 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     assert.equal((await edit("reader")).status, 403);
     assert.equal((await edit("other")).status, 403);
     assert.equal((await edit("owner", "https://evil.test")).status, 403);
+    const linkPeople = (
+      user: string,
+      expected: unknown,
+      next: unknown,
+      origin = "https://archive.test",
+      documentPath = path,
+    ) =>
+      fetch(base + documentPath, {
+        method: "PATCH",
+        headers: {
+          Cookie: cookies.get(user) || "",
+          Origin: origin,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ people: { expected, next } }),
+      });
+    assert.equal((await linkPeople("reader", ["anna"], [])).status, 403);
+    assert.equal((await linkPeople("other", ["anna"], [])).status, 403);
+    assert.equal(
+      (await linkPeople("owner", ["anna"], [], "https://evil.test")).status,
+      403,
+    );
+    assert.equal(
+      (await linkPeople("owner", ["anna"], ["missing"])).status,
+      403,
+    );
+    assert.equal(
+      (await linkPeople("owner", ["anna"], ["anna", "anna"])).status,
+      400,
+    );
+    assert.equal((await linkPeople("owner", "anna", [])).status, 400);
+    const competing = await Promise.all([
+      linkPeople("owner", ["anna"], ["anna", "hidden"]),
+      linkPeople("owner", ["anna"], []),
+    ]);
+    assert.deepEqual(
+      competing.map((response) => response.status).sort(),
+      [200, 409],
+    );
+    const currentLinks = (
+      await (await request(path, "owner")).json()
+    ).people.map((person: { id: string }) => person.id);
+    assert.equal(
+      (await linkPeople("owner", currentLinks, ["anna", "hidden"])).status,
+      200,
+    );
+    await db
+      .prepare(
+        "UPDATE users SET person_id='anna',tree_access='common_ancestors' WHERE id='owner'",
+      )
+      .run();
+    assert.equal(
+      (await linkPeople("owner", ["anna"], ["anna", "hidden"])).status,
+      403,
+    );
+    const scopedLinks = await linkPeople("owner", ["anna"], []);
+    assert.equal(scopedLinks.status, 200);
+    assert.deepEqual((await scopedLinks.json()).people, []);
+    assert.deepEqual(
+      (
+        await db
+          .prepare("SELECT person_id FROM document_people WHERE document_id=?")
+          .all(id)
+      ).map((row) => row.person_id),
+      ["hidden"],
+    );
+    assert.equal(
+      (await request(path, "owner")).status,
+      404,
+      "own document linked only to hidden people stays inaccessible",
+    );
+    await db
+      .prepare("UPDATE users SET tree_access='all' WHERE id='owner'")
+      .run();
+    assert.equal((await linkPeople("owner", ["hidden"], ["anna"])).status, 200);
     const annotationPath = `${path}/annotations`;
     const annotate = (user: string, origin = "https://archive.test") =>
       fetch(base + annotationPath, {
@@ -475,7 +575,51 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       },
       body: new Uint8Array(pdf).buffer,
     });
-    assert.equal(scopedUnlinked.status, 400);
+    assert.equal(scopedUnlinked.status, 201);
+    const unlinkedPath = `/api/documents/${(await scopedUnlinked.json()).id}`;
+    for (const suffix of ["", "/file", "/annotations"])
+      assert.equal((await request(unlinkedPath + suffix, "owner")).status, 200);
+    const ownLibrary = await (await request("/api/documents", "owner")).json();
+    assert.equal(ownLibrary.total, 1);
+    await db
+      .prepare(
+        "UPDATE users SET person_id='outsider',tree_access='common_ancestors' WHERE id='other'",
+      )
+      .run();
+    for (const suffix of ["", "/file", "/annotations"])
+      assert.equal((await request(unlinkedPath + suffix, "other")).status, 404);
+    assert.equal(
+      (await (await request("/api/documents", "other")).json()).total,
+      0,
+    );
+    assert.equal(
+      (
+        await linkPeople(
+          "owner",
+          [],
+          ["anna"],
+          "https://archive.test",
+          unlinkedPath,
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await linkPeople(
+          "owner",
+          [],
+          ["hidden"],
+          "https://archive.test",
+          unlinkedPath,
+        )
+      ).status,
+      200,
+    );
+    assert.equal((await request(unlinkedPath, "owner", "DELETE")).status, 200);
+    await db
+      .prepare("UPDATE users SET tree_access='all' WHERE id='other'")
+      .run();
     const hiddenFilter = (await (
       await request("/api/documents?personId=anna", "owner")
     ).json()) as { total: number };

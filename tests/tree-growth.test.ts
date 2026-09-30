@@ -3,7 +3,8 @@ import test from "node:test";
 import type { LayoutPerson } from "../src/domain/tree-layout.ts";
 import {
   TREE_GROWTH_EDGE_MS,
-  TREE_GROWTH_MAX_DELAY_MS,
+  treeGrowthBudget,
+  treeGrowthDuration,
   TREE_GROWTH_NODE_MS,
   TREE_GROWTH_REVEAL_MS,
   treeConnectionGrowthStyle,
@@ -23,6 +24,27 @@ function person(
 function cssMilliseconds(value: string) {
   return Number.parseFloat(value);
 }
+
+test("the entire introduction gets a shorter budget as archives grow", () => {
+  let previous = Infinity;
+  for (const count of [25, 100, 200, 500, 2_000]) {
+    const people = Array.from({ length: count }, (_, index) =>
+      person(`p-${index}`, "1900", index ? [`p-${index - 1}`] : []),
+    );
+    const schedule = treeGrowthDelays(people);
+    const duration = treeGrowthDuration(
+      Math.max(...schedule.values()),
+      schedule,
+    );
+    assert.ok(duration < previous);
+    assert.ok(duration <= treeGrowthBudget(count) + 0.001);
+    assert.ok(schedule.labelMs > 0);
+    previous = duration;
+  }
+  assert.equal(treeGrowthBudget(100), 2_000);
+  assert.equal(treeGrowthBudget(10_000), 600);
+  assert.equal(treeGrowthDelays([]).size, 0);
+});
 
 test("tree growth follows birth dates and finishes a generation before its descendants", () => {
   const people = [
@@ -142,10 +164,14 @@ test("deep archives compress the whole schedule without reversing arrows and car
   );
   const delays = treeGrowthDelays(people);
   assert.equal(delays.size, people.length);
-  assert.equal(delays.get("person-9999"), TREE_GROWTH_MAX_DELAY_MS);
+  assert.ok(
+    treeGrowthDuration(delays.get("person-9999")!, delays) <=
+      treeGrowthBudget(people.length) + 0.001,
+  );
   assert.ok(delays.nodeMs < TREE_GROWTH_NODE_MS);
   assert.ok(delays.edgeMs < TREE_GROWTH_EDGE_MS);
   assert.deepEqual(treeGrowthCanvasStyle(delays), {
+    "--tree-growth-label-duration": `${Math.round(delays.labelMs * 1_000) / 1_000}ms`,
     "--tree-growth-node-duration": `${Math.round(delays.nodeMs * 1_000) / 1_000}ms`,
     "--tree-growth-reveal-duration": `${Math.round(delays.revealMs * 1_000) / 1_000}ms`,
     "--tree-growth-edge-duration": `${Math.round(delays.edgeMs * 1_000) / 1_000}ms`,
@@ -184,8 +210,8 @@ test("wide archives schedule every descendant without a fixed family size", () =
   const delays = treeGrowthDelays(people);
 
   assert.equal(delays.size, people.length);
-  assert.equal(delays.nodeMs, TREE_GROWTH_NODE_MS);
-  assert.equal(delays.edgeMs, TREE_GROWTH_EDGE_MS);
+  assert.ok(delays.nodeMs < TREE_GROWTH_NODE_MS);
+  assert.ok(delays.edgeMs < TREE_GROWTH_EDGE_MS);
   for (const child of people.slice(1)) {
     const edgeStart = cssMilliseconds(
       treeConnectionGrowthStyle(
@@ -193,7 +219,7 @@ test("wide archives schedule every descendant without a fixed family size", () =
         delays,
       )["--tree-growth-delay"],
     );
-    assert.ok(edgeStart >= delays.get("root")! + delays.revealMs);
+    assert.ok(edgeStart + 0.001 >= delays.get("root")! + delays.revealMs);
     assert.ok(edgeStart + delays.edgeMs <= delays.get(child.id)! + 0.001);
   }
 });

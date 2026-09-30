@@ -1,4 +1,7 @@
 import { createWebSearchService } from "./web-search.ts";
+import { dirname, join } from "node:path";
+import { aiAttachmentStore, validateAttachments } from "./ai-attachments.ts";
+import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import type { GeneratedResearchFile } from "./code-interpreter.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
@@ -9,7 +12,7 @@ import { fullName } from "../domain/dates.ts";
 import { exportGedcom } from "../domain/gedcom.ts";
 import { lineageReport } from "../domain/lineage-report.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
-import { aiChatStore } from "./ai-chats.ts";
+import { aiChatStore, AiChatLimitError } from "./ai-chats.ts";
 import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
 import { AiLimitError, type aiUsageStore } from "./ai-usage.ts";
 import type { createAuth } from "./auth.ts";
@@ -53,6 +56,7 @@ export function aiResearchHttp({
   researchCatalog,
   publicOrigin,
   fetcher = fetch,
+  uploadsDirectory,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -64,8 +68,18 @@ export function aiResearchHttp({
   researchCatalog: ReturnType<typeof researchCatalogStore>;
   publicOrigin?: string;
   fetcher?: typeof fetch;
+  uploadsDirectory?: string;
 }) {
   const chats = aiChatStore(archive.db);
+  const attachments = aiAttachmentStore(
+    uploadsDirectory || join(dirname(archive.db.file), "uploads"),
+    chats,
+  );
+  void attachments
+    .prune()
+    .catch(() =>
+      console.warn(JSON.stringify({ event: "ai.attachment_cleanup_failed" })),
+    );
   const activeRuns = new Map<
     string,
     { controller: AbortController; done: Promise<void> }
@@ -122,6 +136,7 @@ export function aiResearchHttp({
     fetcher,
     chats,
     generatedFiles,
+    attachments,
     webSearch: (runtime, metrics) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
         ? createWebSearchService({
@@ -248,6 +263,7 @@ export function aiResearchHttp({
       path !== "/api/ai/chat" &&
       path !== "/api/ai/chat/stream" &&
       path !== "/api/ai/chats" &&
+      !path.startsWith("/api/ai/attachments/") &&
       !path.startsWith("/api/ai/chats/")
     )
       return false;
@@ -275,7 +291,36 @@ export function aiResearchHttp({
         enabled: runtime.active,
         canPropose: runtime.capabilities.proposals && (await auth.canEdit(req)),
         streaming: true,
+        attachments: {
+          photoAnalysis: runtime.capabilities.photoAnalysis,
+          codeInterpreter: runtime.capabilities.codeInterpreter,
+        },
       });
+    }
+
+    if (path.startsWith("/api/ai/attachments/")) {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      const match =
+        /^\/api\/ai\/attachments\/([a-f0-9-]{36})\/([a-f0-9-]{36})$/i.exec(
+          path,
+        );
+      const chat = match && (await chats.read(match[1], aiUser.id));
+      if (!chat || chat.accessScope !== (await accessScope(aiUser)))
+        return json(res, 404, { error: "Вложение не найдено" });
+      const item = await attachments
+        .download(chat.id, aiUser.id, path)
+        .catch(() => null);
+      if (!item) return json(res, 404, { error: "Вложение не найдено" });
+      res.writeHead(200, {
+        "Content-Type": item.file.type,
+        "Content-Length": item.bytes.length,
+        "Content-Disposition": `attachment; filename="attachment"; filename*=UTF-8''${encodeURIComponent(item.file.name)}`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(item.bytes);
+      return true;
     }
 
     if (path === "/api/ai/chats" && req.method === "GET") {
@@ -319,8 +364,7 @@ export function aiResearchHttp({
         if (!isSameOriginRequest(req, publicOrigin))
           return json(res, 403, { error: "Invalid origin" });
         const existing = await chats.read(id, user.id);
-        if (!existing || existing.accessScope !== (await accessScope(user)))
-          return json(res, 404, { error: "Диалог не найден" });
+        if (!existing) return json(res, 404, { error: "Диалог не найден" });
         await stopChat(id);
         if (await chats.isBusy(id))
           return json(res, 409, {
@@ -328,6 +372,13 @@ export function aiResearchHttp({
           });
         const chat = await chats.delete(id, user.id);
         if (!chat) return json(res, 404, { error: "Диалог не найден" });
+        await attachments
+          .deleteChat(id)
+          .catch(() =>
+            console.warn(
+              JSON.stringify({ event: "ai.attachment_cleanup_failed" }),
+            ),
+          );
         const remoteId =
           chat.yandexConversationId || existing.yandexConversationId;
         if (remoteId) {
@@ -360,7 +411,9 @@ export function aiResearchHttp({
 
     let body: Record<string, unknown>;
     try {
-      body = (await readJson(req)) as Record<string, unknown>;
+      body = (await readJson(req, 14 * 1024 * 1024)) as Record<string, unknown>;
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        throw new Error("Некорректный запрос");
     } catch (error) {
       return json(res, error instanceof RangeError ? 413 : 400, {
         error:
@@ -379,6 +432,21 @@ export function aiResearchHttp({
       });
     const canPropose =
       runtime.capabilities.proposals && (await auth.canEdit(req));
+    let preparedAttachments;
+    try {
+      preparedAttachments = await validateAttachments(
+        body.attachments,
+        runtime.capabilities,
+      );
+      delete body.attachments;
+    } catch (error) {
+      return json(res, 400, {
+        error:
+          error instanceof RangeError
+            ? error.message
+            : "Не удалось прочитать вложения",
+      });
+    }
     const selectedPersonId = body.selectedPersonId;
     if (
       selectedPersonId !== undefined &&
@@ -386,7 +454,11 @@ export function aiResearchHttp({
     )
       return json(res, 400, { error: "Некорректный выбор человека" });
     const typedMessage =
-      typeof body.message === "string" ? body.message.trim() : "";
+      typeof body.message === "string" && body.message.trim()
+        ? body.message.trim()
+        : preparedAttachments.length
+          ? "Изучи прикреплённые файлы."
+          : "";
     if (
       typedMessage.length > 8000 ||
       (selectedPersonId && typedMessage) ||
@@ -421,9 +493,16 @@ export function aiResearchHttp({
       throw error;
     }
 
-    const chat = requestedChatId
-      ? await chats.read(requestedChatId, user.id)
-      : await chats.create(user.id, await accessScope(user));
+    let chat;
+    try {
+      chat = requestedChatId
+        ? await chats.read(requestedChatId, user.id)
+        : await chats.create(user.id, await accessScope(user));
+    } catch (error) {
+      if (error instanceof AiChatLimitError)
+        return json(res, 409, { code: "AI_CHAT_LIMIT", error: error.message });
+      throw error;
+    }
     if (!chat || chat.accessScope !== (await accessScope(user)))
       return json(res, 404, { error: "Диалог не найден" });
     if (closing)
@@ -436,17 +515,63 @@ export function aiResearchHttp({
         error: "Дождитесь завершения предыдущего ответа в этом диалоге",
       });
     let usageRun: Awaited<ReturnType<typeof usage.begin>>;
+    let savedAttachments: ResearchAttachment[] = [];
+    let appended = false;
     try {
       if (closing) throw new Error("Сервер перезапускается");
+      const oldFiles =
+        (await chats.messages(chat.id, user.id))?.flatMap(
+          (item) => item.attachments || [],
+        ) || [];
+      if (
+        preparedAttachments.length &&
+        oldFiles.length + preparedAttachments.length > 100
+      ) {
+        await chats.release(chat.id, lockToken);
+        return json(res, 400, {
+          error: "В библиотеке уже 100 файлов. Создайте новый диалог.",
+        });
+      }
+      if (
+        preparedAttachments.length &&
+        oldFiles.reduce((size, file) => size + file.size, 0) +
+          preparedAttachments.reduce(
+            (size, file) => size + file.bytes.length,
+            0,
+          ) >
+          100 * 1024 * 1024
+      ) {
+        await chats.release(chat.id, lockToken);
+        return json(res, 400, {
+          error: "В диалоге уже 100 МБ вложений. Создайте новый диалог.",
+        });
+      }
+      try {
+        savedAttachments = await attachments.save(chat.id, preparedAttachments);
+      } catch {
+        await chats.release(chat.id, lockToken);
+        return json(res, 503, {
+          error:
+            "Не удалось сохранить вложения. Попробуйте позже или обратитесь к администратору.",
+        });
+      }
       await chats.append(
         chat.id,
         "user",
         message,
-        selectedPerson ? { hidden: true } : {},
+        selectedPerson
+          ? { hidden: true }
+          : {
+              ...(savedAttachments.length
+                ? { attachments: savedAttachments }
+                : {}),
+            },
       );
+      appended = true;
       usageRun = await usage.begin(user.id, runtime.model);
       if (closing) throw new Error("Сервер перезапускается");
     } catch (error) {
+      if (!appended) await attachments.removeFiles(savedAttachments);
       await chats.release(chat.id, lockToken);
       throw error;
     }
@@ -517,6 +642,8 @@ export function aiResearchHttp({
       });
       res.flushHeaders?.();
       sse(res, "chat", { chatId: chat.id });
+      if (savedAttachments.length)
+        sse(res, "attachments", { attachments: savedAttachments });
     }
 
     try {
@@ -613,26 +740,29 @@ export function aiResearchHttp({
         : leaseLost
           ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
           : controller.signal.aborted
-          ? "Ответ остановлен"
-          : error instanceof Error &&
-              (error.name === "TimeoutError" ||
-                /aborted due to timeout|timed out/i.test(error.message))
-            ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
-            : error instanceof YandexResponseError
-              ? error.status === 401 || error.status === 403
-                ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
-                : error.status === 429
-                  ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
-                  : error.code === "provider_timeout"
-                    ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
-                    : error.code === "incomplete_max_output_tokens"
-                      ? "ИИ исчерпал лимит длины ответа и рассуждений. Ответ не завершён. История сохранена; попробуйте разделить вопрос на несколько частей."
-                      : error.code === "incomplete_content_filter"
-                        ? "Yandex AI остановил ответ фильтром содержимого. Это не означает, что в архиве нет нужных данных. Попробуйте уточнить запрос."
-                        : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
-              : error instanceof Error
-                ? error.message
-                : "Не удалось получить ответ ИИ";
+            ? "Ответ остановлен"
+            : error instanceof Error &&
+                (error.name === "TimeoutError" ||
+                  /aborted due to timeout|timed out/i.test(error.message))
+              ? "ИИ не ответил вовремя. Попробуйте повторить запрос."
+              : error instanceof YandexResponseError
+                ? error.status === 401 || error.status === 403
+                  ? "Yandex AI отклонил доступ. Администратору нужно проверить API-ключ и права на модель и диалоги в разделе Yandex AI."
+                  : (error.status === 400 || error.status === 422) &&
+                      preparedAttachments.length
+                    ? "Модель ИИ не приняла вложение. Для PDF нужна модель с поддержкой файлов; проверьте её в настройках ИИ или отправьте текст/изображение страницы. Файлы сохранены в диалоге."
+                    : error.status === 429
+                      ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
+                      : error.code === "provider_timeout"
+                        ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
+                        : error.code === "incomplete_max_output_tokens"
+                          ? "ИИ исчерпал лимит длины ответа и рассуждений. Ответ не завершён. История сохранена; попробуйте разделить вопрос на несколько частей."
+                          : error.code === "incomplete_content_filter"
+                            ? "Yandex AI остановил ответ фильтром содержимого. Это не означает, что в архиве нет нужных данных. Попробуйте уточнить запрос."
+                            : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
+                : error instanceof Error
+                  ? error.message
+                  : "Не удалось получить ответ ИИ";
       console.warn(
         JSON.stringify({
           event: "ai.turn_failed",

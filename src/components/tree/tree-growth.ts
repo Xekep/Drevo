@@ -10,8 +10,12 @@ export const TREE_GROWTH_REVEAL_MS = 100;
 const TREE_GROWTH_LABEL_MS = 160;
 export const TREE_GROWTH_ORDER_MS = 30;
 export const TREE_GROWTH_MAX_ORDER_MS = 200;
-export const TREE_GROWTH_MAX_DELAY_MS = 3_500;
 export const TREE_LAYOUT_TRANSITION_MS = 440;
+
+/** Large archives finish their introduction sooner, including cards and labels. */
+export function treeGrowthBudget(personCount: number) {
+  return Math.max(600, 4_000 * Math.sqrt(25 / Math.max(25, personCount)));
+}
 
 type GrowthStyle = CSSProperties & {
   "--tree-growth-delay": string;
@@ -19,11 +23,13 @@ type GrowthStyle = CSSProperties & {
   "--tree-growth-edge-duration"?: string;
 };
 type GrowthCanvasStyle = CSSProperties & {
+  "--tree-growth-label-duration": string;
   "--tree-growth-node-duration": string;
   "--tree-growth-reveal-duration": string;
   "--tree-growth-edge-duration": string;
 };
 export type TreeGrowthSchedule = ReadonlyMap<string, number> & {
+  readonly labelMs: number;
   readonly nodeMs: number;
   readonly revealMs: number;
   readonly edgeMs: number;
@@ -68,6 +74,7 @@ function spouseGroups(members: LayoutPerson[]) {
 function timing(delays: ReadonlyMap<string, number>) {
   const schedule = delays as Partial<TreeGrowthSchedule>;
   return {
+    labelMs: schedule.labelMs ?? TREE_GROWTH_LABEL_MS,
     nodeMs: schedule.nodeMs ?? TREE_GROWTH_NODE_MS,
     revealMs: schedule.revealMs ?? TREE_GROWTH_REVEAL_MS,
     edgeMs: schedule.edgeMs ?? TREE_GROWTH_EDGE_MS,
@@ -126,11 +133,15 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
       TREE_GROWTH_REVEAL_MS;
   }
   const last = Math.max(0, ...rawDelays.values());
-  const scale =
-    last > TREE_GROWTH_MAX_DELAY_MS ? TREE_GROWTH_MAX_DELAY_MS / last : 1;
+  const tail = Math.max(
+    TREE_GROWTH_NODE_MS,
+    TREE_GROWTH_REVEAL_MS + TREE_GROWTH_EDGE_MS + TREE_GROWTH_LABEL_MS,
+  );
+  const scale = Math.min(1, treeGrowthBudget(people.length) / (last + tail));
   return Object.assign(
     new Map([...rawDelays].map(([id, delay]) => [id, delay * scale])),
     {
+      labelMs: TREE_GROWTH_LABEL_MS * scale,
       nodeMs: TREE_GROWTH_NODE_MS * scale,
       revealMs: TREE_GROWTH_REVEAL_MS * scale,
       edgeMs: TREE_GROWTH_EDGE_MS * scale,
@@ -148,8 +159,9 @@ export function treeNodeGrowthStyle(delay: number): GrowthStyle {
 export function treeGrowthCanvasStyle(
   delays: ReadonlyMap<string, number>,
 ): GrowthCanvasStyle {
-  const { nodeMs, revealMs, edgeMs } = timing(delays);
+  const { nodeMs, revealMs, edgeMs, labelMs } = timing(delays);
   return {
+    "--tree-growth-label-duration": milliseconds(labelMs),
     "--tree-growth-node-duration": milliseconds(nodeMs),
     "--tree-growth-reveal-duration": milliseconds(revealMs),
     "--tree-growth-edge-duration": milliseconds(edgeMs),
@@ -199,6 +211,6 @@ export function treeGrowthDuration(
   maxDelay: number,
   delays?: ReadonlyMap<string, number>,
 ) {
-  const { nodeMs, revealMs, edgeMs } = timing(delays || new Map());
-  return maxDelay + Math.max(nodeMs, revealMs + edgeMs + TREE_GROWTH_LABEL_MS);
+  const { nodeMs, revealMs, edgeMs, labelMs } = timing(delays || new Map());
+  return maxDelay + Math.max(nodeMs, revealMs + edgeMs + labelMs);
 }

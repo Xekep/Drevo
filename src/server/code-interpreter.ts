@@ -100,6 +100,7 @@ export async function runCodeInterpreter(options: {
   onUsage: (input: number, output: number) => void;
   timeoutMs?: number;
   allowPdf: boolean;
+  attachments?: Array<{ name: string; type: string; bytes: Buffer }>;
 }) {
   const { client, runtime } = options;
   const started = Date.now();
@@ -153,11 +154,18 @@ export async function runCodeInterpreter(options: {
       fileId = await client.uploadCalculationData(runtime, serialized, signal);
       cleanup.add(fileId);
     }
+    const attachmentIds: string[] = [];
+    for (const attachment of options.attachments || []) {
+      const id = await client.uploadInputFile(runtime, attachment, signal);
+      attachmentIds.push(id);
+      cleanup.add(id);
+    }
     options.onCall();
     const raw = (await client.codeInterpreter({
       runtime,
       task: args.task,
       fileId,
+      attachmentIds,
       signal,
     })) as RawResult;
     options.onUsage(
@@ -183,7 +191,8 @@ export async function runCodeInterpreter(options: {
           safeId(item.file_id) &&
           safeId(item.container_id) &&
           containers.has(item.container_id) &&
-          item.file_id !== fileId,
+          item.file_id !== fileId &&
+          !attachmentIds.includes(item.file_id!),
       );
     for (const item of citations.slice(0, 20)) cleanup.add(item.file_id!);
     if (

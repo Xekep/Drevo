@@ -5,8 +5,15 @@ export type ResponseFunctionCall = {
   arguments: string;
 };
 
+export type ResponseInputContent =
+  | { type: "input_text"; text: string }
+  | { type: "input_file"; filename: string; file_data: string };
 export type ResponseItem =
-  | { type: "message"; role: "user" | "assistant"; content: string }
+  | {
+      type: "message";
+      role: "user" | "assistant";
+      content: string | ResponseInputContent[];
+    }
   | { type: "function_call_output"; call_id: string; output: string };
 
 type RawResponse = {
@@ -185,6 +192,37 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
   }
 
   return {
+    async uploadInputFile(
+      runtime: { baseUrl: string; apiKey: string; folderId: string },
+      file: { name: string; type: string; bytes: Buffer },
+      signal: AbortSignal,
+    ) {
+      const form = new FormData();
+      form.append("purpose", "user_data");
+      form.append(
+        "file",
+        new Blob([new Uint8Array(file.bytes)], { type: file.type }),
+        file.name,
+      );
+      form.append("expires_after[anchor]", "created_at");
+      form.append("expires_after[seconds]", "86400");
+      const response = await request(
+        runtime.baseUrl,
+        "/files",
+        "POST",
+        runtime.apiKey,
+        runtime.folderId,
+        form,
+        signal,
+      );
+      const value = (await response.json()) as { id?: unknown };
+      if (
+        typeof value.id !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,200}$/.test(value.id)
+      )
+        throw new Error("Некорректный ответ загрузки файла");
+      return value.id;
+    },
     async uploadCalculationData(
       runtime: { baseUrl: string; apiKey: string; folderId: string },
       data: string,
@@ -276,6 +314,7 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
       };
       task: string;
       fileId?: string;
+      attachmentIds?: string[];
       signal: AbortSignal;
     }): Promise<unknown> {
       const { runtime } = options;
@@ -297,7 +336,14 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
                 type: "auto",
                 memory_limit: "1g",
                 network_policy: { type: "disabled" },
-                ...(options.fileId ? { file_ids: [options.fileId] } : {}),
+                ...(options.fileId || options.attachmentIds?.length
+                  ? {
+                      file_ids: [
+                        ...(options.fileId ? [options.fileId] : []),
+                        ...(options.attachmentIds || []),
+                      ],
+                    }
+                  : {}),
               },
             },
           ],
@@ -436,9 +482,15 @@ export function yandexResponsesClient(fetcher: typeof fetch = fetch) {
                   : {
                       type: "message" as const,
                       role: "user" as const,
-                      content: [
-                        { type: "input_text" as const, text: item.content },
-                      ],
+                      content:
+                        typeof item.content === "string"
+                          ? [
+                              {
+                                type: "input_text" as const,
+                                text: item.content,
+                              },
+                            ]
+                          : item.content,
                     },
             );
       const body = {

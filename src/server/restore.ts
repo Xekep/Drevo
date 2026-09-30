@@ -1,3 +1,4 @@
+import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
 import { storeDatabase } from "./store-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -36,7 +37,11 @@ import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
-import { documentSearchText, parseDocumentDetails, type DocumentDetails } from "../shared/document-details.ts";
+import {
+  documentSearchText,
+  parseDocumentDetails,
+  type DocumentDetails,
+} from "../shared/document-details.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
@@ -234,7 +239,11 @@ async function unpack(source: Readable, directory: string) {
               throw new Error("Некорректный ключ в бэкапе");
             if (
               remaining >
-              (name === "drevo.sqlite" ? SQLITE_LIMIT : 20 * 1024 * 1024)
+              (name === "drevo.sqlite"
+                ? SQLITE_LIMIT
+                : name.endsWith(".pdf")
+                  ? MAX_PDF_BYTES
+                  : 20 * 1024 * 1024)
             )
               throw new Error("Один из файлов бэкапа слишком большой");
             if (seen.has(name))
@@ -410,10 +419,12 @@ export function restoreStore(
             .get()
         ) {
           const people = new Set(family.people.map((person) => person.id));
-          const documentColumns = new Set(source
-            .prepare("PRAGMA table_info(documents)")
-            .all()
-            .map((column) => String(column.name)));
+          const documentColumns = new Set(
+            source
+              .prepare("PRAGMA table_info(documents)")
+              .all()
+              .map((column) => String(column.name)),
+          );
           const savedColumn = (name: string, fallback: string) =>
             documentColumns.has(name) ? name : `'${fallback}' AS ${name}`;
           const rows = source
@@ -455,7 +466,7 @@ export function restoreStore(
               document.title.length > 160 ||
               !parseDocumentDetails(document) ||
               document.fileSize < 1 ||
-              document.fileSize > 20 * 1024 * 1024
+              document.fileSize > MAX_PDF_BYTES
             )
               throw new Error("Некорректный документ в бэкапе");
             return document;
@@ -710,7 +721,10 @@ export function restoreStore(
               await insert.run(
                 document.id,
                 document.title,
-                documentSearchText(document.title, parseDocumentDetails(document)!),
+                documentSearchText(
+                  document.title,
+                  parseDocumentDetails(document)!,
+                ),
                 document.fileName,
                 document.fileSize,
                 document.uploadedBy,

@@ -47,7 +47,9 @@ test("adding a spouse offers the current person's child before saving", async ({
     page.locator(".name-suggestions").getByText(/Возможный ребёнок.*Ольга/),
   ).toBeVisible();
 });
-test("new relative asks for an explicit twin type", async ({ page }, testInfo) => {
+test("new relative asks for an explicit twin type", async ({
+  page,
+}, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/);
@@ -134,7 +136,12 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
           state.frames++;
           // Keep probes inside the animation frame: a slow CI runner can
           // finish the intro between separate Playwright mouse commands.
-          if (scenario !== "idle" && state.frames % 5 === 0) {
+          // Large archives now have a shorter intro; probe its first frame
+          // even when rendering the graph leaves fewer than five frames.
+          if (
+            scenario !== "idle" &&
+            (state.frames === 1 || state.frames % 5 === 0)
+          ) {
             const target = canvas.querySelector(".react-flow__pane")!;
             for (const event of [
               new WheelEvent("wheel", {

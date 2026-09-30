@@ -205,3 +205,129 @@
   .document-item { transition: none; }
   .pdf-book-pages { transition: none; }
 }
+
+.documents-drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 36px 24px;
+  background: #193b2cb8;
+  backdrop-filter: blur(6px);
+  color: #f8fff4;
+  pointer-events: none;
+  text-align: center;
+}
+.documents-drop-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 16px;
+  border: 2px dashed #d2e8c2;
+  border-radius: 20px;
+}
+.documents-drop-overlay > * {
+  position: relative;
+}
+.documents-drop-overlay b {
+  font-size: clamp(18px, 3vw, 28px);
+  font-weight: 600;
+}
+.documents-drop-overlay span {
+  font-size: 14px;
+  color: #dcebd5;
+}
+
+.documents-upload .documents-drop-zone {
+  grid-column: 1 / -1;
+  min-height: 170px;
+  align-content: center;
+  justify-items: center;
+  padding: 24px 16px;
+  border: 1px dashed #8eae8e;
+  border-radius: 12px;
+  background: #eef5e9;
+  text-align: center;
+  cursor: pointer;
+}
+.documents-drop-zone strong {
+  overflow-wrap: anywhere;
+}
+.documents-drop-zone span {
+  font-weight: 400;
+  color: #647760;
+}
+.documents-drop-zone:focus-within {
+  outline: 2px solid #507458;
+  outline-offset: 3px;
+}
+.documents-upload .documents-drop-zone input {
+  max-width: 100%;
+  background: transparent;
+  border: 0;
+}
+.document-people-picker {
+  min-width: 0;
+}
+.document-people-picker .documents-selected-people {
+  margin-top: 8px;
+}
+.person-documents-editor {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid #d7e1d3;
+}
+.person-documents-editor h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.person-documents-editor button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #d7e1d3;
+  border-radius: 8px;
+  background: #f9fcf7;
+  color: #42644a;
+  cursor: pointer;
+}
+.person-documents-editor button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.person-document-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e7ece3;
+}
+.person-document-row a,
+.person-document-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: #42644a;
+}
+.person-document-row button {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.person-document-picker {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f4f7f0;
+}
+.person-documents-editor .field-hint {
+  margin: 0;
+}
