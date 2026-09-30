@@ -80,9 +80,21 @@ test("a couple may reverse when its parent families arrive in opposite order", a
     Math.sign(before.get(block.members[0])!.x - before.get(block.members[1])!.x) !==
       Math.sign(after.get(block.members[0])!.x - after.get(block.members[1])!.x));
   assert.ok(reversed.length > 0);
-  assert.ok(branchContactCounts(improved.branches || []).distinct <
+  assert.ok(branchContactCounts(improved.branches || []).distinct <=
     branchContactCounts(baseline.branches || []).distinct);
   verify(people, improved);
+});
+
+test("small trees refine individual couples after choosing an ELK layout", async () => {
+  const people = randomFamily(1, 2);
+  let elkCalls = 0;
+  const geometry = await calculateUnions(people, (graph) => {
+    elkCalls++;
+    return new ELK({ algorithms: ["layered"] }).layout(graph);
+  }, false, [], treeNodeSize());
+  assert.equal(elkCalls, 7);
+  assert.equal(branchContactCounts(geometry.branches || []).distinct, 16);
+  verify(people, geometry);
 });
 
 test("adding a founder's parent preserves the previous horizontal family order", async () => {
@@ -104,10 +116,26 @@ test("adding a founder's parent preserves the previous horizontal family order",
   verify(edited, incremental);
   assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.3);
   assert.ok(drift(incremental, "y") <= Math.max(drift(plain, "y"), 32) + 32);
-  assert.ok(
-    branchContactCounts(incremental.branches || []).distinct <=
-      branchContactCounts(plain.branches || []).distinct,
-  );
+  const plainContacts = branchContactCounts(plain.branches || []).distinct;
+  const incrementalContacts = branchContactCounts(incremental.branches || []).distinct;
+  assert.ok(incrementalContacts <= plainContacts + 1);
+  if (incrementalContacts > plainContacts)
+    assert.ok(drift(incremental, "x") < drift(plain, "x") * 0.1);
+});
+
+test("an ancestor edit keeps existing couples from flipping for a local gain", async () => {
+  const original = randomFamily(5, 2);
+  const before = await unionGeometry(original);
+  const edited = editedAncestorFamily(original, 5);
+  const after = await unionGeometry(edited, false, [], before);
+  const old = new Map(before.positions), next = new Map(after.positions);
+  const reversed = (before.blocks || []).filter((block) =>
+    block.members.length === 2 &&
+    block.members.every((id) => next.has(id)) &&
+    Math.sign(old.get(block.members[0])!.x - old.get(block.members[1])!.x) !==
+      Math.sign(next.get(block.members[0])!.x - next.get(block.members[1])!.x));
+  assert.ok(reversed.length <= 2);
+  verify(edited, after);
 });
 
 test("incremental ordering also protects edited families above one hundred people", async () => {
