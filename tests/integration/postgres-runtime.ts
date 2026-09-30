@@ -1044,6 +1044,11 @@ try {
   assert.equal(selectedFamily.status, 200);
   const selectedSnapshot = await selectedFamily.json();
   assert.equal(selectedSnapshot.family.people[0].name, "Исправленный сосед");
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/health", { headers })).status,
+    404,
+    "warming an archive must not expose even public routes to other members",
+  );
   const selectedShareResponse = await fetch(securedBase + "/a/other-archive/api/shares", {
     method: "POST",
     headers: { ...ownerHeaders, "If-Match": String(selectedSnapshot.revision) },
@@ -1103,6 +1108,8 @@ try {
   const ownerArchives = await fetch(securedBase + "/api/account/archives", {
     headers: ownerHeaders,
   }).then((r) => r.json());
+  assert.equal(await accountArchiveDirectory(app.archive.db).contains("owner", "other-archive"), true);
+  assert.equal(await accountArchiveDirectory(app.archive.db).contains("reader", "other-archive"), false);
   assert.deepEqual(
     new Set(ownerArchives.archives.map((archive: { id: string }) => archive.id)),
     new Set(["runtime-test", "other-archive"]),
@@ -1135,6 +1142,27 @@ try {
     [sessionTokenHash(otherOnlyToken), Date.now() + 60_000],
   );
   const otherOnlyHeaders = { Cookie: `drevo_session=${otherOnlyToken}` };
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
+    200,
+  );
+  const selectedUsers = await userStore(otherApp.archive.db);
+  await selectedUsers.setApproved((await selectedUsers.get("owner"))!, "other-only", false);
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
+    404,
+    "unapproving a member must close an already warm selected archive",
+  );
+  assert.equal(
+    (await fetch(securedBase + "/api/account/sessions", { headers: otherOnlyHeaders })).status,
+    200,
+    "archive approval must not revoke the global account session",
+  );
+  await selectedUsers.setApproved((await selectedUsers.get("owner"))!, "other-only", true);
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
+    200,
+  );
   const otherOnlySession = await fetch(securedBase + "/api/session", {
     headers: otherOnlyHeaders,
   }).then((r) => r.json());
@@ -1153,6 +1181,11 @@ try {
     "DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='other-only'",
   );
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  assert.equal(
+    (await fetch(securedBase + "/a/other-archive/api/health", { headers: otherOnlyHeaders })).status,
+    404,
+    "a warmed runtime must stop serving a member immediately after removal",
+  );
   assert.deepEqual(
     (await fetch(securedBase + "/api/account/archives", { headers: otherOnlyHeaders })
       .then((r) => r.json())).archives,

@@ -25,8 +25,22 @@ export function accountArchiveDirectory(db: StoreDatabase) {
          ORDER BY lower(a.title),a.id`,
         )
       : null;
+  const approvedMembership =
+    db.kind === "postgres"
+      ? db.prepare(
+          "",
+          "SELECT 1 FROM archive_memberships WHERE archive_id=? AND user_id=? AND approved=true",
+        )
+      : null;
 
   return {
+    async contains(userId: string, archiveId: string): Promise<boolean> {
+      if (!setAccount || !approvedMembership) return false;
+      return await db.transaction(async () => {
+        await setAccount.get(userId);
+        return !!(await approvedMembership.get(archiveId, userId));
+      }, true);
+    },
     async list(userId: string): Promise<AccountArchive[] | null> {
       if (!setAccount || !memberships) return null;
       return await db.transaction(async () => {

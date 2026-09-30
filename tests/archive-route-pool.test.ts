@@ -58,3 +58,41 @@ test("a fifth tree waits for an active tree instead of losing the request", asyn
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("a warm archive still checks access on every request", async () => {
+  let permitted = true;
+  let opened = 0;
+  let handled = 0;
+  const pool = archiveRoutePool(
+    async () => permitted,
+    async () => {
+      opened++;
+      return {
+        async handle(_req, res) {
+          handled++;
+          res.writeHead(200).end("archive");
+        },
+        async close() {},
+      };
+    },
+  );
+  const server = createServer((req, res) => {
+    void pool.route(req, res, new URL(req.url!, "http://localhost"));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const url = `${base}/a/private-tree/api/health`;
+    assert.equal((await fetch(url)).status, 200);
+    permitted = false;
+    assert.equal((await fetch(url)).status, 404);
+    assert.equal(handled, 1);
+    permitted = true;
+    assert.equal((await fetch(url)).status, 200);
+    assert.equal(opened, 1);
+  } finally {
+    await pool.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
