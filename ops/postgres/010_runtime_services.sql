@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS research_resources (
 CREATE TABLE IF NOT EXISTS workflow_stages (
   archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id', true) REFERENCES archives(id) ON DELETE CASCADE,
           token TEXT NOT NULL,
-          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore')),
+          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore','drevo')),
           actor_id TEXT NOT NULL,
           revision bigint NOT NULL,
           expires_at bigint NOT NULL,

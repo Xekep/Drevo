@@ -707,7 +707,7 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       db.exec(`
         CREATE TABLE workflow_stages (
           token TEXT PRIMARY KEY,
-          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore')),
+          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore','drevo')),
           actor_id TEXT NOT NULL,
           revision INTEGER NOT NULL,
           expires_at INTEGER NOT NULL,
@@ -718,6 +718,38 @@ export function initializeArchiveSchema(db: DatabaseSync) {
         CREATE INDEX workflow_stages_expiry ON workflow_stages(expires_at);
       `);
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(workflowExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  const stagesSql = String(
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_schema WHERE type='table' AND name='workflow_stages'",
+      )
+      .get()?.sql || "",
+  );
+  if (stagesSql && !stagesSql.includes("'drevo'")) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE workflow_stages_v2 (
+          token TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('gedcom','restore','drevo')),
+          actor_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          data TEXT NOT NULL CHECK(json_valid(data)),
+          directory TEXT,
+          UNIQUE(kind, actor_id)
+        ) STRICT;
+        INSERT INTO workflow_stages_v2 SELECT * FROM workflow_stages;
+        DROP TABLE workflow_stages;
+        ALTER TABLE workflow_stages_v2 RENAME TO workflow_stages;
+        CREATE INDEX workflow_stages_expiry ON workflow_stages(expires_at);
+      `);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

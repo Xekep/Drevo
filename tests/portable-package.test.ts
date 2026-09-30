@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { openPromise } from "yauzl";
+import sharp from "sharp";
 import { ZipFile } from "yazl";
 import type { Family } from "../src/domain/types.ts";
 import {
@@ -16,6 +17,10 @@ import {
   type PortableManifest,
 } from "../src/server/portable-package.ts";
 import { readPortablePackage } from "../src/server/portable-import.ts";
+import { installPortableOriginals } from "../src/server/portable-install.ts";
+import { applyPortablePackage } from "../src/server/portable-apply.ts";
+import { openArchive } from "../src/server/database.ts";
+import { userStore } from "../src/server/users.ts";
 
 const hash = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 
@@ -32,7 +37,11 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
   try {
     const uploads = join(dir, "uploads");
     await mkdir(uploads);
-    const image = Buffer.from("original photo bytes");
+    const image = await sharp({
+      create: { width: 1, height: 1, channels: 4, background: "white" },
+    })
+      .png()
+      .toBuffer();
     const pdf = Buffer.from("%PDF-1.4\nportable document");
     await writeFile(join(uploads, "portrait.png"), image);
     await writeFile(join(uploads, "record.pdf"), pdf);
@@ -133,6 +142,69 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     const imported = await readPortablePackage(path, stage);
     assert.deepEqual(imported.snapshot, snapshot);
     assert.equal(imported.files.get("media/record.pdf")?.sha256, hash(pdf));
+    const destination = join(dir, "destination");
+    await mkdir(destination);
+    const installed = await installPortableOriginals(imported, destination);
+    assert.notEqual(
+      installed.snapshot.family.people[0].photo,
+      "/media/portrait.png",
+    );
+    assert.notEqual(installed.snapshot.documents[0].fileName, "record.pdf");
+    assert.equal(installed.snapshot.comments[0].authorId, "imported:owner");
+    assert.deepEqual(
+      await readFile(
+        join(destination, installed.snapshot.documents[0].fileName),
+      ),
+      pdf,
+    );
+    const archive = await openArchive(":memory:", {
+      title: "Empty",
+      description: "",
+      demo: false,
+      people: [],
+      photos: [],
+    });
+    try {
+      const owner = await (
+        await userStore(archive.db, { requireInitialAdmin: false })
+      ).register("owner", "Owner");
+      const revision = (await archive.read()).revision;
+      const token = "37add622-72b9-4d29-bc04-f9751e6f9a4a";
+      await archive.db
+        .prepare(
+          "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) VALUES(?,'drevo',?,?,?,?)",
+        )
+        .run(token, owner.id, revision, Date.now() + 60_000, "{}");
+      await applyPortablePackage(archive, owner, token, revision, installed);
+      const result = await archive.read();
+      assert.equal(
+        result.family.people[0].photo,
+        installed.snapshot.family.people[0].photo,
+      );
+      assert.equal(
+        (await archive.db.prepare("SELECT count(*) AS n FROM documents").get())
+          ?.n,
+        1,
+      );
+      assert.equal(
+        (
+          await archive.db
+            .prepare("SELECT author_name FROM person_comments")
+            .get()
+        )?.author_name,
+        "Владелец",
+      );
+      await assert.rejects(
+        applyPortablePackage(archive, owner, token, revision, installed),
+      );
+    } finally {
+      await archive.close();
+    }
+    await installed.undo();
+    await assert.rejects(
+      readFile(join(destination, installed.snapshot.documents[0].fileName)),
+      { code: "ENOENT" },
+    );
     const tampered = new Map(files);
     const alteredManifest: PortableManifest = structuredClone(manifest);
     alteredManifest.entries[0].sha256 = "0".repeat(64);

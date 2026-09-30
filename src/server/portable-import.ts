@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -9,6 +9,8 @@ import { openPromise } from "yauzl";
 import { randomUUID } from "node:crypto";
 import { validateFamily } from "../domain/validation.ts";
 import { validAnnotationSelection } from "../shared/document-annotations.ts";
+import { parseDocumentDetails } from "../shared/document-details.ts";
+import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import {
   PortablePackageError,
   type PortableComment,
@@ -92,7 +94,9 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       documentFiles.has(document.fileName) ||
       typeof document.title !== "string" ||
       !document.title.trim() ||
-      document.title.length > 500 ||
+      document.title.length > 160 ||
+      !parseDocumentDetails(document) ||
+      !Number.isFinite(Date.parse(String(document.createdAt))) ||
       ![
         "createdAt",
         "uploadedBy",
@@ -123,7 +127,9 @@ function snapshotFrom(value: unknown): PortableSnapshot {
         typeof metadata.id !== "string" ||
         !uuid.test(metadata.id) ||
         typeof metadata.authorId !== "string" ||
+        metadata.authorId.length > 200 ||
         typeof metadata.authorName !== "string" ||
+        metadata.authorName.length > 200 ||
         typeof metadata.createdAt !== "string"
       )
         invalid("Некорректная аннотация документа");
@@ -212,6 +218,9 @@ export async function readPortablePackage(
       total += entry.uncompressedSize;
       if (total > PORTABLE_IMPORT_LIMIT)
         invalid("Распакованный пакет Drevo больше 12 ГиБ");
+      const disk = await statfs(directory);
+      if (disk.bavail * disk.bsize < entry.uncompressedSize + 128 * 1024 ** 2)
+        invalid("Недостаточно места для распаковки пакета Drevo");
       const target = join(directory, randomUUID());
       const hash = createHash("sha256");
       let size = 0;
@@ -274,6 +283,9 @@ export async function readPortablePackage(
     )
       invalid("Повреждён файл пакета Drevo: SHA-256 не совпадает");
   }
+  for (const [name, file] of files)
+    if (name.startsWith("media/"))
+      await verifyPortableMediaFile(file.path, name);
   const expectedMedia = new Set<string>();
   for (const person of snapshot.family.people)
     if (person.photo?.startsWith("/media/"))
