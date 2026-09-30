@@ -1471,6 +1471,22 @@ try {
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "linked");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
+  const beforeCandidates = await otherApp.archive.read();
+  const similarCandidate = structuredClone(beforeCandidates.family);
+  similarCandidate.people[0].name = "Иван";
+  await otherApp.archive.write(similarCandidate, beforeCandidates.revision);
+  const suggested = await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+    headers: ownerHeaders,
+  });
+  assert.equal(suggested.status, 200);
+  const suggestedBody = await suggested.json();
+  assert.deepEqual(suggestedBody.candidates.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["other-archive","person-a"]]);
+  assert.equal(suggestedBody.candidates[0].birthYear, undefined,
+    "candidate evidence must not disclose a birth year hidden by publication consent");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
+    headers,
+  })).status, 403);
   await otherPublication.unpublish("person-a");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "revoked",
@@ -1480,6 +1496,9 @@ try {
     404,
     "revocation removes the global detail in the same transaction",
   );
+  assert.deepEqual((await (await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
+    .json()).candidates, [], "revocation must remove the candidate immediately");
   await publishedPeopleStore(app.archive.db).unpublish("person-a");
   const rootAfterMatch = await app.archive.read();
   const restoredRoot = structuredClone(rootAfterMatch.family);
