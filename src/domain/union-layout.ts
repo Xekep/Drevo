@@ -627,12 +627,15 @@ export async function unionGeometry(
   const initial = extent(best);
   // На больших архивах ограничиваем число запусков ELK, сохраняя
   // детерминированный результат для одного и того же набора людей.
-  // On scale fixtures the third ELK run helped at 782 people, but not at 977.
+  // On 423-556 person fixtures the third ELK run did not improve quality,
+  // while it helped at 782 people. Keep two candidates through 700 people.
   const seeds =
     !contacts.distinct ? [] : people.length <= 300
       ? [15, 20, 12, 4, 8]
-      : people.length <= 900
-        ? [15, 20]
+      : people.length <= 700
+        ? [15]
+        : people.length <= 900
+          ? [15, 20]
         : people.length <= 2000
           ? [15]
         : [];

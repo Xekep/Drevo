@@ -7,13 +7,12 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { ChevronDown, ChevronUp, CircleHelp, Copy, Eye, EyeOff, LoaderCircle, Plus } from "lucide-react";
-import { fullName, years, type Person, type FamilyLink } from "../../domain";
+import { fullName, resolvedSex, years, type Person } from "../../domain";
 import { archiveFetch } from "../../data/archive-fetch.ts";
 import { archiveContextAt, archiveResourceUrl } from "../../domain/archive-context.ts";
 import { Avatar } from "../person-panel";
 import { useLongPress } from "./use-long-press";
 import { samePersonNodeData, type PersonNodeData } from "./person-node-data";
-import { personRelationLabel } from "./person-relation-label";
 import {
   treeNodeSize,
   TREE_NODE_WIDTH,
@@ -26,10 +25,7 @@ export const TreeActions = createContext<{
   reference: (personId: string, occurrenceId: string) => void;
   publishPerson?: (personId: string) => void;
   publicationUpdate?: { personId: string; published: boolean; archiveId: string | null } | null;
-  showRelationLabel: boolean;
-  kinshipReference: Person | null;
-  kinshipPeople: Person[];
-  kinshipLinks: FamilyLink[];
+  relationLabel: (person: Person) => string;
 }>({
   choose: () => {},
   selectOnly: () => {},
@@ -38,10 +34,7 @@ export const TreeActions = createContext<{
   reference: () => {},
   publishPerson: undefined,
   publicationUpdate: null,
-  showRelationLabel: true,
-  kinshipReference: null,
-  kinshipPeople: [],
-  kinshipLinks: [],
+  relationLabel: () => "",
 });
 export type PersonNodeType = Node<PersonNodeData, "person">;
 type PublicationStatus = "unknown" | "loading" | "published" | "hidden" | "error";
@@ -79,10 +72,7 @@ export const PersonNode = memo(function PersonNode({
     reference,
     publishPerson,
     publicationUpdate,
-    showRelationLabel,
-    kinshipReference,
-    kinshipPeople,
-    kinshipLinks,
+    relationLabel: getRelationLabel,
   } = useContext(TreeActions);
   const archiveId = archiveContextAt(window.location.pathname)?.id || null;
   const publicationEndpoint = archiveResourceUrl(
@@ -153,21 +143,10 @@ export const PersonNode = memo(function PersonNode({
   );
   const compact = detail !== "full";
   const overview = detail === "overview" || detail === "distant";
-  const relationLabel = useMemo(() => {
-    if (!showRelationLabel) return "";
-    return personRelationLabel(
-      data.person,
-      kinshipReference,
-      kinshipPeople,
-      kinshipLinks,
-    );
-  }, [
-    showRelationLabel,
-    data.person,
-    kinshipReference,
-    kinshipPeople,
-    kinshipLinks,
-  ]);
+  const relationLabel = useMemo(
+    () => detail === "distant" ? "" : getRelationLabel(data.person),
+    [detail, getRelationLabel, data.person],
+  );
   const lifespan = years(data.person);
   const cardLabel = `${fullName(data.person)}${lifespan ? `, ${lifespan}` : ""}${relationLabel ? `, ${relationLabel}` : ""}${data.person.needsReview ? ", требует проверки" : ""}`;
   const branchAction = data.collapsed ? "Развернуть" : "Свернуть";
@@ -231,7 +210,12 @@ export const PersonNode = memo(function PersonNode({
         aria-label={cardLabel}
         title={cardLabel}
       >
-        <Avatar person={data.person} />
+        {detail === "distant" ? (
+          <span
+            className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
+            aria-hidden="true"
+          />
+        ) : <Avatar person={data.person} />}
         <span className="portrait-card-info">
           <strong>{fullName(data.person)}</strong>
           {lifespan && <span className="portrait-card-years">{lifespan}</span>}

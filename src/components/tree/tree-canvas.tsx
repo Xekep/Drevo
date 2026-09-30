@@ -39,12 +39,14 @@ import {
   type Family,
   type ArchiveUser,
   type GraphConnection,
+  type Person,
   type TreeMode,
   type TreeColorScheme,
 } from "../../domain";
 import { archiveContextAt } from "../../domain/archive-context.ts";
 import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { personRelationLabel } from "./person-relation-label";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
@@ -683,13 +685,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     },
     [flow, layoutKey, personOccurrences, positions, toggleView],
   );
+  const relationLabel = useMemo(() => {
+    const reference = family.people.find((person) => person.id === user?.personId) || null;
+    const labels = new Map<string, string>();
+    return (person: Person) => {
+      if (!user?.id) return "";
+      const cached = labels.get(person.id);
+      if (cached !== undefined) return cached;
+      const label = personRelationLabel(person, reference, family.people, family.links || []);
+      labels.set(person.id, label);
+      return label;
+    };
+  }, [family.people, family.links, user?.id, user?.personId]);
   const actions = useMemo(
     () => ({
-      showRelationLabel: Boolean(user?.id),
-      kinshipReference:
-        family.people.find((person) => person.id === user?.personId) || null,
-      kinshipPeople: family.people,
-      kinshipLinks: family.links || [],
+      relationLabel,
       publishPerson: props.onPublishPerson,
       publicationUpdate: props.publicationUpdate,
       choose: (id: string, additive: boolean) => {
@@ -728,10 +738,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       personOccurrences,
       flow,
       introCameraFinished,
-      family.people,
-      family.links,
-      user?.id,
-      user?.personId,
+      relationLabel,
       props.onPublishPerson,
       props.publicationUpdate,
     ],
