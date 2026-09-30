@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS person_comments (
   id bigint NOT NULL,
   person_id text NOT NULL,
   author_id text NOT NULL,
+  author_name text NOT NULL DEFAULT '',
   created_ms bigint NOT NULL,
   text text NOT NULL CHECK (char_length(text) BETWEEN 1 AND 2000),
   PRIMARY KEY (archive_id, id),

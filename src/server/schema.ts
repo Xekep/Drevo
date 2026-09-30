@@ -842,6 +842,7 @@ export function initializeArchiveSchema(db: DatabaseSync) {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
           author_id TEXT NOT NULL,
+          author_name TEXT NOT NULL DEFAULT '',
           created_ms INTEGER NOT NULL,
           text TEXT NOT NULL CHECK(length(text) BETWEEN 1 AND 2000)
         ) STRICT;
@@ -849,6 +850,21 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       `);
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
         discussionExtension,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  if (!tableHasColumn(db, "person_comments", "author_name")) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(
+        "ALTER TABLE person_comments ADD COLUMN author_name TEXT NOT NULL DEFAULT ''",
+      );
+      db.exec(
+        "UPDATE person_comments SET author_name=COALESCE((SELECT name FROM users WHERE users.id=person_comments.author_id),'')",
       );
       db.exec("COMMIT");
     } catch (error) {
@@ -1023,12 +1039,22 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const documentExtension = "2026-09-document-metadata";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(documentExtension)) {
+  if (
+    !db.prepare("SELECT 1 FROM migrations WHERE id=?").get(documentExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const name of ["document_type", "document_date", "place", "description", "provenance"])
+      for (const name of [
+        "document_type",
+        "document_date",
+        "place",
+        "description",
+        "provenance",
+      ])
         if (!tableHasColumn(db, "documents", name))
-          db.exec(`ALTER TABLE documents ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`);
+          db.exec(
+            `ALTER TABLE documents ADD COLUMN ${name} TEXT NOT NULL DEFAULT ''`,
+          );
       db.prepare("INSERT INTO migrations(id) VALUES(?)").run(documentExtension);
       db.exec("COMMIT");
     } catch (error) {
@@ -1063,14 +1089,28 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     }
   }
   const publicationFieldsExtension = "2026-09-publication-fields";
-  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(publicationFieldsExtension)) {
+  if (
+    !db
+      .prepare("SELECT 1 FROM migrations WHERE id=?")
+      .get(publicationFieldsExtension)
+  ) {
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const field of ["birth_year_visible", "death_year_visible", "birth_place_visible", "death_place_visible", "birth_surname_visible"] as const) {
+      for (const field of [
+        "birth_year_visible",
+        "death_year_visible",
+        "birth_place_visible",
+        "death_place_visible",
+        "birth_surname_visible",
+      ] as const) {
         const defaultValue = field === "birth_surname_visible" ? 0 : 1;
-        db.exec(`ALTER TABLE published_people ADD COLUMN ${field} INTEGER NOT NULL DEFAULT ${defaultValue} CHECK(${field} IN (0,1))`);
+        db.exec(
+          `ALTER TABLE published_people ADD COLUMN ${field} INTEGER NOT NULL DEFAULT ${defaultValue} CHECK(${field} IN (0,1))`,
+        );
       }
-      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(publicationFieldsExtension);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(
+        publicationFieldsExtension,
+      );
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

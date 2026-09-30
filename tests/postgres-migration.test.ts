@@ -145,6 +145,12 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     );
     writeFileSync(join(uploads, "record.pdf"), "document");
     const oldSchema = new DatabaseSync(sqlite);
+    oldSchema.exec("ALTER TABLE person_comments DROP COLUMN author_name");
+    assert.equal(
+      inspectSqliteSnapshot(sqlite, uploads).rows.get("person_comments")?.[0]
+        ?.author_name,
+      "",
+    );
     oldSchema.exec("DROP TABLE person_comments");
     for (const column of [
       "document_type",

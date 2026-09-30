@@ -66,9 +66,9 @@ export function portableExportHttp(
       }));
       const commentRows = await db
         .prepare(
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(u.name,'') AS author_name,c.created_ms,c.text
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text
          FROM person_comments c LEFT JOIN users u ON u.id=c.author_id ORDER BY c.id`,
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(u.name,'') AS author_name,c.created_ms,c.text
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text
          FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id ORDER BY c.id`,
         )
         .all();

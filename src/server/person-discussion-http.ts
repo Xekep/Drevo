@@ -56,10 +56,10 @@ export function personDiscussionHttp({
   const db = archive.db;
   const audit = auditStore(db);
   const comment = db.prepare(
-    `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
+    `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
        FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
       WHERE c.id=? AND c.person_id=?`,
-    "SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text\n       FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
+    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n       FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
   );
   const present = (
     row: CommentRow,
@@ -110,10 +110,10 @@ export function personDiscussionHttp({
         return json(res, 400, { error: "Некорректная страница" });
       const rows = (await db
         .prepare(
-          `SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
              FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
             WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
-          "SELECT c.id,c.person_id,c.author_id,u.name AS author_name,c.created_ms,c.text\n             FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
+          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n             FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
@@ -155,10 +155,10 @@ export function personDiscussionHttp({
           (
             await db
               .prepare(
-                "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?)",
-                "INSERT INTO person_comments(person_id,author_id,created_ms,text) VALUES(?,?,?,?) RETURNING id",
+                "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text) VALUES(?,?,?,?,?)",
+                "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text) VALUES(?,?,?,?,?) RETURNING id",
               )
-              .run(personId, user.id, now, text)
+              .run(personId, user.id, user.name, now, text)
           ).lastInsertRowid,
         );
         await audit.record(
