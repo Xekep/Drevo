@@ -142,8 +142,7 @@ test("AI research stream preserves tool calling and emits the checked answer", a
     const stream = await response.text();
     assert.match(stream, /event: status/);
     assert.match(stream, /Ищу людей в архиве/);
-    assert.match(stream, /event: delta\ndata: \{"text":"Найдена Анна\."\}/);
-    assert.equal((stream.match(/event: delta/g) || []).length, 1);
+    assert.doesNotMatch(stream, /event: delta/);
     assert.match(stream, /event: done/);
     assert.match(stream, /"answer":"Найдена Анна\."/);
     assert.match(stream, /"id":"anna-stream-test"/);

@@ -370,7 +370,7 @@ test("textual model tool call is recovered instead of being shown as Arduino cod
   );
 });
 
-test("stream only exposes the checked answer after textual tool calls", async () => {
+test("stream only exposes the checked answer after textual tool calls and the final access check", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-ai-safe-stream-"));
   process.env.YANDEX_AI_API_KEY = "test-key";
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
@@ -432,16 +432,14 @@ test("stream only exposes the checked answer after textual tool calls", async ()
         const [name, data] = frame.split("\ndata: ");
         return { name: name.slice(7), data: JSON.parse(data) };
       });
-    const deltas = events.filter((event) => event.name === "delta");
-    assert.equal(deltas.length, 1);
-    assert.doesNotMatch(
-      deltas[0].data.text.replace(/\[\[[^\]]+\]\]/g, ""),
-      /get_family|get_timeline|person-42|personId|Скоро вернусь/,
-    );
-    assert.match(deltas[0].data.text, /Иван Петрович/);
+    assert.equal(events.filter((event) => event.name === "delta").length, 0);
     assert.match(
       events.find((event) => event.name === "done")!.data.answer,
       /\[\[person:person-42\|Иван Петрович\]\]/,
+    );
+    assert.doesNotMatch(
+      events.find((event) => event.name === "done")!.data.answer,
+      /get_family|get_timeline|personId|Скоро вернусь/,
     );
     assert.equal(calls, 2);
   } finally {

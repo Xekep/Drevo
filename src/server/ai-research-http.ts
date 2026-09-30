@@ -464,16 +464,24 @@ export function aiResearchHttp({
       controller = new AbortController();
     let renewing = false;
     let leaseLost = false;
+    let accessRevoked = false;
     const lockRenewal = setInterval(() => {
       if (renewing) return;
       renewing = true;
       void accountAiAccess(archive.db, user.id, auth.local)
-        .then((allowed) => allowed && chats.renew(chat.id, lockToken))
+        .then((allowed) => {
+          if (!allowed) {
+            accessRevoked = true;
+            controller.abort();
+            return false;
+          }
+          return chats.renew(chat.id, lockToken);
+        })
         .then((held) => {
-          if (!held) {
+          if (!held && !accessRevoked) {
             leaseLost = true;
             controller.abort();
-          } else if (stream && !res.writableEnded && !res.destroyed) {
+          } else if (held && stream && !res.writableEnded && !res.destroyed) {
             res.write(": keep-alive\n\n");
           }
         })
@@ -519,9 +527,9 @@ export function aiResearchHttp({
         runtime,
         stream,
         metrics,
-        onDelta: (text) => {
-          if (stream) sse(res, "delta", { text });
-        },
+        // The browser does not consume deltas. Delivering them before the
+        // final access check would leak an answer after a tier downgrade.
+        onDelta: () => {},
         onStatus: (status) => {
           if (stream) sse(res, "status", { message: status });
         },
@@ -530,8 +538,10 @@ export function aiResearchHttp({
       });
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
-      if (!(await accountAiAccess(archive.db, user.id, auth.local)))
+      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+        accessRevoked = true;
         throw new DOMException("Доступ к ИИ отключён", "AbortError");
+      }
       await chats.append(chat.id, "assistant", result.answer, {
         references: result.references,
         suggestionIds: result.suggestionIds,
@@ -598,9 +608,11 @@ export function aiResearchHttp({
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
       await chats.setRemote(chat.id, null);
-      const errorMessage = leaseLost
-        ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
-        : controller.signal.aborted
+      const errorMessage = accessRevoked
+        ? "Доступ к ИИ отключён. Ответ не сохранён."
+        : leaseLost
+          ? "Соединение с архивом прервано. Повторите запрос после восстановления связи."
+          : controller.signal.aborted
           ? "Ответ остановлен"
           : error instanceof Error &&
               (error.name === "TimeoutError" ||
