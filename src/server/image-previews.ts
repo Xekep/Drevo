@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type ImagePreviewVariant = "thumb" | "display" | "ai";
+export type ImagePreviewVariant = "tiny" | "thumb" | "display" | "ai";
 export type ImagePreviewSource = Buffer | { path: string; cacheKey: string };
 
 export const IMAGE_PREVIEW_SETTINGS = {
+  tiny: { maxSize: 48, quality: 45 },
   thumb: { maxSize: 400, quality: 76 },
   display: { maxSize: 1600, quality: 82 },
   ai: { maxSize: 1600, quality: 86 },
@@ -59,12 +60,14 @@ export function imagePreviews(directory: string) {
             height: settings.maxSize,
             fit: "inside",
             withoutEnlargement: true,
-          })
-          .keepIccProfile();
+          });
+        const output = variant === "tiny"
+          ? resized.grayscale()
+          : resized.keepIccProfile();
         const bytes = await (
           variant === "ai"
-            ? resized.jpeg({ quality: settings.quality, mozjpeg: true })
-            : resized.webp({
+            ? output.jpeg({ quality: settings.quality, mozjpeg: true })
+            : output.webp({
                 quality: settings.quality,
                 lossless: tiny,
                 effort: 4,

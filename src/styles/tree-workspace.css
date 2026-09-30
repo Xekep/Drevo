@@ -223,6 +223,24 @@
   opacity: 0;
   visibility: hidden;
 }
+.tree-distant-portrait-clip {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.tree-distant-portraits {
+  position: absolute;
+  left: -256px;
+  top: -256px;
+  width: calc(100% + 512px);
+  height: calc(100% + 512px);
+  will-change: transform;
+}
+.tree-canvas.is-growth-preparing .tree-distant-portrait-clip {
+  visibility: hidden;
+}
 .tree-canvas .react-flow {
   position: absolute;
   top: 0;
@@ -1698,6 +1716,9 @@
 .flow-person.is-distant .flow-person-content > span > span {
   font-size: 27px;
   line-height: 1.05;
+}
+.flow-person.is-portrait-card.is-distant .person-avatar {
+  box-shadow: none;
 }
 .tree-mode-bar {
   top: 18px;

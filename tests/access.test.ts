@@ -567,6 +567,8 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     );
     const portraitPreview = await request(portrait + "?variant=thumb", reader);
     assert.equal(portraitPreview.headers.get("content-type"), "image/webp");
+    const tinyPortrait = await request(portrait + "?variant=tiny", reader);
+    assert.equal(tinyPortrait.headers.get("content-type"), "image/webp");
     assert.deepEqual(
       await sharp(Buffer.from(await portraitPreview.arrayBuffer()))
         .raw()

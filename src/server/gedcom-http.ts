@@ -142,12 +142,71 @@ export function gedcomHttp(
           error: "Перенос данных доступен администратору",
         });
       try {
-        if (url.pathname === "/api/gedcom/export" && req.method === "GET") {
+        if (
+          (url.pathname === "/api/gedcom/export" && req.method === "GET") ||
+          (url.pathname === "/api/gedcom/export-visible" && req.method === "POST")
+        ) {
           const format = url.searchParams.get("format") || "gedzip7";
           if (!["gedcom551", "gedcom7", "gedzip7"].includes(format))
             return json(400, { error: "Неизвестный формат экспорта" });
-          const family = (await archive.read()).family,
-            items = await exportMedia(archive.db, family);
+          let family = (await archive.read()).family;
+          let visible: Set<string> | undefined;
+          if (url.pathname === "/api/gedcom/export-visible") {
+            if (!isSameOriginRequest(req, publicOrigin))
+              return json(403, { error: "Недопустимый источник запроса" });
+            if (!String(req.headers["content-type"] || "").startsWith("application/x-www-form-urlencoded"))
+              return json(415, { error: "Неверный формат запроса" });
+            const parts: Buffer[] = [];
+            let bytes = 0;
+            for await (const part of req) {
+              bytes += part.length;
+              if (bytes > 1024 * 1024)
+                return json(413, { error: "Слишком много людей для экспорта" });
+              parts.push(part);
+            }
+            let ids: unknown;
+            try {
+              ids = JSON.parse(new URLSearchParams(Buffer.concat(parts).toString("utf8")).get("ids") || "");
+            } catch {
+              return json(400, { error: "Неверный список людей" });
+            }
+            const known = new Set(family.people.map((person) => person.id));
+            if (!Array.isArray(ids) || !ids.length || ids.length > 10000 ||
+                ids.some((id) => typeof id !== "string" || !known.has(id)))
+              return json(400, { error: "Неверный список людей" });
+            visible = new Set(ids);
+            family = {
+              ...family,
+              people: family.people.filter((person) => visible!.has(person.id)).map((person) => ({
+                ...person,
+                parents: person.parents.filter((id) => visible!.has(id)),
+                spouses: person.spouses.filter((id) => visible!.has(id)),
+              })),
+              links: family.links?.filter((link) => visible!.has(link.from) && visible!.has(link.to)),
+              photos: family.photos?.filter((photo) =>
+                photo.tags.some((tag) => visible!.has(tag.personId)) ||
+                family.people.some((person) => visible!.has(person.id) && person.photo === photo.url),
+              ).map((photo) => ({
+                ...photo,
+                tags: photo.tags.filter((tag) => visible!.has(tag.personId)),
+              })),
+            };
+          }
+          let items = await exportMedia(archive.db, family);
+          if (visible) {
+            const documents = new Set(family.people.flatMap((person) => [
+              ...person.sources.map((source) => source.documentId),
+              ...(person.events || []).flatMap((event) =>
+                (event.sources || []).map((source) => source.documentId)),
+            ]).filter(Boolean));
+            items = items.filter((item) =>
+              !item.document || item.personIds.some((id) => visible!.has(id)) || documents.has(item.id),
+            ).map((item) => ({
+              ...item,
+              personIds: item.personIds.filter((id) => visible!.has(id)),
+              portraitIds: item.portraitIds.filter((id) => visible!.has(id)),
+            }));
+          }
           if (format === "gedzip7") {
             if (exporting)
               return json(429, { error: "Другой экспорт уже выполняется" });

@@ -48,6 +48,7 @@ import { archiveContextAt } from "../../domain/archive-context.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
 import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
+import { DistantPortraits } from "./distant-portraits";
 import { personRelationLabel } from "./person-relation-label";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
@@ -107,6 +108,7 @@ export type AssistantTreeFilter =
   | { ids: string[]; label: string; token: number }
   | { excludeNeedsReview: true; label: string; token: number };
 export type TreeCanvasHandle = {
+  visiblePersonIds: (signal?: AbortSignal) => Promise<string[]>;
   exportPdf: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
   exportPng: (signal?: AbortSignal, scope?: TreeExportScope, anchorId?: string, generations?: number) => Promise<void>;
 };
@@ -956,6 +958,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         );
       };
       return {
+        async visiblePersonIds(signal) {
+          const tree = await preparedTree(signal);
+          return [...new Set(tree.nodes.flatMap((node) =>
+            node.type === "person" ? [node.data.person.id] : [],
+          ))];
+        },
         async exportPdf(signal, scope, anchorId, generations) {
           const tree = await selectedTree(signal, scope, anchorId, generations);
           const { exportTreePdf } = await import("./tree-pdf");
@@ -1424,6 +1432,17 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <TreeCameraTools selected={selected} disabled={cameraLocked} />
           )}
         </ReactFlow>
+        )}
+        {!activeFanAnchor && (
+          <DistantPortraits
+            people={family.people}
+            nodes={nodes}
+            width={canvasWidth}
+            height={canvasHeight}
+            growing={growing}
+            growthStarted={growthStarted}
+            growthDelays={growthDelays}
+          />
         )}
         {!activeFanAnchor && (
           <TreeEdgeChoices

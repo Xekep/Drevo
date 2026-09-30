@@ -5,7 +5,6 @@ import { ArrowDownUp, ImagePlus, Link2, Plus, X } from "lucide-react";
 import {
   analyzeKinship,
   suggestConnectionOrder,
-  fullName,
   type Person,
   type GraphConnection,
   type ConnectionType,
@@ -44,6 +43,7 @@ import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
 import { TreeExportDialog } from "./components/tree-export-dialog";
+import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-download";
 import { TreeImportDialog } from "./components/tree-import-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
@@ -131,9 +131,6 @@ export default function App() {
     } = selection;
   const navigationDirty = useRef(false);
   const treeCanvas = useRef<TreeCanvasHandle>(null);
-  const [lastTreeExportAnchorId, setLastTreeExportAnchorId] = useState<
-    string | null
-  >(null);
   const [requestedView, setView, currentPath] = useArchiveView(
     useCallback(() => {
       const leave = confirmDiscardChanges(navigationDirty.current);
@@ -525,7 +522,6 @@ export default function App() {
         return;
       }
       if (!closeConnection()) return;
-      setLastTreeExportAnchorId(id);
       choose(id, additive);
       if (additive || compare) {
         lastUrlTarget.current = "";
@@ -549,7 +545,6 @@ export default function App() {
   const selectPersonOnly = useCallback(
     (id: string) => {
       if (!closeConnection() || !setPersonDraft(null)) return;
-      setLastTreeExportAnchorId(id);
       dispatch({ type: "selectOnly", id });
       lastUrlTarget.current = "";
       setView("tree", undefined, true);
@@ -559,7 +554,6 @@ export default function App() {
   const showPerson = useCallback(
     (id: string) => {
       if (!closeConnection()) return;
-      setLastTreeExportAnchorId(id);
       const target: ArchiveTarget = { kind: "person", id };
       lastUrlTarget.current = targetKey(target);
       setView("tree", target);
@@ -679,11 +673,6 @@ export default function App() {
   const accountPerson = navigationUser?.personId
     ? family?.people.find((person) => person.id === navigationUser.personId)
     : undefined;
-  const treeExportAnchor = family?.people.find(
-    (person) =>
-      person.id ===
-      (selected[0] || lastTreeExportAnchorId || accountPerson?.id),
-  );
   return (
     <div className="archive-app">
       {shareDraft && (
@@ -1192,12 +1181,12 @@ export default function App() {
       )}
       {treeExportOpen && family && readTree && (
         <TreeExportDialog
-          anchorId={treeExportAnchor?.id}
-          anchorName={treeExportAnchor && fullName(treeExportAnchor)}
-          onExportPdf={(signal, scope, anchorId, generations) =>
-            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
-          }
-          canExportArchive={user?.role === "admin"}
+          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
+          onExportGenealogy={user?.role === "admin" ? async (format, signal, onError) => {
+            const ids = await treeCanvas.current!.visiblePersonIds(signal);
+            signal.throwIfAborted();
+            downloadVisibleGenealogy(format, ids, onError);
+          } : undefined}
           onClose={() => setTreeExportOpen(false)}
         />
       )}

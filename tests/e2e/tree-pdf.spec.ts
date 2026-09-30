@@ -14,7 +14,7 @@ async function openExport(page: Page) {
 async function downloadPdf(page: Page, info: TestInfo) {
   const dialog = await openExport(page);
   const pending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: /PDF/ }).click();
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
   const download = await pending;
   expect(download.suggestedFilename()).toMatch(/\.pdf$/);
   const path = info.outputPath("tree.pdf");
@@ -26,7 +26,7 @@ async function downloadPdf(page: Page, info: TestInfo) {
   return getDocument({ data: new Uint8Array(buffer) }).promise;
 }
 
-test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
+test("selection does not change the visible tree PDF export", async ({ page, isMobile }, info) => {
   test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
@@ -37,16 +37,12 @@ test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
     .locator(".flow-person-content")
     .click();
   const dialog = await openExport(page);
-  await dialog
-    .getByRole("combobox", { name: "Область экспорта" })
-    .selectOption("descendants");
-  await dialog
-    .getByRole("combobox", { name: "Поколений для экспорта" })
-    .selectOption("2");
+  await expect(dialog.getByRole("combobox", { name: "Формат экспорта" })).toHaveValue("pdf");
+  await expect(dialog.getByRole("combobox", { name: "Область экспорта" })).toHaveCount(0);
   const pending = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: /PDF/ }).click();
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
   const download = await pending;
-  const path = info.outputPath("descendants.pdf");
+  const path = info.outputPath("visible.pdf");
   await download.saveAs(path);
   const pdf = await getDocument({ data: new Uint8Array(await readFile(path)) })
     .promise;
@@ -56,7 +52,7 @@ test("selected descendants export to PDF", async ({ page, isMobile }, info) => {
       .join(" ");
     expect(text).toContain("Анна");
     expect(text).toContain("Пётр");
-    expect(text).not.toContain("Ольга");
+    expect(text).toContain("Ольга");
   } finally {
     await pdf.loadingTask.destroy();
   }
@@ -71,7 +67,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("settings have no export; canvas menu offers visible and full tree", async ({
+test("settings have no export; canvas dialog offers one visible tree format selector", async ({
   page,
   isMobile,
 }) => {
@@ -85,14 +81,38 @@ test("settings have no export; canvas menu offers visible and full tree", async 
   await expect(settings.locator("select")).toHaveCount(0);
   await settings.getByRole("button", { name: "Закрыть" }).click();
   const dialog = await openExport(page);
-  const scope = dialog.getByRole("combobox", { name: "Область экспорта" });
-  await expect(scope).toHaveValue("current");
-  await expect(scope.locator('option[value="current"]')).toContainText(
-    "Видимое древо",
-  );
-  await expect(scope.locator('option[value="all"]')).toContainText("Всё древо");
-  await expect(dialog.getByRole("button", { name: /PDF/ })).toBeVisible();
+  await expect(dialog.getByRole("combobox", { name: "Область экспорта" })).toHaveCount(0);
+  const formats = dialog.getByRole("combobox", { name: "Формат экспорта" });
+  await expect(formats).toHaveValue("pdf");
+  await expect(formats.locator('option[value="gedzip7"]')).toHaveCount(1);
+  await expect(formats.locator('option[value="gedcom7"]')).toHaveCount(1);
+  await expect(formats.locator('option[value="gedcom551"]')).toHaveCount(1);
+  await expect(dialog.getByRole("button", { name: "Скачать", exact: true })).toBeVisible();
   await expect(dialog.getByText("PNG", { exact: true })).toHaveCount(0);
+});
+
+test("GEDCOM from the tree dialog contains only visible people", async ({ page, isMobile }, info) => {
+  test.skip(isMobile, "Экспорт с полотна доступен на десктопе");
+  await page.goto("/tree");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow|is-layout-settling/);
+  await page.getByTestId("rf__node-e2e-child")
+    .getByRole("button", { name: /Свернуть (потомков|ветвь)/ }).click();
+  await expect(page.getByTestId("rf__node-e2e-grandchild")).toHaveCount(0);
+  const dialog = await openExport(page);
+  await dialog.getByRole("combobox", { name: "Формат экспорта" }).selectOption("gedcom7");
+  const request = page.waitForRequest((item) => item.url().includes("/api/gedcom/export-visible") && item.method() === "POST");
+  const pending = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
+  const submitted = await request;
+  expect(JSON.parse(new URLSearchParams(submitted.postData() || "").get("ids") || "[]"))
+    .not.toContain("e2e-grandchild");
+  const download = await pending;
+  expect(download.suggestedFilename()).toMatch(/\.ged$/);
+  const path = info.outputPath("visible.ged");
+  await download.saveAs(path);
+  const text = await readFile(path, "utf8");
+  expect(text).toContain("Пётр");
+  expect(text).not.toContain("Анна");
 });
 
 test("person cards have no context menu; tree sharing stays in the toolbar", async ({
@@ -185,7 +205,7 @@ test("download respects collapsed branches; cancel releases preparation without 
     downloaded = true;
   });
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Скачать PDF" }).click();
+  await dialog.getByRole("button", { name: "Скачать", exact: true }).click();
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(1);
   await dialog.getByRole("button", { name: "Закрыть", exact: true }).click();
   await expect(page.locator("iframe[data-tree-print]")).toHaveCount(0);

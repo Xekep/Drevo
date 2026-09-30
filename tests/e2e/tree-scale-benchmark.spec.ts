@@ -28,7 +28,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     data.user.personId = process.env.DREVO_LAYOUT_SCALE_KINSHIP ? people[0].id : null;
     await route.fulfill({ response, json: data });
   });
-  if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=thumb", (route) =>
+  if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=*", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#688a70"/></svg>',
@@ -95,7 +95,8 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
       mountedCards: document.querySelectorAll(".react-flow__node").length,
       mountedEdges: document.querySelectorAll(".react-flow__edge").length,
       distantCards: document.querySelectorAll(".flow-person.is-distant").length,
-      distantImages: document.querySelectorAll(".flow-person.is-distant .person-avatar img").length };
+      distantImages: document.querySelectorAll(".flow-person.is-distant .person-avatar img").length,
+      distantPortraits: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0) };
   });
   expect(result.people).toBe(people.length);
   expect(result.occurrences).toBeGreaterThanOrEqual(people.length);
@@ -111,6 +112,8 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   if (!process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
     expect(result.distantCards).toBeGreaterThan(0);
     expect(result.distantImages).toBe(0);
+    if (withPortraits) expect(result.distantPortraits).toBeGreaterThan(0);
+    else expect(result.distantPortraits).toBe(0);
   }
   console.log(`scale-browser ${JSON.stringify(result)}`);
   const pane = page.locator(".react-flow__pane");
@@ -145,5 +148,14 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     });
     console.log(`scale-pan ${JSON.stringify(frames)}`);
     expect(frames.count).toBeGreaterThan(0);
+  }
+  if (process.env.DREVO_LAYOUT_SCALE_SCREENSHOT) {
+    const zoomIn = page.locator(".flow-camera-tools button").nth(1);
+    for (let index = 0; index < 6; index++) await zoomIn.click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: testInfo.outputPath("distant-portraits.png") });
+    for (let index = 0; index < 2; index++) await zoomIn.click();
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: testInfo.outputPath("normal-portraits.png") });
   }
 });

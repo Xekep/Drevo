@@ -1146,6 +1146,34 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
         new RegExp(`2 VERS ${version.replaceAll(".", "\\.")}`),
       );
     }
+    for (const format of ["gedcom7", "gedzip7"] as const) {
+      const visible = await fetch(`${base}/api/gedcom/export-visible?format=${format}`, {
+        method: "POST",
+        headers: {
+          Origin: "https://test.invalid",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ ids: JSON.stringify(["child"]) }),
+      });
+      assert.equal(visible.status, 200);
+      if (format === "gedcom7") {
+        const imported = importGedcom(await visible.text(), "visible-export");
+        assert.deepEqual(imported.family.people.map((person) => person.name), ["child"]);
+        assert.deepEqual(imported.family.people[0].parents, []);
+      } else {
+        const visiblePath = join(dir, "visible.gdz");
+        const visibleStage = join(dir, "visible-stage");
+        await writeFile(visiblePath, Buffer.from(await visible.arrayBuffer()));
+        await mkdir(visibleStage);
+        const imported = await prepareGenealogyImport(visiblePath, visibleStage, "visible");
+        assert.deepEqual(imported.family.people.map((person) => person.name), ["child"]);
+      }
+    }
+    assert.equal((await fetch(`${base}/api/gedcom/export-visible?format=gedcom7`, {
+      method: "POST",
+      headers: { Origin: "https://test.invalid", "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ids: JSON.stringify(["missing"]) }),
+    })).status, 400);
     assert.equal(
       (await request("/api/gedcom/export?format=agelongXml")).status,
       400,

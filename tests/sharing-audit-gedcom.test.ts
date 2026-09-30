@@ -122,6 +122,7 @@ test("share membership is fixed, excludes outside edges and metadata, token is h
         ],
       },
     ];
+    family.people.find((item) => item.id === "child")!.needsReview = true;
     const projection = sharedFamily(family, result.share, result.token);
     assert.ok(!JSON.stringify(projection).includes(privateDocumentId));
     assert.equal(projection.people.find((item) => item.id === "child")!.sources[0].documentPage, undefined);
@@ -136,6 +137,7 @@ test("share membership is fixed, excludes outside edges and metadata, token is h
     assert.deepEqual(projection.people[0].parents, []);
     assert.deepEqual(projection.people[1].parents, ["mother"]);
     assert.equal(projection.people[1].parentageComplete, false);
+    assert.equal(projection.people[1].needsReview, true);
     assert.equal(projection.description, "");
     assert.deepEqual(projection.photos, []);
     assert.deepEqual(projection.links, []);
