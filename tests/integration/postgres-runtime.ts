@@ -1400,10 +1400,17 @@ try {
   deceasedFamily.people[0].deceased = true;
   deceasedFamily.people[0].maidenName = "ПоискРождения";
   await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
-  await otherPublication.publish("person-a", "owner", {
+  const selectedDiscoveryFields = {
     birthSurname: true, birthYear: false, deathYear: false,
     birthPlace: false, deathPlace: false,
-  });
+  };
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  })).status, 200);
+  assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
+    headers: ownerHeaders,
+  })).json()).fields["person-a"], selectedDiscoveryFields);
   await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
   const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
   assert.equal(found.status, 200);

@@ -45,6 +45,7 @@ test("only explicitly published people are searchable without tree access, and u
             birth: "1988-01-01",
             death: undefined,
           },
+          { ...person, id: "second-person", surname: "Петров", name: "Анна" },
         ],
       },
       initial.revision,
@@ -144,6 +145,20 @@ test("only explicitly published people are searchable without tree access, and u
     assert.equal((await request(
       "/api/admin/published-people/published-person", admin, "PUT", { fields: { birthYear: true } },
     )).status, 400);
+    const batch = "/api/admin/published-people/batch";
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "living-person"], fields: chosenFields,
+    })).status, 409);
+    assert.equal((await request("/api/published-people/living-person")).status, 404);
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "second-person"], fields: chosenFields,
+    })).status, 200);
+    const statuses = await (await request(`${batch}?id=${person.id}&id=second-person`, admin)).json();
+    assert.deepEqual(statuses.fields[person.id], chosenFields);
+    assert.deepEqual(statuses.fields["second-person"], chosenFields);
+    assert.equal((await request("/api/published-people/second-person")).status, 200);
+    assert.equal((await request(batch, admin, "DELETE", { personIds: ["second-person"] })).status, 200);
+    assert.equal((await request("/api/published-people/second-person")).status, 404);
     const beforeStatusChange = await app.archive.read();
     await app.archive.write(
       {

@@ -13,6 +13,7 @@ import {
   KeyRound,
   Trash2,
   Clock3,
+  ScanSearch,
 } from "lucide-react";
 import {
   ROLE_NAMES,
@@ -31,6 +32,7 @@ import { McpTokenAdmin } from "./mcp-token-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
+import { PublicationAdmin } from "./publication-admin";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -53,6 +55,7 @@ const ADMIN_SECTIONS = [
       { id: "invitations", label: "Приглашения", icon: Link2 },
       { id: "vk", label: "Вход через VK", icon: ShieldCheck },
       { id: "shares", label: "Общий доступ", icon: Link2 },
+      { id: "publications", label: "Можно найти", icon: ScanSearch },
     ],
   },
   {
@@ -112,6 +115,10 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
   shares: {
     title: "Общий доступ",
     description: "Публичный просмотр и временные ссылки на семейные ветви.",
+  },
+  publications: {
+    title: "Можно найти в Drevo",
+    description: "Выберите людей и точные поля, доступные другим участникам через поиск.",
   },
   audit: {
     title: "Журнал правок",
@@ -635,6 +642,7 @@ export function AdminPanel({
         {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
+        {section === "publications" && <PublicationAdmin family={family} />}
         {section === "invitations" && <InvitationsAdmin />}
         {section === "audit" && (
           <section className="admin-card archive-form">
