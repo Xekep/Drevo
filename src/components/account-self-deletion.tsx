@@ -139,6 +139,11 @@ export function AccountSelfDeletion() {
               Закрыть
             </button>
           ) : null}
+          {!plan && !busy && (
+            <button type="button" onClick={() => setOpen(false)}>
+              Закрыть
+            </button>
+          )}
           {error && (
             <p className="account-error" role="alert">
               {error}
