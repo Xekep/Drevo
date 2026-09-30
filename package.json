@@ -34,6 +34,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.42.0",
     "nodemailer": "^10.0.13",
+    "page-flip": "^2.0.7",
     "pdfjs-dist": "^6.3.289",
     "pdfkit": "^0.20.2",
     "pg": "8.23.0",
