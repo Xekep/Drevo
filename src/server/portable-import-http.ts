@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
+import { accountCapacity } from "./account-capacity.ts";
 import { ConflictError, type openArchive } from "./database.ts";
 import { applyPortablePackage } from "./portable-apply.ts";
 import {
@@ -246,6 +247,17 @@ export function portableImportHttp(
           .filter(([name]) => name.startsWith("media/"))
           .reduce((sum, [, file]) => sum + file.size, 0),
       };
+      const capacity = await accountCapacity(db, actorId);
+      const limits: string[] = [];
+      if (capacity.available && capacity.owned && !capacity.fullAccess) {
+        if (capacity.people + summary.people > capacity.peopleLimit)
+          limits.push(`Лимит людей: ${capacity.peopleLimit}`);
+        if (
+          capacity.mediaBytes === null ||
+          capacity.mediaBytes + summary.bytes > capacity.mediaLimitBytes
+        )
+          limits.push("Лимит фотографий и документов: 500 МБ");
+      }
       for (const file of parsed.files.values())
         await rm(file.path, { force: true });
       const updated = await db
@@ -263,7 +275,11 @@ export function portableImportHttp(
       if (!updated.changes)
         throw new ConflictError("Предпросмотр импорта истёк");
       ready = true;
-      return summary;
+      return {
+        ...summary,
+        canImport: limits.length === 0,
+        warning: limits.length ? limits.join("; ") : null,
+      };
     } finally {
       clearInterval(heartbeat);
       if (!ready) {

@@ -1860,12 +1860,35 @@ try {
       Origin: process.env.PUBLIC_ORIGIN!,
       "X-Drevo-Import": "1",
     };
+    const overLimitFile = join(directory, "portable-over-limit.drevo");
+    await writePortablePackage(createWriteStream(overLimitFile), directory, {
+      family: {
+        title: "Too many people", description: "", demo: false,
+        people: Array.from({ length: 151 }, (_, index) => ({
+          id: `pg-over-limit-${index}`, name: "Portable", surname: `Person ${index}`,
+          patronymic: "", sex: "u" as const, birth: "1900", birthPlace: "",
+          parents: [], spouses: [], generation: 1, column: index, sources: [],
+        })),
+        photos: [],
+      },
+      documents: [], comments: [],
+    }, async () => {});
+    const overLimitPreview = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
+      method: "POST", headers: transferHeaders, body: readFileSync(overLimitFile),
+    });
+    assert.equal(overLimitPreview.status, 200,
+      overLimitPreview.status === 200 ? "" : await overLimitPreview.text());
+    const overLimitSummary = await overLimitPreview.json();
+    assert.equal(overLimitSummary.canImport, false);
+    assert.match(overLimitSummary.warning, /150/);
     const previewTransfer = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
       method: "POST", headers: transferHeaders, body: readFileSync(importFile),
     });
     assert.equal(previewTransfer.status, 200,
       previewTransfer.status === 200 ? "" : await previewTransfer.text());
-    const transferToken = (await previewTransfer.json()).token;
+    const transferSummary = await previewTransfer.json();
+    assert.equal(transferSummary.canImport, true);
+    const transferToken = transferSummary.token;
     const applyTransfer = () => fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
       method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ token: transferToken, confirm: true }),
