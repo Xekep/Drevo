@@ -92,7 +92,7 @@ export function mediaUploadHttp({
       const disk = await statfs(uploadsDirectory);
       release = await quota.acquire(
         requester.id,
-        MAX_UPLOAD,
+        Number(req.headers["content-length"]) > 0 ? Math.min(Number(req.headers["content-length"]), MAX_UPLOAD) : MAX_UPLOAD,
         disk.bavail * disk.bsize,
         await media.usage(),
       );

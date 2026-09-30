@@ -19,7 +19,7 @@ import {
   aiRuntimeConfig,
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
-import { aiChatStore } from "../../src/server/ai-chats.ts";
+import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
@@ -353,6 +353,22 @@ try {
   ]);
   assert.equal([lease1, lease2].filter(Boolean).length, 1);
   await chats.release(chat.id, (lease1 || lease2)!);
+  const chatAttempts = await Promise.allSettled(
+    Array.from({ length: 10 }, () => chats.create("owner", "all")),
+  );
+  const createdChats = chatAttempts.filter(
+    (item) => item.status === "fulfilled",
+  );
+  assert.equal(
+    createdChats.length,
+    9,
+    "concurrent PostgreSQL requests cannot exceed ten chats",
+  );
+  const rejectedChat = chatAttempts.find(
+    (item) => item.status === "rejected",
+  ) as PromiseRejectedResult;
+  assert.ok(rejectedChat.reason instanceof AiChatLimitError);
+  for (const item of createdChats) await chats.delete(item.value.id, "owner");
   const usage = aiUsageStore(live.db),
     turn = await usage.begin("owner", "test-model");
   await usage.finish(turn.id, turn.started, {

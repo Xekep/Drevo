@@ -29,6 +29,7 @@ import { PersonSearch } from "./person-search";
 import { GedcomTransfer } from "./gedcom-transfer";
 import { McpTokenAdmin } from "./mcp-token-admin";
 import { AiSettingsAdmin } from "./ai-settings-admin";
+import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
 type Settings = {
@@ -67,6 +68,7 @@ const ADMIN_SECTIONS = [
     label: "Данные",
     items: [
       { id: "data", label: "Экспорт и импорт", icon: Download },
+      { id: "storage", label: "Хранилище", icon: DatabaseBackup },
       { id: "backups", label: "Резервные копии", icon: DatabaseBackup },
     ],
   },
@@ -76,6 +78,7 @@ const ADMIN_SECTIONS = [
   },
 ] as const;
 const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
+  storage: { title: "Хранилище", description: "Лимиты фотографий и документов по ролям участников." },
   vk: {
     title: "Вход через VK",
     description: "Подключение VK ID для входа в архив.",
@@ -631,6 +634,7 @@ export function AdminPanel({
           </form>
         )}
         {section === "ai" && <AiSettingsAdmin />}
+        {section === "storage" && <StorageLimitsAdmin />}
         {section === "vk" && <VkAuthAdmin />}
         {section === "resources" && <ResearchResourcesAdmin />}
         {section === "mcp" && <McpTokenAdmin />}

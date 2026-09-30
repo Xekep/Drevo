@@ -1,3 +1,5 @@
+import { enforceUserStorageLimit } from "./storage-limits.ts";
+import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
 import { rename, stat, statfs, unlink } from "node:fs/promises";
@@ -20,10 +22,16 @@ import {
 import { auditStore } from "./audit.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
-import { documentSearchText, parseDocumentDetails, type DocumentDetails } from "../shared/document-details.ts";
+import {
+  documentSearchText,
+  parseDocumentDetails,
+  type DocumentDetails,
+} from "../shared/document-details.ts";
 
-const MAX_PDF_BYTES = 20 * 1024 * 1024;
-async function readJsonBody(req: IncomingMessage, limit: number): Promise<unknown> {
+async function readJsonBody(
+  req: IncomingMessage,
+  limit: number,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -67,6 +75,15 @@ function parsedVersion(value: unknown): DocumentVersion | null {
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const details = parseDocumentDetails(input);
   return title && title.length <= 160 && details ? { title, ...details } : null;
+}
+
+function personIdsInput(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 30 &&
+    value.every((id) => typeof id === "string" && !!id && id.length <= 200) &&
+    new Set(value).size === value.length
+  );
 }
 
 const editableFields: Array<[keyof DocumentVersion, string]> = [
@@ -133,11 +150,20 @@ export function documentsHttp({
       ? projectFamilyForUser((await archive.read()).family, user)
       : (await archive.read()).family;
     return {
+      userId: user?.id,
       scoped: isScopedUser(user),
       people: family.people,
       ids: family.people.map((person) => person.id),
     };
   };
+  const canSee = (
+    access: Awaited<ReturnType<typeof visible>>,
+    row: Row,
+    ids: string[],
+  ) =>
+    !access.scoped ||
+    ids.some((id) => access.ids.includes(id)) ||
+    (!ids.length && row.uploaded_by === access.userId);
   const associations = async (ids: string[]) => {
     if (!ids.length) return new Map<string, string[]>();
     const rows = (await db
@@ -206,10 +232,10 @@ export function documentsHttp({
       if (access.scoped) {
         conditions.push(
           db.kind === "postgres"
-            ? "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)))"
-            : "EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?)))",
+            ? "(EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))) OR (d.uploaded_by=? AND NOT EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id)))"
+            : "(EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id AND dp.person_id IN (SELECT value FROM json_each(?))) OR (d.uploaded_by=? AND NOT EXISTS (SELECT 1 FROM document_people dp WHERE dp.document_id=d.id)))",
         );
-        args.push(JSON.stringify(access.ids));
+        args.push(JSON.stringify(access.ids), access.userId || "");
       }
       if (query) {
         const peopleIds = access.people
@@ -272,7 +298,7 @@ export function documentsHttp({
       if (!row) return json(res, 404, { error: "Документ не найден" });
       const access = await visible(req);
       const linkedIds = (await associations([row.id])).get(row.id) || [];
-      if (access.scoped && !linkedIds.some((id) => access.ids.includes(id)))
+      if (!canSee(access, row, linkedIds))
         return json(res, 404, { error: "Документ не найден" });
       const people = new Map(
         access.people.map((person) => [person.id, fullName(person)]),
@@ -295,7 +321,9 @@ export function documentsHttp({
         return json(res, 403, { error: "Недопустимый источник запроса" });
       if (!(await auth.canEdit(req)))
         return json(res, 403, { error: "Нет прав на изменение документа" });
-      if (req.headers["content-type"]?.split(";")[0].trim() !== "application/json")
+      if (
+        req.headers["content-type"]?.split(";")[0].trim() !== "application/json"
+      )
         return json(res, 415, { error: "Ожидается JSON" });
       let body: unknown;
       try {
@@ -303,48 +331,199 @@ export function documentsHttp({
       } catch {
         return json(res, 400, { error: "Некорректные сведения о документе" });
       }
-      const input = body && typeof body === "object" ? body as Record<string, unknown> : {};
+      const input =
+        body && typeof body === "object"
+          ? (body as Record<string, unknown>)
+          : {};
       const expected = parsedVersion(input.expected);
-      const next = parsedVersion(input.next);
-      if (!expected || !next)
-        return json(res, 400, { error: "Проверьте название и сведения о документе" });
+      const requestedNext = parsedVersion(input.next);
+      const links = input.people as
+        { expected?: unknown; next?: unknown } | undefined;
+      if (
+        (input.expected !== undefined || input.next !== undefined) &&
+        (!expected || !requestedNext)
+      )
+        return json(res, 400, {
+          error: "Проверьте название и сведения о документе",
+        });
+      if (
+        (!expected && !links) ||
+        (links &&
+          (!personIdsInput(links.expected) || !personIdsInput(links.next)))
+      )
+        return json(res, 400, { error: "Некорректные привязки документа" });
       const result = await db.transaction(async () => {
         const actor = await auth.currentUser(req);
         if (!actor?.approved || !(await auth.canEdit(req)))
-          return { status: 403 as const, error: "Нет прав на изменение документа" };
-        const row = (await db.prepare(
-          "SELECT * FROM documents WHERE id=?",
-          "SELECT * FROM documents WHERE id=?",
-        ).get(item[1])) as Row | undefined;
+          return {
+            status: 403 as const,
+            error: "Нет прав на изменение документа",
+          };
+        const row = (await db
+          .prepare(
+            "SELECT * FROM documents WHERE id=?",
+            "SELECT * FROM documents WHERE id=?",
+          )
+          .get(item[1])) as Row | undefined;
         if (!row) return { status: 404 as const, error: "Документ не найден" };
         const access = await visible(req);
         const personIds = (await associations([row.id])).get(row.id) || [];
-        if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+        if (!canSee(access, row, personIds))
           return { status: 404 as const, error: "Документ не найден" };
         if (!owns(actor, { createdBy: row.uploaded_by }))
-          return { status: 403 as const, error: "Изменить документ может его автор или администратор" };
-        const previous: DocumentVersion = { title: row.title, ...rowDetails(row) };
-        if (editableFields.some(([field]) => previous[field] !== expected[field]))
-          return { status: 409 as const, error: "Документ изменился. Откройте его заново" };
-        if (editableFields.every(([field]) => previous[field] === next[field]))
-          return { status: 200 as const, item: listedDocument(row, personIds, new Map(access.people.map((person) => [person.id, fullName(person)])), true) };
-        await db.prepare(
-          "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
-          "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
-        ).run(next.title, documentSearchText(next.title, next), next.documentType, next.documentDate, next.place, next.description, next.provenance, row.id);
-        await audit.record({
-          action: "Изменён документ",
-          entity: "document",
-          entityId: row.id,
-          label: next.title,
-          personIds,
-          details: editableFields.filter(([field]) => previous[field] !== next[field])
-            .map(([field, label]) => ({ field: label, before: previous[field], after: next[field] })),
-        }, actor);
-        const updated = { ...row, title: next.title, document_type: next.documentType,
-          document_date: next.documentDate, place: next.place, description: next.description,
-          provenance: next.provenance };
-        return { status: 200 as const, item: listedDocument(updated, personIds, new Map(access.people.map((person) => [person.id, fullName(person)])), true) };
+          return {
+            status: 403 as const,
+            error: "Изменить документ может его автор или администратор",
+          };
+        const previous: DocumentVersion = {
+          title: row.title,
+          ...rowDetails(row),
+        };
+        const next = requestedNext || previous;
+        if (
+          expected &&
+          editableFields.some(([field]) => previous[field] !== expected[field])
+        )
+          return {
+            status: 409 as const,
+            error: "Документ изменился. Откройте его заново",
+          };
+        const visibleIds = personIds.filter((id) => access.ids.includes(id));
+        let nextIds = personIds;
+        if (links) {
+          const expectedIds = links.expected as string[],
+            requestedIds = links.next as string[];
+          if (
+            [...expectedIds, ...requestedIds].some(
+              (id) => !access.ids.includes(id),
+            )
+          )
+            return {
+              status: 403 as const,
+              error: "Нет доступа к выбранному человеку",
+            };
+          if (
+            JSON.stringify([...expectedIds].sort()) !==
+            JSON.stringify([...visibleIds].sort())
+          )
+            return {
+              status: 409 as const,
+              error: "Привязки изменились. Откройте документ заново",
+            };
+          // A scoped editor cannot remove or learn about links to hidden people.
+          nextIds = [
+            ...personIds.filter((id) => !access.ids.includes(id)),
+            ...requestedIds,
+          ];
+          if (nextIds.length > 30)
+            return {
+              status: 400 as const,
+              error: "Документ можно связать не более чем с 30 людьми",
+            };
+        }
+        const linksChanged =
+          JSON.stringify([...personIds].sort()) !==
+          JSON.stringify([...nextIds].sort());
+        if (
+          !linksChanged &&
+          editableFields.every(([field]) => previous[field] === next[field])
+        )
+          return {
+            status: 200 as const,
+            item: listedDocument(
+              row,
+              personIds,
+              new Map(
+                access.people.map((person) => [person.id, fullName(person)]),
+              ),
+              true,
+            ),
+          };
+        if (linksChanged) {
+          await db
+            .prepare(
+              "DELETE FROM document_people WHERE document_id=?",
+              "DELETE FROM document_people WHERE document_id=?",
+            )
+            .run(row.id);
+          const insert = db.prepare(
+            "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+            "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
+          );
+          for (const id of nextIds) await insert.run(row.id, id);
+        }
+        await db
+          .prepare(
+            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
+            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
+          )
+          .run(
+            next.title,
+            documentSearchText(next.title, next),
+            next.documentType,
+            next.documentDate,
+            next.place,
+            next.description,
+            next.provenance,
+            row.id,
+          );
+        await audit.record(
+          {
+            action: "Изменён документ",
+            entity: "document",
+            entityId: row.id,
+            label: next.title,
+            personIds: [...new Set([...personIds, ...nextIds])],
+            details: [
+              ...editableFields
+                .filter(([field]) => previous[field] !== next[field])
+                .map(([field, label]) => ({
+                  field: label,
+                  before: previous[field],
+                  after: next[field],
+                })),
+              ...(linksChanged
+                ? [
+                    {
+                      field: "Привязки к людям",
+                      before: visibleIds
+                        .map((id) =>
+                          fullName(access.people.find((p) => p.id === id)!),
+                        )
+                        .join(", "),
+                      after: nextIds
+                        .filter((id) => access.ids.includes(id))
+                        .map((id) =>
+                          fullName(access.people.find((p) => p.id === id)!),
+                        )
+                        .join(", "),
+                    },
+                  ]
+                : []),
+            ],
+          },
+          actor,
+        );
+        const updated = {
+          ...row,
+          title: next.title,
+          document_type: next.documentType,
+          document_date: next.documentDate,
+          place: next.place,
+          description: next.description,
+          provenance: next.provenance,
+        };
+        return {
+          status: 200 as const,
+          item: listedDocument(
+            updated,
+            nextIds,
+            new Map(
+              access.people.map((person) => [person.id, fullName(person)]),
+            ),
+            true,
+          ),
+        };
       });
       return "error" in result
         ? json(res, result.status, { error: result.error })
@@ -361,7 +540,7 @@ export function documentsHttp({
       if (!row) return json(res, 404, { error: "Документ не найден" });
       const access = await visible(req);
       const personIds = (await associations([row.id])).get(row.id) || [];
-      if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+      if (!canSee(access, row, personIds))
         return json(res, 404, { error: "Документ не найден" });
       const visibleItems = (
         items: DocumentAnnotation[],
@@ -410,9 +589,9 @@ export function documentsHttp({
         const latest = await auth.currentUser(req);
         if (!latest?.approved || !(await auth.canEdit(req)))
           return { status: 403, error: "Нет прав на комментарии" };
-        const allowed = new Set((await visible(req)).ids);
+        const latestAccess = await visible(req);
         const linked = (await associations([row.id])).get(row.id) || [];
-        if (isScopedUser(latest) && !linked.some((id) => allowed.has(id)))
+        if (!canSee(latestAccess, current, linked))
           return { status: 404, error: "Документ не найден" };
         const items = JSON.parse(current.annotations) as DocumentAnnotation[];
         let status = 201;
@@ -495,7 +674,7 @@ export function documentsHttp({
         if (!row) return { status: 404 as const, error: "Документ не найден" };
         const access = await visible(req);
         const personIds = (await associations([row.id])).get(row.id) || [];
-        if (access.scoped && !personIds.some((id) => access.ids.includes(id)))
+        if (!canSee(access, row, personIds))
           return { status: 404 as const, error: "Документ не найден" };
         const actor = await auth.currentUser(req);
         if (!owns(actor, { createdBy: row.uploaded_by }))
@@ -555,13 +734,7 @@ export function documentsHttp({
         return json(res, 404, { error: "Файл документа не найден" });
       const access = await visible(req);
       if (
-        access.scoped &&
-        !(await db
-          .prepare(
-            "SELECT 1 FROM document_people WHERE document_id=? AND person_id IN (SELECT value FROM json_each(?)) LIMIT 1",
-            "SELECT 1 FROM document_people WHERE document_id=? AND person_id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb)) LIMIT 1",
-          )
-          .get(row.id, JSON.stringify(access.ids)))
+        !canSee(access, row, (await associations([row.id])).get(row.id) || [])
       )
         return json(res, 404, { error: "Документ не найден" });
       const path = join(uploadsDirectory, row.file_name);
@@ -595,7 +768,7 @@ export function documentsHttp({
       )
         return json(res, 415, { error: "Загрузите PDF-файл" });
       if (Number(req.headers["content-length"] || 0) > MAX_PDF_BYTES)
-        return json(res, 413, { error: "PDF должен быть не больше 20 МБ" });
+        return json(res, 413, { error: "PDF должен быть не больше 50 МБ" });
       let metadata: { title?: unknown; personIds?: unknown };
       try {
         const header = String(req.headers["x-document-metadata"] || "");
@@ -624,10 +797,6 @@ export function documentsHttp({
         return json(res, 400, { error: "Укажите название документа" });
       const access = await visible(req),
         allowed = new Set(access.ids);
-      if (access.scoped && !ids.length)
-        return json(res, 400, {
-          error: "Для вашего доступа нужно указать хотя бы одного человека",
-        });
       if (ids.some((id) => !allowed.has(id)))
         return json(res, 403, { error: "Нет доступа к выбранному человеку" });
 
@@ -636,7 +805,7 @@ export function documentsHttp({
         temporary = join(uploadsDirectory, `.${id}.upload`),
         target = join(uploadsDirectory, name);
       let size = 0;
-      let release: (() => unknown) | undefined;
+      let release: (() => Promise<unknown>) | undefined;
       const header: Buffer[] = [];
       let headerSize = 0;
       try {
@@ -647,7 +816,7 @@ export function documentsHttp({
           return json(res, 403, { error: "Право загрузки отозвано" });
         release = await quota.acquire(
           uploader.id,
-          MAX_PDF_BYTES,
+          Number(req.headers["content-length"]) > 0 ? Math.min(Number(req.headers["content-length"]), MAX_PDF_BYTES) : MAX_PDF_BYTES,
           disk.bavail * disk.bsize,
           images,
         );
@@ -655,7 +824,7 @@ export function documentsHttp({
           transform(chunk: Buffer, _encoding, callback) {
             size += chunk.length;
             if (size > MAX_PDF_BYTES)
-              return callback(new Error("PDF должен быть не больше 20 МБ"));
+              return callback(new Error("PDF должен быть не больше 50 МБ"));
             if (headerSize < 5) {
               const part = chunk.subarray(0, 5 - headerSize);
               header.push(part);
@@ -683,7 +852,6 @@ export function documentsHttp({
           !latest?.approved ||
           !(await auth.canEdit(req)) ||
           latest.id !== uploader.id ||
-          (isScopedUser(latest) && !ids.length) ||
           ids.some((personId) => !latestVisible.has(personId as string))
         )
           return json(res, 403, {
@@ -696,7 +864,6 @@ export function documentsHttp({
             !current?.approved ||
             !(await auth.canEdit(req)) ||
             current.id !== uploader.id ||
-            (isScopedUser(current) && !ids.length) ||
             ids.some((personId) => !currentVisible.has(personId as string))
           )
             return false;
@@ -725,6 +892,7 @@ export function documentsHttp({
           );
           for (const personId of ids as string[]) await link.run(id, personId);
           await enforcePostgresMediaQuota(db);
+          await enforceUserStorageLimit(db, uploader.id);
           return true;
         });
         if (!committed)
@@ -737,11 +905,11 @@ export function documentsHttp({
           return json(res, error.status, { error: error.message });
         }
         if (size > MAX_PDF_BYTES)
-          return json(res, 413, { error: "PDF должен быть не больше 20 МБ" });
+          return json(res, 413, { error: "PDF должен быть не больше 50 МБ" });
         console.error("Не удалось сохранить загруженный PDF", error);
         return json(res, 500, { error: "Не удалось сохранить PDF" });
       } finally {
-        release?.();
+        await release?.();
         await unlink(temporary).catch(() => {});
         if (
           !(await db

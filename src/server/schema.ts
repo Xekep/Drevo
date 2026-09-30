@@ -596,6 +596,11 @@ export function initializeArchiveSchema(db: DatabaseSync) {
     "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;",
   );
 
+  db.exec(`CREATE TABLE IF NOT EXISTS upload_limits (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    data TEXT NOT NULL CHECK(json_valid(data))
+  ) STRICT;`);
+
   for (let target = current + 1; target <= ARCHIVE_SCHEMA_VERSION; target++) {
     db.exec("BEGIN IMMEDIATE");
     try {

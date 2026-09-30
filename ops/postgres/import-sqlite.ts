@@ -111,6 +111,7 @@ const tables: Table[] = [
 // their complete rows in the shadow database so no account or service state is
 // silently lost while those repositories are built.
 const serviceTables = [
+  "upload_limits",
   "access_settings",
   "ai_chat_messages",
   "ai_chats",
@@ -165,7 +166,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   ]
     .filter(
       (name) =>
-        !["person_comments", "vk_auth_settings", "media_originals"].includes(
+        !["person_comments", "vk_auth_settings", "media_originals", "upload_limits"].includes(
           name,
         ) || actual.includes(name),
     )
@@ -212,6 +213,8 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   )
     throw new Error("Столбцы archive отличаются от схемы импорта");
   return serviceTables.map((name) => {
+    if (name === "upload_limits" && !actual.includes(name))
+      return { name, columns: ["id", "data"], rows: [] };
     // Older standalone backups predate the additive VK settings table.
     if (name === "vk_auth_settings" && !actual.includes(name))
       return { name, columns: ["id", "enabled", "client_id"], rows: [] };

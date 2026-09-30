@@ -7,9 +7,10 @@ export const BASIC_MEDIA_BYTES = 500_000_000;
  * the last reference can then free the owner's quota immediately.
  */
 export async function releaseAttachedMediaGrants(db: StoreDatabase) {
-  if (db.kind !== "postgres") return;
   await db.exec(
-    "",
+    `DELETE FROM media_upload_grants WHERE
+      EXISTS (SELECT 1 FROM people p WHERE json_extract(p.data,'$.photo')=media_upload_grants.url)
+      OR EXISTS (SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=media_upload_grants.url)`,
     `DELETE FROM media_upload_grants g
      WHERE EXISTS (
        SELECT 1 FROM people p

@@ -377,6 +377,7 @@ export function researchToolStatus(name: string) {
   const labels: Record<string, string> = {
     get_current_time: "Уточняю текущую дату и время…",
     run_code_interpreter: "Выполняю расчёт в Python…",
+    read_chat_attachments: "Открываю библиотеку вложений…",
     get_archive_insights: "Собираю статистику и факты архива…",
     get_distribution_statistics:
       "Считаю распределение и энтропию по доступным данным…",
@@ -492,12 +493,12 @@ export function usageTokens(usage: ModelUsage | undefined) {
   };
 }
 
-export async function readJson(req: IncomingMessage) {
+export async function readJson(req: IncomingMessage, limit = 64 * 1024) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 64 * 1024) throw new RangeError("Request too large");
+    if (size > limit) throw new RangeError("Request too large");
     chunks.push(Buffer.from(chunk));
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));

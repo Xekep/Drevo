@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
+import { PersonDocumentsEditor } from "./person-documents-editor";
 import {
   Pencil,
   UserRound,
@@ -175,15 +176,12 @@ export function PersonEditor({
         : relativeTo.sex
       : "u",
     relationshipSex =
-      !person &&
-      relationship === "spouse" &&
-      relativeSex !== "u"
+      !person && relationship === "spouse" && relativeSex !== "u"
         ? relativeSex === "m"
           ? "f"
           : "m"
         : "u",
-    suggestedSex =
-      relationshipSex !== "u" ? relationshipSex : guessSex(draft);
+    suggestedSex = relationshipSex !== "u" ? relationshipSex : guessSex(draft);
   const hintDraft = {
     ...draft,
     birth: hintDate(birthText),
@@ -320,7 +318,14 @@ export function PersonEditor({
         next =
           relationship === "child"
             ? connectPeople(next, relativeTo.id, p.id, "parent")
-            : connectPeople(next, p.id, relativeTo.id, relationship, "", twinKind);
+            : connectPeople(
+                next,
+                p.id,
+                relativeTo.id,
+                relationship,
+                "",
+                twinKind,
+              );
       }
       for (const hint of confirmed)
         next = connectPeople(next, hint.from, hint.to, "parent");
@@ -799,6 +804,7 @@ export function PersonEditor({
               + Источник
             </button>
           </section>
+          <PersonDocumentsEditor personId={person?.id} disabled={busy} />
         </details>
         <details className="form-details">
           <summary>

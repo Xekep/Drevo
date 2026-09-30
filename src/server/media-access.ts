@@ -1,3 +1,4 @@
+import { enforceUserStorageLimit } from "./storage-limits.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { Family, Person } from "../domain/types.ts";
@@ -28,6 +29,7 @@ export async function registerMediaUpload(
       )
       .run(url, userId, Date.now() + 24 * 60 * 60_000);
     await enforcePostgresMediaQuota(db);
+    await enforceUserStorageLimit(db, userId);
   });
   return async () =>
     await db.transaction(async () => {

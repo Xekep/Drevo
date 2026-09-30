@@ -1,3 +1,4 @@
+import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
 import { storeDatabase } from "./store-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -234,7 +235,7 @@ async function unpack(source: Readable, directory: string) {
               throw new Error("Некорректный ключ в бэкапе");
             if (
               remaining >
-              (name === "drevo.sqlite" ? SQLITE_LIMIT : 20 * 1024 * 1024)
+              (name === "drevo.sqlite" ? SQLITE_LIMIT : name.endsWith(".pdf") ? MAX_PDF_BYTES : 20 * 1024 * 1024)
             )
               throw new Error("Один из файлов бэкапа слишком большой");
             if (seen.has(name))
@@ -455,7 +456,7 @@ export function restoreStore(
               document.title.length > 160 ||
               !parseDocumentDetails(document) ||
               document.fileSize < 1 ||
-              document.fileSize > 20 * 1024 * 1024
+              document.fileSize > MAX_PDF_BYTES
             )
               throw new Error("Некорректный документ в бэкапе");
             return document;

@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
+import type { ResearchAttachment } from "../shared/research-attachments.ts";
+import { AI_CHAT_LIMIT } from "../shared/research-attachments.ts";
+
+export class AiChatLimitError extends Error {
+  constructor() {
+    super(
+      "Можно сохранить не больше 10 диалогов. Удалите один из старых диалогов вместе с его вложениями, чтобы создать новый.",
+    );
+  }
+}
 
 type ChatRow = {
   id: string;
@@ -18,6 +28,7 @@ export type AiChatMessage = {
   references?: unknown[];
   suggestionIds?: string[];
   files?: Array<{ name: string; url: string }>;
+  attachments?: ResearchAttachment[];
 };
 
 export function aiChatStore(db: StoreDatabase) {
@@ -44,38 +55,68 @@ export function aiChatStore(db: StoreDatabase) {
   }
   return {
     read,
-    async create(userId: string, accessScope: string) {
-      const id = randomUUID();
-      await db
+    async exists(id: string) {
+      return !!(await db
         .prepare(
-          "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
-          "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+          "SELECT 1 FROM ai_chats WHERE id=?",
+          "SELECT 1 FROM ai_chats WHERE id=?",
         )
-        .run(id, userId, accessScope);
-      return (await read(id, userId))!;
+        .get(id));
+    },
+    async create(userId: string, accessScope: string) {
+      return await db.transaction(async () => {
+        // Serialize concurrent new chats for this account, including other server processes.
+        if (db.kind === "postgres")
+          await db
+            .prepare(
+              "SELECT 1",
+              "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+            )
+            .get(`ai-chats:${db.archiveId}:${userId}`);
+        const count = await db
+          .prepare(
+            "SELECT count(*) AS total FROM ai_chats WHERE user_id=?",
+            "SELECT count(*) AS total FROM ai_chats WHERE user_id=?",
+          )
+          .get(userId);
+        if (Number(count?.total) >= AI_CHAT_LIMIT) throw new AiChatLimitError();
+        const id = randomUUID();
+        await db
+          .prepare(
+            "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+            "INSERT INTO ai_chats(id,user_id,access_scope) VALUES(?,?,?)",
+          )
+          .run(id, userId, accessScope);
+        return (await read(id, userId))!;
+      });
     },
     async list(userId: string, accessScope: string) {
       return (
         (await db
           .prepare(
-            `SELECT ai_chats.id,updated_at,
+            `SELECT ai_chats.id,updated_at,access_scope,
              (SELECT content FROM ai_chat_messages
               WHERE chat_id=ai_chats.id AND role='user'
                 AND json_extract(data,'$.hidden') IS NOT 1
               ORDER BY id LIMIT 1) AS title
-           FROM ai_chats WHERE user_id=? AND access_scope=?
-           ORDER BY updated_at DESC LIMIT 50`,
-            "SELECT ai_chats.id,updated_at,\n             (SELECT content FROM ai_chat_messages\n              WHERE chat_id=ai_chats.id AND role='user'\n                AND (data->>'hidden') IS DISTINCT FROM 'true'\n              ORDER BY id LIMIT 1) AS title\n           FROM ai_chats WHERE user_id=? AND access_scope=?\n           ORDER BY updated_at DESC LIMIT 50",
+           FROM ai_chats WHERE user_id=?
+           ORDER BY updated_at DESC`,
+            "SELECT ai_chats.id,updated_at,access_scope,\n             (SELECT content FROM ai_chat_messages\n              WHERE chat_id=ai_chats.id AND role='user'\n                AND (data->>'hidden') IS DISTINCT FROM 'true'\n              ORDER BY id LIMIT 1) AS title\n           FROM ai_chats WHERE user_id=?\n           ORDER BY updated_at DESC",
           )
-          .all(userId, accessScope)) as Array<{
+          .all(userId)) as Array<{
           id: string;
           updated_at: string;
           title: string | null;
+          access_scope: string;
         }>
       ).map((row) => ({
         id: row.id,
         updatedAt: row.updated_at,
-        title: row.title?.slice(0, 80) || "Новый диалог",
+        title:
+          row.access_scope === accessScope
+            ? row.title?.slice(0, 80) || "Новый диалог"
+            : "Диалог с прежними правами доступа",
+        ...(row.access_scope !== accessScope ? { unavailable: true } : {}),
       }));
     },
     async messages(

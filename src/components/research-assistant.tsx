@@ -1,4 +1,15 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { AttachmentLibrary } from "./research/attachment-library";
+import {
+  AI_ATTACHMENT_ACCEPT,
+  AI_CHAT_LIMIT,
+  AI_ATTACHMENT_HINT,
+  type ResearchAttachment,
+} from "../shared/research-attachments.ts";
+import {
+  useResearchAttachments,
+  encodeResearchFiles,
+} from "./research/use-research-attachments";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import type { ResearchResult, UiAction } from "../shared/research-protocol.ts";
 import { browserTimeZone } from "../data/browser-time-zone";
@@ -19,6 +30,7 @@ import {
   Check,
   ChevronDown,
   LoaderCircle,
+  Paperclip,
   Send,
   Sparkles,
   Square,
@@ -296,8 +308,18 @@ export function ResearchAssistant({
     [draft, setDraft] = useState(""),
     [messages, setMessages] = useState<Message[]>([]),
     [chatId, setChatId] = useState(""),
+    [libraryOpen, setLibraryOpen] = useState(false),
+    [attachmentCapabilities, setAttachmentCapabilities] = useState<{
+      photoAnalysis: boolean;
+      codeInterpreter: boolean;
+    }>(),
     [chats, setChats] = useState<
-      Array<{ id: string; title: string; updatedAt: string }>
+      Array<{
+        id: string;
+        title: string;
+        updatedAt: string;
+        unavailable?: boolean;
+      }>
     >([]),
     [chatMenuOpen, setChatMenuOpen] = useState(false),
     [chatSearch, setChatSearch] = useState(""),
@@ -358,6 +380,14 @@ export function ResearchAssistant({
         ? "Ответ ещё выполняется на сервере. Его можно остановить."
         : ""),
     activities = currentWork?.activities || [];
+  const attachmentDraft = useResearchAttachments(
+    busy || chatLoading,
+    setError,
+    attachmentCapabilities,
+  );
+  const libraryFiles = messages
+    .flatMap((message) => message.attachments || [])
+    .filter((file) => file.url);
 
   useLayoutEffect(() => {
     const field = composer.current;
@@ -411,14 +441,17 @@ export function ResearchAssistant({
       .then(async (data) => {
         if (!active) return;
         setChats(data.chats);
-        if (data.chats[0]) {
-          const response = await archiveFetch(`/api/ai/chats/${data.chats[0].id}`);
+        const initialChat = data.chats.find((chat) => !chat.unavailable);
+        if (initialChat) {
+          const response = await archiveFetch(
+            `/api/ai/chats/${initialChat.id}`,
+          );
           if (!response.ok) return;
           const detail = (await response.json()) as { messages: Message[] };
           if (active && selection === chatSelection.current) {
-            selectedChatKey.current = data.chats[0].id;
-            chatMessages.current.set(data.chats[0].id, detail.messages);
-            setChatId(data.chats[0].id);
+            selectedChatKey.current = initialChat.id;
+            chatMessages.current.set(initialChat.id, detail.messages);
+            setChatId(initialChat.id);
             setMessages(detail.messages);
           }
         }
@@ -572,7 +605,11 @@ export function ResearchAssistant({
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (response.ok) setEnabled((await response.json()).enabled === true);
+        if (response.ok) {
+          const status = await response.json();
+          setEnabled(status.enabled === true);
+          setAttachmentCapabilities(status.attachments);
+        }
       })
       .catch(() => {});
     return () => controller.abort();
@@ -658,6 +695,13 @@ export function ResearchAssistant({
     setChatMenuOpen(false);
     setChatSearch("");
     if (id && id === selectedChatKey.current) return;
+    if (!id && chats.length >= AI_CHAT_LIMIT) {
+      setError("Можно открыть до 10 диалогов. Удалите один из старых.");
+      return;
+    }
+    setLibraryOpen(false);
+    attachmentDraft.setFiles([]);
+    setDraft("");
     const selection = ++chatSelection.current;
     if (!id) {
       selectedChatKey.current = `new:${crypto.randomUUID()}`;
@@ -756,13 +800,17 @@ export function ResearchAssistant({
     selectedChatKey.current = `new:${crypto.randomUUID()}`;
     setMessages([]);
     setDraft("");
+    setLibraryOpen(false);
+    attachmentDraft.setFiles([]);
     setError("");
     setReviewedSuggestions({});
     setChatLoading(false);
   }
 
   async function send(text = draft, selectedPersonId?: string) {
-    const message = text.trim();
+    const selectedFiles = selectedPersonId ? [] : attachmentDraft.files;
+    const message =
+      text.trim() || (selectedFiles.length ? "Изучи прикреплённые файлы." : "");
     let jobKey = selectedChatKey.current;
     if (
       (!message && !selectedPersonId) ||
@@ -772,20 +820,37 @@ export function ResearchAssistant({
     )
       return;
     if (selectedPersonId && !chatId) return;
+    if (!chatId && chats.length >= AI_CHAT_LIMIT) {
+      setError("Можно открыть до 10 диалогов. Удалите один из старых.");
+      return;
+    }
+    setLibraryOpen(false);
     const controller = new AbortController();
     const isCurrent = () =>
       activeRequests.current.get(jobKey) === controller &&
       !controller.signal.aborted;
     activeRequests.current.set(jobKey, controller);
+    const previousMessages = chatMessages.current.get(jobKey) || messages;
+    let accepted = false;
     chatErrors.current.delete(jobKey);
     if (!selectedPersonId) {
       const next = [
         ...(chatMessages.current.get(jobKey) || messages),
-        { role: "user" as const, content: message },
+        {
+          role: "user" as const,
+          content: message,
+          attachments: selectedFiles.map((file) => ({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            url: "",
+          })),
+        },
       ];
       chatMessages.current.set(jobKey, next);
       setMessages(next);
       setDraft("");
+      attachmentDraft.setFiles([]);
     }
     setWorkingChats((current) => ({
       ...current,
@@ -793,12 +858,15 @@ export function ResearchAssistant({
     }));
     setError("");
     try {
+      const attached = await encodeResearchFiles(selectedFiles);
+      controller.signal.throwIfAborted();
       const response = await archiveFetch("/api/ai/chat/stream", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
+          ...(attached.length ? { attachments: attached } : {}),
           ...(selectedPersonId ? { selectedPersonId } : {}),
           ...(chatId ? { chatId } : {}),
           context: {
@@ -836,8 +904,10 @@ export function ResearchAssistant({
           message?: string;
           error?: string;
           chatId?: string;
+          attachments?: ResearchAttachment[];
         };
         if (parsed.event === "chat" && data.chatId) {
+          accepted = true;
           const id = data.chatId;
           if (jobKey !== id) {
             const oldKey = jobKey;
@@ -877,6 +947,15 @@ export function ResearchAssistant({
                   ...current,
                 ],
           );
+          return;
+        }
+        if (parsed.event === "attachments" && data.attachments) {
+          const next = [...(chatMessages.current.get(jobKey) || [])];
+          const index = next.findLastIndex((item) => item.role === "user");
+          if (index >= 0)
+            next[index] = { ...next[index], attachments: data.attachments };
+          chatMessages.current.set(jobKey, next);
+          if (selectedChatKey.current === jobKey) setMessages(next);
           return;
         }
         if (parsed.event === "status") {
@@ -962,6 +1041,17 @@ export function ResearchAssistant({
 
       if (canEdit && isCurrent()) await loadSuggestions();
     } catch (reason) {
+      if (
+        !accepted &&
+        selectedFiles.length &&
+        selectedChatKey.current === jobKey &&
+        isCurrent()
+      ) {
+        attachmentDraft.setFiles(selectedFiles);
+        setDraft(text);
+        chatMessages.current.set(jobKey, previousMessages);
+        setMessages(previousMessages);
+      }
       if (isCurrent()) {
         const message = (reason as Error).message;
         chatErrors.current.set(jobKey, message);
@@ -1071,6 +1161,7 @@ export function ResearchAssistant({
       )}
       {open && (
         <aside
+          {...attachmentDraft.dragEvents}
           ref={panel}
           className="research-assistant"
           aria-label="ИИ-исследователь"
@@ -1085,6 +1176,13 @@ export function ResearchAssistant({
               : undefined
           }
         >
+          {attachmentDraft.dragging && (
+            <div className="research-drop-overlay" role="status">
+              <Paperclip size={28} />
+              <strong>Перетащите файлы сюда</strong>
+              <span>{AI_ATTACHMENT_HINT}</span>
+            </div>
+          )}
           {RESIZE_DIRECTIONS.map(({ direction, label }) => (
             <button
               key={direction}
@@ -1116,11 +1214,29 @@ export function ResearchAssistant({
             <div className="research-assistant-header-actions">
               <button
                 type="button"
+                className="research-library-button"
+                aria-label={`Вложения (${libraryFiles.length})`}
+                aria-pressed={libraryOpen}
+                title="Библиотека вложений диалога"
+                onClick={() => setLibraryOpen((open) => !open)}
+              >
+                <Paperclip size={16} />
+                <span>
+                  Вложения
+                  {libraryFiles.length ? ` · ${libraryFiles.length}` : ""}
+                </span>
+              </button>
+              <button
+                type="button"
                 aria-label={chatId ? "Удалить диалог" : "Очистить диалог"}
                 title={chatId ? "Удалить диалог" : "Очистить диалог"}
                 disabled={
                   chatLoading ||
-                  (!chatId && !messages.length && !draft && !error)
+                  (!chatId &&
+                    !messages.length &&
+                    !draft &&
+                    !error &&
+                    !attachmentDraft.files.length)
                 }
                 onClick={() => void clearDialog()}
               >
@@ -1177,9 +1293,16 @@ export function ResearchAssistant({
                     />
                   )}
                   <div className="research-chat-menu-list">
+                    <small className="research-chat-limit">
+                      Диалоги: {chats.length} / {AI_CHAT_LIMIT}
+                      {chats.length >= AI_CHAT_LIMIT
+                        ? " · удалите старый, чтобы создать новый"
+                        : ""}
+                    </small>
                     <button
                       type="button"
                       aria-current={!chatId ? "true" : undefined}
+                      disabled={chats.length >= AI_CHAT_LIMIT}
                       onClick={() => void openChat("")}
                     >
                       Новый диалог
@@ -1196,9 +1319,33 @@ export function ResearchAssistant({
                           type="button"
                           aria-current={item.id === chatId ? "true" : undefined}
                           title={item.title}
-                          onClick={() => void openChat(item.id)}
+                          aria-label={
+                            item.unavailable
+                              ? "Удалить диалог с прежними правами доступа"
+                              : undefined
+                          }
+                          onClick={() => {
+                            if (!item.unavailable) {
+                              void openChat(item.id);
+                              return;
+                            }
+                            void archiveFetch(`/api/ai/chats/${item.id}`, {
+                              method: "DELETE",
+                            })
+                              .then((response) => {
+                                if (!response.ok)
+                                  throw new Error("Не удалось удалить диалог");
+                                setChats((current) =>
+                                  current.filter((chat) => chat.id !== item.id),
+                                );
+                              })
+                              .catch(() =>
+                                setError("Не удалось удалить диалог"),
+                              );
+                          }}
                         >
                           <span>{item.title}</span>
+                          {item.unavailable && <Trash2 size={15} />}
                           {workingChats[item.id] && (
                             <LoaderCircle
                               className="research-chat-working"
@@ -1214,145 +1361,177 @@ export function ResearchAssistant({
             </div>
           )}
           <div className="research-assistant-messages">
-            {chatLoading && <p role="status">Загружаю историю…</p>}
-            {canEdit && suggestions.length > 0 && (
-              <section
-                className="research-suggestions"
-                aria-label="Предложения ИИ"
-              >
-                {suggestions
-                  .filter(
-                    (suggestion) =>
-                      !messages.some((message) =>
-                        message.suggestionIds?.includes(suggestion.id),
-                      ),
-                  )
-                  .map((suggestion) => (
-                    <SuggestionCard
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      disabled={!!reviewBusy}
-                      onReview={(id, action) => void review(id, action)}
-                    />
-                  ))}
-              </section>
-            )}
-            {!messages.length && (
-              <div className="research-assistant-empty">
-                <strong>
-                  {currentPersonName
-                    ? `Здравствуйте, ${currentPersonName}!`
-                    : "Здравствуйте!"}
-                </strong>
-                <p>
-                  Я помогу разобраться в семейном архиве. Спросите меня о людях,
-                  фотографиях, родстве или истории семьи.
-                </p>
-              </div>
-            )}
-            {messages.map((message, index) => (
-              <div key={index}>
-                {message.role === "assistant" &&
-                  !!message.activities?.length && (
-                    <details className="research-activity">
-                      <summary>Как готовился ответ</summary>
+            {libraryOpen ? (
+              <AttachmentLibrary
+                files={libraryFiles}
+                onAsk={(name) => {
+                  setDraft(`Изучи файл «${name}» из библиотеки вложений: `);
+                  setLibraryOpen(false);
+                  composer.current?.focus();
+                }}
+              />
+            ) : (
+              <>
+                {chatLoading && <p role="status">Загружаю историю…</p>}
+                {canEdit && suggestions.length > 0 && (
+                  <section
+                    className="research-suggestions"
+                    aria-label="Предложения ИИ"
+                  >
+                    {suggestions
+                      .filter(
+                        (suggestion) =>
+                          !messages.some((message) =>
+                            message.suggestionIds?.includes(suggestion.id),
+                          ),
+                      )
+                      .map((suggestion) => (
+                        <SuggestionCard
+                          key={suggestion.id}
+                          suggestion={suggestion}
+                          disabled={!!reviewBusy}
+                          onReview={(id, action) => void review(id, action)}
+                        />
+                      ))}
+                  </section>
+                )}
+                {!messages.length && (
+                  <div className="research-assistant-empty">
+                    <strong>
+                      {currentPersonName
+                        ? `Здравствуйте, ${currentPersonName}!`
+                        : "Здравствуйте!"}
+                    </strong>
+                    <p>
+                      Я помогу разобраться в семейном архиве. Спросите меня о
+                      людях, фотографиях, родстве или истории семьи.
+                    </p>
+                  </div>
+                )}
+                {messages.map((message, index) => (
+                  <div key={index}>
+                    {message.role === "assistant" &&
+                      !!message.activities?.length && (
+                        <details className="research-activity">
+                          <summary>Как готовился ответ</summary>
+                          <div className="research-activity-steps">
+                            {message.activities.map((step, position) => (
+                              <p key={position}>{step}</p>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    <article className={`is-${message.role}`}>
+                      {message.role === "assistant" ? (
+                        <Suspense fallback={<p>Оформляем ответ…</p>}>
+                          <MarkdownAnswer
+                            message={message}
+                            onPerson={onPerson}
+                            onChoosePerson={choosePerson}
+                            onPhoto={onPhoto}
+                          />
+                        </Suspense>
+                      ) : (
+                        <p>{message.content}</p>
+                      )}
+                      {message.attachments?.map((file, position) =>
+                        file.url ? (
+                          <a
+                            className="research-file"
+                            key={file.url}
+                            href={archiveResourceUrl(file.url)}
+                            download={file.name}
+                          >
+                            <Paperclip size={14} />
+                            {file.name}
+                          </a>
+                        ) : (
+                          <span className="research-file" key={position}>
+                            <Paperclip size={14} />
+                            {file.name}
+                          </span>
+                        ),
+                      )}
+                      {message.role === "assistant" &&
+                        message.files?.map((file) =>
+                          file.url === "drevo:tree-pdf:current" ||
+                          file.url === "drevo:tree-pdf:all" ? (
+                            <button
+                              className="research-file"
+                              type="button"
+                              key={file.url}
+                              disabled={!onExportTreePdf}
+                              onClick={() => {
+                                if (!onExportTreePdf) return;
+                                void onExportTreePdf(
+                                  file.url.endsWith(":all") ? "all" : "current",
+                                ).catch((reason: unknown) =>
+                                  setError(
+                                    reason instanceof Error
+                                      ? reason.message
+                                      : "Не удалось создать PDF древа.",
+                                  ),
+                                );
+                              }}
+                            >
+                              Скачать {file.name}
+                            </button>
+                          ) : (
+                            <a
+                              className="research-file"
+                              key={file.url}
+                              href={archiveResourceUrl(file.url)}
+                              download={file.name}
+                            >
+                              Скачать {file.name}
+                            </a>
+                          ),
+                        )}
+                      {message.role === "assistant" &&
+                        message.suggestionIds?.map((id) => {
+                          const suggestion = suggestions.find(
+                            (item) => item.id === id,
+                          );
+                          return suggestion ? (
+                            <SuggestionCard
+                              key={id}
+                              suggestion={suggestion}
+                              disabled={!!reviewBusy}
+                              onReview={(suggestionId, action) =>
+                                void review(suggestionId, action)
+                              }
+                            />
+                          ) : reviewedSuggestions[id] ? (
+                            <p className="research-suggestion-result" key={id}>
+                              {reviewedSuggestions[id].status === "accepted"
+                                ? reviewedSuggestions[id].kind ===
+                                  "person_create"
+                                  ? `✓ ${reviewedSuggestions[id].personName} добавлен в архив`
+                                  : `✓ Изменение для ${reviewedSuggestions[id].personName} сохранено`
+                                : "× Предложение отклонено"}
+                            </p>
+                          ) : null;
+                        })}
+                    </article>
+                  </div>
+                ))}
+                {busy && (
+                  <details className="research-activity" open>
+                    <summary>
+                      <span role="status">
+                        {streamStatus || "ИИ формирует ответ…"}
+                      </span>
+                    </summary>
+                    {activities.length > 1 && (
                       <div className="research-activity-steps">
-                        {message.activities.map((step, position) => (
+                        {activities.slice(0, -1).map((step, position) => (
                           <p key={position}>{step}</p>
                         ))}
                       </div>
-                    </details>
-                  )}
-                <article className={`is-${message.role}`}>
-                  {message.role === "assistant" ? (
-                    <Suspense fallback={<p>Оформляем ответ…</p>}>
-                      <MarkdownAnswer
-                        message={message}
-                        onPerson={onPerson}
-                        onChoosePerson={choosePerson}
-                        onPhoto={onPhoto}
-                      />
-                    </Suspense>
-                  ) : (
-                    <p>{message.content}</p>
-                  )}
-                  {message.role === "assistant" &&
-                    message.files?.map((file) =>
-                      file.url === "drevo:tree-pdf:current" ||
-                      file.url === "drevo:tree-pdf:all" ? (
-                        <button
-                          className="research-file"
-                          type="button"
-                          key={file.url}
-                          disabled={!onExportTreePdf}
-                          onClick={() => {
-                            if (!onExportTreePdf) return;
-                            void onExportTreePdf(
-                              file.url.endsWith(":all") ? "all" : "current",
-                            ).catch((reason: unknown) =>
-                              setError(
-                                reason instanceof Error
-                                  ? reason.message
-                                  : "Не удалось создать PDF древа.",
-                              ),
-                            );
-                          }}
-                        >
-                          Скачать {file.name}
-                        </button>
-                      ) : (
-                        <a
-                          className="research-file"
-                          key={file.url}
-                          href={archiveResourceUrl(file.url)}
-                          download={file.name}
-                        >
-                          Скачать {file.name}
-                        </a>
-                      ),
                     )}
-                  {message.role === "assistant" &&
-                    message.suggestionIds?.map((id) => {
-                      const suggestion = suggestions.find(
-                        (item) => item.id === id,
-                      );
-                      return suggestion ? (
-                        <SuggestionCard
-                          key={id}
-                          suggestion={suggestion}
-                          disabled={!!reviewBusy}
-                          onReview={(suggestionId, action) =>
-                            void review(suggestionId, action)
-                          }
-                        />
-                      ) : reviewedSuggestions[id] ? (
-                        <p className="research-suggestion-result" key={id}>
-                          {reviewedSuggestions[id].status === "accepted"
-                            ? reviewedSuggestions[id].kind === "person_create"
-                              ? `✓ ${reviewedSuggestions[id].personName} добавлен в архив`
-                              : `✓ Изменение для ${reviewedSuggestions[id].personName} сохранено`
-                            : "× Предложение отклонено"}
-                        </p>
-                      ) : null;
-                    })}
-                </article>
-              </div>
-            ))}
-            {busy && (
-              <details className="research-activity" open>
-                <summary>
-                  <span role="status">
-                    {streamStatus || "ИИ формирует ответ…"}
-                  </span>
-                </summary>
-                {activities.length > 1 && (
-                  <div className="research-activity-steps">
-                    {activities.slice(0, -1).map((step, position) => (
-                      <p key={position}>{step}</p>
-                    ))}
-                  </div>
+                  </details>
                 )}
-              </details>
+              </>
             )}
             {error && (
               <p className="form-error" role="alert">
@@ -1367,6 +1546,59 @@ export function ResearchAssistant({
               void send();
             }}
           >
+            {!!attachmentDraft.files.length && (
+              <div
+                className="research-attachment-drafts"
+                aria-label="Прикреплённые файлы"
+              >
+                {attachmentDraft.files.map((file, index) => (
+                  <div
+                    className="research-attachment-draft"
+                    key={`${file.name}-${index}`}
+                  >
+                    <Paperclip size={14} />
+                    <span title={file.name}>{file.name}</span>
+                    <small>
+                      {Math.max(1, Math.round(file.size / 1024))} КБ
+                    </small>
+                    <button
+                      type="button"
+                      aria-label={`Убрать файл ${file.name}`}
+                      onClick={() =>
+                        attachmentDraft.setFiles((files) =>
+                          files.filter((_, position) => position !== index),
+                        )
+                      }
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={attachmentDraft.input}
+              type="file"
+              hidden
+              multiple
+              accept={AI_ATTACHMENT_ACCEPT}
+              aria-label="Выбрать файлы для ИИ"
+              disabled={busy || chatLoading}
+              onChange={(event) => {
+                attachmentDraft.add(Array.from(event.target.files || []));
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="research-attach-button"
+              aria-label="Прикрепить файлы"
+              title={AI_ATTACHMENT_HINT}
+              disabled={busy || chatLoading}
+              onClick={() => attachmentDraft.input.current?.click()}
+            >
+              <Paperclip size={19} />
+            </button>
             <textarea
               ref={composer}
               value={draft}
@@ -1382,7 +1614,7 @@ export function ResearchAssistant({
                 }
               }}
             />
-            {(busy || draft.trim()) && (
+            {(busy || draft.trim() || attachmentDraft.files.length > 0) && (
               <button
                 type={busy ? "button" : "submit"}
                 className="primary-action"

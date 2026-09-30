@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import type { ResearchAttachment } from "../../shared/research-attachments.ts";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -23,6 +24,7 @@ export type ResearchMessage = {
   suggestionIds?: string[];
   files?: Array<{ name: string; url: string }>;
   activities?: string[];
+  attachments?: ResearchAttachment[];
 };
 
 const MarkdownAnswer = memo(function MarkdownAnswer({

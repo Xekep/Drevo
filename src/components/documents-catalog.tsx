@@ -1,3 +1,4 @@
+import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useCallback,
@@ -7,7 +8,20 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { BookOpenText, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import {
+  BookOpenText,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  DocumentPeoplePicker,
+  type DocumentPerson,
+} from "./document-people-picker";
 import { PdfBookReader } from "./pdf-book-reader";
 import { DocumentDetailsFields } from "./document-details-fields";
 import { fullName, type Person } from "../domain";
@@ -33,8 +47,6 @@ const EMPTY_DETAILS: DocumentDetails = {
   description: "",
   provenance: "",
 };
-
-type PersonOption = { id: string; label: string; detail: string };
 
 export function DocumentsCatalog({
   mayEdit,
@@ -73,13 +85,101 @@ export function DocumentsCatalog({
   const [details, setDetails] = useState<DocumentDetails>(EMPTY_DETAILS);
   const [editing, setEditing] = useState<ListedDocument | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [editDetails, setEditDetails] = useState<DocumentDetails>(EMPTY_DETAILS);
+  const [editDetails, setEditDetails] =
+    useState<DocumentDetails>(EMPTY_DETAILS);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState("");
-  const [personQuery, setPersonQuery] = useState("");
-  const [personResults, setPersonResults] = useState<PersonOption[]>([]);
-  const [selectedPeople, setSelectedPeople] = useState<PersonOption[]>([]);
+  const [selectedPeople, setSelectedPeople] = useState<DocumentPerson[]>([]);
+  const [editPeople, setEditPeople] = useState<DocumentPerson[]>([]);
+  const [dragging, setDragging] = useState(false);
   const filteredPerson = people.find((person) => person.id === personFilter);
+
+  const chooseFile = useCallback(
+    (next: File) => {
+      setUploadOpen(true);
+      setEditing(null);
+      setUploadError("");
+      if (
+        !/\.pdf$/i.test(next.name) ||
+        (next.type &&
+          !["application/pdf", "application/octet-stream"].includes(next.type))
+      ) {
+        setUploadError("Можно загрузить только PDF-файл");
+        setFile(null);
+        return;
+      }
+      if (next.size > MAX_PDF_BYTES) {
+        setUploadError("PDF должен быть не больше 50 МБ");
+        setFile(null);
+        return;
+      }
+      setFile(next);
+      setTitle(next.name.replace(/\.pdf$/i, "").slice(0, 160));
+      if (filteredPerson)
+        setSelectedPeople([
+          { id: filteredPerson.id, name: fullName(filteredPerson) },
+        ]);
+    },
+    [filteredPerson],
+  );
+
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      event.dataTransfer?.types.includes("Files");
+    const unavailable = () =>
+      !mayEdit || uploading || !!document.querySelector("dialog[open]");
+    const reset = () => setDragging(false);
+    const over = (event: DragEvent) => {
+      if (
+        !hasFiles(event) ||
+        event.defaultPrevented ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      event.preventDefault();
+      if (event.dataTransfer)
+        event.dataTransfer.dropEffect = unavailable() ? "none" : "copy";
+      if (!unavailable()) setDragging(true);
+    };
+    const leave = (event: DragEvent) => {
+      if (
+        event.clientX <= 0 ||
+        event.clientY <= 0 ||
+        event.clientX >= window.innerWidth ||
+        event.clientY >= window.innerHeight
+      )
+        reset();
+    };
+    const drop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      const handled = event.defaultPrevented;
+      event.preventDefault();
+      reset();
+      if (handled || unavailable()) return;
+      const files = event.dataTransfer?.files;
+      if (!files?.length) return;
+      if (files.length !== 1) {
+        setUploadOpen(true);
+        setUploadError("Перетащите один PDF-файл за раз");
+        return;
+      }
+      chooseFile(files[0]);
+    };
+    window.addEventListener("dragenter", over);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    window.addEventListener("dragend", reset);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("dragenter", over);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("dragend", reset);
+      window.removeEventListener("blur", reset);
+    };
+  }, [mayEdit, uploading, chooseFile]);
 
   const load = useCallback(
     async (offset: number) => {
@@ -168,28 +268,6 @@ export function DocumentsCatalog({
         : "";
   const activeSelected = selected?.id === documentId ? selected : null;
 
-  useEffect(() => {
-    if (personQuery.trim().length < 2) return;
-    const request = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await archiveFetch(
-          `/api/people/search?q=${encodeURIComponent(personQuery.trim())}`,
-          { signal: request.signal },
-        );
-        if (!response.ok) return;
-        const result = (await response.json()) as { people: PersonOption[] };
-        if (!request.signal.aborted) setPersonResults(result.people);
-      } catch {
-        if (!request.signal.aborted) setPersonResults([]);
-      }
-    }, 180);
-    return () => {
-      window.clearTimeout(timer);
-      request.abort();
-    };
-  }, [personQuery]);
-
   const upload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!file || !title.trim() || (!allowUnlinked && !selectedPeople.length))
@@ -226,7 +304,7 @@ export function DocumentsCatalog({
         canDelete: true,
         people: selectedPeople.map((person) => ({
           id: person.id,
-          name: person.label,
+          name: person.name,
         })),
       });
       onSelectDocument(created.id);
@@ -234,7 +312,6 @@ export function DocumentsCatalog({
       setFile(null);
       setTitle("");
       setDetails(EMPTY_DETAILS);
-      setPersonQuery("");
       setSelectedPeople([]);
       void load(0);
     } catch (reason) {
@@ -253,6 +330,7 @@ export function DocumentsCatalog({
     setSelected(null);
     onSelectDocument(null);
     setEditing(entry);
+    setEditPeople(entry.people);
     setEditTitle(entry.title);
     setEditDetails({
       documentType: entry.documentType,
@@ -284,14 +362,25 @@ export function DocumentsCatalog({
             provenance: editing.provenance,
           },
           next: { title: editTitle.trim(), ...editDetails },
+          people: {
+            expected: editing.people.map((p) => p.id),
+            next: editPeople.map((p) => p.id),
+          },
         }),
       });
-      const result = (await response.json()) as ListedDocument & { error?: string };
-      if (!response.ok) throw new Error(result.error || "Не удалось сохранить документ");
+      const result = (await response.json()) as ListedDocument & {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(result.error || "Не удалось сохранить документ");
       setEditing(null);
       await load(0);
     } catch (reason) {
-      setEditError(reason instanceof Error ? reason.message : "Не удалось сохранить документ");
+      setEditError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось сохранить документ",
+      );
     } finally {
       setSavingEdit(false);
     }
@@ -368,6 +457,15 @@ export function DocumentsCatalog({
 
   return (
     <section className="documents-catalog">
+      {dragging &&
+        createPortal(
+          <div className="documents-drop-overlay" role="status">
+            <Upload size={48} strokeWidth={1.4} aria-hidden="true" />
+            <b>Перетащите PDF сюда</b>
+            <span>Один файл до 50 МБ · людей можно привязать позже</span>
+          </div>,
+          document.body,
+        )}
       <header className="documents-heading">
         <div>
           <span className="documents-eyebrow">Семейный архив</span>
@@ -397,8 +495,7 @@ export function DocumentsCatalog({
                   setSelectedPeople([
                     {
                       id: filteredPerson.id,
-                      label: fullName(filteredPerson),
-                      detail: "",
+                      name: fullName(filteredPerson),
                     },
                   ]);
                 setUploadOpen((open) => !open);
@@ -425,16 +522,21 @@ export function DocumentsCatalog({
               <X size={18} />
             </button>
           </div>
-          <label>
-            PDF-файл · до 20 МБ
+          <label className="documents-drop-zone">
+            <Upload size={28} aria-hidden="true" />
+            <strong>
+              {file ? file.name : "Перетащите PDF или выберите файл"}
+            </strong>
+            <span>До 50 МБ · людей можно привязать после загрузки</span>
             <input
               type="file"
               accept=".pdf,application/pdf"
-              required
+              disabled={uploading}
+              aria-label="PDF-файл"
               onChange={(event) => {
-                const next = event.target.files?.[0] || null;
-                setFile(next);
-                if (next && !title) setTitle(next.name.replace(/\.pdf$/i, ""));
+                const next = event.target.files?.[0];
+                if (next) chooseFile(next);
+                event.target.value = "";
               }}
             />
           </label>
@@ -447,67 +549,18 @@ export function DocumentsCatalog({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <label>
-            К кому относится{allowUnlinked ? " · необязательно" : ""}
-            <input
-              value={personQuery}
-              onChange={(event) => {
-                setPersonQuery(event.target.value);
-                setPersonResults([]);
-              }}
-              placeholder="Начните вводить имя"
-              aria-label="Найти человека для документа"
-            />
-          </label>
+          <DocumentPeoplePicker
+            value={selectedPeople}
+            onChange={setSelectedPeople}
+            optional={allowUnlinked}
+            disabled={uploading}
+          />
           <DocumentDetailsFields
             value={details}
-            onChange={(key, value) => setDetails((current) => ({ ...current, [key]: value }))}
+            onChange={(key, value) =>
+              setDetails((current) => ({ ...current, [key]: value }))
+            }
           />
-          {personResults.length > 0 && personQuery.trim().length > 1 && (
-            <div
-              className="documents-person-results"
-              role="listbox"
-              aria-label="Найденные люди"
-            >
-              {personResults
-                .filter(
-                  (person) =>
-                    !selectedPeople.some((item) => item.id === person.id),
-                )
-                .map((person) => (
-                  <button
-                    type="button"
-                    key={person.id}
-                    onClick={() => {
-                      setSelectedPeople((current) => [...current, person]);
-                      setPersonQuery("");
-                      setPersonResults([]);
-                    }}
-                  >
-                    <strong>{person.label}</strong>
-                    <small>{person.detail}</small>
-                  </button>
-                ))}
-            </div>
-          )}
-          <div className="documents-selected-people">
-            {selectedPeople.map((person) => (
-              <span key={person.id}>
-                {person.label}
-                <button
-                  type="button"
-                  aria-label={`Убрать ${person.label}`}
-                  onClick={() =>
-                    setSelectedPeople((current) =>
-                      current.filter((item) => item.id !== person.id),
-                    )
-                  }
-                >
-                  <X size={14} />
-                </button>
-              </span>
-            ))}
-          </div>
           {uploadError && (
             <p role="alert" className="documents-upload-error">
               {uploadError}
@@ -529,28 +582,62 @@ export function DocumentsCatalog({
         </form>
       )}
       {editing && (
-        <form className="documents-upload documents-edit" aria-label="Редактировать документ" onSubmit={(event) => void saveEdit(event)}>
+        <form
+          className="documents-upload documents-edit"
+          aria-label="Редактировать документ"
+          onSubmit={(event) => void saveEdit(event)}
+        >
           <div className="documents-upload-heading">
             <h2>Сведения о документе</h2>
-            <button type="button" onClick={() => setEditing(null)} aria-label="Закрыть редактирование">
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              aria-label="Закрыть редактирование"
+            >
               <X size={18} />
             </button>
           </div>
           <label className="documents-edit-title">
             Название
-            <input value={editTitle} maxLength={160} required onChange={(event) => setEditTitle(event.target.value)} />
+            <input
+              value={editTitle}
+              maxLength={160}
+              required
+              onChange={(event) => setEditTitle(event.target.value)}
+            />
           </label>
+          <DocumentPeoplePicker
+            value={editPeople}
+            onChange={setEditPeople}
+            disabled={savingEdit}
+          />
           <DocumentDetailsFields
             value={editDetails}
             expanded
-            onChange={(key, value) => setEditDetails((current) => ({ ...current, [key]: value }))}
+            onChange={(key, value) =>
+              setEditDetails((current) => ({ ...current, [key]: value }))
+            }
           />
-          {editError && <p role="alert" className="documents-upload-error">{editError}</p>}
+          {editError && (
+            <p role="alert" className="documents-upload-error">
+              {editError}
+            </p>
+          )}
           <div className="documents-edit-actions">
-            <button type="submit" className="documents-upload-submit" disabled={savingEdit || !editTitle.trim()}>
+            <button
+              type="submit"
+              className="documents-upload-submit"
+              disabled={savingEdit || !editTitle.trim()}
+            >
               {savingEdit ? "Сохраняем…" : "Сохранить"}
             </button>
-            <button type="button" onClick={() => setEditing(null)} disabled={savingEdit}>Отмена</button>
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              disabled={savingEdit}
+            >
+              Отмена
+            </button>
           </div>
         </form>
       )}
@@ -620,7 +707,10 @@ export function DocumentsCatalog({
             </div>
             <div className="documents-grid">
               {group.items.map((document) => (
-                <div className={`document-item-row ${mayEdit && document.canDelete ? "can-edit" : ""}`} key={document.id}>
+                <div
+                  className={`document-item-row ${mayEdit && document.canDelete ? "can-edit" : ""}`}
+                  key={document.id}
+                >
                   <button
                     type="button"
                     className="document-item"
@@ -689,7 +779,11 @@ export function DocumentsCatalog({
             setSelected(null);
             onSelectDocument(null);
           }}
-          onEdit={mayEdit && activeSelected.canDelete ? () => beginEdit(activeSelected) : undefined}
+          onEdit={
+            mayEdit && activeSelected.canDelete
+              ? () => beginEdit(activeSelected)
+              : undefined
+          }
           onDelete={
             mayEdit && activeSelected.canDelete
               ? () => void remove(activeSelected)

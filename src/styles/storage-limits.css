@@ -1,0 +1,11 @@
+.storage-limits-form { display: grid; gap: 16px; max-width: 660px; }
+.storage-limits-form p { margin: 0; line-height: 1.5; }
+.storage-limits-rows { display: grid; gap: 10px; }
+.storage-limits-rows label { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(140px, 210px) 30px; align-items: center; gap: 10px; }
+.storage-limits-rows input { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #cbd8c4; border-radius: 8px; color: #324935; background: white; font: inherit; }
+.storage-limits-rows label > span:last-child { font-size: 12px; color: #71806e; }
+.storage-limits-form > button { justify-self: start; }
+@media (max-width: 420px) {
+  .storage-limits-rows label { grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; }
+  .storage-limits-rows label > span:first-child { grid-column: 1 / -1; }
+}

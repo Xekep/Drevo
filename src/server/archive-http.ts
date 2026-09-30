@@ -113,6 +113,7 @@ export async function archiveHttp({
     researchCatalog,
     publicOrigin,
     fetcher: aiFetch,
+    uploadsDirectory,
   });
   const researchSuggestions = researchSuggestionsHttp({
     archive,
@@ -135,6 +136,7 @@ export async function archiveHttp({
   });
   const serveBackup = databaseBackupHttp({ archive, auth });
   const adminAccess = adminAccessHttp({
+    db: archive.db,
     auth,
     users: await userStore(archive.db),
     visibility,

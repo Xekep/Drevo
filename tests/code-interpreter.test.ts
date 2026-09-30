@@ -36,6 +36,50 @@ const runtime = {
   folderId: "folder",
   modelUri: "gpt://folder/model",
 };
+
+test("Code Interpreter receives selected chat files and deletes remote uploads", async () => {
+  const deleted: string[] = [];
+  const client = yandexResponsesClient(async (url, init) => {
+    if (init?.method === "DELETE") {
+      deleted.push(String(url));
+      return Response.json({ deleted: true });
+    }
+    if (String(url).endsWith("/files")) {
+      assert.ok(init?.body instanceof FormData);
+      const file = init.body.get("file") as File;
+      assert.equal(file.name, "table.csv");
+      assert.equal(await file.text(), "year,count\n1900,2");
+      assert.equal(init.body.get("purpose"), "user_data");
+      return Response.json({ id: "chat-input" });
+    }
+    if (String(url).endsWith("/content"))
+      return new Response("year,count\n1900,2");
+    const body = JSON.parse(String(init?.body));
+    assert.deepEqual(body.tools[0].container.file_ids, ["chat-input"]);
+    assert.equal(body.tools[0].container.network_policy.type, "disabled");
+    return Response.json(success());
+  });
+  const result = await runCodeInterpreter({
+    client,
+    runtime,
+    family,
+    input: { task: "Посчитай таблицу", fields: [] },
+    signal: new AbortController().signal,
+    onCall: () => {},
+    onUsage: () => {},
+    allowPdf: true,
+    attachments: [
+      {
+        name: "table.csv",
+        type: "text/csv",
+        bytes: Buffer.from("year,count\n1900,2"),
+      },
+    ],
+  });
+  assert.ok(!("error" in result));
+  assert.ok(deleted.some((url) => url.endsWith("/files/chat-input")));
+  assert.doesNotMatch(JSON.stringify(result), /secret-api-key/);
+});
 const success = () => ({
   status: "completed",
   usage: { input_tokens: 23, output_tokens: 45 },

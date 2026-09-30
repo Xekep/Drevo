@@ -5,6 +5,9 @@ import { ForbiddenError } from "./users.ts";
 import type { settingsStore } from "./settings.ts";
 import type { Role, TreeAccess } from "../domain/access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import type { StoreDatabase } from "./store-database.ts";
+import { readStorageLimits, writeStorageLimits } from "./storage-limits.ts";
+import { parseStorageLimits } from "../shared/storage-limits.ts";
 
 async function readJson(req: IncomingMessage) {
   const chunks: Buffer[] = [];
@@ -18,11 +21,13 @@ async function readJson(req: IncomingMessage) {
 }
 
 export function adminAccessHttp({
+  db,
   auth,
   users,
   visibility,
   publicOrigin,
 }: {
+  db: StoreDatabase;
   auth: Awaited<ReturnType<typeof createAuth>>;
   users: Awaited<ReturnType<typeof userStore>>;
   visibility: Awaited<ReturnType<typeof settingsStore>>;
@@ -45,6 +50,7 @@ export function adminAccessHttp({
     const path = url.pathname;
     if (
       path !== "/api/settings" &&
+      path !== "/api/settings/storage" &&
       path !== "/api/users" &&
       !path.startsWith("/api/users/")
     )
@@ -57,6 +63,27 @@ export function adminAccessHttp({
             ? "Only administrators can change visibility"
             : "Only administrators can manage access",
       });
+
+    if (path === "/api/settings/storage") {
+      if (req.method === "GET") return json(res, 200, await readStorageLimits(db));
+      if (req.method !== "PUT") return json(res, 405, { error: "Ожидается PUT" });
+      if (!isSameOriginRequest(req, publicOrigin)) return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!req.headers["content-type"]?.startsWith("application/json")) return json(res, 415, { error: "Ожидается JSON" });
+      try {
+        const body = await readJson(req);
+        const expected = parseStorageLimits(body?.expected), next = parseStorageLimits(body?.next);
+        if (!expected || !next) return json(res, 400, { error: "Укажите лимиты от 0 до 10240 МБ или оставьте поле пустым" });
+        const result = await db.transaction(async () => {
+          if (!(await auth.isAdmin(req))) return { status: 403, error: "Нет прав на настройку хранилища" };
+          if (JSON.stringify(await readStorageLimits(db)) !== JSON.stringify(expected)) return { status: 409, error: "Лимиты изменились. Обновите страницу перед сохранением" };
+          await writeStorageLimits(db, next, (await auth.currentUser(req))!);
+          return { status: 200 };
+        });
+        return json(res, result.status, result.error ? { error: result.error } : next);
+      } catch (error) {
+        return json(res, error instanceof RangeError ? 413 : 400, { error: "Не удалось сохранить лимиты хранилища" });
+      }
+    }
 
     if (path === "/api/users" && req.method === "GET") {
       try {
