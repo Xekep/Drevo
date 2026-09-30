@@ -4,6 +4,7 @@ import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { createRequestLimiter, requestClientKey } from "./request-rate-limit.ts";
+import { candidateEvidence, candidateNameQuery } from "./discovery-candidate-ranking.ts";
 
 const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
@@ -46,6 +47,17 @@ function match(row: Row) {
     ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
     left: person(row, "left"),
     right: person(row, "right"),
+  };
+}
+
+function published(row: Row) {
+  return {
+    archiveId: String(row.archive_id), id: String(row.person_id), name: String(row.name),
+    ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
+    ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
+    ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
+    ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
+    ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
   };
 }
 
@@ -97,8 +109,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const collection = url.pathname === "/api/discovery/matches";
     const ownPeople = url.pathname === "/api/discovery/matches/own-people";
+    const candidates = url.pathname === "/api/discovery/matches/candidates";
     const detail = /^\/api\/discovery\/matches\/([a-f0-9-]{36})$/.exec(url.pathname);
-    if (!collection && !ownPeople && !detail) return false;
+    if (!collection && !ownPeople && !candidates && !detail) return false;
     if (db.kind !== "postgres" || !db.archiveId)
       return json(res, 501, { error: "Сопоставление деревьев доступно с PostgreSQL" });
     const user = await auth.currentUser(req);
@@ -108,6 +121,41 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     const archiveId = db.archiveId;
+
+    if (candidates) {
+      if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });
+      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+        return json(res, 429, { error: "Слишком много запросов" });
+      const sourceId = url.searchParams.get("sourcePersonId") || "";
+      if (!idPattern.test(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
+      const columns = `archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place`;
+      const sourceRow = await db.prepare("", `SELECT ${columns} FROM discovery_people
+        WHERE archive_id=? AND person_id=?`).get(archiveId,sourceId);
+      if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
+      const source = published(sourceRow);
+      const terms = candidateNameQuery(source);
+      if (!terms) return json(res, 200, { candidates: [], truncated: false });
+      // GIN narrows the candidate set before scoring. No private graph is read.
+      const rows = await db.prepare("", `SELECT ${columns} FROM discovery_people
+        WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)
+        ORDER BY name,archive_id,person_id LIMIT 201`).all(archiveId,terms);
+      const ranked = rows.map((row) => {
+        const candidate = published(row);
+        const evidence = candidateEvidence(source,candidate);
+        return evidence ? { ...candidate, ...evidence } : null;
+      }).filter((item) => item !== null)
+        .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))
+        .slice(0,12).map((item) => ({
+          archiveId: item.archiveId, id: item.id, name: item.name,
+          ...(item.birthSurname ? { birthSurname: item.birthSurname } : {}),
+          ...(item.birthYear ? { birthYear: item.birthYear } : {}),
+          ...(item.deathYear ? { deathYear: item.deathYear } : {}),
+          ...(item.birthPlace ? { birthPlace: item.birthPlace } : {}),
+          ...(item.deathPlace ? { deathPlace: item.deathPlace } : {}),
+          reasons: item.reasons, conflicts: item.conflicts,
+        }));
+      return json(res, 200, { candidates: ranked, truncated: rows.length > 200 });
+    }
 
     if (ownPeople) {
       if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });

@@ -9,6 +9,9 @@ test("archive admin proposes a match using only two published cards", async ({ p
     route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
   await page.route("**/api/discovery/people?**", (route) =>
     route.fulfill({ json: { results: [target], nextCursor: null } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) =>
+    route.fulfill({ json: { candidates: [{ ...target, reasons: ["Совпадают имя и фамилия",
+      "Год рождения близок (±2 года)"], conflicts: [] }], truncated: false } }));
   await page.route("**/api/discovery/matches", async (route) => {
     if (route.request().method() === "POST") {
       expect(route.request().postDataJSON()).toEqual({
@@ -26,8 +29,9 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
   await page.getByRole("button", { name: /Иван Петров.*1900/ }).click();
+  await expect(page.getByText(/Год рождения близок/)).toBeVisible();
   await page.getByRole("searchbox", { name: "Карточка из другого дерева" }).fill("Иван");
-  await page.getByRole("button", { name: /Иван Петров.*1901/ }).click();
+  await page.locator(".match-options").last().getByRole("button", { name: /Иван Петров.*1901/ }).click();
   await expect(page.getByRole("heading", { name: "Проверьте обе карточки" })).toBeVisible();
   await page.getByRole("button", { name: "Предложить сопоставление" }).click();
   await expect(page.getByText("Ожидает подтверждения")).toBeVisible();

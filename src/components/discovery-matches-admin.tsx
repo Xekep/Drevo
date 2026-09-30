@@ -12,6 +12,7 @@ type Candidate = {
   birthPlace?: string;
   deathPlace?: string;
 };
+type SuggestedCandidate = Candidate & { reasons: string[]; conflicts: string[] };
 type Match = {
   id: string;
   status: "pending" | "linked" | "rejected" | "revoked";
@@ -46,6 +47,9 @@ export function DiscoveryMatchesAdmin() {
   const [targetQuery, setTargetQuery] = useState("");
   const [ownPeople, setOwnPeople] = useState<Candidate[]>([]);
   const [targets, setTargets] = useState<Candidate[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestedCandidate[]>([]);
+  const [suggestionsBusy, setSuggestionsBusy] = useState(false);
+  const [suggestionsTruncated, setSuggestionsTruncated] = useState(false);
   const [source, setSource] = useState<Candidate | null>(null);
   const [target, setTarget] = useState<Candidate | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -88,6 +92,21 @@ export function DiscoveryMatchesAdmin() {
   }, [targetQuery]);
 
   useEffect(() => {
+    if (!source) return;
+    const controller = new AbortController();
+    archiveFetch(`${endpoint}/candidates?sourcePersonId=${encodeURIComponent(source.id)}`, {
+      signal: controller.signal, cache: "no-store",
+    }).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось найти возможные совпадения");
+      setSuggestions(body.candidates);
+      setSuggestionsTruncated(body.truncated);
+    }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
+      .finally(() => { if (!controller.signal.aborted) setSuggestionsBusy(false); });
+    return () => controller.abort();
+  }, [source, reload]);
+
+  useEffect(() => {
     const controller = new AbortController();
     archiveFetch(`${endpoint}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, {
       signal: controller.signal, cache: "no-store",
@@ -114,6 +133,7 @@ export function DiscoveryMatchesAdmin() {
       setNotice(body.match.status === "pending" ? "Запрос отправлен. Другая сторона должна подтвердить сопоставление." :
         "Этот запрос уже существует. Его текущий статус показан ниже.");
       setSource(null); setTarget(null); setCursor(null); setHistory([]);
+      setSuggestions([]); setSuggestionsBusy(false); setSuggestionsTruncated(false);
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -140,13 +160,19 @@ export function DiscoveryMatchesAdmin() {
       <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. Оно не объединяет деревья и не открывает чужую ветку.</p>
       <div className="match-search-grid">
         <div><label>Человек из этого дерева
-          <input type="search" value={ownQuery} onChange={(event) => { setOwnQuery(event.target.value); setSource(null); }} placeholder="Поиск среди опубликованных" />
+          <input type="search" value={ownQuery} onChange={(event) => {
+            setOwnQuery(event.target.value); setSource(null); setSuggestions([]);
+            setSuggestionsBusy(false); setSuggestionsTruncated(false);
+          }} placeholder="Поиск среди опубликованных" />
         </label>
           <div className="match-options" aria-label="Свои опубликованные люди">
             {ownPeople.map((person) => <button type="button" key={person.id}
               className={source?.id === person.id ? "is-selected" : ""}
               aria-pressed={source?.id === person.id}
-              onClick={() => setSource(person)}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
+              onClick={() => {
+                setSource(person); setTarget(null); setSuggestions([]);
+                setSuggestionsBusy(true); setSuggestionsTruncated(false);
+              }}>{person.name}<small>{person.birthYear || "?"}–{person.deathYear || "?"}</small></button>)}
             {!ownPeople.length && <p>Опубликуйте свою карточку в разделе «Можно найти».</p>}
           </div>
         </div>
@@ -162,6 +188,23 @@ export function DiscoveryMatchesAdmin() {
           </div>
         </div>
       </div>
+      {source && <div className="match-suggestions">
+        <h2>Возможные совпадения</h2>
+        <p>Подсказки основаны только на опубликованных именах, годах и местах. Проверьте сведения перед отправкой запроса.</p>
+        {suggestionsBusy && <p role="status">Ищем совпадения…</p>}
+        {!suggestionsBusy && !suggestions.length && <p>Пока совпадений нет. Можно найти карточку вручную.</p>}
+        <div className="match-suggestion-list">
+          {suggestions.map((item) => <button type="button" key={`${item.archiveId}:${item.id}`}
+            className={target?.archiveId === item.archiveId && target.id === item.id ? "is-selected" : ""}
+            aria-pressed={target?.archiveId === item.archiveId && target.id === item.id}
+            onClick={() => setTarget(item)}>
+            <strong>{item.name}</strong>
+            <small>{item.reasons.join(" · ")}</small>
+            {item.conflicts.length > 0 && <small className="match-conflicts">Расхождения: {item.conflicts.join("; ")}</small>}
+          </button>)}
+        </div>
+        {suggestionsTruncated && <p>Показана часть похожих карточек. Для точного поиска введите ФИО справа.</p>}
+      </div>}
       {source && target && <div className="match-review">
         <h2>Проверьте обе карточки</h2>
         <div className="match-pair"><CandidateCard candidate={source} /><CandidateCard candidate={target} /></div>

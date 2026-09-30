@@ -8,6 +8,15 @@
 }
 .match-options button.is-selected { border-color: var(--green); background: #edf3e9; }
 .match-options small { color: var(--muted); white-space: nowrap; }
+.match-suggestions { display: grid; gap: 8px; }
+.match-suggestions > p { margin: 0; }
+.match-suggestion-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,240px),1fr)); gap: 8px; }
+.archive-form .match-suggestion-list button {
+  display: grid; align-content: start; gap: 4px; min-width: 0; padding: 10px 12px; text-align: left;
+}
+.match-suggestion-list button.is-selected { border-color: var(--green); background: #edf3e9; }
+.match-suggestion-list small { color: var(--muted); line-height: 1.3; }
+.match-suggestion-list .match-conflicts { color: #96531f; }
 .match-review, .match-request { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
 .match-review h2, .discovery-matches-admin h2 { margin: 0; font-size: 16px; }
 .match-candidate-card { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 10px; background: #f4f7f1; border-radius: 8px; }
