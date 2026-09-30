@@ -251,10 +251,11 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
     // Correctness must not depend on the CI machine's FPS. Require repeated
     // observations of distinct already-drawn edges, not an arbitrary frame rate.
     expect(result.frames).toBeGreaterThan(1);
+    // The sixth fixture edge is an additional relation, hidden by default.
     expect(result.rechecked).toBeGreaterThanOrEqual(
-      scenario === "large" ? 10 : 6,
+      scenario === "large" ? 10 : 5,
     );
-    expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 6);
+    expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
     if (scenario !== "idle") {
       expect(result.blocked).toBeGreaterThan(0);

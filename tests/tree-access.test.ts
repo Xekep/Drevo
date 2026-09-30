@@ -143,7 +143,13 @@ test("привязка аккаунта и область видимости д�
         .split(";")[0];
     };
     const admin = await login("admin"),
-      relative = await login("relative");
+      relative = await login("relative"),
+      reader = await login("reader");
+    assert.equal(
+      (await request("/api/users/reader", admin, "PATCH", { role: "reader" }))
+        .status,
+      200,
+    );
     assert.equal(
       (
         await request("/api/users/relative", admin, "PATCH", {
@@ -258,6 +264,7 @@ test("привязка аккаунта и область видимости д�
     );
     assert.equal((await request("/media/secret.png", relative)).status, 401);
     assert.equal((await request("/media/secret.png", admin)).status, 200);
+    assert.equal((await request("/media/secret.png", reader)).status, 200);
     await app.archive.db
       .prepare(
         "INSERT INTO face_descriptors(id,person_id,data,model) VALUES(?,?,?,?)",
@@ -408,11 +415,22 @@ test("привязка аккаунта и область видимости д�
     });
     assert.equal(upload.status, 201);
     const uploaded = await upload.json();
+    writeFileSync(join(dir, "uploads", "orphan.png"), png);
     assert.equal(
       (await request(uploaded.url, relative)).status,
       200,
       "own pending portrait is readable before assignment",
     );
+    for (const route of [
+      uploaded.url,
+      `${uploaded.url}?variant=thumb`,
+      "/media/orphan.png",
+    ])
+      assert.equal(
+        (await request(route, reader)).status,
+        401,
+        "a full-archive reader cannot read another user's pending or orphaned media",
+      );
     assert.equal((await request(uploaded.url)).status, 401);
     const attached = await request(
       "/api/family/changes",
@@ -432,6 +450,7 @@ test("привязка аккаунта и область видимости д�
     );
     assert.equal(attached.status, 200);
     await app.archive.db.prepare("DELETE FROM media_upload_grants").run();
+    assert.equal((await request(uploaded.url, reader)).status, 200);
     assert.equal(
       (await request(uploaded.url, relative)).status,
       200,
@@ -468,6 +487,17 @@ test("привязка аккаунта и область видимости д�
       ).status,
       400,
     );
+    const beforeRemoval = await app.archive.read();
+    await app.archive.write(
+      {
+        ...beforeRemoval.family,
+        people: beforeRemoval.family.people.map((person) =>
+          person.id === "new-branch" ? { ...person, photo: undefined } : person,
+        ),
+      },
+      beforeRemoval.revision,
+    );
+    assert.equal((await request(uploaded.url, reader)).status, 401);
   } finally {
     await app?.close();
     for (const [key, value] of Object.entries(original))

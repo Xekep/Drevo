@@ -24,32 +24,39 @@ export function mediaHttp({
 }) {
   let cachedKey = "",
     cachedUrls = new Set<string>();
+  const referenced = async (url: string, includePortraits: boolean) => {
+    if (
+      await archive.db
+        .prepare(
+          "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
+          "SELECT 1 FROM photos WHERE (data->>'url')=? LIMIT 1",
+        )
+        .get(url)
+    )
+      return true;
+    return (
+      includePortraits &&
+      !!(await archive.db
+        .prepare(
+          "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
+          "SELECT 1 FROM people WHERE (data->>'photo')=? LIMIT 1",
+        )
+        .get(url))
+    );
+  };
   const permitted = async (req: IncomingMessage, url?: string) => {
-    if (!(await auth.canRead(req)) && !(await visibility.read()).publicAlbums)
-      return false;
-    if (!(await auth.canRead(req))) {
+    const canRead = await auth.canRead(req);
+    if (!canRead && !(await visibility.read()).publicAlbums) return false;
+    if (!url) return false;
+    if (!canRead) {
       // UUID is an identifier, not permission to view an unpublished upload.
-      if (!url) return false;
       const settings = await visibility.read();
-      return (
-        !!(await archive.db
-          .prepare(
-            "SELECT 1 FROM photos WHERE json_extract(data,'$.url')=? LIMIT 1",
-            "SELECT 1 FROM photos WHERE (data->>'url')=? LIMIT 1",
-          )
-          .get(url)) ||
-        (settings.publicTree &&
-          !!(await archive.db
-            .prepare(
-              "SELECT 1 FROM people WHERE json_extract(data,'$.photo')=? LIMIT 1",
-              "SELECT 1 FROM people WHERE (data->>'photo')=? LIMIT 1",
-            )
-            .get(url)))
-      );
+      return await referenced(url, settings.publicTree);
     }
     const user = await auth.currentUser(req);
-    if (!isScopedUser(user) || !url) return true;
+    if (!user) return false;
     if (await ownsPendingMedia(archive.db, url, user.id)) return true;
+    if (!isScopedUser(user)) return await referenced(url, true);
     const key = `${(await archive.meta()).revision}:${user.id}:${user.personId || ""}`;
     if (key !== cachedKey) {
       const scoped = projectFamilyForUser((await archive.read()).family, user);

@@ -16,7 +16,7 @@ import {
   writeGuestTreePreferences,
 } from "../data/guest-tree-preferences";
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
-import { downloadLineageReport } from "./tree/download-lineage-report";
+import { TreeExportDialog } from "./tree-export-dialog";
 import { fullName } from "../domain";
 import { TreeSearch } from "./tree-search";
 const noop = () => {};
@@ -34,6 +34,7 @@ export default function SharedTree({ token }: { token: string }) {
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { selected, compare, selectionOnly, choose, reveal, dispatch, focus } =
     useWorkspaceSelection();
@@ -163,6 +164,7 @@ export default function SharedTree({ token }: { token: string }) {
                 ref={treeCanvas}
                 restricted
                 onPreferences={() => setPreferencesOpen(true)}
+                onExport={() => setExportOpen(true)}
                 comparisonAction={
                   <div className="workspace-actions">
                     <button
@@ -253,33 +255,6 @@ export default function SharedTree({ token }: { token: string }) {
       </div>
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
-          anchorId={exportAnchor?.id}
-          anchorName={exportAnchor && fullName(exportAnchor)}
-          onExportPdf={(signal, scope, anchorId, generations) =>
-            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
-          }
-          onExportPng={(signal, scope, anchorId, generations) =>
-            treeCanvas.current!.exportPng(signal, scope, anchorId, generations)
-          }
-          onExportReport={(direction, generations) =>
-            downloadLineageReport(
-              data.family,
-              exportAnchor?.id,
-              direction,
-              generations,
-            )
-          }
-          onExportPdfReport={async (kind, generations, signal) => {
-            const { downloadArchiveReport } =
-              await import("./tree/download-archive-report");
-            await downloadArchiveReport(
-              data.family,
-              exportAnchor?.id,
-              kind,
-              generations,
-              signal,
-            );
-          }}
           preferences={preferences}
           onChange={async (value) => {
             writeGuestTreePreferences(value);
@@ -287,6 +262,16 @@ export default function SharedTree({ token }: { token: string }) {
             return value;
           }}
           onClose={() => setPreferencesOpen(false)}
+        />
+      )}
+      {data && exportOpen && (
+        <TreeExportDialog
+          anchorId={exportAnchor?.id}
+          anchorName={exportAnchor && fullName(exportAnchor)}
+          onExportPdf={(signal, scope, anchorId, generations) =>
+            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
+          }
+          onClose={() => setExportOpen(false)}
         />
       )}
     </div>

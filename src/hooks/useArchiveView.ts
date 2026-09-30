@@ -15,8 +15,13 @@ export function useArchiveView(canLeave: () => boolean = () => true) {
     () => window.location.pathname + window.location.search,
   );
   const navigate = useCallback(
-    (next: ArchiveView, target?: ArchiveTarget, replace = false) => {
-      const path = target ? archiveTargetPath(target) : archivePaths[next];
+    (next: ArchiveView, target?: ArchiveTarget | string, replace = false) => {
+      const path =
+        typeof target === "string"
+          ? target
+          : target
+            ? archiveTargetPath(target)
+            : archivePaths[next];
       const fullscreen = Boolean(window.history.state?.drevoTreeFullscreen);
       if (window.location.pathname + window.location.search !== path)
         window.history[replace || fullscreen ? "replaceState" : "pushState"](

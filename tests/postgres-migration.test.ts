@@ -32,6 +32,9 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
         "person-1",
         JSON.stringify({ id: "person-1", photo: "/media/photo.jpg" }),
       );
+      db.prepare(
+        "INSERT INTO published_people(person_id,published_at,published_by) VALUES(?,?,?)",
+      ).run("person-1", "2026-09-30T00:00:00Z", "user-1");
       db.prepare("INSERT INTO photos(id,data) VALUES(?,?)").run(
         "photo-1",
         JSON.stringify({ id: "photo-1", url: "/media/photo.jpg" }),
@@ -83,7 +86,7 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
-    assert.equal(snapshot.services.length, 31);
+    assert.equal(snapshot.services.length, 32);
     assert.equal(
       snapshot.services.find((table) => table.name === "media_originals")
         ?.rows[0]?.data.size_bytes,
@@ -91,6 +94,14 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     );
     assert.ok(
       snapshot.services.some((table) => table.name === "share_link_activity"),
+    );
+    assert.ok(
+      snapshot.services.some((table) => table.name === "published_people"),
+    );
+    assert.equal(
+      snapshot.services.find((table) => table.name === "published_people")
+        ?.rows[0]?.data.person_id,
+      "person-1",
     );
     assert.equal(
       snapshot.services.find((table) => table.name === "user_tree_preferences")
@@ -135,7 +146,13 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     writeFileSync(join(uploads, "record.pdf"), "document");
     const oldSchema = new DatabaseSync(sqlite);
     oldSchema.exec("DROP TABLE person_comments");
-    for (const column of ["document_type", "document_date", "place", "description", "provenance"])
+    for (const column of [
+      "document_type",
+      "document_date",
+      "place",
+      "description",
+      "provenance",
+    ])
       oldSchema.exec(`ALTER TABLE documents DROP COLUMN ${column}`);
     oldSchema.close();
     assert.deepEqual(
@@ -144,7 +161,8 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
       "копии до появления обсуждений остаются переносимыми",
     );
     assert.equal(
-      inspectSqliteSnapshot(sqlite, uploads).rows.get("documents")?.[0]?.provenance,
+      inspectSqliteSnapshot(sqlite, uploads).rows.get("documents")?.[0]
+        ?.provenance,
       "",
       "старые документы получают пустые дополнительные поля",
     );

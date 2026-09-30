@@ -376,7 +376,10 @@ export function archiveGraph(family: Family): ResearchGraph {
 export function researchToolStatus(name: string) {
   const labels: Record<string, string> = {
     get_current_time: "Уточняю текущую дату и время…",
+    run_code_interpreter: "Выполняю расчёт в Python…",
     get_archive_insights: "Собираю статистику и факты архива…",
+    get_distribution_statistics:
+      "Считаю распределение и энтропию по доступным данным…",
     get_lifespan_statistics: "Считаю продолжительность жизни и проверяю даты…",
     find_missing_data: "Ищу пробелы в карточках людей…",
     find_inconsistencies: "Проверяю противоречия в данных…",

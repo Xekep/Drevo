@@ -21,6 +21,7 @@ type AiAdminStatus = {
   defaultRoleProfile: AiRoleProfile;
   enabled: boolean;
   webSearchEnabled: boolean;
+  codeInterpreterEnabled: boolean;
   webSearchProvider: string;
   webSearchDefaultScope: string;
   active: boolean;
@@ -101,6 +102,7 @@ export function AiSettingsAdmin() {
   const [status, setStatus] = useState<AiAdminStatus | null>(null),
     [enabled, setEnabled] = useState(true),
     [webSearchEnabled, setWebSearchEnabled] = useState(false),
+    [codeInterpreterEnabled, setCodeInterpreterEnabled] = useState(false),
     [apiKey, setApiKey] = useState(""),
     [clearApiKey, setClearApiKey] = useState(false),
     [folderId, setFolderId] = useState(""),
@@ -125,6 +127,7 @@ export function AiSettingsAdmin() {
     setStatus(next);
     setEnabled(next.enabled);
     setWebSearchEnabled(next.webSearchEnabled);
+    setCodeInterpreterEnabled(next.codeInterpreterEnabled);
     setFolderId(next.folderIdOverride || next.folderId || "");
     const selectedModel = next.modelOverride || next.model || "";
     setModel(selectedModel || next.models[0]?.id || "");
@@ -173,6 +176,7 @@ export function AiSettingsAdmin() {
           body: JSON.stringify({
             enabled,
             webSearchEnabled,
+            codeInterpreterEnabled,
             model,
             folderId,
             ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
@@ -329,6 +333,28 @@ export function AiSettingsAdmin() {
                 onChange={(event) => setWebSearchEnabled(event.target.checked)}
               />
             </label>
+            <label
+              className="setting-toggle"
+              htmlFor="ai-code-interpreter-enabled"
+              aria-label="Code Interpreter"
+            >
+              <span>
+                <b>Code Interpreter</b>
+                <small>
+                  Вычисления Python, графики и таблицы в Yandex. Общий
+                  выключатель для всех ролей.
+                </small>
+              </span>
+              <input
+                id="ai-code-interpreter-enabled"
+                type="checkbox"
+                checked={codeInterpreterEnabled}
+                disabled={busy}
+                onChange={(event) =>
+                  setCodeInterpreterEnabled(event.target.checked)
+                }
+              />
+            </label>
             <AiRoleProfilesEditor
               profiles={roleProfiles}
               defaults={{
@@ -351,225 +377,225 @@ export function AiSettingsAdmin() {
 
             <details className="ai-admin-connection">
               <summary>Подключение Yandex, общие лимиты и контекст</summary>
-            <fieldset className="ai-credential-settings">
-              <legend>Подключение и модель по умолчанию</legend>
+              <fieldset className="ai-credential-settings">
+                <legend>Подключение и модель по умолчанию</legend>
 
-              <label htmlFor="ai-api-key">
-                API-ключ
-                <input
-                  id="ai-api-key"
-                  type="password"
-                  autoComplete="new-password"
-                  value={apiKey}
-                  placeholder={
-                    status.apiKeyConfigured
-                      ? "Оставьте пустым, чтобы не менять"
-                      : "AQVN…"
-                  }
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    if (event.target.value) setClearApiKey(false);
-                  }}
-                />
-                <small>
-                  Ключ отправляется только на сервер и хранится там
-                  зашифрованным. Обратно в браузер он не возвращается.
-                </small>
-              </label>
-
-              {status.apiKeyStored && (
-                <label
-                  className="setting-toggle"
-                  htmlFor="ai-clear-api-key"
-                  aria-label="Удалить сохранённый API-ключ"
-                >
-                  <span>
-                    <b>Удалить сохранённый ключ</b>
-                    <small>
-                      После сохранения Drevo снова использует ключ из окружения,
-                      если он там задан.
-                    </small>
-                  </span>
+                <label htmlFor="ai-api-key">
+                  API-ключ
                   <input
-                    id="ai-clear-api-key"
-                    type="checkbox"
-                    checked={clearApiKey}
+                    id="ai-api-key"
+                    type="password"
+                    autoComplete="new-password"
+                    value={apiKey}
+                    placeholder={
+                      status.apiKeyConfigured
+                        ? "Оставьте пустым, чтобы не менять"
+                        : "AQVN…"
+                    }
                     onChange={(event) => {
-                      setClearApiKey(event.target.checked);
-                      if (event.target.checked) setApiKey("");
+                      setApiKey(event.target.value);
+                      if (event.target.value) setClearApiKey(false);
                     }}
                   />
+                  <small>
+                    Ключ отправляется только на сервер и хранится там
+                    зашифрованным. Обратно в браузер он не возвращается.
+                  </small>
                 </label>
+
+                {status.apiKeyStored && (
+                  <label
+                    className="setting-toggle"
+                    htmlFor="ai-clear-api-key"
+                    aria-label="Удалить сохранённый API-ключ"
+                  >
+                    <span>
+                      <b>Удалить сохранённый ключ</b>
+                      <small>
+                        После сохранения Drevo снова использует ключ из
+                        окружения, если он там задан.
+                      </small>
+                    </span>
+                    <input
+                      id="ai-clear-api-key"
+                      type="checkbox"
+                      checked={clearApiKey}
+                      onChange={(event) => {
+                        setClearApiKey(event.target.checked);
+                        if (event.target.checked) setApiKey("");
+                      }}
+                    />
+                  </label>
+                )}
+
+                <label htmlFor="ai-folder-id">
+                  Folder ID
+                  <input
+                    id="ai-folder-id"
+                    value={folderId}
+                    maxLength={128}
+                    placeholder="b1g…"
+                    onChange={(event) => setFolderId(event.target.value)}
+                  />
+                </label>
+
+                <div className="ai-model-picker">
+                  <label htmlFor="ai-model">
+                    Модель
+                    <select
+                      id="ai-model"
+                      value={model}
+                      disabled={!status.models.length && !model}
+                      onChange={(event) => setModel(event.target.value)}
+                    >
+                      {!status.models.some((item) => item.id === model) &&
+                        model && (
+                          <option value={model}>
+                            {model} · текущее значение
+                          </option>
+                        )}
+                      {!model && !status.models.length && (
+                        <option value="">Загрузите модели каталога</option>
+                      )}
+                      {status.models.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="ai-model-refresh"
+                    disabled={loadingModels || !folderId.trim()}
+                    onClick={() => void refreshModels()}
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={loadingModels ? "spinning" : ""}
+                    />
+                    {loadingModels ? "Загружаем…" : "Обновить список"}
+                  </button>
+                  {status.modelsError && (
+                    <small className="form-error">{status.modelsError}</small>
+                  )}
+                </div>
+              </fieldset>
+
+              <details className="ai-context-settings">
+                <summary>Контекст диалога</summary>
+                <label
+                  className="setting-toggle"
+                  htmlFor="ai-compaction-enabled"
+                  aria-label="Сжимать длинный диалог"
+                >
+                  <span>
+                    <b>Сжимать длинный диалог</b>
+                  </span>
+                  <input
+                    id="ai-compaction-enabled"
+                    type="checkbox"
+                    checked={compactionEnabled}
+                    onChange={(event) =>
+                      setCompactionEnabled(event.target.checked)
+                    }
+                  />
+                </label>
+                <label htmlFor="ai-compact-threshold">
+                  Порог сжатия, токенов
+                  <input
+                    id="ai-compact-threshold"
+                    type="number"
+                    min={1000}
+                    max={1000000}
+                    disabled={!compactionEnabled}
+                    value={compactThresholdTokens}
+                    onChange={(event) =>
+                      setCompactThresholdTokens(Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label
+                  className="setting-toggle"
+                  htmlFor="ai-truncation-enabled"
+                  aria-label="Автоматически сокращать контекст при переполнении"
+                >
+                  <span>
+                    <b>Автоматически сокращать контекст при переполнении</b>
+                  </span>
+                  <input
+                    id="ai-truncation-enabled"
+                    type="checkbox"
+                    checked={automaticTruncation}
+                    onChange={(event) =>
+                      setAutomaticTruncation(event.target.checked)
+                    }
+                  />
+                </label>
+                <label htmlFor="ai-tool-iterations">
+                  Максимум шагов инструментов
+                  <input
+                    id="ai-tool-iterations"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={maxToolIterations}
+                    onChange={(event) =>
+                      setMaxToolIterations(Number(event.target.value))
+                    }
+                  />
+                </label>
+              </details>
+
+              {status.credentialError && (
+                <p className="form-error" role="alert">
+                  {status.credentialError}
+                </p>
               )}
 
-              <label htmlFor="ai-folder-id">
-                Folder ID
-                <input
-                  id="ai-folder-id"
-                  value={folderId}
-                  maxLength={128}
-                  placeholder="b1g…"
-                  onChange={(event) => setFolderId(event.target.value)}
-                />
-              </label>
-
-              <div className="ai-model-picker">
-                <label htmlFor="ai-model">
-                  Модель
-                  <select
-                    id="ai-model"
-                    value={model}
-                    disabled={!status.models.length && !model}
-                    onChange={(event) => setModel(event.target.value)}
-                  >
-                    {!status.models.some((item) => item.id === model) &&
-                      model && (
-                        <option value={model}>
-                          {model} · текущее значение
-                        </option>
-                      )}
-                    {!model && !status.models.length && (
-                      <option value="">Загрузите модели каталога</option>
-                    )}
-                    {status.models.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="ai-model-refresh"
-                  disabled={loadingModels || !folderId.trim()}
-                  onClick={() => void refreshModels()}
-                >
-                  <RefreshCw
-                    size={15}
-                    className={loadingModels ? "spinning" : ""}
+              <fieldset className="ai-limit-settings">
+                <legend>Лимиты</legend>
+                <label htmlFor="ai-rpm">
+                  Запросов в минуту на пользователя
+                  <input
+                    id="ai-rpm"
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={requestsPerMinute}
+                    onChange={(event) =>
+                      setRequestsPerMinute(Number(event.target.value))
+                    }
                   />
-                  {loadingModels ? "Загружаем…" : "Обновить список"}
-                </button>
-                {status.modelsError && (
-                  <small className="form-error">{status.modelsError}</small>
-                )}
-              </div>
-            </fieldset>
-
-            <details className="ai-context-settings">
-              <summary>Контекст диалога</summary>
-              <label
-                className="setting-toggle"
-                htmlFor="ai-compaction-enabled"
-                aria-label="Сжимать длинный диалог"
-              >
-                <span>
-                  <b>Сжимать длинный диалог</b>
-                </span>
-                <input
-                  id="ai-compaction-enabled"
-                  type="checkbox"
-                  checked={compactionEnabled}
-                  onChange={(event) =>
-                    setCompactionEnabled(event.target.checked)
-                  }
-                />
-              </label>
-              <label htmlFor="ai-compact-threshold">
-                Порог сжатия, токенов
-                <input
-                  id="ai-compact-threshold"
-                  type="number"
-                  min={1000}
-                  max={1000000}
-                  disabled={!compactionEnabled}
-                  value={compactThresholdTokens}
-                  onChange={(event) =>
-                    setCompactThresholdTokens(Number(event.target.value))
-                  }
-                />
-              </label>
-              <label
-                className="setting-toggle"
-                htmlFor="ai-truncation-enabled"
-                aria-label="Автоматически сокращать контекст при переполнении"
-              >
-                <span>
-                  <b>Автоматически сокращать контекст при переполнении</b>
-                </span>
-                <input
-                  id="ai-truncation-enabled"
-                  type="checkbox"
-                  checked={automaticTruncation}
-                  onChange={(event) =>
-                    setAutomaticTruncation(event.target.checked)
-                  }
-                />
-              </label>
-              <label htmlFor="ai-tool-iterations">
-                Максимум шагов инструментов
-                <input
-                  id="ai-tool-iterations"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={maxToolIterations}
-                  onChange={(event) =>
-                    setMaxToolIterations(Number(event.target.value))
-                  }
-                />
-              </label>
-            </details>
-
-            {status.credentialError && (
-              <p className="form-error" role="alert">
-                {status.credentialError}
-              </p>
-            )}
-
-            <fieldset className="ai-limit-settings">
-              <legend>Лимиты</legend>
-              <label htmlFor="ai-rpm">
-                Запросов в минуту на пользователя
-                <input
-                  id="ai-rpm"
-                  type="number"
-                  min={0}
-                  max={120}
-                  value={requestsPerMinute}
-                  onChange={(event) =>
-                    setRequestsPerMinute(Number(event.target.value))
-                  }
-                />
-              </label>
-              <label htmlFor="ai-daily-requests">
-                Запросов в день на весь архив
-                <input
-                  id="ai-daily-requests"
-                  type="number"
-                  min={0}
-                  max={100000}
-                  value={dailyRequests}
-                  onChange={(event) =>
-                    setDailyRequests(Number(event.target.value))
-                  }
-                />
-              </label>
-              <label htmlFor="ai-daily-tokens">
-                Токенов в день на весь архив
-                <input
-                  id="ai-daily-tokens"
-                  type="number"
-                  min={0}
-                  max={1000000000}
-                  value={dailyTokens}
-                  onChange={(event) =>
-                    setDailyTokens(Number(event.target.value))
-                  }
-                />
-              </label>
-              <small>Ноль отключает соответствующий лимит.</small>
-            </fieldset>
+                </label>
+                <label htmlFor="ai-daily-requests">
+                  Запросов в день на весь архив
+                  <input
+                    id="ai-daily-requests"
+                    type="number"
+                    min={0}
+                    max={100000}
+                    value={dailyRequests}
+                    onChange={(event) =>
+                      setDailyRequests(Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label htmlFor="ai-daily-tokens">
+                  Токенов в день на весь архив
+                  <input
+                    id="ai-daily-tokens"
+                    type="number"
+                    min={0}
+                    max={1000000000}
+                    value={dailyTokens}
+                    onChange={(event) =>
+                      setDailyTokens(Number(event.target.value))
+                    }
+                  />
+                </label>
+                <small>Ноль отключает соответствующий лимит.</small>
+              </fieldset>
             </details>
 
             <footer className="ai-settings-actions">
@@ -593,107 +619,118 @@ export function AiSettingsAdmin() {
           </form>
 
           <details className="ai-admin-connection">
-          <summary>Текущее подключение · {status.configured ? "настроено" : "требует настройки"}</summary>
-          <div className="ai-config-status">
-            <div>
-              <b>API-ключ</b>
-              <span>
-                {status.apiKeyConfigured
-                  ? status.apiKeySource === "database"
-                    ? "Сохранён в Drevo"
-                    : "Из окружения сервера"
-                  : "Не задан"}
-              </span>
+            <summary>
+              Текущее подключение ·{" "}
+              {status.configured ? "настроено" : "требует настройки"}
+            </summary>
+            <div className="ai-config-status">
+              <div>
+                <b>API-ключ</b>
+                <span>
+                  {status.apiKeyConfigured
+                    ? status.apiKeySource === "database"
+                      ? "Сохранён в Drevo"
+                      : "Из окружения сервера"
+                    : "Не задан"}
+                </span>
+              </div>
+              <div>
+                <b>Folder ID</b>
+                <span>
+                  {status.folderConfigured
+                    ? `${status.folderId} · ${
+                        status.folderSource === "database"
+                          ? "Drevo"
+                          : "окружение"
+                      }`
+                    : "Не задан"}
+                </span>
+              </div>
+              <div>
+                <b>Модель</b>
+                <span>{status.model}</span>
+              </div>
+              <div>
+                <b>Endpoint</b>
+                <span>{status.baseUrl}</span>
+              </div>
             </div>
-            <div>
-              <b>Folder ID</b>
-              <span>
-                {status.folderConfigured
-                  ? `${status.folderId} · ${
-                      status.folderSource === "database" ? "Drevo" : "окружение"
-                    }`
-                  : "Не задан"}
-              </span>
-            </div>
-            <div>
-              <b>Модель</b>
-              <span>{status.model}</span>
-            </div>
-            <div>
-              <b>Endpoint</b>
-              <span>{status.baseUrl}</span>
-            </div>
-          </div>
           </details>
 
           <details className="ai-admin-connection ai-usage-details">
-            <summary>Статистика · сегодня {status.usage.today.requests} запросов</summary>
-          <section className="ai-usage-summary" aria-label="Использование ИИ">
-            <h3>Использование сегодня</h3>
-            <div className="ai-usage-stats">
-              <div>
-                <b>{status.usage.today.requests}</b>
-                <span>
-                  запросов
-                  {status.limits.dailyRequests
-                    ? ` / ${status.limits.dailyRequests}`
-                    : ""}
-                </span>
+            <summary>
+              Статистика · сегодня {status.usage.today.requests} запросов
+            </summary>
+            <section className="ai-usage-summary" aria-label="Использование ИИ">
+              <h3>Использование сегодня</h3>
+              <div className="ai-usage-stats">
+                <div>
+                  <b>{status.usage.today.requests}</b>
+                  <span>
+                    запросов
+                    {status.limits.dailyRequests
+                      ? ` / ${status.limits.dailyRequests}`
+                      : ""}
+                  </span>
+                </div>
+                <div>
+                  <b>
+                    {status.usage.today.totalTokens.toLocaleString("ru-RU")}
+                  </b>
+                  <span>
+                    вход{" "}
+                    {status.usage.today.inputTokens.toLocaleString("ru-RU")} ·
+                    выход{" "}
+                    {status.usage.today.outputTokens.toLocaleString("ru-RU")}
+                    {status.limits.dailyTokens
+                      ? ` · лимит ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
+                      : ""}
+                  </span>
+                </div>
+                <div>
+                  <b>{status.usage.today.providerCalls}</b>
+                  <span>вызовов AI Studio</span>
+                </div>
+                <div>
+                  <b>{status.usage.today.averageLatencyMs} мс</b>
+                  <span>средняя задержка</span>
+                </div>
+                <div>
+                  <b>{status.usage.today.errors}</b>
+                  <span>ошибок</span>
+                </div>
               </div>
-              <div>
-                <b>{status.usage.today.totalTokens.toLocaleString("ru-RU")}</b>
-                <span>
-                  вход {status.usage.today.inputTokens.toLocaleString("ru-RU")}{" "}
-                  · выход{" "}
-                  {status.usage.today.outputTokens.toLocaleString("ru-RU")}
-                  {status.limits.dailyTokens
-                    ? ` · лимит ${status.limits.dailyTokens.toLocaleString("ru-RU")}`
-                    : ""}
-                </span>
+              <div className="ai-token-chart">
+                <h4>Расход токенов за 14 дней</h4>
+                <AiTokenUsageChart history={status.usage.history} />
               </div>
-              <div>
-                <b>{status.usage.today.providerCalls}</b>
-                <span>вызовов AI Studio</span>
-              </div>
-              <div>
-                <b>{status.usage.today.averageLatencyMs} мс</b>
-                <span>средняя задержка</span>
-              </div>
-              <div>
-                <b>{status.usage.today.errors}</b>
-                <span>ошибок</span>
-              </div>
-            </div>
-            <div className="ai-token-chart">
-              <h4>Расход токенов за 14 дней</h4>
-              <AiTokenUsageChart history={status.usage.history} />
-            </div>
-            {status.usage.recent.length > 0 && (
-              <div className="ai-usage-recent">
-                <h4>Последние запросы</h4>
-                {status.usage.recent.slice(0, 10).map((item) => (
-                  <article key={item.id}>
-                    <span className={item.status === "ok" ? "ok" : "error"}>
-                      {item.status === "ok" ? "OK" : "Ошибка"}
-                    </span>
-                    <div>
-                      <b>{item.model}</b>
-                      <small>
-                        {new Date(item.at).toLocaleString("ru-RU")} · вход{" "}
-                        {item.inputTokens.toLocaleString("ru-RU")} · выход{" "}
-                        {item.outputTokens.toLocaleString("ru-RU")} ·{" "}
-                        {item.providerCalls} выз. · {item.latencyMs} мс
-                      </small>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-            <p className="ai-usage-privacy">
-              Сохраняются только технические счётчики. Тексты запросов, ответов
-              и аргументы Research Tools в журнал использования не записываются.
-            </p>
-          </section>
+              {status.usage.recent.length > 0 && (
+                <div className="ai-usage-recent">
+                  <h4>Последние запросы</h4>
+                  {status.usage.recent.slice(0, 10).map((item) => (
+                    <article key={item.id}>
+                      <span className={item.status === "ok" ? "ok" : "error"}>
+                        {item.status === "ok" ? "OK" : "Ошибка"}
+                      </span>
+                      <div>
+                        <b>{item.model}</b>
+                        <small>
+                          {new Date(item.at).toLocaleString("ru-RU")} · вход{" "}
+                          {item.inputTokens.toLocaleString("ru-RU")} · выход{" "}
+                          {item.outputTokens.toLocaleString("ru-RU")} ·{" "}
+                          {item.providerCalls} выз. · {item.latencyMs} мс
+                        </small>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+              <p className="ai-usage-privacy">
+                Сохраняются только технические счётчики. Тексты запросов,
+                ответов и аргументы Research Tools в журнал использования не
+                записываются.
+              </p>
+            </section>
           </details>
         </>
       )}

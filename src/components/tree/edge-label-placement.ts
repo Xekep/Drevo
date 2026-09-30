@@ -13,8 +13,8 @@ export function edgeLabelPlacement(
     const to = points![i];
     const dx = to.x - from.x;
     const dy = to.y - from.y;
-    if ((!dx && !dy) || (dx && dy)) continue;
-    const length = Math.abs(dx || dy);
+    if (!dx && !dy) continue;
+    const length = Math.hypot(dx, dy);
     if (best && length <= best.length) continue;
     best = {
       x: (from.x + to.x) / 2,

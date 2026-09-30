@@ -539,3 +539,76 @@ export function roundedRoute(points: Point[], radius = 7) {
   }
   return { path, ...label };
 }
+
+function segmentCrossesCard(a: Point, b: Point, card: Box) {
+  // Clip against the card interior so an edge may touch its own port.
+  const box = {
+    left: card.left + 0.5,
+    right: card.right - 0.5,
+    top: card.top + 0.5,
+    bottom: card.bottom - 0.5,
+  };
+  let entry = 0,
+    exit = 1;
+  for (const [origin, delta, min, max] of [
+    [a.x, b.x - a.x, box.left, box.right],
+    [a.y, b.y - a.y, box.top, box.bottom],
+  ]) {
+    if (delta === 0) {
+      if (origin < min || origin > max) return false;
+      continue;
+    }
+    const first = (min - origin) / delta,
+      last = (max - origin) / delta;
+    entry = Math.max(entry, Math.min(first, last));
+    exit = Math.min(exit, Math.max(first, last));
+    if (entry > exit) return false;
+  }
+  return true;
+}
+
+/** Shorten only the visual route of an additional relationship; card placement stays intact. */
+export function relaxAdditionalRoute(
+  route: EdgeRoute,
+  cards: readonly Box[],
+  familyRoutes: readonly EdgeRoute[] = [],
+): EdgeRoute {
+  const { points } = route;
+  if (points.length < 3) return route;
+  const clear = (a: Point, b: Point) =>
+    !familyRoutes.some((family) =>
+      family.points.slice(1).some((point, index) =>
+        segmentsCross([a, b], [family.points[index], point]),
+      ),
+    ) &&
+    !cards.some((card) => {
+      const endpointCard = [a, b].some(
+        (point) =>
+          point.x >= card.left &&
+          point.x <= card.right &&
+          point.y >= card.top &&
+          point.y <= card.bottom,
+      );
+      const obstacle = endpointCard
+        ? card
+        : {
+            left: card.left - 6,
+            right: card.right + 6,
+            top: card.top - 6,
+            bottom: card.bottom + 6,
+          };
+      return segmentCrossesCard(a, b, obstacle);
+    });
+  const relaxed = [points[0]];
+  for (let from = 0; from < points.length - 1; ) {
+    let next = from + 1;
+    for (let to = points.length - 1; to > next; to--)
+      if (clear(points[from], points[to])) {
+        next = to;
+        break;
+      }
+    relaxed.push(points[next]);
+    from = next;
+  }
+  return { ...route, points: relaxed };
+}

@@ -74,7 +74,7 @@ export function productionStaticHttp(
 
     const shared = /^\/s\/[A-Za-z0-9_-]{43}$/.test(pathname);
     const filePath =
-      archiveViewAt(pathname) || shared
+      archiveViewAt(pathname) || shared || pathname === "/discover"
         ? resolve(root, "index.html")
         : resolve(root, "." + decoded);
     if (filePath !== root && !filePath.startsWith(root + sep))

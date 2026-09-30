@@ -38,3 +38,13 @@ test("unrouted edge uses its path anchor and endpoint direction", () => {
     length: 100,
   });
 });
+
+test("label remains horizontal on a diagonal additional relationship", () => {
+  assert.deepEqual(
+    edgeLabelPlacement(
+      [{ x: 10, y: 20 }, { x: 210, y: 180 }],
+      fallback,
+    ),
+    { x: 110, y: 100, vertical: false, reversed: false, length: Math.hypot(200, 160) },
+  );
+});

@@ -1,10 +1,13 @@
 import { createWebSearchService } from "./web-search.ts";
+import type { GeneratedResearchFile } from "./code-interpreter.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
+import { exportGedcom } from "../domain/gedcom.ts";
+import { lineageReport } from "../domain/lineage-report.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { aiChatStore } from "./ai-chats.ts";
 import { aiRuntimeConfig, type aiSettingsStore } from "./ai-settings.ts";
@@ -100,10 +103,7 @@ export function aiResearchHttp({
       .digest("hex");
     return JSON.stringify([...identity, fingerprint]);
   };
-  const pdfFiles = new Map<
-    string,
-    { ownerId: string; name: string; bytes: Buffer; expires: number }
-  >();
+  const generatedFiles = new Map<string, GeneratedResearchFile>();
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -121,7 +121,7 @@ export function aiResearchHttp({
     researchCatalog,
     fetcher,
     chats,
-    pdfFiles,
+    generatedFiles,
     webSearch: (runtime, metrics) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
         ? createWebSearchService({
@@ -151,6 +151,58 @@ export function aiResearchHttp({
   ): Promise<boolean> => {
     const path = url.pathname,
       stream = path === "/api/ai/chat/stream";
+    if (path.startsWith("/api/ai/export/")) {
+      if (req.method !== "GET")
+        return json(res, 405, { error: "Ожидается GET" });
+      const actor = await auth.currentUser(req);
+      if (!actor || !(await auth.canRead(req)))
+        return json(res, actor ? 403 : 401, { error: "Нет доступа к архиву" });
+      if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+        return json(res, 403, {
+          error: "ИИ-функции недоступны этому аккаунту",
+        });
+      const source = (await archive.read()).family;
+      const family = isScopedUser(actor)
+        ? projectFamilyForUser(source, actor)
+        : source;
+      let content: string;
+      let filename: string;
+      let contentType: string;
+      if (path === "/api/ai/export/gedcom") {
+        const format = url.searchParams.get("format");
+        if (format !== "gedcom7" && format !== "gedcom551")
+          return json(res, 400, { error: "Неизвестный формат GEDCOM" });
+        content = exportGedcom(family, {
+          version: format === "gedcom7" ? "7.0" : "5.5.1",
+          media: [],
+        });
+        filename = format === "gedcom7" ? "drevo-7.ged" : "drevo-5.5.1.ged";
+        contentType = "text/vnd.familysearch.gedcom; charset=utf-8";
+      } else if (path === "/api/ai/export/lineage") {
+        const personId = url.searchParams.get("personId") || "";
+        const direction = url.searchParams.get("direction");
+        if (
+          !family.people.some((person) => person.id === personId) ||
+          (direction !== "ancestors" && direction !== "descendants")
+        )
+          return json(res, 404, {
+            error: "Человек или направление не найдены",
+          });
+        content = lineageReport(family, personId, direction, 8);
+        filename = `drevo-lineage-${direction}.txt`;
+        contentType = "text/plain; charset=utf-8";
+      } else return json(res, 404, { error: "Формат экспорта не найден" });
+      const bytes = Buffer.from(content);
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Content-Length": bytes.length,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(bytes);
+      return true;
+    }
     if (path.startsWith("/api/ai/files/")) {
       if (req.method !== "GET")
         return json(res, 405, { error: "Ожидается GET" });
@@ -161,21 +213,30 @@ export function aiResearchHttp({
         !fileUser ||
         !(await accountAiAccess(archive.db, fileUser.id, auth.local))
       )
-        return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+        return json(res, 403, {
+          error: "ИИ-функции недоступны этому аккаунту",
+        });
       const id = path.slice("/api/ai/files/".length),
-        file = pdfFiles.get(id);
+        file = generatedFiles.get(id);
       if (
         !file ||
         file.expires < Date.now() ||
-        file.ownerId !== (await auth.currentUser(req))?.id
+        file.ownerId !== fileUser.id ||
+        (await chats.read(file.chatId, fileUser.id))?.accessScope !==
+          (await accessScope(fileUser))
       )
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
         });
       res.writeHead(200, {
-        "Content-Type": "application/pdf",
+        "Content-Type": file.contentType,
         "Content-Length": file.bytes.length,
-        "Content-Disposition": `attachment; filename="drevo-research.pdf"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        "Content-Disposition": `attachment; filename="drevo-result.${
+          file.name
+            .split(".")
+            .at(-1)
+            ?.replace(/[^a-z0-9]/gi, "") || "bin"
+        }"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       });
@@ -552,7 +613,11 @@ export function aiResearchHttp({
                   ? "Yandex AI ограничил частоту запросов. Повторите немного позже."
                   : error.code === "provider_timeout"
                     ? "Yandex AI не завершил ответ вовремя. История диалога сохранена; запрос можно повторить."
-                    : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
+                    : error.code === "incomplete_max_output_tokens"
+                      ? "ИИ исчерпал лимит длины ответа и рассуждений. Ответ не завершён. История сохранена; попробуйте разделить вопрос на несколько частей."
+                      : error.code === "incomplete_content_filter"
+                        ? "Yandex AI остановил ответ фильтром содержимого. Это не означает, что в архиве нет нужных данных. Попробуйте уточнить запрос."
+                        : "Сервис ИИ не смог завершить ответ. История диалога сохранена; запрос можно повторить."
               : error instanceof Error
                 ? error.message
                 : "Не удалось получить ответ ИИ";
@@ -585,6 +650,21 @@ export function aiResearchHttp({
         cachedInputTokens: metrics.cachedTokens,
         models: modelUsage(metrics),
       });
+      if (
+        !leaseLost &&
+        !controller.signal.aborted &&
+        (error instanceof YandexResponseError ||
+          (error instanceof Error && error.name === "TimeoutError"))
+      ) {
+        // Keep a safe operational fact for the next turn, never upstream text.
+        // The visible error is delivered separately through HTTP/SSE.
+        await chats.append(
+          chat.id,
+          "assistant",
+          `Служебный статус предыдущего ответа: ${errorMessage}`,
+          { hidden: true },
+        );
+      }
       if (stream) {
         sse(res, "error", { error: errorMessage });
         res.end();
@@ -610,7 +690,7 @@ export function aiResearchHttp({
       const runs = [...activeRuns.values()];
       for (const run of runs) run.controller.abort();
       await Promise.all(runs.map((run) => run.done));
-      pdfFiles.clear();
+      generatedFiles.clear();
     },
   });
 }

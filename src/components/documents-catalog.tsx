@@ -40,12 +40,14 @@ export function DocumentsCatalog({
   allowUnlinked,
   personFilter,
   documentId,
+  onSelectDocument,
   people,
 }: {
   mayEdit: boolean;
   allowUnlinked: boolean;
   personFilter: string | null;
   documentId: string | null;
+  onSelectDocument: (id: string | null) => void;
   people: Person[];
 }) {
   const [documents, setDocuments] = useState<ListedDocument[]>([]);
@@ -125,6 +127,7 @@ export function DocumentsCatalog({
 
   useEffect(() => {
     if (!documentId) return;
+    if (selected?.id === documentId) return;
     if (!/^[a-f0-9-]{36}$/.test(documentId)) return;
     const request = new AbortController();
     void (async () => {
@@ -155,13 +158,14 @@ export function DocumentsCatalog({
       }
     })();
     return () => request.abort();
-  }, [documentId, personFilter]);
+  }, [documentId, personFilter, selected?.id]);
   const directError =
     documentId && !/^[a-f0-9-]{36}$/.test(documentId)
       ? "Некорректная ссылка на документ"
       : directFailure?.id === documentId
         ? directFailure.message
         : "";
+  const activeSelected = selected?.id === documentId ? selected : null;
 
   useEffect(() => {
     if (personQuery.trim().length < 2) return;
@@ -224,6 +228,7 @@ export function DocumentsCatalog({
           name: person.label,
         })),
       });
+      onSelectDocument(created.id);
       setUploadOpen(false);
       setFile(null);
       setTitle("");
@@ -245,6 +250,7 @@ export function DocumentsCatalog({
   const beginEdit = (entry: ListedDocument) => {
     setUploadOpen(false);
     setSelected(null);
+    onSelectDocument(null);
     setEditing(entry);
     setEditTitle(entry.title);
     setEditDetails({
@@ -346,6 +352,7 @@ export function DocumentsCatalog({
         throw new Error(result.error || "Не удалось удалить документ");
       }
       setSelected((current) => (current?.id === entry.id ? null : current));
+      if (selected?.id === entry.id) onSelectDocument(null);
       await load(0);
     } catch (reason) {
       setDeleteError(
@@ -599,7 +606,7 @@ export function DocumentsCatalog({
         <p className="documents-state">По запросу ничего не найдено.</p>
       )}
       <div className="documents-groups">
-        {deleteError && !selected && (
+        {deleteError && !activeSelected && (
           <p role="alert" className="documents-upload-error">
             {deleteError}
           </p>
@@ -620,6 +627,7 @@ export function DocumentsCatalog({
                       setDeleteError("");
                       setAnnotateOnOpen(false);
                       setSelected(document);
+                      onSelectDocument(document.id);
                     }}
                   >
                     <span className="document-item-icon">
@@ -671,19 +679,22 @@ export function DocumentsCatalog({
             : `Показать ещё · ${total - documents.length}`}
         </button>
       )}
-      {selected && (
+      {activeSelected && (
         <PdfBookReader
-          document={selected}
+          document={activeSelected}
           mayAnnotate={mayEdit}
           annotateOnOpen={annotateOnOpen}
-          onClose={() => setSelected(null)}
-          onEdit={mayEdit && selected.canDelete ? () => beginEdit(selected) : undefined}
+          onClose={() => {
+            setSelected(null);
+            onSelectDocument(null);
+          }}
+          onEdit={mayEdit && activeSelected.canDelete ? () => beginEdit(activeSelected) : undefined}
           onDelete={
-            mayEdit && selected.canDelete
-              ? () => void remove(selected)
+            mayEdit && activeSelected.canDelete
+              ? () => void remove(activeSelected)
               : undefined
           }
-          deleting={deleting === selected.id}
+          deleting={deleting === activeSelected.id}
           deleteError={deleteError}
         />
       )}
