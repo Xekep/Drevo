@@ -46,7 +46,7 @@ BEGIN
    WHERE published.archive_id=target_archive
      AND published.person_id=target_person;
   IF NOT FOUND OR NOT (
-    person_data->>'deceased' = 'true' OR
+    coalesce(person_data->>'deceased' = 'true', false) OR
     nullif(person_data->>'death', '') IS NOT NULL
   ) THEN
     DELETE FROM discovery_people
