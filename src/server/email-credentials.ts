@@ -179,6 +179,15 @@ export function emailCredentials(
         );
       const time = now();
       return await transact(async (client) => {
+        const found = await client.query<{ email: string }>(
+          "SELECT email FROM pending_email_registrations WHERE token_hash=$1",
+          [tokenHash(token)],
+        );
+        if (!found.rows[0])
+          throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
+        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
+          found.rows[0].email,
+        ]);
         const pending = await client.query<{
           email: string;
           name: string;
@@ -191,9 +200,6 @@ export function emailCredentials(
         const row = pending.rows[0];
         if (!row || Number(row.expires_at) <= time)
           throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
-        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
-          row.email,
-        ]);
         if (
           (
             await client.query(
