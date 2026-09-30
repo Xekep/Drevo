@@ -32,7 +32,10 @@ export function publishedPeopleStore(db: StoreDatabase) {
   return {
     async ids() {
       const rows = await db
-        .prepare("SELECT person_id FROM published_people")
+        .prepare(
+          "SELECT person_id FROM published_people",
+          "SELECT person_id FROM published_people",
+        )
         .all();
       return new Set(rows.map((row) => String(row.person_id)));
     },
@@ -40,6 +43,7 @@ export function publishedPeopleStore(db: StoreDatabase) {
       return Boolean(
         await db
           .prepare(
+            "SELECT 1 AS present FROM published_people WHERE person_id=?",
             "SELECT 1 AS present FROM published_people WHERE person_id=?",
           )
           .get(personId),
@@ -55,7 +59,10 @@ export function publishedPeopleStore(db: StoreDatabase) {
     },
     async unpublish(personId: string) {
       await db
-        .prepare("DELETE FROM published_people WHERE person_id=?")
+        .prepare(
+          "DELETE FROM published_people WHERE person_id=?",
+          "DELETE FROM published_people WHERE person_id=?",
+        )
         .run(personId);
     },
   };
