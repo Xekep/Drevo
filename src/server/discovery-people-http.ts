@@ -11,6 +11,7 @@ function listedPerson(row: DiscoveryRow) {
     archiveId: String(row.archive_id),
     id: String(row.person_id),
     name: String(row.name),
+    ...(row.birth_surname ? { birthSurname: String(row.birth_surname) } : {}),
     ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
     ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
     ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
@@ -73,7 +74,7 @@ export function discoveryPeopleHttp(
     if (state?.ready !== true)
       return json(res, 503, { error: "Поисковый каталог подготавливается" });
     if (detail) {
-      const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_year,death_year,
+      const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version FROM discovery_people
              WHERE archive_id=? AND person_id=?`).get(detail[1], detail[2]);
       return row ? json(res, 200, { person: listedPerson(row) })
@@ -85,7 +86,7 @@ export function discoveryPeopleHttp(
       return json(res, 400, { error: "Введите от 2 до 100 символов для поиска" });
     const cursor = readCursor(url.searchParams.get("cursor"));
     if (!cursor) return json(res, 400, { error: "Некорректная страница поиска" });
-    const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_year,death_year,
+    const rows = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version
         FROM discovery_people
        WHERE search_vector @@ to_tsquery('simple', ?)

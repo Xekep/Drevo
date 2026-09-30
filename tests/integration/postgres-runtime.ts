@@ -168,14 +168,14 @@ try {
     const primaryPublished = publishedPeopleStore(live.db);
     const otherPublished = publishedPeopleStore(other);
     await primaryPublished.publish("person-a", "owner");
-    assert.equal(await primaryPublished.has("person-a"), true);
-    assert.equal((await primaryPublished.ids()).has("person-a"), true);
-    assert.equal(await otherPublished.has("person-a"), false);
+    assert.equal(Boolean(await primaryPublished.getFields("person-a")), true);
+    assert.equal((await primaryPublished.entries()).has("person-a"), true);
+    assert.equal(Boolean(await otherPublished.getFields("person-a")), false);
     await otherPublished.publish("person-a", "owner");
-    assert.equal((await otherPublished.ids()).has("person-a"), true);
+    assert.equal((await otherPublished.entries()).has("person-a"), true);
     await primaryPublished.unpublish("person-a");
-    assert.equal(await primaryPublished.has("person-a"), false);
-    assert.equal(await otherPublished.has("person-a"), true);
+    assert.equal(Boolean(await primaryPublished.getFields("person-a")), false);
+    assert.equal(Boolean(await otherPublished.getFields("person-a")), true);
     await otherPublished.unpublish("person-a");
     // Explicit archive selection keeps same-ID people in separate snapshots.
     const otherArchive = await openArchive(source, family, "other-archive");
@@ -1398,8 +1398,12 @@ try {
   const beforeDiscovery = await otherApp.archive.read();
   const deceasedFamily = structuredClone(beforeDiscovery.family);
   deceasedFamily.people[0].deceased = true;
+  deceasedFamily.people[0].maidenName = "ПоискРождения";
   await otherApp.archive.write(deceasedFamily, beforeDiscovery.revision);
-  await otherPublication.publish("person-a", "owner");
+  await otherPublication.publish("person-a", "owner", {
+    birthSurname: true, birthYear: false, deathYear: false,
+    birthPlace: false, deathPlace: false,
+  });
   await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=true WHERE singleton=true").run();
   const found = await fetch(securedBase + "/api/discovery/people?q=Исправленный", { headers });
   assert.equal(found.status, 200);
@@ -1408,6 +1412,10 @@ try {
     [["other-archive","person-a"]],
     "a root-archive reader can find only the explicitly published projection from another archive",
   );
+  const chosenProjection = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers });
+  assert.deepEqual(Object.keys((await chosenProjection.json()).person).sort(),
+    ["archiveId", "birthSurname", "id", "name", "publicationVersion"].sort());
+  assert.equal((await (await fetch(securedBase + "/api/discovery/people?q=ПоискРождения", { headers })).json()).results.length, 1);
   assert.equal(
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
