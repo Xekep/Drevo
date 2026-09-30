@@ -145,21 +145,31 @@ export function documentsHttp({
     res.end(JSON.stringify(value));
     return true;
   };
+  const accessScope = (user: Awaited<ReturnType<typeof auth.currentUser>>) =>
+    user?.approved
+      ? JSON.stringify([user.id, user.role, user.treeAccess, user.personId])
+      : null;
   const visible = async (req: IncomingMessage, includePeople = true) => {
     const user = await auth.currentUser(req);
+    const scope = accessScope(user);
     const scoped = isScopedUser(user);
-    const people = !scoped && !includePeople
+    const people = !scope || (!scoped && !includePeople)
       ? []
       : scoped
         ? projectFamilyForUser((await archive.read()).family, user).people
         : (await archive.read()).family.people;
     return {
       userId: user?.id,
+      scope,
       scoped,
       people,
       ids: people.map((person) => person.id),
     };
   };
+  const accessStillCurrent = async (
+    req: IncomingMessage,
+    access: Awaited<ReturnType<typeof visible>>,
+  ) => !!access.scope && accessScope(await auth.currentUser(req)) === access.scope;
   const linkedPersonNames = async (ids: string[]) => {
     if (!ids.length) return new Map<string, string>();
     const rows = await db.prepare(
@@ -177,9 +187,11 @@ export function documentsHttp({
     row: Row,
     ids: string[],
   ) =>
-    !access.scoped ||
-    ids.some((id) => access.ids.includes(id)) ||
-    (!ids.length && row.uploaded_by === access.userId);
+    !!access.scope && (
+      !access.scoped ||
+      ids.some((id) => access.ids.includes(id)) ||
+      (!ids.length && row.uploaded_by === access.userId)
+    );
   const associations = async (ids: string[]) => {
     if (!ids.length) return new Map<string, string[]>();
     const rows = (await db
@@ -235,6 +247,8 @@ export function documentsHttp({
       )
         return json(res, 400, { error: "Некорректная страница" });
       const access = await visible(req, !!query);
+      if (!access.scope)
+        return json(res, 403, { error: "Доступ к документам изменился" });
       if (personId !== null && access.scoped && !access.ids.includes(personId))
         return json(res, 200, { total: 0, items: [] });
       const conditions: string[] = [];
@@ -291,6 +305,8 @@ export function documentsHttp({
         : await linkedPersonNames([...links.values()].flat());
       const actor = await auth.currentUser(req),
         mayEdit = await auth.canEdit(req);
+      if (!(await accessStillCurrent(req, access)))
+        return json(res, 403, { error: "Доступ к документам изменился" });
       return json(res, 200, {
         total,
         items: rows.map((row) =>
@@ -319,6 +335,10 @@ export function documentsHttp({
       const people = access.scoped
         ? new Map(access.people.map((person) => [person.id, fullName(person)]))
         : await linkedPersonNames(linkedIds);
+      const actor = await auth.currentUser(req);
+      const mayEdit = await auth.canEdit(req);
+      if (!(await accessStillCurrent(req, access)))
+        return json(res, 404, { error: "Документ не найден" });
       return json(
         res,
         200,
@@ -326,8 +346,7 @@ export function documentsHttp({
           row,
           linkedIds,
           people,
-          (await auth.canEdit(req)) &&
-            owns(await auth.currentUser(req), { createdBy: row.uploaded_by }),
+          mayEdit && owns(actor, { createdBy: row.uploaded_by }),
         ),
       );
     }
@@ -566,13 +585,14 @@ export function documentsHttp({
           ...item,
           canDelete: owns(actor, { createdBy: item.authorId }),
         }));
-      if (req.method === "GET" && !annotations[2])
+      if (req.method === "GET" && !annotations[2]) {
+        const actor = await auth.currentUser(req);
+        if (!(await accessStillCurrent(req, access)))
+          return json(res, 404, { error: "Документ не найден" });
         return json(res, 200, {
-          items: visibleItems(
-            JSON.parse(row.annotations),
-            await auth.currentUser(req),
-          ),
+          items: visibleItems(JSON.parse(row.annotations), actor),
         });
+      }
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
       if (!(await auth.canEdit(req)))
@@ -758,6 +778,8 @@ export function documentsHttp({
         const info = await stat(path);
         if (!info.isFile())
           return json(res, 404, { error: "Файл документа не найден" });
+        if (!(await accessStillCurrent(req, access)))
+          return json(res, 404, { error: "Документ не найден" });
         res.writeHead(200, {
           "Content-Type": "application/pdf",
           "Content-Length": String(info.size),
