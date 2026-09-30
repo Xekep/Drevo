@@ -198,7 +198,7 @@ export function faceDescriptorsHttp({
         error: "You do not have editing access",
       });
     const actor = (await auth.currentUser(req))!;
-    if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+    if (!deleting && !(await accountAiAccess(archive.db, actor.id, auth.local)))
       return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
     if (deleting && req.method !== "DELETE")
       return json(res, 405, { error: "Ожидается DELETE" });
@@ -255,7 +255,10 @@ export function faceDescriptorsHttp({
           return json(res, 503, {
             error: "Слишком много образцов для интерактивного сравнения",
           });
-        return json(res, 200, { match: closestMatch(descriptor, rows, model) });
+        const match = closestMatch(descriptor, rows, model);
+        if (!(await accountAiAccess(archive.db, actor.id, auth.local)))
+          return json(res, 403, { error: "Распознавание лиц недоступно этому аккаунту" });
+        return json(res, 200, { match });
       }
       const sample = parseDescriptor(body);
       const actor = (await auth.currentUser(req))!;
@@ -318,7 +321,16 @@ export function faceDescriptorsHttp({
         return json(res, 409, {
           error: "Для этого человека уже сохранено максимальное число образцов",
         });
-      await archive.db.transaction(async () => {
+      const saved = await archive.db.transaction(async () => {
+        const currentActor = await auth.currentUser(req);
+        if (!currentActor || !(await auth.canEdit(req)) ||
+            !(await accountAiAccess(archive.db, currentActor.id, auth.local, true)))
+          return false;
+        if (isScopedUser(currentActor) &&
+            !visiblePersonIds((await archive.read()).family, currentActor).has(sample.personId))
+          return false;
+        if (currentActor.role !== "admin" && photo.createdBy !== currentActor.id)
+          return false;
         await archive.db
           .prepare(
             "DELETE FROM face_descriptors WHERE source_tag_id=? AND model=?",
@@ -341,7 +353,9 @@ export function faceDescriptorsHttp({
             sourceTagRowId,
             sample.model,
           );
+        return true;
       });
+      if (!saved) return json(res, 403, { error: "Доступ к распознаванию лиц изменился" });
       return json(res, 201, { ok: true });
     } catch (error) {
       if (isInfrastructureError(error)) throw error;

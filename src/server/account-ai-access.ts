@@ -5,8 +5,11 @@ export async function accountAiAccess(
   db: StoreDatabase,
   accountId: string,
   trustedLocal = false,
+  lockTier = false,
 ) {
   if (trustedLocal || db.kind === "sqlite") return true;
+  if (lockTier && !db.inTransaction())
+    throw new Error("Проверка уровня с блокировкой требует транзакции");
   const row = await db
     .prepare(
       "",
@@ -16,7 +19,8 @@ export async function accountAiAccess(
          JOIN archive_owners owner
            ON owner.archive_id=current_setting('drevo.archive_id', true)
          JOIN account_tiers owner_tier ON owner_tier.account_id=owner.user_id
-        WHERE viewer.account_id=?`,
+        WHERE viewer.account_id=?
+        ${lockTier ? "FOR SHARE OF viewer,owner_tier" : ""}`,
     )
     .get(accountId);
   return row?.viewer_full === true && row.owner_full === true;

@@ -780,6 +780,34 @@ try {
     });
   }
   assert.equal(await accountAiAccess(app.archive.db, "vk:42"), true);
+  const aiAccessDb = app.archive.db;
+  await assert.rejects(accountAiAccess(aiAccessDb, "vk:42", false, true),
+    /транзакции/, "a tier lock must not silently run outside the saving transaction");
+  let lockReady!: () => void;
+  let releaseTierLock!: () => void;
+  const lockAcquired = new Promise<void>((resolve) => { lockReady = resolve; });
+  const tierRelease = new Promise<void>((resolve) => { releaseTierLock = resolve; });
+  const guardedSave = aiAccessDb.transaction(async () => {
+    assert.equal(await accountAiAccess(aiAccessDb, "vk:42", false, true), true);
+    lockReady();
+    await tierRelease;
+  });
+  await lockAcquired;
+  const downgradeWhileSaving = client.query(
+    "UPDATE account_tiers SET full_access=false WHERE account_id='vk:42'",
+  );
+  try {
+    assert.equal(await Promise.race([
+      downgradeWhileSaving.then(() => "changed"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100)),
+    ]), "waiting", "downgrading waits for an already authorized save to commit");
+  } finally {
+    releaseTierLock();
+    await guardedSave;
+  }
+  await downgradeWhileSaving;
+  assert.equal(await accountAiAccess(app.archive.db, "vk:42"), false);
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='vk:42'");
   assert.equal(
     (await fetch(securedBase + "/api/faces/status", { headers: ownerHeaders })
       .then((r) => r.json())).enabled,
