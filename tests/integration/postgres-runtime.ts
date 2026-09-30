@@ -1137,6 +1137,37 @@ try {
   );
   await quotaDb.transaction(async () => {
     await quotaDb
+      .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id='owner'")
+      .run();
+    await quotaDb
+      .prepare(
+        "",
+        "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES('quota-over','Over limit','over limit','quota-over.pdf',1,'owner',?)",
+      )
+      .run(new Date().toISOString());
+    await quotaDb
+      .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id='owner'")
+      .run();
+    await enforcePostgresMediaQuota(quotaDb, BASIC_MEDIA_BYTES + 1);
+  });
+  assert.equal(
+    (await quotaDb.prepare("", "SELECT count(*) AS n FROM documents").get())?.n,
+    2,
+  );
+  await assert.rejects(
+    quotaDb.transaction(async () => {
+      await quotaDb
+        .prepare(
+          "",
+          "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES('quota-growth','Growth','growth','quota-growth.pdf',1,'owner',?)",
+        )
+        .run(new Date().toISOString());
+      await enforcePostgresMediaQuota(quotaDb, BASIC_MEDIA_BYTES + 1);
+    }),
+    (error) => error instanceof UploadQuotaError,
+  );
+  await quotaDb.transaction(async () => {
+    await quotaDb
       .prepare("", "INSERT INTO photos(id,data) VALUES('quota-photo',?::jsonb)")
       .run(JSON.stringify({ url: "/media/quota.png", title: "", tags: [] }));
     await releaseAttachedMediaGrants(quotaDb);

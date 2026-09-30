@@ -839,6 +839,27 @@ test("batch creation cannot partially fill the last quota slot, but relation edi
   assert.equal((await read(first, "tree-a")).revision, 2);
 });
 
+test("downgrading an over-quota tree preserves reading and relation edits while blocking growth", async (t) => {
+  const { first } = await fixture(t);
+  await growTo(first, 151);
+  await first.query(
+    "UPDATE account_tiers SET full_access=false WHERE account_id='admin'",
+  );
+  assert.equal((await read(first, "tree-a")).family.people.length, 151);
+  await graph(
+    first,
+    tokens.relative,
+    "tree-a",
+    change("parents", [], ["father"], "own"),
+    0,
+  );
+  await assert.rejects(
+    graph(first, tokens.relative, "tree-a", add("beyond-limit"), 1),
+    /150/,
+  );
+  assert.equal((await read(first, "tree-a")).family.people.length, 151);
+});
+
 test("creation fails closed without owner/tier, full access still keeps the technical graph limit", async (t) => {
   const { first } = await fixture(t);
   await first.query("DELETE FROM archive_owners WHERE archive_id='tree-a'");
