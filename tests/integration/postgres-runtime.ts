@@ -882,12 +882,27 @@ try {
     })).status,
     403,
   );
-  assert.equal(
-    (await fetch(securedBase + "/api/ai/chats", { headers: ownerHeaders }))
-      .status,
-    403,
+  const cleanupListResponse = await fetch(securedBase + "/api/ai/chats", {
+    headers: ownerHeaders,
+  });
+  assert.equal(cleanupListResponse.status, 200);
+  const cleanupList = await cleanupListResponse.json() as {
+    chats: Array<{ id: string; title: string; unavailable?: boolean }>;
+  };
+  assert.deepEqual(
+    cleanupList.chats.find((chat) => chat.id === chatToDeleteAfterDowngrade.id),
+    {
+      id: chatToDeleteAfterDowngrade.id,
+      updatedAt: chatToDeleteAfterDowngrade.updatedAt,
+      title: "Диалог с прежними правами доступа",
+      unavailable: true,
+    },
+    "a downgraded account can locate its own history without seeing old chat text",
   );
   const cleanupPath = `/api/ai/chats/${chatToDeleteAfterDowngrade.id}`;
+  assert.equal((await fetch(securedBase + cleanupPath, {
+    headers: ownerHeaders,
+  })).status, 403, "listing history does not restore access to messages");
   assert.equal((await fetch(securedBase + `${cleanupPath}/stop`, {
     method: "POST", headers: ownerHeaders,
   })).status, 200, "a downgraded account can stop its existing work");

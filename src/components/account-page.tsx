@@ -23,6 +23,7 @@ import { clearLayoutStorage } from "./tree/layout-storage";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
+import { AccountAiHistory } from "./account-ai-history";
 
 export type AccountSession = {
   user: ArchiveUser | null;
@@ -545,6 +546,7 @@ export function AccountPage({
                   )}
                 </section>
               )}
+              {user?.approved && <AccountAiHistory key={accountId} accountId={accountId} />}
             </div>
           </>
         ) : null}

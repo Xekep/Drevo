@@ -292,7 +292,9 @@ export function aiResearchHttp({
     const ownHistoryCleanup =
       (req.method === "DELETE" && /^\/api\/ai\/chats\/[a-f0-9-]{36}$/i.test(path)) ||
       (req.method === "POST" && /^\/api\/ai\/chats\/[a-f0-9-]{36}\/stop$/i.test(path));
-    if (!(await accountAiAccess(archive.db, aiUser.id, auth.local)) && !ownHistoryCleanup) {
+    const aiAvailable = await accountAiAccess(archive.db, aiUser.id, auth.local);
+    const ownHistoryList = path === "/api/ai/chats" && req.method === "GET";
+    if (!aiAvailable && !ownHistoryCleanup && !ownHistoryList) {
       if (path === "/api/ai/status")
         return json(res, 200, {
           enabled: false,
@@ -348,7 +350,10 @@ export function aiResearchHttp({
     if (path === "/api/ai/chats" && req.method === "GET") {
       const user = (await auth.currentUser(req))!;
       return json(res, 200, {
-        chats: await chats.list(user.id, await accessScope(user)),
+        chats: await chats.list(
+          user.id,
+          aiAvailable ? await accessScope(user) : "history-cleanup-only",
+        ),
       });
     }
     if (path.startsWith("/api/ai/chats/")) {
