@@ -6,6 +6,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   test.setTimeout(240_000);
   const people = process.env.DREVO_LAYOUT_SCALE_PEOPLE === "500"
     ? randomFamily(1, 6) : randomFamily(5, 9);
+  const withPortraits = !!process.env.DREVO_LAYOUT_SCALE_PORTRAITS;
   await page.route("**/api/family?projection=overview", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
@@ -19,6 +20,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
       sources: [],
       generation: 1,
       column: 0,
+      ...(withPortraits ? { photo: `/media/e2e-scale-${person.id}.jpg` } : {}),
     }));
     data.family.links = [];
     data.family.photos = [];
@@ -26,6 +28,32 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     data.user.personId = process.env.DREVO_LAYOUT_SCALE_KINSHIP ? people[0].id : null;
     await route.fulfill({ response, json: data });
   });
+  if (withPortraits) await page.route("**/media/e2e-scale-*.jpg?variant=thumb", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#688a70"/></svg>',
+    }),
+  );
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
+    await page.addInitScript((personId) => {
+      const state: { first: { loaded: boolean; zoom: number } | null } = { first: null };
+      Object.assign(window, { __introPortrait: state });
+      const start = performance.now();
+      const tick = () => {
+        const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
+        const image = document.querySelector<HTMLImageElement>(
+          `[data-person-id="${personId}"] .person-avatar img`,
+        );
+        const zoom = viewport ? new DOMMatrix(getComputedStyle(viewport).transform).a : 0;
+        if (zoom >= 0.18 && image) {
+          state.first = { loaded: image.complete && image.naturalWidth > 0, zoom };
+          return;
+        }
+        if (performance.now() - start < 40_000) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, people[0].id);
+  }
   await page.addInitScript((minimumPeople) => {
     const state = { requestedAt: 0, completedAt: 0, people: 0, occurrences: 0, branches: 0 };
     Object.assign(window, { __scaleLayout: state });
@@ -72,6 +100,14 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
   expect(result.people).toBe(people.length);
   expect(result.occurrences).toBeGreaterThanOrEqual(people.length);
   expect(result.mountedCards).toBeGreaterThan(0);
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
+    const first = await page.evaluate(() => (
+      window as typeof window & { __introPortrait: {
+        first: { loaded: boolean; zoom: number } | null;
+      } }
+    ).__introPortrait.first);
+    expect(first?.loaded).toBe(true);
+  }
   if (!process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
     expect(result.distantCards).toBeGreaterThan(0);
     expect(result.distantImages).toBe(0);

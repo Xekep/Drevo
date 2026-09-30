@@ -215,7 +215,7 @@ export const PersonNode = memo(function PersonNode({
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"
           />
-        ) : <Avatar person={data.person} />}
+        ) : <Avatar person={data.person} loading="eager" />}
         <span className="portrait-card-info">
           <strong>{fullName(data.person)}</strong>
           {lifespan && <span className="portrait-card-years">{lifespan}</span>}
