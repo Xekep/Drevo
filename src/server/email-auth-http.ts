@@ -11,6 +11,7 @@ import {
   createRequestLimiter,
   requestClientKey,
 } from "./request-rate-limit.ts";
+import { postgresEmailRateLimit } from "./postgres-email-rate-limit.ts";
 
 type EmailSender = (to: string, subject: string, text: string) => Promise<void>;
 
@@ -50,6 +51,7 @@ export function emailAuthHttp(
   const enabled =
     db.kind === "postgres" && !!db.postgresTransaction && !!origin && !!sender;
   const credentials = enabled ? emailCredentials(db, sender!, origin!) : null;
+  const sharedLimit = enabled ? postgresEmailRateLimit(db) : null;
   const ipLimit = createRequestLimiter({ limit: 25, windowMs: 10 * 60_000 });
   const addressLimit = createRequestLimiter({
     limit: 8,
@@ -112,6 +114,10 @@ export function emailAuthHttp(
         const address =
           typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
         if (address && !addressLimit.allow(address))
+          return json(res, 429, {
+            error: "Слишком много попыток. Повторите позже.",
+          });
+        if (!(await sharedLimit!.allow(client, address)))
           return json(res, 429, {
             error: "Слишком много попыток. Повторите позже.",
           });
