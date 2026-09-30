@@ -77,6 +77,7 @@ async function samplePdf(count = 3, landscape = false) {
   for (let index = 1; index <= count; index++) {
     pdf.addPage({ layout: landscape ? "landscape" : "portrait" });
     pdf.text(`Archive page ${index}`);
+    if (index === 2) pdf.outline.addItem("Вторая страница");
   }
   pdf.end();
   return done;
@@ -114,6 +115,7 @@ test("PDF можно перетащить, затем привязать из д
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader).toBeVisible();
   const id = new URL(page.url()).searchParams.get("documentId");
+  await reader.getByText("Сведения о документе").click();
   await reader
     .getByRole("button", { name: "Редактировать сведения о документе" })
     .click();
@@ -285,7 +287,7 @@ test("из карточки человека открываются только
   ).toBeVisible();
 });
 
-test("участник загружает PDF и листает его как книгу", async ({
+test("участник загружает PDF и читает страницы без анимации", async ({
   page,
 }, testInfo) => {
   const title = `Архивный документ ${testInfo.project.name}`;
@@ -357,6 +359,26 @@ test("участник загружает PDF и листает его как к
     })
     .toBeLessThan(3);
   await expect(reader.locator('[role="alert"]')).toHaveCount(0);
+  await expect(
+    reader.getByRole("link", { name: "Скачать оригинал" }),
+  ).toBeVisible();
+  await reader.getByRole("button", { name: "Оглавление" }).click();
+  await reader
+    .getByRole("navigation", { name: "Оглавление документа" })
+    .getByRole("button", { name: /Вторая страница/ })
+    .click();
+  await expect(reader.getByText("2 из 3")).toBeVisible();
+  await reader.getByRole("button", { name: "Предыдущая страница" }).click();
+  await reader.getByRole("button", { name: "Лупа" }).click();
+  await firstPage.hover();
+  await expect(
+    reader.locator('.pdf-reader-sheet > div[style*="border-radius: 50%"]'),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(reader.getByRole("button", { name: "Лупа" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await reader.screenshot({
     path: `work/pdf-reader-${testInfo.project.name}.png`,
   });
@@ -379,11 +401,6 @@ test("участник загружает PDF и листает его как к
       ),
     ).toBe(true);
   }
-  page.once("dialog", (dialog) => dialog.dismiss());
-  await reader
-    .getByRole("button", { name: "Удалить документ", exact: true })
-    .click();
-  await expect(reader).toBeVisible();
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await expect(reader).toBeHidden();
   page.once("dialog", (dialog) => dialog.accept());
@@ -459,9 +476,10 @@ for (const variant of ["one-page", "landscape", "damaged"] as const) {
           reader.getByRole("button", { name: "Следующая страница" }),
         ).toBeDisabled();
     }
+    await reader.getByRole("button", { name: "Закрыть документ" }).click();
     page.once("dialog", (dialog) => dialog.accept());
-    await reader
-      .getByRole("button", { name: "Удалить документ", exact: true })
+    await page
+      .getByRole("button", { name: `Удалить документ «${title}»` })
       .click();
     await expect(reader).toBeHidden();
     expect((await page.request.get(`/api/documents/${id}/file`)).status()).toBe(
@@ -489,6 +507,10 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await page.locator(".document-item").filter({ hasText: title }).click();
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   await expect(reader.getByText("1 из 7")).toBeVisible();
+  if (info.project.name === "mobile")
+    await reader
+      .getByRole("button", { name: "Комментарии", exact: true })
+      .click();
   await reader.getByRole("button", { name: "Выделить фрагмент" }).click();
   const overlay = reader.locator('[data-page="0"] .pdf-book-overlay').first();
   await expect
@@ -524,6 +546,10 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   expect(second.status()).toBe(201);
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await page.locator(".document-item").filter({ hasText: title }).click();
+  if (info.project.name === "mobile")
+    await reader
+      .getByRole("button", { name: "Комментарии", exact: true })
+      .click();
   await reader
     .getByRole("button", { name: /Страница 7.*Последняя страница/ })
     .click();
@@ -552,6 +578,10 @@ test("фрагмент PDF сохраняет комментарий и ссыл
   await reader.getByRole("button", { name: "Закрыть документ" }).click();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
+  if (info.project.name === "mobile")
+    await reader
+      .getByRole("button", { name: "Комментарии", exact: true })
+      .click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
 });
 
