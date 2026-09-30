@@ -1,4 +1,3 @@
-import { LensZoom } from "@jojovms/lens-zoom-core";
 import { BookReaderPlugin } from "@internetarchive/bookreader/src/BookReaderPlugin.js";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { BookReaderInstance } from "./bookreader-runtime";
@@ -19,16 +18,74 @@ type PageLayer = {
   marks: HTMLElement;
 };
 
-export function makeDrevoPlugin(emit: (event: ReaderEvent) => void) {
+export function makeDrevoPlugin(
+  emit: (event: ReaderEvent) => void,
+  options: { downloadUrl: string; downloadName: string; canEdit: boolean },
+) {
   return class DrevoPlugin extends BookReaderPlugin {
     declare br: BookReaderInstance;
     private layers = new Map<number, PageLayer[]>();
-    private lenses = new Map<HTMLElement, LensZoom>();
+    private lens: HTMLDivElement | null = null;
+    private lensButton: HTMLButtonElement | null = null;
+    private commentsButton: HTMLButtonElement | null = null;
     private annotations: DocumentAnnotation[] = [];
     private activeAnnotation = "";
     private selection: AnnotationSelection | null = null;
     private annotating = false;
     private magnifier = false;
+
+    _configureToolbar($toolbar: { 0: HTMLElement }) {
+      const section = $toolbar[0].querySelector(".BRtoolbarSectionInfo");
+      if (!section) return;
+      // The stock Share dialog links to this iframe rather than to the document.
+      section.querySelector(".share")?.remove();
+      const button = (
+        name: string,
+        icon: string,
+        action: () => void,
+        className = "",
+      ) => {
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = `BRpill drevo-toolbar-action ${className}`;
+        element.setAttribute("aria-label", name);
+        element.title = name;
+        element.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}" /></svg>`;
+        element.addEventListener("click", action);
+        section.append(element);
+        return element;
+      };
+      this.lensButton = button(
+        "Лупа",
+        "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16m10 2-4.35-4.35",
+        () => emit({ source: "drevo-bookreader", type: "toggle-magnifier" }),
+      );
+      const download = document.createElement("a");
+      download.className = "BRpill drevo-toolbar-action";
+      download.href = options.downloadUrl;
+      download.download = options.downloadName;
+      download.setAttribute("aria-label", "Скачать оригинал");
+      download.title = "Скачать оригинал";
+      download.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3" /></svg>';
+      section.append(download);
+      this.commentsButton = button(
+        "Комментарии",
+        "M20 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.6-.8L3 21l1.8-4.9a8.5 8.5 0 1 1 15.2-4.6Z",
+        () => emit({ source: "drevo-bookreader", type: "toggle-comments" }),
+        "drevo-toolbar-comments",
+      );
+      if (options.canEdit)
+        button(
+          "Редактировать сведения",
+          "M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L9 17l-4 1 1-4L16.5 3.5Z",
+          () => emit({ source: "drevo-bookreader", type: "edit" }),
+        );
+      button(
+        "Закрыть документ",
+        "M18 6 6 18M6 6l12 12",
+        () => emit({ source: "drevo-bookreader", type: "close" }),
+      );
+    }
 
     _configurePageContainer(pageContainer: PageContainer) {
       if (!pageContainer.page || this.br.mode === this.br.constModeThumb) return;
@@ -45,8 +102,8 @@ export function makeDrevoPlugin(emit: (event: ReaderEvent) => void) {
       list.push(layer);
       this.layers.set(page, list);
       this.bindSelection(layer);
+      this.bindLens(container);
       this.renderLayer(layer);
-      if (this.magnifier) this.enableLens(container);
     }
 
     update(state: Extract<ReaderCommand, { type: "state" }>) {
@@ -55,30 +112,43 @@ export function makeDrevoPlugin(emit: (event: ReaderEvent) => void) {
       this.selection = state.selection;
       this.annotating = state.annotating;
       this.magnifier = state.magnifier;
+      this.lensButton?.setAttribute("aria-pressed", String(this.magnifier));
+      this.commentsButton?.setAttribute("aria-expanded", String(state.commentsOpen));
       document.body.classList.toggle("drevo-annotating", this.annotating);
       document.body.classList.toggle("drevo-magnifying", this.magnifier);
       for (const layers of this.layers.values()) {
         for (const layer of layers) {
           this.renderLayer(layer);
-          if (this.magnifier) this.enableLens(layer.container);
         }
       }
-      if (!this.magnifier) {
-        for (const lens of this.lenses.values()) lens.cleanup();
-        this.lenses.clear();
-      }
+      if (!this.magnifier) this.hideLens();
     }
 
-    private enableLens(container: HTMLElement) {
-      if (this.lenses.has(container)) return;
-      const lens = new LensZoom(container, {
-        zoom: 2.5,
-        lensSize: 180,
-        lensColor: "#fff",
-        borderColor: "#a9a9a9",
+    private bindLens(container: HTMLElement) {
+      container.addEventListener("pointermove", (event) => {
+        if (!this.magnifier || this.annotating) return;
+        const image = container.querySelector<HTMLImageElement>("img.BRpageimage");
+        if (!image?.complete || !image.naturalWidth) return;
+        const bounds = image.getBoundingClientRect();
+        const zoom = 2.5;
+        const radius = 90;
+        if (!this.lens) {
+          this.lens = document.createElement("div");
+          this.lens.className = "drevo-magnifier-lens";
+          document.body.append(this.lens);
+        }
+        this.lens.style.left = `${event.clientX - radius}px`;
+        this.lens.style.top = `${event.clientY - radius}px`;
+        this.lens.style.backgroundImage = `url("${image.currentSrc || image.src}")`;
+        this.lens.style.backgroundSize = `${bounds.width * zoom}px ${bounds.height * zoom}px`;
+        this.lens.style.backgroundPosition = `${radius - (event.clientX - bounds.left) * zoom}px ${radius - (event.clientY - bounds.top) * zoom}px`;
       });
-      lens.init();
-      this.lenses.set(container, lens);
+      container.addEventListener("pointerleave", () => this.hideLens());
+    }
+
+    private hideLens() {
+      this.lens?.remove();
+      this.lens = null;
     }
 
     private renderLayer(layer: PageLayer) {

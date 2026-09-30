@@ -59,23 +59,33 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   );
   await expect(book.locator(".BRtoolbar")).toBeVisible();
   await expect(book.locator(".BRfooter")).toBeVisible();
+  await expect(book.locator(".BRtoolbar .share")).toHaveCount(0);
+  await book.locator(".BRtoolbar .info").click();
+  await expect(book.locator(".BRinfo")).toContainText("Название");
+  await book.locator("body").press("Escape");
+  await expect(book.locator("#colorbox")).toBeHidden();
+  await expect(reader).toBeVisible();
   if (info.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-sidebar-tabs button").last().click();
   await reader.locator(".pdf-book-outline button").first().click();
   await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
 
-  const lensButton = reader.locator(
-    '.pdf-book-controls button[aria-label="Лупа"]',
-  );
+  const lensButton = book.getByRole("button", { name: "Лупа" });
   await lensButton.click();
   await expect(book.locator("body.drevo-magnifying")).toHaveCount(1);
   await book.locator('.BRpage-visible[data-index="1"]').hover();
+  await expect(book.locator(".drevo-magnifier-lens")).toBeVisible();
+  await expect(book.locator(".drevo-magnifier-lens")).toHaveCSS(
+    "width",
+    "180px",
+  );
   await book.locator("body").press("Escape");
   await expect(lensButton).toHaveAttribute("aria-pressed", "false");
+  await expect(book.locator(".drevo-magnifier-lens")).toHaveCount(0);
 
   if (info.project.name === "mobile")
-    await reader.locator(".pdf-book-sidebar-toggle").click();
+    await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-sidebar-tabs button").first().click();
   await reader.locator(".pdf-book-add-comment").click();
   await expect(book.locator("body.drevo-annotating")).toHaveCount(1);
@@ -130,6 +140,19 @@ test("BookReader turns the cover and preloads the next spread", async ({
       )
       .toBeGreaterThan(0);
   }
+  await expect(book.locator(".br-mode-2up__leafs--flipping")).toHaveCount(0);
+  const edge = book.locator("br-leaf-edges:visible").last();
+  await edge.hover();
+  const label = edge.locator(".br-leaf-edges__label");
+  await expect(label).toBeVisible();
+  const labelBounds = (await label.boundingBox())!;
+  expect(labelBounds.width).toBeLessThan(100);
+  expect(labelBounds.height).toBeLessThan(40);
+  expect(
+    await book.locator(".br-mode-2up__root").evaluate((root) =>
+      root.scrollWidth - root.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
   await book.locator(".BRicon.book_left:visible").first().click();
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
 });

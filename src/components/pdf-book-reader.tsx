@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  CircleAlert,
-  Download,
-  MessageSquare,
-  MessageSquarePlus,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { MessageSquarePlus, Trash2 } from "lucide-react";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { archiveFetch } from "../data/archive-fetch.ts";
@@ -35,10 +27,10 @@ export function PdfBookReader({
   mayAnnotate?: boolean;
   annotateOnOpen?: boolean;
 }) {
-  const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const closeLatest = useRef(onClose);
+  const editLatest = useRef(onEdit);
   const magnifierLatest = useRef(false);
   const navigateToPage = useRef<((index: number) => void) | null>(null);
   const [readerReady, setReaderReady] = useState(false);
@@ -46,7 +38,6 @@ export function PdfBookReader({
   const [sidebarTab, setSidebarTab] = useState<"comments" | "outline">(
     "comments",
   );
-  const [infoOpen, setInfoOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [magnifier, setMagnifier] = useState(false);
@@ -63,6 +54,9 @@ export function PdfBookReader({
     closeLatest.current = onClose;
   }, [onClose]);
   useEffect(() => {
+    editLatest.current = onEdit;
+  }, [onEdit]);
+  useEffect(() => {
     magnifierLatest.current = magnifier;
   }, [magnifier]);
   useEffect(() => {
@@ -72,7 +66,7 @@ export function PdfBookReader({
         : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    closeButton.current?.focus();
+    frame.current?.focus();
     return () => {
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
@@ -85,8 +79,7 @@ export function PdfBookReader({
           event.preventDefault();
           magnifierLatest.current = false;
           setMagnifier(false);
-        } else if (infoOpen) setInfoOpen(false);
-        else closeLatest.current();
+        } else closeLatest.current();
       } else if (event.key === "Tab") {
         const controls = [
           ...(dialog.current?.querySelectorAll<HTMLElement>(
@@ -106,7 +99,7 @@ export function PdfBookReader({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [infoOpen]);
+  }, []);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent<ReaderEvent>) => {
@@ -124,6 +117,18 @@ export function PdfBookReader({
             type: "init",
             url: archiveResourceUrl(entry.url),
             initialPage,
+            title: entry.title,
+            downloadName: entry.title + ".pdf",
+            metadata: [
+              ["Тип", entry.documentType],
+              ["Дата", entry.documentDate],
+              ["Место", entry.place],
+              ["Источник", entry.provenance],
+              ["Описание", entry.description],
+            ]
+              .filter((item): item is [string, string] => !!item[1])
+              .map(([label, value]) => ({ label, value })),
+            canEdit: !!onEdit,
           } satisfies ReaderCommand,
           window.location.origin,
         );
@@ -138,6 +143,14 @@ export function PdfBookReader({
         setCommentsOpen(true);
       } else if (message.type === "magnifier-off") {
         setMagnifier(false);
+      } else if (message.type === "toggle-magnifier") {
+        setAnnotating(false);
+        setSelection(null);
+        setMagnifier((value) => !value);
+      } else if (message.type === "toggle-comments") {
+        setCommentsOpen((value) => !value);
+      } else if (message.type === "edit") {
+        editLatest.current?.();
       } else if (message.type === "close") {
         closeLatest.current();
       } else if (message.type === "error") {
@@ -147,7 +160,17 @@ export function PdfBookReader({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [entry.url, initialPage]);
+  }, [
+    entry.url,
+    entry.title,
+    entry.documentType,
+    entry.documentDate,
+    entry.place,
+    entry.provenance,
+    entry.description,
+    initialPage,
+    onEdit,
+  ]);
 
   useEffect(() => {
     if (!readerReady) return;
@@ -159,6 +182,7 @@ export function PdfBookReader({
         activeAnnotation,
         annotating,
         magnifier,
+        commentsOpen,
         selection,
       } satisfies ReaderCommand,
       window.location.origin,
@@ -169,6 +193,7 @@ export function PdfBookReader({
     activeAnnotation,
     annotating,
     magnifier,
+    commentsOpen,
     selection,
   ]);
 
@@ -330,6 +355,9 @@ export function PdfBookReader({
                 >
                   Открыть оригинал
                 </a>
+                <button type="button" onClick={onClose}>
+                  Закрыть документ
+                </button>
               </div>
             )}
           </div>
@@ -502,114 +530,6 @@ export function PdfBookReader({
             )}
           </aside>
         </div>
-        {infoOpen && (
-          <div
-            className="pdf-book-info"
-            role="group"
-            aria-label="Сведения о документе"
-          >
-            <p>
-              <span>Документ</span>
-              {entry.title}
-            </p>
-            {entry.documentType && (
-              <p>
-                <span>Тип</span>
-                {entry.documentType}
-              </p>
-            )}
-            {entry.documentDate && (
-              <p>
-                <span>Дата</span>
-                {entry.documentDate}
-              </p>
-            )}
-            {entry.place && (
-              <p>
-                <span>Место</span>
-                {entry.place}
-              </p>
-            )}
-            {entry.provenance && (
-              <p>
-                <span>Источник</span>
-                {entry.provenance}
-              </p>
-            )}
-            {entry.description && (
-              <p>
-                <span>Описание</span>
-                {entry.description}
-              </p>
-            )}
-            {onEdit && (
-              <button
-                type="button"
-                onClick={onEdit}
-                aria-label="Редактировать сведения о документе"
-              >
-                Редактировать
-              </button>
-            )}
-          </div>
-        )}
-        <footer
-          className="pdf-book-controls"
-          aria-label="Управление документом"
-        >
-          <button
-            type="button"
-            className={magnifier ? "is-active" : ""}
-            onClick={() => {
-              setAnnotating(false);
-              setSelection(null);
-              setMagnifier((value) => !value);
-            }}
-            disabled={loading || !!error}
-            aria-label="Лупа"
-            aria-pressed={magnifier}
-            title="Лупа · Escape для выхода"
-          >
-            <Search size={19} />
-          </button>
-          <button
-            type="button"
-            className={infoOpen ? "is-active" : ""}
-            onClick={() => setInfoOpen((value) => !value)}
-            aria-label="Сведения о документе"
-            aria-expanded={infoOpen}
-            title="Сведения о документе"
-          >
-            <CircleAlert size={18} />
-          </button>
-          <a
-            href={archiveResourceUrl(entry.url)}
-            download={entry.title + ".pdf"}
-            aria-label="Скачать оригинал"
-            title="Скачать оригинал"
-          >
-            <Download size={18} />
-          </a>
-          <button
-            type="button"
-            className="pdf-book-sidebar-toggle"
-            onClick={() => setCommentsOpen((value) => !value)}
-            aria-label="Комментарии"
-            aria-expanded={commentsOpen}
-            title="Комментарии"
-          >
-            <MessageSquare size={18} />
-          </button>
-          <button
-            ref={closeButton}
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть документ"
-            title="Закрыть"
-          >
-            <X size={19} />
-          </button>
-        </footer>
       </section>
     </div>,
     document.body,
