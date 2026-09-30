@@ -774,6 +774,7 @@ export function DocumentsCatalog({
       )}
       {activeSelected && (
         <PdfBookReader
+          key={activeSelected.id}
           document={activeSelected}
           initialPage={documentPage}
           mayAnnotate={mayEdit}

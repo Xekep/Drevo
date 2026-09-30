@@ -154,51 +154,13 @@
   position: absolute;
   inset: 20px 20px 74px;
 }
-.pdf-book-pages {
-  width: 100%;
-  height: 100%;
-}
-.pdf-book-pages > .stf__wrapper { height: 100%; }
-.pdf-book-page {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #f7f5ed;
-  box-shadow: inset 0 0 16px #68605320;
-}
-.pdf-book-page img {
+.pdf-book-frame {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  border: 0;
+  background: #1d211e;
 }
-.pdf-book-page > span { display: none; }
-.pdf-book-host.is-magnifying .pdf-book-page { cursor: none; }
-.pdf-book-overlay {
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-  touch-action: none;
-}
-.pdf-book-host.is-annotating .pdf-book-overlay {
-  pointer-events: auto;
-  cursor: crosshair;
-}
-.pdf-book-highlight, .pdf-book-draft {
-  position: absolute;
-  box-sizing: border-box;
-  pointer-events: none;
-  border: 1px solid #a67932;
-  background: #e9c26155;
-}
-.pdf-book-highlight.is-active {
-  border-color: #e7b856;
-  background: #e7b85688;
-}
-.pdf-book-draft { border-style: dashed; }
 .pdf-book-message {
   z-index: 2;
   max-width: 360px;
@@ -393,20 +355,6 @@
   background: rgb(255 255 255 / 13%);
 }
 .pdf-book-controls button:disabled { opacity: .32; cursor: default; }
-.pdf-book-page-count {
-  min-width: 64px;
-  padding: 0 2px;
-  color: #c4ccc3;
-  font-size: 11px;
-  text-align: center;
-  white-space: nowrap;
-}
-.pdf-book-control-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 3px;
-  background: rgb(255 255 255 / 17%);
-}
 .pdf-book-sidebar-toggle { display: none !important; }
 .pdf-book-info {
   position: absolute;
@@ -476,8 +424,6 @@
   .pdf-book-host { inset: 8px 8px 68px; }
   .pdf-book-controls { bottom: 12px; gap: 1px; padding: 3px; }
   .pdf-book-controls button, .pdf-book-controls a { width: 30px; height: 32px; }
-  .pdf-book-page-count { min-width: 54px; }
-  .pdf-book-control-divider { margin: 0 1px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .document-item { transition: none; }
