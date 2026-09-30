@@ -48,6 +48,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
       await new Promise((done) => setTimeout(done, 5));
       if (profile.id === "failed") throw new Error("test session failure");
       issued++;
+      if (profile.id === "stranger") return "/a/test-archive/tree";
     },
     db: storeDatabase(db),
   });
@@ -103,6 +104,7 @@ test("Yandex OAuth checks state, uses PKCE, accepts new accounts and consumes th
     );
     assert.equal(response.status, 303);
     assert.equal(issued, 2);
+    assert.equal(response.headers.get("location"), "/a/test-archive/tree");
     const third = await begin();
     response = await fetch(
       base + `/auth/yandex/callback?state=${third.state}&error=access_denied`,

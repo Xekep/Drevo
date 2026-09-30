@@ -160,7 +160,8 @@ export async function startServer(
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
     clientSecret: process.env.YANDEX_CLIENT_SECRET,
-    issueSession: auth.issueSession,
+    issueSession: (req, res, profile) =>
+      auth.issueOAuthSession(req, res, "yandex", profile),
     fetcher: oauthFetch,
     db: archive.db,
   });
@@ -177,7 +178,8 @@ export async function startServer(
       const settings = await vkSettings.read();
       return { enabled: settings.available, clientId: settings.clientId };
     },
-    issueSession: auth.issueSession,
+    issueSession: (req, res, profile) =>
+      auth.issueOAuthSession(req, res, "vk", profile),
     fetcher: oauthFetch,
     db: archive.db,
   });

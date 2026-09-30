@@ -8,6 +8,7 @@ import {
   validSessionToken,
   SESSION_MAX_AGE,
 } from "./session-token.ts";
+import { completePostgresOAuthLoginInTransaction } from "./postgres-yandex-login.ts";
 export { SESSION_MAX_AGE } from "./session-token.ts";
 const RENEW_INTERVAL = 24 * 60 * 60 * 1000;
 const VISIT_INTERVAL = 60 * 1000;
@@ -167,6 +168,29 @@ export async function createAuth(
         : null;
     },
     issueSession,
+    async issueOAuthSession(
+      req: IncomingMessage,
+      res: ServerResponse,
+      provider: "yandex" | "vk",
+      profile: { id: string; name: string },
+    ) {
+      if (db.kind !== "postgres") {
+        await issueSession(req, res, profile);
+        return;
+      }
+      if (!db.postgresTransaction)
+        throw new Error("Глобальная транзакция PostgreSQL недоступна");
+      const result = await db.postgresTransaction((client) =>
+        completePostgresOAuthLoginInTransaction(
+          client,
+          provider,
+          profile,
+          cookie(req),
+        ),
+      );
+      setCookie(res, result.session.token);
+      return `/a/${result.archiveId}/tree`;
+    },
     async sessionSummary(req: IncomingMessage) {
       if (local) return { currentExpiresAt: null, otherCount: 0 };
       const session = await sessionFor(req);
