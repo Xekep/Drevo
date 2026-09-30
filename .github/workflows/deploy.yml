@@ -32,6 +32,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: bash -n ops/deploy.sh
+      - name: Validate Nginx site
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nginx
+          bash ops/check-nginx.sh
       - run: bash -n ops/backup.sh
       - run: bash -n ops/fetch-award-images.sh
       - run: bash -n ops/postgres/verify-restore.sh
