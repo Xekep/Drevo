@@ -131,6 +131,32 @@ test("storage limits count each uploader, reservations, current roles and distin
   }
 });
 
+test("lowering a storage limit still allows attaching an already-counted upload", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-storage-downgrade-"));
+  const archive = await openArchive(join(dir, "db.sqlite"), {
+    title: "Test", description: "", people: [], demo: false,
+  });
+  const db = archive.db;
+  try {
+    await db.prepare("INSERT INTO users(id,name,role,approved) VALUES('admin','Admin','admin',1)").run();
+    await db.transaction(() => writeStorageLimits(db, { ...DEFAULT_STORAGE_LIMITS, admin: 1 }, admin));
+    await registerMediaUpload(db, "/media/pending-photo.jpg", "admin", 800_000);
+    assert.equal(await userStorageBytes(db, "admin"), 800_000);
+    await db.transaction(() => writeStorageLimits(db, { ...DEFAULT_STORAGE_LIMITS, admin: 0 }, admin));
+    const before = await archive.read();
+    const saved = await archive.appendPhoto({ id: "pending-photo", url: "/media/pending-photo.jpg",
+      title: "", tags: [] }, before.revision, admin);
+    assert.equal(saved.family.photos?.length, 1,
+      "attaching a reserved original does not add storage after downgrade");
+    assert.equal(await userStorageBytes(db, "admin"), 800_000);
+    await assert.rejects(registerMediaUpload(db, "/media/extra-photo.jpg", "admin", 1),
+      UploadQuotaError, "a genuinely new byte remains forbidden");
+  } finally {
+    await archive.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("PDF accepts 50 MiB, rejects larger uploads and reserves actual small request size", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-pdf-limit-"));
   const app = await startServer(0, join(dir, "db.sqlite"), true);

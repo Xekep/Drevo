@@ -83,12 +83,15 @@ export async function userStorageBytes(
   return Number(row?.bytes || 0);
 }
 
+/** previousBytes is only for an already-accounted reference update in the same
+ * transaction; upload and import paths must enforce the full resulting usage. */
 export async function enforceUserStorageLimit(
   db: StoreDatabase,
   userId: string,
   extraBytes = 0,
   includeReservations = false,
   now = Date.now(),
+  previousBytes?: number,
 ) {
   const row = await db
     .prepare(
@@ -112,10 +115,9 @@ export async function enforceUserStorageLimit(
         )?.bytes || 0,
       )
     : 0;
-  if (
-    (await userStorageBytes(db, userId, now)) + pending + extraBytes >
-    limit * 1024 ** 2
-  )
+  const used = (await userStorageBytes(db, userId, now)) + pending + extraBytes;
+  if (used > limit * 1024 ** 2 &&
+      (previousBytes === undefined || used > previousBytes))
     throw new UploadQuotaError(
       `Личный лимит фотографий и PDF — ${limit} МБ. Освободите место или обратитесь к администратору.`,
       507,

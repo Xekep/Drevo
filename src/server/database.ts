@@ -1,9 +1,10 @@
-import { enforceUserStorageLimit } from "./storage-limits.ts";
+import { enforceUserStorageLimit, userStorageBytes } from "./storage-limits.ts";
 import { authorizeArchive } from "./permissions.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
 import { authorizeMediaReferences } from "./media-access.ts";
 import {
   enforcePostgresMediaQuota,
+  postgresMediaBytes,
   releaseAttachedMediaGrants,
 } from "./postgres-media-quota.ts";
 import type { ArchiveUser } from "../domain/access.ts";
@@ -372,6 +373,11 @@ export async function openArchive(
           : validateFamily(value);
       if (actor && previous)
         await authorizeMediaReferences(db, previous, family, actor);
+      const mediaActorId = actor && previous && addsMediaReference(previous, family)
+        ? actor.id : null;
+      const measuredAt = Date.now();
+      const archiveBytesBefore = mediaActorId ? await postgresMediaBytes(db, measuredAt) : 0;
+      const userBytesBefore = mediaActorId ? await userStorageBytes(db, mediaActorId, measuredAt) : 0;
       if (previous && oldRevision !== null)
         await remember(previous, family, oldRevision, actor, operation);
 
@@ -416,10 +422,10 @@ export async function openArchive(
           );
       }
       await afterWrite?.(db);
-      if (actor && previous && addsMediaReference(previous, family)) {
+      if (mediaActorId) {
         await releaseAttachedMediaGrants(db);
-        await enforcePostgresMediaQuota(db);
-        await enforceUserStorageLimit(db, actor.id);
+        await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
+        await enforceUserStorageLimit(db, mediaActorId, 0, false, measuredAt, userBytesBefore);
       }
       await finishWrite();
       return { family, revision: expected + 1 };
@@ -446,6 +452,9 @@ export async function openArchive(
       );
       const photo = family.photos!.find((item) => item.id === value.id)!;
       await authorizeMediaReferences(db, previous, family, actor);
+      const measuredAt = Date.now();
+      const archiveBytesBefore = await postgresMediaBytes(db, measuredAt);
+      const userBytesBefore = await userStorageBytes(db, actor.id, measuredAt);
       await remember(previous, family, oldRevision, actor);
       await db
         .prepare(
@@ -471,8 +480,8 @@ export async function openArchive(
         )
         .run(expected + 1);
       await releaseAttachedMediaGrants(db);
-      await enforcePostgresMediaQuota(db);
-      await enforceUserStorageLimit(db, actor.id);
+      await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
+      await enforceUserStorageLimit(db, actor.id, 0, false, measuredAt, userBytesBefore);
       await finishWrite();
       return { family, revision: expected + 1 };
     });

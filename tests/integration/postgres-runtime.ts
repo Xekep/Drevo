@@ -40,6 +40,7 @@ import {
   releaseAttachedMediaGrants,
 } from "../../src/server/postgres-media-quota.ts";
 import { UploadQuotaError } from "../../src/server/upload-quota.ts";
+import { registerMediaUpload } from "../../src/server/media-access.ts";
 import type { Family } from "../../src/domain/types.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -1118,6 +1119,23 @@ try {
   await client.query(
     "UPDATE account_tiers SET full_access=true WHERE account_id='owner'",
   );
+  await registerMediaUpload(quotaDb, "/media/pre-downgrade.jpg", "owner",
+    BASIC_MEDIA_BYTES + 1);
+  await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+  const beforeDowngradedAttach = await app.archive.read();
+  const attachedAfterDowngrade = await app.archive.appendPhoto({
+    id: "pre-downgrade-photo", url: "/media/pre-downgrade.jpg", title: "", tags: [],
+  }, beforeDowngradedAttach.revision, owner);
+  assert.equal(attachedAfterDowngrade.family.photos?.some((photo) =>
+    photo.id === "pre-downgrade-photo"), true,
+  "an already-counted original can be attached despite an exceeded downgraded quota");
+  await assert.rejects(registerMediaUpload(quotaDb, "/media/new-after-downgrade.jpg",
+    "owner", 1), UploadQuotaError, "new media still cannot grow an exceeded archive");
+  await app.archive.write({ ...attachedAfterDowngrade.family,
+    photos: attachedAfterDowngrade.family.photos?.filter((photo) =>
+      photo.id !== "pre-downgrade-photo") }, attachedAfterDowngrade.revision, owner);
+  await quotaDb.prepare("", "DELETE FROM media_originals WHERE url='/media/pre-downgrade.jpg'").run();
+  await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
   // The same media URL must resolve inside the selected archive's storage root.
   await client.query(
     "SELECT set_config('drevo.archive_id','other-archive',false)",
