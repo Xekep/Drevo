@@ -93,6 +93,11 @@ test("shared portrait uses path previews and streams GIF originals", async () =>
     assert.equal(metadata.format, "webp");
     assert.ok((metadata.width || 0) <= 400);
     assert.ok((metadata.height || 0) <= 400);
+    const tinyResponse = await fetch(base + portrait + "?variant=tiny");
+    assert.equal(tinyResponse.status, 200);
+    const tinyMeta = await sharp(Buffer.from(await tinyResponse.arrayBuffer())).metadata();
+    assert.ok((tinyMeta.width || 0) <= 48);
+    assert.ok((tinyMeta.height || 0) <= 48);
 
     const current = await app.archive.read(),
       withGif = structuredClone(current.family);

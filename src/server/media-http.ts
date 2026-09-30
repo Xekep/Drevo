@@ -93,7 +93,8 @@ export function mediaHttp({
     if (!file) return json(res, 404, { error: "Фото не найдено" });
     const requested = url.searchParams.get("variant");
     const variant: ImagePreviewVariant | null =
-      requested === "thumb" || requested === "display" ? requested : null;
+      requested === "tiny" || requested === "thumb" || requested === "display"
+        ? requested : null;
 
     if (variant && file.type !== "image/gif") {
       try {

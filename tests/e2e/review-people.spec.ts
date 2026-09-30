@@ -1,6 +1,28 @@
 import { expect, test } from "@playwright/test";
 import type { Family } from "../../src/domain/types.ts";
 
+test("shared tree keeps the orange review border", async ({ page, request }, info) => {
+  test.skip(info.project.name !== "desktop");
+  const snapshot = await (await request.get("/api/family")).json();
+  const family = snapshot.family as Family;
+  family.people.find((person) => person.id === "e2e-child")!.needsReview = true;
+  const token = "r".repeat(43);
+  await page.route(`**/api/shared/${token}`, (route) => route.fulfill({
+    json: {
+      family,
+      serverTime: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    },
+  }));
+  await page.goto(`/s/${token}`);
+  const card = page.getByTestId("rf__node-e2e-child");
+  await expect(card.locator(".flow-person")).toHaveClass(/is-needs-review/);
+  await expect(card.locator(".flow-person-content")).toHaveAttribute("aria-label", /требует проверки/);
+  expect(await card.locator(".person-avatar").evaluate((avatar) =>
+    getComputedStyle(avatar).borderTopColor,
+  )).toBe("rgb(215, 123, 24)");
+});
+
 test("a review marker survives editing and the assistant temporarily hides its card", async ({
   page,
   request,

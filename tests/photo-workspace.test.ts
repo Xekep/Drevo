@@ -179,6 +179,9 @@ test("portrait crop stays square and inside the original even at extreme positio
       );
     }
   assert.equal(mediaPreview("/media/abc.png"), "/media/abc.png?variant=thumb");
+  assert.equal(mediaPreview("/media/abc.png", "tiny"), "/media/abc.png?variant=tiny");
+  const sharedPortrait = `/api/shared/${"a".repeat(43)}/portrait/person-1`;
+  assert.equal(mediaPreview(sharedPortrait, "tiny"), `${sharedPortrait}?variant=tiny`);
   for (const url of [
     "/media/abc.gif",
     "https://example.com/photo.png",

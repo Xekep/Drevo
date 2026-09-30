@@ -18,7 +18,6 @@ import {
 } from "../data/guest-tree-preferences";
 import { TreePreferencesDialog } from "./tree-preferences-dialog";
 import { TreeExportDialog } from "./tree-export-dialog";
-import { fullName } from "../domain";
 import { TreeSearch } from "./tree-search";
 const noop = () => {};
 type SharedData = {
@@ -28,9 +27,6 @@ type SharedData = {
 };
 export default function SharedTree({ token }: { token: string }) {
   const treeCanvas = useRef<TreeCanvasHandle>(null);
-  const [lastExportAnchorId, setLastExportAnchorId] = useState<string | null>(
-    null,
-  );
   const [data, setData] = useState<SharedData | null>(null),
     [error, setError] = useState("");
   const [preferences, setPreferences] = useState<TreePreferences | null>(null);
@@ -117,9 +113,6 @@ export default function SharedTree({ token }: { token: string }) {
       ),
     [data, selected],
   );
-  const exportAnchor = data?.family.people.find(
-    (person) => person.id === (chosen[0]?.id || lastExportAnchorId),
-  );
   const relation = useMemo(
     () =>
       chosen.length === 2 && data
@@ -152,7 +145,6 @@ export default function SharedTree({ token }: { token: string }) {
               query={query}
               onQuery={setQuery}
               onSelect={(id) => {
-                setLastExportAnchorId(id);
                 reveal([id]);
               }}
             />
@@ -190,11 +182,9 @@ export default function SharedTree({ token }: { token: string }) {
                 colorScheme={preferences?.colorScheme}
                 selected={selected}
                 onChoose={(id, additive) => {
-                  setLastExportAnchorId(id);
                   choose(id, additive);
                 }}
                 onSelectOnly={(id) => {
-                  setLastExportAnchorId(id);
                   dispatch({ type: "selectOnly", id });
                 }}
                 onEdge={(edge) => reveal([edge.from, edge.to])}
@@ -236,7 +226,6 @@ export default function SharedTree({ token }: { token: string }) {
                         onExistingRelative={noop}
                         onAlbum={noop}
                         onSelect={(id) => {
-                          setLastExportAnchorId(id);
                           reveal([id]);
                         }}
                         onCompare={() => dispatch({ type: "compare" })}
@@ -267,11 +256,7 @@ export default function SharedTree({ token }: { token: string }) {
       )}
       {data && exportOpen && (
         <TreeExportDialog
-          anchorId={exportAnchor?.id}
-          anchorName={exportAnchor && fullName(exportAnchor)}
-          onExportPdf={(signal, scope, anchorId, generations) =>
-            treeCanvas.current!.exportPdf(signal, scope, anchorId, generations)
-          }
+          onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
           onClose={() => setExportOpen(false)}
         />
       )}

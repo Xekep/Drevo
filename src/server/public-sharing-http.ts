@@ -61,7 +61,7 @@ export function publicSharingHttp({
         try {
           const bytes = await previewImage(
             { path: file.path, cacheKey: file.name },
-            "thumb",
+            url.searchParams.get("variant") === "tiny" ? "tiny" : "thumb",
           );
           if (!(await shares.get(token)))
             return json(410, { error: "Срок ссылки истёк" });

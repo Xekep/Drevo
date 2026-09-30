@@ -12,6 +12,10 @@ import {
 
 test("photo previews use lossy webp settings and a new cache generation", () => {
   assert.equal(IMAGE_PREVIEW_CACHE_VERSION, 2);
+  assert.deepEqual(IMAGE_PREVIEW_SETTINGS.tiny, {
+    maxSize: 48,
+    quality: 45,
+  });
   assert.deepEqual(IMAGE_PREVIEW_SETTINGS.thumb, {
     maxSize: 400,
     quality: 76,
@@ -48,6 +52,15 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(displayMeta.width, 1600);
     assert.equal(displayMeta.height, 1200);
 
+    const tiny = await preview(original, "tiny");
+    const tinyMeta = await sharp(tiny).metadata();
+    assert.equal(tinyMeta.format, "webp");
+    assert.equal(tinyMeta.width, 48);
+    assert.equal(tinyMeta.height, 36);
+    const tinyPixels = await sharp(tiny).raw().toBuffer();
+    assert.equal(tinyPixels[0], tinyPixels[1]);
+    assert.equal(tinyPixels[1], tinyPixels[2]);
+
     const thumb = await preview(original, "thumb");
     const thumbMeta = await sharp(thumb).metadata();
     assert.equal(thumbMeta.format, "webp");
@@ -61,7 +74,8 @@ test("photo previews keep expected dimensions and cache variant", async () => {
     assert.equal(aiMeta.height, 1200);
 
     const files = await readdir(directory);
-    assert.equal(files.length, 3);
+    assert.equal(files.length, 4);
+    assert.ok(files.some((file) => file.endsWith("-tiny-v2.webp")));
     assert.ok(files.some((file) => file.endsWith("-display-v2.webp")));
     assert.ok(files.some((file) => file.endsWith("-thumb-v2.webp")));
     assert.ok(files.some((file) => file.endsWith("-ai-v2.jpg")));

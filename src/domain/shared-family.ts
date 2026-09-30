@@ -40,6 +40,7 @@ export function sharedFamily(
         birth: p.birth,
         death: p.death,
         deceased: p.deceased,
+        needsReview: p.needsReview,
         birthPlace: p.birthPlace,
         deathPlace: p.deathPlace,
         maidenName: p.maidenName,

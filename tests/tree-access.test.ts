@@ -424,6 +424,7 @@ test("привязка аккаунта и область видимости д�
     for (const route of [
       uploaded.url,
       `${uploaded.url}?variant=thumb`,
+      `${uploaded.url}?variant=tiny`,
       "/media/orphan.png",
     ])
       assert.equal(
