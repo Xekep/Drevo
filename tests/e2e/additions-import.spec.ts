@@ -118,6 +118,44 @@ test("tree import previews a JSON batch and preserves every existing card", asyn
     await expect(
       dialog.getByRole("button", { name: "Добавить 1 карточек" }),
     ).toHaveCount(0);
+    const undo = dialog.getByRole("region", { name: "Отмена импорта" });
+    await undo
+      .getByRole("button", { name: "Показать импортированные пакеты" })
+      .click();
+    await undo
+      .getByRole("button", {
+        name: `Проверить отмену импорта №${saved.revision}`,
+        exact: true,
+      })
+      .click();
+    await expect(
+      undo.getByText("Будет удалено карточек: 1 из 1"),
+    ).toBeVisible();
+    const remove = undo.getByRole("button", {
+      name: "Отменить импорт и удалить 1 карточек",
+    });
+    await expect(remove).toBeDisabled();
+    expect(
+      (await (await request.get("/api/family")).json()).family.people.length,
+    ).toBe(saved.family.people.length);
+    await undo
+      .getByRole("checkbox", {
+        name: "Удалить перечисленные карточки этого импорта",
+      })
+      .check();
+    await remove.click();
+    await expect(undo.getByRole("status")).toContainText("Удалено карточек: 1");
+    const restored = await (await request.get("/api/family")).json();
+    expect(restored.family).toEqual(original.family);
+    await undo
+      .getByRole("button", { name: "Показать импортированные пакеты" })
+      .click();
+    await expect(
+      undo.getByRole("button", {
+        name: `Проверить отмену импорта №${saved.revision}`,
+        exact: true,
+      }),
+    ).toHaveCount(0);
   } finally {
     const current = await (await request.get("/api/family")).json();
     const p = (current.family as Family).people.find((p) => p.id === newId);

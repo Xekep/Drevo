@@ -161,6 +161,65 @@ test("HTTP preview/apply enforces admin, origin, reviewed payload, stale revisio
       400,
     );
     assert.deepEqual(await archive.read(), saved);
+    const batches = await (await fetch(base + "history")).json();
+    assert.equal(batches.batches[0].count, 1);
+    const undoResponse = await request("undo-preview", {
+      importRevision: saved.revision,
+      personIds: ["old"],
+    });
+    assert.equal(undoResponse.status, 200);
+    const undoPreview = await undoResponse.json();
+    assert.deepEqual(
+      undoPreview.people.map((p: { id: string }) => p.id),
+      ["new"],
+    );
+    assert.deepEqual(await archive.read(), saved);
+    const undoBody = {
+      importRevision: saved.revision,
+      revision: saved.revision,
+      fingerprint: undoPreview.fingerprint,
+      confirm: true,
+    };
+    assert.equal(
+      (await request("undo", undoBody, "https://evil.invalid")).status,
+      403,
+    );
+    assert.equal(
+      (await request("undo", { ...undoBody, confirm: false })).status,
+      409,
+    );
+    assert.equal(
+      (await request("undo", { ...undoBody, fingerprint: "bad" })).status,
+      409,
+    );
+    actor = { ...actor, role: "relative" };
+    assert.equal((await fetch(base + "history")).status, 403);
+    assert.equal((await request("undo", undoBody)).status, 403);
+    actor = { ...actor, role: "admin" };
+    const undoReplies = await Promise.all([
+      request("undo", undoBody),
+      request("undo", undoBody),
+    ]);
+    assert.deepEqual(undoReplies.map((r) => r.status).sort(), [200, 409]);
+    const undone = await archive.read();
+    assert.deepEqual(undone.family, newer);
+    assert.equal(
+      (await (await fetch(base + "history")).json()).batches[0].undone,
+      true,
+    );
+    assert.equal(
+      (await request("undo-preview", { importRevision: saved.revision }))
+        .status,
+      409,
+    );
+    assert.equal(
+      (await archive.db
+        .prepare(
+          "SELECT count(*) AS n FROM audit_entries WHERE action='undo_import_additions'",
+        )
+        .get())!.n,
+      1,
+    );
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((e) => (e ? reject(e) : resolve())),
