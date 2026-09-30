@@ -1,5 +1,6 @@
 import { EditorDialog } from "./editor-dialog";
 import { JsonAdditionsImport } from "./json-additions-import";
+import { JsonImportUndo } from "./json-import-undo";
 
 export function TreeImportDialog({
   canEdit,
@@ -14,6 +15,8 @@ export function TreeImportDialog({
     <EditorDialog title="Импорт в древо" onClose={onClose} wide>
       <div className="archive-form">
         <JsonAdditionsImport canEdit={canEdit} onImported={onImported} />
+        <hr />
+        <JsonImportUndo canEdit={canEdit} onImported={onImported} />
       </div>
     </EditorDialog>
   );

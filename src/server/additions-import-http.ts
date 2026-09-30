@@ -10,6 +10,8 @@ import { ConflictError, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { listAdditionBatches, planUndoAdditions } from "./additions-undo.ts";
+import { auditStore } from "./audit.ts";
 
 export function additionsImportHttp({
   archive,
@@ -25,6 +27,9 @@ export function additionsImportHttp({
       ![
         "/api/import/additions/preview",
         "/api/import/additions/apply",
+        "/api/import/additions/history",
+        "/api/import/additions/undo-preview",
+        "/api/import/additions/undo",
       ].includes(url.pathname)
     )
       return false;
@@ -36,8 +41,10 @@ export function additionsImportHttp({
       res.end(JSON.stringify(data));
       return true;
     };
-    if (req.method !== "POST") return json(405, { error: "Ожидается POST" });
-    if (!isSameOriginRequest(req, publicOrigin))
+    const history = url.pathname.endsWith("/history");
+    if (req.method !== (history ? "GET" : "POST"))
+      return json(405, { error: "Неверный метод запроса" });
+    if (!history && !isSameOriginRequest(req, publicOrigin))
       return json(403, { error: "Импорт разрешён только со страницы архива" });
     const actor = await auth.currentUser(req);
     // Same access as the existing transfer UI and GEDCOM import.
@@ -45,6 +52,8 @@ export function additionsImportHttp({
       return json(actor ? 403 : 401, {
         error: "Пакетный импорт доступен администратору архива",
       });
+    if (history)
+      return json(200, { batches: await listAdditionBatches(archive.db) });
     if (!req.headers["content-type"]?.startsWith("application/json"))
       return json(415, { error: "Ожидается JSON" });
     try {
@@ -61,6 +70,7 @@ export function additionsImportHttp({
         revision?: unknown;
         fingerprint?: unknown;
         confirm?: unknown;
+        importRevision?: unknown;
       };
       try {
         body = JSON.parse(
@@ -76,7 +86,11 @@ export function additionsImportHttp({
       if (!body || typeof body !== "object" || Array.isArray(body))
         return json(400, { error: "Ожидается объект с пакетом" });
       const current = await archive.read();
-      const apply = url.pathname.endsWith("/apply");
+      const undo =
+        url.pathname.endsWith("/undo") ||
+        url.pathname.endsWith("/undo-preview");
+      const apply =
+        url.pathname.endsWith("/apply") || url.pathname.endsWith("/undo");
       if (
         apply &&
         (body.confirm !== true || body.revision !== current.revision)
@@ -85,7 +99,13 @@ export function additionsImportHttp({
           error:
             "Архив изменился или добавление не подтверждено. Проверьте файл заново",
         });
-      const plan = planAdditions(current.family, body.package, actor.id);
+      const plan = undo
+        ? await planUndoAdditions(
+            archive.db,
+            current.family,
+            body.importRevision,
+          )
+        : planAdditions(current.family, body.package, actor.id);
       authorizeArchive(plan.family, current.family, actor);
       // A content/revision checksum, not an authorization token. Works after a restart.
       const fingerprint = createHash("sha256")
@@ -94,6 +114,7 @@ export function additionsImportHttp({
             archive.db.archiveId || archive.db.file,
             actor.id,
             current.revision,
+            undo ? body.importRevision : "add",
             plan.changes,
           ]),
         )
@@ -110,7 +131,9 @@ export function additionsImportHttp({
         });
       if (plan.preview.errorCount)
         return json(400, {
-          error: "В пакете есть противоречия. Добавление отменено",
+          error: undo
+            ? "Отмена импорта заблокирована. Проверьте связи"
+            : "В пакете есть противоречия. Добавление отменено",
           ...plan.preview,
         });
       const activeActor = await auth.currentUser(req);
@@ -123,11 +146,35 @@ export function additionsImportHttp({
         plan.family,
         current.revision,
         activeActor,
-        "import_additions",
+        undo ? undefined : "import_additions",
         current.family,
+        undefined,
+        undo
+          ? (db) =>
+              auditStore(db).record(
+                {
+                  action: "undo_import_additions",
+                  entity: "archive",
+                  entityId: `import:${body.importRevision}`,
+                  label: "Отмена пакетного импорта",
+                  personIds: [],
+                  details: [
+                    {
+                      field: "Импорт",
+                      before: String(body.importRevision),
+                      after: "Отменён",
+                    },
+                  ],
+                },
+                activeActor,
+                current.revision + 1,
+              )
+          : undefined,
       );
       return json(200, {
-        added: plan.preview.people.length,
+        ...(undo
+          ? { removed: plan.preview.people.length }
+          : { added: plan.preview.people.length }),
         connections: plan.preview.connections,
         revision: saved.revision,
         existingPeopleChanged: 0,
