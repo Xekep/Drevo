@@ -20,6 +20,7 @@ import {
   type Role,
 } from "../domain";
 import { clearLayoutStorage } from "./tree/layout-storage";
+import { archiveResourceUrl } from "../domain/archive-context.ts";
 import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
 
@@ -508,9 +509,32 @@ export function AccountPage({
                     Сведения и экспорт выбранного дерева доступны в пределах
                     вашей роли.
                   </p>
+                  {capacity?.available &&
+                    capacity.owned &&
+                    user.role === "admin" &&
+                    user.approved && (
+                      <div className="account-export-actions">
+                        <a
+                          className="account-row-action"
+                          href={archiveResourceUrl("/api/gedcom/export?format=gedzip7")}
+                          download="drevo.gdz"
+                        >
+                          Скачать дерево с фото и документами (GEDZIP, до 224 МБ)
+                          <ExternalLink size={16} aria-hidden="true" />
+                        </a>
+                        <a
+                          className="account-row-action"
+                          href={archiveResourceUrl("/api/gedcom/export?format=gedcom7")}
+                          download="drevo-7.ged"
+                        >
+                          Скачать данные дерева (GEDCOM 7)
+                          <ExternalLink size={16} aria-hidden="true" />
+                        </a>
+                      </div>
+                    )}
                   {user.role === "admin" && user.approved && (
                     <button className="account-row-action" onClick={onAdmin}>
-                      <Users size={17} /> Управление и экспорт общего архива{" "}
+                      <Users size={17} /> Управление архивом{" "}
                       <ArrowRight size={17} />
                     </button>
                   )}
