@@ -49,3 +49,36 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await expect(page.getByText("Основание: Совпадает место рождения")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить", exact: true })).toHaveCount(0);
 });
+
+test("a changed published card requires a fresh review before acceptance", async ({ page }) => {
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let stale = true;
+  let linked = false;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-b", people: [right] } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-b", nextCursor: null, matches: [{ id: "match-1", left, right,
+      initiatedByArchiveId: "tree-a", status: linked ? "linked" : "pending",
+      reviewToken: stale ? "old-token" : "new-token", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route("**/api/discovery/matches/match-1", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.decision).toBe("accept");
+    if (stale) {
+      expect(body.reviewToken).toBe("old-token");
+      stale = false;
+      return route.fulfill({ status: 409, json: { error: "Карточки изменились. Проверьте сведения ещё раз перед подтверждением" } });
+    }
+    expect(body.reviewToken).toBe("new-token");
+    linked = true;
+    return route.fulfill({ json: { match: { status: "linked" } } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByRole("button", { name: "Подтвердить" }).click();
+  await expect(page.getByRole("alert")).toContainText("Проверьте сведения ещё раз");
+  await expect(page.getByRole("button", { name: "Подтвердить" })).toHaveAttribute("data-review-token", "new-token");
+  await page.getByRole("button", { name: "Подтвердить" }).click();
+  await expect(page.getByText("Сопоставлено")).toBeVisible();
+});

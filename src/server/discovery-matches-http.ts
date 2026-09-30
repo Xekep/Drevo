@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
@@ -17,9 +17,11 @@ const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archi
   l.name AS left_name,l.birth_surname AS left_birth_surname,
   l.birth_year AS left_birth_year,l.death_year AS left_death_year,
   l.birth_place AS left_birth_place,l.death_place AS left_death_place,
+  l.publication_version AS left_publication_version,
   r.name AS right_name,r.birth_surname AS right_birth_surname,
   r.birth_year AS right_birth_year,r.death_year AS right_death_year,
-  r.birth_place AS right_birth_place,r.death_place AS right_death_place
+  r.birth_place AS right_birth_place,r.death_place AS right_death_place,
+  r.publication_version AS right_publication_version
   FROM discovery_match_requests m
   LEFT JOIN discovery_people l ON l.archive_id=m.left_archive_id AND l.person_id=m.left_person_id
   LEFT JOIN discovery_people r ON r.archive_id=m.right_archive_id AND r.person_id=m.right_person_id`;
@@ -38,6 +40,7 @@ function person(row: Row, side: "left" | "right") {
 }
 
 function match(row: Row) {
+  const token = reviewToken(row);
   return {
     id: String(row.id),
     status: String(row.status),
@@ -48,7 +51,20 @@ function match(row: Row) {
     ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
     left: person(row, "left"),
     right: person(row, "right"),
+    ...(token ? { reviewToken: token } : {}),
   };
+}
+
+/** Changes whenever either currently published identity or consented field changes. */
+function reviewToken(row: Row): string | null {
+  if (row.left_name == null || row.right_name == null) return null;
+  const fields = ["left_archive_id","left_person_id","right_archive_id","right_person_id",
+    "left_name","left_birth_surname","left_birth_year","left_death_year",
+    "left_birth_place","left_death_place","left_publication_version",
+    "right_name","right_birth_surname","right_birth_year","right_death_year",
+    "right_birth_place","right_death_place","right_publication_version"];
+  return createHash("sha256").update(JSON.stringify(fields.map((field) => row[field] ?? null)))
+    .digest("hex");
 }
 
 function published(row: Row) {
@@ -264,6 +280,12 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         if (decision !== "revoke" && row.status !== "pending" ||
             decision === "revoke" && row.status !== "pending" && row.status !== "linked")
           return { code: 409, error: "Решение уже изменено" };
+        if (decision === "accept") {
+          const current = await readMatch(detail[1]);
+          if (!current || typeof body?.reviewToken !== "string" ||
+              body.reviewToken !== reviewToken(current))
+            return { code: 409, error: "Карточки изменились. Проверьте сведения ещё раз перед подтверждением" };
+        }
         await db.prepare("", `UPDATE discovery_match_requests SET status=?,
           responded_by=CASE WHEN ?='revoke' THEN responded_by ELSE ? END,
           responded_at=CASE WHEN ?='revoke' THEN responded_at ELSE now() END,

@@ -1481,13 +1481,25 @@ try {
   assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
     "reversing the proposal must not create a second match");
   const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
+  const beforeReviewChange = await otherApp.archive.read();
+  const changedBeforeReview = structuredClone(beforeReviewChange.family);
+  changedBeforeReview.people[0].name = "Исправленный кандидат";
+  await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
+  assert.equal((await fetch(otherBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken }),
+  })).status, 409, "a changed published identity cannot be accepted using a stale review token");
+  const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
+    headers: ownerHeaders,
+  })).json()).matches[0];
+  assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
   assert.equal((await fetch(securedBase + matchPath, {
     method: "PATCH", headers: ownerHeaders,
     body: JSON.stringify({ decision: "accept" }),
   })).status, 403, "an initiating archive cannot confirm its own request");
   const acceptedMatch = await fetch(otherBase + matchPath, {
     method: "PATCH", headers: ownerHeaders,
-    body: JSON.stringify({ decision: "accept" }),
+    body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
   });
   assert.equal(acceptedMatch.status, 200);
   assert.equal((await acceptedMatch.json()).match.status, "linked");
