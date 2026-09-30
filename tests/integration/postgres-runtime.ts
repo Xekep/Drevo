@@ -26,6 +26,7 @@ import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
+import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -1027,6 +1028,45 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  const ownerArchives = await fetch(securedBase + "/api/account/archives", {
+    headers: ownerHeaders,
+  }).then((r) => r.json());
+  assert.deepEqual(
+    new Set(ownerArchives.archives.map((archive: { id: string }) => archive.id)),
+    new Set(["runtime-test", "other-archive"]),
+  );
+  assert.equal(
+    ownerArchives.archives.find((archive: { id: string }) => archive.id === "runtime-test").current,
+    true,
+  );
+  const readerArchives = await fetch(securedBase + "/api/account/archives", {
+    headers,
+  }).then((r) => r.json());
+  assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
+  assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
+  assert.equal(
+    (await fetch(otherBase + "/api/account/archives", { headers: ownerHeaders })
+      .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,
+    true,
+  );
+  const primaryDb = app.archive.db;
+  assert.equal(
+    (await primaryDb.prepare("", "SELECT count(*) AS n FROM archives").get())?.n,
+    1,
+    "account context must not leak outside the listing transaction",
+  );
+  assert.deepEqual(
+    (await accountArchiveDirectory(primaryDb).list("reader"))?.map((archive) => archive.id),
+    ["runtime-test"],
+  );
+  await primaryDb.transaction(async () => {
+    await primaryDb.prepare("", "SELECT set_config('drevo.account_id',?,true)").get("owner");
+    assert.equal(
+      (await primaryDb.prepare("", "UPDATE archive_memberships SET role='reader' WHERE archive_id='other-archive' AND user_id='owner'").run()).changes,
+      0,
+      "the extra read policy must not permit cross-archive writes",
+    );
+  });
   assert.equal(
     (await fetch(otherBase + "/api/session", { headers: ownerHeaders }).then((r) => r.json())).user.id,
     "owner",

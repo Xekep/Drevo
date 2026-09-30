@@ -66,6 +66,12 @@ export async function backfillRuntimeServicesInTransaction(
   );
   await client.query(
     readFileSync(
+      new URL("./021_account_archive_directory.sql", import.meta.url),
+      "utf8",
+    ),
+  );
+  await client.query(
+    readFileSync(
       new URL("./012_ai_role_profiles.sql", import.meta.url),
       "utf8",
     ),
