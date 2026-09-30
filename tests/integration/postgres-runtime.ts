@@ -766,6 +766,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
   const previousAiEnvironment = aiKeys.map((key) => process.env[key]);
   process.env.YANDEX_AI_API_KEY = "test-key";
@@ -883,6 +884,17 @@ try {
       .status,
     403,
   );
+  const cleanupPath = `/api/ai/chats/${chatToDeleteAfterDowngrade.id}`;
+  assert.equal((await fetch(securedBase + `${cleanupPath}/stop`, {
+    method: "POST", headers: ownerHeaders,
+  })).status, 200, "a downgraded account can stop its existing work");
+  assert.equal((await fetch(securedBase + cleanupPath, {
+    method: "DELETE", headers: { ...ownerHeaders, Origin: "https://evil.example" },
+  })).status, 403, "history deletion still requires same-origin protection");
+  assert.equal((await fetch(securedBase + cleanupPath, {
+    method: "DELETE", headers: ownerHeaders,
+  })).status, 200, "a downgraded account can delete its own stored AI history");
+  assert.equal(await aiChatStore(app.archive.db).read(chatToDeleteAfterDowngrade.id, "owner"), null);
   assert.equal(
     (await fetch(securedBase + "/api/admin/ai", { headers: ownerHeaders }))
       .status,

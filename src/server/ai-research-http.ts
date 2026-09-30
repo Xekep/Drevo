@@ -283,7 +283,10 @@ export function aiResearchHttp({
         error: "Войдите в архив для работы с ИИ-исследователем",
       });
     const aiUser = (await auth.currentUser(req))!;
-    if (!(await accountAiAccess(archive.db, aiUser.id, auth.local))) {
+    const ownHistoryCleanup =
+      (req.method === "DELETE" && /^\/api\/ai\/chats\/[a-f0-9-]{36}$/i.test(path)) ||
+      (req.method === "POST" && /^\/api\/ai\/chats\/[a-f0-9-]{36}\/stop$/i.test(path));
+    if (!(await accountAiAccess(archive.db, aiUser.id, auth.local)) && !ownHistoryCleanup) {
       if (path === "/api/ai/status")
         return json(res, 200, {
           enabled: false,
@@ -354,7 +357,7 @@ export function aiResearchHttp({
         if (!isSameOriginRequest(req, publicOrigin))
           return json(res, 403, { error: "Invalid origin" });
         const chat = await chats.read(id, user.id);
-        if (!chat || chat.accessScope !== (await accessScope(user)))
+        if (!chat)
           return json(res, 404, { error: "Диалог не найден" });
         await stopChat(id);
         return json(res, 200, { busy: !!(await chats.isBusy(id)) });
