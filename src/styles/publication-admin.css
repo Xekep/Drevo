@@ -21,6 +21,8 @@
 .publication-admin-confirm li { padding: 4px 0; }
 .publication-admin-confirm li span { display: block; color: var(--muted); font-size: 12px; }
 @media (max-width: 540px) {
+  .publication-admin-toolbar > span { flex-basis: 100%; }
+  .publication-admin-actions > button { flex: 1 1 100%; }
   .archive-form .publication-admin-row { grid-template-columns: 20px minmax(0, 1fr); }
   .publication-admin-state { grid-column: 2; }
 }
