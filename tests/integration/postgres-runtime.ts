@@ -754,10 +754,9 @@ try {
     )).enabled,
     false,
   );
-  assert.equal(
-    (await fetch(securedBase + "/api/ai/chats", { headers })).status,
-    403,
-  );
+  const basicHistoryResponse = await fetch(securedBase + "/api/ai/chats", { headers });
+  assert.equal(basicHistoryResponse.status, 200);
+  assert.deepEqual((await basicHistoryResponse.json()).chats, []);
   const aiOwnerToken = newSessionToken();
   await app.archive.db
     .prepare(
