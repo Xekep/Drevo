@@ -1443,6 +1443,17 @@ try {
   assert.equal(requestedMatch.status, 200);
   const matchBody = await requestedMatch.json();
   assert.equal(matchBody.match.status, "pending");
+  const matchDb = app.archive.db;
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
+    "pending requests stay hidden outside the participating archives");
+  }, true);
+  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+    headers,
+  })).json()).linkedCards, [], "a pending request must not appear on a published card");
   assert.equal([matchBody.match.left, matchBody.match.right]
     .find((person: { archiveId: string }) => person.archiveId === "other-archive")?.name,
     "Тестов Исправленный сосед");
@@ -1468,6 +1479,19 @@ try {
   });
   assert.equal(acceptedMatch.status, 200);
   assert.equal((await acceptedMatch.json()).match.status, "linked");
+  const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
+    headers,
+  });
+  assert.deepEqual((await linkedPublicCard.json()).linkedCards.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["runtime-test","person-a"]],
+  "a signed-in reader can follow only the other published identity after both sides confirm");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 1,
+    "only confirmed matches can be read from an unrelated archive context");
+  }, true);
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "linked");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
@@ -1488,6 +1512,9 @@ try {
     headers,
   })).status, 403);
   await otherPublication.unpublish("person-a");
+  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
+    headers,
+  })).json()).linkedCards, [], "revoking either publication removes the transition");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "revoked",
     "revoking either publication closes a confirmed cross-archive match");

@@ -157,7 +157,7 @@ export function DiscoveryMatchesAdmin() {
 
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
-      <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. Оно не объединяет деревья и не открывает чужую ветку.</p>
+      <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет деревья и не открывает чужую ветку.</p>
       <div className="match-search-grid">
         <div><label>Человек из этого дерева
           <input type="search" value={ownQuery} onChange={(event) => {

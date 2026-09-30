@@ -13,7 +13,12 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
     });
   });
   await page.route("**/api/discovery/people/tree-b/same", (route) =>
-    route.fulfill({ json: { person: { archiveId: "tree-b", id: "same", name: "Тестов Павел", birthYear: "1901" } } }),
+    route.fulfill({ json: { person: { archiveId: "tree-b", id: "same", name: "Тестов Павел", birthYear: "1901" },
+      linkedCards: [{ archiveId: "tree-a", id: "same", name: "Тестов Иван" }] } }),
+  );
+  await page.route("**/api/discovery/people/tree-a/same", (route) =>
+    route.fulfill({ json: { person: { archiveId: "tree-a", id: "same", name: "Тестов Иван" },
+      linkedCards: [{ archiveId: "tree-b", id: "same", name: "Тестов Павел" }] } }),
   );
   await page.goto("/discover");
   await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Тестов");
@@ -23,8 +28,11 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
   await page.getByRole("button", { name: "Показать ещё" }).click();
   await expect(page.locator(".public-person-card")).toHaveCount(3);
   await page.getByRole("link", { name: "Тестов Павел" }).click();
-  await expect(page.locator(".public-person-card")).toContainText("1901");
+  await expect(page.locator(".public-person-card").first()).toContainText("1901");
   await expect(page).toHaveURL(/\/discover\/person\/tree-b\/same$/);
+  await expect(page.getByRole("heading", { name: "Этот человек в других деревьях" })).toBeVisible();
+  await page.getByRole("link", { name: "Тестов Иван" }).click();
+  await expect(page).toHaveURL(/\/discover\/person\/tree-a\/same$/);
 });
 
 test("admin publishes a person from the card menu and finds the limited public card", async ({ page, isMobile }) => {
