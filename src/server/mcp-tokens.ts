@@ -52,8 +52,10 @@ export function mcpTokenStore(db: StoreDatabase) {
        LEFT JOIN users u ON u.id=t.bound_user_id
        ORDER BY t.created_at DESC,t.id DESC`,
     `SELECT ${tokenColumns}
+       ,to_char(d.deleted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS deleted_creator_at
        FROM mcp_tokens t
        LEFT JOIN runtime_users u ON u.id=t.bound_user_id
+       LEFT JOIN deleted_account_tombstones d ON d.id=t.created_by
        ORDER BY t.created_at DESC,t.id DESC`,
   );
   const lookup = db.prepare(
@@ -66,7 +68,9 @@ export function mcpTokenStore(db: StoreDatabase) {
     `SELECT ${tokenColumns}
        FROM mcp_tokens t
        LEFT JOIN runtime_users u ON u.id=t.bound_user_id
+       LEFT JOIN deleted_account_tombstones d ON d.id=t.created_by
        WHERE t.token_hash=? AND t.revoked_at IS NULL
+         AND d.id IS NULL
          AND (t.expires_at IS NULL OR t.expires_at>?)
          AND (t.bound_user_id IS NULL OR u.approved=1)`,
   );
@@ -99,8 +103,12 @@ export function mcpTokenStore(db: StoreDatabase) {
       scopes: JSON.parse(String(row.scopes)) as ResearchScope[],
       createdAt: String(row.created_at),
       ...(row.expires_at ? { expiresAt: Number(row.expires_at) } : {}),
-      createdBy: String(row.created_by),
-      ...(row.revoked_at ? { revokedAt: String(row.revoked_at) } : {}),
+      createdBy: row.deleted_creator_at
+        ? "deleted-account"
+        : String(row.created_by),
+      ...(row.revoked_at || row.deleted_creator_at
+        ? { revokedAt: String(row.revoked_at || row.deleted_creator_at) }
+        : {}),
       ...(row.last_used_at ? { lastUsedAt: Number(row.last_used_at) } : {}),
       rateLimitPerMinute: Number(row.rate_limit_per_minute),
       ...(boundUser(row) ? { boundUser: boundUser(row) } : {}),

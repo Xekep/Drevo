@@ -19,7 +19,7 @@ export async function listAdditionBatches(
       `SELECT a.revision,a.at,a.actor_name,
       (SELECT count(*) FROM archive_audit_entries p WHERE p.revision=a.revision AND p.entity='people' AND p.action='Добавлено') AS count,
       EXISTS(SELECT 1 FROM archive_audit_entries u WHERE u.action='undo_import_additions' AND u.entity_id='import:' || a.revision) AS undone
-     FROM archive_audit_entries a WHERE a.action='import_additions' ORDER BY a.id DESC LIMIT 30`,
+     FROM runtime_visible_audit_entries a WHERE a.action='import_additions' ORDER BY a.id DESC LIMIT 30`,
     )
     .all();
   return rows.map((r) => ({

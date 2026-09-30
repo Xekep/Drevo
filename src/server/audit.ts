@@ -61,7 +61,7 @@ export function auditStore(db: StoreDatabase) {
           `SELECT a.* FROM audit_entries a WHERE (?=0 OR a.id<?)
         AND (?='' OR a.actor_id=?) AND (?='' OR EXISTS (SELECT 1 FROM audit_people p WHERE p.entry_id=a.id AND p.person_id=?))
         ORDER BY a.id DESC LIMIT 41`,
-          "SELECT a.* FROM archive_audit_entries a WHERE (?=0 OR a.id<?)\n        AND (?='' OR a.actor_id=?) AND (?='' OR EXISTS (SELECT 1 FROM archive_audit_people p WHERE p.entry_id=a.id AND p.person_id=?))\n        ORDER BY a.id DESC LIMIT 41",
+          "SELECT a.* FROM runtime_visible_audit_entries a WHERE (?=0 OR a.id<?)\n        AND (?='' OR a.actor_id=?) AND (?='' OR EXISTS (SELECT 1 FROM archive_audit_people p WHERE p.entry_id=a.id AND p.person_id=?))\n        ORDER BY a.id DESC LIMIT 41",
         )
         .all(
           before,

@@ -491,7 +491,7 @@ function withRelation(
 export function researchSuggestionStore(db: StoreDatabase) {
   const select = `SELECT id,kind,status,person_id,payload,reason,evidence,base_revision,
       created_at,created_by,reviewed_at,reviewed_by
-    FROM research_suggestions`;
+    FROM ${db.kind === "postgres" ? "runtime_visible_research_suggestions" : "research_suggestions"}`;
 
   const insert = async (
     actor: ArchiveUser,

@@ -133,7 +133,7 @@ export function sharesStore(db: StoreDatabase) {
       const row = await db
         .prepare(
           "SELECT s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
-          "SELECT s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
+          "SELECT s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE s.token_hash=?",
         )
         .get(hash(token));
       if (!row) return null;
@@ -163,7 +163,7 @@ export function sharesStore(db: StoreDatabase) {
       const rows = await db
         .prepare(
           "SELECT s.rowid AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.rowid<?) ORDER BY s.rowid DESC LIMIT 101",
-          "SELECT s.ordinal AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.ordinal<?) ORDER BY s.ordinal DESC LIMIT 101",
+          "SELECT s.ordinal AS cursor,s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.ordinal<?) ORDER BY s.ordinal DESC LIMIT 101",
         )
         .all(cursor, cursor);
       return {

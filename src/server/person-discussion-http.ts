@@ -59,7 +59,7 @@ export function personDiscussionHttp({
     `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
        FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
       WHERE c.id=? AND c.person_id=?`,
-    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n       FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
+    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n       FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
   );
   const present = (
     row: CommentRow,
@@ -113,7 +113,7 @@ export function personDiscussionHttp({
           `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
              FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
             WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
-          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n             FROM person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
+          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n             FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
