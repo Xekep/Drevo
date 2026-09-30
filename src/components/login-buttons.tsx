@@ -3,15 +3,15 @@ import { markEntrySequence } from "./entry-sequence";
 import "../styles/login-buttons.css";
 
 type Providers = { vk: boolean; yandex: boolean; email: boolean };
-type EmailMode = "login" | "register" | "request-reset" | "reset" | "verify";
+type EmailMode = "login" | "register" | "request-reset" | "reset" | "verify" | "link";
 function initialEmailLink() {
   if (typeof window === "undefined") return null;
-  const match = /^#email-(verify|reset)=([A-Za-z0-9_-]{43})$/.exec(
+  const match = /^#email-(verify|reset|link)=([A-Za-z0-9_-]{43})$/.exec(
     window.location.hash,
   );
   return match
     ? {
-        mode: (match[1] === "verify" ? "verify" : "reset") as EmailMode,
+        mode: match[1] as EmailMode,
         token: match[2],
       }
     : null;
@@ -69,6 +69,8 @@ export function LoginButtons({
     const path =
       mode === "verify"
         ? "verify"
+        : mode === "link"
+          ? "link/verify"
         : mode === "request-reset"
           ? "reset/request"
           : mode === "reset"
@@ -87,6 +89,10 @@ export function LoginButtons({
         onBeforeNavigate?.();
         markEntrySequence();
         window.location.replace(`/a/${result.archiveId}/tree`);
+        return;
+      }
+      if (result.linked) {
+        window.location.replace("/account");
         return;
       }
       setMessage(result.message || "Готово.");
@@ -177,8 +183,11 @@ export function LoginButtons({
                   ? "Новый пароль"
                   : mode === "verify"
                     ? "Подтвердить почту"
+                    : mode === "link"
+                      ? "Подключить почту"
                     : "Вход по почте"}
           </h3>
+          {mode === "link" && <p>Подтвердите подключение почты к аккаунту, в который вы сейчас вошли. Если сеанс завершился, войдите снова и откройте ссылку из письма.</p>}
           {mode === "register" && (
             <label>
               Имя
@@ -234,9 +243,11 @@ export function LoginButtons({
                     ? "Сменить пароль"
                     : mode === "verify"
                       ? "Подтвердить"
+                      : mode === "link"
+                        ? "Подключить почту"
                       : "Войти"}
           </button>
-          <div className="login-email-options">
+          {mode !== "link" && <div className="login-email-options">
             {mode !== "login" && (
               <button
                 type="button"
@@ -273,7 +284,7 @@ export function LoginButtons({
                 Забыли пароль?
               </button>
             )}
-          </div>
+          </div>}
         </form>
       )}
       {failed ? (

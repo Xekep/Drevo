@@ -130,4 +130,37 @@ export async function verifyEmailAccounts(
     ),
     [account.archiveId],
   );
+  await accounts.requestLink("owner", {
+    email: "linked@example.org",
+    password: "a separate strong password",
+  });
+  const linkToken = sent[2].text.match(/#email-link=([A-Za-z0-9_-]{43})/)?.[1];
+  assert.ok(linkToken);
+  await assert.rejects(
+    accounts.verifyLink(account.accountId, linkToken),
+    InvalidEmailCredential,
+    "the verified mailbox alone cannot attach a login to another account",
+  );
+  await accounts.verifyLink("owner", linkToken);
+  assert.equal(
+    (
+      await accounts.login({
+        email: "linked@example.org",
+        password: "a separate strong password",
+      })
+    ).archiveId,
+    "runtime-test",
+  );
+  await assert.rejects(
+    accounts.verifyLink("owner", linkToken),
+    InvalidEmailCredential,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT provider FROM account_identities WHERE account_id='owner' AND provider IN ('email','yandex') ORDER BY provider",
+      )
+    ).rows.map((row) => row.provider),
+    ["email", "yandex"],
+  );
 }

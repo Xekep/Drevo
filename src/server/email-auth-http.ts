@@ -154,6 +154,36 @@ export function emailAuthHttp(
           await credentials.resetPassword(body.token, body.password);
           return json(res, 200, { message: "Пароль изменён. Войдите заново." });
         }
+        if (url.pathname === "/api/auth/email/link/request") {
+          const accountId = await auth.accountId(req);
+          if (!accountId)
+            return json(res, 401, { error: "Сначала войдите в аккаунт." });
+          if (!(await auth.recentOAuthSession(req)))
+            return json(res, 403, {
+              error: "Для подключения почты снова войдите через Яндекс или VK.",
+            });
+          await credentials.requestLink(accountId, {
+            email: body.email,
+            password: body.password,
+          });
+          return json(res, 202, {
+            message: "Если адрес доступен, письмо с подтверждением отправлено.",
+          });
+        }
+        if (url.pathname === "/api/auth/email/link/verify") {
+          const accountId = await auth.accountId(req);
+          if (!accountId)
+            return json(res, 401, {
+              error: "Войдите в исходный аккаунт и снова откройте ссылку.",
+            });
+          if (!(await auth.recentOAuthSession(req)))
+            return json(res, 403, {
+              error:
+                "Снова войдите через Яндекс или VK и откройте ссылку из письма.",
+            });
+          await credentials.verifyLink(accountId, body.token);
+          return json(res, 200, { linked: true });
+        }
         return json(res, 404, { error: "Неизвестный запрос." });
       } catch (error) {
         if (error instanceof InvalidEmailCredential)

@@ -1816,6 +1816,7 @@ try {
       .getSetCookie()
       .find((value) => value.startsWith("drevo_session="))!
       .split(";")[0];
+    assert.equal((await client.query("SELECT provider FROM account_oauth_session_proofs WHERE token_hash=$1", [sessionTokenHash(sessionCookie.slice("drevo_session=".length))])).rows[0]?.provider, "yandex");
     const newAccountSession = await fetch(
       oauthBase + location.replace(/\/tree$/, "/api/session"),
       { headers: { Cookie: sessionCookie } },
