@@ -436,6 +436,10 @@ export function PdfBookReader({
         const firstPage = await pdf.getPage(1);
         if (!active) return;
         const pageSize = firstPage.getViewport({ scale: 1 });
+        const reducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        const flipDuration = reducedMotion ? 1 : 550;
         flip = new pageFlip.PageFlip(root, {
           width: pageSize.width,
           height: pageSize.height,
@@ -447,10 +451,7 @@ export function PdfBookReader({
           showCover: true,
           usePortrait: true,
           autoSize: false,
-          flippingTime: window.matchMedia("(prefers-reduced-motion: reduce)")
-            .matches
-            ? 1
-            : 550,
+          flippingTime: flipDuration,
           maxShadowOpacity: 0.32,
           mobileScrollSupport: false,
         });
@@ -468,9 +469,8 @@ export function PdfBookReader({
               if (active) setError("Не удалось загрузить страницу PDF");
             });
         };
-        const centerBook = () => {
+        const centerBook = (index: number, animate = false) => {
           if (!flip || !pdf) return;
-          const index = flip.getCurrentPageIndex();
           const shift =
             flip.getOrientation() !== "landscape"
               ? 0
@@ -480,13 +480,37 @@ export function PdfBookReader({
                 : index === 0
                   ? -0.5
                   : 0;
-          root.style.transform = `translateX(${shift * flip.getBoundsRect().pageWidth}px)`;
+          const transform = `translateX(${shift * flip.getBoundsRect().pageWidth}px)`;
+          if (root.style.transform === transform) return;
+          root.style.transition =
+            animate && !reducedMotion
+              ? `transform ${flipDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`
+              : "none";
+          root.style.transform = transform;
         };
+        flip.on("changeState", ({ data }) => {
+          if (!active || data !== "flipping" || !flip || !pdf) return;
+          const direction = flip
+            .getFlipController()
+            .getCalculation()
+            ?.getDirection();
+          if (direction === undefined) return;
+          const index = flip.getCurrentPageIndex();
+          const target =
+            direction === 0
+              ? index === 0
+                ? 1
+                : Math.min(index + 2, pdf.numPages - 1)
+              : index === 1
+                ? 0
+                : Math.max(0, index - 2);
+          centerBook(target, true);
+        });
         flip.on("flip", ({ data }) => {
           if (!active) return;
           setPageIndex(data);
           renderNearby(data);
-          centerBook();
+          centerBook(data);
           requestAnimationFrame(() => {
             if (!active) return;
             alignOverlay(data);
@@ -497,17 +521,20 @@ export function PdfBookReader({
           if (!active) return;
           setOrientation(data);
           for (const [index, url] of urls) showPage(index, url);
-          centerBook();
+          centerBook(flip?.getCurrentPageIndex() ?? 0);
           requestAnimationFrame(() => {
             if (active) for (const index of urls.keys()) alignOverlay(index);
           });
         });
         flip.loadFromHTML(pages);
+        // showCover forces rigid end pages; keep its single-page spread but fold paper softly.
+        flip.getPage(0).setDensity("soft");
+        if (pdf.numPages > 1) flip.getPage(pdf.numPages - 1).setDensity("soft");
         if (firstIndex > 0) flip.turnToPage(firstIndex);
         resize = new ResizeObserver(() => {
           if (active) {
             flip?.update();
-            centerBook();
+            centerBook(flip?.getCurrentPageIndex() ?? 0);
             for (const index of urls.keys()) alignOverlay(index);
           }
         });
