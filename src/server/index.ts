@@ -31,6 +31,7 @@ import { indexReferencedMediaOriginals } from "./media-originals.ts";
 import { configuredDatabaseBackend } from "./store-database.ts";
 import { accountArchiveDirectory } from "./account-archives.ts";
 import { accountArchivesHttp } from "./account-archives-http.ts";
+import { discoveryPeopleHttp } from "./discovery-people-http.ts";
 import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
 import { publicShareAccess } from "./public-share-access.ts";
@@ -116,6 +117,7 @@ export async function startServer(
     auth,
     accountArchiveDirectory(archive.db),
   );
+  const searchPublishedPeople = discoveryPeopleHttp(archive.db, auth);
   const manageAccountInvitations = !archiveId
     ? accountInvitationsHttp(archive.db, auth, publicOrigin)
     : null;
@@ -243,6 +245,7 @@ export async function startServer(
       return;
     if (path.startsWith("/api/")) await auth.refreshSession(req, res);
     if (await listAccountArchives(req, res, parsedUrl)) return;
+    if (await searchPublishedPeople(req, res, parsedUrl)) return;
     if (
       manageAccountInvitations &&
       (await manageAccountInvitations(req, res, parsedUrl))
