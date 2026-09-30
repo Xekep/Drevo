@@ -114,3 +114,29 @@ test("a changed published card requires a fresh review before acceptance", async
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByText("Сопоставлено")).toBeVisible();
 });
+
+test("candidate suggestions can continue past the first indexed page", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const first = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const later = { archiveId: "tree-c", id: "person-c", name: "Иван Петров" };
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    return route.fulfill({ json: cursor === "next-page"
+      ? { candidates: [{ ...later, reasons: ["Совпадает имя и фамилия"], conflicts: [] }], nextCursor: null }
+      : { candidates: [{ ...first, reasons: ["Совпадает имя и фамилия"], conflicts: [] }], nextCursor: "next-page" } });
+  });
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await page.getByRole("button", { name: /Иван Петров/ }).first().click();
+  await expect(page.locator(".match-suggestion")).toHaveCount(1);
+  await page.getByRole("button", { name: "Показать ещё похожих" }).click();
+  await expect(page.locator(".match-suggestion")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Показать ещё похожих" })).toHaveCount(0);
+});

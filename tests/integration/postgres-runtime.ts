@@ -1673,6 +1673,30 @@ try {
     "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: ownerHeaders }))
     .json()).candidates.map((person: { id: string }) => person.id), ["person-b"],
   "restoring the archive returns its published candidates");
+  const beforeCandidatePages = await otherApp.archive.read();
+  const pagedFamily = structuredClone(beforeCandidatePages.family);
+  const template = pagedFamily.people.find((person) => person.id === "person-b")!;
+  const pageIds = Array.from({ length: 25 }, (_, index) => `similar-${String(index).padStart(2, "0")}`);
+  pagedFamily.people.push(...pageIds.map((id, index) => ({
+    ...structuredClone(template), id, column: index + 2,
+  })));
+  const paged = await otherApp.archive.write(pagedFamily, beforeCandidatePages.revision);
+  for (const id of pageIds)
+    await otherPublication.publish(id, "owner", selectedDiscoveryFields);
+  const candidatePath = "/api/discovery/matches/candidates?sourcePersonId=person-a";
+  const firstCandidatePage = await fetch(securedBase + candidatePath, { headers: ownerHeaders }).then((response) => response.json());
+  assert.equal(firstCandidatePage.candidates.length, 24);
+  assert.equal(typeof firstCandidatePage.nextCursor, "string");
+  const secondCandidatePage = await fetch(securedBase + candidatePath +
+    `&cursor=${encodeURIComponent(firstCandidatePage.nextCursor)}`, { headers: ownerHeaders }).then((response) => response.json());
+  assert.equal(secondCandidatePage.nextCursor, null);
+  assert.equal(new Set([...firstCandidatePage.candidates, ...secondCandidatePage.candidates]
+    .map((person: { id: string }) => person.id)).size, 26,
+  "all published names remain reachable beyond the first indexed page");
+  assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
+    headers: ownerHeaders,
+  })).status, 400);
+  await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {

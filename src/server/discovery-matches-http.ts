@@ -9,6 +9,7 @@ import { candidateEvidence, candidateNameQuery } from "./discovery-candidate-ran
 const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
+const candidatePageSize = 24;
 type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
@@ -103,6 +104,17 @@ function cursor(value: string | null): [string,string] | null {
       typeof parsed[0] === "string" && !Number.isNaN(Date.parse(parsed[0])) &&
       typeof parsed[1] === "string" && matchPattern.test(parsed[1])
       ? parsed as [string,string] : null;
+  } catch { return null; }
+}
+
+function candidateCursor(value: string | null): [string,string,string] | null {
+  if (!value) return ["", "", ""];
+  if (value.length > 1500) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    return Array.isArray(parsed) && parsed.length === 3 &&
+      parsed.every((part) => typeof part === "string" && part.length <= 512)
+      ? parsed as [string,string,string] : null;
   } catch { return null; }
 }
 
@@ -227,18 +239,21 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         return json(res, 429, { error: "Слишком много запросов" });
       const sourceId = url.searchParams.get("sourcePersonId") || "";
       if (!idPattern.test(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
+      const after = candidateCursor(url.searchParams.get("cursor"));
+      if (!after) return json(res, 400, { error: "Некорректная страница подсказок" });
       const columns = `archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place`;
       const sourceRow = await db.prepare("", `SELECT ${columns} FROM discovery_people
         WHERE archive_id=? AND person_id=?`).get(archiveId,sourceId);
       if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
       const source = published(sourceRow);
       const terms = candidateNameQuery(source);
-      if (!terms) return json(res, 200, { candidates: [], truncated: false });
+      if (!terms) return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
       // GIN narrows the candidate set before scoring. No private graph is read.
       const rows = await db.prepare("", `SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place FROM discovery_people d
         WHERE d.archive_id<>? AND d.name_vector @@ to_tsquery('simple',?)
+          AND (d.name,d.archive_id,d.person_id) > (?,?,?)
           AND NOT EXISTS (SELECT 1 FROM discovery_ignored_archives a
             WHERE a.archive_id=? AND a.target_archive_id=d.archive_id)
           AND ${showIgnored ? "EXISTS" : "NOT EXISTS"} (
@@ -251,15 +266,20 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
                 AND m.right_archive_id=d.archive_id AND m.right_person_id=d.person_id)
               OR (m.right_archive_id=? AND m.right_person_id=?
                 AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
-        ORDER BY d.name,d.archive_id,d.person_id LIMIT 201`)
-        .all(archiveId,terms,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
-      const ranked = rows.map((row) => {
+        ORDER BY d.name,d.archive_id,d.person_id LIMIT ${candidatePageSize + 1}`)
+        .all(archiveId,terms,...after,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
+      const page = rows.slice(0, candidatePageSize);
+      const nextCursor = rows.length > candidatePageSize
+        ? Buffer.from(JSON.stringify([
+          page.at(-1)!.name, page.at(-1)!.archive_id, page.at(-1)!.person_id,
+        ])).toString("base64url") : null;
+      const ranked = page.map((row) => {
         const candidate = published(row);
         const evidence = candidateEvidence(source,candidate);
         return evidence ? { ...candidate, ...evidence } : null;
       }).filter((item) => item !== null)
         .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))
-        .slice(0,12).map((item) => ({
+        .map((item) => ({
           archiveId: item.archiveId, id: item.id, name: item.name,
           ...(item.birthSurname ? { birthSurname: item.birthSurname } : {}),
           ...(item.birthYear ? { birthYear: item.birthYear } : {}),
@@ -268,7 +288,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
           ...(item.deathPlace ? { deathPlace: item.deathPlace } : {}),
           reasons: item.reasons, conflicts: item.conflicts,
         }));
-      return json(res, 200, { candidates: ranked, truncated: rows.length > 200 });
+      return json(res, 200, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
     }
 
     if (ownPeople) {
