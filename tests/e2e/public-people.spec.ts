@@ -36,6 +36,9 @@ test("admin publishes a person from the card menu and finds the limited public c
   await expect(dialog.getByRole("button", { name: "Опубликовать в поиске" })).toBeVisible();
   await dialog.getByRole("button", { name: "Опубликовать в поиске" }).click();
   await expect(dialog.getByRole("button", { name: "Снять с поиска" })).toBeVisible();
+  await expect(dialog.getByRole("link", { name: /\/discover\/person\// })).toHaveAttribute(
+    "href", /\/discover\/person\/e2e-memorial-person$/,
+  );
   await page.goto("/discover?q=%D0%A2%D0%B5%D1%81%D1%82%D0%BE%D0%B2");
   await expect(page.getByRole("heading", { name: /Тестов Иван/ })).toBeVisible();
   await expect(page.locator(".public-person-card")).toContainText("1940");

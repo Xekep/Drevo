@@ -4,6 +4,7 @@ import type { Person } from "../domain/types";
 import { EditorDialog } from "./editor-dialog";
 
 type Status = {
+  archiveId?: string | null;
   published: boolean;
   publishable: boolean;
   person: {
@@ -57,7 +58,7 @@ export function PublishPersonDialog({
     }
   }
   const link = new URL(
-    `/discover?personId=${encodeURIComponent(person.id)}`,
+    `/discover/person/${status?.archiveId ? `${encodeURIComponent(status.archiveId)}/` : ""}${encodeURIComponent(person.id)}`,
     location.origin,
   ).href;
   return (
