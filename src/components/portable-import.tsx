@@ -10,6 +10,8 @@ type Preview = {
   documents: number;
   comments: number;
   bytes: number;
+  canImport: boolean;
+  warning: string | null;
 };
 
 export function PortableImport() {
@@ -96,7 +98,24 @@ export function PortableImport() {
             {preview.people} человек · {preview.photos} фото ·{" "}
             {preview.documents} документов · {preview.comments} обсуждений
           </span>
-          <button type="button" disabled={busy} onClick={() => void apply()}>
+          <span>
+            Оригиналы:{" "}
+            {new Intl.NumberFormat("ru-RU", {
+              maximumFractionDigits: 1,
+            }).format(preview.bytes / 1_000_000)}{" "}
+            МБ
+          </span>
+          {preview.warning && (
+            <p className="account-error" role="alert">
+              {preview.warning}. Выберите пакет в пределах лимита или попросите
+              полный доступ.
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={busy || !preview.canImport}
+            onClick={() => void apply()}
+          >
             {busy ? "Импортируем…" : "Импортировать в это дерево"}
           </button>
         </div>

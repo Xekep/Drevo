@@ -236,17 +236,32 @@ test("empty archive owner previews a portable import before applying", async ({
       },
     }),
   );
+  let overLimit = false;
   await page.route("**/api/drevo/preview", (route) =>
     route.fulfill({
-      json: {
-        token: "test-stage",
-        title: "Семейный архив",
-        people: 12,
-        photos: 3,
-        documents: 2,
-        comments: 1,
-        bytes: 2048,
-      },
+      json: overLimit
+        ? {
+            token: "over-limit-stage",
+            title: "Семейный архив",
+            people: 151,
+            photos: 3,
+            documents: 2,
+            comments: 1,
+            bytes: 501_000_000,
+            canImport: false,
+            warning: "Лимит людей: 150; Лимит фотографий и документов: 500 МБ",
+          }
+        : {
+            token: "test-stage",
+            title: "Семейный архив",
+            people: 12,
+            photos: 3,
+            documents: 2,
+            comments: 1,
+            bytes: 2048,
+            canImport: true,
+            warning: null,
+          },
     }),
   );
   await page.goto("/account");
@@ -262,7 +277,13 @@ test("empty archive owner previews a portable import before applying", async ({
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Импортировать в это дерево" }),
-  ).toBeVisible();
+  ).toBeEnabled();
+  overLimit = true;
+  await page.getByRole("button", { name: "Проверить файл" }).click();
+  await expect(
+    page.getByRole("button", { name: "Импортировать в это дерево" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("alert")).toContainText("Лимит людей: 150");
 });
 
 test("account cabinet hides archive export from a non-owner", async ({
