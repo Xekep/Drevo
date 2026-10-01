@@ -120,7 +120,7 @@ test("форматы экспорта и импорт GEDCOM с предпрос
   }
 });
 
-test("XML Древа Жизни показывает неподдержанные поля до импорта", async ({ page }) => {
+test("XML Древа Жизни показывает сохранённые текстом поля до импорта", async ({ page }) => {
   await page.goto("/admin");
   await openAdminSection(page, "data", "Экспорт и импорт");
   const panel = page.locator(".gedcom-transfer");
@@ -132,6 +132,6 @@ test("XML Древа Жизни показывает неподдержанны�
   });
   await panel.getByRole("button", { name: "Проверить файл" }).click();
   await expect(panel.getByText("Формат: Agelong Tree XML")).toBeVisible();
-  await expect(panel.getByText("Атрибут event.custom не перенесён.")).toBeVisible();
+  await expect(panel.getByText("Поле event.custom сохранено как текст; его тип и назначение в Drevo не представлены.")).toBeVisible();
   await expect(panel.getByRole("button", { name: "Подтвердить добавление 1 человек" })).toBeVisible();
 });
