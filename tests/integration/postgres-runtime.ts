@@ -2979,9 +2979,18 @@ try {
     .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"]);
   await publishedPeopleStore(otherApp.archive.db).unpublish("branch-parent-b");
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
-    .then((response) => response.json())).incoming, [],
+  const branchAfterUnpublish = await fetch(securedBase + branchPath, { headers: ownerHeaders });
+  assert.equal(branchAfterUnpublish.headers.get("cache-control"), "private, no-store",
+    "a reopened branch panel must revalidate against an uncached projection");
+  assert.deepEqual((await branchAfterUnpublish.json()).incoming, [],
     "unpublishing a selected relative immediately removes it from the branch");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'
+        AND person_id='branch-parent-b'`).get())?.count, 0,
+    "RLS cannot read the formerly shared member after publication is revoked");
+  }, true);
   assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
     404, "unpublishing immediately closes its direct linked member URL");
   const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
