@@ -59,6 +59,7 @@ export function aiResearchHttp({
   fetcher = fetch,
   uploadsDirectory,
   beforeChatDelivery,
+  beforeAnswerDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -72,6 +73,7 @@ export function aiResearchHttp({
   fetcher?: typeof fetch;
   uploadsDirectory?: string;
   beforeChatDelivery?: () => Promise<void>;
+  beforeAnswerDelivery?: () => Promise<void>;
 }) {
   const chats = aiChatStore(archive.db);
   const attachments = aiAttachmentStore(
@@ -120,10 +122,37 @@ export function aiResearchHttp({
       .digest("hex");
     return JSON.stringify([...identity, fingerprint]);
   };
-  const canDeliverAiData = async (req: IncomingMessage, expectedScope: string) => {
+  const canDeliverAiData = async (
+    req: IncomingMessage,
+    expectedScope: string,
+    expectedUserId?: string,
+    lockAccess = false,
+  ) => {
     const current = await auth.currentUser(req);
-    return !!current && (await auth.canRead(req)) &&
-      (await accountAiAccess(archive.db, current.id, auth.local)) &&
+    if (!current || (expectedUserId && current.id !== expectedUserId)) return false;
+    if (lockAccess && archive.db.kind === "postgres") {
+      if (!auth.local) {
+        const session = await auth.accountSession(req);
+        if (!session || session.accountId !== current.id) return false;
+        // Account deletion locks the session before the archive. SKIP LOCKED
+        // fails closed without reversing that lock order.
+        const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+          FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+          .get(session.tokenHash);
+        if (lockedSession?.user_id !== current.id ||
+          Number(lockedSession.expires_at) <= Date.now()) return false;
+      }
+      // Serialize the durable answer with membership and tier revocation. The
+      // archive transaction already locks the graph revision for scoped users.
+      const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+        .get(archive.db.archiveId || "", current.id);
+      if (!membership?.approved || membership.role !== current.role ||
+        (membership.person_id || "") !== (current.personId || "") ||
+        membership.tree_access !== (current.treeAccess || "all")) return false;
+    }
+    return (await auth.canRead(req)) &&
+      (await accountAiAccess(archive.db, current.id, auth.local, lockAccess)) &&
       (await accessScope(current)) === expectedScope;
   };
   const generatedFiles = new Map<string, GeneratedResearchFile>();
@@ -750,31 +779,45 @@ export function aiResearchHttp({
       });
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
-      if (!(await accountAiAccess(archive.db, user.id, auth.local))) {
+      const answerSaved = await archive.db.transaction(async () => {
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+          return false;
+        await chats.append(chat.id, "assistant", result.answer, {
+          references: result.references,
+          suggestionIds: result.suggestionIds,
+          files: result.files,
+        });
+        const latestFamily = (await archive.read()).family;
+        const accessiblePeople = new Set(
+          (isScopedUser(user)
+            ? projectFamilyForUser(latestFamily, user)
+            : latestFamily
+          ).people.map((person) => person.id),
+        );
+        const activeIds = [
+          ...new Set([
+            ...chat.sessionState.activePersonIds,
+            ...result.references
+              .filter((item) => item.kind === "person")
+              .map((item) => item.id),
+          ]),
+        ].filter((id) => accessiblePeople.has(id));
+        await chats.setActivePeople(chat.id, activeIds);
+        return true;
+      });
+      if (!answerSaved) {
         accessRevoked = true;
+        controller.abort();
         throw new DOMException("Доступ к ИИ отключён", "AbortError");
       }
-      await chats.append(chat.id, "assistant", result.answer, {
-        references: result.references,
-        suggestionIds: result.suggestionIds,
-        files: result.files,
-      });
-      const latestFamily = (await archive.read()).family;
-      const accessiblePeople = new Set(
-        (isScopedUser(user)
-          ? projectFamilyForUser(latestFamily, user)
-          : latestFamily
-        ).people.map((person) => person.id),
-      );
-      const activeIds = [
-        ...new Set([
-          ...chat.sessionState.activePersonIds,
-          ...result.references
-            .filter((item) => item.kind === "person")
-            .map((item) => item.id),
-        ]),
-      ].filter((id) => accessiblePeople.has(id));
-      await chats.setActivePeople(chat.id, activeIds);
+      const assertAnswerDelivery = async () => {
+        if (await canDeliverAiData(req, chat.accessScope, user.id)) return;
+        accessRevoked = true;
+        controller.abort();
+        throw new DOMException("Доступ к ИИ отключён", "AbortError");
+      };
+      await beforeAnswerDelivery?.();
+      await assertAnswerDelivery();
       await usage.finish(usageRun.id, usageRun.started, {
         status: "ok",
         providerCalls: metrics.providerCalls,
@@ -805,6 +848,7 @@ export function aiResearchHttp({
         }),
       );
 
+      await assertAnswerDelivery();
       if (stream) {
         sse(res, "done", {
           chatId: chat.id,
