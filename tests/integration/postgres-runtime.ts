@@ -1603,6 +1603,20 @@ try {
       }
     };
     try {
+      const rollbackReason = proposalReason("rollback");
+      const rollbackActor = await (await userStore(app.archive.db)).get("owner");
+      const rollbackFamily = await app.archive.read();
+      assert.ok(rollbackActor);
+      await assert.rejects(app.archive.db.transaction(async () => {
+        await researchSuggestionStore(app!.archive.db).createFromTool(
+          "propose_person_create", rollbackActor, rollbackFamily.family, rollbackFamily.revision,
+          { person: { surname: "Проверка", name: "Rollback", sex: "m", birth: "1991" },
+            reason: rollbackReason, evidence: ["Данные участника"] },
+        );
+        throw new Error("rollback proposal transaction");
+      }), /rollback proposal transaction/);
+      assert.equal((await client.query("SELECT count(*)::int AS n FROM research_suggestions WHERE reason=$1", [rollbackReason])).rows[0].n,
+        0, "suggestion insert uses the archive transaction and rolls back with it");
       await runProposal(ownerHeaders, "owner", "allowed", async (release) => { release(); }, true);
       await runProposal(ownerHeaders, "owner", "downgraded", async (release) => {
         const downgrade = client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
