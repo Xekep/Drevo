@@ -321,4 +321,14 @@ window.addEventListener("keydown", (event) => {
   } else send({ source, type: "close" });
 });
 
+window.addEventListener(
+  "contextmenu",
+  (event) => {
+    if (!pendingState?.magnifier) return;
+    event.preventDefault();
+    send({ source, type: "magnifier-off" });
+  },
+  { capture: true },
+);
+
 send({ source, type: "ready" });

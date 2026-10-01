@@ -122,9 +122,65 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
     "width",
     "180px",
   );
+  await book.locator("body").evaluate((body) => {
+    window.addEventListener(
+      "contextmenu",
+      (event) => {
+        body.dataset.lensMenuPrevented = String(event.defaultPrevented);
+      },
+      { once: true },
+    );
+  });
+  await book
+    .locator('.BRpage-visible[data-index="1"]')
+    .click({ button: "right" });
+  await expect(book.locator("body")).toHaveAttribute(
+    "data-lens-menu-prevented",
+    "true",
+  );
+  await expect(lensButton).toHaveAttribute("aria-pressed", "false");
+  await expect(book.locator(".drevo-magnifier-lens")).toHaveCount(0);
+  await expect(reader).toBeVisible();
+  await lensButton.click();
+  await expect(lensButton).toHaveAttribute("aria-pressed", "true");
   await book.locator("body").press("Escape");
   await expect(lensButton).toHaveAttribute("aria-pressed", "false");
   await expect(book.locator(".drevo-magnifier-lens")).toHaveCount(0);
+
+  await lensButton.click();
+  await expect(lensButton).toHaveAttribute("aria-pressed", "true");
+  await commentsButton.click();
+  await reader.evaluate(() => {
+    window.addEventListener(
+      "contextmenu",
+      (event) => {
+        document.body.dataset.lensMenuPrevented = String(
+          event.defaultPrevented,
+        );
+      },
+      { once: true },
+    );
+  });
+  await reader
+    .locator(".pdf-book-sidebar-tabs button")
+    .first()
+    .click({ button: "right" });
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-lens-menu-prevented",
+    "true",
+  );
+  await expect(lensButton).toHaveAttribute("aria-pressed", "false");
+  await expect(reader).toBeVisible();
+  expect(
+    await book
+      .locator("body")
+      .evaluate((body) =>
+        body.dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+        ),
+      ),
+  ).toBe(true);
+  await commentsButton.click();
 
   await commentsButton.click();
   await reader.locator(".pdf-book-sidebar-tabs button").first().click();
