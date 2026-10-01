@@ -1,4 +1,4 @@
--- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 041.
+-- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 052.
 -- The app role keeps FORCE RLS and receives EXECUTE only on the checked entry
 -- point. Re-running this script safely cleans remaining old tombstones.
 BEGIN;
@@ -106,20 +106,52 @@ BEGIN
   PERFORM public.runtime_anonymize_account_history_rows(account_id);
 END $$;
 
+-- Only the authenticated deletion transaction may erase its own comment text.
+-- The author lock is shared with the insert trigger in schema 052, so a write
+-- that began before deletion either finishes before this UPDATE or observes
+-- the committed tombstone and is redacted by the trigger.
+CREATE OR REPLACE FUNCTION public.runtime_redact_deleted_account_comments(account_id text)
+RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE changed bigint;
+BEGIN
+  IF account_id IS NULL OR account_id=''
+    OR current_setting('drevo.account_id',true) IS DISTINCT FROM account_id
+    OR NOT EXISTS (
+      SELECT 1 FROM public.deleted_account_tombstones
+      WHERE id=account_id AND redact_comments=true
+    )
+  THEN
+    RAISE EXCEPTION 'Account comment redaction context is missing' USING ERRCODE='42501';
+  END IF;
+  PERFORM 1 FROM public.accounts WHERE id=account_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Account already removed' USING ERRCODE='42501';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('drevo-comment:' || account_id,0));
+  UPDATE public.person_comments
+    SET text='Текст удалён по запросу автора'
+    WHERE author_id=account_id;
+  GET DIAGNOSTICS changed=ROW_COUNT;
+  RETURN changed;
+END $$;
+
 DO $$ BEGIN
   EXECUTE format('ALTER FUNCTION public.runtime_redact_account_attribution(jsonb,text) OWNER TO %I',current_user);
   EXECUTE format('ALTER FUNCTION public.runtime_anonymize_account_history_rows(text) OWNER TO %I',current_user);
   EXECUTE format('ALTER FUNCTION public.runtime_anonymize_deleted_account_history(text) OWNER TO %I',current_user);
+  EXECUTE format('ALTER FUNCTION public.runtime_redact_deleted_account_comments(text) OWNER TO %I',current_user);
 END $$;
 
 REVOKE ALL ON FUNCTION public.runtime_redact_account_attribution(jsonb,text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.runtime_anonymize_account_history_rows(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.runtime_anonymize_deleted_account_history(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.runtime_redact_deleted_account_comments(text) FROM PUBLIC;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='site_drevo') THEN
     REVOKE ALL ON FUNCTION public.runtime_redact_account_attribution(jsonb,text) FROM site_drevo;
     REVOKE ALL ON FUNCTION public.runtime_anonymize_account_history_rows(text) FROM site_drevo;
     GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO site_drevo;
+    GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO site_drevo;
   END IF;
 END $$;
 

@@ -28,12 +28,14 @@ async function readConfirmation(req: IncomingMessage) {
     typeof value.name !== "string" ||
     value.name.length > 200 ||
     !("leaveSharedArchives" in value) ||
-    typeof value.leaveSharedArchives !== "boolean"
+    typeof value.leaveSharedArchives !== "boolean" ||
+    ("redactComments" in value && typeof value.redactComments !== "boolean")
   )
     throw new SyntaxError("Некорректное подтверждение");
   return {
     name: value.name,
     leaveSharedArchives: value.leaveSharedArchives,
+    redactComments: "redactComments" in value && value.redactComments === true,
   };
 }
 

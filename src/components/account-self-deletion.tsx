@@ -5,6 +5,7 @@ type DeletionPlan = {
   name: string;
   ownedArchives: number;
   sharedArchives: number;
+  canRedactComments?: boolean;
 };
 
 export function AccountSelfDeletion() {
@@ -12,6 +13,7 @@ export function AccountSelfDeletion() {
   const [plan, setPlan] = useState<DeletionPlan | null>(null);
   const [name, setName] = useState("");
   const [leaveSharedArchives, setLeaveSharedArchives] = useState(false);
+  const [redactComments, setRedactComments] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,7 +47,7 @@ export function AccountSelfDeletion() {
           "Content-Type": "application/json",
           "X-Drevo-Account-Deletion": "1",
         },
-        body: JSON.stringify({ name, leaveSharedArchives }),
+        body: JSON.stringify({ name, leaveSharedArchives, redactComments }),
       });
       const value = await response.json();
       if (!response.ok)
@@ -96,6 +98,18 @@ export function AccountSelfDeletion() {
                   </span>
                 </label>
               )}
+              {plan.canRedactComments ? (
+                <label className="account-archive-deletion-consent">
+                  <input
+                    type="checkbox"
+                    checked={redactComments}
+                    onChange={(event) => setRedactComments(event.target.checked)}
+                  />
+                  <span>
+                    Удалить тексты моих комментариев во всех деревьях. В обсуждениях останется пометка вместо текста; чужие комментарии и данные людей сохранятся. Старые резервные копии не меняются.
+                  </span>
+                </label>
+              ) : null}
               <label>
                 Для подтверждения введите имя аккаунта: {plan.name}
                 <input
@@ -126,6 +140,7 @@ export function AccountSelfDeletion() {
                     setPlan(null);
                     setName("");
                     setLeaveSharedArchives(false);
+                    setRedactComments(false);
                     setError("");
                   }}
                 >

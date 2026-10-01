@@ -162,6 +162,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT to_regclass('runtime_visible_person_comments') AS present",
       "041_deleted_account_history.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('person_comments') AND tgname='guard_deleted_comment_author' AND NOT tgisinternal",
+      "052_deleted_account_comments.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {
