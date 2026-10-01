@@ -1,4 +1,6 @@
 export type Source = {
+  /** Reference to an archive-wide source record; legacy inline citations omit it. */
+  catalogId?: string;
   title: string;
   type: string;
   reference: string;

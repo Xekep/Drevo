@@ -8,6 +8,7 @@ import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import type { installPortableOriginals } from "./portable-install.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
+import { sourceCatalogStore } from "./source-catalog-store.ts";
 
 type Installed = Awaited<ReturnType<typeof installPortableOriginals>>;
 
@@ -51,11 +52,11 @@ export async function applyPortablePackage(
       }
       const occupied = await transaction
         .prepare(
-          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments",
-          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments",
+          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
+          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
         )
         .get();
-      if (Number(occupied?.documents) || Number(occupied?.comments))
+      if (Number(occupied?.documents) || Number(occupied?.comments) || Number(occupied?.sources))
         throw new ConflictError("Импорт возможен только в пустое дерево");
       const consumed = await transaction
         .prepare(
@@ -110,6 +111,8 @@ export async function applyPortablePackage(
             )
             .run(document.id, personId);
       }
+      for (const source of installed.snapshot.sources || [])
+        await sourceCatalogStore(transaction).insert(source);
       for (const comment of installed.snapshot.comments)
         await transaction
           .prepare(

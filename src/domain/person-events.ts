@@ -74,6 +74,8 @@ export function validateEvents(events: unknown): void {
       for (const s of e.sources)
         if (
           !s ||
+          (s.catalogId !== undefined && (typeof s.catalogId !== "string" ||
+            !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) ||
           ![s.title, s.type, s.reference].every(
             (v) => typeof v === "string" && v.length <= 5000,
           ) ||

@@ -31,6 +31,7 @@ import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
 import { archiveSnapshotReader } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
+import { assertCatalogLinks, hydrateCatalogCitations } from "./source-catalog-store.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
@@ -476,6 +477,7 @@ export async function openArchive(
           );
       }
       await afterWrite?.(db);
+      await assertCatalogLinks(db, family);
       if (mediaActorId) {
         await releaseAttachedMediaGrants(db);
         await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
@@ -681,16 +683,18 @@ async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
       )
       .all()
   ).map((row) => JSON.parse(String(row.data)));
+  const family: Family = {
+    title: meta.title,
+    description: meta.description,
+    demo: meta.demo,
+    people,
+    ...(unions.length ? { unions } : {}),
+    links,
+    photos: [],
+  };
+  await hydrateCatalogCitations(db, family);
   return {
-    family: {
-      title: meta.title,
-      description: meta.description,
-      demo: meta.demo,
-      people,
-      ...(unions.length ? { unions } : {}),
-      links,
-      photos: [],
-    } as Family,
+    family,
     revision: meta.revision,
     totals: { people: meta.people, photos: meta.photos },
   };
@@ -701,7 +705,7 @@ async function readPeoplePage(
   offset: number,
   limit: number,
 ): Promise<Person[]> {
-  return (
+  const people = (
     await db
       .prepare(
         "SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?",
@@ -716,6 +720,10 @@ async function readPeoplePage(
         spouses: [],
       }) as Person,
   );
+  await hydrateCatalogCitations(db, {
+    title: "", description: "", demo: false, people,
+  });
+  return people;
 }
 
 async function readPhotoPage(
@@ -761,7 +769,7 @@ export async function readArchive(db: StoreDatabase) {
         "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='family_unions'",
       )
       .get());
-  return hydrateArchive(
+  const snapshot = hydrateArchive(
     meta,
     await db
       .prepare(
@@ -796,4 +804,6 @@ export async function readArchive(db: StoreDatabase) {
           .all()
       : [],
   );
+  await hydrateCatalogCitations(db, snapshot.family);
+  return snapshot;
 }

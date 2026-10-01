@@ -21,6 +21,15 @@ import {
   type TransferMedia,
 } from "./genealogy-transfer.ts";
 
+// GEDCOM transfers readable citations, not archive-local catalogue identities.
+function inlineUnionSources(union: FamilyUnion): FamilyUnion {
+  const copy = structuredClone(union);
+  for (const sources of [copy.sources, copy.formation?.sources, copy.ending?.sources,
+    copy.divorce?.sources, copy.ongoing?.sources])
+    for (const source of sources || []) delete source.catalogId;
+  return copy;
+}
+
 type Node = {
   tag: string;
   value: string;
@@ -635,7 +644,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       const explicit = value(f, "_DREVO_UNION");
       if (explicit) {
         try {
-          const restored = JSON.parse(explicit) as FamilyUnion;
+          const restored = inlineUnionSources(JSON.parse(explicit) as FamilyUnion);
           unions.push({
             ...restored,
             participants: [spousePair[0].id, spousePair[1].id],
@@ -1253,7 +1262,7 @@ export function exportGedcom(
       usedRoles.add(role);
     }
     if (g.union) {
-      const { createdBy: _createdBy, ...portableUnion } = g.union;
+      const { createdBy: _createdBy, ...portableUnion } = inlineUnionSources(g.union);
       void _createdBy;
       emit(1, "_DREVO_UNION", JSON.stringify(portableUnion));
       emit(1, "_DREVO_SPOUSE", "Y");

@@ -66,7 +66,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           spouses: [],
           generation: 1,
           column: 0,
-          sources: [],
+          sources: [{ catalogId: "source-1", title: "Метрическая книга", type: "архив", reference: "ф. 6" }],
           photo: "/media/portrait.png",
         },
       ],
@@ -74,6 +74,12 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     };
     const snapshot: PortableSnapshot = {
       family,
+      sources: [{
+        id: "source-1", title: "Метрическая книга", type: "архив", author: "",
+        institution: "", archive: "ГАСО", fond: "6", opis: "13", delo: "104",
+        sheet: "12", reference: "ф. 6", url: "", accessedAt: "2026-10-01",
+        description: "Запись о рождении", documentIds: ["a38e540d-841d-4205-9548-847939860299"],
+      }],
       documents: [
         {
           id: "a38e540d-841d-4205-9548-847939860299",
@@ -165,6 +171,20 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     await mkdir(stage);
     const imported = await readPortablePackage(path, stage);
     assert.deepEqual(imported.snapshot, snapshot);
+    const wrongCitation = structuredClone(snapshot);
+    wrongCitation.family.people[0].sources[0].documentId = "c26d78da-c392-4591-a013-e2d4acdb9230";
+    const wrongArchive = Buffer.from(JSON.stringify(wrongCitation));
+    const wrongManifest = structuredClone(manifest);
+    const archiveEntry = wrongManifest.entries.find((entry) => entry.path === "archive.json")!;
+    archiveEntry.size = wrongArchive.length;
+    archiveEntry.sha256 = hash(wrongArchive);
+    const wrongPackage = join(dir, "wrong-source-document.drevo");
+    await zipEntries(wrongPackage, new Map(files).set("archive.json", wrongArchive)
+      .set("manifest.json", Buffer.from(JSON.stringify(wrongManifest))));
+    const wrongStage = join(dir, "wrong-source-stage");
+    await mkdir(wrongStage);
+    await assert.rejects(readPortablePackage(wrongPackage, wrongStage),
+      /источник или документ/);
     assert.equal(imported.files.get("media/record.pdf")?.sha256, hash(pdf));
     assert.equal(imported.files.get("media/scan.png")?.sha256, hash(scan));
     const destination = join(dir, "destination");
@@ -215,6 +235,8 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           ?.n,
         2,
       );
+      assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM source_catalog").get())?.n, 1);
+      assert.equal(result.family.people[0].sources[0].catalogId, "source-1");
       assert.equal(
         (
           await archive.db

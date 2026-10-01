@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { readArchive, type openArchive } from "./database.ts";
 import { ForbiddenError } from "./users.ts";
+import { sourceCatalogStore } from "./source-catalog-store.ts";
 import {
   writePortablePackage,
   PortablePackageError,
@@ -82,7 +83,12 @@ export function portableExportHttp(
         createdMs: Number(row.created_ms),
         text: String(row.text),
       }));
-      return { family, documents, comments };
+      const sources = (await sourceCatalogStore(db).list()).map((entry) => {
+        const source = { ...entry };
+        delete (source as Partial<typeof source>).version;
+        return source;
+      });
+      return { family, documents, comments, sources };
     }, true);
   }
 

@@ -43,6 +43,7 @@ import { accountInvitationsHttp } from "./account-invitations-http.ts";
 import { archiveRoutePool } from "./archive-route-pool.ts";
 import { publicShareAccess } from "./public-share-access.ts";
 import { safeRequestRoute } from "./safe-request-route.ts";
+import { sourceCatalogHttp } from "./source-catalog-http.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 type StartedServer = {
@@ -223,6 +224,7 @@ export async function startServer(
     dbPath,
     publicOrigin,
   );
+  const handleSources = sourceCatalogHttp(archive, auth, publicOrigin);
   const yandex = createYandexOAuth({
     origin: publicOrigin,
     clientId: process.env.YANDEX_CLIENT_ID,
@@ -310,6 +312,7 @@ export async function startServer(
     if (await manageVkAuth(req, res, parsedUrl)) return;
     if (await manageBackups(req, res, parsedUrl)) return;
     if (await handleArchive(req, res, parsedUrl)) return;
+    if (await handleSources(req, res, parsedUrl)) return;
     if (await transferArchiveOwner(req, res, parsedUrl)) return;
     if (await deleteArchive(req, res, parsedUrl)) return;
     if (await gedcom.handle(req, res, parsedUrl)) return;
