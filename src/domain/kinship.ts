@@ -24,6 +24,9 @@ function ancestors(id: string, map: Map<string, Person>) {
     }
   return paths;
 }
+function praWord(word: string, count: number) {
+  return (count >= 4 ? `пра(${count})` : "пра".repeat(count)) + word;
+}
 function ancestorWord(p: Person, distance: number) {
   if (p.sex === "u")
     return distance === 1
@@ -32,11 +35,7 @@ function ancestorWord(p: Person, distance: number) {
         ? "дедушка / бабушка"
         : `предок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
   if (distance === 1) return p.sex === "m" ? "отец" : "мать";
-  if (distance === 2) return p.sex === "m" ? "дедушка" : "бабушка";
-  if (distance === 3) return p.sex === "m" ? "прадедушка" : "прабабушка";
-  if (distance <= 6)
-    return "пра".repeat(distance - 2) + (p.sex === "m" ? "дедушка" : "бабушка");
-  return `предок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
+  return praWord(p.sex === "m" ? "дедушка" : "бабушка", distance - 2);
 }
 function descendantWord(p: Person, distance: number) {
   if (p.sex === "u")
@@ -46,9 +45,7 @@ function descendantWord(p: Person, distance: number) {
         ? "внук / внучка"
         : `потомок через ${distance} ${plural(distance, "поколение", "поколения", "поколений")}`;
   if (distance === 1) return p.sex === "m" ? "сын" : "дочь";
-  if (distance <= 6)
-    return "пра".repeat(distance - 2) + (p.sex === "m" ? "внук" : "внучка");
-  return `потомок через ${distance} поколений`;
+  return praWord(p.sex === "m" ? "внук" : "внучка", distance - 2);
 }
 function cousinAdjective(degree: number, female: boolean) {
   const stems: Record<number, string> = {
