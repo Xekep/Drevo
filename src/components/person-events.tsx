@@ -351,7 +351,7 @@ export function PersonEvents({
                         <a
                           href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}
                         >
-                          {" "}Открыть PDF
+                          {" "}Открыть документ
                         </a>
                       )}
                     </p>

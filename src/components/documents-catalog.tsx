@@ -1,4 +1,4 @@
-import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import {
   useCallback,
@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   BookOpenText,
+  Image as ImageIcon,
   Pencil,
   Plus,
   Search,
@@ -33,6 +34,7 @@ export type ListedDocument = DocumentDetails & {
   title: string;
   url: string;
   size: number;
+  mimeType?: string;
   createdAt: string;
   canDelete?: boolean;
   people: Array<{ id: string; name: string }>;
@@ -101,22 +103,24 @@ export function DocumentsCatalog({
       setUploadOpen(true);
       setEditing(null);
       setUploadError("");
+      const type = documentFileTypeFromName(next.name);
       if (
-        !/\.pdf$/i.test(next.name) ||
-        (next.type &&
-          !["application/pdf", "application/octet-stream"].includes(next.type))
+        !type ||
+        (next.type && ![type.mime, "application/octet-stream"].includes(next.type))
       ) {
-        setUploadError("Можно загрузить только PDF-файл");
+        setUploadError("Поддерживаются PDF, JPEG, PNG, WebP и GIF");
         setFile(null);
         return;
       }
-      if (next.size > MAX_PDF_BYTES) {
-        setUploadError("PDF должен быть не больше 50 МБ");
+      if (next.size > type.maxBytes) {
+        setUploadError(type.extension === "pdf"
+          ? "PDF должен быть не больше 50 МБ"
+          : "Изображение должно быть не больше 20 МБ");
         setFile(null);
         return;
       }
       setFile(next);
-      setTitle(next.name.replace(/\.pdf$/i, "").slice(0, 160));
+      setTitle(next.name.replace(/\.[a-z]+$/i, "").slice(0, 160));
       if (filteredPerson)
         setSelectedPeople([
           { id: filteredPerson.id, name: fullName(filteredPerson) },
@@ -162,7 +166,7 @@ export function DocumentsCatalog({
       if (!files?.length) return;
       if (files.length !== 1) {
         setUploadOpen(true);
-        setUploadError("Перетащите один PDF-файл за раз");
+        setUploadError("Перетащите один документ за раз");
         return;
       }
       chooseFile(files[0]);
@@ -274,6 +278,8 @@ export function DocumentsCatalog({
     event.preventDefault();
     if (!file || !title.trim() || (!allowUnlinked && !selectedPeople.length))
       return;
+    const type = documentFileTypeFromName(file.name);
+    if (!type) return;
     setUploading(true);
     setUploadError("");
     try {
@@ -285,7 +291,7 @@ export function DocumentsCatalog({
       const response = await archiveFetch("/api/documents", {
         method: "POST",
         headers: {
-          "Content-Type": "application/pdf",
+          "Content-Type": type.mime,
           "X-Document-Metadata": `base64:${btoa(String.fromCharCode(...new TextEncoder().encode(metadata)))}`,
         },
         body: file,
@@ -302,6 +308,7 @@ export function DocumentsCatalog({
         ...details,
         url: `/api/documents/${created.id}/file`,
         size: file.size,
+        mimeType: type.mime,
         createdAt: new Date().toISOString(),
         canDelete: true,
         people: selectedPeople.map((person) => ({
@@ -429,7 +436,7 @@ export function DocumentsCatalog({
     if (
       deleting ||
       !window.confirm(
-        `Удалить документ «${entry.title}»? PDF и его привязки к людям будут удалены из архива.`,
+        `Удалить документ «${entry.title}»? Файл и его привязки к людям будут удалены из архива.`,
       )
     )
       return;
@@ -463,8 +470,8 @@ export function DocumentsCatalog({
         createPortal(
           <div className="documents-drop-overlay" role="status">
             <Upload size={48} strokeWidth={1.4} aria-hidden="true" />
-            <b>Перетащите PDF сюда</b>
-            <span>Один файл до 50 МБ · людей можно привязать позже</span>
+            <b>Перетащите документ сюда</b>
+            <span>PDF до 50 МБ или изображение до 20 МБ</span>
           </div>,
           document.body,
         )}
@@ -474,8 +481,8 @@ export function DocumentsCatalog({
           <h1>Документы</h1>
           <p>
             {personFilter !== null
-              ? `PDF-документы, связанные с ${filteredPerson ? fullName(filteredPerson) : "выбранным человеком"}.`
-              : "Загруженные участниками PDF-документы, связанные с людьми в архиве."}
+              ? `Документы, связанные с ${filteredPerson ? fullName(filteredPerson) : "выбранным человеком"}.`
+              : "Загруженные участниками документы, связанные с людьми в архиве."}
           </p>
           {personFilter !== null && (
             <a className="documents-clear-filter" href="/documents">
@@ -504,7 +511,7 @@ export function DocumentsCatalog({
               }}
               aria-expanded={uploadOpen}
             >
-              <Plus size={18} /> Добавить PDF
+              <Plus size={18} /> Добавить документ
             </button>
           )}
         </div>
@@ -527,14 +534,14 @@ export function DocumentsCatalog({
           <label className="documents-drop-zone">
             <Upload size={28} aria-hidden="true" />
             <strong>
-              {file ? file.name : "Перетащите PDF или выберите файл"}
+              {file ? file.name : "Перетащите PDF или изображение либо выберите файл"}
             </strong>
-            <span>До 50 МБ · людей можно привязать после загрузки</span>
+            <span>PDF до 50 МБ, изображение до 20 МБ · людей можно привязать позже</span>
             <input
               type="file"
-              accept=".pdf,application/pdf"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/jpeg,image/png,image/webp,image/gif"
               disabled={uploading}
-              aria-label="PDF-файл"
+              aria-label="Файл документа"
               onChange={(event) => {
                 const next = event.target.files?.[0];
                 if (next) chooseFile(next);
@@ -687,8 +694,8 @@ export function DocumentsCatalog({
           <h2>Документов пока нет</h2>
           <p>
             {personFilter !== null
-              ? "К этому человеку пока не привязан ни один PDF-документ."
-              : "Загруженные PDF-файлы появятся здесь."}
+              ? "К этому человеку пока не привязан ни один документ."
+              : "Загруженные документы появятся здесь."}
           </p>
         </div>
       )}
@@ -724,11 +731,15 @@ export function DocumentsCatalog({
                     }}
                   >
                     <span className="document-item-icon">
-                      <BookOpenText size={25} strokeWidth={1.5} />
+                      {document.mimeType?.startsWith("image/")
+                        ? <ImageIcon size={25} strokeWidth={1.5} />
+                        : <BookOpenText size={25} strokeWidth={1.5} />}
                     </span>
                     <span className="document-item-text">
                       <strong>{document.title}</strong>
-                      <small>PDF · Открыть книгу</small>
+                      <small>{document.mimeType?.startsWith("image/")
+                        ? "Изображение · Открыть документ"
+                        : "PDF · Открыть книгу"}</small>
                     </span>
                   </button>
                   {mayEdit && document.canDelete && (

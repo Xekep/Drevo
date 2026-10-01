@@ -1,8 +1,13 @@
 import { enforceUserStorageLimit } from "./storage-limits.ts";
-import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
+import {
+  documentFileTypeFromMime,
+  storedDocumentFileType,
+} from "../shared/document-file.ts";
+import { imageExtension } from "./media.ts";
+import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
-import { rename, stat, statfs, unlink } from "node:fs/promises";
+import { readFile, rename, stat, statfs, unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { Transform } from "node:stream";
@@ -111,6 +116,7 @@ function listedDocument(
     description: row.description,
     provenance: row.provenance,
     size: row.file_size,
+    mimeType: storedDocumentFileType(row.file_name)?.mime || "application/pdf",
     createdAt: row.created_at,
     canDelete,
     url: `/api/documents/${row.id}/file`,
@@ -506,7 +512,7 @@ export function documentsHttp({
           if (citedBy.some((id) => personIds.includes(id) && !nextIds.includes(id)))
             return {
               status: 409 as const,
-              error: "Сначала уберите ссылку на PDF из источников этого человека или его событий.",
+              error: "Сначала уберите ссылку на документ из источников этого человека или его событий.",
             };
           await db
             .prepare(
@@ -782,7 +788,7 @@ export function documentsHttp({
       const { row } = result;
       // The committed catalogue removal revokes access first. A filesystem
       // cleanup failure must not expose the file again or report a false rollback.
-      if (/^[a-f0-9-]{36}\.pdf$/.test(row.file_name)) {
+      if (storedDocumentFileType(row.file_name)) {
         await unlink(join(uploadsDirectory, row.file_name)).catch(
           (error: NodeJS.ErrnoException) => {
             if (error.code !== "ENOENT")
@@ -804,7 +810,8 @@ export function documentsHttp({
         )
         .get(file[1])) as Row | undefined;
       if (!row) return json(res, 404, { error: "Документ не найден" });
-      if (!/^[a-f0-9-]{36}\.pdf$/.test(row.file_name))
+      const fileType = storedDocumentFileType(row.file_name);
+      if (!fileType)
         return json(res, 404, { error: "Файл документа не найден" });
       const access = await visible(req, false);
       if (
@@ -819,9 +826,9 @@ export function documentsHttp({
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
         res.writeHead(200, {
-          "Content-Type": "application/pdf",
+          "Content-Type": fileType.mime,
           "Content-Length": String(info.size),
-          "Content-Disposition": 'inline; filename="document.pdf"',
+          "Content-Disposition": `inline; filename="document.${fileType.extension}"`,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, no-store",
         });
@@ -839,12 +846,16 @@ export function documentsHttp({
         return json(res, 403, { error: "Нет прав на загрузку" });
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Недопустимый источник запроса" });
-      if (
-        req.headers["content-type"]?.split(";")[0].trim() !== "application/pdf"
-      )
-        return json(res, 415, { error: "Загрузите PDF-файл" });
-      if (Number(req.headers["content-length"] || 0) > MAX_PDF_BYTES)
-        return json(res, 413, { error: "PDF должен быть не больше 50 МБ" });
+      const fileType = documentFileTypeFromMime(
+        req.headers["content-type"]?.split(";")[0].trim() || "",
+      );
+      if (!fileType)
+        return json(res, 415, { error: "Загрузите PDF или изображение JPEG, PNG, WebP, GIF" });
+      const sizeLimitMessage = fileType.extension === "pdf"
+        ? "PDF должен быть не больше 50 МБ"
+        : "Изображение должно быть не больше 20 МБ";
+      if (Number(req.headers["content-length"] || 0) > fileType.maxBytes)
+        return json(res, 413, { error: sizeLimitMessage });
       let metadata: { title?: unknown; personIds?: unknown };
       try {
         const header = String(req.headers["x-document-metadata"] || "");
@@ -877,7 +888,7 @@ export function documentsHttp({
         return json(res, 403, { error: "Нет доступа к выбранному человеку" });
 
       const id = randomUUID(),
-        name = `${id}.pdf`,
+        name = `${id}.${fileType.extension}`,
         temporary = join(uploadsDirectory, `.${id}.upload`),
         target = join(uploadsDirectory, name);
       let size = 0;
@@ -893,18 +904,18 @@ export function documentsHttp({
         release = await quota.acquire(
           uploader.id,
           Number(req.headers["content-length"]) > 0
-            ? Math.min(Number(req.headers["content-length"]), MAX_PDF_BYTES)
-            : MAX_PDF_BYTES,
+            ? Math.min(Number(req.headers["content-length"]), fileType.maxBytes)
+            : fileType.maxBytes,
           disk.bavail * disk.bsize,
           images,
         );
         const guard = new Transform({
           transform(chunk: Buffer, _encoding, callback) {
             size += chunk.length;
-            if (size > MAX_PDF_BYTES)
-              return callback(new Error("PDF должен быть не больше 50 МБ"));
-            if (headerSize < 5) {
-              const part = chunk.subarray(0, 5 - headerSize);
+            if (size > fileType.maxBytes)
+              return callback(new Error(sizeLimitMessage));
+            if (headerSize < 12) {
+              const part = chunk.subarray(0, 12 - headerSize);
               header.push(part);
               headerSize += part.length;
             }
@@ -919,9 +930,21 @@ export function documentsHttp({
             signal: AbortSignal.timeout(120_000),
           },
         );
-        if (size < 8 || Buffer.concat(header).toString("ascii") !== "%PDF-") {
-          await unlink(temporary);
-          return json(res, 415, { error: "Файл не является PDF" });
+        const signature = Buffer.concat(header);
+        if (fileType.extension === "pdf") {
+          if (size < 8 || signature.toString("ascii", 0, 5) !== "%PDF-")
+            return json(res, 415, { error: "Файл не является PDF" });
+        } else {
+          try {
+            if (imageExtension(signature) !== fileType.extension)
+              throw new Error("Тип файла не совпадает с содержимым");
+            await sharp(await readFile(temporary), { limitInputPixels: 50_000_000 })
+              .rotate()
+              .resize({ width: 1, height: 1, fit: "inside" })
+              .toBuffer();
+          } catch {
+            return json(res, 415, { error: "Файл не является поддерживаемым изображением" });
+          }
         }
         await rename(temporary, target);
         const latest = await auth.currentUser(req);
@@ -982,10 +1005,10 @@ export function documentsHttp({
           if (error.status === 429) res.setHeader("Retry-After", "60");
           return json(res, error.status, { error: error.message });
         }
-        if (size > MAX_PDF_BYTES)
-          return json(res, 413, { error: "PDF должен быть не больше 50 МБ" });
-        console.error("Не удалось сохранить загруженный PDF", error);
-        return json(res, 500, { error: "Не удалось сохранить PDF" });
+        if (size > fileType.maxBytes)
+          return json(res, 413, { error: sizeLimitMessage });
+        console.error("Не удалось сохранить загруженный документ", error);
+        return json(res, 500, { error: "Не удалось сохранить документ" });
       } finally {
         await release?.();
         await unlink(temporary).catch(() => {});

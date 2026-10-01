@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { MessageSquarePlus, Trash2 } from "lucide-react";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
+import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl } from "../domain/archive-context.ts";
 import type {
@@ -116,9 +117,11 @@ export function PdfBookReader({
             source: "drevo-bookreader",
             type: "init",
             url: archiveResourceUrl(entry.url),
+            mimeType: entry.mimeType || "application/pdf",
             initialPage,
             title: entry.title,
-            downloadName: entry.title + ".pdf",
+            downloadName: entry.title + "." +
+              (documentFileTypeFromMime(entry.mimeType || "application/pdf")?.extension || "pdf"),
             metadata: [
               ["Тип", entry.documentType],
               ["Дата", entry.documentDate],
@@ -162,6 +165,7 @@ export function PdfBookReader({
     return () => window.removeEventListener("message", onMessage);
   }, [
     entry.url,
+    entry.mimeType,
     entry.title,
     entry.documentType,
     entry.documentDate,
@@ -333,7 +337,7 @@ export function PdfBookReader({
                 ref={frame}
                 className="pdf-book-frame"
                 src="/bookreader-frame.html"
-                title="Страницы PDF"
+                title="Страницы документа"
                 aria-busy={loading}
                 style={{
                   visibility: loading || !!error ? "hidden" : "visible",

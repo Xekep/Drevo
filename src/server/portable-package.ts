@@ -7,6 +7,7 @@ import type { Readable, Writable } from "node:stream";
 import { ZipFile } from "yazl";
 import type { Family } from "../domain/types.ts";
 import type { DocumentAnnotation } from "../shared/document-annotations.ts";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
 const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
@@ -70,7 +71,7 @@ function fileNames(snapshot: PortableSnapshot) {
   for (const document of snapshot.documents) {
     if (
       !originalName.test(document.fileName) ||
-      !document.fileName.endsWith(".pdf")
+      !documentFileTypeFromName(document.fileName)
     )
       throw new PortablePackageError("Некорректный путь оригинала документа");
     names.add(document.fileName);

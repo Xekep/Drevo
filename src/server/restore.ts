@@ -1,4 +1,5 @@
 import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
+import { storedDocumentFileType } from "../shared/document-file.ts";
 import { storeDatabase } from "./store-database.ts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -35,6 +36,7 @@ import {
 } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { imageExtension, mediaPattern } from "./media.ts";
+import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -461,12 +463,13 @@ export function restoreStore(
             };
             if (
               !/^[a-f0-9-]{36}$/.test(document.id) ||
-              !/^[a-f0-9-]{36}\.pdf$/.test(document.fileName) ||
+              !storedDocumentFileType(document.fileName) ||
               !document.title ||
               document.title.length > 160 ||
               !parseDocumentDetails(document) ||
               document.fileSize < 1 ||
-              document.fileSize > MAX_PDF_BYTES
+              document.fileSize >
+                (storedDocumentFileType(document.fileName)?.maxBytes || 0)
             )
               throw new Error("Некорректный документ в бэкапе");
             return document;
@@ -561,12 +564,13 @@ export function restoreStore(
         if (!existsSync(file))
           throw new Error(`Нет файла документа «${document.title}»`);
         const info = await stat(file);
-        if (
-          !info.isFile() ||
-          info.size !== document.fileSize ||
-          (await fileHeader(file)).toString("ascii", 0, 5) !== "%PDF-"
-        )
-          throw new Error(`Повреждён PDF-документ «${document.title}»`);
+        if (!info.isFile() || info.size !== document.fileSize)
+          throw new Error(`Повреждён документ «${document.title}»`);
+        try {
+          await verifyPortableMediaFile(file, document.fileName);
+        } catch {
+          throw new Error(`Повреждён документ «${document.title}»`);
+        }
         documentFiles.set(document.id, file);
       }
       let missing = 0;
@@ -681,7 +685,7 @@ export function restoreStore(
           const source = stage.documentFiles.get(document.id);
           if (!source) throw new Error("Файл документа отсутствует в бэкапе");
           const id = randomUUID(),
-            fileName = `${id}.pdf`,
+            fileName = `${id}.${storedDocumentFileType(document.fileName)!.extension}`,
             destination = join(dirname(dbPath), "uploads", fileName);
           await copyFile(source, destination, constants.COPYFILE_EXCL);
           created.push(destination);

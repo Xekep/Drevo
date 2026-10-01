@@ -743,6 +743,39 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
   }
 });
 
+test("GEDZIP retains a scanned image as a document rather than a gallery photo", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-scan-gdz-"));
+  try {
+    const uploads = join(dir, "uploads");
+    const stage = join(dir, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const scan = await sharp({ create: {
+      width: 24, height: 32, channels: 3, background: "#e2decf",
+    } }).png().toBuffer();
+    await writeFile(join(uploads, "scan.png"), scan);
+    const details = {
+      documentType: "Метрическая запись", documentDate: "1887",
+      place: "Реж", description: "Лист 7", provenance: "ГАСО",
+    };
+    const path = join(dir, "scan.gdz");
+    await writeGenealogyPackage(path, uploads, seed(), [{
+      id: "scan", file: "documents/scan.png", title: "Скан записи",
+      mime: "image/png", personIds: ["child"], portraitIds: [],
+      document: details,
+    }]);
+    const parsed = await prepareGenealogyImport(path, stage, "scan-import");
+    assert.deepEqual(parsed.family.photos || [], []);
+    assert.equal(parsed.files.length, 1);
+    assert.ok(parsed.files[0].documentId);
+    assert.deepEqual(parsed.files[0].document, details);
+    assert.deepEqual(parsed.files[0].personIds, ["scan-import-p3"]);
+    assert.deepEqual(await readFile(join(stage, parsed.files[0].name)), scan);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("streamed GEDZIP validates originals before starting the response", async () => {
   const directory = await mkdtemp(join(tmpdir(), "drevo-stream-export-"));
   const uploads = join(directory, "uploads");

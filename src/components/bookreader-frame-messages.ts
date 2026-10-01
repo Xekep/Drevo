@@ -8,6 +8,7 @@ export type ReaderCommand =
       source: "drevo-bookreader";
       type: "init";
       url: string;
+      mimeType: string;
       initialPage: number;
       title: string;
       downloadName: string;

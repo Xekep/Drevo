@@ -112,7 +112,7 @@ test("standalone archive opens people, photos, documents and places without a se
     );
     await page.getByRole("button", { name: "Документы", exact: true }).click();
     await expect(
-      page.getByRole("link", { name: "Открыть PDF" }),
+      page.getByRole("link", { name: "Открыть оригинал" }),
     ).toHaveAttribute("href", `media/${pdf}`);
     await page.getByRole("button", { name: "Места", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Москва" })).toBeVisible();

@@ -13,11 +13,11 @@ import {
 import { treeExportPeople } from "../domain/tree-export-selection.ts";
 import type { Family } from "../domain/types.ts";
 import { offlineReaderHtml, type OfflineDocument } from "./offline-reader.ts";
+import { documentFileTypeFromName, storedDocumentFileType } from "../shared/document-file.ts";
 
 export type OfflineScope =
   "all" | "family" | "ancestors" | "descendants" | "blood";
 const filePattern = /^\/media\/([a-f0-9-]{36}\.(?:jpg|png|webp|gif))$/;
-const documentPattern = /^[a-f0-9-]{36}\.pdf$/;
 const maxPackageBytes = 1024 * 1024 * 1024;
 
 function withoutCreator<T extends { createdBy?: string }>(
@@ -118,7 +118,7 @@ export function offlineDocuments(
       (row) => links.has(row.id) || (includeUnlinked && !allLinked.has(row.id)),
     )
     .map((row) => {
-      if (!documentPattern.test(row.file_name))
+      if (!storedDocumentFileType(row.file_name))
         throw new Error("Некорректное имя оригинала документа.");
       return {
         id: row.id,
@@ -185,7 +185,7 @@ export async function writeOfflinePackage(
       id: document.id,
       file: document.file,
       title: document.title,
-      mime: "application/pdf",
+      mime: documentFileTypeFromName(document.file)?.mime || "application/pdf",
       personIds: document.personIds,
       portraitIds: [],
       document: {

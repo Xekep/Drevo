@@ -170,14 +170,14 @@ export function PersonPanel({
             { signal: request.signal },
           );
           if (!response.ok)
-            throw new Error("Не удалось загрузить PDF-документы");
+            throw new Error("Не удалось загрузить документы");
           const page = (await response.json()) as {
             total: number;
             items: Array<{ id: string; title: string }>;
           };
           total = page.total;
           if (!page.items.length && items.length < total)
-            throw new Error("Не удалось загрузить все PDF-документы");
+            throw new Error("Не удалось загрузить все документы");
           items.push(...page.items);
         } while (items.length < total);
         if (!request.signal.aborted)
@@ -196,7 +196,7 @@ export function PersonPanel({
             error:
               reason instanceof Error
                 ? reason.message
-                : "Не удалось загрузить PDF-документы",
+                : "Не удалось загрузить документы",
           });
       }
     })();
@@ -415,7 +415,7 @@ export function PersonPanel({
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>
             {documentsLoading && (
               <p className="muted-copy" role="status">
-                Загружаем PDF-документы…
+                Загружаем документы…
               </p>
             )}
             {documentsCurrent && documents.error && (
@@ -433,13 +433,13 @@ export function PersonPanel({
               <div className="source-card" key={document.id}>
                 <div className="source-type">
                   <FileText size={13} />
-                  PDF-документ
+                  Документ
                 </div>
                 <h3>{document.title}</h3>
                 <a
                   href={scopedArchivePath(archiveDocumentPath(person.id, document.id))}
                 >
-                  Открыть документ
+                  Открыть файл
                   <ArrowUpRight size={12} />
                 </a>
               </div>
@@ -479,7 +479,7 @@ export function PersonPanel({
                   )}
                   {canLoadDocuments && s.documentId && (
                     <a href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}>
-                      Открыть PDF
+                      Открыть документ
                       <ArrowUpRight size={12} />
                     </a>
                   )}
