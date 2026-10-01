@@ -136,3 +136,37 @@ test("source catalog search is server-paginated and rejects invalid bounds", asy
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a catalog source used only by an additional link cannot be deleted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-link-catalog-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const created = await fetch(base + "/api/sources", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Guardianship record" }) });
+    assert.equal(created.status, 201);
+    const source = (await created.json()).source as { id: string; version: number; title: string };
+    const before = await app.archive.read();
+    const linked = structuredClone(before.family);
+    linked.people = ["adult", "child"].map((id) => ({ id, name: id, surname: "Test",
+      patronymic: "", sex: "u" as const, birth: "", birthPlace: "", parents: [],
+      spouses: [], generation: 1, column: 0, sources: [] }));
+    linked.links = [{ id: "guardianship", from: "adult", to: "child", type: "guardian",
+      sources: [{ catalogId: source.id, title: source.title, type: "", reference: "" }] }];
+    await app.archive.write(linked, before.revision);
+    assert.equal((await fetch(base + `/api/sources/${source.id}`, { method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: source.version }) })).status, 409);
+    const saved = await app.archive.read();
+    assert.equal(saved.family.links?.[0].sources?.[0].catalogId, source.id);
+    saved.family.links![0].sources = [];
+    await app.archive.write(saved.family, saved.revision);
+    assert.equal((await fetch(base + `/api/sources/${source.id}`, { method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: source.version }) })).status, 200);
+  } finally {
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

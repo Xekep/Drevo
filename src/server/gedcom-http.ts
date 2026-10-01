@@ -200,6 +200,7 @@ export function gedcomHttp(
             const documents = new Set([
               ...family.people.flatMap(personCitations),
               ...(family.unions || []).flatMap(unionCitations),
+              ...(family.links || []).flatMap((link) => link.sources || []),
             ].map((source) => source.documentId).filter(Boolean));
             items = items.filter((item) =>
               !item.document || item.personIds.some((id) => visible!.has(id)) || documents.has(item.id),

@@ -4,6 +4,10 @@ import type { StoreDatabase } from "./store-database.ts";
 /** Additive extension: the preceding release can still run after deployment. */
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='relations' AND column_name='sources'",
+      "060_family_link_sources.sql",
+    ],
     ["SELECT to_regclass('family_unions') AS present", "047_family_unions.sql"],
     [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='user_tree_preferences' AND column_name='generation_limits'",

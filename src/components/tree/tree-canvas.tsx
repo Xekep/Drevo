@@ -100,6 +100,7 @@ export type ConnectionDraft = {
   type: GraphConnection["type"];
   original?: GraphConnection;
   note?: string;
+  sources?: GraphConnection["sources"];
   twinKind?: GraphConnection["twinKind"];
   hint?: string;
 };
@@ -1501,6 +1502,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
                 original: edge.data.connection,
                 note: edge.data.connection.note,
                 twinKind: edge.data.connection.twinKind,
+                sources: edge.data.connection.sources,
               });
           }}
           onEdgeClick={(_, e) => {

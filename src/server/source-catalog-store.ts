@@ -91,6 +91,7 @@ export function allCitations(family: Family): Source[] {
   return [
     ...family.people.flatMap(personCitations),
     ...(family.unions || []).flatMap(unionCitations),
+    ...(family.links || []).flatMap((link) => link.sources || []),
   ];
 }
 
@@ -141,5 +142,7 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
     for (const milestone of [union.formation, union.ending, union.divorce, union.ongoing])
       if (milestone?.sources) milestone.sources = milestone.sources.map(resolve);
   }
+  for (const link of family.links || [])
+    if (link.sources) link.sources = link.sources.map(resolve);
   return family;
 }

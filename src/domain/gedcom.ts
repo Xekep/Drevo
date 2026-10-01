@@ -674,6 +674,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     type: FamilyLink["type"],
     note?: string,
     twinKind?: FamilyLink["twinKind"],
+    evidence?: Source[],
   ) => {
     const existing = links.find(
       (l) =>
@@ -684,6 +685,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (existing) {
       if (note) existing.note = note;
       if (type === "twin") existing.twinKind = twinKind || "unknown";
+      if (evidence?.length) existing.sources = [...(existing.sources || []), ...evidence];
     } else
       links.push({
         id: `${namespace}-l${links.length + 1}`,
@@ -691,6 +693,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         to,
         type,
         note,
+        ...(evidence?.length ? { sources: evidence } : {}),
         ...(type === "twin" ? { twinKind: twinKind || "unknown" } : {}),
       });
   };
@@ -905,6 +908,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             ? ((value(assoc, "_DREVO_TWIN") ||
                 "unknown") as FamilyLink["twinKind"])
             : undefined,
+          sources(assoc),
         );
       else
         warnings.add(
@@ -1001,6 +1005,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     for (const stage of [union.formation, union.ending, union.divorce, union.ongoing])
       retain(stage?.sources);
   }
+  for (const link of links) retain(link.sources);
   const citationMedia: NonNullable<GenealogyImport["citationMedia"]> = [];
   const citedImages = new Set<string>();
   for (const { source, object, page } of citationObjects) {
@@ -1421,6 +1426,7 @@ export function exportGedcom(
         } else emit(2, "RELA", l.type);
         if (l.note) emit(2, "NOTE", l.note);
         if (l.type === "twin") emit(2, "_DREVO_TWIN", l.twinKind || "unknown");
+        for (const source of l.sources || []) citation(2, source);
       }
     media.forEach((item, i) => {
       if (item.personIds.includes(p.id) || item.portraitIds.includes(p.id)) {
