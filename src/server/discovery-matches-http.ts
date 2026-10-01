@@ -5,7 +5,7 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery, candidatePlaceQuery,
+import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery, candidatePlaceQueries,
   candidateRelativeQuery, type PublishedRelative } from "./discovery-candidate-ranking.ts";
 import { publicPersonId } from "./public-person-id.ts";
 
@@ -269,9 +269,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
           kind: String(row.kind) as PublishedRelative["kind"], name: String(row.relative_name),
         }));
       const fuzzy = candidateFuzzyTerms(source);
-      const place = candidatePlaceQuery(source);
+      const places = candidatePlaceQueries(source);
       const relativeTerms = candidateRelativeQuery(sourceRelatives);
-      if (!terms && !fuzzy && !place && !relativeTerms)
+      if (!terms && !fuzzy && !places.length && !relativeTerms)
         return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
       const branches: string[] = [], lookupArgs: string[] = [];
@@ -288,10 +288,10 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         lookupArgs.push(archiveId,fuzzy.given,
           ...fuzzy.surnames.flatMap((value) => [value,value]));
       }
-      if (place) {
+      for (const place of places) {
         branches.push(`SELECT archive_id,person_id FROM discovery_people
           WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
-            AND ${place.column} BETWEEN ? AND ?`);
+            AND birth_year BETWEEN ? AND ?`);
         lookupArgs.push(archiveId,place.terms,place.from,place.to);
       }
       if (relativeTerms) {

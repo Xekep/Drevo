@@ -21,18 +21,19 @@ export function candidateFuzzyTerms(person: PublishedCandidate) {
   const terms = [...new Set(surnames.filter((value) => value.length >= 4))].slice(0, 2);
   return given.length >= 4 && terms.length ? { given, surnames: terms } : null;
 }
-export function candidatePlaceQuery(person: PublishedCandidate) {
+export function candidatePlaceQueries(person: PublishedCandidate) {
   const given = nameParts(person).given;
-  const field = person.birthPlace && /^\d{4}$/.test(person.birthYear || "")
-    ? "birthYear" : "deathYear";
-  const year = person[field];
-  const locality = localityWords((field === "birthYear" ? person.birthPlace : person.deathPlace) || "")
-    .filter((word) => word.length >= 4);
-  if (given.length < 2 || !locality.length || !year || !/^\d{4}$/.test(year)) return null;
-  return { terms: `${given} & ${locality.join(" & ")}`,
-    column: field === "birthYear" ? "birth_year" as const : "death_year" as const,
+  const year = person.birthYear;
+  // The changed-surname evidence requires a close birth year even when the
+  // shared settlement is a death place. Probe both opt-in places separately.
+  if (given.length < 2 || !year || !/^\d{4}$/.test(year)) return [];
+  const terms = [...new Set([person.birthPlace,person.deathPlace]
+    .map((place) => localityWords(place || "").filter((word) => word.length >= 4))
+    .filter((locality) => locality.length)
+    .map((locality) => `${given} & ${locality.join(" & ")}`))];
+  return terms.map((query) => ({ terms: query,
     from: String(Math.max(1, Number(year) - 2)).padStart(4, "0"),
-    to: String(Math.min(9999, Number(year) + 2)).padStart(4, "0") };
+    to: String(Math.min(9999, Number(year) + 2)).padStart(4, "0") }));
 }
 /** Only names from the opt-in relative projection may become lookup terms. */
 export function candidateRelativeQuery(relatives: PublishedRelative[]): string | null {
