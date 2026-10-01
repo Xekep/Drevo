@@ -42,6 +42,8 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   const { first } = await fixture(t);
   await dependencies(first);
   await first.query("UPDATE person_comments SET author_name='Автор сообщения',updated_ms=123458 WHERE archive_id='tree-a' AND id=42");
+  const commentFiles = [{ id: randomUUID(), name: "Скан.png", type: "image/png", size: 128 }];
+  await first.query("UPDATE person_comments SET attachments=$1::jsonb WHERE archive_id='tree-a' AND id=42", [JSON.stringify(commentFiles)]);
   let before = (await read(first, "tree-a")).family;
   const linked = connectPeople(
     connectPeople(before, "child", "own", "spouse"),
@@ -141,10 +143,10 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   assert.deepEqual(
     (
       await first.query(
-        "SELECT author_id,author_name,created_ms,updated_ms,text FROM person_comments WHERE archive_id='tree-a' AND id=42",
+        "SELECT author_id,author_name,created_ms,updated_ms,text,attachments FROM person_comments WHERE archive_id='tree-a' AND id=42",
       )
     ).rows[0],
-    { author_id: "relative", author_name: "Автор сообщения", created_ms: "123456", updated_ms: "123458", text: "Обсуждение" },
+    { author_id: "relative", author_name: "Автор сообщения", created_ms: "123456", updated_ms: "123458", text: "Обсуждение", attachments: commentFiles },
   );
   assert.deepEqual(await fingerprint(first, "tree-b"), other);
   const restored = await fingerprint(first);
