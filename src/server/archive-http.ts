@@ -45,6 +45,7 @@ import { publishedPeopleStore } from "./published-people.ts";
 import { publishedPeopleHttp } from "./published-people-http.ts";
 import { discoveryMatchesHttp } from "./discovery-matches-http.ts";
 import { discoveryCardShareHttp } from "./discovery-card-share-http.ts";
+import { discoveryBranchShareHttp } from "./discovery-branch-share-http.ts";
 
 export async function archiveHttp({
   archive,
@@ -88,6 +89,7 @@ export async function archiveHttp({
   });
   const discoveryMatches = discoveryMatchesHttp({ archive, auth, publicOrigin });
   const discoveryCardShare = discoveryCardShareHttp({ archive, auth, publicOrigin });
+  const discoveryBranchShare = discoveryBranchShareHttp({ archive, auth, publicOrigin });
   const personalTreeSettings = treePreferencesHttp({
     auth,
     preferences: treePreferences,
@@ -247,6 +249,7 @@ export async function archiveHttp({
     if (await invitations(req, res, url)) return true;
     if (await publishedPeople(req, res, url)) return true;
     if (await discoveryCardShare(req, res, url)) return true;
+    if (await discoveryBranchShare(req, res, url)) return true;
     if (await discoveryMatches(req, res, url)) return true;
     if (await restore(req, res, url)) return true;
     if (await saveChanges(req, res, url)) return true;

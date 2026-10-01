@@ -14,6 +14,16 @@ LOCK TABLE people, published_people IN SHARE MODE;
 DO $$
 DECLARE tables text := '';
 BEGIN
+  IF to_regclass('discovery_branch_members') IS NOT NULL THEN
+    EXECUTE 'CREATE TEMP TABLE discovery_branch_members_backup ON COMMIT DROP
+      AS SELECT * FROM discovery_branch_members';
+    tables := tables || 'discovery_branch_members,';
+  END IF;
+  IF to_regclass('discovery_branch_grants') IS NOT NULL THEN
+    EXECUTE 'CREATE TEMP TABLE discovery_branch_grants_backup ON COMMIT DROP
+      AS SELECT * FROM discovery_branch_grants';
+    tables := tables || 'discovery_branch_grants,';
+  END IF;
   IF to_regclass('discovery_linked_card_grants') IS NOT NULL THEN
     EXECUTE 'CREATE TEMP TABLE discovery_card_grants_backup ON COMMIT DROP
       AS SELECT * FROM discovery_linked_card_grants';
@@ -60,6 +70,30 @@ BEGIN
        AND pair.left_person_id=backup.left_person_id
        AND pair.right_archive_id=backup.right_archive_id
        AND pair.right_person_id=backup.right_person_id$sql$;
+  END IF;
+END $$;
+-- Restore bilateral branch consent only for pairs and published members that
+-- still exist. There is never a temporary broad grant during the backfill.
+DO $$
+BEGIN
+  IF to_regclass('discovery_branch_grants') IS NOT NULL THEN
+    EXECUTE $sql$INSERT INTO discovery_branch_grants
+      SELECT backup.* FROM pg_temp.discovery_branch_grants_backup backup
+      JOIN discovery_linked_pairs pair
+        ON pair.left_archive_id=backup.left_archive_id
+       AND pair.left_person_id=backup.left_person_id
+       AND pair.right_archive_id=backup.right_archive_id
+       AND pair.right_person_id=backup.right_person_id$sql$;
+    EXECUTE $sql$INSERT INTO discovery_branch_members
+      SELECT backup.* FROM pg_temp.discovery_branch_members_backup backup
+      JOIN discovery_branch_grants grant_row
+        ON grant_row.left_archive_id=backup.left_archive_id
+       AND grant_row.left_person_id=backup.left_person_id
+       AND grant_row.right_archive_id=backup.right_archive_id
+       AND grant_row.right_person_id=backup.right_person_id
+       AND grant_row.grantor_archive_id=backup.grantor_archive_id
+      JOIN discovery_people person ON person.archive_id=backup.grantor_archive_id
+        AND person.person_id=backup.person_id$sql$;
   END IF;
 END $$;
 UPDATE discovery_index_state SET ready=true WHERE singleton=true;
