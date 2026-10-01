@@ -16,6 +16,7 @@ const archivePattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{2,63}$/;
 const filePattern = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
 const sources = new Set([
   "person", "photo", "history", "upload_grant", "image_metadata", "document",
+  "restore_stage_image", "restore_stage_document",
 ]);
 
 function parseManifest(input: string, legacyArchiveId: string) {
