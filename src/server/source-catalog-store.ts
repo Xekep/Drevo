@@ -1,5 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
-import type { Family, Source } from "../domain/types.ts";
+import type { Family, FamilyUnion, Person, Source } from "../domain/types.ts";
 import { parseCatalogSource, sourceCitation, type CatalogSource } from "../shared/source-catalog.ts";
 
 function parsed(row: Record<string, unknown>) {
@@ -59,26 +59,38 @@ export function sourceCatalogStore(db: StoreDatabase) {
         return false;
     return true;
   };
-  return { list, page, get, insert, update, remove, documentIdsExist };
+  const usesDocument = async (id: string) => !!await db.prepare(
+    "SELECT 1 FROM source_catalog WHERE EXISTS (SELECT 1 FROM json_each(data, '$.documentIds') WHERE value=?) LIMIT 1",
+    "SELECT 1 FROM source_catalog WHERE EXISTS (SELECT 1 FROM jsonb_array_elements_text(data->'documentIds') AS document_id(value) WHERE document_id.value=?) LIMIT 1",
+  ).get(id);
+  return { list, page, get, insert, update, remove, documentIdsExist, usesDocument };
+}
+
+export function personCitations(person: Person): Source[] {
+  return [
+    ...person.sources,
+    ...(person.birthDateClaim?.sources || []),
+    ...(person.deathDateClaim?.sources || []),
+    ...(person.birthPlaceClaim?.sources || []),
+    ...(person.deathPlaceClaim?.sources || []),
+    ...(person.events || []).flatMap((event) => event.sources || []),
+  ];
+}
+
+export function unionCitations(union: FamilyUnion): Source[] {
+  return [
+    ...(union.sources || []),
+    ...(union.formation?.sources || []),
+    ...(union.ending?.sources || []),
+    ...(union.divorce?.sources || []),
+    ...(union.ongoing?.sources || []),
+  ];
 }
 
 export function allCitations(family: Family): Source[] {
   return [
-    ...family.people.flatMap((person) => [
-      ...person.sources,
-      ...(person.birthDateClaim?.sources || []),
-      ...(person.deathDateClaim?.sources || []),
-      ...(person.birthPlaceClaim?.sources || []),
-      ...(person.deathPlaceClaim?.sources || []),
-      ...(person.events || []).flatMap((event) => event.sources || []),
-    ]),
-    ...(family.unions || []).flatMap((union) => [
-      ...(union.sources || []),
-      ...(union.formation?.sources || []),
-      ...(union.ending?.sources || []),
-      ...(union.divorce?.sources || []),
-      ...(union.ongoing?.sources || []),
-    ]),
+    ...family.people.flatMap(personCitations),
+    ...(family.unions || []).flatMap(unionCitations),
   ];
 }
 
