@@ -89,6 +89,26 @@ BEGIN
   END IF;
   RETURN NEW;
 END $$;
+
+-- Ownership transfer does not change archives.revision. A successor must
+-- grant branch access personally rather than inherit the former owner's opt-in.
+CREATE OR REPLACE FUNCTION revoke_discovery_branches_after_owner_transfer()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
+BEGIN
+  IF NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+    DELETE FROM discovery_branch_grants WHERE grantor_archive_id=NEW.archive_id;
+  END IF;
+  RETURN NEW;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid='archive_owners'::regclass
+        AND tgname='revoke_discovery_branches_after_owner_transfer') THEN
+    CREATE TRIGGER revoke_discovery_branches_after_owner_transfer
+      AFTER UPDATE OF user_id ON archive_owners FOR EACH ROW
+      EXECUTE FUNCTION revoke_discovery_branches_after_owner_transfer();
+  END IF;
+END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger
       WHERE tgrelid='archives'::regclass AND tgname='revoke_discovery_branches_after_edit') THEN

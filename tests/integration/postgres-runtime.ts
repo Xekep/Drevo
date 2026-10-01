@@ -2367,6 +2367,36 @@ try {
     .then((response) => response.json());
   assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
   assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('other-archive','other-only','admin',true,'all')`);
+  assert.equal((await client.query(`UPDATE archive_owners SET user_id='other-only'
+    WHERE archive_id='other-archive'`)).rowCount, 1);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+    WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'`)).rows[0].count,
+    0, "ownership transfer revokes the previous owner's branch grant in the same transaction");
+  assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.211",
+  } }).then((response) => response.json())).incoming, [],
+  "A cannot keep reading B's branch after B changes owner");
+  assert.equal((await fetch(otherBase + branchPath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
+  } })).status, 403, "the former owner cannot reauthorize B's branch");
+  assert.equal((await client.query(`UPDATE archive_owners SET user_id='vk:42'
+    WHERE archive_id='other-archive'`)).rowCount, 1);
+  await client.query(`DELETE FROM archive_memberships WHERE archive_id='other-archive'
+    AND user_id='other-only'`);
+  const afterTransfer = await fetch(otherBase + branchPath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
+  } }).then((response) => response.json());
+  assert.equal((await fetch(otherBase + branchPath, {
+    method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212" },
+    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: afterTransfer.previewToken }),
+  })).status, 200, "the owner must issue a fresh grant after ownership changes back");
+  assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.213",
+  } }).then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+  ["branch-parent-b"], "a fresh owner grant reopens only the selected branch member");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
