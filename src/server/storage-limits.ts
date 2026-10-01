@@ -71,15 +71,15 @@ export async function userStorageBytes(
         EXISTS (SELECT 1 FROM people p WHERE json_extract(p.data,'$.photo')=m.url) OR
         EXISTS (SELECT 1 FROM photos p WHERE json_extract(p.data,'$.url')=m.url) OR
         EXISTS (SELECT 1 FROM media_upload_grants g WHERE g.url=m.url AND g.expires_ms>?)
-      )),0) AS bytes`,
+      )),0) + COALESCE((SELECT sum(json_extract(f.value,'$.size')) FROM person_comments c,json_each(c.attachments) f WHERE c.author_id=?),0) AS bytes`,
       `SELECT COALESCE((SELECT sum(file_size) FROM documents WHERE uploaded_by=?),0) +
       COALESCE((SELECT sum(m.size_bytes) FROM media_originals m WHERE m.uploaded_by=? AND (
         EXISTS (SELECT 1 FROM people p WHERE p.archive_id=m.archive_id AND p.data->>'photo'=m.url) OR
         EXISTS (SELECT 1 FROM photos p WHERE p.archive_id=m.archive_id AND p.data->>'url'=m.url) OR
         EXISTS (SELECT 1 FROM media_upload_grants g WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>?)
-      )),0) AS bytes`,
+      )),0) + COALESCE((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f WHERE c.author_id=?),0) AS bytes`,
     )
-    .get(userId, userId, now);
+    .get(userId, userId, now, userId);
   return Number(row?.bytes || 0);
 }
 
@@ -119,7 +119,7 @@ export async function enforceUserStorageLimit(
   if (used > limit * 1024 ** 2 &&
       (previousBytes === undefined || used > previousBytes))
     throw new UploadQuotaError(
-      `Личный лимит фотографий и PDF — ${limit} МБ. Освободите место или обратитесь к администратору.`,
+      `Личный лимит файлов — ${limit} МБ. Освободите место или обратитесь к администратору.`,
       507,
     );
 }

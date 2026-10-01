@@ -10,6 +10,7 @@ import type { CatalogSource } from "../shared/source-catalog.ts";
 import type { DocumentAnnotation } from "../shared/document-annotations.ts";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
+import { validCommentFiles, type CommentAttachmentFile } from "../shared/person-discussion.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
 const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
@@ -41,6 +42,7 @@ export type PortableComment = {
   createdMs: number;
   editedMs?: number | null;
   text: string;
+  attachments?: CommentAttachmentFile[];
 };
 
 export type PortableSnapshot = {
@@ -81,6 +83,11 @@ function fileNames(snapshot: PortableSnapshot) {
     )
       throw new PortablePackageError("Некорректный путь оригинала документа");
     names.add(document.fileName);
+  }
+  for (const comment of snapshot.comments) {
+    if (comment.attachments && !validCommentFiles(comment.attachments))
+      throw new PortablePackageError("Некорректные вложения обсуждения");
+    for (const file of comment.attachments || []) names.add(`discussion-files/${file.id}`);
   }
   return [...names].sort();
 }

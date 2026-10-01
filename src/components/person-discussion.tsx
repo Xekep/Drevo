@@ -8,20 +8,34 @@ import {
   MAX_COMMENT_LENGTH,
   type PersonComment as Comment,
   type PersonDiscussionPage as Page,
+  type CommentAttachment,
 } from "../shared/person-discussion";
 import CommentEditor from "./discussion/comment-editor";
 import { CommentMarkdown } from "./discussion/comment-markdown";
+import {
+  AttachmentComposer,
+  encodeCommentFiles,
+} from "./discussion/attachment-composer";
+import { MessageAttachments } from "./discussion/message-attachments";
+import { AttachmentGallery } from "./discussion/attachment-gallery";
 
 export function PersonDiscussion({
   personId,
   onSelect,
+  onCountChange,
 }: {
   personId: string;
   onSelect: (id: string) => void;
+  onCountChange: (total: number) => void;
 }) {
   const [items, setItems] = useState<Comment[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
+  const [draftFiles, setDraftFiles] = useState<File[]>([]);
+  const [gallery, setGallery] = useState<{
+    files: CommentAttachment[];
+    id: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -30,9 +44,18 @@ export function PersonDiscussion({
   const [editing, setEditing] = useState<{
     original: Comment;
     text: string;
+    keep: string[];
+    files: File[];
   } | null>(null);
   const endpoint = `/api/people/${encodeURIComponent(personId)}/discussion`;
-  useUnsavedChanges(!!editing && editing.text !== editing.original.text);
+  useUnsavedChanges(
+    !!draft.trim() ||
+      draftFiles.length > 0 ||
+      (!!editing &&
+        (editing.text !== editing.original.text ||
+          editing.files.length > 0 ||
+          editing.keep.length !== (editing.original.attachments || []).length)),
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -47,6 +70,7 @@ export function PersonDiscussion({
       .then((page) => {
         setItems(page.items);
         setNextBefore(page.nextBefore);
+        onCountChange(page.total ?? page.items.length);
       })
       .catch((reason) => {
         if (!controller.signal.aborted)
@@ -58,7 +82,7 @@ export function PersonDiscussion({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [endpoint, retry]);
+  }, [endpoint, retry, onCountChange]);
 
   async function request(
     url: string,
@@ -73,6 +97,7 @@ export function PersonDiscussion({
     const result = (await response.json()) as {
       error?: string;
       item?: Comment;
+      total?: number;
     };
     if (!response.ok) {
       if (response.status === 409 && result.item) {
@@ -83,20 +108,31 @@ export function PersonDiscussion({
       }
       throw new Error(result.error || "Не удалось выполнить действие");
     }
+    if (result.total !== undefined) onCountChange(result.total);
     return result;
   }
 
   async function send() {
     const text = draft.trimEnd();
-    if (!text.trim() || text.length > MAX_COMMENT_LENGTH || pending || editing)
+    if (
+      (!text.trim() && !draftFiles.length) ||
+      text.length > MAX_COMMENT_LENGTH ||
+      loading ||
+      pending ||
+      editing
+    )
       return;
     setPending(true);
     setError("");
     try {
-      const result = await request(endpoint, "POST", { text });
+      const result = await request(endpoint, "POST", {
+        text,
+        attachments: { keep: [], files: await encodeCommentFiles(draftFiles) },
+      });
       const item = result.item;
       if (item) setItems((current) => [item, ...current]);
       setDraft("");
+      setDraftFiles([]);
     } catch (reason) {
       setError(
         reason instanceof Error
@@ -112,7 +148,7 @@ export function PersonDiscussion({
     if (
       !editing ||
       pending ||
-      !editing.text.trim() ||
+      (!editing.text.trim() && !editing.keep.length && !editing.files.length) ||
       editing.text.length > MAX_COMMENT_LENGTH
     )
       return;
@@ -125,6 +161,10 @@ export function PersonDiscussion({
         {
           text: editing.text.trimEnd(),
           editedAt: editing.original.editedAt,
+          attachments: {
+            keep: editing.keep,
+            files: await encodeCommentFiles(editing.files),
+          },
         },
       );
       const saved = result.item;
@@ -175,6 +215,7 @@ export function PersonDiscussion({
       const page = (await response.json()) as Page;
       setItems((current) => [...current, ...page.items]);
       setNextBefore(page.nextBefore);
+      if (page.total !== undefined) onCountChange(page.total);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Ошибка загрузки");
     } finally {
@@ -184,10 +225,6 @@ export function PersonDiscussion({
 
   return (
     <section className="person-discussion" aria-label="Обсуждение человека">
-      <p className="person-discussion-intro">
-        Вопросы, воспоминания и уточнения об этом человеке. Проверенные сведения
-        добавляйте в карточку со ссылкой на источник.
-      </p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -197,9 +234,15 @@ export function PersonDiscussion({
         <CommentEditor
           label="Сообщение для обсуждения"
           value={draft}
-          disabled={pending || !!editing}
+          disabled={loading || pending || !!editing}
           onChange={setDraft}
           onSubmit={() => void send()}
+        />
+        <AttachmentComposer
+          files={draftFiles}
+          onChange={setDraftFiles}
+          disabled={loading || pending || !!editing}
+          onError={setError}
         />
         <div className="person-discussion-compose-footer">
           <small>
@@ -208,8 +251,9 @@ export function PersonDiscussion({
           <button
             type="submit"
             disabled={
-              !draft.trim() ||
+              (!draft.trim() && !draftFiles.length) ||
               draft.length > MAX_COMMENT_LENGTH ||
+              loading ||
               pending ||
               !!editing
             }
@@ -306,7 +350,14 @@ export function PersonDiscussion({
                         type="button"
                         disabled={pending}
                         onClick={() => {
-                          setEditing({ original: item, text: item.text });
+                          setEditing({
+                            original: item,
+                            text: item.text,
+                            keep: (item.attachments || []).map(
+                              (file) => file.id,
+                            ),
+                            files: [],
+                          });
                           setError("");
                         }}
                       >
@@ -326,6 +377,29 @@ export function PersonDiscussion({
                     }
                     onSubmit={() => void saveEdit()}
                   />
+                  <AttachmentComposer
+                    files={editing.files}
+                    retained={(editing.original.attachments || []).filter(
+                      (file) => editing.keep.includes(file.id),
+                    )}
+                    onChange={(files) =>
+                      setEditing((current) =>
+                        current ? { ...current, files } : null,
+                      )
+                    }
+                    onRemoveRetained={(id) =>
+                      setEditing((current) =>
+                        current
+                          ? {
+                              ...current,
+                              keep: current.keep.filter((key) => key !== id),
+                            }
+                          : null,
+                      )
+                    }
+                    disabled={pending}
+                    onError={setError}
+                  />
                   <div className="person-discussion-compose-footer">
                     <small>
                       {editing.text.length}/{MAX_COMMENT_LENGTH}
@@ -335,7 +409,9 @@ export function PersonDiscussion({
                         type="submit"
                         disabled={
                           pending ||
-                          !editing.text.trim() ||
+                          (!editing.text.trim() &&
+                            !editing.keep.length &&
+                            !editing.files.length) ||
                           editing.text.length > MAX_COMMENT_LENGTH
                         }
                       >
@@ -355,7 +431,13 @@ export function PersonDiscussion({
                   </div>
                 </form>
               ) : (
-                <CommentMarkdown text={item.text} />
+                <>
+                  <CommentMarkdown text={item.text} />
+                  <MessageAttachments
+                    files={item.attachments || []}
+                    onOpen={(files, id) => setGallery({ files, id })}
+                  />
+                </>
               )}
               {item.canEdit && editing?.original.id !== item.id && (
                 <button
@@ -364,7 +446,12 @@ export function PersonDiscussion({
                   aria-label="Редактировать сообщение"
                   disabled={pending || !!editing}
                   onClick={() => {
-                    setEditing({ original: item, text: item.text });
+                    setEditing({
+                      original: item,
+                      text: item.text,
+                      keep: (item.attachments || []).map((file) => file.id),
+                      files: [],
+                    });
                     setConfirmDelete(null);
                     setError("");
                   }}
@@ -417,6 +504,13 @@ export function PersonDiscussion({
       ) : !error ? (
         <p className="muted-copy">Сообщений пока нет. Начните обсуждение.</p>
       ) : null}
+      {gallery && (
+        <AttachmentGallery
+          files={gallery.files}
+          initialId={gallery.id}
+          onClose={() => setGallery(null)}
+        />
+      )}
     </section>
   );
 }

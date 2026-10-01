@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
-import { copyFile, lstat, rm } from "node:fs/promises";
+import { copyFile, lstat, rm, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { readPortablePackage } from "./portable-import.ts";
 import { PortablePackageError } from "./portable-package.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
+import { discussionAttachmentStore, prepareCommentFile } from "./discussion-attachments.ts";
 
 type Parsed = Awaited<ReturnType<typeof readPortablePackage>>;
 
@@ -21,10 +22,14 @@ export async function installPortableOriginals(
   const undo = async () => {
     for (const file of copies)
       await rm(join(uploads, file.name), { force: true });
+    await discussionFiles.remove(savedAttachments);
   };
+  const discussionFiles = discussionAttachmentStore(uploads);
+  const savedAttachments: Awaited<ReturnType<typeof discussionFiles.save>> = [];
   try {
     for (const [path, file] of parsed.files) {
       if (!path.startsWith("media/")) continue;
+      if (path.startsWith("media/discussion-files/")) continue;
       if (file.size <= 0)
         throw new PortablePackageError("Пустой оригинал в пакете Drevo");
       const name = `${randomUUID()}${extname(path).toLowerCase()}`;
@@ -61,8 +66,19 @@ export async function installPortableOriginals(
       for (const annotation of document.annotations)
         annotation.authorId = `imported:${annotation.authorId}`;
     }
-    for (const comment of snapshot.comments)
+    for (const comment of snapshot.comments) {
       comment.authorId = `imported:${comment.authorId}`;
+      const installed = [];
+      for (const file of comment.attachments || []) {
+        const original = parsed.files.get(`media/discussion-files/${file.id}`);
+        if (!original) throw new PortablePackageError("Нет вложения обсуждения");
+        const prepared = await prepareCommentFile(file.name, await readFile(original.path));
+        const saved = await discussionFiles.save([prepared]);
+        savedAttachments.push(...saved);
+        installed.push(...saved);
+      }
+      comment.attachments = installed;
+    }
     return { snapshot, copies, undo };
   } catch (error) {
     await undo();

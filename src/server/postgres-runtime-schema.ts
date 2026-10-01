@@ -182,6 +182,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_indexes WHERE schemaname=current_schema() AND tablename='person_comments' AND indexname='person_comments_author'",
       "056_person_comments_author.sql",
     ],
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='runtime_visible_person_comments' AND column_name='attachments'",
+      "057_person_comment_attachments.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

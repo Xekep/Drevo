@@ -14,6 +14,7 @@ type Dependencies = {
     created_ms: string;
     updated_ms?: string | null;
     text: string;
+    attachments?: unknown;
   }[];
 };
 
@@ -48,7 +49,7 @@ export async function capturePersonRemovalDependencies(
     [archiveId, personId],
   );
   const comments = await client.query(
-    "SELECT id,person_id,author_id,author_name,created_ms,text,updated_ms FROM person_comments WHERE archive_id=$1 AND person_id=$2 ORDER BY id FOR UPDATE",
+    "SELECT id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments FROM person_comments WHERE archive_id=$1 AND person_id=$2 ORDER BY id FOR UPDATE",
     [archiveId, personId],
   );
   const photos = await client.query(
@@ -150,9 +151,9 @@ export async function restorePersonRemovalDependencies(
     );
   if (saved.comments.length)
     await client.query(
-      `INSERT INTO person_comments(archive_id,id,person_id,author_id,author_name,created_ms,text,updated_ms)
-       SELECT $1,r.id,$2,r.author_id,COALESCE(r.author_name,''),r.created_ms,r.text,r.updated_ms
-       FROM jsonb_to_recordset($3::jsonb) AS r(id bigint,author_id text,author_name text,created_ms bigint,text text,updated_ms bigint)`,
+      `INSERT INTO person_comments(archive_id,id,person_id,author_id,author_name,created_ms,text,updated_ms,attachments)
+       SELECT $1,r.id,$2,r.author_id,COALESCE(r.author_name,''),r.created_ms,r.text,r.updated_ms,COALESCE(r.attachments,'[]'::jsonb)
+       FROM jsonb_to_recordset($3::jsonb) AS r(id bigint,author_id text,author_name text,created_ms bigint,text text,updated_ms bigint,attachments jsonb)`,
       [archiveId, personId, JSON.stringify(saved.comments)],
     );
 }

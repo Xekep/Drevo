@@ -31,3 +31,9 @@ test("invalid LaTeX remains readable without breaking the comment", () => {
   assert.match(renderCommentHtml("$\\notACommand{x}$"), /notACommand/);
   assert.match(renderCommentHtml("    код\n    ещё код"), /<pre><code>/);
 });
+test("only Mermaid fenced code receives a diagram marker and raw SVG stays inactive", () => {
+  const html = renderCommentHtml("```mermaid\ngraph TD\nA --> B\n```\n\n```javascript\nalert(1)\n```\n\n<svg onload=alert(1)></svg>");
+  assert.match(html, /class="language-mermaid"/);
+  assert.equal((html.match(/language-mermaid/g) || []).length, 1);
+  assert.doesNotMatch(html, /<svg|onload=/);
+});

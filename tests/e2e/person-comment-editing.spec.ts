@@ -87,10 +87,8 @@ test("comments show Markdown and LaTeX in the editor, support author edits and r
     await expect(
       section.locator(".comment-editor .comment-math-preview .katex"),
     ).toHaveCount(1);
-    await section.getByRole("button", { name: "Исходный текст" }).click();
-    await expect(editor).toContainText("$x^2$");
-    await expect(section.locator(".comment-editor .katex")).toHaveCount(0);
-    await section.getByRole("button", { name: "Исходный текст" }).click();
+    await expect(section.getByRole("button", { name: "Исходный текст" })).toHaveCount(0);
+    await expect(section.locator(".comment-editor-hint")).toHaveCount(0);
     const source = `## ${marker}\n\n**Проверено** и $x^2$.\n\n- Первый\n- Второй\n\n$$\n\\frac{1}{2}\n$$\n\nПродолжение`;
     await replaceText(page, editor, source);
     await expect(section.locator(".comment-editor .katex")).toHaveCount(2);

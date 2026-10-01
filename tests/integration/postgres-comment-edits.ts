@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
 import type { PersonComment } from "../../src/shared/person-discussion.ts";
+import type { StoreDatabase } from "../../src/server/store-database.ts";
+import { userStorageBytes } from "../../src/server/storage-limits.ts";
+import { postgresMediaBytes } from "../../src/server/postgres-media-quota.ts";
+import sharp from "sharp";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { writePortablePostgresBackup } from "../../src/server/postgres-portable-backup.ts";
 
 export async function verifyPostgresCommentEdits(
   base: string,
   authorHeaders: Record<string, string | undefined>,
   adminHeaders: Record<string, string | undefined>,
+  db: StoreDatabase,
 ) {
   const headers = (values: Record<string, string | undefined>) =>
     Object.fromEntries(
@@ -13,10 +23,32 @@ export async function verifyPostgresCommentEdits(
       ),
     );
   const endpoint = `${base}/api/people/person-a/discussion`;
+  const countBefore = (
+    await (
+      await fetch(`${endpoint}?count=1`, { headers: headers(authorHeaders) })
+    ).json()
+  ).total;
+  const userBytesBefore = await userStorageBytes(db, "owner");
+  const archiveBytesBefore = await postgresMediaBytes(db);
+  const image = await sharp({
+    create: { width: 800, height: 400, channels: 3, background: "#abc38e" },
+  })
+    .png()
+    .toBuffer();
+  const note = Buffer.from("Примечание из PostgreSQL");
   const created = await fetch(endpoint, {
     method: "POST",
     headers: headers(authorHeaders),
-    body: JSON.stringify({ text: "PG **комментарий** $x^2$" }),
+    body: JSON.stringify({
+      text: "PG **комментарий** $x^2$",
+      attachments: {
+        keep: [],
+        files: [
+          { name: "Скан.png", data: image.toString("base64") },
+          { name: "Примечание.txt", data: note.toString("base64") },
+        ],
+      },
+    }),
   });
   assert.equal(created.status, 201, await created.clone().text());
   const original: PersonComment = (await created.json()).item;
@@ -24,6 +56,75 @@ export async function verifyPostgresCommentEdits(
   assert.equal(original.canEdit, true);
   assert.equal(original.author, "Тестов Иван");
   assert.equal(original.authorPersonId, "person-a");
+  assert.equal(original.attachments.length, 2);
+  const backupDirectory = await mkdtemp(join(tmpdir(), "drevo-comment-backup-"));
+  try {
+    const backupFile = join(backupDirectory, "backup.sqlite");
+    await writePortablePostgresBackup(db, backupFile);
+    const saved = new DatabaseSync(backupFile, { readOnly: true });
+    try {
+      assert.deepEqual(
+        JSON.parse(String(saved.prepare("SELECT attachments FROM person_comments WHERE id=?").get(original.id)?.attachments)),
+        original.attachments.map(({ id, name, type, size }) => ({ id, name, type, size })),
+        "the downloadable PostgreSQL backup retains attachment metadata as SQLite JSON",
+      );
+    } finally {
+      saved.close();
+    }
+  } finally {
+    await rm(backupDirectory, { recursive: true, force: true });
+  }
+  assert.equal(
+    await userStorageBytes(db, "owner"),
+    userBytesBefore + image.length + note.length,
+  );
+  assert.equal(
+    await postgresMediaBytes(db),
+    archiveBytesBefore + image.length + note.length,
+  );
+  assert.equal(
+    (
+      await (
+        await fetch(`${endpoint}?count=1`, { headers: headers(authorHeaders) })
+      ).json()
+    ).total,
+    countBefore + 1,
+  );
+  assert.equal((await fetch(base + original.attachments[0].url)).status, 401);
+  assert.deepEqual(
+    Buffer.from(
+      await (
+        await fetch(base + original.attachments[0].url, {
+          headers: headers(adminHeaders),
+        })
+      ).arrayBuffer(),
+    ),
+    image,
+  );
+  const preview = await fetch(base + original.attachments[0].previewUrl!, {
+    headers: headers(adminHeaders),
+  });
+  assert.equal(preview.headers.get("content-type"), "image/webp");
+  assert.equal(
+    (await sharp(Buffer.from(await preview.arrayBuffer())).metadata()).width,
+    480,
+  );
+  await db.transaction(async () => {
+    await db
+      .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal(
+      (
+        await db
+          .prepare(
+            "",
+            "SELECT count(*)::int AS total FROM person_comments WHERE id=?",
+          )
+          .get(original.id)
+      )?.total,
+      0,
+    );
+  }, true);
   const path = `${endpoint}/${original.id}`;
   const patch = (
     text: string,
@@ -54,6 +155,11 @@ export async function verifyPostgresCommentEdits(
   assert.equal(edited.createdAt, original.createdAt);
   assert.equal(edited.authorPersonId, "person-a");
   assert.ok(edited.editedAt);
+  assert.deepEqual(
+    edited.attachments,
+    original.attachments,
+    "text-only edits preserve the files",
+  );
   assert.ok(Date.parse(edited.editedAt) > Date.parse(edited.createdAt));
   const items: PersonComment[] = (
     await (await fetch(endpoint, { headers: headers(adminHeaders) })).json()
@@ -74,4 +180,14 @@ export async function verifyPostgresCommentEdits(
       .status,
     200,
   );
+  assert.equal(
+    (
+      await fetch(base + original.attachments[0].url, {
+        headers: headers(authorHeaders),
+      })
+    ).status,
+    404,
+  );
+  assert.equal(await userStorageBytes(db, "owner"), userBytesBefore);
+  assert.equal(await postgresMediaBytes(db), archiveBytesBefore);
 }

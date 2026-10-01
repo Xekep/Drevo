@@ -3,11 +3,6 @@
   gap: 17px;
   min-width: 0;
 }
-.person-discussion-intro {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
 .person-discussion form {
   border: 1px solid #dce5da;
   border-radius: 12px;
@@ -204,31 +199,255 @@
 }
 .comment-editor {
   min-width: 0;
+  position: relative;
 }
-.comment-editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.comment-editor-toolbar button {
-  min-height: 30px;
-  padding: 3px 7px;
-  border-radius: 5px;
+.comment-insert-diagram {
+  float: right;
+  width: 32px;
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
   color: var(--muted);
 }
-.comment-editor-toolbar button[aria-pressed="true"] {
+.comment-insert-diagram:hover {
   background: var(--soft-green);
   color: var(--green);
 }
-.comment-editor-hint {
+.comment-diagram {
+  max-width: 100%;
+  overflow: auto;
+  margin-block: 8px;
+  min-height: 30px;
+}
+.comment-diagram svg {
   display: block;
-  margin: 5px 0 8px;
+  margin: auto;
+  max-width: 100%;
+  height: auto;
+}
+.comment-diagram.is-error > p {
+  font-size: 12px;
+  color: #9e3a31;
+}
+.discussion-attachment-composer > input {
+  display: none;
+}
+.discussion-attach-button {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--green);
+  min-height: 36px;
+  font-size: 12px;
+}
+.discussion-selected-files {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  margin: 3px 0 9px;
+  list-style: none;
+}
+.discussion-selected-files li,
+.discussion-file {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #f2f5ef;
+  min-width: 0;
+}
+.discussion-selected-files img {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.discussion-selected-files span,
+.discussion-file span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.discussion-selected-files small,
+.discussion-file small {
+  display: block;
   color: var(--muted);
   font-size: 10px;
-  line-height: 1.5;
+}
+.discussion-selected-files button {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.discussion-selected-files button:hover {
+  background: #f5eae7;
+  color: #9e3a31;
+}
+.discussion-message-attachments {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.discussion-image-previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+  gap: 7px;
+}
+.discussion-image-previews button {
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f5ef;
+  text-align: left;
+}
+.discussion-image-previews img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.discussion-image-previews span {
+  display: block;
+  padding: 5px 7px;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.discussion-file {
+  color: var(--green);
+  min-height: 48px;
+}
+.discussion-file:hover {
+  background: var(--soft-green);
+}
+.discussion-lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: #10150f;
+  color: #fff;
+}
+.discussion-lightbox::backdrop {
+  background: #10150fec;
+}
+.discussion-gallery-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.discussion-gallery-content header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+}
+.discussion-gallery-content header span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.discussion-gallery-content header a,
+.discussion-gallery-content header button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+.discussion-gallery-content header a:hover,
+.discussion-gallery-content header button:hover {
+  background: #ffffff20;
+}
+.discussion-gallery-space {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+.discussion-gallery-track {
+  position: absolute;
+  inset: 0;
+}
+.discussion-gallery-space.is-settling .discussion-gallery-track {
+  transition: transform 240ms ease;
+}
+.discussion-gallery-slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 50px max(16px, env(safe-area-inset-bottom));
+}
+.discussion-gallery-slide.is-previous {
+  left: -100%;
+  right: 100%;
+}
+.discussion-gallery-slide.is-next {
+  left: 100%;
+  right: -100%;
+}
+.discussion-gallery-slide img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.discussion-gallery-previous,
+.discussion-gallery-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #ffffff16;
+}
+.discussion-gallery-previous {
+  left: 6px;
+}
+.discussion-gallery-next {
+  right: 6px;
+}
+.discussion-gallery-space button:disabled {
+  opacity: 0.2;
+}
+@media (pointer: coarse) {
+  .comment-insert-diagram,
+  .discussion-attach-button,
+  .discussion-selected-files button {
+    min-height: 44px;
+  }
+  .discussion-selected-files button {
+    min-width: 44px;
+  }
+  .discussion-gallery-slide {
+    padding-inline: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .discussion-gallery-space.is-settling .discussion-gallery-track {
+    transition: none;
+  }
 }
 .comment-editor .cm-editor {
   font: inherit;
@@ -253,9 +472,6 @@
 }
 .comment-editor .cm-placeholder {
   color: var(--muted);
-}
-.comment-editor.is-source .cm-content {
-  font-family: monospace;
 }
 .comment-editor .cm-content[contenteditable="false"] {
   opacity: 0.65;
@@ -373,8 +589,5 @@
   }
   .person-discussion-delete {
     right: 0;
-  }
-  .comment-editor-toolbar button {
-    min-height: 40px;
   }
 }
