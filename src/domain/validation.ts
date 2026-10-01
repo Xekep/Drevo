@@ -1,7 +1,20 @@
-import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
+import { EXTRA_LINK_TYPES, type Family, type Source } from "./types.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 import { validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
+
+function validPersonSource(s: Source): boolean {
+  return !!s &&
+    (s.catalogId === undefined || (typeof s.catalogId === "string" &&
+      /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) &&
+    [s.title, s.type, s.reference].every((v) => typeof v === "string") &&
+    (s.url === undefined || typeof s.url === "string") &&
+    (s.note === undefined || typeof s.note === "string") &&
+    (s.documentId === undefined || (typeof s.documentId === "string" &&
+      /^[a-f0-9-]{36}$/i.test(s.documentId))) &&
+    (s.documentPage === undefined || (!!s.documentId &&
+      Number.isInteger(s.documentPage) && s.documentPage >= 1 && s.documentPage <= 2000));
+}
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -75,23 +88,15 @@ export function validateFamily(value: unknown): Family {
       if (p[key] !== undefined && typeof p[key] !== "string")
         throw new Error("Некорректные сведения о человеке");
     for (const s of p.sources)
-      if (
-        !s ||
-        (s.catalogId !== undefined && (typeof s.catalogId !== "string" ||
-          !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) ||
-        ![s.title, s.type, s.reference].every((v) => typeof v === "string") ||
-        (s.url !== undefined && typeof s.url !== "string") ||
-        (s.note !== undefined && typeof s.note !== "string") ||
-        (s.documentId !== undefined &&
-          (typeof s.documentId !== "string" ||
-            !/^[a-f0-9-]{36}$/i.test(s.documentId))) ||
-        (s.documentPage !== undefined &&
-          (!s.documentId ||
-            !Number.isInteger(s.documentPage) ||
-            s.documentPage < 1 ||
-            s.documentPage > 2000))
-      )
-        throw new Error("Некорректный источник");
+      if (!validPersonSource(s)) throw new Error("Некорректный источник");
+    if (p.birthDateClaim !== undefined &&
+      (!p.birthDateClaim || typeof p.birthDateClaim !== "object" ||
+        !p.birth || p.birthDateClaim.value !== p.birth ||
+        !Array.isArray(p.birthDateClaim.sources) ||
+        !p.birthDateClaim.sources.length || p.birthDateClaim.sources.length > 50 ||
+        !p.birthDateClaim.sources.every((source) =>
+          validPersonSource(source) && !!(source.catalogId || source.title.trim()))))
+      throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
     if (p.awards !== undefined) {
       if (!Array.isArray(p.awards) || p.awards.length > 100)
         throw new Error("Допустимо не более 100 наград у человека");

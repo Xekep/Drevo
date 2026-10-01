@@ -351,6 +351,8 @@ export function PersonPanel({
                 <div>
                   <span className="event-label">Рождение</span>
                   {person.birth && <b>{dateLabel(person.birth)}</b>}
+                  {!!person.birthDateClaim?.sources.length &&
+                    <p>Источники даты: {person.birthDateClaim.sources.map((source) => source.title).join("; ")}</p>}
                   {person.birthPlace && <p>{person.birthPlace}</p>}
                 </div>
               </div>
