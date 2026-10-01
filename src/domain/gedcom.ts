@@ -434,6 +434,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     kind: "BIRTH" | "DEATH") => {
     if (!node) return { date: [] as Source[], place: [] as Source[], general: [] as Source[] };
     const citations = sources(node);
+    const placeNode = child(node, "PLAC");
+    const placeCitations = placeNode ? sources(placeNode) : [];
     const sourceNodes = children(node, "SOUR");
     const dateClaimed: Source[] = [], placeClaimed: Source[] = [], general: Source[] = [];
     citations.forEach((source, index) => {
@@ -442,6 +444,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       else if (place.trim() && marker === `${kind}_PLACE`) placeClaimed.push(source);
       else general.push(source);
     });
+    if (place.trim()) placeClaimed.push(...placeCitations);
+    else if (placeCitations.length) {
+      general.push(...placeCitations);
+      warnings.add("Источник места без названия сохранён как общий источник карточки.");
+    }
     return { date: dateClaimed, place: placeClaimed, general };
   };
   const restoreCitationMedia = (target: Source[] | undefined, parsed: Source[], context: string) => {
