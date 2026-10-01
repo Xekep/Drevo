@@ -1579,21 +1579,24 @@ try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       try {
         const port = (server.address() as { port: number }).port;
-        const response = await fetch(`http://127.0.0.1:${port}/api/ai/chat/stream`, {
+        const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [actorId]))
+          .rows.map((row) => row.id as string));
+        const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
           method: "POST", headers: actorHeaders,
           body: JSON.stringify({ message: "Добавь новую карточку человека" }),
         });
-        assert.equal(response.status, 200);
         await Promise.race([entered,
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Proposal provider did not start")), 15000))]);
         await duringProvider(release);
         release();
-        const frames = await response.text();
-        assert.match(frames, allowed ? /event: done/ : /event: error/);
-        if (!allowed) assert.doesNotMatch(frames, /event: done|Предложение обработано/);
+        const response = await request;
+        const body = await response.text();
+        assert.equal(response.status, allowed ? 200 : 403, body);
+        if (!allowed) assert.doesNotMatch(body, /Предложение обработано/);
         assert.equal((await client.query("SELECT count(*)::int AS n FROM research_suggestions WHERE reason=$1", [reason])).rows[0].n,
           allowed ? 1 : 0, "the proposal write obeys the current account tier and archive role");
-        const chatId = /event: chat\ndata: \{"chatId":"([^"]+)"/.exec(frames)?.[1];
+        const chatId = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [actorId]))
+          .rows.map((row) => row.id as string).find((id) => !oldChats.has(id));
         assert.ok(chatId);
         await aiChatStore(app!.archive.db).delete(chatId, actorId);
       } finally {

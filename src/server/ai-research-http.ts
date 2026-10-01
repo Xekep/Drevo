@@ -897,7 +897,7 @@ export function aiResearchHttp({
         res.end();
         return true;
       }
-      return json(res, error instanceof RangeError ? 400 : 502, {
+      return json(res, accessRevoked ? 403 : error instanceof RangeError ? 400 : 502, {
         error: errorMessage,
       });
     } finally {
