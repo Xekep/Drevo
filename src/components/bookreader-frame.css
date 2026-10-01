@@ -151,12 +151,28 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
   justify-content: flex-end;
   gap: 6px;
 }
+.BRtoolbar .BRtoolbarLeft {
+  min-width: 0;
+  padding-right: 6px;
+}
 .BRtoolbar .BRtoolbarSectionSearch {
-  margin-right: auto;
+  display: flex;
+  min-width: 0;
+  max-width: 170px;
 }
 .BRtoolbar .BRbooksearch.desktop {
+  display: flex;
+  max-width: 100%;
+  margin-left: 0;
   border-color: rgb(255 255 255 / 40%);
   border-radius: 4px;
+}
+.BRtoolbar .BRsearchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.BRtoolbar .BRsearchSubmit {
+  flex: none;
 }
 /* The standalone reader uses pins and previous/next results; the IA shell owns this sidebar button. */
 .BRsearch-navigation .toggle-sidebar {

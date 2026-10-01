@@ -11,8 +11,8 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
     _configureToolbar(toolbar: { 0: HTMLElement }) {
       super._configureToolbar(toolbar);
       const search = toolbar[0].querySelector(".BRtoolbarSectionSearch");
-      const actions = toolbar[0].querySelector(".BRtoolbarSectionInfo");
-      if (search && actions) actions.before(search);
+      const left = toolbar[0].querySelector(".BRtoolbarLeft");
+      if (search && left) left.prepend(search);
     }
 
     private highlightActiveMatch() {
