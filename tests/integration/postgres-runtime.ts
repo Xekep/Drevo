@@ -1999,9 +1999,13 @@ try {
     birthPlace: false, deathPlace: false,
   };
   assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
-    method: "POST", headers,
+    method: "POST", headers: inviteeHeaders,
     body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
   })).status, 403, "a reader cannot preview a private publication batch");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+    method: "POST", headers,
+    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  })).status, 401, "a member of a different archive cannot preview this publication batch");
   const batchPreviewUrl = otherBase + "/api/admin/published-people/batch/preview";
   const oldBatchPreview = await fetch(batchPreviewUrl, {
     method: "POST", headers: ownerHeaders,
