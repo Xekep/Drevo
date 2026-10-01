@@ -1913,6 +1913,47 @@ try {
       [location.split("/")[2]],
     );
     const portablePath = location.replace(/\/tree$/, "/api/drevo/export");
+    const assertPortableTaskBlocked = async (
+      taskName: string,
+      request: () => Promise<Response>,
+      expectedStatus: number,
+    ) => {
+      const secondProcess = await openPostgresDatabase(
+        location.split("/")[2], source,
+      );
+      let entered!: () => void;
+      let release!: () => void;
+      const active = new Promise<void>((resolve) => { entered = resolve; });
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const operation = secondProcess.withExclusiveArchiveTask!(
+        taskName, async () => {
+          entered();
+          await held;
+        },
+      );
+      void operation.then(entered, entered);
+      try {
+        await active;
+        const response = await request();
+        assert.equal(response.status, expectedStatus,
+          `${taskName} must reject a concurrent request from another backend`);
+        await response.body?.cancel();
+      } finally {
+        release();
+        try {
+          await operation;
+        } finally {
+          await secondProcess.close();
+        }
+      }
+    };
+    await assertPortableTaskBlocked(
+      "portable-export",
+      () => fetch(oauthBase + portablePath, {
+        headers: { Cookie: sessionCookie },
+      }),
+      429,
+    );
     const portable = await fetch(oauthBase + portablePath, {
       headers: { Cookie: sessionCookie },
     });
@@ -1941,6 +1982,14 @@ try {
       Origin: process.env.PUBLIC_ORIGIN!,
       "X-Drevo-Import": "1",
     };
+    await assertPortableTaskBlocked(
+      "portable-import",
+      () => fetch(
+        oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"),
+        { method: "POST", headers: transferHeaders, body: readFileSync(importFile) },
+      ),
+      409,
+    );
     const overLimitFile = join(directory, "portable-over-limit.drevo");
     await writePortablePackage(createWriteStream(overLimitFile), directory, {
       family: {

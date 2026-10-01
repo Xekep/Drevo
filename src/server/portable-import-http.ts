@@ -90,7 +90,10 @@ export function portableImportHttp(
   let sweeping: Promise<void> | undefined;
   const timer = setInterval(() => {
     if (sweeping) return;
-    sweeping = cleanup()
+    const sweep = db.withExclusiveArchiveTask
+      ? db.withExclusiveArchiveTask("portable-import", cleanup).then(() => {})
+      : cleanup();
+    sweeping = sweep
       .catch(() => console.warn("portable_stage_cleanup_failed"))
       .finally(() => {
         sweeping = undefined;
@@ -424,13 +427,20 @@ export function portableImportHttp(
           error: "Импорт доступен владельцу дерева",
         });
       try {
-        await cleanup();
-        return json(
-          200,
-          url.pathname.endsWith("preview")
+        const performImport = async () => {
+          await cleanup();
+          return url.pathname.endsWith("preview")
             ? await preview(req, actor.id)
-            : await apply(req, actor.id),
+            : await apply(req, actor.id);
+        };
+        if (!db.withExclusiveArchiveTask)
+          return json(200, await performImport());
+        const task = await db.withExclusiveArchiveTask(
+          "portable-import", performImport,
         );
+        return task.acquired
+          ? json(200, task.value)
+          : json(409, { error: "Импорт уже выполняется" });
       } catch (error) {
         const status =
           error instanceof ConflictError
