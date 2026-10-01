@@ -139,7 +139,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "031_discovery_ignored_archives.sql",
     ],
     [
-      "SELECT to_regclass('discovery_relative_names') AS present",
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('relations') AND tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal",
       "049_discovery_candidate_signals.sql",
     ],
     [

@@ -3,22 +3,22 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ALTER TABLE discovery_people
-  ADD COLUMN given_normalized text GENERATED ALWAYS AS
+  ADD COLUMN IF NOT EXISTS given_normalized text GENERATED ALWAYS AS
     (split_part(replace(lower(name), 'ё', 'е'), ' ', 2)) STORED,
-  ADD COLUMN surname_normalized text GENERATED ALWAYS AS
+  ADD COLUMN IF NOT EXISTS surname_normalized text GENERATED ALWAYS AS
     (split_part(replace(lower(name), 'ё', 'е'), ' ', 1)) STORED,
-  ADD COLUMN birth_surname_normalized text GENERATED ALWAYS AS
+  ADD COLUMN IF NOT EXISTS birth_surname_normalized text GENERATED ALWAYS AS
     (replace(lower(coalesce(birth_surname, '')), 'ё', 'е')) STORED;
-CREATE INDEX discovery_people_given_trgm
+CREATE INDEX IF NOT EXISTS discovery_people_given_trgm
   ON discovery_people USING gin (given_normalized gin_trgm_ops);
-CREATE INDEX discovery_people_surname_trgm
+CREATE INDEX IF NOT EXISTS discovery_people_surname_trgm
   ON discovery_people USING gin (surname_normalized gin_trgm_ops);
-CREATE INDEX discovery_people_birth_surname_trgm
+CREATE INDEX IF NOT EXISTS discovery_people_birth_surname_trgm
   ON discovery_people USING gin (birth_surname_normalized gin_trgm_ops);
-CREATE INDEX discovery_people_birth_year ON discovery_people(birth_year);
-CREATE INDEX discovery_people_death_year ON discovery_people(death_year);
+CREATE INDEX IF NOT EXISTS discovery_people_birth_year ON discovery_people(birth_year);
+CREATE INDEX IF NOT EXISTS discovery_people_death_year ON discovery_people(death_year);
 
-CREATE TABLE discovery_relative_names (
+CREATE TABLE IF NOT EXISTS discovery_relative_names (
   archive_id text NOT NULL,
   person_id text NOT NULL,
   relative_person_id text NOT NULL,
@@ -32,11 +32,11 @@ CREATE TABLE discovery_relative_names (
   FOREIGN KEY (archive_id, relative_person_id)
     REFERENCES discovery_people(archive_id, person_id) ON DELETE CASCADE
 );
-CREATE INDEX discovery_relative_names_lookup
+CREATE INDEX IF NOT EXISTS discovery_relative_names_lookup
   ON discovery_relative_names USING gin(name_vector);
-CREATE INDEX discovery_relative_names_person
+CREATE INDEX IF NOT EXISTS discovery_relative_names_person
   ON discovery_relative_names(archive_id, person_id);
-CREATE INDEX discovery_relative_names_relative
+CREATE INDEX IF NOT EXISTS discovery_relative_names_relative
   ON discovery_relative_names(archive_id, relative_person_id);
 
 CREATE OR REPLACE FUNCTION refresh_discovery_relatives(target_archive text, target_person text)
@@ -77,9 +77,15 @@ BEGIN
   END LOOP;
   RETURN NEW;
 END $$;
-CREATE TRIGGER refresh_discovery_relatives_after_person
-  AFTER INSERT OR UPDATE OF name ON discovery_people
-  FOR EACH ROW EXECUTE FUNCTION refresh_discovery_relatives_after_person();
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid='discovery_people'::regclass
+        AND tgname='refresh_discovery_relatives_after_person') THEN
+    CREATE TRIGGER refresh_discovery_relatives_after_person
+      AFTER INSERT OR UPDATE OF name ON discovery_people
+      FOR EACH ROW EXECUTE FUNCTION refresh_discovery_relatives_after_person();
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION refresh_discovery_relatives_after_relation()
 RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
@@ -94,9 +100,15 @@ BEGIN
   END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END $$;
-CREATE TRIGGER refresh_discovery_relatives_after_relation
-  AFTER INSERT OR UPDATE OR DELETE ON relations
-  FOR EACH ROW EXECUTE FUNCTION refresh_discovery_relatives_after_relation();
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid='relations'::regclass
+        AND tgname='refresh_discovery_relatives_after_relation') THEN
+    CREATE TRIGGER refresh_discovery_relatives_after_relation
+      AFTER INSERT OR UPDATE OR DELETE ON relations
+      FOR EACH ROW EXECUTE FUNCTION refresh_discovery_relatives_after_relation();
+  END IF;
+END $$;
 
 -- Existing archives are backfilled once; subsequent edits touch only their
 -- affected person and immediate neighbours.

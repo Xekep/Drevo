@@ -132,6 +132,10 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  // A second application must safely finish an already installed extension.
+  await client.query(readFileSync(new URL("../../ops/postgres/049_discovery_candidate_signals.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_trigger
+    WHERE tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal`)).rows[0].count, 1);
   const adminClient = process.env.PGADMINUSER
     ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
     : client;
