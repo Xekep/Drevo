@@ -140,6 +140,15 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
     return true;
   };
   const readMatch = (id: string) => db.prepare("", `${projection} WHERE m.id=?`).get(id);
+  const hideRejectedCandidate = (row: Row, archiveId: string, actorId: string) => {
+    const ownIsLeft = row.left_archive_id === archiveId;
+    return db.prepare("", `INSERT INTO discovery_ignored_candidates(
+      archive_id,source_person_id,target_archive_id,target_person_id,ignored_by)
+      VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING`).run(archiveId,
+      String(ownIsLeft ? row.left_person_id : row.right_person_id),
+      String(ownIsLeft ? row.right_archive_id : row.left_archive_id),
+      String(ownIsLeft ? row.right_person_id : row.left_person_id), actorId);
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const collection = url.pathname === "/api/discovery/matches";
     const ownPeople = url.pathname === "/api/discovery/matches/own-people";
@@ -483,6 +492,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         WHERE id=?`).run(decision === "accept" ? "linked" : decision === "reject" ? "rejected" : "revoked",
           decision,approved.id,decision,decision,decisionToken,
           decision,approved.id,decision,detail[1]);
+        if (decision === "reject") await hideRejectedCandidate(row,archiveId,approved.id);
         return { code: 200, row: await readMatch(detail[1]) };
       });
       return "row" in result ? json(res, 200, { match: match(result.row!) })
