@@ -5,9 +5,16 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
+import { patchPeople } from "./person-patches.ts";
+import { ConflictError } from "./archive-errors.ts";
+import { ForbiddenError } from "./users.ts";
+import { isInfrastructureError } from "./infrastructure-error.ts";
+import type { Change } from "../domain/changes.ts";
 
 const fields = ["birth", "death", "birthPlace", "deathPlace", "occupation"] as const;
 type Field = typeof fields[number];
+const copyFields = ["birth", "death", "birthPlace", "deathPlace"] as const;
+type CopyField = typeof copyFields[number];
 type CardFields = Partial<Record<Field, string>>;
 type Row = Record<string, unknown>;
 const limits: Record<Field, number> = {
@@ -15,13 +22,17 @@ const limits: Record<Field, number> = {
 };
 const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/card-share(?:\/(copy-preview))?$/;
 
-function scalarFields(value: unknown, own = false): CardFields {
+function objectFields(value: unknown): Record<string, unknown> {
   let parsed = value;
   if (typeof parsed === "string") {
     try { parsed = JSON.parse(parsed); } catch { return {}; }
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-  const source = parsed as Record<string, unknown>;
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown> : {};
+}
+
+function scalarFields(value: unknown, own = false): CardFields {
+  const source = objectFields(value);
   const result: CardFields = {};
   for (const key of fields) {
     const current = source[key];
@@ -35,6 +46,30 @@ function scalarFields(value: unknown, own = false): CardFields {
 
 function previewToken(available: CardFields) {
   return createHash("sha256").update(JSON.stringify(available)).digest("hex");
+}
+
+function copyReviewToken(pair: Row, archiveId: string, revision: number,
+  grant: Row, target: CardFields) {
+  return createHash("sha256").update(JSON.stringify({ pair: pairArgs(pair), archiveId,
+    revision, grant: scalarFields(grant.fields), grantedAt: grant.granted_at,
+    target: copyFields.map((field) => target[field] || null),
+  })).digest("hex");
+}
+
+function selectedCopyFields(value: unknown): CopyField[] | null {
+  if (!Array.isArray(value) || !value.length || value.length > copyFields.length ||
+      value.some((item) => typeof item !== "string" ||
+        !copyFields.includes(item as CopyField)) || new Set(value).size !== value.length)
+    return null;
+  return value as CopyField[];
+}
+
+function confirmedConflicts(value: unknown): CopyField[] | null {
+  if (!Array.isArray(value) || value.length > copyFields.length ||
+      value.some((item) => typeof item !== "string" ||
+        !copyFields.includes(item as CopyField)) || new Set(value).size !== value.length)
+    return null;
+  return value as CopyField[];
 }
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
@@ -95,6 +130,51 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     granted_by,granted_at::text AS granted_at FROM discovery_linked_card_grants
     WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?`)
     .all(...pairArgs(pair));
+  const copyState = async (matchId: string, archiveId: string, userId: string,
+    lock = false) => {
+    const owner = await db.prepare("", `SELECT 1 FROM archive_owners
+      WHERE archive_id=? AND user_id=? ${lock ? "FOR SHARE" : ""}`).get(archiveId, userId);
+    if (!owner) return { code: 403 as const };
+    const pair = await linkedPair(matchId, archiveId, lock);
+    if (!pair) return { code: 404 as const };
+    const ownPersonId = String(pair.left_archive_id === archiveId
+      ? pair.left_person_id : pair.right_person_id);
+    const sourceArchiveId = String(pair.left_archive_id === archiveId
+      ? pair.right_archive_id : pair.left_archive_id);
+    const sourcePersonId = String(pair.left_archive_id === archiveId
+      ? pair.right_person_id : pair.left_person_id);
+    const own = await db.prepare("", `SELECT data FROM people WHERE archive_id=? AND id=?
+      ${lock ? "FOR SHARE" : ""}`).get(archiveId, ownPersonId);
+    if (!own) return { code: 404 as const };
+    const incomingGrant = () => db.prepare("", `SELECT fields,granted_at::text AS granted_at
+      FROM discovery_linked_card_grants WHERE left_archive_id=? AND left_person_id=?
+        AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
+      ${lock ? "FOR SHARE" : ""}`).get(...pairArgs(pair), sourceArchiveId);
+    let grant: Row | undefined;
+    if (lock) {
+      // Row-locking SELECT also applies the UPDATE RLS policy. The recipient
+      // may read this grant but only its grantor may lock it. Scope the one
+      // exact-row lock to that grantor, then restore the recipient context
+      // before any archive write or auth query. DELETE/revoke must wait for
+      // this lock, including a cascade after unpublication.
+      await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get(sourceArchiveId);
+      try { grant = await incomingGrant(); }
+      finally {
+        await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+          .get(archiveId);
+      }
+    } else grant = await incomingGrant();
+    if (!grant) return { code: 404 as const };
+    const revision = Number((await db.prepare("", `SELECT revision FROM archives WHERE id=?`)
+      .get(archiveId))?.revision);
+    if (!Number.isSafeInteger(revision)) throw new Error("Некорректная версия архива");
+    const target = scalarFields(own.data, true);
+    return { code: 200 as const, pair, own, ownPersonId, sourceArchiveId,
+      sourcePersonId, grant, revision, target,
+      permitted: scalarFields(grant.fields),
+      reviewToken: copyReviewToken(pair, archiveId, revision, grant, target) };
+  };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = route.exec(url.pathname);
     if (!detail) return false;
@@ -105,44 +185,107 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     if (user.role !== "admin" || user.approved !== true)
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (detail[2]) {
-      if (req.method !== "GET") return json(res, 405, { error: "Метод не поддерживается" });
+      if (req.method !== "GET" && req.method !== "POST")
+        return json(res, 405, { error: "Метод не поддерживается" });
       const archiveId = db.archiveId;
-      const result = await db.transaction(async () => {
-        const owner = await db.prepare("", `SELECT 1 FROM archive_owners
-          WHERE archive_id=? AND user_id=?`).get(archiveId, user.id);
-        if (!owner) return { code: 403 };
-        const pair = await linkedPair(detail[1], archiveId);
-        if (!pair) return { code: 404 };
-        const ownPersonId = String(pair.left_archive_id === archiveId
-          ? pair.left_person_id : pair.right_person_id);
-        const sourceArchiveId = String(pair.left_archive_id === archiveId
-          ? pair.right_archive_id : pair.left_archive_id);
-        const sourcePersonId = String(pair.left_archive_id === archiveId
-          ? pair.right_person_id : pair.left_person_id);
-        const own = await db.prepare("", "SELECT data FROM people WHERE archive_id=? AND id=?")
-          .get(archiveId, ownPersonId);
-        if (!own) return { code: 404 };
-        const incoming = (await grantsFor(pair)).find((row) =>
-          row.grantor_archive_id === sourceArchiveId);
-        if (!incoming) return { code: 404 };
-        const permitted = scalarFields(incoming.fields);
-        const target = scalarFields(own.data, true);
-        // This preview compares scalars on an existing linked person. It cannot
-        // create a person, attach media, or apply a change to either archive.
-        return { code: 200, source: { archiveId: sourceArchiveId, personId: sourcePersonId },
-          target: { archiveId, personId: ownPersonId },
-          fields: fields.filter((field) => permitted[field]).map((field) => ({
-            field, sourceValue: permitted[field]!, targetValue: target[field] || null,
-            status: !target[field] ? "empty" : target[field] === permitted[field] ? "same" : "conflict",
-          })),
-          quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 } };
-      }, true);
-      if (result.code === 200) {
-        return json(res, 200, { source: result.source, target: result.target,
-          fields: result.fields, quotaImpact: result.quotaImpact });
+      if (req.method === "GET") {
+        const result = await db.transaction(async () => {
+          const state = await copyState(detail[1], archiveId, user.id);
+          if (state.code !== 200) return state;
+          const origins = await db.prepare("", `SELECT field,value,source_archive_id,
+            source_person_id,copied_revision,copied_at::text AS copied_at
+            FROM discovery_copied_fields WHERE archive_id=? AND person_id=?`)
+            .all(archiveId, state.ownPersonId);
+          const originByField = new Map(origins.map((row) => [String(row.field), row]));
+          // Only the current grant's scalar keys are returned. Provenance is
+          // local metadata, not a documentary source or a new access grant.
+          return { code: 200 as const,
+            source: { archiveId: state.sourceArchiveId, personId: state.sourcePersonId },
+            target: { archiveId, personId: state.ownPersonId },
+            revision: state.revision, reviewToken: state.reviewToken,
+            fields: fields.filter((field) => state.permitted[field]).map((field) => {
+              const prior = originByField.get(field);
+              return { field, sourceValue: state.permitted[field]!,
+                targetValue: state.target[field] || null,
+                status: !state.target[field] ? "empty"
+                  : state.target[field] === state.permitted[field] ? "same" : "conflict",
+                copyable: copyFields.includes(field as CopyField),
+                ...(prior && prior.value === state.target[field] ? { copiedFrom: {
+                  archiveId: String(prior.source_archive_id),
+                  personId: String(prior.source_person_id),
+                  revision: Number(prior.copied_revision),
+                  copiedAt: String(prior.copied_at),
+                } } : {}),
+              };
+            }), quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 } };
+        }, true);
+        if (result.code === 200) return json(res, 200, {
+          source: result.source, target: result.target, revision: result.revision,
+          reviewToken: result.reviewToken, fields: result.fields,
+          quotaImpact: result.quotaImpact,
+        });
+        return json(res, result.code, { error: result.code === 403
+          ? "Доступно владельцу дерева" : "Связь не найдена" });
       }
-      return json(res, result.code, { error: result.code === 403
-        ? "Доступно владельцу дерева" : "Связь не найдена" });
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Недопустимый источник запроса" });
+      if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
+        return json(res, 429, { error: "Слишком много запросов" });
+      const body = await readBody(req);
+      const selected = selectedCopyFields(body?.fields);
+      const confirmed = confirmedConflicts(body?.confirmConflicts);
+      if (!selected || !confirmed || typeof body?.reviewToken !== "string" ||
+          !/^[0-9a-f]{64}$/.test(body.reviewToken) ||
+          !Number.isSafeInteger(body.revision) || Number(body.revision) < 0)
+        return json(res, 400, { error: "Выберите поля после просмотра сравнения" });
+      try {
+        const result = await db.transaction(async () => {
+          const state = await copyState(detail[1], archiveId, user.id, true);
+          if (state.code !== 200) return state;
+          const approved = await auth.currentUser(req);
+          if (approved?.id !== user.id || approved.role !== "admin" || approved.approved !== true)
+            return { code: 403 as const };
+          if (Number(body.revision) !== state.revision || body.reviewToken !== state.reviewToken)
+            return { code: 409 as const };
+          if (selected.some((field) => !state.permitted[field] ||
+              state.target[field] === state.permitted[field]))
+            return { code: 409 as const };
+          const conflicts = selected.filter((field) => Boolean(state.target[field]));
+          if (confirmed.length !== conflicts.length ||
+              confirmed.some((field) => !conflicts.includes(field)))
+            return { code: 409 as const };
+          const current = objectFields(state.own.data);
+          const changes: Change[] = selected.map((field) => ({
+            collection: "people", id: state.ownPersonId, field,
+            before: current[field], after: state.permitted[field],
+          }));
+          const saved = await patchPeople(db, changes, state.revision, approved,
+            { withinTransaction: true });
+          if (!saved || !saved.appliedChanges.length) return { code: 409 as const };
+          for (const field of selected)
+            await db.prepare("", `INSERT INTO discovery_copied_fields(archive_id,person_id,
+              field,value,source_archive_id,source_person_id,copied_revision)
+              VALUES(?,?,?,?,?,?,?)
+              ON CONFLICT(archive_id,person_id,field) DO UPDATE SET
+                value=EXCLUDED.value,source_archive_id=EXCLUDED.source_archive_id,
+                source_person_id=EXCLUDED.source_person_id,
+                copied_revision=EXCLUDED.copied_revision,copied_at=now()`)
+              .run(archiveId, state.ownPersonId, field, state.permitted[field]!,
+                state.sourceArchiveId, state.sourcePersonId, saved.revision);
+          return { code: 200 as const, revision: saved.revision, copied: selected };
+        });
+        return result.code === 200 ? json(res, 200, {
+          revision: result.revision, copied: result.copied,
+        }) : json(res, result.code, { error: result.code === 403
+          ? "Доступ отозван" : result.code === 404 ? "Связь не найдена"
+            : "Сведения изменились. Проверьте сравнение ещё раз" });
+      } catch (error) {
+        if (isInfrastructureError(error) ||
+            typeof (error as { code?: unknown })?.code === "string") throw error;
+        return json(res, error instanceof ConflictError ? 409
+          : error instanceof ForbiddenError ? 403 : 400,
+        { error: error instanceof Error ? error.message : "Не удалось скопировать сведения" });
+      }
     }
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -154,6 +297,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     const archiveId = db.archiveId;
     if (req.method === "GET") {
       const result = await db.transaction(async () => {
+        if (!await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=?`).get(archiveId,user.id))
+          return { forbidden: true };
         const pair = await linkedPair(detail[1],archiveId);
         if (!pair) return null;
         const ownPersonId = String(pair.left_archive_id === archiveId
@@ -170,6 +316,8 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           outgoing: grant(grants.find((row) => row.grantor_archive_id === archiveId)),
           incoming: grant(grants.find((row) => row.grantor_archive_id !== archiveId)) };
       }, true);
+      if (result && "forbidden" in result)
+        return json(res, 403, { error: "Доступно владельцу дерева" });
       return result ? json(res, 200, result) : json(res, 404, { error: "Связь не найдена" });
     }
     if (req.method === "PUT") {
@@ -179,6 +327,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           !/^[0-9a-f]{64}$/.test(body.previewToken))
         return json(res, 400, { error: "Выберите доступные поля после просмотра карточки" });
       const result = await db.transaction(async () => {
+        if (!await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
+          return { code: 403, error: "Доступно владельцу дерева" };
         const preliminary = await linkedPair(detail[1],archiveId);
         if (!preliminary) return { code: 404, error: "Связь не найдена" };
         const ownPersonId = String(preliminary.left_archive_id === archiveId
@@ -213,6 +364,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
         : json(res, result.code, { error: result.error });
     }
     const result = await db.transaction(async () => {
+      if (!await db.prepare("", `SELECT 1 FROM archive_owners
+        WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
+        return { code: 403, error: "Доступно владельцу дерева" };
       const pair = await linkedPair(detail[1],archiveId,true);
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);
