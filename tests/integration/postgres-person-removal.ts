@@ -49,16 +49,25 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
     "godparent",
     "Крёстный",
   );
-  const withUnion = {
-    ...linked,
-    unions: [{
-      id: "child-own-marriage",
-      participants: ["child", "own"] as [string, string],
-      type: "marriage" as const,
-      formation: { dateText: "около 2000 года" },
-    }],
-  };
-  await graph(first, tokens.admin, "tree-a", archiveChanges(before, withUnion), 0);
+  await graph(first, tokens.admin, "tree-a", archiveChanges(before, linked), 0);
+  await first.query("BEGIN");
+  try {
+    await first.query("SELECT set_config('drevo.archive_id',$1,true)", ["tree-a"]);
+    await first.query(
+      `INSERT INTO family_unions(archive_id,id,ordinal,participant_a,participant_b,data)
+       VALUES('tree-a','child-own-marriage',1,'child','own',$1::jsonb)`,
+      [JSON.stringify({
+        id: "child-own-marriage",
+        participants: ["child", "own"],
+        type: "marriage",
+        formation: { dateText: "около 2000 года" },
+      })],
+    );
+    await first.query("COMMIT");
+  } catch (error) {
+    await first.query("ROLLBACK");
+    throw error;
+  }
   before = (await read(first, "tree-a")).family;
   const other = await fingerprint(first, "tree-b");
   const request = randomUUID();
