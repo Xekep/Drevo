@@ -19,16 +19,23 @@ function lineage(distance: number, sex: Person["sex"]): Person[] {
   }));
 }
 
-test("four or more pra prefixes are counted for ancestors and descendants in both directions", () => {
+test("three or more pra prefixes are counted for ancestors and descendants in both directions", () => {
   for (const sex of ["m", "f"] as const) {
     const ancestor = sex === "m" ? "дедушка" : "бабушка";
     const descendant = sex === "m" ? "внук" : "внучка";
-    for (const count of [0, 1, 2, 3, 4, 5, 12]) {
+    for (const [count, prefix] of [
+      [0, ""],
+      [1, "пра"],
+      [2, "прапра"],
+      [3, "пра(3)"],
+      [4, "пра(4)"],
+      [5, "пра(5)"],
+      [12, "пра(12)"],
+    ] as const) {
       const distance = count + 2;
       const people = lineage(distance, sex);
       const first = people[0],
         last = people.at(-1)!;
-      const prefix = count >= 4 ? `пра(${count})` : "пра".repeat(count);
       const down = analyzeKinship(first, last, people);
       const up = analyzeKinship(last, first, people);
       assert.equal(down.roles?.[0].term, prefix + ancestor);
