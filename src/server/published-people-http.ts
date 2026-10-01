@@ -5,10 +5,8 @@ import type { publishedPeopleStore } from "./published-people.ts";
 import { publicPerson, publishablePerson } from "./published-people.ts";
 import { defaultPublicationFields, type PublicationFields } from "../shared/publication.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
-import {
-  createRequestLimiter,
-  requestClientKey,
-} from "./request-rate-limit.ts";
+import { requestClientKey } from "./request-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 
 async function readObject(req: IncomingMessage, limit: number): Promise<Record<string, unknown> | null | undefined> {
   const chunks: Buffer[] = [];
@@ -57,7 +55,7 @@ export function publishedPeopleHttp({
   store: ReturnType<typeof publishedPeopleStore>;
   publicOrigin?: string;
 }) {
-  const limiter = createRequestLimiter({ windowMs: 60_000, limit: 60 });
+  const limiter = createSharedRequestLimiter(archive.db, "published-people", { windowMs: 60_000, limit: 60 });
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -86,9 +84,9 @@ export function publishedPeopleHttp({
       return json(res, 403, { error: "Публикация доступна администратору" });
     if (
       !admin && !batch &&
-      !limiter.allow(
+      !(await limiter.allow(
         requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress),
-      )
+      ))
     )
       return json(res, 429, { error: "Слишком много поисковых запросов" });
     if (

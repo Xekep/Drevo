@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createOAuthStartLimiter, oauthClientKey } from "./oauth-rate-limit.ts";
+import { oauthClientKey } from "./oauth-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import {
   sqliteOAuthTransactions,
@@ -50,7 +51,9 @@ export function createOAuthFlow(
   const transactions =
     options.transactions || sqliteOAuthTransactions(options.db!);
   const enabled = !!options.origin && provider.configured;
-  const starts = createOAuthStartLimiter();
+  const starts = createSharedRequestLimiter(options.db, `oauth-${provider.id}`, {
+    windowMs: 10 * 60_000, limit: 30,
+  });
   const path = `/auth/${provider.id}`;
   const callback = options.origin ? `${options.origin}${path}/callback` : "";
   const cookieName =
@@ -103,7 +106,7 @@ export function createOAuthFlow(
           req.headers["x-real-ip"],
           req.socket.remoteAddress,
         );
-        if (!starts.allow(client)) {
+        if (!(await starts.allow(client))) {
           res.setHeader("Retry-After", "600");
           fail(res, 429, "Слишком много попыток входа. Попробуйте позже.");
           return true;

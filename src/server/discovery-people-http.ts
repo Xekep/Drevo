@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
-import { createRequestLimiter, requestClientKey } from "./request-rate-limit.ts";
+import { requestClientKey } from "./request-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 
 type Cursor = [name: string, archiveId: string, personId: string];
 type DiscoveryRow = Record<string, unknown>;
@@ -47,7 +48,7 @@ export function discoveryPeopleHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
 ) {
-  const limiter = createRequestLimiter({ windowMs: 60_000, limit: 60 });
+  const limiter = createSharedRequestLimiter(db, "discovery-people", { windowMs: 60_000, limit: 60 });
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
@@ -80,7 +81,7 @@ export function discoveryPeopleHttp(
     const accountId = await auth.accountId(req);
     if (!accountId)
       return json(res, 401, { error: "Войдите, чтобы искать опубликованных людей" });
-    if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+    if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
       return json(res, 429, { error: "Слишком много поисковых запросов" });
     const state = await db.prepare("", "SELECT ready FROM discovery_index_state WHERE singleton=true").get();
     if (state?.ready !== true)

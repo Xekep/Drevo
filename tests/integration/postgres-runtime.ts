@@ -50,6 +50,7 @@ import { planAdditions } from "../../src/domain/additions-import.ts";
 import { listAdditionBatches, planUndoAdditions } from "../../src/server/additions-undo.ts";
 import { auditStore } from "../../src/server/audit.ts";
 import { writePortablePackage } from "../../src/server/portable-package.ts";
+import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
   throw new Error("Use a NEW disposable drevo_migration_runtime_* database");
@@ -176,6 +177,20 @@ try {
   ]);
   const other = await openPostgresDatabase("other-archive", source);
   try {
+    const firstBudget = createSharedRequestLimiter(live.db, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
+    const secondBudget = createSharedRequestLimiter(other, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
+    const attempts = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      (index % 2 ? firstBudget : secondBudget).allow("one-account")));
+    assert.equal(attempts.filter(Boolean).length, 3,
+      "parallel archive runtimes share exactly one atomic request budget");
+    assert.equal(await secondBudget.allow("one-account"), false);
+    assert.equal(await secondBudget.allow("another-account"), true);
+    assert.equal(await createSharedRequestLimiter(other, "another-scope", { windowMs: 60_000, limit: 1 }).allow("one-account"), true);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM request_rate_limits WHERE key_hash='one-account'")).rows[0].n, 0,
+      "the rate-limit table stores a digest, not a raw account or IP");
+    await client.query("UPDATE request_rate_limits SET started_at=0 WHERE scope='runtime-shared-test'");
+    assert.equal(await firstBudget.allow("one-account"), true,
+      "an expired window starts a new budget");
     const primaryPublished = publishedPeopleStore(live.db);
     const otherPublished = publishedPeopleStore(other);
     await primaryPublished.publish("person-a", "owner");

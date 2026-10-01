@@ -13,7 +13,7 @@ import {
   writeOfflinePackage,
   type OfflineScope,
 } from "./offline-package.ts";
-import { createRequestLimiter } from "./request-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 
 const scopes = new Set<OfflineScope>([
   "all",
@@ -32,7 +32,7 @@ export function offlinePackageHttp({
   auth: Awaited<ReturnType<typeof createAuth>>;
   uploadsDirectory: string;
 }) {
-  const limiter = createRequestLimiter({ windowMs: 300_000, limit: 3 });
+  const limiter = createSharedRequestLimiter(archive.db, "offline-export", { windowMs: 300_000, limit: 3 });
   const active = new Set<string>();
   const readDocumentIndex = async () => {
     const rows = (await archive.db
@@ -91,7 +91,7 @@ export function offlinePackageHttp({
       generations > 20
     )
       return json(res, 400, "Некорректные параметры ветки");
-    if (!limiter.allow(actor.id)) {
+    if (!(await limiter.allow(actor.id))) {
       res.setHeader("Retry-After", "300");
       return json(res, 429, "Слишком много запросов экспорта");
     }
