@@ -181,6 +181,9 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     reader = new BookReader({
       el: "#bookreader",
       data,
+      // BookReader assumes 500 ppi scans. Our PDFs use points and small scans
+      // may have fewer pixels; 144 keeps them legible on the initial view.
+      ppi: 144,
       defaults: `page/n${initial}/mode/2up`,
       ui: "full",
       showLogo: false,

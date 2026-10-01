@@ -42,6 +42,12 @@ export type ListedDocument = DocumentDetails & {
 
 type DocumentPage = { items: ListedDocument[]; total: number };
 const PAGE_SIZE = 30;
+const documentSize = (bytes: number) => bytes >= 1024 * 1024
+  ? `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`
+  : `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+const documentFormat = (mimeType?: string) => mimeType?.startsWith("image/")
+  ? mimeType.slice(6).replace("jpeg", "jpg").toUpperCase()
+  : "PDF";
 const EMPTY_DETAILS: DocumentDetails = {
   documentType: "",
   documentDate: "",
@@ -532,11 +538,14 @@ export function DocumentsCatalog({
             </button>
           </div>
           <label className="documents-drop-zone">
-            <Upload size={28} aria-hidden="true" />
+            <span className="documents-drop-icon"><Upload size={26} aria-hidden="true" /></span>
             <strong>
-              {file ? file.name : "Перетащите PDF или изображение либо выберите файл"}
+              {file ? file.name : "Перетащите документ сюда"}
             </strong>
             <span>PDF до 50 МБ, изображение до 20 МБ · людей можно привязать позже</span>
+            <span className="documents-file-picker">
+              {file ? "Выбрать другой файл" : "Выбрать файл"}
+            </span>
             <input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/jpeg,image/png,image/webp,image/gif"
@@ -737,9 +746,13 @@ export function DocumentsCatalog({
                     </span>
                     <span className="document-item-text">
                       <strong>{document.title}</strong>
-                      <small>{document.mimeType?.startsWith("image/")
-                        ? "Изображение · Открыть документ"
-                        : "PDF · Открыть книгу"}</small>
+                      <small>
+                        <span className="document-format">
+                          {documentFormat(document.mimeType)}
+                        </span>
+                        <span>{document.documentType || documentSize(document.size)}</span>
+                        {document.documentDate && <span>· {document.documentDate}</span>}
+                      </small>
                     </span>
                   </button>
                   {mayEdit && document.canDelete && (

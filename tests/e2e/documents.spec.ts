@@ -42,6 +42,9 @@ test("PDF без привязки остаётся в общем каталог�
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   const book = reader.frameLocator("iframe.pdf-book-frame");
   await expect(reader).toBeVisible();
+  await expect.poll(async () =>
+    (await book.locator(".BRpagecontainer").first().boundingBox())?.width || 0,
+  ).toBeGreaterThan(testInfo.project.name === "mobile" ? 190 : 350);
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const documentUrl = page.url();
   const documentId = new URL(documentUrl).pathname.split("/").at(-1);

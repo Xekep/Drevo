@@ -18,6 +18,7 @@ export type BookReaderConstructor = {
   new (options: {
     el: string;
     data: ReaderPage[][];
+    ppi: number;
     defaults: string;
     ui: "full";
     showLogo: boolean;
