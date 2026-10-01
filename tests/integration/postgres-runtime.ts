@@ -1598,13 +1598,19 @@ try {
       await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
       const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
         .rows.map((row) => row.id as string));
+      const usageBefore = Number((await client.query(
+        "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
+        [proposalMember],
+      )).rows[0].id);
       try {
         const port = (server.address() as { port: number }).port;
         const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
           method: "POST", headers: proposalHeaders,
           body: JSON.stringify({ message: `Проверь отложенный ответ ${label}` }),
         });
-        await Promise.race([entered,
+        await Promise.race([entered, request.then(async (response) => {
+          throw new Error(`Deferred AI stopped before provider: ${response.status} ${await response.clone().text()}`);
+        }),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI provider did not start")), 15000))]);
         if (!revokeAfterWrite) await changeAccess();
         release();
@@ -1623,6 +1629,8 @@ try {
         for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
         await new Promise<void>((resolve) => server.close(() => resolve()));
         await handler.close();
+        await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+          [proposalMember, usageBefore]);
       }
     };
     const proposalReason = (label: string) => `AI proposal guard ${label}`;
@@ -1679,7 +1687,9 @@ try {
           method: "POST", headers: actorHeaders,
           body: JSON.stringify({ message: "Добавь новую карточку человека" }),
         });
-        await Promise.race([entered,
+        await Promise.race([entered, request.then(async (response) => {
+          throw new Error(`Proposal stopped before provider: ${response.status} ${await response.clone().text()}`);
+        }),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Proposal provider did not start")), 15000))]);
         await duringProvider(release);
         release();
