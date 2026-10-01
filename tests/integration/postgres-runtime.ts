@@ -844,6 +844,19 @@ try {
   assert.equal(annotated.status, 201, await annotated.clone().text());
   const fileResponse = await fetch(base + documents.items[0].url);
   assert.deepEqual(Buffer.from(await fileResponse.arrayBuffer()), pdfBytes);
+  const backupCatalogCreated = await fetch(base + "/api/sources", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "Источник из бэкапа", documentIds: [documents.items[0].id] }),
+  });
+  assert.equal(backupCatalogCreated.status, 201, await backupCatalogCreated.clone().text());
+  const backupCatalog = (await backupCatalogCreated.json()).source;
+  const backupClaimBefore = await app.archive.read();
+  const backupClaimFamily = structuredClone(backupClaimBefore.family);
+  backupClaimFamily.people.find((person) => person.id === "person-a")!.birthDateClaim = {
+    value: "1990", sources: [{ catalogId: backupCatalog.id, title: backupCatalog.title,
+      type: "", reference: "", documentId: documents.items[0].id }],
+  };
+  await app.archive.write(backupClaimFamily, backupClaimBefore.revision);
   const fullBackup = await fetch(base + "/api/backup/full");
   assert.equal(fullBackup.status, 200);
   const backupBytes = await fullBackup.arrayBuffer();
@@ -988,6 +1001,30 @@ try {
   assert.equal(afterDocuments.total, 1);
   assert.equal(afterDocuments.items[0].documentType, "metrical record");
   assert.equal(afterDocuments.items[0].provenance, "GASO F6 Op13 D104");
+  assert.notEqual(afterDocuments.items[0].id, documents.items[0].id);
+  const restoredClaim = (await app.archive.read()).family.people.find((person) => person.id === "person-a")!
+    .birthDateClaim?.sources[0];
+  assert.equal(restoredClaim?.catalogId, backupCatalog.id);
+  assert.equal(restoredClaim?.documentId, afterDocuments.items[0].id);
+  const restoredSource = await fetch(base + "/api/sources/" + backupCatalog.id);
+  assert.equal(restoredSource.status, 200);
+  const restoredCatalog = (await restoredSource.json()).source;
+  assert.deepEqual(restoredCatalog.documentIds, [afterDocuments.items[0].id]);
+  assert.ok(restoredCatalog.version > backupCatalog.version);
+  const staleCatalogEdit = await fetch(base + "/api/sources/" + backupCatalog.id, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: backupCatalog.version, title: "Устаревшая правка" }),
+  });
+  assert.equal(staleCatalogEdit.status, 409);
+  const removeBackupClaim = await app.archive.read();
+  const withoutBackupClaim = structuredClone(removeBackupClaim.family);
+  delete withoutBackupClaim.people.find((person) => person.id === "person-a")!.birthDateClaim;
+  await app.archive.write(withoutBackupClaim, removeBackupClaim.revision);
+  const removeBackupSource = await fetch(base + "/api/sources/" + backupCatalog.id, {
+    method: "DELETE", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: restoredCatalog.version }),
+  });
+  assert.equal(removeBackupSource.status, 200, await removeBackupSource.clone().text());
   const restoredAnnotations = await fetch(
     `${base}/api/documents/${afterDocuments.items[0].id}/annotations`,
   ).then((r) => r.json());

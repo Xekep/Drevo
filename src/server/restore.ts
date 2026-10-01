@@ -46,9 +46,11 @@ import {
   parseDocumentDetails,
   type DocumentDetails,
 } from "../shared/document-details.ts";
-import { validateFamily, type Family } from "../domain/index.ts";
+import { validateFamily, type Family, type Source } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { parseCatalogSource, type CatalogSource } from "../shared/source-catalog.ts";
+import { allCitations, sourceCatalogStore } from "./source-catalog-store.ts";
 
 const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
 const RESERVATION_STEP = 32 * 1024 * 1024;
@@ -289,6 +291,7 @@ type Stage = {
   faceDescriptors: StoredFaceDescriptor[];
   documents: StoredDocument[];
   documentFiles: Map<string, string>;
+  catalogSources: Array<CatalogSource & { version: number }>;
 };
 
 type StoredDocument = Partial<DocumentDetails> & {
@@ -324,6 +327,7 @@ export function restoreStore(
       faceDescriptors: StoredFaceDescriptor[];
       documents?: StoredDocument[];
       documentFiles?: [string, string][];
+      catalogSources?: Array<CatalogSource & { version: number }>;
     };
     return {
       directory: String(row.directory),
@@ -335,6 +339,7 @@ export function restoreStore(
       faceDescriptors: data.faceDescriptors,
       documents: data.documents || [],
       documentFiles: new Map(data.documentFiles || []),
+      catalogSources: data.catalogSources || [],
     };
   };
   const discard = async (token: string) => {
@@ -430,7 +435,8 @@ export function restoreStore(
       });
       let family: Family,
         faceDescriptors: StoredFaceDescriptor[] = [],
-        documents: StoredDocument[] = [];
+        documents: StoredDocument[] = [],
+        catalogSources: Array<CatalogSource & { version: number }> = [];
       try {
         source.exec("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON;");
         const tables = source
@@ -508,6 +514,31 @@ export function restoreStore(
               throw new Error("Некорректный документ в бэкапе");
             return document;
           });
+        }
+        if (source.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='source_catalog'").get()) {
+          const rows = source.prepare("SELECT id,data,version FROM source_catalog ORDER BY id").all();
+          if (rows.length > 50_000) throw new Error("Слишком много источников в бэкапе");
+          catalogSources = rows.map((row) => {
+            let parsed: CatalogSource | null = null;
+            try { parsed = parseCatalogSource(JSON.parse(String(row.data))); }
+            catch { /* Invalid catalogue data is reported before applying the backup. */ }
+            const version = Number(row.version);
+            if (!parsed || parsed.id !== row.id || !Number.isSafeInteger(version) ||
+              version < 1 || version > 2_147_483_645)
+              throw new Error("Некорректный источник в бэкапе");
+            return { ...parsed, version };
+          });
+        }
+        const documentIds = new Set(documents.map((document) => document.id));
+        const catalog = new Map(catalogSources.map((item) => [item.id, item]));
+        if (catalogSources.some((item) => item.documentIds.some((id) => !documentIds.has(id))))
+          throw new Error("Источник в бэкапе ссылается на отсутствующий документ");
+        for (const citation of allCitations(family)) {
+          if (citation.documentId && !documentIds.has(citation.documentId))
+            throw new Error("Цитата в бэкапе ссылается на отсутствующий документ");
+          if (citation.catalogId && (!catalog.has(citation.catalogId) ||
+            (citation.documentId && !catalog.get(citation.catalogId)!.documentIds.includes(citation.documentId))))
+            throw new Error("Цитата в бэкапе ссылается на отсутствующий источник или документ каталога");
         }
         if (
           source
@@ -633,6 +664,7 @@ export function restoreStore(
         faceDescriptors,
         documents,
         documentFiles,
+        catalogSources,
       };
       await archive.db
         .prepare(
@@ -651,6 +683,7 @@ export function restoreStore(
             faceDescriptors,
             documents,
             documentFiles: [...documentFiles],
+            catalogSources,
           }),
           directory,
         );
@@ -661,6 +694,7 @@ export function restoreStore(
         people: family.people.length,
         photos: family.photos?.length || 0,
         documents: documents.length,
+        sources: catalogSources.length,
         files: files.size,
         missing,
         currentPeople: current.family.people.length,
@@ -748,23 +782,28 @@ export function restoreStore(
           restoredDocuments.push({ ...document, id, fileName });
           documentIdMap.set(document.id, id);
         }
-        const family = {
-          ...stage.family,
-          people: stage.family.people.map((p) => ({
-            ...p,
-            ...(p.photo ? { photo: urls.get(p.photo) || p.photo } : {}),
-            sources: p.sources.map((source) => source.documentId && documentIdMap.has(source.documentId)
-              ? { ...source, documentId: documentIdMap.get(source.documentId) } : source),
-            events: p.events?.map((event) => ({ ...event,
-              sources: event.sources?.map((source) => source.documentId && documentIdMap.has(source.documentId)
-                ? { ...source, documentId: documentIdMap.get(source.documentId) } : source),
-            })),
-          })),
-          photos: stage.family.photos?.map((p) => ({
-            ...p,
-            url: urls.get(p.url) || p.url,
-          })),
-        };
+        const remapCitation = (source: Source): Source => ({ ...source,
+          ...(source.documentId ? { documentId: documentIdMap.get(source.documentId)! } : {}),
+        });
+        const remapCitations = (sources: Source[]) => sources.map(remapCitation);
+        const family = structuredClone(stage.family);
+        for (const person of family.people) {
+          if (person.photo) person.photo = urls.get(person.photo) || person.photo;
+          person.sources = remapCitations(person.sources);
+          for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const)
+            if (person[key]) person[key]!.sources = remapCitations(person[key]!.sources);
+          for (const event of person.events || [])
+            if (event.sources) event.sources = remapCitations(event.sources);
+        }
+        for (const union of family.unions || []) {
+          if (union.sources) union.sources = remapCitations(union.sources);
+          for (const key of ["formation", "ending", "divorce", "ongoing"] as const)
+            if (union[key]?.sources) union[key]!.sources = remapCitations(union[key]!.sources!);
+        }
+        for (const photo of family.photos || []) photo.url = urls.get(photo.url) || photo.url;
+        const restoredCatalog = stage.catalogSources.map((source) => ({ ...source,
+          documentIds: source.documentIds.map((id) => documentIdMap.get(id)!),
+        }));
         result = await archive.write(
           family,
           stage.revision,
@@ -810,6 +849,17 @@ export function restoreStore(
               );
               for (const personId of document.personIds)
                 await link.run(document.id, personId);
+            }
+            const currentVersions = new Map((await db.prepare(
+              "SELECT id,version FROM source_catalog",
+              "SELECT id,version FROM source_catalog",
+            ).all()).map((row) => [String(row.id), Number(row.version)]));
+            await db.exec("DELETE FROM source_catalog", "DELETE FROM source_catalog");
+            for (const { version, ...source } of restoredCatalog) {
+              const nextVersion = Math.max(version, currentVersions.get(source.id) || 0) + 1;
+              if (nextVersion > 2_147_483_646)
+                throw new Error("Версия источника превышает допустимый предел");
+              await sourceCatalogStore(db).insert(source, nextVersion);
             }
             await enforcePostgresMediaQuota(db);
           },

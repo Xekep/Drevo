@@ -4,10 +4,12 @@ import {
   existsSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   unlinkSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import PDFDocument from "pdfkit";
@@ -15,6 +17,7 @@ import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import type { DocumentDetails } from "../src/shared/document-details.ts";
+import { writeDatabaseBackup } from "../src/server/backup.ts";
 
 async function samplePdf() {
   const pdf = new PDFDocument({ autoFirstPage: false });
@@ -241,6 +244,29 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const withCitation = await app.archive.read();
     withCitation.family.people[0].sources.push({ title: "Дело 104", type: "archive", reference: "Л. 2", documentId: id, documentPage: 2 });
     await app.archive.write(withCitation.family, withCitation.revision);
+    const catalogCreated = await fetch(`${base}/api/sources`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Метрическая книга", documentIds: [id] }),
+    });
+    assert.equal(catalogCreated.status, 201, await catalogCreated.clone().text());
+    const catalog = (await catalogCreated.json()) as { source: { id: string; title: string; version: number } };
+    const citedSnapshot = await app.archive.read();
+    const citedPerson = citedSnapshot.family.people[0];
+    citedPerson.birthPlace = "Реж";
+    citedPerson.death = "2000";
+    citedPerson.deathPlace = "Екатеринбург";
+    for (const [field, value] of [
+      ["birthDateClaim", citedPerson.birth], ["deathDateClaim", citedPerson.death],
+      ["birthPlaceClaim", citedPerson.birthPlace], ["deathPlaceClaim", citedPerson.deathPlace],
+    ] as const)
+      citedPerson[field] = { value, sources: [{ catalogId: catalog.source.id,
+        title: catalog.source.title, type: "", reference: "", documentId: id, documentPage: 2 }] };
+    citedSnapshot.family.unions = [{ id: "anna-boris", participants: ["anna", "boris"],
+      type: "marriage", sources: [{ title: "Семейная запись", type: "archive", reference: "", documentId: id }],
+      formation: { date: "1970", sources: [{ title: "Запись о браке", type: "archive", reference: "", documentId: id }] },
+      divorce: { date: "1990", sources: [{ title: "Запись о разводе", type: "archive", reference: "", documentId: id }] },
+    }];
+    await app.archive.write(citedSnapshot.family, citedSnapshot.revision);
     const sourced = (await (await fetch(`${base}/api/documents/${id}`)).json()) as {
       sources: Array<{ title: string; page: number }>;
     };
@@ -327,6 +353,35 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const backup = Buffer.from(
       await (await fetch(`${base}/api/backup/full`)).arrayBuffer(),
     );
+    const invalidDatabase = join(dir, "invalid-source-backup.sqlite");
+    await writeDatabaseBackup(app.archive.db, invalidDatabase);
+    const invalidCopy = new DatabaseSync(invalidDatabase);
+    const missingDocument = "99999999-9999-4999-8999-999999999999";
+    invalidCopy.prepare("INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)").run(
+      "88888888-8888-4888-8888-888888888888",
+      JSON.stringify({ id: "88888888-8888-4888-8888-888888888888", title: "Битый источник",
+        type: "", author: "", institution: "", archive: "", fond: "", opis: "",
+        delo: "", sheet: "", reference: "", url: "", accessedAt: "", description: "",
+        documentIds: [missingDocument] }),
+    );
+    invalidCopy.close();
+    const invalidPreview = await fetch(`${base}/api/restore/preview`, {
+      method: "POST", headers: { "X-Drevo-Restore": "1" },
+      body: new Uint8Array(readFileSync(invalidDatabase)),
+    });
+    assert.equal(invalidPreview.status, 400,
+      "preview rejects a catalog attachment to a document absent from the backup");
+    const missingCatalogDatabase = join(dir, "missing-source-backup.sqlite");
+    await writeDatabaseBackup(app.archive.db, missingCatalogDatabase);
+    const missingCatalogCopy = new DatabaseSync(missingCatalogDatabase);
+    missingCatalogCopy.prepare("DELETE FROM source_catalog WHERE id=?").run(catalog.source.id);
+    missingCatalogCopy.close();
+    const missingCatalogPreview = await fetch(`${base}/api/restore/preview`, {
+      method: "POST", headers: { "X-Drevo-Restore": "1" },
+      body: new Uint8Array(readFileSync(missingCatalogDatabase)),
+    });
+    assert.equal(missingCatalogPreview.status, 400,
+      "preview rejects a citation whose catalog record is missing");
     const preview = await fetch(`${base}/api/restore/preview`, {
       method: "POST",
       headers: { "X-Drevo-Restore": "1" },
@@ -363,6 +418,29 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     assert.equal(after.items[0].eventLinks.length, 1);
     assert.equal(after.items[0].sources[0].title, "Дело 104");
     assert.notEqual(after.items[0].id, id);
+    const restoredFamily = (await app.archive.read()).family;
+    const restoredPerson = restoredFamily.people.find((person) => person.id === "anna")!;
+    for (const claim of [restoredPerson.birthDateClaim, restoredPerson.deathDateClaim,
+      restoredPerson.birthPlaceClaim, restoredPerson.deathPlaceClaim]) {
+      assert.equal(claim?.sources[0].catalogId, catalog.source.id);
+      assert.equal(claim?.sources[0].documentId, after.items[0].id);
+      assert.equal(claim?.sources[0].documentPage, 2);
+    }
+    for (const sources of [restoredFamily.unions?.[0].sources,
+      restoredFamily.unions?.[0].formation?.sources,
+      restoredFamily.unions?.[0].divorce?.sources])
+      assert.equal(sources?.[0].documentId, after.items[0].id);
+    const restoredCatalog = await fetch(`${base}/api/sources/${catalog.source.id}`);
+    assert.equal(restoredCatalog.status, 200);
+    const restoredSource = ((await restoredCatalog.json()) as {
+      source: { documentIds: string[]; version: number; title: string }
+    }).source;
+    assert.deepEqual(restoredSource.documentIds, [after.items[0].id]);
+    assert.ok(restoredSource.version > catalog.source.version);
+    assert.equal((await fetch(`${base}/api/sources/${catalog.source.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: catalog.source.version, title: "Устаревшая правка" }),
+    })).status, 409, "an old editor cannot overwrite a source restored from backup");
     assert.deepEqual(
       after.items[0].people.map((person) => person.id),
       ["anna"],

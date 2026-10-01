@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -113,6 +114,28 @@ test("restore stage survives store restart and can be applied by another instanc
     assert.equal(result.family.title, family.title);
   } finally {
     restores.close();
+    await archive.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("restore accepts an older backup without a source catalogue", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-restore-legacy-sources-"));
+  const databasePath = join(directory, "drevo.sqlite");
+  const backupPath = join(directory, "legacy.sqlite");
+  const archive = await openArchive(databasePath, family);
+  const restores = restoreStore(archive, databasePath);
+  try {
+    writeFileSync(backupPath, await databaseBackupBytes(archive.db));
+    const backup = new DatabaseSync(backupPath);
+    backup.exec("DROP TABLE source_catalog");
+    backup.close();
+    const preview = await restores.preview(readFileSync(backupPath), admin);
+    assert.equal(preview.sources, 0);
+    const result = await restores.apply(preview.token, admin, async () => {});
+    assert.equal(result.family.people[0].id, "person");
+  } finally {
+    await restores.close();
     await archive.close();
     rmSync(directory, { recursive: true, force: true });
   }
