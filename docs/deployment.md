@@ -75,6 +75,32 @@ SSH проверяет закреплённый публичный ключ се
 
 ### PostgreSQL
 
+После выкладки миграции `052_deleted_account_comments.sql` администратор сервера повторно устанавливает привилегированные функции в рабочей БД. Команда берёт точное имя БД из маркера действующего PostgreSQL; её выполняют на сервере из shell с правом `sudo -u postgres`:
+
+```bash
+db=$(cat /var/www/drevo.kiiko.ru/shared/postgres.active)
+[[ "$db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || exit 1
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" \
+  -f /var/www/drevo.kiiko.ru/current/ops/postgres/install-account-history-anonymization.sql
+```
+
+Следующая проверка только читает метаданные и не удаляет аккаунт. Должны получиться `f` для обоих прав роли приложения, `t` для наличия функции, права её вызова у `site_drevo` и запрета вызова для `PUBLIC`:
+
+```bash
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c \
+  "SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='site_drevo'"
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c \
+  "SELECT p.oid IS NOT NULL AS installed,
+          has_function_privilege('site_drevo',p.oid,'EXECUTE') AS app_execute,
+          NOT EXISTS (
+            SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+            WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE'
+          ) AS public_denied
+   FROM pg_proc p WHERE p.oid=to_regprocedure('public.runtime_redact_deleted_account_comments(text)')"
+```
+
+После установки вошедший пользователь может безопасно проверить `GET /api/account/deletion`: поле `canRedactComments` должно быть `true`. Сам `DELETE` для проверки не вызывают. До этой проверки опция очистки текста в production не считается доступной.
+
 Рабочий backend выбирает `/etc/drevo.env`: `DATABASE_BACKEND=postgres`, `PGHOST=/var/run/postgresql`, `PGPORT=5432`, `PGUSER=site_drevo`, `PGDATABASE`, `ARCHIVE_ID=legacy-primary`. Роль приложения не должна иметь superuser/BYPASSRLS. `DATABASE_PATH` остаётся путём-якорем для файлов и ключа, а не рабочей SQLite. Не удаляйте ключ при миграции.
 
 Для физического обезличивания истории при удалении аккаунта после запуска релиза и применения схемы `052_deleted_account_comments.sql` администратор PostgreSQL выполняет `ops/postgres/install-account-history-anonymization.sql` в рабочей БД через `psql -X -v ON_ERROR_STOP=1 -f`. Скрипт требует роли с `BYPASSRLS`, выдаёт `site_drevo` только права вызова проверяемых функций и заодно повторно обезличивает строки аккаунтов, удалённых до её установки. Пока основная функция не установлена, подтверждённое удаление аккаунта отклоняется без частичных изменений; очистка текстов комментариев доступна после повторного запуска скрипта. Повторный запуск безопасен. Очистка затрагивает текущие строки PostgreSQL, но не изменяет ранее созданные резервные копии.

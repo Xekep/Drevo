@@ -26,13 +26,13 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         [accountId],
       );
       const redaction = await client.query(
-        "SELECT to_regprocedure('public.runtime_redact_deleted_account_comments(text)') AS installed",
+        "SELECT COALESCE(has_function_privilege(current_user,to_regprocedure('public.runtime_redact_deleted_account_comments(text)')::oid,'EXECUTE'),false) AS allowed",
       );
       return {
         name: String(account.rows[0].name),
         ownedArchives: Number(owned.rows[0].total),
         sharedArchives: Number(memberships.rows[0].total),
-        canRedactComments: !!redaction.rows[0]?.installed,
+        canRedactComments: redaction.rows[0]?.allowed === true,
       };
     });
   }
@@ -95,9 +95,9 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           );
         if (confirmation.redactComments) {
           const redactionFunction = await client.query(
-            "SELECT to_regprocedure('public.runtime_redact_deleted_account_comments(text)') AS installed",
+            "SELECT COALESCE(has_function_privilege(current_user,to_regprocedure('public.runtime_redact_deleted_account_comments(text)')::oid,'EXECUTE'),false) AS allowed",
           );
-          if (!redactionFunction.rows[0]?.installed)
+          if (redactionFunction.rows[0]?.allowed !== true)
             throw new AccountDeletionConflict(
               "Удаление текстов комментариев пока недоступно: администратор должен обновить настройку PostgreSQL",
             );

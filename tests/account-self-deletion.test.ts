@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { accountSelfDeletion, AccountDeletionConflict } from "../src/server/account-self-deletion.ts";
 import type { StoreDatabase } from "../src/server/store-database.ts";
 
-function fakeDatabase(installed = true) {
+function fakeDatabase(installed = true, redactionAllowed = true) {
   let archiveId = "";
   const writes: Array<{ archiveId: string; sql: string; args: unknown[] }> = [];
   const calls: string[] = [];
@@ -22,12 +22,20 @@ function fakeDatabase(installed = true) {
       }
       if (sql.includes("FROM accounts WHERE id=$1 FOR UPDATE"))
         return { rowCount: 1, rows: [{ name: "Имя" }] };
+      if (sql.startsWith("SELECT name FROM accounts WHERE id=$1"))
+        return { rowCount: 1, rows: [{ name: "Имя" }] };
+      if (sql.includes("count(*)::integer AS total FROM archive_owners"))
+        return { rowCount: 1, rows: [{ total: 0 }] };
+      if (sql.includes("count(*)::integer AS total FROM archive_memberships"))
+        return { rowCount: 1, rows: [{ total: 1 }] };
       if (sql.includes("FROM archive_owners"))
         return { rowCount: 0, rows: [] };
       if (sql.includes("FROM platform_admins"))
         return { rowCount: 2, rows: [{ account_id: "other-1" }, { account_id: "other-2" }] };
       if (sql.includes("FROM archive_memberships WHERE user_id=$1"))
         return { rowCount: 1, rows: [{ archive_id: "current-tree" }] };
+      if (sql.includes("has_function_privilege"))
+        return { rowCount: 1, rows: [{ allowed: redactionAllowed }] };
       if (sql.includes("to_regprocedure"))
         return { rowCount: 1, rows: [{ installed: installed ? "runtime_anonymize_deleted_account_history(text)" : null }] };
       if (sql.includes("SELECT id FROM archives WHERE id=$1 FOR UPDATE"))
@@ -43,6 +51,11 @@ function fakeDatabase(installed = true) {
   } as StoreDatabase;
   return { db, writes, calls };
 }
+
+test("account deletion preview hides comment redaction without EXECUTE grant", async () => {
+  const { db } = fakeDatabase(true, false);
+  assert.equal((await accountSelfDeletion(db, true).preview("account-1"))?.canRedactComments, false);
+});
 
 test("account deletion requires consent before changing any rows", async () => {
   const { db, writes } = fakeDatabase();
