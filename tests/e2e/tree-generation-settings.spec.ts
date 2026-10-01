@@ -150,3 +150,49 @@ test("a 1023-person archive sends only the bounded projection to the layout Work
     page.getByText("В области поколений: 6 из 1023 карточек"),
   ).toBeVisible();
 });
+
+test("generation settings remain usable while the initial layout is still computing", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, {
+      apply(target, thisArg, args) {
+        // Deliberately keep the initial six-person request pending. A smaller
+        // projection must cancel it and run in a fresh Worker.
+        if (args[0]?.people?.length === 6) return;
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+  });
+  let preferences: TreePreferences = { ...DEFAULT_TREE_PREFERENCES };
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.treePreferences = preferences;
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/api/tree-preferences", async (route) => {
+    preferences = route.request().postDataJSON();
+    await route.fulfill({ json: preferences });
+  });
+  await page.goto("/tree");
+  const gear = page.getByRole("button", { name: "Настройки древа" });
+  await expect(gear).toBeEnabled();
+  await gear.click();
+  const dialog = page.getByRole("dialog", { name: "Вид древа" });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("checkbox", { name: "Ограничить видимое древо" })
+    .check();
+  await dialog
+    .getByRole("combobox", { name: "Относительно человека" })
+    .selectOption("e2e-child");
+  await dialog
+    .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
+    .check();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expect(
+    page.locator('.flow-person[data-person-id="e2e-child"]'),
+  ).toBeVisible({ timeout: 15000 });
+  await expect(page.locator(".flow-person")).toHaveCount(4);
+});

@@ -88,6 +88,12 @@
   color: #365b40;
   font-size: 11px;
 }
+.tree-canvas.is-growing .tree-display-actions,
+.tree-canvas.is-growth-preparing .tree-display-actions,
+.tree-canvas.is-growing .tree-mode-bar,
+.tree-canvas.is-growth-preparing .tree-mode-bar {
+  z-index: 21;
+}
 .tree-preference-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

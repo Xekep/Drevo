@@ -10,6 +10,13 @@ export function useTreeGrowthInputLock(
     const element = container.current;
     if (!element || !locked) return;
     const stop = (event: Event) => {
+      // Preferences can reduce the projection and cancel a slow initial layout.
+      if (
+        event.type !== "wheel" &&
+        event.target instanceof Element &&
+        event.target.closest(".tree-preferences-trigger")
+      )
+        return;
       // An explicit selection or mode change may cancel the personal camera
       // move; stray background clicks and wheel gestures must not interrupt it.
       if (
