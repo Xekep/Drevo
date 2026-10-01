@@ -279,7 +279,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       if (place) {
         branches.push(`SELECT archive_id,person_id FROM discovery_people
           WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
-            AND ${place.field} BETWEEN ? AND ?`);
+            AND ${place.column} BETWEEN ? AND ?`);
         lookupArgs.push(archiveId,place.terms,place.from,place.to);
       }
       if (relativeTerms) {

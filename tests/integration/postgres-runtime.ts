@@ -1991,6 +1991,7 @@ try {
   const otherWithRelative = structuredClone(otherBeforeSignals.family);
   const ownPerson = ownWithRelative.people.find((person) => person.id === "person-a")!;
   const otherPerson = otherWithRelative.people.find((person) => person.id === "person-a")!;
+  ownPerson.birthPlace = "Россия, Свердловская область, Нижний Тагил";
   const parent = { ...structuredClone(ownPerson), id: "published-parent",
     surname: "Орлов", name: "Пётр", birth: "1960", deceased: true,
     parents: [], column: 50 };
@@ -2004,21 +2005,41 @@ try {
     id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
     parents: [], column: 52 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "place-match", surname: "Петров", name: "Иван", birth: "1991",
+    birthPlace: "Россия, Свердловская область, Нижний Тагил", deceased: true,
+    parents: [], column: 54 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "region-only", surname: "Романов", name: "Иван", birth: "1991",
+    birthPlace: "Россия, Свердловская область, Екатеринбург", deceased: true,
+    parents: [], column: 55 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
     parents: [], spouses: ["relative-only"], column: 53 });
   const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
   const otherSignalWrite = await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
-  const signalIds = async () => (await (await fetch(securedBase + candidatePath,
-    { headers: ownerHeaders })).json()).candidates as {
+  await otherPublication.publish("place-match", "owner");
+  await otherPublication.publish("region-only", "owner");
+  // Earlier scenarios deliberately spend the normal per-client search budget.
+  const signalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.88" };
+  const signalIds = async () => {
+    const response = await fetch(securedBase + candidatePath, { headers: signalHeaders });
+    assert.equal(response.status, 200, "the candidate page must be available to the owner");
+    return (await response.json()).candidates as {
       id: string; reasons: string[]; conflicts: string[];
     }[];
+  };
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "a private relative cannot create a cross-archive hint");
   assert.ok((await signalIds()).some((item) => item.id === "name-typo" &&
     item.reasons.some((reason) => reason.includes("опечатка"))),
   "a typo in a published surname is found through the trigram index");
+  assert.ok((await signalIds()).some((item) => item.id === "place-match" &&
+    item.reasons.some((reason) => reason.includes("Место рождения"))),
+  "the indexed place and year branch can suggest a changed surname");
+  assert.equal((await signalIds()).some((item) => item.id === "region-only"), false,
+    "a shared region without a shared settlement is not a candidate clue");
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
   const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");

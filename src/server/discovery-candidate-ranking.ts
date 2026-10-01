@@ -26,10 +26,11 @@ export function candidatePlaceQuery(person: PublishedCandidate) {
   const field = person.birthPlace && /^\d{4}$/.test(person.birthYear || "")
     ? "birthYear" : "deathYear";
   const year = person[field];
-  const place = placeWords((field === "birthYear" ? person.birthPlace : person.deathPlace) || "")
-    .find((word) => word.length >= 4);
-  if (given.length < 2 || !place || !year || !/^\d{4}$/.test(year)) return null;
-  return { terms: `${given} & ${place}`, field,
+  const locality = localityWords((field === "birthYear" ? person.birthPlace : person.deathPlace) || "")
+    .filter((word) => word.length >= 4);
+  if (given.length < 2 || !locality.length || !year || !/^\d{4}$/.test(year)) return null;
+  return { terms: `${given} & ${locality.join(" & ")}`,
+    column: field === "birthYear" ? "birth_year" as const : "death_year" as const,
     from: String(Math.max(1, Number(year) - 2)).padStart(4, "0"),
     to: String(Math.min(9999, Number(year) + 2)).padStart(4, "0") };
 }
@@ -68,8 +69,16 @@ function relativeMatch(source: PublishedRelative[], candidate: PublishedRelative
     return Boolean(a.given && a.given === b.given && a.surnames[0] === b.surnames[0]);
   }));
 }
-const placeWords = (value: string) => words(value).filter((word) =>
-  !["г", "город", "с", "село", "д", "деревня", "область", "обл"].includes(word));
+const placePrefixes = new Set(["г", "город", "с", "село", "д", "деревня", "п", "поселок", "поселение", "станица", "хутор"]);
+const regions = new Set(["область", "обл", "край", "район", "республика", "губерния", "уезд", "округ", "волость", "провинция"]);
+const countries = new Set(["россия", "рф", "ссср", "империя", "пруссия", "польша", "казахстан", "украина"]);
+/** Use a settlement, never a country or administrative region, as place evidence. */
+function localityWords(value: string) {
+  const segments = value.split(/[,;]+/).map((segment) => words(segment));
+  const settlement = segments.reverse().find((segment) => segment.length &&
+    !segment.some((word) => regions.has(word) || countries.has(word)));
+  return settlement?.filter((word) => !placePrefixes.has(word)) || [];
+}
 export function candidateEvidence(
   source: PublishedCandidate, candidate: PublishedCandidate,
   sourceRelatives: PublishedRelative[] = [], candidateRelatives: PublishedRelative[] = [],
@@ -81,7 +90,7 @@ export function candidateEvidence(
   const birthDifference = source.birthYear && candidate.birthYear
     ? Math.abs(Number(source.birthYear) - Number(candidate.birthYear)) : null;
   const placeOverlap = (["birthPlace","deathPlace"] as const).some((field) => {
-    const left = placeWords(source[field] || ""), right = placeWords(candidate[field] || "");
+    const left = localityWords(source[field] || ""), right = localityWords(candidate[field] || "");
     return left.some((word) => right.includes(word));
   });
   // A shared relative name alone is insufficient evidence of personal identity.
@@ -117,7 +126,7 @@ export function candidateEvidence(
   for (const [field, label] of [
     ["birthPlace", "Место рождения"], ["deathPlace", "Место смерти"],
   ] as const) {
-    const left = placeWords(source[field] || ""), right = placeWords(candidate[field] || "");
+    const left = localityWords(source[field] || ""), right = localityWords(candidate[field] || "");
     if (!left.length || !right.length) continue;
     if (left.join(" ") === right.join(" ")) { reasons.push(`${label} совпадает`); score += 2; }
     else if (left.some((word) => right.includes(word))) {
