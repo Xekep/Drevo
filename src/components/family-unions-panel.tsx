@@ -5,9 +5,9 @@ import {
   type ArchiveUser,
   type Family,
   type FamilyUnion,
-  type Source,
   type UnionMilestone,
 } from "../domain";
+import { UnionSourcesEditor } from "./union-sources-editor.tsx";
 
 const names = {
   marriage: "Брак",
@@ -73,6 +73,13 @@ export function FamilyUnionsPanel({
           [key]: { ...old[key], [field]: value || undefined },
         },
     );
+  const milestoneSources = (
+    key: "formation" | "ending" | "divorce" | "ongoing",
+    sources: UnionMilestone["sources"],
+  ) => setDraft((old) => old && {
+    ...old,
+    [key]: { ...old[key], sources },
+  });
   const submit = async (remove = false) => {
     if (!draft) return;
     setError("");
@@ -229,6 +236,14 @@ export function FamilyUnionsPanel({
                     }
                   />
                 </label>
+                {(key === "ending" && draft.divorce) || (key === "divorce" && draft.ending)
+                  ? <small>Источники можно добавить после выбора этого этапа вместо другого завершения союза.</small>
+                  : <details className="union-milestone-sources">
+                      <summary>Источники этапа ({draft[key]?.sources?.length || 0})</summary>
+                      <UnionSourcesEditor sources={draft[key]?.sources || []}
+                        isAdmin={user?.role === "admin"}
+                        onChange={(sources) => milestoneSources(key, sources)} />
+                    </details>}
               </fieldset>
             ))}
           <label>
@@ -239,60 +254,10 @@ export function FamilyUnionsPanel({
             />
           </label>
           <fieldset>
-            <legend>Источники</legend>
-            {(draft.sources || []).map((source, index) => (
-              <div key={index}>
-                {(["title", "type", "reference", "url"] as const).map(
-                  (field) => (
-                    <label key={field}>
-                      {
-                        {
-                          title: "Название",
-                          type: "Тип",
-                          reference: "Ссылка в источнике",
-                          url: "URL",
-                        }[field]
-                      }
-                      <input
-                        value={source[field] || ""}
-                        onChange={(event) =>
-                          patch({
-                            sources: draft.sources!.map((item, i) =>
-                              i === index
-                                ? { ...item, [field]: event.target.value }
-                                : item,
-                            ),
-                          })
-                        }
-                      />
-                    </label>
-                  ),
-                )}
-                <button
-                  type="button"
-                  onClick={() =>
-                    patch({
-                      sources: draft.sources!.filter((_, i) => i !== index),
-                    })
-                  }
-                >
-                  Удалить источник
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                patch({
-                  sources: [
-                    ...(draft.sources || []),
-                    { title: "", type: "", reference: "" } satisfies Source,
-                  ],
-                })
-              }
-            >
-              Добавить источник
-            </button>
+            <legend>Источники союза</legend>
+            <UnionSourcesEditor sources={draft.sources || []}
+              isAdmin={user?.role === "admin"}
+              onChange={(sources) => patch({ sources })} />
           </fieldset>
           {error && (
             <p role="alert" className="form-error">
