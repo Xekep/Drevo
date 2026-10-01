@@ -407,6 +407,8 @@ export async function importSqliteSnapshot(
     await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
     await client.query(schema);
     await client.query(serviceSchema);
+    // Import runs before runtime view migrations; prepare edit metadata here too.
+    await client.query("ALTER TABLE person_comments ADD COLUMN IF NOT EXISTS updated_ms bigint CHECK(updated_ms IS NULL OR updated_ms > created_ms)");
     await client.query(
       readFileSync(new URL("./017_document_metadata.sql", import.meta.url), "utf8"),
     );
