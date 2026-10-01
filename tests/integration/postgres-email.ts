@@ -223,7 +223,20 @@ export async function verifyEmailAccounts(
      VALUES('runtime-test',$1,'reader',false,NULL,'all')`,
     [account.accountId],
   );
-  await client.query("DELETE FROM archives WHERE id=$1", [account.archiveId]);
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
+      account.archiveId,
+    ]);
+    const deleted = await client.query("DELETE FROM archives WHERE id=$1", [
+      account.archiveId,
+    ]);
+    assert.equal(deleted.rowCount, 1);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  }
   const withoutTree = await accounts.login({
     email: "new.person@example.org",
     password: "a new long safe password",
