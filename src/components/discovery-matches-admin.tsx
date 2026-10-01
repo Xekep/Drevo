@@ -198,7 +198,11 @@ export function DiscoveryMatchesAdmin() {
         throw new Error(body.error || "Не удалось изменить решение");
       }
       setNotice(decision === "accept" ? "Сопоставление подтверждено." :
-        decision === "reject" ? "Запрос отклонён." : "Связь отозвана.");
+        decision === "reject" ? "Запрос отклонён. Эта подсказка скрыта для вашего дерева; вернуть её можно в списке «Скрытые»." : "Связь отозвана.");
+      if (decision === "reject") {
+        setSuggestions([]); setSuggestionsCursor(null); setSuggestionsNextCursor(null);
+        setSuggestionsReload((value) => value + 1);
+      }
       setReload((value) => value + 1);
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }

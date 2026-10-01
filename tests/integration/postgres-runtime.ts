@@ -2956,6 +2956,11 @@ try {
   assert.equal(suggestedBody.candidates[0].birthYear, undefined,
     "candidate evidence must not disclose a birth year hidden by publication consent");
   const manualHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.101" };
+  const recipientHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.102" };
+  const recipientCandidates = "/api/discovery/matches/candidates?sourcePersonId=person-b";
+  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "the receiving archive sees the suggested pair before rejecting a manual request");
   const rejectedRequest = await fetch(securedBase + "/api/discovery/matches", {
     method: "POST", headers: manualHeaders,
     body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
@@ -2967,6 +2972,28 @@ try {
   assert.equal((await fetch(otherBase + rejectedPath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
   })).status, 200);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    const ignored = await matchDb.prepare("", `SELECT source_person_id,target_archive_id,
+      target_person_id,ignored_by FROM discovery_ignored_candidates
+      WHERE archive_id='other-archive' AND source_person_id='person-b'`).get();
+    assert.deepEqual(ignored, { source_person_id: "person-b", target_archive_id: "runtime-test",
+      target_person_id: "person-a", ignored_by: "owner" },
+    "rejection stores the pair in the recipient's direction only");
+  }, true);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_ignored_candidates WHERE archive_id='other-archive'`).get())?.count,
+      0, "RLS hides the recipient's dismissal from the proposing archive");
+  }, true);
+  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "rejection removes this pair from future automatic suggestions to the recipient");
+  assert.ok((await fetch(otherBase + recipientCandidates + "&ignored=1", {
+    headers: recipientHeaders,
+  }).then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "the dismissed pair remains recoverable in the recipient's hidden list");
   const rejectedAudit = await matchDb.prepare("", `SELECT status,requested_by,responded_by,
     request_review_token,decision_review_token FROM discovery_match_requests WHERE id=?`)
     .get(rejectedId);
@@ -2978,8 +3005,86 @@ try {
   assert.equal((await fetch(otherBase + rejectedPath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
   })).status, 200, "repeating a rejection is idempotent");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_ignored_candidates WHERE archive_id='other-archive'
+        AND source_person_id='person-b' AND target_archive_id='runtime-test'
+        AND target_person_id='person-a'`).get())?.count,
+      1, "repeating a rejection keeps exactly one recipient-owned dismissal");
+  }, true);
   assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
     WHERE id=?`).get(rejectedId))?.decision_review_token, rejectedAudit?.decision_review_token);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: manualHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-b", ignored: false }),
+  })).status, 200, "the proposer may clear only its own directed ignore, not the recipient's");
+  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"));
+  assert.equal((await fetch(otherBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: recipientHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+      targetPersonId: "person-a", ignored: false }),
+  })).status, 200);
+  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "restoring the hint resumes suggestions without changing the match decision");
+  assert.equal((await fetch(otherBase + rejectedPath, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
+  })).status, 200);
+  assert.ok((await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "an idempotent retry cannot undo an explicit later restoration");
+  const repeatedRequest = await fetch(otherBase + "/api/discovery/matches", {
+    method: "POST", headers: recipientHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+      targetPersonId: "person-a" }),
+  });
+  assert.equal(repeatedRequest.status, 200);
+  assert.deepEqual({ id: (await repeatedRequest.json()).match.id,
+    status: (await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
+      .get(rejectedId))?.status }, { id: rejectedId, status: "rejected" },
+  "restoring a hint does not reopen the rejected manual request");
+  const beforeReverseRejection = await app.archive.read();
+  const reverseFamily = structuredClone(beforeReverseRejection.family);
+  reverseFamily.people.push({ ...structuredClone(reverseFamily.people[0]),
+    id: "reverse-rejected-a", name: "Другой Иван", column: 75 });
+  const reverseWrite = await app.archive.write(reverseFamily, beforeReverseRejection.revision);
+  await publishedPeopleStore(app.archive.db).publish("reverse-rejected-a", "owner");
+  const reverseRequest = await fetch(otherBase + "/api/discovery/matches", {
+    method: "POST", headers: recipientHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-b", targetArchiveId: "runtime-test",
+      targetPersonId: "reverse-rejected-a" }),
+  });
+  assert.equal(reverseRequest.status, 200);
+  const reverseId = (await reverseRequest.json()).match.id as string;
+  assert.equal((await fetch(securedBase + `/api/discovery/matches/${reverseId}`, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
+  })).status, 200);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
+        AND source_person_id='reverse-rejected-a' AND target_archive_id='other-archive'
+        AND target_person_id='person-b'`).get())?.count, 1,
+    "when the recipient is the right pair side, the ignore still points from its own person");
+  }, true);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_ignored_candidates WHERE archive_id='runtime-test'
+        AND source_person_id='reverse-rejected-a'`).get())?.count, 0,
+    "the initiator cannot read the reverse-direction dismissal");
+  }, true);
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: manualHeaders,
+    body: JSON.stringify({ sourcePersonId: "reverse-rejected-a",
+      targetArchiveId: "other-archive", targetPersonId: "person-b", ignored: false }),
+  })).status, 200);
+  assert.equal((await matchDb.prepare("", "SELECT status FROM discovery_match_requests WHERE id=?")
+    .get(reverseId))?.status, "rejected", "restoration does not reopen the reverse manual request");
+  await app.archive.write(beforeReverseRejection.family, reverseWrite.revision);
   assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
     headers,
   })).status, 403);
