@@ -128,3 +128,41 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
 .br-mode-2up__leafs[side="left"] .br-leaf-edges__label {
   transform: translate(100%, calc(-8px / var(--drevo-edge-scale, 1)));
 }
+.BRtoolbar .BRtoolbarRight {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.BRtoolbar .BRbooksearch.desktop {
+  border-color: rgb(255 255 255 / 40%);
+  border-radius: 4px;
+}
+/* The standalone reader uses pins and previous/next results; the IA shell owns this sidebar button. */
+.BRsearch-navigation .toggle-sidebar {
+  display: none;
+}
+.BookReader .BRsearch-navigation {
+  min-height: 30px;
+  justify-content: flex-end;
+}
+.BRsearch-navigation .clear { margin-left: auto; }
+.BookReader .searchHiliteLayer rect {
+  fill: rgb(255 207 88 / 28%);
+  stroke: rgb(196 148 32 / 65%);
+  stroke-width: 0.7px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .BookReader .searchHiliteLayer rect { animation: none; }
+}
+@media (max-width: 600px) {
+  .BRtoolbar {
+    height: auto;
+    min-height: 44px;
+    padding: 6px;
+  }
+  .BRtoolbarRight { min-width: 0; }
+}
