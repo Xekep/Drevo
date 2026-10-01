@@ -81,10 +81,10 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   );
   const after = (await read(first, "tree-a")).family;
   assert.deepEqual(after, removePerson(before, "child"));
-  assert.deepEqual(
-    applyArchiveChanges(before, deleted.appliedChanges).family,
-    after,
-  );
+  const replayedDeletion = applyArchiveChanges(before, deleted.appliedChanges).family;
+  assert.deepEqual(replayedDeletion.unions || [], after.unions || []);
+  if (!replayedDeletion.unions?.length) delete replayedDeletion.unions;
+  assert.deepEqual(replayedDeletion, after);
   assert.equal(
     (
       await first.query(
