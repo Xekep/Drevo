@@ -1308,7 +1308,12 @@ export function exportGedcom(
     } = p;
     void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column,
       _birthDateClaim, _deathDateClaim, _birthPlaceClaim, _deathPlaceClaim];
-    emit(1, "_DREVO", JSON.stringify(extra));
+    // The Drevo extension carries readable evidence, never archive-local source IDs.
+    const portableExtra = structuredClone(extra);
+    for (const source of portableExtra.sources || []) delete source.catalogId;
+    for (const event of portableExtra.events || [])
+      for (const source of event.sources || []) delete source.catalogId;
+    emit(1, "_DREVO", JSON.stringify(portableExtra));
   }
   for (const g of groups.values()) {
     emit(0, `${g.id} FAM`);

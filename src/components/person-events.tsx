@@ -6,14 +6,18 @@ import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
+import { CatalogPicker } from "./union-sources-editor.tsx";
+import { sourceCitation } from "../shared/source-catalog.ts";
 export function EventsEditor({
   events,
   onChange,
   personId,
+  isAdmin,
 }: {
   events: PersonEvent[];
   onChange: (events: PersonEvent[]) => void;
   personId?: string;
+  isAdmin: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const update = (id: string, patch: Partial<PersonEvent>) =>
@@ -169,6 +173,10 @@ export function EventsEditor({
                 </label>
                 {(event.sources || []).map((source, index) => (
                   <div key={index} className="event-source-editor">
+                    {source.catalogId ? <>
+                      <strong>{source.title}</strong>
+                      {source.reference && <small>{source.reference}</small>}
+                    </> : <>
                     <label>
                       Источник
                       <input
@@ -244,6 +252,7 @@ export function EventsEditor({
                         })
                       }
                     />
+                    </>}
                     <button
                       type="button"
                       onClick={() =>
@@ -270,6 +279,12 @@ export function EventsEditor({
                 >
                   Добавить источник
                 </button>
+                {isAdmin && (event.sources?.length || 0) < 50 && <CatalogPicker
+                  existing={event.sources || []}
+                  onChoose={(entry) => update(event.id, {
+                    sources: [...(event.sources || []), sourceCitation(entry)],
+                  })}
+                />}
               </div>
             </details>
             <button

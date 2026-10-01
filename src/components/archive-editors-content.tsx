@@ -825,6 +825,7 @@ export function PersonEditor({
           events={draft.events || []}
           onChange={(events) => field("events", events)}
           personId={person?.id}
+          isAdmin={isAdmin}
         />
         <details className="form-details">
           <summary>

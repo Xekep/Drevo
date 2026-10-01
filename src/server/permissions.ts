@@ -43,6 +43,24 @@ export function authorizeArchive(
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
+  if (!admin) {
+    const previousPeople = new Map(current.people.map((person) => [person.id, person]));
+    for (const person of next.people) {
+      const oldEvents = new Map((previousPeople.get(person.id)?.events || [])
+        .map((event) => [event.id, event]));
+      for (const event of person.events || []) {
+        const previousCatalogIds = (oldEvents.get(event.id)?.sources || [])
+          .map((source) => source.catalogId);
+        for (const source of event.sources || []) {
+          if (!source.catalogId) continue;
+          const oldIndex = previousCatalogIds.indexOf(source.catalogId);
+          if (oldIndex < 0)
+            throw new ForbiddenError("Привязать каталожный источник к событию может только администратор");
+          previousCatalogIds.splice(oldIndex, 1);
+        }
+      }
+    }
+  }
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
     for (const person of next.people)
