@@ -103,6 +103,9 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
   const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id FROM discovery_branch_grants
     WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?`)
     .all(...pairArgs(pair));
+  const isOwner = async (archiveId: string, userId: string, lock = false) => Boolean(
+    await db.prepare("", `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=?
+      ${lock ? "FOR SHARE" : ""}`).get(archiveId, userId));
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = route.exec(url.pathname);
     if (!detail) return false;
@@ -111,6 +114,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (user.role !== "admin" || user.approved !== true)
+      return json(res, 403, { error: "Доступно владельцу дерева" });
+    if (!(await isOwner(db.archiveId, user.id)))
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -168,6 +173,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
         const approved = await auth.currentUser(req);
         if (approved?.role !== "admin" || approved.approved !== true || approved.id !== user.id)
           return { code: 403, error: "Доступ отозван" };
+        if (!(await isOwner(archiveId, approved.id, true)))
+          return { code: 403, error: "Доступ отозван" };
         await db.prepare("", `DELETE FROM discovery_branch_grants WHERE left_archive_id=?
           AND left_person_id=? AND right_archive_id=? AND right_person_id=?
           AND grantor_archive_id=?`).run(...pairArgs(pair), archiveId);
@@ -190,6 +197,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);
       if (approved?.role !== "admin" || approved.approved !== true || approved.id !== user.id)
+        return { code: 403, error: "Доступ отозван" };
+      if (!(await isOwner(archiveId, approved.id, true)))
         return { code: 403, error: "Доступ отозван" };
       await db.prepare("", `DELETE FROM discovery_branch_grants WHERE left_archive_id=?
         AND left_person_id=? AND right_archive_id=? AND right_person_id=?

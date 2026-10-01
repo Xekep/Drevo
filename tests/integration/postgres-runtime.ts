@@ -2285,7 +2285,26 @@ try {
   assert.ok(acceptedAudit?.responded_at);
   assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
   const branchPath = matchPath + "/branch-share";
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
+    DO UPDATE SET role='admin',approved=true,tree_access='all'`);
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
+    WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+  assert.equal((await fetch(securedBase + branchPath, { headers: archiveAdminHeaders })).status,
+    403, "an invited admin cannot grant or inspect the owner's branch");
+  assert.equal((await fetch(securedBase + branchPath, {
+    method: "PUT", headers: archiveAdminHeaders,
+    body: JSON.stringify({ personIds: [], previewToken: "0".repeat(64) }),
+  })).status, 403, "an invited admin cannot consent on the owner's behalf");
+  await app.archive.db.prepare("", `UPDATE archive_memberships SET role='reader'
+    WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
   assert.equal((await fetch(securedBase + branchPath, { headers: ownerHeaders })).status, 200);
+  assert.equal((await fetch(otherBase + branchPath, { headers: ownerHeaders })).status, 403,
+    "an invited admin of B cannot inspect its owner's branch");
   assert.equal((await fetch(securedBase + branchPath, { headers })).status, 403,
     "a reader cannot inspect branch grants even for a published linked card");
   assert.equal((await fetch(otherBase + branchPath, { headers })).status, 401,
@@ -2308,7 +2327,7 @@ try {
   }
   const firstBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json());
-  const secondBranch = await fetch(otherBase + branchPath, { headers: ownerHeaders })
+  const secondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
   assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id), ["branch-parent-a"]);
   assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id), ["branch-parent-b"]);
@@ -2325,11 +2344,11 @@ try {
     method: "PUT", headers: ownerHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken }),
   })).status, 200);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: ownerHeaders })
+  assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json())).incoming, [],
   "one archive's grant alone does not expose its branch");
   assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
+    method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken }),
   })).status, 200);
   const bilateralBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
@@ -2376,15 +2395,15 @@ try {
     .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"], "a backfill preserves current bilateral grants");
   assert.equal((await fetch(otherBase + branchPath, {
-    method: "DELETE", headers: ownerHeaders,
+    method: "DELETE", headers: archiveAdminHeaders,
   })).status, 200);
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json())).incoming, [],
     "revoking either side closes the branch immediately");
-  const refreshedSecondBranch = await fetch(otherBase + branchPath, { headers: ownerHeaders })
+  const refreshedSecondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
   assert.equal((await fetch(otherBase + branchPath, {
-    method: "PUT", headers: ownerHeaders,
+    method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-b"],
       previewToken: refreshedSecondBranch.previewToken }),
   })).status, 200);
@@ -2457,8 +2476,14 @@ try {
   assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
     "the proposal note is visible to participant admins, not global discovery readers");
   assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
-    [person.archiveId,person.id]), [["runtime-test","person-a"]],
-  "a signed-in reader can follow only the other published identity after both sides confirm");
+    [person.archiveId,person.id]), [["runtime-test","person-a"],["third-archive","person-c"]],
+  "a signed-in reader sees only B's two directly confirmed published transitions");
+  const firstPublicCard = await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
+    headers,
+  }).then((response) => response.json());
+  assert.deepEqual(firstPublicCard.linkedCards.map((person: { archiveId: string; id: string }) =>
+    [person.archiveId,person.id]), [["other-archive","person-a"]],
+  "A's public card cannot traverse B-C to C");
   const cardSharePath = `/api/discovery/matches/${matchBody.match.id}/card-share`;
   assert.equal((await fetch(securedBase + cardSharePath, { headers })).status, 403,
     "a reader of the published card cannot inspect private share grants");
@@ -2467,7 +2492,7 @@ try {
   shareFamily.people[0].occupation = "Архивный исследователь";
   shareFamily.people[0].biography = "Закрытая биография и источники";
   await app.archive.write(shareFamily,shareBeforeEdit.revision);
-  assert.deepEqual((await fetch(otherBase + branchPath, { headers: ownerHeaders })
+  assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json())).incoming, [],
     "a family edit revokes the source archive's branch consent before another read");
   const renewedBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
