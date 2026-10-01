@@ -4707,7 +4707,7 @@ try {
     id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
     parents: [], spouses: ["relative-only"], column: 53 });
   const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
-  const otherSignalWrite = await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+  await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
   await otherPublication.publish("place-match", "owner");
@@ -4784,7 +4784,8 @@ try {
     "UNION deduplicates cards matching both birth and death places before pagination");
   assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
     "a double-matched card beyond the first page remains reachable exactly once");
-  await otherApp.archive.write(beforeBothPlaces.family, bothPlaceWrite.revision);
+  const afterBothPlaces = await otherApp.archive.write(beforeBothPlaces.family,
+    bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
   const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
@@ -4894,7 +4895,7 @@ try {
     FROM discovery_relative_names WHERE relative_person_id='published-parent'
       AND archive_id='other-archive'`).get())?.count, 0);
   await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
-  await otherApp.archive.write(otherBeforeSignals.family, otherSignalWrite.revision);
+  await otherApp.archive.write(otherBeforeSignals.family, afterBothPlaces.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
