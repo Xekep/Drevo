@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 
 import { UploadQuotaError } from "./upload-quota-error.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
+import { PLATFORM_DISK_LOCK } from "./platform-disk-reservation.ts";
 export { UploadQuotaError } from "./upload-quota-error.ts";
 
 const RESERVATION_MS = 10 * 60_000;
-const PLATFORM_DISK_LOCK = 186743293;
 
 /** Reservations count unfinished uploads, including requests in other processes. */
 export function uploadQuota(

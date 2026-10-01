@@ -31,6 +31,36 @@ const portableId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const mediaPath = /^media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
 const digest = /^[a-f0-9]{64}$/;
 
+/** Read ZIP metadata before extracting so concurrent previews can reserve
+ * their entire uncompressed output on the shared volume. The parser below
+ * still validates every entry and its actual bytes while extracting.
+ */
+export async function portableUncompressedBytes(input: string) {
+  const zip = await openPromise(input, {
+    strictFileNames: false,
+    validateEntrySizes: true,
+  });
+  let total = 0;
+  let entries = 0;
+  try {
+    for await (const entry of zip.eachEntry()) {
+      entries++;
+      if (
+        entries > MAX_ENTRIES ||
+        !Number.isSafeInteger(entry.uncompressedSize) ||
+        entry.uncompressedSize < 0
+      )
+        invalid("Некорректный размер вложения в пакете Drevo");
+      total += entry.uncompressedSize;
+      if (total > PORTABLE_IMPORT_LIMIT)
+        invalid("Распакованный пакет Drevo больше 12 ГиБ");
+    }
+  } finally {
+    zip.close();
+  }
+  return total;
+}
+
 function invalid(message: string): never {
   throw new PortablePackageError(message);
 }
