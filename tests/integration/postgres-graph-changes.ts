@@ -107,14 +107,22 @@ test("additional link evidence has SQLite/PostgreSQL parity and cannot move to a
   await sqlite.write(after, 1, actor);
   assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
   const saved = (await read(first, "tree-a")).family;
-  const annotated = { ...saved, links: saved.links!.map((link) => ({ ...link, note: "reviewed" })) };
-  await graph(first, tokens.admin, "tree-a", archiveChanges(saved, annotated), 1);
-  await sqlite.write(annotated, 2, actor);
+  const evidenced = { ...saved, links: saved.links!.map((link) => ({ ...link,
+    sources: [...(link.sources || []), { title: "Witness statement", type: "oral", reference: "2020" }] })) };
+  const sourcePatch = archiveChanges(saved, evidenced);
+  assert.equal(sourcePatch.find((change) => change.collection === "links")?.field, "sources");
+  await assert.rejects(graph(first, tokens.relative, "tree-a", sourcePatch, 1), ForbiddenError);
+  await graph(first, tokens.admin, "tree-a", sourcePatch, 1);
+  await sqlite.write(evidenced, 2, actor);
+  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
+  const annotated = { ...evidenced, links: evidenced.links!.map((link) => ({ ...link, note: "reviewed" })) };
+  await graph(first, tokens.admin, "tree-a", archiveChanges(evidenced, annotated), 2);
+  await sqlite.write(annotated, 3, actor);
   assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
   const moved = { ...annotated, links: annotated.links!.map((link) => ({ ...link, to: "own" })) };
-  await assert.rejects(graph(first, tokens.admin, "tree-a", archiveChanges(annotated, moved), 2),
+  await assert.rejects(graph(first, tokens.admin, "tree-a", archiveChanges(annotated, moved), 3),
     /снимите прежние источники/);
-  await assert.rejects(sqlite.write(moved, 3, actor), /снимите прежние источники/);
+  await assert.rejects(sqlite.write(moved, 4, actor), /снимите прежние источники/);
   assert.equal((await read(first, "tree-a")).family.links?.[0].sources?.[0].reference, "leaf 4");
 });
 
