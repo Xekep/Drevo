@@ -8,6 +8,13 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
     private hasText = true;
     private activeMatch = -1;
 
+    _configureToolbar(toolbar: { 0: HTMLElement }) {
+      super._configureToolbar(toolbar);
+      const search = toolbar[0].querySelector(".BRtoolbarSectionSearch");
+      const actions = toolbar[0].querySelector(".BRtoolbarSectionInfo");
+      if (search && actions) actions.before(search);
+    }
+
     private highlightActiveMatch() {
       document.querySelectorAll(".searchHiliteLayer rect").forEach((box) => {
         box.classList.toggle(

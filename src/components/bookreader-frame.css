@@ -151,6 +151,9 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
   justify-content: flex-end;
   gap: 6px;
 }
+.BRtoolbar .BRtoolbarSectionSearch {
+  margin-right: auto;
+}
 .BRtoolbar .BRbooksearch.desktop {
   border-color: rgb(255 255 255 / 40%);
   border-radius: 4px;
