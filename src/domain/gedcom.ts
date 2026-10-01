@@ -241,6 +241,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         "INDI",
         "FAM",
         "SOUR",
+        "REPO",
         "NOTE",
         "SNOTE",
         "OBJE",
@@ -314,6 +315,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       .join("\n\n");
   const citationObjects: Array<{ source: Source; object: Node; page?: number }> = [];
   const citationObjectBySource = new Map<Source, (typeof citationObjects)[number]>();
+  const usedRepositories = new Set<string>();
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
       const record = s.pointer ? records.get(s.value) : undefined,
@@ -359,12 +361,27 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         warnings.add(
           "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
         );
+      const repositoryNames: string[] = [], callNumbers: string[] = [];
+      for (const link of record ? children(record, "REPO") : []) {
+        const repository = link.pointer ? records.get(link.value) : undefined;
+        if (repository?.tag === "REPO") {
+          usedRepositories.add(link.value);
+          const name = value(repository, "NAME");
+          if (name) repositoryNames.push(`Хранилище: ${name}`);
+        } else if (link.pointer)
+          warnings.add(`Хранилище ${link.value} для источника GEDCOM не найдено.`);
+        for (const call of children(link, "CALN"))
+          if (call.value) callNumbers.push(call.value);
+      }
+      const page = value(s, "PAGE");
+      if (repositoryNames.length || callNumbers.length)
+        warnings.add("Реквизиты хранилища GEDCOM сохранены текстом; структура REPO не восстанавливается.");
       const source: Source = {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
           : s.value,
         type: value(s, "_TYPE") || (record ? value(record, "_TYPE") : ""),
-        reference: value(s, "PAGE"),
+        reference: page || callNumbers[0] || "",
         note:
           [
             record && notes(record, url ? `URL: ${url}` : undefined),
@@ -373,6 +390,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             record && value(record, "PUBL"),
             notes(s),
             ...citationDetails,
+            ...repositoryNames,
+            ...callNumbers.slice(page ? 0 : 1).map((call) => `Шифр хранилища: ${call}`),
           ]
             .filter(Boolean)
             .join("\n") || undefined,
@@ -1052,6 +1071,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     warnings.add(
       "Файлы фотографий и документов не загружаются из GEDCOM. Добавьте оригиналы в галерею отдельно.",
     );
+  for (const repository of roots.filter((node) => node.tag === "REPO"))
+    if (repository.xref && !usedRepositories.has(repository.xref))
+      warnings.add(`Запись REPO ${repository.xref} не связана с цитируемым источником и не перенесена.`);
   warnings.add(
     "Импорт добавляет новые карточки. Совпадения по имени не объединяются автоматически.",
   );
