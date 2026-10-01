@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writePortablePackage } from "../src/server/portable-package.ts";
 import { readPortablePackage } from "../src/server/portable-import.ts";
+import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 
 const person = (id: string): Person => ({
   id, name: id, surname: "Тестов", patronymic: "", sex: "u", birth: "",
@@ -71,6 +72,10 @@ test("catalog links in a union and all four milestones resolve and reject foreig
     };
     await archive.write(family, (await archive.read()).revision);
     assert.equal(allCitations((await archive.read()).family).length, 5);
+    const gedcom = exportGedcom((await archive.read()).family, { version: "7.0" });
+    const transferred = importGedcom(gedcom, "elsewhere").family;
+    assert.equal(allCitations(transferred).length, 5);
+    assert.ok(allCitations(transferred).every((item) => !item.catalogId && item.title === "Акт"));
     await archive.db.transaction(async () => {
       await sourceCatalogStore(archive.db).update({ ...source, title: "Исправленный акт" }, 1);
       await archive.db.prepare("UPDATE archive SET revision=revision+1 WHERE id=1").run();
