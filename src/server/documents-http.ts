@@ -31,6 +31,8 @@ import {
   type DocumentAnnotation,
 } from "../shared/document-annotations.ts";
 import { auditStore } from "./audit.ts";
+import { personCitations, sourceCatalogStore, unionCitations } from "./source-catalog-store.ts";
+import type { FamilyUnion } from "../domain/types.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import {
@@ -235,15 +237,25 @@ export function documentsHttp({
       "SELECT id,data FROM people WHERE data LIKE ?",
       "SELECT id,data FROM people WHERE data::text LIKE ?",
     ).all(`%${documentId}%`);
-    return rows.flatMap((row) => {
+    const people = rows.flatMap((row) => {
       const person = (typeof row.data === "string"
         ? JSON.parse(row.data) : row.data) as Person;
-      const linked = person.sources.some((source) => source.documentId === documentId) ||
-        (person.events || []).some((event) =>
-          (event.sources || []).some((source) => source.documentId === documentId));
+      const linked = personCitations(person).some((source) => source.documentId === documentId);
       return linked ? [String(row.id)] : [];
     });
+    const unions = await db.prepare(
+      "SELECT data FROM family_unions WHERE data LIKE ?",
+      "SELECT data FROM family_unions WHERE data::text LIKE ?",
+    ).all(`%${documentId}%`);
+    for (const row of unions) {
+      const union = (typeof row.data === "string" ? JSON.parse(row.data) : row.data) as FamilyUnion;
+      if (unionCitations(union).some((source) => source.documentId === documentId))
+        people.push(...union.participants);
+    }
+    return [...new Set(people)];
   };
+  const referencedByCatalog = (documentId: string) =>
+    sourceCatalogStore(db).usesDocument(documentId);
   const canSee = (
     access: Awaited<ReturnType<typeof visible>>,
     row: Row,
@@ -574,7 +586,7 @@ export function documentsHttp({
           if (citedBy.some((id) => personIds.includes(id) && !nextIds.includes(id)))
             return {
               status: 409 as const,
-              error: "Сначала уберите ссылку на документ из источников этого человека или его событий.",
+              error: "Сначала уберите ссылку на документ из связанных фактов и источников.",
             };
           await db
             .prepare(
@@ -826,10 +838,10 @@ export function documentsHttp({
             status: 403 as const,
             error: "Удалить документ может его автор или администратор",
           };
-        if ((await referencingPeople(row.id)).length)
+        if ((await referencingPeople(row.id)).length || await referencedByCatalog(row.id))
           return {
             status: 409 as const,
-            error: "Документ используется как источник. Сначала уберите ссылки на него из карточек и событий.",
+            error: "Документ используется как источник. Сначала уберите ссылки на него из фактов и каталога источников.",
           };
         const deleted = await db
           .prepare(

@@ -1018,6 +1018,42 @@ try {
     await failedRestores.close();
   }
   const documentId = afterDocuments.items[0].id;
+  const claimedBefore = await app.archive.read();
+  const claimedFamily = structuredClone(claimedBefore.family);
+  claimedFamily.people.find((person) => person.id === "person-a")!.birthDateClaim = {
+    value: "1990", sources: [{ title: "Метрическая книга", type: "archive",
+      reference: "л. 12", documentId, documentPage: 2 }],
+  };
+  await app.archive.write(claimedFamily, claimedBefore.revision);
+  assert.equal((await fetch(base + "/api/documents/" + documentId, { method: "DELETE" })).status,
+    409, "a PostgreSQL document cannot be deleted while an exact date cites it");
+  const claimUnlink = await fetch(base + "/api/documents/" + documentId, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ people: { expected: ["person-a"], next: [] } }),
+  });
+  assert.equal(claimUnlink.status, 409, "a PostgreSQL citation keeps its person association");
+  const clearedClaim = await app.archive.read();
+  const clearedFamily = structuredClone(clearedClaim.family);
+  delete clearedFamily.people.find((person) => person.id === "person-a")!.birthDateClaim;
+  await app.archive.write(clearedFamily, clearedClaim.revision);
+  const catalogCreated = await fetch(base + "/api/sources", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "Метрическая книга", documentIds: [documentId] }),
+  });
+  assert.equal(catalogCreated.status, 201, await catalogCreated.clone().text());
+  const catalogSource = (await catalogCreated.json()).source;
+  assert.equal((await fetch(base + "/api/documents/" + documentId, { method: "DELETE" })).status,
+    409, "a PostgreSQL catalog attachment keeps the document");
+  const catalogDetached = await fetch(base + "/api/sources/" + catalogSource.id, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: catalogSource.version, documentIds: [] }),
+  });
+  assert.equal(catalogDetached.status, 200, await catalogDetached.clone().text());
+  const catalogRemoved = await fetch(base + "/api/sources/" + catalogSource.id, {
+    method: "DELETE", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: catalogSource.version + 1 }),
+  });
+  assert.equal(catalogRemoved.status, 200, await catalogRemoved.clone().text());
   const linkedBefore = await app.archive.read();
   const linkedFamily = structuredClone(linkedBefore.family);
   linkedFamily.people.find((person) => person.id === "person-a")!.sources.push({
