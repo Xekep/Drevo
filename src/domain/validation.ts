@@ -15,6 +15,15 @@ function validPersonSource(s: Source): boolean {
     (s.documentPage === undefined || (!!s.documentId &&
       Number.isInteger(s.documentPage) && s.documentPage >= 1 && s.documentPage <= 2000));
 }
+function validDateClaim(claim: unknown, value: string | undefined): boolean {
+  if (claim === undefined) return true;
+  if (!claim || typeof claim !== "object") return false;
+  const candidate = claim as { value?: unknown; sources?: unknown };
+  return !!value && candidate.value === value &&
+    Array.isArray(candidate.sources) && candidate.sources.length > 0 &&
+    candidate.sources.length <= 50 && candidate.sources.every((source: Source) =>
+      validPersonSource(source) && !!(source.catalogId || source.title.trim()));
+}
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -89,14 +98,10 @@ export function validateFamily(value: unknown): Family {
         throw new Error("Некорректные сведения о человеке");
     for (const s of p.sources)
       if (!validPersonSource(s)) throw new Error("Некорректный источник");
-    if (p.birthDateClaim !== undefined &&
-      (!p.birthDateClaim || typeof p.birthDateClaim !== "object" ||
-        !p.birth || p.birthDateClaim.value !== p.birth ||
-        !Array.isArray(p.birthDateClaim.sources) ||
-        !p.birthDateClaim.sources.length || p.birthDateClaim.sources.length > 50 ||
-        !p.birthDateClaim.sources.every((source) =>
-          validPersonSource(source) && !!(source.catalogId || source.title.trim()))))
+    if (!validDateClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
+    if (!validDateClaim(p.deathDateClaim, p.death))
+      throw new Error("Источник даты смерти относится к другому значению; снимите связь перед изменением даты");
     if (p.awards !== undefined) {
       if (!Array.isArray(p.awards) || p.awards.length > 100)
         throw new Error("Допустимо не более 100 наград у человека");

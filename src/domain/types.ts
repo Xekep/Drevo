@@ -46,6 +46,7 @@ export type PersonEvent = {
   description?: string;
   sources?: Source[];
 };
+export type PersonDateClaim = { value: string; sources: Source[] };
 export type Person = {
   createdBy?: string;
   id: string;
@@ -56,8 +57,10 @@ export type Person = {
   /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
   /** Citations for this exact birth-date value, separate from general person sources. */
-  birthDateClaim?: { value: string; sources: Source[] };
+  birthDateClaim?: PersonDateClaim;
   death?: string;
+  /** Citations for this exact death-date value, separate from general person sources. */
+  deathDateClaim?: PersonDateClaim;
   deceased?: boolean;
   /** Manual research marker; absence does not mean the card is verified. */
   needsReview?: boolean;
