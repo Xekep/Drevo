@@ -12,6 +12,7 @@ import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import { openPromise } from "yauzl";
 import {
   newSessionToken,
@@ -38,6 +39,8 @@ import { researchSuggestionStore } from "../../src/server/research-suggestions.t
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
 import { documentsHttp } from "../../src/server/documents-http.ts";
+import { personDiscussionHttp } from "../../src/server/person-discussion-http.ts";
+import { discussionAttachmentStore, prepareCommentFile } from "../../src/server/discussion-attachments.ts";
 import { sampleTiff } from "../fixtures/tiff.ts";
 import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
@@ -2701,6 +2704,106 @@ try {
   await client.query("DELETE FROM documents WHERE id=$1", [scopedTiffId]);
   await client.query("DELETE FROM relations WHERE id='document-access-parent'");
   rmSync(join(scopedUploads, scopedTiffFile));
+  const attachmentBytes = await sharp({
+    create: { width: 3, height: 3, channels: 3, background: "blue" },
+  }).png().toBuffer();
+  const attachmentStore = discussionAttachmentStore(scopedUploads);
+  const [attachment] = await attachmentStore.save([
+    await prepareCommentFile("scoped-attachment.png", attachmentBytes),
+  ]);
+  const attachmentComment = await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,attachments)
+     VALUES('account-export-hidden','owner','Owner',$1,'Scoped attachment',$2::jsonb)
+     RETURNING id`,
+    [Date.now(), JSON.stringify([attachment])],
+  );
+  const attachmentId = Number(attachmentComment.rows[0].id);
+  const attachmentPath = `/api/people/account-export-hidden/discussion/${attachmentId}/attachments/${attachment.id}`;
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('attachment-access-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const initialAttachment = await fetch(securedBase + attachmentPath, { headers });
+  assert.equal(initialAttachment.status, 200);
+  assert.deepEqual(Buffer.from(await initialAttachment.arrayBuffer()), attachmentBytes);
+  const attachmentAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const raceAttachmentDownload = async (path: string, change: () => Promise<void>) => {
+    let reachedRead!: () => void;
+    let resumeRead!: () => void;
+    const readReady = new Promise<void>((resolve) => { reachedRead = resolve; });
+    const readGate = new Promise<void>((resolve) => { resumeRead = resolve; });
+    let reads = 0;
+    const delayedArchive = {
+      ...app!.archive,
+      read: async () => {
+        const snapshot = await app!.archive.read();
+        if (reads++ === 0) {
+          reachedRead();
+          await readGate;
+        }
+        return snapshot;
+      },
+    };
+    const handler = personDiscussionHttp({
+      archive: delayedArchive,
+      auth: attachmentAuth,
+      uploadsDirectory: scopedUploads,
+      media: mediaStore(scopedUploads),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+    });
+    const downloadServer = createServer((req, res) => {
+      void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .then((handled) => { if (!handled) res.writeHead(404).end(); })
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => downloadServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (downloadServer.address() as { port: number }).port;
+      const pending = fetch(`http://127.0.0.1:${port}${path}`, { headers });
+      await Promise.race([
+        readReady,
+        pending.then(() => { throw new Error("Attachment sent before snapshot barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Attachment read did not reach barrier")), 10_000);
+          timer.unref();
+        }),
+      ]);
+      await change();
+      resumeRead();
+      const response = await pending;
+      assert.equal(response.status, 404,
+        "an attachment hidden during preparation must not be delivered");
+      assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
+      assert.doesNotMatch(await response.text(), /scoped-attachment/);
+    } finally {
+      resumeRead();
+      await new Promise<void>((resolve) => downloadServer.close(() => resolve()));
+    }
+  };
+  await raceAttachmentDownload(attachmentPath, async () => {
+    await client.query("DELETE FROM relations WHERE id='attachment-access-parent'");
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  });
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('attachment-access-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const initialPreview = await fetch(securedBase + attachmentPath + "/preview", { headers });
+  assert.equal(initialPreview.status, 200);
+  assert.equal(initialPreview.headers.get("content-type"), "image/webp");
+  await initialPreview.arrayBuffer();
+  await raceAttachmentDownload(attachmentPath + "/preview", async () => {
+    await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  });
+  await client.query("UPDATE archive_memberships SET approved=true WHERE user_id='reader'");
+  await client.query("DELETE FROM person_comments WHERE id=$1", [attachmentId]);
+  await client.query("DELETE FROM relations WHERE id='attachment-access-parent'");
+  await attachmentStore.remove([attachment]);
   const preparedCommentExport = await accountDataExport(app.archive.db).read("reader");
   assert.ok(preparedCommentExport);
   await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");

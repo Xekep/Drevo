@@ -231,6 +231,13 @@ export function personDiscussionHttp({
         return json(res, 404, { error: "Вложение не найдено" });
       try {
         const bytes = await attachments.read(file, !!match[4]);
+        await checkCurrentAccess();
+        const current = (await comment.get(Number(match[2]), personId)) as
+          CommentRow | undefined;
+        if (!current || !commentFilesFromJson(current.attachments).some(
+          (item) => item.id === file.id && item.type === file.type,
+        ))
+          return json(res, 404, { error: "Вложение не найдено" });
         res.writeHead(200, {
           "Content-Type": match[4] ? "image/webp" : file.type,
           "Content-Length": bytes.length,
