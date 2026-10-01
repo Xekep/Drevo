@@ -4667,10 +4667,23 @@ try {
     const importedDocument = await fetch(oauthBase + `${documentPath}/annotations`,
       { headers: researcherHeaders }).then((response) => response.json());
     assert.equal(importedDocument.items[0].authorName, "Original researcher");
-    assert.equal(importedDocument.items[0].canDelete, false);
+    assert.equal(importedDocument.items[0].canDelete, true,
+      "researchers can moderate imported annotations regardless of original authorship");
+    assert.equal(importedDocument.items[0].authorId, "",
+      "the source author ID stays detached from local accounts");
+    await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id=$1 AND user_id='owner'",
+      [personalArchiveId]);
+    const relativeAnnotations = await fetch(oauthBase + `${documentPath}/annotations`,
+      { headers: researcherHeaders }).then((response) => response.json());
+    assert.equal(relativeAnnotations.items[0].canDelete, false);
     assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
       method: "DELETE", headers: researcherHeaders,
-    })).status, 403, "a matching source ID cannot delete imported annotations");
+    })).status, 403, "a relative with a matching source ID cannot delete imported annotations");
+    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id=$1 AND user_id='owner'",
+      [personalArchiveId]);
+    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+      method: "DELETE", headers: researcherHeaders,
+    })).status, 200, "the researcher role grants moderation of accessible imported annotations");
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
     assert.equal((await client.query("SELECT uploaded_by FROM documents WHERE id=$1",
       [portableDocumentId])).rows[0]?.uploaded_by, newAccountSession.user.id,
@@ -5270,12 +5283,21 @@ try {
     assert.equal(returnedAnnotations.status, 200);
     const annotationItems = (await returnedAnnotations.json()).items as Array<{ id: string; authorId: string; authorName: string; canDelete: boolean }>;
     assert.deepEqual(annotationItems.find((item) => item.id === formerAnnotationId),
-      { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: false },
-    "re-registering the same account ID does not regain the annotation delete capability");
+      { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: true },
+    "researcher moderation leaves the predecessor's author identity anonymized");
+    await client.query("UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    const returnedRelativeAnnotations = await fetch(securedBase + annotationPath, { headers: returnedHeaders })
+      .then(response => response.json());
+    assert.equal(returnedRelativeAnnotations.items.find((item: { id: string }) => item.id === formerAnnotationId)?.canDelete, false,
+      "re-registering the same ID as a relative does not regain annotation ownership");
     assert.equal((await fetch(securedBase + `${annotationPath}/${formerAnnotationId}`, {
       method: "DELETE",
       headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
-    })).status, 403, "a returned account cannot delete its predecessor's shared annotation");
+    })).status, 403, "a returned relative cannot delete its predecessor's shared annotation");
+    await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id='former-member'");
+    assert.equal((await fetch(securedBase + `${annotationPath}/${formerAnnotationId}`, {
+      method: "DELETE", headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
+    })).status, 200, "a researcher can moderate an anonymized annotation in an accessible document");
     await client.query("DELETE FROM documents WHERE id=$1", [formerAnnotationDocumentId]);
     await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
     await client.query("DELETE FROM documents WHERE id=$1", [otherArchiveAnnotationDocumentId]);
