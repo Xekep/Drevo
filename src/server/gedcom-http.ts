@@ -521,7 +521,7 @@ export function gedcomHttp(
           });
         } finally {
           await undo?.();
-          release?.();
+          await release?.();
         }
       } catch (error) {
         if (res.headersSent) {
