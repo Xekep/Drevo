@@ -1,4 +1,5 @@
-.mode-timeline .react-flow {
+.mode-timeline .react-flow,
+.mode-timeline .tree-distant-portrait-clip {
   visibility: hidden;
   pointer-events: none;
 }

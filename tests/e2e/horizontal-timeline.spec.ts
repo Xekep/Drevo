@@ -1,4 +1,53 @@
 import { expect, test } from "@playwright/test";
+import { randomFamily } from "../layout-fixtures";
+
+test("chronology hides the tiny distant-tree portraits behind its background", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  test.setTimeout(45_000);
+  const people = randomFamily(1, 4);
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.family.people = people.map((person, index) => ({
+      ...person,
+      name: person.id,
+      surname: "Тестов",
+      patronymic: "",
+      sex: "m",
+      birthPlace: "",
+      sources: [],
+      generation: 1,
+      column: 0,
+      ...(index === 0 ? { photo: "/media/timeline-tiny-portrait.jpg" } : {}),
+    }));
+    data.family.links = [];
+    data.family.photos = [];
+    data.partial = false;
+    data.user.personId = null;
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/media/timeline-tiny-portrait.jpg?variant=*", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#688a70"/></svg>',
+    }),
+  );
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-distant-portraits");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
+    timeout: 30_000,
+  });
+  await expect.poll(async () => Number(await canvas.getAttribute("data-portrait-count")))
+    .toBeGreaterThan(0);
+  await expect(canvas).toHaveCSS("visibility", "visible");
+  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  await expect(page.locator(".horizontal-timeline")).toBeVisible();
+  await expect(page.locator(".tree-distant-portrait-clip")).toBeHidden();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await expect(page.locator(".tree-distant-portrait-clip")).toBeVisible();
+});
 
 test("хронология переключает десятилетия без перетаскивания шкалы", async ({
   page,
