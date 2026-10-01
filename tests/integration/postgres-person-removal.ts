@@ -50,6 +50,24 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
     "Крёстный",
   );
   await graph(first, tokens.admin, "tree-a", archiveChanges(before, linked), 0);
+  await first.query("BEGIN");
+  try {
+    await first.query("SELECT set_config('drevo.archive_id',$1,true)", ["tree-a"]);
+    await first.query(
+      `INSERT INTO family_unions(archive_id,id,ordinal,participant_a,participant_b,data)
+       VALUES('tree-a','child-own-marriage',1,'child','own',$1::jsonb)`,
+      [JSON.stringify({
+        id: "child-own-marriage",
+        participants: ["child", "own"],
+        type: "marriage",
+        formation: { dateText: "около 2000 года" },
+      })],
+    );
+    await first.query("COMMIT");
+  } catch (error) {
+    await first.query("ROLLBACK");
+    throw error;
+  }
   before = (await read(first, "tree-a")).family;
   const other = await fingerprint(first, "tree-b");
   const request = randomUUID();
@@ -63,10 +81,10 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   );
   const after = (await read(first, "tree-a")).family;
   assert.deepEqual(after, removePerson(before, "child"));
-  assert.deepEqual(
-    applyArchiveChanges(before, deleted.appliedChanges).family,
-    after,
-  );
+  const replayedDeletion = applyArchiveChanges(before, deleted.appliedChanges).family;
+  assert.deepEqual(replayedDeletion.unions || [], after.unions || []);
+  if (!replayedDeletion.unions?.length) delete replayedDeletion.unions;
+  assert.deepEqual(replayedDeletion, after);
   assert.equal(
     (
       await first.query(
@@ -105,6 +123,7 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   );
   assert.deepEqual(saved.photos, before.photos);
   assert.deepEqual(saved.links, before.links);
+  assert.deepEqual(saved.unions, before.unions);
   assert.deepEqual(
     (await first.query("SELECT * FROM documents WHERE archive_id='tree-a'"))
       .rows,

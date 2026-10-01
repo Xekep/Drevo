@@ -73,14 +73,24 @@ export function removeConnections(family: Family, edges: Connection[]): Family {
       const child = next.people.find((p) => p.id === edge.to)!;
       child.parents = child.parents.filter((id) => id !== edge.from);
       child.parentageComplete = false;
-    } else if (edge.type === "spouse")
+    } else if (edge.type === "spouse") {
+      if (
+        next.unions?.some(
+          (union) =>
+            union.participants.includes(edge.from) &&
+            union.participants.includes(edge.to),
+        )
+      )
+        throw new Error(
+          "Сначала удалите записи семейных союзов этой пары, затем связь супругов.",
+        );
       for (const p of next.people) {
         if (p.id === edge.from)
           p.spouses = p.spouses.filter((id) => id !== edge.to);
         if (p.id === edge.to)
           p.spouses = p.spouses.filter((id) => id !== edge.from);
       }
-    else next.links = (next.links || []).filter((l) => l.id !== edge.id);
+    } else next.links = (next.links || []).filter((l) => l.id !== edge.id);
   }
   return validateFamily(next);
 }
@@ -95,6 +105,10 @@ export function removePerson(family: Family, id: string): Family {
       spouses: p.spouses.filter((x) => x !== id),
     }));
   next.links = (next.links || []).filter((l) => l.from !== id && l.to !== id);
+  if (next.unions) {
+    next.unions = next.unions.filter((union) => !union.participants.includes(id));
+    if (!next.unions.length) delete next.unions;
+  }
   next.photos = (next.photos || []).map((p) => ({
     ...p,
     tags: p.tags.filter((t) => t.personId !== id),
