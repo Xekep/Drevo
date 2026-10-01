@@ -482,6 +482,25 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     ).family.people.find((p: { id: string }) => p.id === "own");
     assert.equal(minimal.birth, "");
     assert.equal(minimal.sex, "u");
+    const createdSource = await request("/api/sources", admin, "POST", {
+      title: "Закрытая архивная запись", archive: "ГАСО",
+    });
+    assert.equal(createdSource.status, 201);
+    const sourceId = (await createdSource.json()).source.id as string;
+    assert.equal((await request("/api/sources", reader)).status, 403);
+    data = await request("/api/family", reader).then((r) => r.json());
+    const guessedCitation = { catalogId: sourceId, title: "Угаданная запись",
+      type: "", reference: "" };
+    const guessedPerson = structuredClone(data.family) as Family;
+    guessedPerson.people.find((p) => p.id === "own")!.sources.push(guessedCitation);
+    assert.equal((await request("/api/family", reader, "PUT", guessedPerson, data.revision)).status,
+      403, "direct archive writes cannot bypass the admin-only catalog");
+    const guessedPlace = structuredClone(data.family) as Family;
+    const ownWithPlace = guessedPlace.people.find((p) => p.id === "own")!;
+    ownWithPlace.birthPlace = "Тула";
+    ownWithPlace.birthPlaceClaim = { value: "Тула", sources: [guessedCitation] };
+    assert.equal((await request("/api/family", reader, "PUT", guessedPlace, data.revision)).status,
+      403, "a place claim cannot reveal an admin-only catalog entry");
     const original = structuredClone(data.family) as Family;
     const bad = structuredClone(original);
     bad.people[0].name = "Подмена";

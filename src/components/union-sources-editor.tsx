@@ -6,7 +6,7 @@ import "../styles/union-sources-editor.css";
 
 type CatalogEntry = CatalogSource & { version: number };
 
-function CatalogPicker({ existing, onChoose }: {
+export function CatalogPicker({ existing, onChoose }: {
   existing: Source[];
   onChoose: (source: CatalogEntry) => void;
 }) {

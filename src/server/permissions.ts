@@ -3,9 +3,30 @@ import {
   validateFamily,
   type Family,
   type ArchiveUser,
+  type Source,
 } from "../domain/index.ts";
 import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+
+function catalogCitationSlots(family: Family) {
+  const slots = new Map<string, Source[]>();
+  const add = (path: string[], sources?: Source[]) => slots.set(JSON.stringify(path),
+    (sources || []).filter((source) => source.catalogId));
+  for (const person of family.people) {
+    add(["person", person.id], person.sources);
+    for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const)
+      add(["person", person.id, claim], person[claim]?.sources);
+    for (const event of person.events || [])
+      add(["person", person.id, "event", event.id], event.sources);
+  }
+  for (const union of family.unions || []) {
+    add(["union", union.id], union.sources);
+    for (const milestone of ["formation", "ending", "divorce", "ongoing"] as const)
+      add(["union", union.id, milestone], union[milestone]?.sources);
+  }
+  return slots;
+}
+
 /** Проверяет весь снимок, включая изменения чужих узлов через связи. Автор назначается сервером. */
 export function authorizeArchive(
   nextValue: unknown,
@@ -166,6 +187,18 @@ export function authorizeArchive(
   for (const p of next.photos || []) {
     const old = previousPhotos.get(p.id);
     if (old && old.url !== p.url) deny();
+  }
+  const previousSlots = catalogCitationSlots(current);
+  for (const [path, nextSources] of catalogCitationSlots(next)) {
+    const previousSources = previousSlots.get(path) || [];
+    for (const source of nextSources) {
+      const oldIndex = previousSources.findIndex((old) => old.catalogId === source.catalogId);
+      if (oldIndex < 0)
+        throw new ForbiddenError("Привязать каталожный источник может только администратор");
+      const [old] = previousSources.splice(oldIndex, 1);
+      if (!isDeepStrictEqual(source, old))
+        throw new ForbiddenError("Изменить каталожную цитату может только администратор");
+    }
   }
   return next;
 }
