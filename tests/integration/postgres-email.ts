@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type pg from "pg";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
@@ -8,6 +9,7 @@ import {
 } from "../../src/server/email-credentials.ts";
 import { postgresEmailRateLimit } from "../../src/server/postgres-email-rate-limit.ts";
 import { issuePostgresEmailSessionInTransaction } from "../../src/server/postgres-sessions.ts";
+import { emailAuthHttp } from "../../src/server/email-auth-http.ts";
 
 export async function verifyEmailAccounts(
   db: StoreDatabase,
@@ -212,4 +214,95 @@ export async function verifyEmailAccounts(
         "concurrent verification and resend must not deadlock",
       );
   }
+
+  // Losing ownership must not lock the verified account out of email login.
+  // An invitation is usable only after approval; without any tree the account
+  // session still opens /account, where a new personal tree can be created.
+  await client.query(
+    `INSERT INTO archive_memberships(archive_id,user_id,role,approved,person_id,tree_access)
+     VALUES('runtime-test',$1,'reader',false,NULL,'all')`,
+    [account.accountId],
+  );
+  await client.query("DELETE FROM archives WHERE id=$1", [account.archiveId]);
+  const withoutTree = await accounts.login({
+    email: "new.person@example.org",
+    password: "a new long safe password",
+  });
+  assert.equal(withoutTree.archiveId, null);
+  const previousFlag = process.env.EMAIL_AUTH_ENABLED;
+  process.env.EMAIL_AUTH_ENABLED = "1";
+  try {
+    let issued = false;
+    const endpoint = emailAuthHttp(
+      db,
+      {
+        issueAccountSession: async (
+          _req: IncomingMessage,
+          _res: ServerResponse,
+          accountId: string,
+          passwordHash?: string,
+        ) => {
+          assert.equal(accountId, withoutTree.accountId);
+          assert.equal(passwordHash, withoutTree.passwordHash);
+          assert.ok(passwordHash);
+          await db.postgresTransaction!((transaction) =>
+            issuePostgresEmailSessionInTransaction(
+              transaction,
+              accountId,
+              passwordHash,
+            ),
+          );
+          issued = true;
+        },
+      } as unknown as Parameters<typeof emailAuthHttp>[1],
+      "https://mydrevo.org",
+      async () => {},
+    );
+    const body = Buffer.from(
+      JSON.stringify({
+        email: "new.person@example.org",
+        password: "a new long safe password",
+      }),
+    );
+    const request = {
+      headers: { "content-type": "application/json", origin: "https://mydrevo.org" },
+      socket: { remoteAddress: "127.0.0.1" },
+      async *[Symbol.asyncIterator]() {
+        yield body;
+      },
+    } as unknown as IncomingMessage;
+    let status = 0;
+    let payload = "";
+    const response = {
+      writeHead(code: number) { status = code; },
+      end(value: string) { payload = value; },
+    } as unknown as ServerResponse;
+    assert.equal(
+      await endpoint.handle(
+        request,
+        response,
+        new URL("https://mydrevo.org/api/auth/email/login"),
+      ),
+      true,
+    );
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(payload), { archiveId: null, account: true });
+    assert.equal(issued, true);
+  } finally {
+    if (previousFlag === undefined) delete process.env.EMAIL_AUTH_ENABLED;
+    else process.env.EMAIL_AUTH_ENABLED = previousFlag;
+  }
+  await client.query(
+    "UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id=$1",
+    [account.accountId],
+  );
+  assert.equal(
+    (
+      await accounts.login({
+        email: "new.person@example.org",
+        password: "a new long safe password",
+      })
+    ).archiveId,
+    "runtime-test",
+  );
 }

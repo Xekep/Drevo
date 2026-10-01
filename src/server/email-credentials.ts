@@ -276,18 +276,22 @@ export function emailCredentials(
         ]);
         return (
           await client.query<{ archive_id: string }>(
-            "SELECT archive_id FROM archive_owners WHERE user_id=$1 LIMIT 1",
+            `SELECT m.archive_id FROM archive_memberships m
+               JOIN archives a ON a.id=m.archive_id
+               LEFT JOIN archive_owners o
+                 ON o.archive_id=m.archive_id AND o.user_id=m.user_id
+              WHERE m.user_id=$1 AND m.approved
+              ORDER BY (o.user_id IS NOT NULL) DESC,lower(a.title),a.id
+              LIMIT 1`,
             [row.account_id],
           )
         ).rows[0]?.archive_id;
       });
-      if (!archiveId)
-        throw new InvalidEmailCredential("Личный архив недоступен.");
       // A reset can commit between checking the password and issuing a session.
       // The session issuer rechecks this hash under the credential row lock.
       return {
         accountId: row.account_id,
-        archiveId,
+        archiveId: archiveId ?? null,
         passwordHash: row.password_hash,
       };
     },

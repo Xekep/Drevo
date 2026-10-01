@@ -153,7 +153,7 @@ export function emailAuthHttp(
             account.accountId,
             account.passwordHash,
           );
-          return json(res, 200, { archiveId: account.archiveId });
+          return json(res, 200, { archiveId: account.archiveId, account: true });
         }
         if (url.pathname === "/api/auth/email/reset/request") {
           await credentials.requestReset(body.email);
