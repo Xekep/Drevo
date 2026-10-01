@@ -113,6 +113,13 @@ test("production static streams SPA routes, files and shared page", async () => 
     assert.equal(invitation.headers.get("referrer-policy"), "no-referrer");
     assert.equal(await invitation.text(), html);
 
+    const linkedBranch = await fetch(app.base +
+      "/discover/linked/family-one/11111111-1111-4111-8111-111111111111/family%3Aperson.1");
+    assert.equal(linkedBranch.status, 200);
+    assert.equal(linkedBranch.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(linkedBranch.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+    assert.equal(await linkedBranch.text(), html);
+
     const head = await fetch(app.base + "/tree", { method: "HEAD" });
     assert.equal(head.status, 200);
     assert.equal(

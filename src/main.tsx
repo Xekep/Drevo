@@ -33,6 +33,11 @@ import { ArchiveLoading } from "./components/archive-loading";
 const App = lazy(() => import("./App"));
 const SharedTree = lazy(() => import("./components/shared-tree"));
 const PublicPeople = lazy(() => import("./components/public-people"));
+const DiscoveryLinkedBranchPerson = lazy(() =>
+  import("./components/discovery-linked-branch-person").then((module) => ({
+    default: module.DiscoveryLinkedBranchPerson,
+  })),
+);
 const JoinArchive = lazy(() =>
   import("./components/join-archive").then((module) => ({
     default: module.JoinArchive,
@@ -46,6 +51,16 @@ const join =
   /^\/join\/([A-Za-z0-9][A-Za-z0-9-]{2,63})\/([A-Za-z0-9_-]{43})$/.exec(
     location.pathname,
   );
+const linkedBranch = (() => {
+  const match = /^\/discover\/linked\/([A-Za-z0-9-]{3,64})\/([a-f0-9-]{36})\/([^/]{1,1200})$/.exec(
+    location.pathname,
+  );
+  if (!match) return null;
+  try {
+    const personId = decodeURIComponent(match[3]);
+    return personId && personId.length <= 100 ? [match[1], match[2], personId] : null;
+  } catch { return null; }
+})();
 const pendingInvite = (() => {
   try {
     const path = sessionStorage.getItem("drevo_pending_invite") || "";
@@ -85,6 +100,9 @@ function Entry() {
     <SharedTree token={sharedToken} />
   ) : join ? (
     <JoinArchive archiveId={join[1]} token={join[2]} />
+  ) : linkedBranch ? (
+    <DiscoveryLinkedBranchPerson archiveId={linkedBranch[0]}
+      matchId={linkedBranch[1]} personId={linkedBranch[2]} />
   ) : location.pathname === "/discover" || location.pathname.startsWith("/discover/") ? (
     <PublicPeople />
   ) : (

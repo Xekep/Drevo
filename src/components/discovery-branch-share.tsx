@@ -7,15 +7,19 @@ type Detail = { available: Member[]; truncated: boolean; previewToken: string;
   ownReady: boolean; otherReady: boolean; outgoingIds: string[]; incoming: Member[] };
 const relationLabels = { parent: "Родитель", child: "Ребёнок", spouse: "Супруг(а)" };
 
-function MemberCard({ person }: { person: Member }) {
+function MemberCard({ person, matchId, archiveId }: { person: Member; matchId: string;
+  archiveId: string }) {
   return <li><strong>{relationLabels[person.relation]}: {person.name}</strong>
     {(person.birthYear || person.deathYear) && <small> · {person.birthYear || "?"}–{person.deathYear || "?"}</small>}
     {person.birthPlace && <small> · Рождение: {person.birthPlace}</small>}
     {person.deathPlace && <small> · Смерть: {person.deathPlace}</small>}
+    <a href={`/discover/linked/${encodeURIComponent(archiveId)}/${encodeURIComponent(matchId)}/${encodeURIComponent(person.id)}`}>
+      Открыть разрешённую карточку
+    </a>
   </li>;
 }
 
-export function DiscoveryBranchShare({ matchId }: { matchId: string }) {
+export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; archiveId: string }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -84,7 +88,7 @@ export function DiscoveryBranchShare({ matchId }: { matchId: string }) {
       <h4>Разрешённая ветка другого архива</h4>
       {detail.ownReady && detail.otherReady
         ? detail.incoming.length ? <ul>{detail.incoming.map((person) =>
-          <MemberCard key={person.id} person={person} />)}</ul>
+          <MemberCard key={person.id} person={person} matchId={matchId} archiveId={archiveId} />)}</ul>
           : <p>Другая сторона не выбрала родственников.</p>
         : <p>Просмотр откроется после разрешения обеих сторон.</p>}
     </>}

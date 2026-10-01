@@ -2458,6 +2458,8 @@ try {
   assert.ok(acceptedAudit?.responded_at);
   assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
   const branchPath = matchPath + "/branch-share";
+  const branchPersonPath = branchPath + "/people/branch-parent-b";
+  const navigationHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.214" };
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','vk:42','admin',true,'all') ON CONFLICT (archive_id,user_id)
@@ -2480,6 +2482,8 @@ try {
     "an invited admin of B cannot inspect its owner's branch");
   assert.equal((await fetch(securedBase + branchPath, { headers })).status, 403,
     "a reader cannot inspect branch grants even for a published linked card");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers })).status, 403,
+    "a reader cannot open a linked branch member by guessing the URL");
   assert.equal((await fetch(otherBase + branchPath, { headers })).status, 401,
     "a nonmember cannot inspect another archive's branch grant");
   for (const [runtime, visibleId, hiddenId, label] of [
@@ -2505,6 +2509,8 @@ try {
   assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id), ["branch-parent-a"]);
   assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id), ["branch-parent-b"]);
   assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|Закрытая биография ветки/);
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+    404, "a confirmed match without mutual branch grants cannot open a member URL");
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
     body: JSON.stringify({ personIds: ["branch-hidden-a"], previewToken: firstBranch.previewToken }),
@@ -2520,6 +2526,8 @@ try {
   assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json())).incoming, [],
   "one archive's grant alone does not expose its branch");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+    404, "one unilateral grant cannot open the other archive's member card");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -2540,6 +2548,29 @@ try {
     .then((response) => response.json());
   assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
   assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+  const selectedBranchResponse = await fetch(securedBase + branchPersonPath, { headers: navigationHeaders });
+  assert.equal(selectedBranchResponse.status, 200);
+  assert.match(selectedBranchResponse.headers.get("cache-control") || "", /no-store/);
+  const selectedBranchPerson = (await selectedBranchResponse.json()).person;
+  assert.deepEqual({ archiveId: selectedBranchPerson.archiveId, id: selectedBranchPerson.id,
+    relation: selectedBranchPerson.relation },
+  { archiveId: "other-archive", id: "branch-parent-b", relation: "parent" });
+  assert.ok(Object.keys(selectedBranchPerson).every((key) =>
+    ["archiveId", "id", "relation", "name", "birthYear", "deathYear", "birthPlace", "deathPlace"]
+      .includes(key)), "member navigation exposes only the selected scalar projection");
+  assert.doesNotMatch(JSON.stringify(selectedBranchPerson), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+  assert.equal((await fetch(securedBase + branchPath + "/people/branch-hidden-b", {
+    headers: navigationHeaders,
+  })).status, 404, "a private adjacent person is indistinguishable from an unavailable member");
+  assert.equal((await fetch(securedBase + branchPath + "/people/%ZZ", {
+    headers: navigationHeaders,
+  })).status, 404, "a malformed encoded ID exposes no branch detail");
+  assert.equal((await fetch(securedBase + branchPath + "/people/branch-parent-a", {
+    headers: navigationHeaders,
+  })).status, 404, "the route cannot open the requester's own member as a foreign card");
+  assert.equal((await fetch(securedBase + branchPersonPath, {
+    method: "POST", headers: navigationHeaders,
+  })).status, 405, "the linked member route is read-only");
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','other-only','admin',true,'all')`);
@@ -2555,6 +2586,9 @@ try {
     ...ownerHeaders, "X-Real-IP": "198.51.100.211",
   } }).then((response) => response.json())).incoming, [],
   "A cannot keep reading B's branch after B changes owner");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.211",
+  } })).status, 404, "ownership transfer closes direct member navigation");
   assert.equal((await fetch(otherBase + branchPath, { headers: {
     ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212",
   } })).status, 403, "the former owner cannot reauthorize B's branch");
@@ -2573,6 +2607,9 @@ try {
     ...ownerHeaders, "X-Real-IP": "198.51.100.213",
   } }).then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
   ["branch-parent-b"], "a fresh owner grant reopens only the selected branch member");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.213",
+  } })).status, 200, "a fresh mutual grant reopens the direct member URL");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -2624,6 +2661,8 @@ try {
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json())).incoming, [],
     "revoking either side closes the branch immediately");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+    404, "grant revocation closes an already issued member URL");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
@@ -2644,13 +2683,13 @@ try {
   await client.query("INSERT INTO people(id,data) VALUES('person-c',$1)", [JSON.stringify({
     ...family.people[0], id: "person-c", name: "Третий", deceased: true,
   })]);
-  await client.query("INSERT INTO people(id,data) VALUES('branch-parent-c',$1)", [JSON.stringify({
-    ...family.people[0], id: "branch-parent-c", name: "Третий родитель", deceased: true,
+  await client.query("INSERT INTO people(id,data) VALUES('family:person.1',$1)", [JSON.stringify({
+    ...family.people[0], id: "family:person.1", name: "Третий родитель", deceased: true,
   })]);
   const thirdDb = await openPostgresDatabase("third-archive", source);
   try {
     await publishedPeopleStore(thirdDb).publish("person-c", "owner");
-    await publishedPeopleStore(thirdDb).publish("branch-parent-c", "owner");
+    await publishedPeopleStore(thirdDb).publish("family:person.1", "owner");
   } finally { await thirdDb.close(); }
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   const secondPairId = "11111111-2222-4333-8444-555555555555";
@@ -2672,7 +2711,22 @@ try {
   await client.query(`INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
     right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
     VALUES('other-archive','person-a','third-archive','person-c',
-      'third-archive','branch-parent-c','parent')`);
+      'third-archive','family:person.1','parent')`);
+  const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
+  const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
+  } });
+  assert.equal(encodedMember.status, 200, "a selected member with punctuation has a usable direct URL");
+  assert.deepEqual((await encodedMember.json()).person.id, "family:person.1");
+  assert.equal((await fetch(securedBase + branchPath + "/people/family%3Aperson.1", {
+    headers: navigationHeaders,
+  })).status, 404, "A-B member navigation cannot traverse B-C's separately granted branch");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE person_id='family:person.1'`).get())?.count,
+      0, "RLS cannot expose C's selected member through A's unrelated confirmed pair");
+  }, true);
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
     0, "C cannot read grants belonging only to A-B even when it shares B-C");
@@ -2683,7 +2737,7 @@ try {
     .then((response) => response.json());
   assert.deepEqual(oneHopOnly.incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"], "A-B cannot traverse B-C or reveal C's branch");
-  assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|branch-parent-c|Третий родитель/);
+  assert.doesNotMatch(JSON.stringify(oneHopOnly), /third-archive|family:person.1|Третий родитель/);
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
@@ -2739,6 +2793,8 @@ try {
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json())).incoming, [],
     "unpublishing a selected relative immediately removes it from the branch");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
+    404, "unpublishing immediately closes its direct linked member URL");
   const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.equal(sharePreview.available.occupation, "Архивный исследователь");

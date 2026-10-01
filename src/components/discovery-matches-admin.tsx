@@ -362,7 +362,7 @@ export function DiscoveryMatchesAdmin() {
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "revoke")}>Отозвать связь</button>}
         </div>
         {item.status === "linked" && <><DiscoveryLinkedCardShare matchId={item.id} />
-          <DiscoveryBranchShare matchId={item.id} /></>}
+          <DiscoveryBranchShare matchId={item.id} archiveId={archiveId} /></>}
       </article>)}
       {(history.length > 0 || nextCursor) && <nav className="match-pages" aria-label="Страницы запросов">
         <button type="button" disabled={!history.length} onClick={() => { setCursor(history.at(-1) || null); setHistory((current) => current.slice(0, -1)); }}>Назад</button>

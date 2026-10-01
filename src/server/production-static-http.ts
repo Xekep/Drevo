@@ -80,10 +80,13 @@ export function productionStaticHttp(
       /^\/(?:a\/[A-Za-z0-9][A-Za-z0-9-]{2,63}\/)?s\/[A-Za-z0-9_-]{43}$/.test(
         pathname,
       );
+    const linkedBranch =
+      /^\/discover\/linked\/[A-Za-z0-9-]{3,64}\/[a-f0-9-]{36}\/[^/]{1,1200}$/.test(pathname);
     const discovery =
       pathname === "/discover" ||
       /^\/discover\/search\/[^/]{1,300}$/.test(pathname) ||
-      /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?[A-Za-z0-9_-]{1,100}$/.test(pathname);
+      /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?[A-Za-z0-9_-]{1,100}$/.test(pathname) ||
+      linkedBranch;
     const filePath =
       archiveViewAt(pathname) ||
       shared ||
@@ -102,7 +105,7 @@ export function productionStaticHttp(
         await handle.close();
         return jsonError(res, 404, "Страница не найдена");
       }
-      if (shared || invitation || pathname === "/account") {
+      if (shared || invitation || linkedBranch || pathname === "/account") {
         res.setHeader("Referrer-Policy", "no-referrer");
         res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
       }

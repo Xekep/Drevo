@@ -246,3 +246,44 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   await expect(page.getByText("Анна Петрова")).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
+
+test("a selected linked member opens through its own permission-checked URL", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const incoming = { id: "family:person.1", relation: "parent", name: "Мария Петрова",
+    birthYear: "1900" };
+  let permitted = true;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share`, (route) =>
+    route.fulfill({ json: { available: [], truncated: false, previewToken: "b".repeat(64),
+      ownReady: true, otherReady: true, outgoingIds: [], incoming: [incoming] } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share/people/*`, (route) => {
+    expect(decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-1)!))
+      .toBe("family:person.1");
+    return permitted ? route.fulfill({ json: { person: { ...incoming, archiveId: "tree-b" } } })
+      : route.fulfill({ status: 404, json: { error: "Карточка недоступна" } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByText("Поделиться разрешённой веткой").click();
+  await expect(page.getByText("Мария Петрова")).toBeVisible();
+  await page.getByRole("link", { name: "Открыть разрешённую карточку" }).click();
+  await expect(page).toHaveURL(new RegExp(`/discover/linked/tree-a/${id}/family%3Aperson\\.1$`, "i"));
+  await expect(page.getByRole("heading", { name: "Мария Петрова" })).toBeVisible();
+  await expect(page.getByText("Родитель · Архив: tree-b")).toBeVisible();
+  await expect(page.getByRole("link", { name: /media|Редактировать|Скачать/ })).toHaveCount(0);
+  permitted = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("alert")).toContainText("Карточка недоступна");
+  await expect(page.getByRole("heading", { name: "Мария Петрова" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("alert")).toContainText("Карточка недоступна");
+});
