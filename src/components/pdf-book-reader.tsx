@@ -332,6 +332,12 @@ export function PdfBookReader({
         role="dialog"
         aria-modal="true"
         aria-label={"Документ: " + entry.title}
+        onContextMenu={(event) => {
+          if (!magnifierLatest.current) return;
+          event.preventDefault();
+          magnifierLatest.current = false;
+          setMagnifier(false);
+        }}
       >
         <div className="pdf-book-content">
           <div className="pdf-book-stage">
