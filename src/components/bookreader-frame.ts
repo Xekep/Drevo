@@ -17,13 +17,19 @@ const source = "drevo-bookreader";
 const origin = window.location.origin;
 const send = (event: ReaderEvent) => window.parent.postMessage(event, origin);
 const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (character) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
+  value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ]!,
   );
 let reader: BookReaderInstance | null = null;
 let pendingState: Extract<ReaderCommand, { type: "state" }> | null = null;
 let opening = false;
 let pageCount = 0;
+let cleanupDocument: () => void = () => {};
+window.addEventListener("pagehide", () => cleanupDocument(), { once: true });
 
 async function pageDimensions(pdf: PDFDocumentProxy): Promise<ReaderPage[]> {
   const dimensions = Array<ReaderPage>(pdf.numPages);
@@ -87,82 +93,130 @@ async function readOutline(pdf: PDFDocumentProxy) {
   }
 }
 
+async function prepareDocument(
+  command: Extract<ReaderCommand, { type: "init" }>,
+) {
+  let dimensions: ReaderPage[];
+  let render: (index: number) => Promise<string>;
+  let prefetch: (index: number) => void = () => {};
+  let readBookmarks: () => void = () => {};
+  if (command.mimeType === "application/pdf") {
+    const loadingTask = getDocument({
+      url: command.url,
+      withCredentials: command.url.startsWith("/"),
+      disableStream: true,
+      disableAutoFetch: true,
+    });
+    cleanupDocument = () => {
+      void loadingTask.destroy();
+    };
+    const pdf = await loadingTask.promise;
+    if (pdf.numPages < 1 || pdf.numPages > 2000)
+      throw new Error("Документ должен содержать от 1 до 2000 страниц");
+    pageCount = pdf.numPages;
+    const urls = new Map<number, string>();
+    const pending = new Map<number, Promise<string>>();
+    let disposed = false;
+    let activeRenders = 0;
+    const waiting: (() => void)[] = [];
+    const nextRender = () => {
+      while (activeRenders < 2 && waiting.length) {
+        activeRenders++;
+        waiting.shift()!();
+      }
+    };
+    render = (index: number): Promise<string> => {
+      const url = urls.get(index);
+      if (url) return Promise.resolve(url);
+      const inProgress = pending.get(index);
+      if (inProgress) return inProgress;
+      const task = (async () => {
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve);
+          nextRender();
+        });
+        if (disposed) throw new Error("Документ закрыт");
+        const page = await pdf.getPage(index + 1);
+        const original = page.getViewport({ scale: 1 });
+        const scale = Math.min(
+          2,
+          1600 / Math.max(original.width, original.height),
+        );
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Не удалось отобразить страницу PDF");
+        await page.render({ canvas, canvasContext: context, viewport }).promise;
+        const blob = await canvasBlob(canvas);
+        page.cleanup();
+        if (disposed) throw new Error("Документ закрыт");
+        const result = URL.createObjectURL(blob);
+        urls.set(index, result);
+        return result;
+      })().finally(() => {
+        pending.delete(index);
+        activeRenders--;
+        nextRender();
+      });
+      pending.set(index, task);
+      return task;
+    };
+    cleanupDocument = () => {
+      if (disposed) return;
+      disposed = true;
+      for (const url of urls.values()) URL.revokeObjectURL(url);
+      void loadingTask.destroy();
+    };
+    // Keep exact sizes for mixed-format PDFs; render the opening spread in parallel.
+    const initial = Math.min(
+      pageCount - 1,
+      Math.max(0, command.initialPage - 1),
+    );
+    const spread =
+      initial === 0
+        ? [0]
+        : initial % 2
+          ? [initial, initial + 1]
+          : [initial - 1, initial];
+    [dimensions] = await Promise.all([
+      pageDimensions(pdf),
+      Promise.all(spread.filter((index) => index < pageCount).map(render)),
+    ]);
+    prefetch = (index: number) => {
+      for (const page of [index, index + 1, index + 2, index + 3, index + 4]) {
+        if (page >= 0 && page < pageCount)
+          void render(page).catch((error) => {
+            send({ source, type: "error", message: String(error) });
+          });
+      }
+    };
+    readBookmarks = () => {
+      void readOutline(pdf);
+    };
+  } else {
+    const type = documentFileTypeFromMime(command.mimeType);
+    if (!type || type.extension === "pdf")
+      throw new Error("Тип документа не поддерживается");
+    const image = new Image();
+    image.src = command.url;
+    await image.decode();
+    if (!image.naturalWidth || !image.naturalHeight)
+      throw new Error("Изображение документа повреждено");
+    pageCount = 1;
+    dimensions = [{ width: image.naturalWidth, height: image.naturalHeight }];
+    render = () => Promise.resolve(command.url);
+  }
+  return { dimensions, render, prefetch, readBookmarks };
+}
+
 async function open(command: Extract<ReaderCommand, { type: "init" }>) {
   if (opening) return;
   opening = true;
   try {
-    const BookReader = await loadBookReader();
-    let dimensions: ReaderPage[];
-    let render: (index: number) => Promise<string>;
-    let prefetch: (index: number) => void = () => {};
-    let readBookmarks: () => void = () => {};
-    let cleanup: () => void = () => {};
-    if (command.mimeType === "application/pdf") {
-      const loadingTask = getDocument({
-        url: command.url,
-        withCredentials: command.url.startsWith("/"),
-      });
-      const pdf = await loadingTask.promise;
-      if (pdf.numPages < 1 || pdf.numPages > 2000)
-        throw new Error("Документ должен содержать от 1 до 2000 страниц");
-      pageCount = pdf.numPages;
-      dimensions = await pageDimensions(pdf);
-      const urls = new Map<number, string>();
-      const pending = new Map<number, Promise<string>>();
-      render = (index: number): Promise<string> => {
-        const url = urls.get(index);
-        if (url) return Promise.resolve(url);
-        const inProgress = pending.get(index);
-        if (inProgress) return inProgress;
-        const task = (async () => {
-          const page = await pdf.getPage(index + 1);
-          const original = page.getViewport({ scale: 1 });
-          const scale = Math.min(
-            2,
-            1600 / Math.max(original.width, original.height),
-          );
-          const viewport = page.getViewport({ scale });
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
-          const context = canvas.getContext("2d");
-          if (!context) throw new Error("Не удалось отобразить страницу PDF");
-          await page.render({ canvas, canvasContext: context, viewport }).promise;
-          const blob = await canvasBlob(canvas);
-          page.cleanup();
-          const result = URL.createObjectURL(blob);
-          urls.set(index, result);
-          return result;
-        })().finally(() => pending.delete(index));
-        pending.set(index, task);
-        return task;
-      };
-      prefetch = (index: number) => {
-        for (const page of [index, index + 1, index + 2, index + 3, index + 4]) {
-          if (page >= 0 && page < pageCount)
-            void render(page).catch((error) => {
-              send({ source, type: "error", message: String(error) });
-            });
-        }
-      };
-      readBookmarks = () => { void readOutline(pdf); };
-      cleanup = () => {
-        for (const url of urls.values()) URL.revokeObjectURL(url);
-        void loadingTask.destroy();
-      };
-    } else {
-      const type = documentFileTypeFromMime(command.mimeType);
-      if (!type || type.extension === "pdf")
-        throw new Error("Тип документа не поддерживается");
-      const image = new Image();
-      image.src = command.url;
-      await image.decode();
-      if (!image.naturalWidth || !image.naturalHeight)
-        throw new Error("Изображение документа повреждено");
-      pageCount = 1;
-      dimensions = [{ width: image.naturalWidth, height: image.naturalHeight }];
-      render = () => Promise.resolve(command.url);
-    }
+    const [BookReader, { dimensions, render, prefetch, readBookmarks }] =
+      await Promise.all([loadBookReader(), prepareDocument(command)]);
     const data: ReaderPage[][] = [[dimensions[0]]];
     for (let index = 1; index < dimensions.length; index += 2)
       data.push(dimensions.slice(index, index + 2));
@@ -204,8 +258,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       },
       renderPageURI(image, uri) {
         const index = Number(uri.slice("drevo-page:".length));
-        if (!Number.isInteger(index) || index < 0 || index >= pageCount)
-          return;
+        if (!Number.isInteger(index) || index < 0 || index >= pageCount) return;
         void render(index)
           .then((url) => {
             image.src = url;
@@ -231,8 +284,8 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
     send({ source, type: "loaded", pageCount });
     send({ source, type: "page", page: reader.currentIndex() });
     readBookmarks();
-    window.addEventListener("pagehide", cleanup, { once: true });
   } catch (error) {
+    cleanupDocument();
     send({
       source,
       type: "error",

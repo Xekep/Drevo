@@ -1,4 +1,5 @@
 import { enforceUserStorageLimit } from "./storage-limits.ts";
+import { httpByteRange } from "./http-byte-range.ts";
 import {
   documentFileTypeFromMime,
   storedDocumentFileType,
@@ -893,14 +894,36 @@ export function documentsHttp({
           return json(res, 404, { error: "Файл документа не найден" });
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
-        res.writeHead(200, {
+        const range = req.headers["if-range"]
+          ? undefined
+          : httpByteRange(req.headers.range, info.size);
+        const headers = {
           "Content-Type": fileType.mime,
-          "Content-Length": String(info.size),
           "Content-Disposition": `inline; filename="document.${fileType.extension}"`,
           "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, no-store",
+          "Accept-Ranges": "bytes",
+        };
+        if (range === "unsatisfiable") {
+          res
+            .writeHead(416, {
+              ...headers,
+              "Content-Range": `bytes */${info.size}`,
+              "Content-Length": "0",
+            })
+            .end();
+          return true;
+        }
+        res.writeHead(range ? 206 : 200, {
+          ...headers,
+          "Content-Length": String(
+            range ? range.end - range.start + 1 : info.size,
+          ),
+          ...(range
+            ? { "Content-Range": `bytes ${range.start}-${range.end}/${info.size}` }
+            : {}),
         });
-        await pipeline(createReadStream(path), res);
+        await pipeline(createReadStream(path, range), res);
       } catch (error) {
         if (!res.headersSent)
           return json(res, 404, { error: "Файл документа не найден" });

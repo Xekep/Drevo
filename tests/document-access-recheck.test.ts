@@ -65,10 +65,16 @@ test("document reads recheck revoked and narrowed access before responding", asy
       `/api/documents/${documentId}/annotations`,
       `/api/documents/${documentId}/file`,
     ]) {
-      users = path.endsWith("/file") ? [admin, scoped] : [admin, admin, scoped];
-      const response = await fetch(`${base}${path}`);
-      assert.ok(response.status === 403 || response.status === 404, `${path}: ${response.status}`);
-      assert.doesNotMatch(await response.text(), /Private document|%PDF/);
+      const requests: Record<string, string>[] = path.endsWith("/file")
+        ? [{}, { Range: "bytes=0-3" }, { Range: "bytes=1000-" }]
+        : [{}];
+      for (const headers of requests) {
+        users = path.endsWith("/file") ? [admin, scoped] : [admin, admin, scoped];
+        const response = await fetch(`${base}${path}`, { headers });
+        assert.ok(response.status === 403 || response.status === 404, `${path}: ${response.status}`);
+        assert.equal(response.headers.get("content-range"), null);
+        assert.doesNotMatch(await response.text(), /Private document|%PDF/);
+      }
     }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

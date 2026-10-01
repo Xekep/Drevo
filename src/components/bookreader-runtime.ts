@@ -46,6 +46,8 @@ function loadScript(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = url;
+    // Download dependencies together, execute classic scripts in insertion order.
+    script.async = false;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("Не удалось загрузить BookReader"));
     document.head.append(script);
@@ -53,9 +55,13 @@ function loadScript(url: string): Promise<void> {
 }
 
 export async function loadBookReader(): Promise<BookReaderConstructor> {
-  await loadScript(polyfillUrl);
-  await loadScript(jqueryUrl);
-  await loadScript(bookReaderUrl);
+  const needsPolyfill =
+    !window.customElements || !HTMLElement.prototype.attachShadow;
+  await Promise.all([
+    ...(needsPolyfill ? [loadScript(polyfillUrl)] : []),
+    loadScript(jqueryUrl),
+    loadScript(bookReaderUrl),
+  ]);
   if (!window.BookReader) throw new Error("Не удалось запустить BookReader");
   return window.BookReader;
 }
