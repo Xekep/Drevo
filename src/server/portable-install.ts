@@ -47,6 +47,15 @@ export async function installPortableOriginals(
       remap.set(basename(path), name);
     }
     const snapshot = structuredClone(parsed.snapshot);
+    // Author IDs belong to the exporting installation. Keeping them live here
+    // could give a matching account in this archive edit rights or visibility.
+    const detachAuthor = (item: { createdBy?: string }) => {
+      if (item.createdBy) item.createdBy = `imported:${item.createdBy}`;
+    };
+    for (const person of snapshot.family.people) detachAuthor(person);
+    for (const photo of snapshot.family.photos || []) detachAuthor(photo);
+    for (const link of snapshot.family.links || []) detachAuthor(link);
+    for (const union of snapshot.family.unions || []) detachAuthor(union);
     const url = (value: string) => {
       if (!value.startsWith("/media/")) return value;
       const name = remap.get(value.slice(7));

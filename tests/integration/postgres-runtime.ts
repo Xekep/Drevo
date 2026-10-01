@@ -3708,7 +3708,8 @@ try {
         title: "Transferred", description: "", demo: false,
         people: [{ id: "pg-portable-person", name: "Portable", surname: "Person",
           patronymic: "", sex: "u", birth: "1900", birthPlace: "",
-          parents: [], spouses: [], generation: 1, column: 0, sources: [] }],
+          parents: [], spouses: [], generation: 1, column: 0, sources: [],
+          createdBy: "owner" }],
         photos: [],
       },
       documents: [],
@@ -3881,6 +3882,32 @@ try {
       headers: { Cookie: sessionCookie },
     }).then((response) => response.json());
     assert.equal(transferred.family.people[0].id, "pg-portable-person");
+    assert.equal(transferred.family.people[0].createdBy, "imported:owner",
+      "the source account ID must not become a live author in the target archive");
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES($1,'owner','researcher',true,'all')",
+      [personalArchiveId],
+    );
+    const collidingAuthorToken = newSessionToken();
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'owner',$2)",
+      [sessionTokenHash(collidingAuthorToken), Date.now() + 10 * 60_000],
+    );
+    const forgedFamily = structuredClone(transferred.family);
+    forgedFamily.people[0].name = "Unauthorized edit";
+    const authorEdit = await fetch(oauthBase + location.replace(/\/tree$/, "/api/family"), {
+      method: "PUT",
+      headers: { Cookie: `drevo_session=${collidingAuthorToken}`,
+        Origin: process.env.PUBLIC_ORIGIN!, "Content-Type": "application/json",
+        "If-Match": String(transferred.revision) },
+      body: JSON.stringify(forgedFamily),
+    });
+    assert.equal(authorEdit.status, 403,
+      "a researcher whose ID matched the source author cannot edit imported people");
+    assert.equal((await fetch(oauthBase + location.replace(/\/tree$/, "/api/family"), {
+      headers: { Cookie: sessionCookie },
+    }).then((response) => response.json())).family.people[0].name, "Portable");
     const vkRegistration = await oauthApp.archive.db.postgresTransaction!((pgClient) =>
       completePostgresOAuthLoginInTransaction(
         pgClient,

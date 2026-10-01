@@ -84,9 +84,20 @@ test("private package preview and one-time import preserve people, media, docume
           column: 0,
           sources: [],
           photo: "/media/portrait.png",
+          createdBy: "remote",
+        },
+        {
+          id: "p2", surname: "Test", name: "Other", patronymic: "",
+          sex: "u", birth: "1881", birthPlace: "", parents: [], spouses: [],
+          generation: 1, column: 1, sources: [],
         },
       ],
-      photos: [],
+      photos: [{ id: "gallery", url: "/media/portrait.png", title: "Photo",
+        tags: [], createdBy: "remote" }],
+      links: [{ id: "link", from: "p1", to: "p2", type: "sworn_sibling",
+        createdBy: "remote" }],
+      unions: [{ id: "union", participants: ["p1", "p2"], type: "partnership",
+        createdBy: "remote" }],
     },
     documents: [
       {
@@ -214,7 +225,7 @@ test("private package preview and one-time import preserve people, media, docume
       people: number;
       documents: number;
     };
-    assert.equal(preview.people, 1);
+    assert.equal(preview.people, 2);
     assert.equal(preview.documents, 1);
     assert.equal((await archive.read()).family.people.length, 0);
     const importRequest = () =>
@@ -251,7 +262,11 @@ test("private package preview and one-time import preserve people, media, docume
       "successful portable import releases its disk reservation",
     );
     const result = await archive.read();
-    assert.equal(result.family.people.length, 1);
+    assert.equal(result.family.people.length, 2);
+    assert.equal(result.family.people[0].createdBy, "imported:remote");
+    assert.equal(result.family.photos?.[0].createdBy, "imported:remote");
+    assert.equal(result.family.links?.[0].createdBy, "imported:remote");
+    assert.equal(result.family.unions?.[0].createdBy, "imported:remote");
     const portrait = result.family.people[0].photo!;
     assert.notEqual(portrait, "/media/portrait.png");
     assert.deepEqual(
