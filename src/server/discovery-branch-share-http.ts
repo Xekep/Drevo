@@ -11,7 +11,7 @@ type Row = Record<string, unknown>;
 type Relation = "parent" | "child" | "spouse";
 type Member = { id: string; relation: Relation; name: string; birthYear?: string;
   deathYear?: string; birthPlace?: string; deathPlace?: string; publicationVersion: string };
-const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/branch-share$/;
+const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/branch-share(?:\/people\/([^/]{1,1200}))?$/;
 const maxMembers = 20;
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown> | null> {
@@ -109,6 +109,13 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = route.exec(url.pathname);
     if (!detail) return false;
+    let memberId: string | null = null;
+    if (detail[2]) {
+      try { memberId = decodeURIComponent(detail[2]); }
+      catch { return json(res, 404, { error: "Карточка недоступна" }); }
+      if (!memberId || memberId.length > 100)
+        return json(res, 404, { error: "Карточка недоступна" });
+    }
     if (db.kind !== "postgres" || !db.archiveId)
       return json(res, 501, { error: "Просмотр ветки доступен с PostgreSQL" });
     const user = await auth.currentUser(req);
@@ -119,11 +126,35 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
       return json(res, 403, { error: "Доступно владельцу дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
-    if (req.method !== "GET" && req.method !== "PUT" && req.method !== "DELETE")
+    if ((detail[2] && req.method !== "GET") ||
+        (req.method !== "GET" && req.method !== "PUT" && req.method !== "DELETE"))
       return json(res, 405, { error: "Метод не поддерживается" });
     if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
       return json(res, 429, { error: "Слишком много запросов" });
     const archiveId = db.archiveId;
+    if (memberId) {
+      const personId = memberId;
+      const person = await db.transaction(async () => {
+        const pair = await linkedPair(detail[1], archiveId);
+        if (!pair || !(await isOwner(archiveId, user.id))) return null;
+        const grants = await db.prepare("", `SELECT grantor_archive_id FROM discovery_branch_grants
+          WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=?
+            AND right_person_id=?`).all(...pairArgs(pair));
+        if (!grants.some((row) => row.grantor_archive_id === archiveId) ||
+            !grants.some((row) => row.grantor_archive_id !== archiveId)) return null;
+        const row = await db.prepare("", `SELECT p.archive_id,p.person_id,p.name,p.birth_year,
+          p.death_year,p.birth_place,p.death_place,p.publication_version,b.relation
+          FROM discovery_branch_members b JOIN discovery_people p
+            ON p.archive_id=b.grantor_archive_id AND p.person_id=b.person_id
+          WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
+            AND b.right_person_id=? AND b.grantor_archive_id<>? AND b.person_id=?`)
+          .get(...pairArgs(pair), archiveId, personId);
+        return row ? { archiveId: String(row.archive_id),
+          ...listed(row, String(row.relation) as Relation) } : null;
+      }, true);
+      return person ? json(res, 200, { person })
+        : json(res, 404, { error: "Карточка недоступна" });
+    }
     if (req.method === "GET") {
       const result = await db.transaction(async () => {
         const pair = await linkedPair(detail[1], archiveId);
