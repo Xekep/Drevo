@@ -9,6 +9,7 @@ import {
 import {
   TreeDeciduous,
   Users,
+  UserRound,
   Image,
   BookOpenText,
   Heart,
@@ -157,28 +158,30 @@ export function ArchiveNavigation({
       >
         О проекте
       </button>
-      {identity && (
-        <a
-          className="nav-account"
-          href={scopedArchivePath(archivePaths.account)}
-          aria-label={`Личный кабинет: ${identity.name}`}
-          aria-current={view === "account" ? "page" : undefined}
-          onClick={(event) => navigate(event, "account")}
-          title="Личный кабинет"
-        >
-          <span className="nav-account-avatar" aria-hidden="true">
-            {portrait && portrait !== failedPortrait ? (
-              <img
-                src={portrait}
-                alt=""
-                onError={() => setFailedPortrait(portrait)}
-              />
-            ) : (
-              initial
-            )}
-          </span>
-        </a>
-      )}
+      <a
+        className="nav-account"
+        href={scopedArchivePath(archivePaths.account)}
+        aria-label={
+          identity ? `Личный кабинет: ${identity.name}` : "Личный кабинет"
+        }
+        aria-current={view === "account" ? "page" : undefined}
+        onClick={(event) => navigate(event, "account")}
+        title="Личный кабинет"
+      >
+        <span className="nav-account-avatar" aria-hidden="true">
+          {portrait && portrait !== failedPortrait ? (
+            <img
+              src={portrait}
+              alt=""
+              onError={() => setFailedPortrait(portrait)}
+            />
+          ) : identity ? (
+            initial
+          ) : (
+            <UserRound size={20} />
+          )}
+        </span>
+      </a>
       <details ref={menu} className="archive-more" key={view}>
         <summary aria-label="Меню проекта">
           <Menu size={20} />

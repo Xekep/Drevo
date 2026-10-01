@@ -1261,6 +1261,7 @@
   background: #59735a;
 }
 .archive-more {
+  display: none;
   order: 6;
   position: relative;
   margin-left: 0;
@@ -1535,6 +1536,9 @@
   line-height: 1.8;
 }
 @media (max-width: 1100px) {
+  .archive-header .archive-more {
+    display: block;
+  }
   .archive-header .nav-sections {
     display: none;
   }
