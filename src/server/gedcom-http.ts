@@ -484,8 +484,8 @@ export function gedcomHttp(
                 };
                 await db
                   .prepare(
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   )
                   .run(
                     file.documentId!,
@@ -500,6 +500,8 @@ export function gedcomHttp(
                     details.place,
                     details.description,
                     details.provenance,
+                    JSON.stringify(details.eventLinks || []),
+                    JSON.stringify(details.pages || []),
                   );
                 for (const id of file.personIds)
                   await db

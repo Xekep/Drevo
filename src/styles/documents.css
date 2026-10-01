@@ -503,6 +503,16 @@
   border-radius: 10px;
   background: #f4f7f0;
 }
+.documents-relations { display: grid; gap: 10px; padding-top: 12px; }
+.documents-relations p { margin: 6px 0 0; font-weight: 600; }
+.documents-relation-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.documents-relation-row label { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.documents-relation-row input[type="number"] { width: 76px; }
+.documents-relation-row input:not([type="checkbox"]), .documents-relation-row button { max-width: 100%; }
+.pdf-book-links { padding: 12px; overflow: auto; }
+.pdf-book-links h3 { margin: 12px 0 8px; font-size: 14px; }
+.pdf-book-links p { margin: 8px 0; line-height: 1.45; overflow-wrap: anywhere; }
+.pdf-book-links button { margin: 0 4px; }
 .person-documents-editor .field-hint {
   margin: 0;
 }

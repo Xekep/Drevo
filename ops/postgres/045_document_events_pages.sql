@@ -1,0 +1,2 @@
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS event_links text NOT NULL DEFAULT '[]';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS pages text NOT NULL DEFAULT '[]';

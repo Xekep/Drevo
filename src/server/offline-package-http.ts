@@ -37,8 +37,8 @@ export function offlinePackageHttp({
   const readDocumentIndex = async () => {
     const rows = (await archive.db
       .prepare(
-        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
-        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
+        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
+        "SELECT id,title,file_name,created_at,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
       )
       .all()) as Array<{
       id: string;
@@ -50,6 +50,8 @@ export function offlinePackageHttp({
       place: string;
       description: string;
       provenance: string;
+      event_links: string;
+      pages: string;
     }>;
     const links = (await archive.db
       .prepare(

@@ -11,6 +11,7 @@ import { validateFamily } from "../domain/validation.ts";
 import { validAnnotationSelection } from "../shared/document-annotations.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
+import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import {
   PortablePackageError,
@@ -150,9 +151,16 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       ) ||
       new Set(document.personIds).size !== document.personIds.length ||
       !Array.isArray(document.annotations) ||
-      document.annotations.length > 500
+      document.annotations.length > 500 ||
+      !parseDocumentEventLinks(document.eventLinks ?? []) ||
+      !parseDocumentPages(document.pages ?? [])
     )
       invalid("Некорректный документ в пакете Drevo");
+    const eventLinks = parseDocumentEventLinks(document.eventLinks ?? []) || [];
+    if (eventLinks.some((link) => !(document.personIds as string[]).includes(link.personId) ||
+      !family.people.some((person) => person.id === link.personId &&
+        person.events?.some((event) => event.id === link.eventId))))
+      invalid("Связь документа с отсутствующим событием");
     for (const rawAnnotation of document.annotations) {
       const annotation = object(rawAnnotation);
       const metadata: Record<string, unknown> = annotation;
