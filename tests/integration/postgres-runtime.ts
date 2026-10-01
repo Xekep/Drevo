@@ -1796,6 +1796,13 @@ try {
   assert.equal(matchBody.match.status, "pending");
   assert.equal(matchBody.match.reason, "Совпадают семейные записи");
   const matchDb = app.archive.db;
+  const requestedAudit = await matchDb.prepare("", `SELECT requested_by,request_review_token,
+    decision_review_token,responded_by FROM discovery_match_requests WHERE id=?`)
+    .get(matchBody.match.id);
+  assert.equal(requestedAudit?.requested_by, "owner");
+  assert.equal(requestedAudit?.request_review_token, matchBody.match.reviewToken);
+  assert.equal(requestedAudit?.decision_review_token, null);
+  assert.equal(requestedAudit?.responded_by, null);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
       .get("unrelated-archive");
@@ -1820,6 +1827,9 @@ try {
   assert.equal(duplicateFromOtherSide.status, 200);
   assert.equal((await duplicateFromOtherSide.json()).match.id, matchBody.match.id,
     "reversing the proposal must not create a second match");
+  assert.equal((await matchDb.prepare("", `SELECT request_review_token FROM discovery_match_requests
+    WHERE id=?`).get(matchBody.match.id))?.request_review_token, matchBody.match.reviewToken,
+  "an idempotent reverse proposal preserves the original reviewed revision");
   const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
   const beforeReviewChange = await otherApp.archive.read();
   const changedBeforeReview = structuredClone(beforeReviewChange.family);
@@ -1833,6 +1843,8 @@ try {
     headers: ownerHeaders,
   })).json()).matches[0];
   assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
+  assert.equal(freshReview.changedSinceRequest, true,
+    "the responding owner sees that the published cards changed after proposal");
   assert.equal((await fetch(securedBase + matchPath, {
     method: "PATCH", headers: ownerHeaders,
     body: JSON.stringify({ decision: "accept" }),
@@ -1843,6 +1855,29 @@ try {
   });
   assert.equal(acceptedMatch.status, 200);
   assert.equal((await acceptedMatch.json()).match.status, "linked");
+  const acceptedAudit = await matchDb.prepare("", `SELECT requested_by,request_review_token,
+    responded_by,responded_at,decision_review_token FROM discovery_match_requests WHERE id=?`)
+    .get(matchBody.match.id);
+  assert.equal(acceptedAudit?.requested_by, "owner");
+  assert.equal(acceptedAudit?.request_review_token, matchBody.match.reviewToken);
+  assert.equal(acceptedAudit?.responded_by, "owner");
+  assert.ok(acceptedAudit?.responded_at);
+  assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
+  assert.equal((await fetch(otherBase + matchPath, {
+    method: "PATCH", headers: ownerHeaders,
+    body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
+  })).status, 200, "repeating the accepted decision is idempotent");
+  assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
+    WHERE id=?`).get(matchBody.match.id))?.decision_review_token, freshReview.reviewToken);
+  await client.query(readFileSync(new URL("../../ops/postgres/050_discovery_match_audit.sql", import.meta.url), "utf8"));
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
+  "reapplying the additive projection migration keeps one linked pair");
+  assert.deepEqual((await client.query(`SELECT column_name FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='discovery_linked_pairs'
+    ORDER BY ordinal_position`)).rows.map((row) => row.column_name),
+  ["left_archive_id","left_person_id","right_archive_id","right_person_id"],
+  "the public projection contains no reason, actor or review digest");
   const linkedPublicCard = await fetch(securedBase + "/api/discovery/people/other-archive/person-a", {
     headers,
   });
@@ -1857,7 +1892,11 @@ try {
       .get("unrelated-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
       FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 1,
-    "only confirmed matches can be read from an unrelated archive context");
+    "the preceding release retains its linked-read behavior until the follow-up migration");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
+        AND right_archive_id='runtime-test'`).get())?.count, 1,
+    "an unrelated archive sees only the published transition keys");
   }, true);
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "linked");
@@ -1879,6 +1918,31 @@ try {
   "a confirmed link must not be suggested again");
   assert.equal(suggestedBody.candidates[0].birthYear, undefined,
     "candidate evidence must not disclose a birth year hidden by publication consent");
+  const manualHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.101" };
+  const rejectedRequest = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: manualHeaders,
+    body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+      targetPersonId: "person-b", reason: "Проверить запись" }),
+  });
+  assert.equal(rejectedRequest.status, 200);
+  const rejectedId = (await rejectedRequest.json()).match.id as string;
+  const rejectedPath = `/api/discovery/matches/${rejectedId}`;
+  assert.equal((await fetch(otherBase + rejectedPath, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
+  })).status, 200);
+  const rejectedAudit = await matchDb.prepare("", `SELECT status,requested_by,responded_by,
+    request_review_token,decision_review_token FROM discovery_match_requests WHERE id=?`)
+    .get(rejectedId);
+  assert.equal(rejectedAudit?.status, "rejected");
+  assert.equal(rejectedAudit?.requested_by, "owner");
+  assert.equal(rejectedAudit?.responded_by, "owner");
+  assert.match(String(rejectedAudit?.request_review_token), /^[0-9a-f]{64}$/);
+  assert.match(String(rejectedAudit?.decision_review_token), /^[0-9a-f]{64}$/);
+  assert.equal((await fetch(otherBase + rejectedPath, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "reject" }),
+  })).status, 200, "repeating a rejection is idempotent");
+  assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
+    WHERE id=?`).get(rejectedId))?.decision_review_token, rejectedAudit?.decision_review_token);
   assert.equal((await fetch(securedBase + "/api/discovery/matches/candidates?sourcePersonId=person-a", {
     headers,
   })).status, 403);
@@ -2052,6 +2116,36 @@ try {
     "a shared region without a shared settlement is not a candidate clue");
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
+  const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: manualHeaders,
+    body: JSON.stringify({ sourcePersonId: parent.id, targetArchiveId: "other-archive",
+      targetPersonId: parent.id }),
+  });
+  assert.equal(revocableRequest.status, 200);
+  const revocableId = (await revocableRequest.json()).match.id as string;
+  const revocablePath = `/api/discovery/matches/${revocableId}`;
+  const revocableReview = (await (await fetch(otherBase + "/api/discovery/matches", {
+    headers: manualHeaders,
+  })).json()).matches.find((item: { id: string }) => item.id === revocableId);
+  assert.ok(revocableReview?.reviewToken);
+  assert.equal((await fetch(otherBase + revocablePath, {
+    method: "PATCH", headers: manualHeaders,
+    body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken }),
+  })).status, 200);
+  assert.equal((await fetch(securedBase + revocablePath, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
+  })).status, 200);
+  assert.equal((await fetch(securedBase + revocablePath, {
+    method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
+  })).status, 200, "repeating a revocation is idempotent");
+  const revokedAudit = await matchDb.prepare("", `SELECT status,revoked_by,decision_review_token
+    FROM discovery_match_requests WHERE id=?`).get(revocableId);
+  assert.equal(revokedAudit?.status, "revoked");
+  assert.equal(revokedAudit?.revoked_by, "owner");
+  assert.equal(revokedAudit?.decision_review_token, revocableReview.reviewToken);
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+    WHERE left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.count, 0,
+  "manual revocation removes the public transition immediately");
   const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
   assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
   assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
@@ -2071,6 +2165,9 @@ try {
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
     headers,
   })).json()).linkedCards, [], "revoking either publication removes the transition");
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 0,
+  "revocation removes the minimal public transition in the same transaction");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "revoked",
     "revoking either publication closes a confirmed cross-archive match");

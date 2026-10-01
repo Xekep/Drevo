@@ -19,6 +19,7 @@ type Match = {
   status: "pending" | "linked" | "rejected" | "revoked";
   reason?: string;
   reviewToken?: string;
+  changedSinceRequest?: boolean;
   initiatedByArchiveId: string;
   requestedAt: string;
   left: Candidate;
@@ -346,6 +347,8 @@ export function DiscoveryMatchesAdmin() {
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
         <div className="match-pair"><CandidateCard candidate={item.left} /><CandidateCard candidate={item.right} /></div>
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
+        {item.status === "pending" && item.changedSinceRequest &&
+          <p className="match-reason">Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.</p>}
         <div className="match-request-actions">
           {item.status === "pending" && item.initiatedByArchiveId !== archiveId && <>
             <button type="button" disabled={busy || !item.reviewToken}

@@ -147,6 +147,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "049_discovery_candidate_signals.sql",
     ],
     [
+      "SELECT 1 AS present WHERE to_regclass('discovery_linked_pairs') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('discovery_match_requests') AND tgname='sync_discovery_linked_pair' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_match_requests' AND column_name='decision_review_token')",
+      "050_discovery_match_audit.sql",
+    ],
+    [
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitations_created_by_fkey' AND confdeltype='c'",
       "040_account_removal_references.sql",
     ],

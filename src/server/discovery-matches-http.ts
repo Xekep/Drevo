@@ -15,7 +15,8 @@ const candidatePageSize = 24;
 type Row = Record<string, unknown>;
 
 const projection = `SELECT m.id,m.left_archive_id,m.left_person_id,m.right_archive_id,m.right_person_id,
-  m.initiated_by_archive_id,m.status,m.reason,m.requested_at::text AS requested_at,
+  m.initiated_by_archive_id,m.status,m.reason,m.request_review_token,
+  m.decision_review_token,m.requested_at::text AS requested_at,
   m.responded_at::text AS responded_at,m.revoked_at::text AS revoked_at,
   l.name AS left_name,l.birth_surname AS left_birth_surname,
   l.birth_year AS left_birth_year,l.death_year AS left_death_year,
@@ -55,6 +56,8 @@ function match(row: Row) {
     left: person(row, "left"),
     right: person(row, "right"),
     ...(token ? { reviewToken: token } : {}),
+    ...(row.status === "pending" && row.request_review_token && token
+      ? { changedSinceRequest: row.request_review_token !== token } : {}),
   };
 }
 
@@ -410,14 +413,22 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
           ORDER BY archive_id COLLATE "C",person_id COLLATE "C" FOR SHARE`)
           .all(archiveId,sourceId,targetArchiveId,targetId);
         if (visible.length !== 2) return null;
-        await db.prepare("", `INSERT INTO discovery_match_requests(
+        const inserted = await db.prepare("", `INSERT INTO discovery_match_requests(
           id,left_archive_id,left_person_id,right_archive_id,right_person_id,
           initiated_by_archive_id,requested_by,reason)
           VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(left_archive_id,left_person_id,right_archive_id,right_person_id)
           DO NOTHING`).run(randomUUID(),pair[0][0],pair[0][1],pair[1][0],pair[1][1],archiveId,approved.id,
           reason.trim() || null);
-        return await db.prepare("", `${projection} WHERE m.left_archive_id=? AND m.left_person_id=?
+        const row = await db.prepare("", `${projection} WHERE m.left_archive_id=? AND m.left_person_id=?
           AND m.right_archive_id=? AND m.right_person_id=?`).get(pair[0][0],pair[0][1],pair[1][0],pair[1][1]);
+        if (inserted.changes && row) {
+          const token = reviewToken(row);
+          if (!token) throw new Error("Published match lost its projection during request");
+          await db.prepare("", `UPDATE discovery_match_requests SET request_review_token=?
+            WHERE id=?`).run(token,String(row.id));
+          return { ...row, request_review_token: token };
+        }
+        return row;
       });
       return result ? json(res, 200, { match: match(result) })
         : json(res, 409, { error: "Одна из карточек больше не открыта для поиска" });
@@ -456,19 +467,22 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         if (decision !== "revoke" && row.status !== "pending" ||
             decision === "revoke" && row.status !== "pending" && row.status !== "linked")
           return { code: 409, error: "Решение уже изменено" };
+        const current = decision === "revoke" ? null : await readMatch(detail[1]);
+        const decisionToken = current ? reviewToken(current) : null;
         if (decision === "accept") {
-          const current = await readMatch(detail[1]);
-          if (!current || typeof body?.reviewToken !== "string" ||
-              body.reviewToken !== reviewToken(current))
+          if (!decisionToken || typeof body?.reviewToken !== "string" ||
+              body.reviewToken !== decisionToken)
             return { code: 409, error: "Карточки изменились. Проверьте сведения ещё раз перед подтверждением" };
         }
         await db.prepare("", `UPDATE discovery_match_requests SET status=?,
           responded_by=CASE WHEN ?='revoke' THEN responded_by ELSE ? END,
           responded_at=CASE WHEN ?='revoke' THEN responded_at ELSE now() END,
+          decision_review_token=CASE WHEN ?='revoke' THEN decision_review_token ELSE ? END,
           revoked_by=CASE WHEN ?='revoke' THEN ? ELSE revoked_by END,
           revoked_at=CASE WHEN ?='revoke' THEN now() ELSE revoked_at END
-          WHERE id=?`).run(decision === "accept" ? "linked" : decision === "reject" ? "rejected" : "revoked",
-          decision,approved.id,decision,decision,approved.id,decision,detail[1]);
+        WHERE id=?`).run(decision === "accept" ? "linked" : decision === "reject" ? "rejected" : "revoked",
+          decision,approved.id,decision,decision,decisionToken,
+          decision,approved.id,decision,detail[1]);
         return { code: 200, row: await readMatch(detail[1]) };
       });
       return "row" in result ? json(res, 200, { match: match(result.row!) })
