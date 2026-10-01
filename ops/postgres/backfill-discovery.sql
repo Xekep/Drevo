@@ -1,21 +1,31 @@
 -- Run as the PostgreSQL administrator after 024_discovery_people.sql has
 -- been installed. The endpoint remains unavailable until this commits.
 BEGIN;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user
+      AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'Discovery backfill requires a role that bypasses RLS';
+  END IF;
+END $$;
 LOCK TABLE people, published_people IN SHARE MODE;
 -- Newer catalogs have opt-in projections referencing this table. Truncate
 -- them explicitly; CASCADE could silently remove unrelated future data.
 DO $$
+DECLARE tables text := '';
 BEGIN
-  IF to_regclass('discovery_relative_names') IS NOT NULL
-      AND to_regclass('discovery_linked_pairs') IS NOT NULL THEN
-    EXECUTE 'TRUNCATE discovery_linked_pairs, discovery_relative_names, discovery_people';
-  ELSIF to_regclass('discovery_linked_pairs') IS NOT NULL THEN
-    EXECUTE 'TRUNCATE discovery_linked_pairs, discovery_people';
-  ELSIF to_regclass('discovery_relative_names') IS NOT NULL THEN
-    EXECUTE 'TRUNCATE discovery_relative_names, discovery_people';
-  ELSE
-    EXECUTE 'TRUNCATE discovery_people';
+  IF to_regclass('discovery_linked_card_grants') IS NOT NULL THEN
+    EXECUTE 'CREATE TEMP TABLE discovery_card_grants_backup ON COMMIT DROP
+      AS SELECT * FROM discovery_linked_card_grants';
+    tables := tables || 'discovery_linked_card_grants,';
   END IF;
+  IF to_regclass('discovery_linked_pairs') IS NOT NULL THEN
+    tables := tables || 'discovery_linked_pairs,';
+  END IF;
+  IF to_regclass('discovery_relative_names') IS NOT NULL THEN
+    tables := tables || 'discovery_relative_names,';
+  END IF;
+  EXECUTE 'TRUNCATE ' || tables || 'discovery_people';
 END $$;
 DO $$
 DECLARE entry record;
@@ -37,6 +47,19 @@ BEGIN
       JOIN discovery_people l ON l.archive_id=m.left_archive_id AND l.person_id=m.left_person_id
       JOIN discovery_people r ON r.archive_id=m.right_archive_id AND r.person_id=m.right_person_id
      WHERE m.status='linked' ON CONFLICT DO NOTHING$sql$;
+  END IF;
+END $$;
+-- Preserve only grants whose confirmed published pair was rebuilt.
+DO $$
+BEGIN
+  IF to_regclass('discovery_linked_card_grants') IS NOT NULL THEN
+    EXECUTE $sql$INSERT INTO discovery_linked_card_grants
+      SELECT backup.* FROM pg_temp.discovery_card_grants_backup backup
+      JOIN discovery_linked_pairs pair
+        ON pair.left_archive_id=backup.left_archive_id
+       AND pair.left_person_id=backup.left_person_id
+       AND pair.right_archive_id=backup.right_archive_id
+       AND pair.right_person_id=backup.right_person_id$sql$;
   END IF;
 END $$;
 UPDATE discovery_index_state SET ready=true WHERE singleton=true;
