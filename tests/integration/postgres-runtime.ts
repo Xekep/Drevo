@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import pg from "pg";
 import PDFDocument from "pdfkit";
+import { openPromise } from "yauzl";
 import {
   newSessionToken,
   sessionTokenHash,
@@ -131,6 +132,33 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  const adminClient = process.env.PGADMINUSER
+    ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
+    : client;
+  if (adminClient !== client) await adminClient.connect();
+  try {
+    await adminClient.query(readFileSync(new URL("../../ops/postgres/install-account-history-anonymization.sql", import.meta.url), "utf8"));
+    const runtimeRole = process.env.PGUSER || "";
+    assert.match(runtimeRole, /^[a-z_][a-z0-9_]*$/);
+    await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
+  } finally {
+    if (adminClient !== client) await adminClient.end();
+  }
+  const runtimePrivileges = (await client.query(`SELECT
+    has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_history(text)','EXECUTE') AS entrypoint,
+    has_function_privilege(current_user,'public.runtime_anonymize_account_history_rows(text)','EXECUTE') AS internal,
+    has_function_privilege(current_user,'public.runtime_redact_account_attribution(jsonb,text)','EXECUTE') AS helper,
+    (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) AS privileged`)).rows[0];
+  if (!runtimePrivileges.privileged) {
+    assert.equal(runtimePrivileges.entrypoint, true);
+    assert.equal(runtimePrivileges.internal, false);
+    assert.equal(runtimePrivileges.helper, false);
+  }
+  await assert.rejects(
+    client.query("SELECT public.runtime_anonymize_deleted_account_history('owner')"),
+    (error: unknown) => (error as { code?: string }).code === "42501",
+    "the privileged entry point rejects a call outside account deletion",
+  );
   assert.equal(
     (
       await live.db
@@ -2460,7 +2488,8 @@ try {
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
-    assert.equal((await client.query("SELECT actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0].actor_name, "Удалённый участник");
+    assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0],
+      { actor_id: "deleted-account", actor_name: "Удалённый участник" });
     assert.equal((await fetch(oauthBase + accountDeletionPath, { headers: deletingHeaders })).status, 401);
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     await client.query(
@@ -2472,6 +2501,12 @@ try {
     );
     await client.query(
       "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES('runtime-test',987655,$1,'former-member','Former member','update','archive','runtime-test','History','[]'::jsonb)",
+      [new Date().toISOString()],
+    );
+    await client.query(
+      `INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details)
+       VALUES('runtime-test',987657,$1,'owner','Owner','Передано владение деревом','user','former-member','Former member',
+         '[{"field":"Владелец","before":"former-member","after":"owner"}]'::jsonb)`,
       [new Date().toISOString()],
     );
     await client.query(
@@ -2496,6 +2531,21 @@ try {
        VALUES('former-suggestion','person_update','accepted','person-a','{}'::jsonb,'History','[]'::jsonb,0,$1,'former-member')`,
       [new Date().toISOString()],
     );
+    await client.query("UPDATE people SET data=jsonb_set(data,'{createdBy}',to_jsonb('former-member'::text)) WHERE id='person-a'");
+    await client.query(
+      `INSERT INTO history(archive_id,revision,saved_at,data) VALUES
+       ('runtime-test',987656,$1,'{"people":[{"id":"person-a","createdBy":"former-member","name":"Preserved"}],"photos":[],"links":[]}'::jsonb)`,
+      [new Date().toISOString()],
+    );
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('drevo.account_id','former-member',true)");
+    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('former-member')");
+    await client.query("SELECT public.runtime_anonymize_deleted_account_history('former-member')");
+    const once = (await client.query("SELECT data FROM history WHERE revision=987656")).rows[0].data;
+    await client.query("SELECT public.runtime_anonymize_deleted_account_history('former-member')");
+    assert.deepEqual((await client.query("SELECT data FROM history WHERE revision=987656")).rows[0].data, once,
+      "a repeated cleanup does not change the historical snapshot again");
+    await client.query("ROLLBACK");
     await client.query(
       "DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id='former-member'",
     );
@@ -2511,8 +2561,34 @@ try {
     });
     assert.equal(formerDeletion.status, 200,
       formerDeletion.status === 200 ? "" : await formerDeletion.text());
-    assert.equal((await client.query("SELECT actor_name FROM archive_audit_entries WHERE id=987655")).rows[0].actor_name, "Former member",
-      "the past archive is not reopened by account deletion");
+    assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE id=987655")).rows[0],
+      { actor_id: "deleted-account", actor_name: "Удалённый участник" },
+      "a former member's historical attribution is physically anonymized");
+    const userAudit = (await client.query("SELECT actor_id,entity_id,label,details FROM archive_audit_entries WHERE id=987657")).rows[0];
+    assert.equal(userAudit.actor_id, "owner");
+    assert.equal(userAudit.entity_id, "deleted-account");
+    assert.equal(userAudit.label, "Удалённый участник");
+    assert.deepEqual(userAudit.details, [{ field: "Владелец", before: "deleted-account", after: "owner" }]);
+    assert.deepEqual((await client.query("SELECT author_id,author_name FROM person_comments WHERE text='Historical comment'")).rows[0],
+      { author_id: "deleted-account", author_name: "Удалённый участник" });
+    assert.equal((await client.query("SELECT created_by FROM research_suggestions WHERE id='former-suggestion'")).rows[0].created_by, "deleted-account");
+    assert.equal((await client.query("SELECT data->>'createdBy' AS creator FROM people WHERE id='person-a'")).rows[0].creator, "deleted-account");
+    const historicalSnapshot = (await client.query("SELECT revision,data FROM history WHERE revision=987656")).rows[0];
+    assert.equal(historicalSnapshot.revision, "987656");
+    assert.deepEqual(historicalSnapshot.data, {
+      people: [{ id: "person-a", createdBy: "deleted-account", name: "Preserved" }], photos: [], links: [],
+    });
+    const oldShare = (await client.query("SELECT created_by,created_name,revoked_at FROM share_links WHERE id='former-share'")).rows[0];
+    assert.equal(oldShare.created_by, "deleted-account");
+    assert.equal(oldShare.created_name, "Удалённый участник");
+    assert.ok(oldShare.revoked_at);
+    const oldMcp = (await client.query("SELECT created_by,revoked_at FROM mcp_tokens WHERE id='former-mcp'")).rows[0];
+    assert.equal(oldMcp.created_by, "deleted-account");
+    assert.ok(oldMcp.revoked_at);
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [recreatedId]);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_audit_entries WHERE id=987655")).rows[0].n, 0,
+      "RLS still hides another archive after account deletion");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     assert.equal((await client.query("SELECT actor_name FROM runtime_visible_audit_entries WHERE id=987655")).rows[0].actor_name, "Удалённый участник");
     assert.equal((await client.query("SELECT author_name FROM runtime_visible_person_comments WHERE text='Historical comment'")).rows[0].author_name, "Удалённый участник");
     const visibleComments = await fetch(securedBase + "/api/people/person-a/discussion", {
@@ -2527,6 +2603,21 @@ try {
     assert.equal((await mcpTokenStore(app.archive.db).authenticate(`Bearer ${oldMcpToken}`)), null,
       "an unbound MCP token from a deleted account stops working");
     assert.equal((await auditStore(app.archive.db).list({ before: 987656 })).items.find((entry) => entry.id === 987655)?.actorName, "Удалённый участник");
+    const portableAfterDeletion = await fetch(securedBase + "/api/drevo/export", { headers: ownerHeaders });
+    assert.equal(portableAfterDeletion.status, 200);
+    const portableAfterDeletionPath = join(directory, "after-account-deletion.drevo");
+    writeFileSync(portableAfterDeletionPath, Buffer.from(await portableAfterDeletion.arrayBuffer()));
+    const portableZip = await openPromise(portableAfterDeletionPath);
+    let portableComments: Array<{ text: string; authorId: string; authorName: string }> = [];
+    for await (const entry of portableZip.eachEntry()) {
+      if (entry.fileName !== "archive.json") continue;
+      const chunks: Buffer[] = [];
+      for await (const chunk of await portableZip.openReadStreamPromise(entry)) chunks.push(Buffer.from(chunk));
+      portableComments = JSON.parse(Buffer.concat(chunks).toString()).comments;
+    }
+    const historicalPortableComment = portableComments.find((comment) => comment.text === "Historical comment");
+    assert.equal(historicalPortableComment?.authorId, "deleted-account");
+    assert.equal(historicalPortableComment?.authorName, "Удалённый участник");
     await client.query(
       "SELECT set_config('drevo.archive_id','runtime-test',false)",
     );

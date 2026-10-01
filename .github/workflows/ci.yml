@@ -49,7 +49,7 @@ jobs:
           await client.query('CREATE DATABASE drevo_migration_runtime_ci OWNER drevo_runtime');
           await client.end();
           NODE
-          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGDATABASE=drevo_migration_runtime_ci node --experimental-strip-types tests/integration/postgres-runtime.ts
+          PGUSER=drevo_runtime PGPASSWORD=local_runtime_test PGADMINUSER=drevo_test PGADMINPASSWORD=local_ci_test PGDATABASE=drevo_migration_runtime_ci node --experimental-strip-types tests/integration/postgres-runtime.ts
       - name: Backfill the global discovery projection as a database administrator
         run: |
           PGDATABASE=drevo_migration_runtime_ci node --input-type=module <<'NODE'
