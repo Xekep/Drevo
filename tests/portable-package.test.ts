@@ -171,6 +171,20 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     await mkdir(stage);
     const imported = await readPortablePackage(path, stage);
     assert.deepEqual(imported.snapshot, snapshot);
+    const wrongCitation = structuredClone(snapshot);
+    wrongCitation.family.people[0].sources[0].documentId = "c26d78da-c392-4591-a013-e2d4acdb9230";
+    const wrongArchive = Buffer.from(JSON.stringify(wrongCitation));
+    const wrongManifest = structuredClone(manifest);
+    const archiveEntry = wrongManifest.entries.find((entry) => entry.path === "archive.json")!;
+    archiveEntry.size = wrongArchive.length;
+    archiveEntry.sha256 = hash(wrongArchive);
+    const wrongPackage = join(dir, "wrong-source-document.drevo");
+    await zipEntries(wrongPackage, new Map(files).set("archive.json", wrongArchive)
+      .set("manifest.json", Buffer.from(JSON.stringify(wrongManifest))));
+    const wrongStage = join(dir, "wrong-source-stage");
+    await mkdir(wrongStage);
+    await assert.rejects(readPortablePackage(wrongPackage, wrongStage),
+      /источник или документ/);
     assert.equal(imported.files.get("media/record.pdf")?.sha256, hash(pdf));
     assert.equal(imported.files.get("media/scan.png")?.sha256, hash(scan));
     const destination = join(dir, "destination");

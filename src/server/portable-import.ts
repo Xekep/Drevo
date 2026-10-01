@@ -203,10 +203,12 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     sourceIds.add(source.id);
     return source;
   });
+  const sourcesById = new Map(sources.map((source) => [source.id, source]));
   for (const person of family.people)
     for (const source of [...person.sources, ...(person.events || []).flatMap((event) => event.sources || [])])
-      if (source.catalogId && !sourceIds.has(source.catalogId))
-        invalid("Ссылка на отсутствующий источник в пакете Drevo");
+      if (source.catalogId && (!sourceIds.has(source.catalogId) ||
+        (source.documentId && !sourcesById.get(source.catalogId)?.documentIds.includes(source.documentId))))
+        invalid("Ссылка на отсутствующий источник или документ в пакете Drevo");
   const commentIds = new Set<number>();
   const comments: PortableComment[] = [];
   for (const raw of data.comments) {

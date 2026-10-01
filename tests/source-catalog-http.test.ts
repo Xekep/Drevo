@@ -81,6 +81,13 @@ test("one catalog source confirms multiple facts, stays current, and legacy cita
       personId: "anna", eventId: "move", revision: beforeUnlink.revision,
     })).status, 200);
     assert.equal((await app.archive.read()).family.people[0].events?.[0].sources?.length, 0);
+    const wrongDocument = structuredClone((await app.archive.read()).family);
+    wrongDocument.people[0].sources.push({
+      catalogId: source.id, title: "Метрическая книга", type: "архив", reference: "",
+      documentId: "33333333-3333-4333-8333-333333333333", documentPage: 8,
+    });
+    await assert.rejects(app.archive.write(wrongDocument, (await app.archive.read()).revision),
+      /Документ цитаты отсутствует/);
     const foreign = structuredClone((await app.archive.read()).family);
     foreign.people[0].sources.push({ catalogId: "foreign-source", title: "Чужой", type: "", reference: "" });
     await assert.rejects(app.archive.write(foreign, (await app.archive.read()).revision), /Источник отсутствует/);

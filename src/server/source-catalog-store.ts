@@ -50,10 +50,17 @@ export function allCitations(family: Family): Source[] {
 
 /** Archive writes may retain legacy inline citations, but catalog links must be local. */
 export async function assertCatalogLinks(db: StoreDatabase, family: Family) {
-  const ids = new Set(allCitations(family).map((source) => source.catalogId).filter(Boolean));
   const catalog = sourceCatalogStore(db);
-  for (const id of ids)
-    if (!await catalog.get(id!)) throw new Error("Источник отсутствует в этом архиве");
+  const entries = new Map<string, Awaited<ReturnType<typeof catalog.get>>>();
+  for (const citation of allCitations(family)) {
+    if (!citation.catalogId) continue;
+    if (!entries.has(citation.catalogId))
+      entries.set(citation.catalogId, await catalog.get(citation.catalogId));
+    const entry = entries.get(citation.catalogId);
+    if (!entry) throw new Error("Источник отсутствует в этом архиве");
+    if (citation.documentId && !entry.documentIds.includes(citation.documentId))
+      throw new Error("Документ цитаты отсутствует у источника");
+  }
 }
 
 export async function hydrateCatalogCitations(db: StoreDatabase, family: Family) {
@@ -62,8 +69,9 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
   const resolve = (source: Source): Source => {
     const entry = source.catalogId && entries.get(source.catalogId);
     if (!entry) return source;
-    const retainedDocument = source.documentId && entry.documentIds.includes(source.documentId)
-      ? source.documentId : undefined;
+    if (source.documentId && !entry.documentIds.includes(source.documentId))
+      throw new Error("Документ цитаты отсутствует у источника");
+    const retainedDocument = source.documentId;
     return { ...sourceCitation(entry),
       ...(source.documentPage && retainedDocument ? { documentPage: source.documentPage } : {}),
       ...(retainedDocument ? { documentId: retainedDocument } : {}),
