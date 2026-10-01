@@ -790,7 +790,7 @@ export function restoreStore(
         for (const person of family.people) {
           if (person.photo) person.photo = urls.get(person.photo) || person.photo;
           person.sources = remapCitations(person.sources);
-          for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim"] as const)
+          for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
             if (person[key]) person[key]!.sources = remapCitations(person[key]!.sources);
           for (const event of person.events || [])
             if (event.sources) event.sources = remapCitations(event.sources);

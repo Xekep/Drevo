@@ -5823,9 +5823,11 @@ try {
   placePerson.birthPlace = "Тула";
   placePerson.deathPlace = "Казань";
   placePerson.occupation = "Столяр";
+  placePerson.maidenName = "Иванова";
   placePerson.birthPlaceClaim = { value: "Тула", sources: [sourceCitation(placeSource)], confidence: "confirmed" };
   placePerson.deathPlaceClaim = { value: "Казань", sources: [sourceCitation(placeSource)], confidence: "conflicting" };
   placePerson.occupationClaim = { value: "Столяр", sources: [sourceCitation(placeSource)] };
+  placePerson.maidenNameClaim = { value: "Иванова", sources: [sourceCitation(placeSource)] };
   const placeToken = newSessionToken();
   await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)")
     .run(sessionTokenHash(placeToken), Date.now() + 60_000);
@@ -5841,12 +5843,15 @@ try {
   assert.equal(placeStored.family.people[0].birthPlaceClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].deathPlaceClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].occupationClaim?.sources[0].catalogId, placeSource.id);
+  assert.equal(placeStored.family.people[0].maidenNameClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].birthPlaceClaim?.confidence, "confirmed");
   assert.equal(placeStored.family.people[0].deathPlaceClaim?.confidence, "conflicting");
   assert.equal((await app.archive.db.prepare("", "SELECT data->'birthPlaceClaim'->>'value' AS place FROM people WHERE id=?")
     .get(placePerson.id))?.place, "Тула", "PostgreSQL stores the exact linked place value");
   assert.equal((await app.archive.db.prepare("", "SELECT data->'occupationClaim'->>'value' AS occupation FROM people WHERE id=?")
     .get(placePerson.id))?.occupation, "Столяр", "PostgreSQL stores the exact linked occupation value");
+  assert.equal((await app.archive.db.prepare("", "SELECT data->'maidenNameClaim'->>'value' AS surname FROM people WHERE id=?")
+    .get(placePerson.id))?.surname, "Иванова", "PostgreSQL stores the exact linked birth surname");
   assert.equal(await sourceCatalogStore(otherApp.archive.db).get(placeSource.id), null,
     "another PostgreSQL archive cannot read the source");
   const foreignBefore = await otherApp.archive.read();
@@ -5858,6 +5863,10 @@ try {
   foreignOccupation.people[0].occupation = "Столяр";
   foreignOccupation.people[0].occupationClaim = { value: "Столяр", sources: [sourceCitation(placeSource)] };
   await assert.rejects(otherApp.archive.write(foreignOccupation, foreignBefore.revision), /Источник отсутствует/);
+  const foreignSurname = structuredClone(foreignBefore.family);
+  foreignSurname.people[0].maidenName = "Иванова";
+  foreignSurname.people[0].maidenNameClaim = { value: "Иванова", sources: [sourceCitation(placeSource)] };
+  await assert.rejects(otherApp.archive.write(foreignSurname, foreignBefore.revision), /Источник отсутствует/);
   const changedPlace = structuredClone(placeStored.family);
   changedPlace.people[0].birthPlace = "Другая Тула";
   assert.equal((await postPlaceChanges(placeStored.family, changedPlace, placeStored.revision)).status, 400);
@@ -5866,6 +5875,10 @@ try {
   changedOccupation.people[0].occupation = "Учитель";
   assert.equal((await postPlaceChanges(placeStored.family, changedOccupation, placeStored.revision)).status, 400);
   assert.equal((await app.archive.read()).family.people[0].occupation, "Столяр");
+  const changedSurname = structuredClone(placeStored.family);
+  changedSurname.people[0].maidenName = "Петрова";
+  assert.equal((await postPlaceChanges(placeStored.family, changedSurname, placeStored.revision)).status, 400);
+  assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
   // Keep the restore concurrency checks in their own archive: later fixtures
   // include cards by other authors, which cannot be replaced by this actor.
   const guardedArchiveId = "restore-guard-test";

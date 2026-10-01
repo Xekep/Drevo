@@ -14,7 +14,7 @@ function catalogCitationSlots(family: Family) {
     (sources || []).filter((source) => source.catalogId));
   for (const person of family.people) {
     add(["person", person.id], person.sources);
-    for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim"] as const)
+    for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
       add(["person", person.id, claim], person[claim]?.sources);
     for (const event of person.events || [])
       add(["person", person.id, "event", event.id], event.sources);
@@ -76,7 +76,7 @@ export function authorizeArchive(
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
     for (const person of next.people)
-      for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim"] as const) {
+      for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const) {
         const claim = person[key];
         const earlier = previous.get(person.id)?.[key];
         if (claim?.confidence !== earlier?.confidence)

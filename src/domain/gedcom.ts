@@ -261,6 +261,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_UNION_STAGE",
     "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
+    "_DREVO_BIRTH_SURNAME_CONFIDENCE",
     "_MAIDEN",
     "_UID",
     "_PATR",
@@ -516,6 +517,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         ),
       )
       .find((name) => nameSurname(name));
+    const maidenName = (birthName && nameSurname(birthName)) ||
+      value(n, "_MAIDEN") || "";
+    const maidenNameSources = birthName && maidenName ? sources(birthName) : [];
     const nameNode = names[0],
       nameText = nameNode?.value || "",
       slash = /^(.*?)\/(.*?)\/(.*)$/.exec(nameText);
@@ -595,10 +599,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         ? { occupationClaim: valueClaim(occupation, occupationClaimSources,
             occupationNode, "_DREVO_OCCUPATION_CONFIDENCE") }
         : {}),
-      maidenName:
-        (birthName && nameSurname(birthName)) ||
-        value(n, "_MAIDEN") ||
-        undefined,
+      maidenName: maidenName || undefined,
+      ...(maidenNameSources.length
+        ? { maidenNameClaim: valueClaim(maidenName, maidenNameSources,
+            birthName, "_DREVO_BIRTH_SURNAME_CONFIDENCE") }
+        : {}),
       sources: [
         ...sources(n),
         ...birthSources.general,
@@ -1043,6 +1048,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     retain(person.birthPlaceClaim?.sources);
     retain(person.deathPlaceClaim?.sources);
     retain(person.occupationClaim?.sources);
+    retain(person.maidenNameClaim?.sources);
     for (const event of person.events || []) retain(event.sources);
   }
   for (const union of unions) {
@@ -1239,7 +1245,7 @@ export function exportGedcom(
   const documentMedia = new Map(media.flatMap((item, index) =>
     item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
-    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION") {
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE" | "OCCUPATION" | "BIRTH_SURNAME") {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
@@ -1293,6 +1299,7 @@ export function exportGedcom(
       "_DREVO_TWIN",
       "_DREVO_CLAIM",
       "_DREVO_DOCUMENT_PAGE",
+      "_DREVO_BIRTH_SURNAME_CONFIDENCE",
       "_DREVO_UNION_STAGE",
       "_DREVO_EVENT_ID",
       "_TYPE",
@@ -1326,6 +1333,10 @@ export function exportGedcom(
       emit(2, "TYPE", modern ? "BIRTH" : "birth");
       emit(2, "GIVN", [p.name, p.patronymic].filter(Boolean).join(" "));
       emit(2, "SURN", p.maidenName);
+      for (const source of p.maidenNameClaim?.sources || [])
+        citation(2, source, "BIRTH_SURNAME");
+      if (p.maidenNameClaim?.confidence)
+        emit(2, "_DREVO_BIRTH_SURNAME_CONFIDENCE", p.maidenNameClaim.confidence);
     }
     if (p.sex !== "u") emit(1, "SEX", p.sex.toUpperCase());
     const eventClaimsEmitted = { birth: false, death: false };
@@ -1505,11 +1516,12 @@ export function exportGedcom(
       birthPlaceClaim: _birthPlaceClaim,
       deathPlaceClaim: _deathPlaceClaim,
       occupationClaim: _occupationClaim,
+      maidenNameClaim: _maidenNameClaim,
       ...extra
     } = p;
     void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column,
       _birthDateClaim, _deathDateClaim, _birthPlaceClaim, _deathPlaceClaim,
-      _occupationClaim];
+      _occupationClaim, _maidenNameClaim];
     // The Drevo extension carries readable evidence, never archive-local source IDs.
     const portableExtra = structuredClone(extra);
     for (const source of portableExtra.sources || []) {

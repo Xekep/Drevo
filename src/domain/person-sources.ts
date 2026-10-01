@@ -45,6 +45,8 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
 
   for (const source of person.occupationClaim?.sources || [])
     add(source, "Занятие");
+  for (const source of person.maidenNameClaim?.sources || [])
+    add(source, "Фамилия при рождении");
 
   for (const award of person.awards || []) {
     const source = award.source;
