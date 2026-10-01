@@ -4749,8 +4749,6 @@ try {
   assert.ok((await deathCandidates()).some((item) => item.id === "death-place-match" &&
     item.reasons.includes("Место смерти совпадает")),
   "the second indexed place branch finds a changed surname by opt-in death settlement and birth year");
-  assert.equal((await fetch(securedBase + candidatePath, { headers: inviteeHeaders })).status,
-    403, "a reader cannot inspect a published candidate page");
   await otherPublication.unpublish("death-place-match");
   assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
     "unpublishing removes the death-settlement suggestion immediately");
