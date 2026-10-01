@@ -122,13 +122,14 @@ test("scope and anchor changes center the current anchor, even with unchanged ge
     .fill("Пётр");
   await page.getByRole("option", { name: /Тестов Пётр/ }).click();
   await expectCentered(page, "e2e-child");
-  // Selecting a card clears explicit focus, but must not revive the old anchor.
-  await page
-    .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
-    .first()
-    .click();
-  await expectCentered(page, "e2e-child");
   if (!isMobile) {
+    // Selecting a card clears explicit focus, but must not revive the old anchor.
+    // On mobile the inspector is a modal covering the card.
+    await page
+      .locator('.flow-person[data-person-id="e2e-child"] .flow-person-content')
+      .first()
+      .click();
+    await expectCentered(page, "e2e-child");
     await page
       .locator(
         '.flow-person[data-person-id="e2e-sibling"] .flow-person-content',
