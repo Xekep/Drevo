@@ -2718,6 +2718,12 @@ try {
   assert.equal((await fetch(securedBase + branchPath + "/people/family%3Aperson.1", {
     headers: navigationHeaders,
   })).status, 404, "A-B member navigation cannot traverse B-C's separately granted branch");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE person_id='family:person.1'`).get())?.count,
+      0, "RLS cannot expose C's selected member through A's unrelated confirmed pair");
+  }, true);
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`)).rows[0].count,
     0, "C cannot read grants belonging only to A-B even when it shares B-C");
