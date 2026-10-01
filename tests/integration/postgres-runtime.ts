@@ -2065,6 +2065,29 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
   "Архивный исследователь", "administrator backfill preserves a still-confirmed grant");
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('share-grant-deleting','Share grant author',$1)",
+      [new Date().toISOString()]);
+    assert.equal((await client.query(`UPDATE discovery_linked_card_grants
+      SET granted_by='share-grant-deleting' WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' RETURNING granted_by`)).rows[0]?.granted_by,
+    "share-grant-deleting");
+    await client.query("SELECT set_config('drevo.archive_id','unrelated-archive',true)");
+    await client.query("SELECT set_config('drevo.account_id','share-grant-deleting',true)");
+    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('share-grant-deleting')");
+    await client.query("SELECT public.runtime_anonymize_deleted_account_history('share-grant-deleting')");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    assert.equal((await client.query(`SELECT granted_by FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0]?.granted_by,
+    "deleted-account", "account deletion anonymizes a grant even when the request archive differs");
+  } finally {
+    await client.query("ROLLBACK");
+  }
+  assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_linked_card_grants
+    WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).get())?.granted_by,
+  "owner", "the deletion probe leaves the live grant intact");
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "DELETE", headers: ownerHeaders,
   })).status, 200);
