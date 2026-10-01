@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { accountSelfDeletion, AccountDeletionConflict } from "../src/server/account-self-deletion.ts";
 import type { StoreDatabase } from "../src/server/store-database.ts";
 
-function fakeDatabase(installed = true, redactionAllowed = true) {
+function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled = true) {
   let archiveId = "";
   const writes: Array<{ archiveId: string; sql: string; args: unknown[] }> = [];
   const calls: string[] = [];
@@ -34,6 +34,8 @@ function fakeDatabase(installed = true, redactionAllowed = true) {
         return { rowCount: 2, rows: [{ account_id: "other-1" }, { account_id: "other-2" }] };
       if (sql.includes("FROM archive_memberships WHERE user_id=$1"))
         return { rowCount: 1, rows: [{ archive_id: "current-tree" }] };
+      if (sql.includes("FROM pg_proc entrypoint"))
+        return { rowCount: 1, rows: [{ installed: unionInstalled }] };
       if (sql.includes("has_function_privilege"))
         return { rowCount: 1, rows: [{ allowed: redactionAllowed }] };
       if (sql.includes("to_regprocedure"))
@@ -76,6 +78,17 @@ test("account deletion stops before writing if privileged cleanup is not install
       name: "Имя", leaveSharedArchives: true,
     }),
     AccountDeletionConflict,
+  );
+  assert.deepEqual(writes, []);
+});
+
+test("account deletion stops before writing if union anonymization is not installed", async () => {
+  const { db, writes } = fakeDatabase(true, true, false);
+  await assert.rejects(
+    accountSelfDeletion(db, true).remove("account-1", {
+      name: "Имя", leaveSharedArchives: true,
+    }),
+    /058/,
   );
   assert.deepEqual(writes, []);
 });

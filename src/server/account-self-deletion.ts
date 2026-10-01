@@ -93,6 +93,27 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           throw new AccountDeletionConflict(
             "Удаление аккаунта пока недоступно: требуется настройка обезличивания истории",
           );
+        // A pre-058 privileged function leaves live union createdBy IDs behind.
+        // Fail before writing the deletion tombstone unless the upgraded
+        // SECURITY DEFINER entrypoint and its union helper are installed.
+        const unionCleanup = await client.query(`SELECT EXISTS (
+          SELECT 1 FROM pg_proc entrypoint
+          JOIN pg_roles owner_role ON owner_role.oid=entrypoint.proowner
+          JOIN pg_proc union_cleanup ON union_cleanup.oid=
+            to_regprocedure('public.runtime_anonymize_deleted_account_unions(text)')
+          JOIN pg_roles union_owner ON union_owner.oid=union_cleanup.proowner
+          WHERE entrypoint.oid=to_regprocedure('public.runtime_anonymize_deleted_account_history(text)')
+            AND entrypoint.prosecdef AND union_cleanup.prosecdef
+            AND (owner_role.rolsuper OR owner_role.rolbypassrls)
+            AND (union_owner.rolsuper OR union_owner.rolbypassrls)
+            AND has_function_privilege(current_user,entrypoint.oid,'EXECUTE')
+            AND position('PERFORM public.runtime_anonymize_deleted_account_unions(account_id)'
+              IN pg_get_functiondef(entrypoint.oid))>0
+        ) AS installed`);
+        if (unionCleanup.rows[0]?.installed !== true)
+          throw new AccountDeletionConflict(
+            "Удаление аккаунта пока недоступно: администратор должен установить миграцию 058 обезличивания авторства союзов",
+          );
         if (confirmation.redactComments) {
           const redactionFunction = await client.query(
             "SELECT COALESCE(has_function_privilege(current_user,to_regprocedure('public.runtime_redact_deleted_account_comments(text)')::oid,'EXECUTE'),false) AS allowed",

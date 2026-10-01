@@ -75,13 +75,23 @@ SSH проверяет закреплённый публичный ключ се
 
 ### PostgreSQL
 
-После выкладки миграций `052_deleted_account_comments.sql`, `054_discovery_linked_card_grants.sql` и `055_discovery_branch_grants.sql` администратор сервера повторно устанавливает привилегированные функции в рабочей БД. После `054` и `055` это обязательно для обезличивания `granted_by` при удалении аккаунта и очистки ID уже удалённых аккаунтов. Команду выполняют в root shell: root читает SQL через закрытые каталоги релиза и передаёт его на stdin `psql` от роли `postgres`, используя имя рабочей БД из маркера действующего PostgreSQL:
+Для версии 058 отдельно применяют привилегированный SQL до активации приложения: роль `site_drevo` не может заменить принадлежащую PostgreSQL функцию с `SECURITY DEFINER`. Прежний установочный скрипт ниже нужен для первоначальной установки и обновления остальных функций. После него всегда запускают 058. Повторный запуск 058 безопасен; миграция обезличивает только ID с маркером удаления и без действующего аккаунта. Повторно зарегистрированные ID требуют отдельной проверки: старое и новое авторство по одному ID различить нельзя.
 
 ```bash
 set -euo pipefail
 db=$(cat /var/www/drevo.kiiko.ru/shared/postgres.active)
 [[ "$db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || exit 1
 cat /var/www/drevo.kiiko.ru/current/ops/postgres/install-account-history-anonymization.sql \
+  | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
+```
+
+До активации релиза с 058 передайте проверенный SQL из подготовленного каталога
+роли PostgreSQL. На новой установке сначала выполните прежний скрипт выше.
+До активации не берите SQL из `current`:
+
+```bash
+release_id=<reviewed-release-id>
+cat "/var/www/drevo.kiiko.ru/releases/$release_id/ops/postgres/058_deleted_account_union_authors.sql" \
   | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
 ```
 
@@ -98,13 +108,31 @@ sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c \
             WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE'
           ) AS public_denied
    FROM pg_proc p WHERE p.oid=to_regprocedure('public.runtime_redact_deleted_account_comments(text)')"
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c \
+  "SELECT position('PERFORM public.runtime_anonymize_deleted_account_unions(account_id)' IN
+             pg_get_functiondef(to_regprocedure('public.runtime_anonymize_deleted_account_history(text)')::oid)) > 0 AS unions_installed,
+           (SELECT prosecdef FROM pg_proc WHERE oid=to_regprocedure('public.runtime_anonymize_deleted_account_unions(text)')) AS helper_security_definer,
+           (SELECT r.rolsuper OR r.rolbypassrls FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+              WHERE p.oid=to_regprocedure('public.runtime_anonymize_deleted_account_unions(text)')) AS helper_owner_privileged,
+           has_function_privilege('site_drevo','public.runtime_anonymize_deleted_account_history(text)','EXECUTE') AS app_deletion_execute,
+           has_function_privilege('site_drevo','public.runtime_anonymize_deleted_account_unions(text)','EXECUTE') AS app_helper_execute,
+           (SELECT count(*) FROM family_unions u JOIN deleted_account_tombstones d ON d.id=(u.data->>'createdBy')
+              WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id=d.id)) AS remaining_deleted_authors,
+           (SELECT count(*) FROM family_unions u JOIN deleted_account_tombstones d ON d.id=(u.data->>'createdBy')
+              WHERE EXISTS (SELECT 1 FROM accounts a WHERE a.id=d.id)) AS ambiguous_reused_ids"
 ```
+
+После 058 поля `unions_installed`, `helper_security_definer`,
+`helper_owner_privileged` и `app_deletion_execute` должны быть `t`,
+`app_helper_execute` — `f`, `remaining_deleted_authors` — `0`.
+`ambiguous_reused_ids` показывает строки для отдельного анализа; миграция их
+не меняет.
 
 После установки вошедший пользователь может безопасно проверить `GET /api/account/deletion`: поле `canRedactComments` должно быть `true`. Сам `DELETE` для проверки не вызывают. До этой проверки опция очистки текста в production не считается доступной.
 
 Рабочий backend выбирает `/etc/drevo.env`: `DATABASE_BACKEND=postgres`, `PGHOST=/var/run/postgresql`, `PGPORT=5432`, `PGUSER=site_drevo`, `PGDATABASE`, `ARCHIVE_ID=legacy-primary`. Роль приложения не должна иметь superuser/BYPASSRLS. `DATABASE_PATH` остаётся путём-якорем для файлов и ключа, а не рабочей SQLite. Не удаляйте ключ при миграции.
 
-Базовое физическое обезличивание истории при удалении аккаунта доступно после схемы `041_deleted_account_history.sql` и первоначальной установки `ops/postgres/install-account-history-anonymization.sql` администратором PostgreSQL. Если основная функция не установлена, удаление аккаунта отклоняется без частичных изменений. После схемы `052_deleted_account_comments.sql` тот же скрипт запускают повторно: он добавляет отдельную проверяемую функцию очистки текста комментариев, не меняя доступность базового удаления. После `054_discovery_linked_card_grants.sql` и `055_discovery_branch_grants.sql` его снова запускают, чтобы обновить обезличивание авторов грантов и очистить сохранённые ID уже удалённых аккаунтов. Скрипт требует роли с `BYPASSRLS`, выдаёт `site_drevo` только права вызова проверяемых функций и повторно обезличивает строки аккаунтов, удалённых до его установки. Повторный запуск безопасен.
+Удаление аккаунта требует привилегированной функции истории, а начиная с версии 058 — и миграции авторства союзов. До установки 058 запрос `DELETE /api/account` отвечает конфликтом до создания маркера удаления и изменения данных. Миграция меняет только совпадающий `family_unions.data.createdBy` во всех архивах, сохраняя прочие поля союза. Резервные копии и WAL она не переписывает. Роль приложения остаётся без `BYPASSRLS` и не может вызвать внутреннюю функцию очистки союзов.
 
 Базовая очистка заменяет ID и снимки имён авторов нейтральным маркером в текущих и ранее покинутых архивах; генеалогические факты и ревизии истории остаются. Вложенные `createdBy` в снимках истории заменяются только при точном совпадении ID удалённого аккаунта. Без отдельной галочки текст комментариев остаётся; с галочкой текущие строки комментариев удаляемого аккаунта заменяются нейтральной пометкой, а чужие комментарии сохраняются. Произвольный текст заметок и старые резервные копии, включая WAL и ранее выгруженные файлы, автоматически не переписываются. Они удаляются по отдельной политике хранения и ротации резервных копий.
 
