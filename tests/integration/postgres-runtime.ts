@@ -124,6 +124,7 @@ const family: Family = {
 let live: Awaited<ReturnType<typeof openArchive>> | undefined;
 let app: Awaited<ReturnType<typeof startServer>> | undefined;
 let otherApp: Awaited<ReturnType<typeof startServer>> | undefined;
+let restoreGuardApp: Awaited<ReturnType<typeof startServer>> | undefined;
 try {
   delete process.env.DATABASE_BACKEND;
   const sqlite = await openArchive(source, family);
@@ -3998,18 +3999,34 @@ try {
   changedPlace.people[0].birthPlace = "Другая Тула";
   assert.equal((await postPlaceChanges(placeStored.family, changedPlace, placeStored.revision)).status, 400);
   assert.equal((await app.archive.read()).family.people[0].birthPlace, "Тула");
+  // Keep the restore concurrency checks in their own archive: later fixtures
+  // include cards by other authors, which cannot be replaced by this actor.
+  const guardedArchiveId = "restore-guard-test";
+  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
+  await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
+    VALUES($1,'Restore guard','',false,0,18)`, [guardedArchiveId]);
+  await client.query("INSERT INTO people(id,data) VALUES('person-a',$1)",
+    [JSON.stringify(family.people[0])]);
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,'owner')", [guardedArchiveId]);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES($1,'owner','admin',true,'all')`, [guardedArchiveId]);
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  restoreGuardApp = await startServer(0, source, true, undefined, undefined, guardedArchiveId);
+  const guardedApp = restoreGuardApp;
+  const guardedBase = `http://127.0.0.1:${(guardedApp.server.address() as { port: number }).port}`;
+  const guardedUploads = join(dirname(guardedApp.archive.db.file), "uploads");
   // A platform grant can be revoked while a restore is copying staged media.
   // The final grant check must run inside archive.write's transaction and lock
   // the grant until commit, without holding that lock during file copying.
   const securedRestoreHeaders = { ...ownerHeaders, "X-Drevo-Restore": "1" };
-  const guardedPreviewResponse = await fetch(securedBase + "/api/restore/preview", {
+  const guardedPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
     method: "POST", headers: securedRestoreHeaders, body: restoreBytes,
   });
   assert.equal(guardedPreviewResponse.status, 200, await guardedPreviewResponse.clone().text());
   const guardedPreview = await guardedPreviewResponse.json() as { token: string };
-  const revisionBeforeRevocation = (await app.archive.read()).revision;
-  const filesBeforeRevocation = readdirSync(uploads).sort();
-  const originalRestoreWrite = app.archive.write;
+  const revisionBeforeRevocation = (await guardedApp.archive.read()).revision;
+  const filesBeforeRevocation = readdirSync(guardedUploads).sort();
+  const originalRestoreWrite = guardedApp.archive.write;
   let restoreAtCommit!: () => void;
   let resumeRestoreCommit!: () => void;
   const restoreCommitReady = new Promise<void>((resolve) => { restoreAtCommit = resolve; });
@@ -4031,13 +4048,13 @@ try {
       if (timeout) clearTimeout(timeout);
     }
   };
-  app.archive.write = async (...args) => {
+  guardedApp.archive.write = async (...args) => {
     restoreAtCommit();
     await restoreCommitGate;
     return originalRestoreWrite(...args);
   };
   try {
-    const pendingApply = fetch(securedBase + "/api/restore/apply", {
+    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
       method: "POST", headers: securedRestoreHeaders,
       body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
     });
@@ -4046,19 +4063,19 @@ try {
     resumeRestoreCommit();
     const deniedApply = await pendingApply;
     assert.equal(deniedApply.status, 403, await deniedApply.text());
-    assert.equal((await app.archive.read()).revision, revisionBeforeRevocation);
-    assert.deepEqual(readdirSync(uploads).sort(), filesBeforeRevocation,
+    assert.equal((await guardedApp.archive.read()).revision, revisionBeforeRevocation);
+    assert.deepEqual(readdirSync(guardedUploads).sort(), filesBeforeRevocation,
       "revoked restore removes copies made before the commit check");
-    assert.equal((await app.archive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
+    assert.equal((await guardedApp.archive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
       .get(guardedPreview.token))?.n, 1, "the failed stage stays available for an authorized retry");
   } finally {
     resumeRestoreCommit();
-    app.archive.write = originalRestoreWrite;
+    guardedApp.archive.write = originalRestoreWrite;
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
-  // The seed SQLite has no media or documents. A successful lock test must
-  // not add originals to the shared PostgreSQL quota fixture.
-  const noMediaPreviewResponse = await fetch(securedBase + "/api/restore/preview", {
+  // The seed SQLite has no media or documents, so the successful lock test
+  // does not copy any original files.
+  const noMediaPreviewResponse = await fetch(guardedBase + "/api/restore/preview", {
     method: "POST", headers: securedRestoreHeaders, body: readFileSync(source),
   });
   assert.equal(noMediaPreviewResponse.status, 200, await noMediaPreviewResponse.clone().text());
@@ -4071,7 +4088,7 @@ try {
   let releasePlatformLock!: () => void;
   const platformLockReady = new Promise<void>((resolve) => { platformLockHeld = resolve; });
   const platformLockGate = new Promise<void>((resolve) => { releasePlatformLock = resolve; });
-  app.archive.write = async (...args) => {
+  guardedApp.archive.write = async (...args) => {
     const afterWrite = args[6];
     args[6] = async (db) => {
       await afterWrite?.(db);
@@ -4081,7 +4098,7 @@ try {
     return originalRestoreWrite(...args);
   };
   try {
-    const pendingApply = fetch(securedBase + "/api/restore/apply", {
+    const pendingApply = fetch(guardedBase + "/api/restore/apply", {
       method: "POST", headers: securedRestoreHeaders,
       body: JSON.stringify({ token: noMediaPreview.token, confirm: true }),
     });
@@ -4100,11 +4117,12 @@ try {
     await concurrentRevocation;
   } finally {
     releasePlatformLock();
-    app.archive.write = originalRestoreWrite;
+    guardedApp.archive.write = originalRestoreWrite;
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
   console.log("runtime_http_and_backup_ok");
 } finally {
+  await restoreGuardApp?.close();
   await otherApp?.close();
   await app?.close();
   await live?.close();
