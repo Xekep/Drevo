@@ -34,6 +34,7 @@ import { AiSettingsAdmin } from "./ai-settings-admin";
 import { StorageLimitsAdmin } from "./storage-limits-admin";
 import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
+import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
 type Settings = {
@@ -67,6 +68,7 @@ const ADMIN_SECTIONS = [
     items: [
       { id: "ai", label: "Yandex AI", icon: Bot },
       { id: "resources", label: "Ресурсы поиска", icon: BookOpen },
+      { id: "sources", label: "Источники", icon: BookOpen },
       { id: "mcp", label: "MCP-токены", icon: KeyRound },
     ],
   },
@@ -116,6 +118,10 @@ const ADMIN_INTRO: Record<string, { title: string; description: string }> = {
     title: "Ресурсы поиска",
     description:
       "Категории и сайты, которые ИИ может предложить для дальнейшего исследования.",
+  },
+  sources: {
+    title: "Источники",
+    description: "Архивные записи, документы и доказательства фактов.",
   },
   mcp: {
     title: "MCP-токены",
@@ -656,6 +662,7 @@ export function AdminPanel({
         {section === "storage" && <StorageLimitsAdmin />}
         {section === "vk" && <VkAuthAdmin />}
         {section === "resources" && <ResearchResourcesAdmin />}
+        {section === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
         {section === "publications" && <PublicationAdmin family={family} />}

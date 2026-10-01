@@ -41,7 +41,13 @@ export function sourceCatalogHttp(
     const linksRoute = url.pathname.endsWith("/links");
     if (!await auth.isAdmin(req)) return json(res, 403, { error: "Каталог источников доступен администратору архива" });
     if (req.method === "GET" && !match[1]) {
-      return json(res, 200, { sources: await catalog.list() });
+      const offset = Number(url.searchParams.get("offset") || 0);
+      const limit = Number(url.searchParams.get("limit") || 20);
+      const query = (url.searchParams.get("q") || "").trim();
+      if (!Number.isSafeInteger(offset) || offset < 0 ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || query.length > 100)
+        return json(res, 400, { error: "Некорректная страница каталога" });
+      return json(res, 200, await catalog.page(query, offset, limit));
     }
     if (req.method === "GET" && match[1] && !linksRoute) {
       const source = await catalog.get(match[1]);

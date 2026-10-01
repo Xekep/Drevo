@@ -1,0 +1,37 @@
+.source-catalog-admin { min-width: 0; }
+.source-catalog-toolbar { display: flex; align-items: end; gap: 12px; margin-bottom: 18px; }
+.source-catalog-toolbar label { flex: 1; min-width: 0; }
+.source-catalog-admin label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.source-catalog-admin :is(input, select, textarea) { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #cbd6ca; border-radius: 7px; background: #fff; color: #26382b; font: inherit; }
+.source-catalog-admin textarea { min-height: 95px; resize: vertical; }
+.source-catalog-admin button { cursor: pointer; }
+.source-catalog-admin button:disabled { cursor: default; opacity: .6; }
+.source-catalog-layout { display: grid; grid-template-columns: minmax(210px, 30%) minmax(0, 1fr); gap: 20px; align-items: start; }
+.source-catalog-list { display: grid; gap: 6px; min-width: 0; }
+.source-catalog-list > button { display: grid; gap: 3px; min-width: 0; text-align: left; padding: 10px 11px; border: 1px solid #e1e8df; border-radius: 8px; background: #f8faf7; color: #283b2e; }
+.source-catalog-list > button[aria-current] { border-color: #638669; background: #eef5ed; }
+.source-catalog-list strong, .source-catalog-list small { overflow-wrap: anywhere; }
+.source-catalog-list small { color: #64736a; }
+.source-catalog-pages { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 6px; font-size: 12px; }
+.source-catalog-pages span { flex: 1; }
+.source-catalog-pages button, .source-catalog-link-actions button { padding: 7px 10px; border: 1px solid #cbd6ca; border-radius: 7px; background: #fff; }
+.source-catalog-editor { min-width: 0; display: grid; gap: 18px; }
+.source-catalog-editor .archive-form { display: grid; gap: 12px; margin: 0; }
+.source-catalog-editor h2, .source-catalog-link h3 { margin: 0; }
+.source-catalog-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.source-catalog-extra { display: grid; gap: 10px; padding: 10px 0; }
+.source-catalog-editor footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-documents { display: grid; gap: 8px; padding: 12px; border: 1px solid #e1e8df; border-radius: 8px; }
+.source-document-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.source-document-tags span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 7px; border-radius: 6px; background: #eaf2e8; overflow-wrap: anywhere; }
+.source-document-tags button { border: 0; background: transparent; font-size: 18px; }
+.source-document-results { display: grid; max-height: 155px; overflow: auto; gap: 4px; }
+.source-document-results button { text-align: left; border: 0; border-radius: 5px; background: #f2f6f0; padding: 7px; overflow-wrap: anywhere; }
+.source-catalog-link { display: grid; gap: 12px; padding: 15px; border: 1px solid #e1e8df; border-radius: 8px; }
+.source-catalog-link-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) {
+  .source-catalog-layout { grid-template-columns: minmax(0, 1fr); }
+  .source-catalog-toolbar { align-items: stretch; flex-direction: column; }
+  .source-catalog-list { max-height: 240px; overflow: auto; }
+  .source-catalog-admin { padding: 12px; }
+}
