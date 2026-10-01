@@ -2,12 +2,14 @@ import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { statfs } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
+import { DatabaseSync } from "node:sqlite";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import { openPromise } from "yauzl";
@@ -18,6 +20,8 @@ import {
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
+import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
+import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { settingsStore } from "../../src/server/settings.ts";
@@ -1390,20 +1394,67 @@ try {
     }).then((response) => response.json())).user.platformAdmin,
     false,
   );
-  for (const path of ["/api/backups", "/api/backup/full"]) {
+  for (const path of ["/api/backups", "/api/backup", "/api/backup/full",
+    "/api/backups/settings"]) {
     assert.equal(
       (await fetch(securedBase + path, { headers: archiveAdminHeaders })).status,
       403,
     );
   }
-  assert.equal(
-    (await fetch(securedBase + "/api/restore/preview", {
-      method: "POST",
-      headers: { ...archiveAdminHeaders, "x-drevo-restore": "1" },
-      body: "invalid backup",
-    })).status,
-    403,
-  );
+  for (const [path, method, body] of [
+    ["/api/backups/settings", "PUT", "{}"],
+    ["/api/backups/create", "POST", "{}"],
+    ["/api/backups/check", "POST", "{}"],
+    ["/api/restore/preview", "POST", "invalid backup"],
+    ["/api/restore/apply", "POST", JSON.stringify({ token: "invalid", confirm: true })],
+  ] as const)
+    assert.equal((await fetch(securedBase + path, {
+      method,
+      headers: { ...archiveAdminHeaders, "x-drevo-restore": "1", "x-drevo-backup": "1" },
+      body,
+    })).status, 403, `a tree admin cannot operate the system endpoint ${path}`);
+  await app.archive.db.prepare("", "UPDATE account_sessions SET expires_at=? WHERE token_hash=?")
+    .run(Date.now() + 5 * 60_000, sessionTokenHash(aiOwnerToken));
+  let reachedSend!: () => void;
+  let resumeSend!: () => void;
+  const sendReady = new Promise<void>((resolve) => { reachedSend = resolve; });
+  const sendGate = new Promise<void>((resolve) => { resumeSend = resolve; });
+  const backupAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const backupEndpoint = databaseBackupHttp({
+    archive: app.archive,
+    auth: backupAuth,
+    beforeSend: async () => { reachedSend(); await sendGate; },
+  });
+  const backupServer = createServer((req, res) => {
+    void backupEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => backupServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const backupPort = (backupServer.address() as { port: number }).port;
+    const download = fetch(`http://127.0.0.1:${backupPort}/api/backup/full`, {
+      headers: ownerHeaders,
+    });
+    await Promise.race([
+      sendReady,
+      download.then(() => { throw new Error("Backup sent before the access recheck"); }),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error("Backup preparation did not reach the send barrier")), 30_000);
+        timer.unref();
+      }),
+    ]);
+    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+    resumeSend();
+    const revoked = await download;
+    assert.equal(revoked.status, 403, "revocation after assembly stops full backup delivery");
+    assert.match(revoked.headers.get("content-type") || "", /application\/json/);
+    assert.match(await revoked.text(), /отозван/);
+  } finally {
+    resumeSend();
+    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+    await new Promise<void>((resolve) => backupServer.close(() => resolve()));
+  }
   await app.archive.db
     .prepare("", "UPDATE archive_memberships SET role='reader' WHERE user_id='vk:42'")
     .run();
@@ -1668,6 +1719,70 @@ try {
   otherApp = await startServer(0, source, true, undefined, undefined, "other-archive");
   const otherBase = `http://127.0.0.1:${(otherApp.server.address() as { port: number }).port}`;
   assert.equal(otherApp.archive.db.archiveId, "other-archive");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES('other-archive','vk:42','admin',true,'all')`);
+  const priorSelectedOwner = (await client.query(
+    "SELECT user_id FROM archive_owners WHERE archive_id='other-archive'",
+  )).rows[0]?.user_id as string | undefined;
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('other-archive','vk:42') ON CONFLICT (archive_id) DO UPDATE SET user_id='vk:42'`);
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  try {
+    const selectedAdmin = await fetch(securedBase + "/a/other-archive/api/session", {
+      headers: archiveAdminHeaders,
+    }).then((response) => response.json());
+    assert.equal(selectedAdmin.user.role, "admin");
+    assert.equal(selectedAdmin.user.platformAdmin, false);
+    for (const path of ["/api/backups", "/api/backup", "/api/backup/full",
+      "/api/backups/settings"])
+      assert.equal((await fetch(securedBase + "/a/other-archive" + path, {
+        headers: archiveAdminHeaders,
+      })).status, 403, `tree admin must not download ${path} from a second archive`);
+    for (const [path, method, body] of [
+      ["/api/backups/settings", "PUT", "{}"],
+      ["/api/backups/create", "POST", "{}"],
+      ["/api/backups/check", "POST", "{}"],
+      ["/api/restore/preview", "POST", "invalid backup"],
+      ["/api/restore/apply", "POST", JSON.stringify({ token: "invalid", confirm: true })],
+    ] as const)
+      assert.equal((await fetch(securedBase + "/a/other-archive" + path, {
+        method,
+        headers: { ...archiveAdminHeaders, "x-drevo-restore": "1", "x-drevo-backup": "1" },
+        body,
+      })).status, 403, `tree admin must not mutate ${path} in a second archive`);
+  } finally {
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    if (priorSelectedOwner)
+      await client.query("UPDATE archive_owners SET user_id=$1 WHERE archive_id='other-archive'", [priorSelectedOwner]);
+    else await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive'");
+    await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  }
+  const selectedBackup = await fetch(securedBase + "/a/other-archive/api/backup", {
+    headers: ownerHeaders,
+  });
+  assert.equal(selectedBackup.status, 200);
+  const selectedBackupFile = join(directory, "selected-archive-backup.sqlite");
+  writeFileSync(selectedBackupFile, Buffer.from(await selectedBackup.arrayBuffer()));
+  const selectedBackupDb = new DatabaseSync(selectedBackupFile, { readOnly: true });
+  try {
+    const selectedPerson = selectedBackupDb.prepare("SELECT data FROM people WHERE id='person-a'").get();
+    assert.equal(JSON.parse(String(selectedPerson?.data)).name,
+      (await otherApp.archive.read()).family.people.find((person) => person.id === "person-a")?.name,
+      "platform admin backup contains only the selected archive's people");
+    assert.notEqual(JSON.parse(String(selectedPerson?.data)).name,
+      (await app.archive.read()).family.people.find((person) => person.id === "person-a")?.name);
+  } finally {
+    selectedBackupDb.close();
+    rmSync(selectedBackupFile, { force: true });
+  }
+  const selectedFullBackup = await fetch(securedBase + "/a/other-archive/api/backup/full", {
+    headers: ownerHeaders,
+  });
+  assert.equal(selectedFullBackup.status, 200);
+  assert.match(selectedFullBackup.headers.get("content-type") || "", /application\/gzip/);
+  await selectedFullBackup.arrayBuffer();
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
     404,
