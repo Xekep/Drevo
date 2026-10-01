@@ -109,7 +109,7 @@ test("restore stage survives store restart and can be applied by another instanc
     const preview = await restores.preview(bytes, admin);
     restores.close();
     restores = restoreStore(archive, databasePath);
-    const result = await restores.apply(preview.token, admin);
+    const result = await restores.apply(preview.token, admin, async () => {});
     assert.equal(result.family.title, family.title);
   } finally {
     restores.close();
