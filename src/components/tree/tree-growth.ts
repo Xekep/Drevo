@@ -43,7 +43,10 @@ function birthOrder(a: LayoutPerson, b: LayoutPerson) {
   );
 }
 
-function spouseGroups(members: LayoutPerson[]) {
+function spouseGroups(
+  members: LayoutPerson[],
+  partners: ReadonlyMap<string, ReadonlySet<string>>,
+) {
   const owners = new Map(members.map((person) => [person.id, person.id]));
   const find = (id: string): string => {
     let root = id;
@@ -67,7 +70,24 @@ function spouseGroups(members: LayoutPerson[]) {
     groups.set(root, group);
   }
   return [...groups.values()]
-    .map((group) => group.sort(birthOrder))
+    .map((group) => {
+      const sorted = group.sort(birthOrder);
+      const byId = new Map(sorted.map((person) => [person.id, person]));
+      const visited = new Set([sorted[0].id]);
+      const ordered = [sorted[0]];
+      for (let index = 0; index < ordered.length; index++) {
+        const next = [...(partners.get(ordered[index].id) || [])]
+          .flatMap((id) =>
+            byId.has(id) && !visited.has(id) ? [byId.get(id)!] : [],
+          )
+          .sort(birthOrder);
+        for (const person of next) {
+          visited.add(person.id);
+          ordered.push(person);
+        }
+      }
+      return ordered;
+    })
     .sort((left, right) => birthOrder(left[0], right[0]));
 }
 
@@ -90,8 +110,8 @@ function milliseconds(value: number) {
  * Следующее поколение ждёт появления всех карточек предыдущего. Затем
  * одновременно начинают рисоваться родительские линии. Каждая доходит до
  * потомка ровно к появлению его карточки, без ожидания после конца линии.
- * Декоративное движение карточки продолжается во время
- * роста исходящих линий, без остановки между фазами.
+ * Новый супруг появляется после соединяющей его линии. Декоративное
+ * движение карточки продолжается во время роста исходящих линий.
  */
 export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
   const levels = generationLevels(people);
@@ -105,6 +125,15 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
 
   const rawDelays = new Map<string, number>();
   const rawParentEdgeStarts = new Map<string, number>();
+  const partners = new Map(
+    people.map((person) => [person.id, new Set<string>()]),
+  );
+  for (const person of people)
+    for (const spouse of person.spouses) {
+      if (!partners.has(spouse)) continue;
+      partners.get(person.id)!.add(spouse);
+      partners.get(spouse)!.add(person.id);
+    }
   let levelEnd = 0;
   let firstLevel = true;
   for (const level of [...generations.keys()].sort((a, b) => a - b)) {
@@ -120,17 +149,28 @@ export function treeGrowthDelays(people: LayoutPerson[]): TreeGrowthSchedule {
           )
         : 0;
     let orderOffset = 0;
-    for (const group of spouseGroups(members)) {
+    let generationEnd = nodeStart;
+    for (const group of spouseGroups(members, partners)) {
+      let groupEnd = nodeStart + orderOffset;
       group.forEach((person, index) => {
-        rawDelays.set(person.id, nodeStart + orderOffset + index * step);
+        const spouseReady = [...partners.get(person.id)!].flatMap((id) => {
+          const delay = rawDelays.get(id);
+          return delay === undefined
+            ? []
+            : [delay + TREE_GROWTH_REVEAL_MS + TREE_GROWTH_EDGE_MS];
+        });
+        const delay = Math.max(
+          nodeStart + orderOffset + index * step,
+          ...spouseReady,
+        );
+        rawDelays.set(person.id, delay);
+        groupEnd = Math.max(groupEnd, delay);
         if (nodeStart) rawParentEdgeStarts.set(person.id, edgeStart);
       });
-      orderOffset += group.length * step;
+      generationEnd = Math.max(generationEnd, groupEnd);
+      orderOffset = groupEnd - nodeStart + step;
     }
-    levelEnd =
-      nodeStart +
-      Math.max(0, members.length - 1) * step +
-      TREE_GROWTH_REVEAL_MS;
+    levelEnd = generationEnd + TREE_GROWTH_REVEAL_MS;
   }
   const last = Math.max(0, ...rawDelays.values());
   const tail = Math.max(
@@ -200,8 +240,9 @@ export function treeConnectionGrowthStyle(
     return treeEdgeGrowthStyle(line, line + duration, duration);
   }
   if (connection.type === "spouse") {
-    const line = Math.max(from, to) + revealMs;
-    return treeEdgeGrowthStyle(line, line + edgeMs);
+    const line = Math.min(from, to) + revealMs;
+    const duration = Math.max(edgeMs, Math.max(from, to) - line);
+    return treeEdgeGrowthStyle(line, line + duration, duration);
   }
   const line = Math.max(from, to) + revealMs;
   return treeEdgeGrowthStyle(line, line + edgeMs);

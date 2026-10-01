@@ -36,9 +36,9 @@ test("later-born descendants appear exactly when their incoming line finishes", 
     page.locator(".relationship-parent .tree-edge-growth-path"),
   ).not.toHaveCount(0);
   const timing = await canvas.evaluate((element) => {
-    const card = [
-      ...element.querySelectorAll<HTMLElement>(".tree-grow-node"),
-    ].find((node) => getComputedStyle(node).animationDelay === "0.4s")!;
+    const card = element.querySelector<HTMLElement>(
+      '[data-testid="rf__node-e2e-sibling"]',
+    )!;
     const edge = [
       ...element.querySelectorAll<SVGGElement>(".relationship-parent"),
     ].find(
@@ -47,11 +47,15 @@ test("later-born descendants appear exactly when their incoming line finishes", 
         edge.getAttribute("data-id")?.includes("e2e-sibling"),
     )!;
     const line = edge.querySelector<SVGPathElement>(".tree-edge-growth-path")!;
+    const style = getComputedStyle(line);
+    const time =
+      (parseFloat(style.animationDelay) +
+        parseFloat(style.animationDuration) * 0.9) *
+      1000;
     element.getAnimations({ subtree: true }).forEach((animation) => {
       animation.pause();
-      animation.currentTime = 370;
+      animation.currentTime = time;
     });
-    const style = getComputedStyle(line);
     return {
       cardStarts: parseFloat(getComputedStyle(card).animationDelay),
       lineEnds:
@@ -92,10 +96,10 @@ test("growth draws parent arrows before descendants without squeezing cards", as
     animations.forEach((animation) => animation.pause());
     const nodes = [...element.querySelectorAll<HTMLElement>(".tree-grow-node")];
     const firstDescendant = nodes.find(
-      (node) => getComputedStyle(node).animationDelay === "0.34s",
+      (node) => node.dataset.id === "e2e-child",
     )!;
     const lastDescendant = nodes.find(
-      (node) => getComputedStyle(node).animationDelay === "0.74s",
+      (node) => node.dataset.id === "e2e-grandchild",
     )!;
     const card = firstDescendant.querySelector<HTMLElement>(".flow-person")!;
     const parentLine = [
@@ -124,11 +128,13 @@ test("growth draws parent arrows before descendants without squeezing cards", as
         cardScaleY: transform.d,
       };
     };
+    const nextChildTime =
+      parseFloat(getComputedStyle(lastDescendant).animationDelay) * 1000;
     return {
       line: sample(220),
       child: sample(450),
-      nextArrow: sample(650),
-      nextChild: sample(800),
+      nextArrow: sample(nextChildTime - 120),
+      nextChild: sample(nextChildTime + 50),
     };
   });
   expect(phases.line.childOpacity).toBe(0);
@@ -145,4 +151,42 @@ test("growth draws parent arrows before descendants without squeezing cards", as
     expect(phase.cardScaleX).toBeCloseTo(1, 3);
     expect(phase.cardScaleY).toBeCloseTo(1, 3);
   }
+});
+
+test("a spouse card waits until its joining line reaches it", async ({
+  page,
+}, testInfo) => {
+  await freezeGrowthBeforeFirstFrame(page);
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  await expect(canvas).toHaveClass(/is-growing/);
+  const phase = await canvas.evaluate((element) => {
+    const card = element.querySelector<HTMLElement>(
+      '[data-testid="rf__node-e2e-spouse"]',
+    )!;
+    const line = element.querySelector<SVGPathElement>(
+      ".relationship-spouse .tree-edge-growth-path",
+    )!;
+    const style = getComputedStyle(line);
+    const starts = parseFloat(style.animationDelay) * 1000;
+    const duration = parseFloat(style.animationDuration) * 1000;
+    const cardStarts = parseFloat(getComputedStyle(card).animationDelay) * 1000;
+    element.getAnimations({ subtree: true }).forEach((animation) => {
+      animation.pause();
+      animation.currentTime = starts + duration / 2;
+    });
+    return {
+      starts,
+      duration,
+      cardStarts,
+      cardOpacity: Number(getComputedStyle(card).opacity),
+      lineRemaining: parseFloat(getComputedStyle(line).strokeDashoffset),
+    };
+  });
+  expect(phase.starts + phase.duration).toBeCloseTo(phase.cardStarts, 1);
+  expect(phase.cardOpacity).toBe(0);
+  expect(phase.lineRemaining).toBeCloseTo(0.5, 1);
+  await canvas.screenshot({
+    path: testInfo.outputPath("line-before-spouse.png"),
+  });
 });

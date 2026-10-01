@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
 
-test("large tree reveals portraits at the personal camera scale", async ({ page }, testInfo) => {
+test("large tree grows at overview scale before flying to the account person", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop");
   test.setTimeout(45_000);
   const people = randomFamily(1, 4);
@@ -67,8 +67,12 @@ test("large tree reveals portraits at the personal camera scale", async ({ page 
       __firstVisiblePortrait: { width: number; zoom: number };
     }).__firstVisiblePortrait,
   );
-  expect(first.width).toBeGreaterThan(50);
-  expect(first.zoom).toBeGreaterThan(0.4);
+  expect(first.zoom).toBeLessThanOrEqual(0.38);
+  expect(first.width).toBeLessThan(51);
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, { timeout: 30_000 });
+  await expect.poll(() => page.locator(".react-flow__viewport").evaluate(
+    (element) => new DOMMatrix(getComputedStyle(element).transform).a,
+  )).toBeCloseTo(0.55, 2);
 });
 
 test("ordinary tree loads portraits before the first growth frame", async ({ page }, testInfo) => {

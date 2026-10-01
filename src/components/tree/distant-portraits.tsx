@@ -7,6 +7,7 @@ import { roundedRoute } from "../../domain/edge-routing.ts";
 import type { HouseholdNodeType } from "./household-node.tsx";
 import type { PersonNodeType } from "./person-node";
 import type { RelationshipEdgeType } from "./relationship-edge.tsx";
+import { treeGrowthDuration, type TreeGrowthSchedule } from "./tree-growth.ts";
 
 const PORTRAIT_SIZE = 132;
 const PORTRAIT_TOP = 4;
@@ -59,7 +60,7 @@ export function DistantPortraits({
   height: number;
   growing: boolean;
   growthStarted: boolean;
-  growthDelays: ReadonlyMap<string, number>;
+  growthDelays: TreeGrowthSchedule;
 }) {
   const store = useStoreApi();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,7 +103,7 @@ export function DistantPortraits({
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context || !width || !height) return;
-    const growthEnd = Math.max(0, ...growthDelays.values()) + 400;
+    const growthEnd = treeGrowthDuration(Math.max(0, ...growthDelays.values()), growthDelays);
     let frame = 0;
     let settleTimer = 0;
     let base = store.getState().transform;
@@ -193,7 +194,7 @@ export function DistantPortraits({
           if (!visible(x, y, cardWidth, cardHeight)) continue;
           const person = node.data.person;
           const delay = growthDelays.get(person.id) || 0;
-          const opacity = growing ? Math.min(1, Math.max(0, (elapsed - delay) / 100)) : 1;
+          const opacity = growing ? Math.min(1, Math.max(0, (elapsed - delay) / growthDelays.revealMs)) : 1;
           if (opacity <= 0) continue;
           context.globalAlpha = node.data.dimmed ? opacity * 0.28 : opacity;
           const centerX = x + cardWidth / 2;
@@ -239,7 +240,7 @@ export function DistantPortraits({
           if (x + size < -OVERSCAN || y + size < -OVERSCAN ||
               x > width + OVERSCAN || y > height + OVERSCAN) continue;
           const delay = growing ? growthDelays.get(node.data.person.id) || 0 : 0;
-          const opacity = Math.min(1, Math.max(0, (elapsed - delay) / 100));
+          const opacity = Math.min(1, Math.max(0, (elapsed - delay) / growthDelays.revealMs));
           if (opacity <= 0) continue;
           context.globalAlpha = opacity;
           context.drawImage(preview, x + OVERSCAN, y + OVERSCAN, size, size);

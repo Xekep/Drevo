@@ -1372,7 +1372,7 @@ test("same-name map candidates show their municipality", async ({
   await expect(page.locator(".map-candidates li")).toHaveCount(3);
 });
 
-test("mobile tree appears fully without branch drawing", async ({
+test("mobile tree draws its branches before becoming interactive", async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
@@ -1380,6 +1380,8 @@ test("mobile tree appears fully without branch drawing", async ({
   await page.goto("/tree");
   const canvas = page.locator(".tree-canvas");
   await expect(page.locator(".flow-person")).toHaveCount(6);
+  await expect(canvas).toHaveClass(/is-growing/);
+  await expect(canvas).toHaveAttribute("aria-busy", "true");
   await expect(canvas).not.toHaveClass(/is-growing/);
   await expect(canvas).toHaveAttribute("aria-busy", "false");
   await expect(
@@ -1461,10 +1463,10 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(delays).toEqual([
     "0s",
     "0.34s",
-    "0.37s",
-    "0.4s",
-    "0.74s",
-    "0.77s",
+    "0.68s",
+    "0.71s",
+    "1.05s",
+    "1.08s",
   ]);
   await expect(page.getByTestId("rf__node-e2e-child")).toHaveCSS(
     "animation-delay",
@@ -1472,11 +1474,11 @@ test("the initial tree grows from roots toward descendants", async ({
   );
   await expect(page.getByTestId("rf__node-e2e-spouse")).toHaveCSS(
     "animation-delay",
-    "0.37s",
+    "0.68s",
   );
   await expect(page.getByTestId("rf__node-e2e-sibling")).toHaveCSS(
     "animation-delay",
-    "0.4s",
+    "0.71s",
   );
   await expect(nodes.last()).toHaveCSS("animation-name", "tree-branch-reveal");
   await expect(nodes.last()).toHaveCSS("animation-duration", "0.1s");
@@ -1504,9 +1506,9 @@ test("the initial tree grows from roots toward descendants", async ({
   expect(edgeDelays).toEqual([
     "0.1s",
     "0.1s",
-    "0.47s",
-    "0.5s",
-    "0.5s",
+    "0.44s",
+    "0.81s",
+    "0.81s",
   ]);
 
   const pane = page.locator(".react-flow__pane");

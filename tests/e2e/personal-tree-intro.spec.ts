@@ -55,6 +55,26 @@ async function expectCentered(page: Page) {
     .toBeLessThan(5);
 }
 
+test("the whole tree draws at a steady overview scale before the personal zoom", async ({
+  page,
+}, info) => {
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  const viewport = page.locator(".react-flow__viewport");
+  await expect(canvas).toHaveClass(/is-growing/);
+  const overview = await viewport.evaluate(
+    (element) => new DOMMatrix(getComputedStyle(element).transform).a,
+  );
+  expect(overview).toBeLessThanOrEqual(
+    info.project.name === "mobile" ? 0.32 : 0.38,
+  );
+  const transform = await viewport.getAttribute("style");
+  await page.waitForTimeout(120);
+  await expect(viewport).toHaveAttribute("style", transform!);
+  await expect(canvas).not.toHaveClass(/is-grow/, { timeout: 5_000 });
+  await expectCentered(page);
+});
+
 test("incidental background clicks during personal intro still finish at the account card", async ({
   page,
 }, info) => {
