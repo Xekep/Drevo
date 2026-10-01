@@ -1140,6 +1140,12 @@ test("visible GEDZIP restores documents cited by retained people, events, claims
   { id: "ended", participants: ["parent", "partner"], type: "partnership",
     formation: { date: "1890", sources: [source(documents[1][1], 8)] },
     ending: { date: "1895", sources: [source(documents[1][1], 7)] } }];
+  family.links = [
+    { id: "visible-evidence", from: "parent", to: "partner", type: "guardian",
+      sources: [source(documents[1][1], 9)] },
+    { id: "private-evidence", from: "parent", to: "child", type: "guardian",
+      sources: [source(documents[2][1], 2)] },
+  ];
   const archive = await openArchive(dbPath, family);
   const auth = { currentUser: () => ({ id: "admin", name: "Admin", role: "admin",
     approved: true, createdAt: "" }) } as unknown as Awaited<ReturnType<typeof createAuth>>;
@@ -1177,6 +1183,7 @@ test("visible GEDZIP restores documents cited by retained people, events, claims
     const withUnion = await exported(["parent", "partner"], "with-union");
     assert.deepEqual(withUnion.files.map((file) => file.title).sort(), ["claim", "union"]);
     assert.equal(withUnion.family.unions?.length, 2);
+    assert.equal(withUnion.family.links?.length, 1);
     assert.deepEqual(withUnion.files.find((file) => file.title === "claim")?.document?.eventLinks || [],
       [], "metadata for an excluded person's event stays out of the visible package");
     assert.deepEqual(withUnion.family.people.find((person) => person.name === "parent")
@@ -1209,11 +1216,13 @@ test("visible GEDZIP restores documents cited by retained people, events, claims
       partnership?.formation?.sources?.[0], partnership?.ending?.sources?.[0],
     ].map((citation) => [citation?.documentId, citation?.documentPage]),
     [[unionId, 8], [unionId, 7]]);
+    assert.deepEqual(withUnion.family.links?.[0].sources?.map((citation) =>
+      [citation.documentId, citation.documentPage]), [[unionId, 9]]);
     assert.notEqual(withUnion.family.unions?.[0].formation?.sources?.[0].documentId,
       documents[1][1], "archive-local IDs are replaced on import");
     const plainText = exportGedcom(family, { version: "7.0",
       media: await exportMedia(archive.db, family) });
-    assert.equal(importGedcom(plainText, "retained-citations").citationMedia?.length, 15,
+    assert.equal(importGedcom(plainText, "retained-citations").citationMedia?.length, 17,
       "repeated GEDCOM parsing must not retain links to discarded citation objects");
     const mismatched = plainText.replace(/^1 _DREVO (.+)$/m, (_line, json: string) => {
       const extra = JSON.parse(json);
@@ -1246,6 +1255,7 @@ test("visible GEDZIP restores documents cited by retained people, events, claims
       ?.events?.find((event) => event.id === "work-event")?.sources?.[0].documentId,
     undefined);
     assert.equal(plain.family.unions?.[0].formation?.sources?.[0].documentId, undefined);
+    assert.equal(plain.family.links?.[0].sources?.[0].documentId, undefined);
     assert.ok(plain.warnings.some((warning) => warning.includes("Вложение цитаты не загружено")));
     const generalOnly = seed();
     generalOnly.people[0].sources = [source(documents[0][1], 9)];

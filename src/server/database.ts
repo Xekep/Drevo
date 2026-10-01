@@ -82,8 +82,8 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
     await unionQuery.run(row.id, row.participantA, row.participantB, row.data);
 
   const relationQuery = db.prepare(
-    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
-    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
   );
   for (const row of rows.relations)
     await relationQuery.run(
@@ -94,6 +94,7 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
       row.note,
       row.twinKind,
       row.createdBy,
+      row.sources,
     );
 
   const photoQuery = db.prepare(
@@ -152,12 +153,12 @@ async function syncRelations(
       "DELETE FROM relations WHERE id=?",
     ),
     insert = db.prepare(
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
-      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by,sources) VALUES(?,?,?,?,?,?,?,?)",
     ),
     update = db.prepare(
-      "UPDATE relations SET note=?,twin_kind=?,created_by=? WHERE id=?",
-      "UPDATE relations SET note=?,twin_kind=?,created_by=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=?,sources=? WHERE id=?",
     );
   for (const row of before) {
     const next = following.get(row.id);
@@ -185,13 +186,15 @@ async function syncRelations(
         row.note,
         row.twinKind,
         row.createdBy,
+        row.sources,
       );
     else if (
       old.note !== row.note ||
       old.twinKind !== row.twinKind ||
-      old.createdBy !== row.createdBy
+      old.createdBy !== row.createdBy ||
+      old.sources !== row.sources
     )
-      await update.run(row.note, row.twinKind, row.createdBy, row.id);
+      await update.run(row.note, row.twinKind, row.createdBy, row.sources, row.id);
   }
 }
 

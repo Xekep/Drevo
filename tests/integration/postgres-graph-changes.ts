@@ -95,6 +95,37 @@ test("PostgreSQL retains foster, presumed and twin details across graph reads", 
   assert.equal((await read(first, "tree-a")).family.links?.find((link) => link.type === "twin")?.twinKind, "fraternal");
 });
 
+test("additional link evidence has SQLite/PostgreSQL parity and cannot move to a different assertion", async (t) => {
+  const { first } = await fixture(t);
+  const before = (await read(first, "tree-a")).family;
+  const sqlite = await openArchive(":memory:", before);
+  t.after(async () => await sqlite.close());
+  const after: Family = { ...before, links: [{ id: "guardianship", from: "father", to: "child",
+    type: "guardian", createdBy: "admin", sources: [{ title: "Guardianship record",
+      type: "archive", reference: "leaf 4" }] }] };
+  await graph(first, tokens.admin, "tree-a", archiveChanges(before, after), 0);
+  await sqlite.write(after, 1, actor);
+  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
+  const saved = (await read(first, "tree-a")).family;
+  const evidenced = { ...saved, links: saved.links!.map((link) => ({ ...link,
+    sources: [...(link.sources || []), { title: "Witness statement", type: "oral", reference: "2020" }] })) };
+  const sourcePatch = archiveChanges(saved, evidenced);
+  assert.equal(sourcePatch.find((change) => change.collection === "links")?.field, "sources");
+  await assert.rejects(graph(first, tokens.relative, "tree-a", sourcePatch, 1), ForbiddenError);
+  await graph(first, tokens.admin, "tree-a", sourcePatch, 1);
+  await sqlite.write(evidenced, 2, actor);
+  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
+  const annotated = { ...evidenced, links: evidenced.links!.map((link) => ({ ...link, note: "reviewed" })) };
+  await graph(first, tokens.admin, "tree-a", archiveChanges(evidenced, annotated), 2);
+  await sqlite.write(annotated, 3, actor);
+  assert.deepEqual((await read(first, "tree-a")).family, (await sqlite.read()).family);
+  const moved = { ...annotated, links: annotated.links!.map((link) => ({ ...link, to: "own" })) };
+  await assert.rejects(graph(first, tokens.admin, "tree-a", archiveChanges(annotated, moved), 3),
+    /снимите прежние источники/);
+  await assert.rejects(sqlite.write(moved, 4, actor), /снимите прежние источники/);
+  assert.equal((await read(first, "tree-a")).family.links?.[0].sources?.[0].reference, "leaf 4");
+});
+
 test("PostgreSQL migration extends an existing relations table without losing rows", async (t) => {
   const { first } = await fixture(t);
   await first.query("ALTER TABLE relations DROP COLUMN twin_kind");
@@ -107,6 +138,19 @@ test("PostgreSQL migration extends an existing relations table without losing ro
     ["tree-a", "new-twin", 2, "child", "own", "twin", "fraternal"],
   );
   assert.equal((await first.query("SELECT twin_kind FROM relations WHERE archive_id=$1 AND id=$2", ["tree-a", "new-twin"])).rows[0].twin_kind, "fraternal");
+});
+
+test("PostgreSQL migration 060 adds empty sources to legacy relations without changing links", async (t) => {
+  const { first } = await fixture(t);
+  await first.query("ALTER TABLE relations DROP COLUMN sources");
+  const before = (await first.query("SELECT id,source,target,type FROM relations WHERE archive_id=$1 ORDER BY id", ["tree-a"])).rows;
+  const migration = readFileSync(new URL("../../ops/postgres/060_family_link_sources.sql", import.meta.url), "utf8");
+  await first.query(migration);
+  await first.query(migration);
+  const rows = (await first.query("SELECT id,source,target,type,sources FROM relations WHERE archive_id=$1 ORDER BY id", ["tree-a"])).rows;
+  assert.deepEqual(rows.map((row) => ({ id: row.id, source: row.source,
+    target: row.target, type: row.type })), before);
+  assert.ok(rows.every((row) => Array.isArray(row.sources) && row.sources.length === 0));
 });
 
 test("adding another spouse preserves prior marriages and makes a retry idempotent", async (t) => {

@@ -24,6 +24,8 @@ function catalogCitationSlots(family: Family) {
     for (const milestone of ["formation", "ending", "divorce", "ongoing"] as const)
       add(["union", union.id, milestone], union[milestone]?.sources);
   }
+  for (const link of family.links || [])
+    add(["link", link.id], link.sources);
   return slots;
 }
 
@@ -64,6 +66,13 @@ export function authorizeArchive(
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
+  const previousLinks = new Map((current.links || []).map((link) => [link.id, link]));
+  for (const link of next.links || []) {
+    const old = previousLinks.get(link.id);
+    if (old && (old.from !== link.from || old.to !== link.to || old.type !== link.type) &&
+      link.sources?.length)
+      throw new ForbiddenError("При смене участников или типа связи снимите прежние источники");
+  }
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
     for (const person of next.people)

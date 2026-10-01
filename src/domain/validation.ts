@@ -229,6 +229,10 @@ export function validateFamily(value: unknown): Family {
       link.from === link.to ||
       !EXTRA_LINK_TYPES.includes(link.type) ||
       (link.note !== undefined && typeof link.note !== "string") ||
+      (link.sources !== undefined &&
+        (!Array.isArray(link.sources) || link.sources.length > 50 ||
+          !link.sources.every((source) => validPersonSource(source) &&
+            !!(source.catalogId || source.title.trim())))) ||
       (link.twinKind !== undefined &&
         (link.type !== "twin" ||
           !["identical", "fraternal", "unknown"].includes(link.twinKind)))

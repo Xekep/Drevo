@@ -660,6 +660,20 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const linkSourcesExtension = "2026-10-family-link-sources";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(linkSourcesExtension) ||
+      !tableHasColumn(db, "relations", "sources")) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!tableHasColumn(db, "relations", "sources"))
+        db.exec("ALTER TABLE relations ADD COLUMN sources TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(sources) AND json_type(sources)='array')");
+      db.prepare("INSERT OR IGNORE INTO migrations(id) VALUES(?)").run(linkSourcesExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   // Nullable metadata is compatible with the previous release. Keep the base
   // schema version so rollback can still open the database after deployment.
   const visitsExtension = "2026-09-user-last-visit";

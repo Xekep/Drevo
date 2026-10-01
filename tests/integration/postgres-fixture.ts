@@ -113,6 +113,7 @@ export async function fixture(t: TestContext) {
     "008_account_tiers.sql",
     "009_person_removals.sql",
     "047_family_unions.sql",
+    "060_family_link_sources.sql",
   ])
     await first.query(
       readFileSync(

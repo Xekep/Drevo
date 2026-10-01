@@ -84,6 +84,7 @@ test("fresh SQLite archive gets current schema version", () => {
     initializeArchiveSchema(db);
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.ok(columns(db, "relations").includes("created_by"));
+    assert.ok(columns(db, "relations").includes("sources"));
     assert.ok(columns(db, "ai_settings").includes("enabled"));
     assert.ok(columns(db, "ai_settings").includes("daily_tokens"));
     assert.ok(columns(db, "ai_settings").includes("api_key_ciphertext"));
@@ -155,6 +156,7 @@ test("legacy version 0 relations table migrates through all schema versions", ()
 
     assert.equal(userVersion(db), ARCHIVE_SCHEMA_VERSION);
     assert.equal(columns(db, "relations").includes("created_by"), true);
+    assert.equal(columns(db, "relations").includes("sources"), true);
     assert.ok(tableNames(db).has("history"));
     assert.ok(tableNames(db).has("auth_sessions"));
   } finally {

@@ -24,6 +24,8 @@ export function hydrateRelations(
     const from = String(row.source);
     const to = String(row.target);
     const type = String(row.type);
+    const sources = typeof row.sources === "string"
+      ? JSON.parse(row.sources) : row.sources;
     if (type === "parent") map.get(to)!.parents.push(from);
     else if (type === "spouse") {
       map.get(from)!.spouses.push(to);
@@ -36,6 +38,7 @@ export function hydrateRelations(
         to,
         type: type as FamilyLink["type"],
         ...(row.note ? { note: String(row.note) } : {}),
+        ...(Array.isArray(sources) && sources.length ? { sources } : {}),
         ...(type === "twin" ? { twinKind: (row.twin_kind || "unknown") as FamilyLink["twinKind"] } : {}),
       });
   }

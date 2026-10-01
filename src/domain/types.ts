@@ -170,6 +170,8 @@ export type FamilyLink = {
   to: string;
   type: ExtraLinkType;
   note?: string;
+  /** Свидетельства именно этой дополнительной связи. */
+  sources?: Source[];
   /** Явная запись; совпадение даты рождения не устанавливает близнецов. */
   twinKind?: TwinKind;
 };

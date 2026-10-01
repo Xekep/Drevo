@@ -18,6 +18,7 @@ import { PersonSearch } from "./person-search";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import type { ConnectionDraft } from "./tree/tree-canvas";
 import { FamilyUnionsPanel } from "./family-unions-panel";
+import { CitationSourcesEditor } from "./union-sources-editor";
 export function ConnectionInspector({
   family,
   user,
@@ -61,10 +62,16 @@ export function ConnectionInspector({
   const targetRole = connectionRoleName(draft.type, to, "to");
   const targetRoleLabel =
     targetRole[0].toLocaleUpperCase("ru") + targetRole.slice(1);
+  const changedAssertion = !!draft.original &&
+    (draft.from !== draft.original.from || draft.to !== draft.original.to ||
+      draft.type !== draft.original.type);
   const update = (next: Partial<ConnectionDraft>) => {
     setError("");
     setConfirm(false);
-    const merged = { ...draft, hint: undefined, ...next };
+    const assertionChanged = ["from", "to", "type"].some((key) =>
+      key in next && next[key as "from" | "to" | "type"] !== draft[key as "from" | "to" | "type"]);
+    const merged = { ...draft, hint: undefined, ...next,
+      ...(assertionChanged ? { sources: [] } : {}) };
     onChange(
       !draft.original &&
         !manualOrder &&
@@ -96,6 +103,9 @@ export function ConnectionInspector({
                 draft.note,
                 draft.twinKind,
               );
+      if (!remove && !draft.original && !["parent", "spouse"].includes(draft.type) &&
+        draft.sources?.length)
+        next.links!.at(-1)!.sources = draft.sources;
       if (!remove && archiveConnections(next).length === 0)
         throw new Error("Связь не создана");
       await save(next);
@@ -122,6 +132,7 @@ export function ConnectionInspector({
             {to ? fullName(to) : "второго человека"}.
           </p>
           {draft.note && <p>{draft.note}</p>}
+          {!!draft.sources?.length && <p>Источники связи: {draft.sources.map((source) => source.title).join("; ")}</p>}
           {draft.type === "twin" && (
             <p>
               Тип:{" "}
@@ -268,6 +279,7 @@ export function ConnectionInspector({
                 hint: undefined,
                 from: draft.to,
                 to: draft.from,
+                sources: [],
               });
             }}
           >
@@ -284,6 +296,16 @@ export function ConnectionInspector({
               onChange={(e) => update({ note: e.target.value })}
             />
           </label>
+        )}
+        {!["parent", "spouse"].includes(draft.type) && (
+          <details className="union-milestone-sources">
+            <summary>Источники связи ({draft.sources?.length || 0})</summary>
+            {changedAssertion &&
+              <small>После смены участников или типа прежние источники нужно привязать заново.</small>}
+            {!changedAssertion && <CitationSourcesEditor sources={draft.sources || []}
+              isAdmin={user?.role === "admin"}
+              onChange={(sources) => update({ sources })} />}
+          </details>
         )}
         <p>
           Братья, сёстры и более дальнее родство рассчитываются автоматически по
