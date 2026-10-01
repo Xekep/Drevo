@@ -78,6 +78,7 @@ test("portable export requires an archive administrator and streams a private pa
     name: "Owner",
     role: "admin",
     createdAt: "",
+    approved: true,
   };
   const auth = {
     local: true,
@@ -202,7 +203,9 @@ test("portable export requires an archive administrator and streams a private pa
       await importer.close();
       await target.close();
     }
-    actor = { ...actor!, role: "reader" };
+    actor = { ...actor!, approved: false };
+    assert.equal((await fetch(url)).status, 403);
+    actor = { ...actor, role: "reader", approved: true };
     assert.equal((await fetch(url)).status, 403);
     actor = null;
     assert.equal((await fetch(url)).status, 401);

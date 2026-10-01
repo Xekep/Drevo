@@ -40,6 +40,11 @@ export async function applyPortablePackage(
     undefined,
     undefined,
     async (transaction) => {
+      if (transaction.kind === "postgres")
+        // Serialize owner revocation with the import commit, without holding
+        // a database transaction while originals are copied to disk.
+        await transaction.prepare("", "SELECT 1 FROM archive_memberships WHERE user_id=? FOR SHARE")
+          .get(actor.id);
       await assertCurrentArchiveActor(transaction, actor);
       if (actor.role !== "admin")
         throw new ForbiddenError("Недостаточно прав для импорта");
