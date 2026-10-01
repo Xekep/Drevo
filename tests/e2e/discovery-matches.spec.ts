@@ -163,6 +163,49 @@ test("rejecting a manual match hides only the recipient's candidate until restor
   await expect(page.getByText("Отклонено")).toBeVisible();
 });
 
+test("later defers only an incoming request for this visit without answering", async ({ page }) => {
+  const own = { archiveId: "tree-b", id: "person-b", name: "Иван Белов" };
+  const other = { archiveId: "tree-a", id: "person-a", name: "Иван Алексеев" };
+  const third = { archiveId: "tree-c", id: "person-c", name: "Иван Сидоров" };
+  const matches = [
+    { id: "incoming", status: "pending", initiatedByArchiveId: "tree-a",
+      requestedAt: "2026-09-30T00:00:00Z", left: other, right: own, reason: "Входящий запрос" },
+    { id: "outgoing", status: "pending", initiatedByArchiveId: "tree-b",
+      requestedAt: "2026-09-30T00:00:00Z", left: own, right: third, reason: "Исходящий запрос" },
+  ];
+  let decisions = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PATCH" && request.url().includes("/api/discovery/matches/")) decisions++;
+  });
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-b", people: [own] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) =>
+    route.fulfill({ json: { archiveId: "tree-b", matches, nextCursor: null } }));
+
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const incoming = page.locator(".match-request").filter({ hasText: "Входящий запрос" });
+  const outgoing = page.locator(".match-request").filter({ hasText: "Исходящий запрос" });
+  await expect(incoming.getByRole("button", { name: "Позже" })).toBeVisible();
+  await expect(outgoing.getByRole("button", { name: "Позже" })).toHaveCount(0);
+  await incoming.getByRole("button", { name: "Позже" }).click();
+  await expect(incoming).toHaveCount(0);
+  await expect(outgoing).toBeVisible();
+  await expect(page.getByText("Ответ другой стороне не отправлен.", { exact: false })).toBeVisible();
+  expect(decisions).toBe(0);
+
+  await page.getByRole("button", { name: "Показать сейчас" }).click();
+  await expect(incoming).toBeVisible();
+  await expect(page.getByText("Отложенные запросы снова показаны.")).toBeVisible();
+  await incoming.getByRole("button", { name: "Позже" }).click();
+  await page.reload();
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await expect(incoming).toBeVisible();
+  expect(decisions).toBe(0);
+});
+
 test("candidate suggestions can continue past the first indexed page", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const first = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
