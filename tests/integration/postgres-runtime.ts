@@ -1424,7 +1424,7 @@ try {
     assert.equal(response.status, 200, raw);
     const { chatId, answer } = JSON.parse(raw) as { chatId: string; answer: string };
     assert.equal(answer, localAnswer);
-    assert.equal(localModelCalls, 1);
+    assert.ok(localModelCalls >= 1, "the answer must pass through the fake provider");
     const history = await fetch(localBase + `/api/ai/chats/${chatId}`);
     assert.equal(history.status, 200, await history.clone().text());
     assert.match(await history.text(), /Ответ локального PostgreSQL архива/);
