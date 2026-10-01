@@ -624,16 +624,26 @@ export function importAgelongXml(
       (name) => name && name !== place.attrs.fullname,
     ),
   ).length;
-  const parentPlaces = placeList.filter((place) => one(place, "parent_id")).length;
-  const sourcedPlaces = placeList.filter((place) => one(place, "sources")?.children.length).length;
+  const parentPlaces = placeList.filter((place) =>
+    one(place, "parent_id"),
+  ).length;
+  const sourcedPlaces = placeList.filter(
+    (place) => one(place, "sources")?.children.length,
+  ).length;
   if (datedPlaces)
-    warnings.add(`Даты исторических названий мест (${datedPlaces}) не перенесены.`);
+    warnings.add(
+      `Даты исторических названий мест (${datedPlaces}) не перенесены.`,
+    );
   if (alternateNames)
-    warnings.add(`Альтернативные названия мест (${alternateNames}) не перенесены; основное название сохранено там, где место используется.`);
+    warnings.add(
+      `Альтернативные названия мест (${alternateNames}) не перенесены; основное название сохранено там, где место используется.`,
+    );
   if (parentPlaces)
     warnings.add(`Иерархия родительских мест (${parentPlaces}) не перенесена.`);
   if (sourcedPlaces)
-    warnings.add(`Ссылки на источники для мест (${sourcedPlaces}) не перенесены.`);
+    warnings.add(
+      `Ссылки на источники для мест (${sourcedPlaces}) не перенесены.`,
+    );
   const eventDocuments = [...events.values()].filter(
     (event) => one(event, "documents")?.children.length,
   ).length;
