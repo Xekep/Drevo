@@ -33,6 +33,7 @@ import {
   type ConnectionType,
   type Family,
   type Person,
+  type PersonDateClaim,
   type TwinKind,
   type ArchiveUser,
   owns,
@@ -51,6 +52,30 @@ import {
   useUnsavedChanges,
 } from "../hooks/useUnsavedChanges";
 type Save = (data: Family) => Promise<Family>;
+function DateClaimSourcesEditor({ kind, date, claim, onChange, isAdmin }: {
+  kind: "birth" | "death";
+  date: string;
+  claim?: PersonDateClaim;
+  onChange: (claim: PersonDateClaim | undefined) => void;
+  isAdmin: boolean;
+}) {
+  const label = kind === "birth" ? "рождения" : "смерти";
+  return <details className={`form-details ${kind}-date-claim`}>
+    <summary>Источники даты {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
+    {claim && claim.value !== date
+      ? <div>
+          <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(claim.value)}. Снимите связь или верните прежнюю дату перед сохранением.</p>
+          <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежней датой</button>
+        </div>
+      : date
+        ? <CitationSourcesEditor
+            sources={claim?.sources || []}
+            onChange={(sources) => onChange(sources.length ? { value: date, sources } : undefined)}
+            isAdmin={isAdmin}
+          />
+        : <p>Укажите дату {label}, чтобы привязать к ней источник.</p>}
+  </details>;
+}
 export function PersonEditor({
   isAdmin,
   user,
@@ -590,25 +615,13 @@ export function PersonEditor({
                   }
                 />
               </div>
-              {kind === "birth" && (
-                <details className="form-details birth-date-claim">
-                  <summary>Источники даты рождения{draft.birthDateClaim?.sources.length
-                    ? ` · ${draft.birthDateClaim.sources.length}` : ""}</summary>
-                  {draft.birthDateClaim && draft.birthDateClaim.value !== hintDate(birthText)
-                    ? <div>
-                        <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(draft.birthDateClaim.value)}. Снимите связь или верните прежнюю дату перед сохранением.</p>
-                        <button type="button" onClick={() => field("birthDateClaim", undefined)}>Снять связи с прежней датой</button>
-                      </div>
-                    : hintDate(birthText)
-                      ? <CitationSourcesEditor
-                          sources={draft.birthDateClaim?.sources || []}
-                          onChange={(sources) => field("birthDateClaim", sources.length
-                            ? { value: hintDate(birthText), sources } : undefined)}
-                          isAdmin={isAdmin}
-                        />
-                      : <p>Укажите дату рождения, чтобы привязать к ней источник.</p>}
-                </details>
-              )}
+              <DateClaimSourcesEditor
+                kind={kind}
+                date={hintDate(kind === "birth" ? birthText : deathText)}
+                claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
+                onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
+                isAdmin={isAdmin}
+              />
               {kind === "death" &&
                 !deathText.trim() &&
                 !draft.deathPlace?.trim() && (

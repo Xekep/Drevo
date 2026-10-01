@@ -363,6 +363,8 @@ export function PersonPanel({
                 <div>
                   <span className="event-label">Уход из жизни</span>
                   {person.death && <b>{dateLabel(person.death)}</b>}
+                  {!!person.deathDateClaim?.sources.length &&
+                    <p>Источники даты: {person.deathDateClaim.sources.map((source) => source.title).join("; ")}</p>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}
                 </div>
               </div>
