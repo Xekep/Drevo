@@ -55,6 +55,8 @@ export type Person = {
   sex: "m" | "f" | "u";
   /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
+  /** Citations for this exact birth-date value, separate from general person sources. */
+  birthDateClaim?: { value: string; sources: Source[] };
   death?: string;
   deceased?: boolean;
   /** Manual research marker; absence does not mean the card is verified. */

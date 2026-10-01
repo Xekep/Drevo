@@ -71,7 +71,7 @@ function CatalogPicker({ existing, onChoose }: {
   </div>;
 }
 
-export function UnionSourcesEditor({ sources, onChange, isAdmin }: {
+export function CitationSourcesEditor({ sources, onChange, isAdmin }: {
   sources: Source[];
   onChange: (sources: Source[]) => void;
   isAdmin: boolean;
@@ -99,3 +99,5 @@ export function UnionSourcesEditor({ sources, onChange, isAdmin }: {
     </div>
   </div>;
 }
+
+export const UnionSourcesEditor = CitationSourcesEditor;

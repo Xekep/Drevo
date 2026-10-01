@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import { PersonDocumentsEditor } from "./person-documents-editor";
 import { DocumentSourcePicker } from "./document-source-picker";
+import { CitationSourcesEditor } from "./union-sources-editor.tsx";
 import {
   Pencil,
   UserRound,
@@ -589,6 +590,25 @@ export function PersonEditor({
                   }
                 />
               </div>
+              {kind === "birth" && (
+                <details className="form-details birth-date-claim">
+                  <summary>Источники даты рождения{draft.birthDateClaim?.sources.length
+                    ? ` · ${draft.birthDateClaim.sources.length}` : ""}</summary>
+                  {draft.birthDateClaim && draft.birthDateClaim.value !== hintDate(birthText)
+                    ? <div>
+                        <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(draft.birthDateClaim.value)}. Снимите связь или верните прежнюю дату перед сохранением.</p>
+                        <button type="button" onClick={() => field("birthDateClaim", undefined)}>Снять связи с прежней датой</button>
+                      </div>
+                    : hintDate(birthText)
+                      ? <CitationSourcesEditor
+                          sources={draft.birthDateClaim?.sources || []}
+                          onChange={(sources) => field("birthDateClaim", sources.length
+                            ? { value: hintDate(birthText), sources } : undefined)}
+                          isAdmin={isAdmin}
+                        />
+                      : <p>Укажите дату рождения, чтобы привязать к ней источник.</p>}
+                </details>
+              )}
               {kind === "death" &&
                 !deathText.trim() &&
                 !draft.deathPlace?.trim() && (
