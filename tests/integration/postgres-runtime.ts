@@ -336,6 +336,13 @@ try {
     }
     await adminClient.query(migration059);
     await adminClient.query(migration059);
+    const alreadyBackfilled = JSON.parse((await client.query(
+      "SELECT annotations FROM documents WHERE id=$1", [backfillDocumentId],
+    )).rows[0].annotations);
+    assert.deepEqual(alreadyBackfilled,
+      [{ ...backfillAnnotations[0], authorId: "deleted-account", authorName: "Удалённый участник" },
+        backfillAnnotations[1], backfillAnnotations[2]],
+    "059 backfills only an unambiguously deleted author and preserves other annotations");
     if (adminClient !== client) {
       await client.query("INSERT INTO accounts(id,name,created_at) VALUES('first-annotation-author','First annotation',now())");
       await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
@@ -347,7 +354,7 @@ try {
       await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
       await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE");
       await client.query("UPDATE documents SET annotations=$2 WHERE id=$1",
-        [backfillDocumentId, JSON.stringify([...backfillAnnotations,
+        [backfillDocumentId, JSON.stringify([...alreadyBackfilled,
           annotation("first", "first-annotation-author", "First annotation")])]);
       const cleanup = adminClient.query("SELECT public.runtime_anonymize_deleted_account_annotations('first-annotation-author')");
       let writerCommitted = false;
@@ -374,11 +381,10 @@ try {
       await client.query("DELETE FROM deleted_account_tombstones WHERE id='first-annotation-author'");
     }
     assert.deepEqual(JSON.parse((await client.query("SELECT annotations FROM documents WHERE id=$1", [backfillDocumentId])).rows[0].annotations),
-      [{ ...backfillAnnotations[0], authorId: "deleted-account", authorName: "Удалённый участник" },
-        backfillAnnotations[1], backfillAnnotations[2],
+      [...alreadyBackfilled,
         ...(adminClient !== client ? [{ ...annotation("first", "first-annotation-author", "First annotation"),
           authorId: "deleted-account", authorName: "Удалённый участник" }] : [])],
-    "059 backfills only an unambiguously deleted author and preserves other annotations");
+    "the concurrent first annotation is redacted without reverting the earlier backfill");
     await client.query("DELETE FROM documents WHERE id=$1", [backfillDocumentId]);
     await client.query("DELETE FROM accounts WHERE id='reused-annotation-author'");
     await client.query("DELETE FROM deleted_account_tombstones WHERE id IN ('old-annotation-author','reused-annotation-author')");
