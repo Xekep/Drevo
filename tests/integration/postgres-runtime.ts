@@ -144,6 +144,16 @@ try {
   } finally {
     if (adminClient !== client) await adminClient.end();
   }
+  const runtimePrivileges = (await client.query(`SELECT
+    has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_history(text)','EXECUTE') AS entrypoint,
+    has_function_privilege(current_user,'public.runtime_anonymize_account_history_rows(text)','EXECUTE') AS internal,
+    has_function_privilege(current_user,'public.runtime_redact_account_attribution(jsonb,text)','EXECUTE') AS helper,
+    (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) AS privileged`)).rows[0];
+  if (!runtimePrivileges.privileged) {
+    assert.equal(runtimePrivileges.entrypoint, true);
+    assert.equal(runtimePrivileges.internal, false);
+    assert.equal(runtimePrivileges.helper, false);
+  }
   await assert.rejects(
     client.query("SELECT public.runtime_anonymize_deleted_account_history('owner')"),
     (error: unknown) => (error as { code?: string }).code === "42501",
