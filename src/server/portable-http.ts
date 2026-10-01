@@ -99,45 +99,54 @@ export function portableExportHttp(
       return json(
         (await auth.currentUser(req)) ? 403 : 401,
         "Экспорт доступен владельцу дерева",
-      );
+    );
     if (exporting) return json(429, "Другой экспорт уже выполняется");
-    exporting = true;
-    const controller = new AbortController();
-    const onClose = () => controller.abort();
-    res.once("close", onClose);
-    try {
-      const data = await snapshot();
-      await writePortablePackage(
-        res,
-        uploads,
-        data,
-        async () => {
-          if (!(await mayExport(req)))
-            throw new ForbiddenError("Доступ владельца отозван");
-          res.writeHead(200, {
-            "Content-Type": "application/zip",
-            "Content-Disposition": 'attachment; filename="drevo.drevo"',
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-          });
-        },
-        controller.signal,
-      );
-      return true;
-    } catch (error) {
-      if (res.headersSent || res.destroyed) {
-        res.destroy(error as Error);
+    const performExport = async () => {
+      exporting = true;
+      const controller = new AbortController();
+      const onClose = () => controller.abort();
+      res.once("close", onClose);
+      try {
+        const data = await snapshot();
+        await writePortablePackage(
+          res,
+          uploads,
+          data,
+          async () => {
+            if (!(await mayExport(req)))
+              throw new ForbiddenError("Доступ владельца отозван");
+            res.writeHead(200, {
+              "Content-Type": "application/zip",
+              "Content-Disposition": 'attachment; filename="drevo.drevo"',
+              "Cache-Control": "no-store",
+              "X-Content-Type-Options": "nosniff",
+            });
+          },
+          controller.signal,
+        );
         return true;
+      } catch (error) {
+        if (res.headersSent || res.destroyed) {
+          res.destroy(error as Error);
+          return true;
+        }
+        if (error instanceof ForbiddenError) return json(403, error.message);
+        if ((error as NodeJS.ErrnoException).code === "ENOENT")
+          return json(409, "Один из оригиналов архива недоступен");
+        if (error instanceof PortablePackageError)
+          return json(409, error.message);
+        throw error;
+      } finally {
+        res.off("close", onClose);
+        exporting = false;
       }
-      if (error instanceof ForbiddenError) return json(403, error.message);
-      if ((error as NodeJS.ErrnoException).code === "ENOENT")
-        return json(409, "Один из оригиналов архива недоступен");
-      if (error instanceof PortablePackageError)
-        return json(409, error.message);
-      throw error;
-    } finally {
-      res.off("close", onClose);
-      exporting = false;
-    }
+    };
+    if (!db.withExclusiveArchiveTask) return await performExport();
+    const task = await db.withExclusiveArchiveTask(
+      "portable-export", performExport,
+    );
+    return task.acquired
+      ? task.value
+      : json(429, "Другой экспорт уже выполняется");
   };
 }
