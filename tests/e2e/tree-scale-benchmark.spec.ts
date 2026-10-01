@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { randomFamily } from "../layout-fixtures";
+import { profileTreeRenderer } from "./tree-render-profile";
+
+// Playwright's DOM snapshots on every gesture distort large-tree timings.
+test.use({ trace: "off" });
 
 test("a large tree completes worker layout and remains interactive", async ({ page }, testInfo) => {
   test.skip(!process.env.DREVO_LAYOUT_SCALE_E2E || testInfo.project.name !== "desktop");
@@ -134,6 +138,26 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     else expect(result.distantPortraits).toBe(0);
   }
   console.log(`scale-browser ${JSON.stringify(result)}`);
+  if (result.sceneNodes > 0 && !process.env.DREVO_LAYOUT_SCALE_SLOW_THUMB &&
+      !process.env.DREVO_RENDER_PROFILE) {
+    const requestedAt = await page.evaluate(() => (
+      window as typeof window & { __scaleLayout: { requestedAt: number } }
+    ).__scaleLayout.requestedAt);
+    const zoom = () => page.locator(".react-flow__viewport").evaluate((element) =>
+      new DOMMatrix(getComputedStyle(element).transform).a);
+    for (let index = 0; index < 16 && await zoom() < 0.18; index++)
+      await page.getByRole("button", { name: "Увеличить", exact: true }).click();
+    await expect.poll(() => page.locator(".react-flow__node").count()).toBeGreaterThan(0);
+    await expect.poll(() => page.locator(".react-flow__edge").count()).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Вписать видимую часть дерева" }).click();
+    await expect.poll(zoom).toBeLessThan(0.18);
+    await expect.poll(() => page.locator(".react-flow__node").count()).toBe(0);
+    await expect.poll(() => page.locator(".react-flow__edge").count()).toBe(0);
+    expect(await page.evaluate(() => (
+      window as typeof window & { __scaleLayout: { requestedAt: number } }
+    ).__scaleLayout.requestedAt)).toBe(requestedAt);
+  }
+  if (process.env.DREVO_RENDER_PROFILE) await profileTreeRenderer(page, testInfo);
   if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT && result.sceneNodes > 0) {
     await expect.poll(() => page.evaluate(() => Number(
       document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0,
