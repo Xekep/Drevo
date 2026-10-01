@@ -2,18 +2,21 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function isolatedFamily(page: import("@playwright/test").Page, saves: Change[][] = []) {
+async function isolatedFamily(page: import("@playwright/test").Page) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
-  let family = structuredClone(initial.family) as Family;
-  let revision = initial.revision as number;
+  const complete = await page.request.get("/api/family");
+  const full = await complete.json();
+  let family = structuredClone(full.family) as Family;
+  let revision = full.revision as number;
   await page.route("**/api/family?projection=overview", (route) =>
     route.fulfill({ response, json: { ...initial, family, revision } }),
   );
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
-    saves.push(changes);
-    family = applyArchiveChanges(family, changes).family;
+    const applied = applyArchiveChanges(family, changes);
+    expect(applied.conflicts).toEqual([]);
+    family = applied.family;
     revision++;
     return route.fulfill({
       json: { family, revision, appliedChanges: changes },
@@ -47,13 +50,7 @@ test("каталожный источник связывается с событ
   await page.route("**/api/sources?*", (route) =>
     route.fulfill({ json: { sources: [source], total: 1 } }),
   );
-  const saves: Change[][] = [];
-  const archiveRequests: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("/api/family") && request.method() !== "GET")
-      archiveRequests.push(`${request.method()} ${request.url()}`);
-  });
-  const readFamily = await isolatedFamily(page, saves);
+  const readFamily = await isolatedFamily(page);
   await page.goto("/tree");
   await page
     .getByTestId("rf__node-e2e-child")
@@ -89,23 +86,15 @@ test("каталожный источник связывается с событ
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  try {
-    await expect
-      .poll(
-        () =>
-          readFamily()
-            .people.find((person) => person.id === "e2e-child")
-            ?.events?.find((item) => item.date === "1901")?.sources?.[1]
-            ?.catalogId,
-      )
-      .toBe(source.id);
-  } catch (reason) {
-    const events = readFamily().people.find((item) => item.id === "e2e-child")?.events;
-    const alerts = await page.getByRole("alert").allTextContents();
-    throw new Error(`${String(reason)}\nEvents: ${JSON.stringify(events)}\n` +
-      `Requests: ${JSON.stringify(archiveRequests)}\n` +
-      `Changes: ${JSON.stringify(saves).slice(0, 5000)}\nAlerts: ${JSON.stringify(alerts)}`);
-  }
+  await expect
+    .poll(
+      () =>
+        readFamily()
+          .people.find((person) => person.id === "e2e-child")
+          ?.events?.find((item) => item.date === "1901")?.sources?.[1]
+          ?.catalogId,
+    )
+    .toBe(source.id);
   const person = readFamily().people.find((item) => item.id === "e2e-child")!;
   const saved = person.events!.find((item) => item.date === "1901")!;
   expect(saved.sources?.[0].title).toBe("Семейная запись");
