@@ -1,4 +1,5 @@
 import { MAX_PDF_BYTES } from "../shared/upload-limits.ts";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { createWriteStream } from "node:fs";
 import {
   lstat,
@@ -300,8 +301,8 @@ export async function prepareGenealogyImport(
         size: data.length,
         title: item.title,
         personIds: [],
-        documentId: extension === "pdf" ? id : undefined,
-        document: extension === "pdf" ? item.document : undefined,
+        documentId: extension === "pdf" || item.document ? id : undefined,
+        document: extension === "pdf" || item.document ? item.document : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);
@@ -371,7 +372,7 @@ export async function exportMedia(
       id: String(row.id),
       file: `documents/${row.file_name}`,
       title: String(row.title),
-      mime: "application/pdf",
+      mime: documentFileTypeFromName(String(row.file_name))?.mime || "application/pdf",
       personIds: peopleByDocument.get(String(row.id)) || [],
       portraitIds: [],
       document: {

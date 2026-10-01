@@ -217,7 +217,7 @@ export function TreeSearch({
                     <FileText size={15} aria-hidden="true" />
                     {option.document.title}
                   </b>
-                  <small>Документ · PDF</small>
+                  <small>Документ</small>
                 </>
               )}
             </button>

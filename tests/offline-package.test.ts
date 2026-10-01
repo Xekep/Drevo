@@ -17,6 +17,7 @@ import {
 
 const photoName = "11111111-1111-1111-1111-111111111111.png";
 const documentName = "22222222-2222-2222-2222-222222222222.pdf";
+const scannedDocumentName = "33333333-3333-3333-3333-333333333333.png";
 const person = (id: string, patch: Partial<Person> = {}): Person => ({
   id,
   name: id,
@@ -137,8 +138,10 @@ test("offline ZIP contains verified original media and a syntactically valid sta
     await mkdir(uploads);
     const image = Buffer.from("original-image");
     const pdf = Buffer.from("%PDF-1.4\noriginal-document");
+    const scan = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6+fIAAAAASUVORK5CYII=", "base64");
     await writeFile(join(uploads, photoName), image);
     await writeFile(join(uploads, documentName), pdf);
+    await writeFile(join(uploads, scannedDocumentName), scan);
     const scoped = offlineFamily(family, "family", "root");
     const documents = offlineDocuments(
       [
@@ -148,8 +151,17 @@ test("offline ZIP contains verified original media and a syntactically valid sta
           file_name: documentName,
           created_at: "2026-01-01",
         },
+        {
+          id: "scan",
+          title: "Скан метрической записи",
+          file_name: scannedDocumentName,
+          created_at: "2026-01-01",
+        },
       ],
-      [{ document_id: "doc", person_id: "root" }],
+      [
+        { document_id: "doc", person_id: "root" },
+        { document_id: "scan", person_id: "root" },
+      ],
       scoped,
       false,
     );
@@ -179,11 +191,13 @@ test("offline ZIP contains verified original media and a syntactically valid sta
         "index.html",
         "manifest.json",
         `media/${documentName}`,
+        `media/${scannedDocumentName}`,
         `media/${photoName}`,
       ].sort(),
     );
     assert.deepEqual(contents.get(`media/${photoName}`), image);
     assert.deepEqual(contents.get(`media/${documentName}`), pdf);
+    assert.deepEqual(contents.get(`media/${scannedDocumentName}`), scan);
     const manifest = JSON.parse(
       contents.get("manifest.json")!.toString("utf8"),
     );

@@ -12,7 +12,7 @@ type Page = {
 };
 const PAGE_SIZE = 20;
 
-/** Chooses an existing PDF linked to this person; no file or person link is copied. */
+/** Chooses an existing document linked to this person; no file is copied. */
 export function DocumentSourcePicker({
   personId,
   documentId,
@@ -89,16 +89,16 @@ export function DocumentSourcePicker({
             target="_blank"
             rel="noopener noreferrer"
           >
-            Открыть связанный PDF
+            Открыть связанный документ
           </a>{" "}
           <button type="button" onClick={() => onChange(undefined)}>
-            Убрать связь с PDF
+            Убрать связь с документом
           </button>
         </span>
       )}
       {documentId && (
         <label className="document-source-page">
-          Страница PDF
+          Страница документа
           <input
             type="number"
             min={1}
@@ -123,16 +123,16 @@ export function DocumentSourcePicker({
         onClick={() => setOpen((value) => !value)}
       >
         {open
-          ? "Закрыть выбор PDF"
+          ? "Закрыть выбор документа"
           : documentId
-            ? "Другой PDF"
-            : "Связать с PDF"}
+            ? "Другой документ"
+            : "Связать с документом"}
       </button>
       {!personId && <small>Сначала сохраните карточку человека.</small>}
       {open && personId && (
         <div className="document-source-picker-list">
           <label>
-            Найти PDF человека
+            Найти документ человека
             <input
               value={query}
               maxLength={100}
@@ -152,15 +152,15 @@ export function DocumentSourcePicker({
               {item.title}
             </button>
           ))}
-          {loading && <small role="status">Загружаем PDF…</small>}
+          {loading && <small role="status">Загружаем документы…</small>}
           {error && (
             <small role="alert">
-              Не удалось загрузить PDF. Повторите поиск.
+              Не удалось загрузить документы. Повторите поиск.
             </small>
           )}
           {!loading && !error && visible && !visible.items.length && (
             <small>
-              PDF не найден. Сначала привяжите его к человеку в разделе
+              Документ не найден. Сначала привяжите его к человеку в разделе
               «Документы».
             </small>
           )}

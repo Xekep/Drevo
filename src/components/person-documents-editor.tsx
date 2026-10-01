@@ -157,12 +157,12 @@ export function PersonDocumentsEditor({
       </h3>
       {!personId ? (
         <p className="field-hint">
-          Сохраните нового человека, чтобы привязать к нему PDF из каталога.
+          Сохраните нового человека, чтобы привязать к нему документ из каталога.
         </p>
       ) : (
         <>
           <p className="field-hint">
-            PDF из раздела «Документы». Кнопки «Привязать» и «Отвязать»
+            Файлы из раздела «Документы». Кнопки «Привязать» и «Отвязать»
             сохраняют привязку сразу.
           </p>
           {!linked.length && (
@@ -196,12 +196,12 @@ export function PersonDocumentsEditor({
             onClick={() => setOpen(!open)}
           >
             <Link2 size={15} />{" "}
-            {open ? "Закрыть выбор документов" : "Привязать PDF из каталога"}
+            {open ? "Закрыть выбор документов" : "Привязать документ из каталога"}
           </button>
           {open && (
             <div className="person-document-picker">
               <label>
-                Найти PDF
+                Найти документ
                 <input
                   value={query}
                   maxLength={100}

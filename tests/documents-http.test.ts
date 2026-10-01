@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import type { DocumentDetails } from "../src/shared/document-details.ts";
@@ -339,6 +340,90 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       0,
     );
     assert.equal((await fetch(`${base}/api/documents?personId=`)).status, 400);
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("image documents keep their type, private bytes and deletion semantics", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-image-documents-"));
+  const app = await startServer(0, join(dir, "drevo.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    await app.archive.write({
+      title: "Изображения документов",
+      description: "",
+      demo: false,
+      people: [{
+        id: "person", name: "Анна", surname: "Тестова", patronymic: "",
+        sex: "f", birth: "1950", birthPlace: "", parents: [], spouses: [],
+        sources: [], column: 0, generation: 1,
+      }],
+    }, (await app.archive.read()).revision);
+    const metadata = `base64:${Buffer.from(JSON.stringify({
+      title: "Скан метрической записи",
+      personIds: ["person"],
+    })).toString("base64")}`;
+    const upload = (bytes: Buffer, mime: string) => fetch(`${base}/api/documents`, {
+      method: "POST",
+      headers: { "Content-Type": mime, "X-Document-Metadata": metadata },
+      body: new Uint8Array(bytes).buffer,
+    });
+    const picture = sharp({ create: {
+      width: 40, height: 30, channels: 3, background: "#e2decf",
+    } });
+    const samples = [
+      { mime: "image/jpeg", extension: "jpg", bytes: await picture.clone().jpeg().toBuffer() },
+      { mime: "image/png", extension: "png", bytes: await picture.clone().png().toBuffer() },
+      { mime: "image/webp", extension: "webp", bytes: await picture.clone().webp().toBuffer() },
+      { mime: "image/gif", extension: "gif", bytes: await picture.clone().gif().toBuffer() },
+    ];
+    assert.equal((await upload(samples[1].bytes, "image/jpeg")).status, 415);
+    assert.equal((await upload(Buffer.from("not an image"), "image/png")).status, 415);
+    for (const { mime, extension, bytes } of samples) {
+      const created = await upload(bytes, mime);
+      assert.equal(created.status, 201, await created.clone().text());
+      const { id } = (await created.json()) as { id: string };
+      const listed = await fetch(`${base}/api/documents/${id}`);
+      assert.equal(listed.status, 200);
+      assert.equal(((await listed.json()) as { mimeType: string }).mimeType, mime);
+      const file = await fetch(`${base}/api/documents/${id}/file`);
+      assert.equal(file.headers.get("content-type"), mime);
+      assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+      assert.deepEqual(Buffer.from(await file.arrayBuffer()), bytes);
+      assert.ok(existsSync(join(dir, "uploads", `${id}.${extension}`)));
+      assert.equal((await fetch(`${base}/api/documents/${id}`, { method: "DELETE" })).status, 200);
+      assert.equal(existsSync(join(dir, "uploads", `${id}.${extension}`)), false);
+      assert.equal((await fetch(`${base}/api/documents/${id}/file`)).status, 404);
+    }
+    const scan = await upload(samples[1].bytes, samples[1].mime);
+    assert.equal(scan.status, 201);
+    const originalId = String(((await scan.json()) as { id: string }).id);
+    const backup = Buffer.from(await (await fetch(`${base}/api/backup/full`)).arrayBuffer());
+    const preview = await fetch(`${base}/api/restore/preview`, {
+      method: "POST",
+      headers: { "X-Drevo-Restore": "1" },
+      body: backup,
+    });
+    assert.equal(preview.status, 200, await preview.clone().text());
+    const { token, documents } = (await preview.json()) as { token: string; documents: number };
+    assert.equal(documents, 1);
+    const applied = await fetch(`${base}/api/restore/apply`, {
+      method: "POST",
+      headers: { "X-Drevo-Restore": "1" },
+      body: JSON.stringify({ token, confirm: true }),
+    });
+    assert.equal(applied.status, 200, await applied.clone().text());
+    const after = (await (await fetch(`${base}/api/documents`)).json()) as {
+      items: Array<{ id: string; mimeType: string }>;
+    };
+    assert.equal(after.items.length, 1);
+    assert.notEqual(after.items[0].id, originalId);
+    assert.equal(after.items[0].mimeType, "image/png");
+    const restoredFile = await fetch(`${base}/api/documents/${after.items[0].id}/file`);
+    assert.equal(restoredFile.headers.get("content-type"), "image/png");
+    assert.deepEqual(Buffer.from(await restoredFile.arrayBuffer()), samples[1].bytes);
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });

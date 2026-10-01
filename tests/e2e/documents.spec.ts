@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import PDFDocument from "pdfkit";
+import sharp from "sharp";
 import { readFileSync } from "node:fs";
 
 test.beforeEach(async ({ page }) => {
@@ -20,7 +21,7 @@ test("PDF без привязки остаётся в общем каталог�
 }, testInfo) => {
   const title = `Неизвестная метрическая запись ${testInfo.project.name}`;
   await page.goto("/documents");
-  await page.getByRole("button", { name: "Добавить PDF" }).click();
+  await page.getByRole("button", { name: "Добавить документ" }).click();
   const form = page.locator(".documents-upload");
   await form.locator('input[type="file"]').setInputFiles({
     name: "record.pdf",
@@ -68,6 +69,36 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(page).toHaveURL(documentUrl);
   await book.locator(".BRtoolbar .info").click();
   await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.105");
+});
+
+test("скан изображения открывается в ридере и по постоянной ссылке", async ({
+  page,
+}, testInfo) => {
+  const title = `Скан документа ${testInfo.project.name} ${Date.now()}`;
+  const scan = await sharp({ create: {
+    width: 360, height: 480, channels: 3, background: "#e2decf",
+  } }).png().toBuffer();
+  await page.goto("/documents");
+  await page.getByRole("button", { name: "Добавить документ" }).click();
+  const form = page.locator(".documents-upload");
+  await form.locator('input[type="file"]').setInputFiles({
+    name: "scan.png", mimeType: "image/png", buffer: scan,
+  });
+  await form.getByLabel("Название").fill(title);
+  await form.getByRole("button", { name: "Добавить документ" }).click();
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  await expect(reader).toBeVisible();
+  const image = book.locator('.BRpage-visible[data-index="0"] img.BRpageimage');
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
+    .toBe(360);
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
+  const url = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(url);
+  await expect(book.locator('.BRpage-visible[data-index="0"] img.BRpageimage'))
+    .toBeVisible();
 });
 
 test("верхний поиск находит PDF и открывает постоянную ссылку", async ({
@@ -120,12 +151,12 @@ test("источник карточки связывается с PDF без к�
     .click();
   await page.getByRole("button", { name: "+ Источник" }).click();
   const source = page.locator(".source-editor").last();
-  await source.getByRole("button", { name: "Связать с PDF" }).click();
-  await source.getByLabel("Найти PDF человека").fill(title);
+  await source.getByRole("button", { name: "Связать с документом" }).click();
+  await source.getByLabel("Найти документ человека").fill(title);
   await source.getByRole("button", { name: title, exact: true }).click();
-  await source.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
+  await source.getByRole("spinbutton", { name: "Страница документа" }).fill("2");
   await expect(
-    source.getByRole("link", { name: "Открыть связанный PDF" }),
+    source.getByRole("link", { name: "Открыть связанный документ" }),
   ).toHaveAttribute("href", `/documents/${id}/page/2`);
   await page.locator(".event-editor > summary").click();
   await page.getByRole("button", { name: "Добавить событие" }).click();
@@ -133,10 +164,10 @@ test("источник карточки связывается с PDF без к�
   await event.locator(".event-extra > summary").click();
   await event.getByRole("button", { name: "Добавить источник" }).click();
   const eventSource = event.locator(".event-source-editor").last();
-  await eventSource.getByRole("button", { name: "Связать с PDF" }).click();
-  await eventSource.getByLabel("Найти PDF человека").fill(title);
+  await eventSource.getByRole("button", { name: "Связать с документом" }).click();
+  await eventSource.getByLabel("Найти документ человека").fill(title);
   await eventSource.getByRole("button", { name: title, exact: true }).click();
-  await eventSource.getByRole("spinbutton", { name: "Страница PDF" }).fill("2");
+  await eventSource.getByRole("spinbutton", { name: "Страница документа" }).fill("2");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await page
     .locator(".life-event")
@@ -147,11 +178,11 @@ test("источник карточки связывается с PDF без к�
     page
       .locator(".life-event")
       .last()
-      .getByRole("link", { name: "Открыть PDF" }),
+      .getByRole("link", { name: "Открыть документ" }),
   ).toHaveAttribute("href", `/documents/${id}/page/2`);
   await page.getByRole("tab", { name: /Источники/ }).click();
   const card = page.locator(".source-card").filter({ hasText: title });
-  await expect(card.getByRole("link", { name: "Открыть PDF" })).toHaveAttribute(
+  await expect(card.getByRole("link", { name: "Открыть документ" })).toHaveAttribute(
     "href",
     `/documents/${id}/page/2`,
   );
@@ -214,7 +245,7 @@ test("PDF можно перетащить, затем привязать из д
   await page
     .locator("body")
     .dispatchEvent("dragenter", { dataTransfer: transfer });
-  await expect(page.getByText("Перетащите PDF сюда")).toBeVisible();
+  await expect(page.getByText("Перетащите документ сюда")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("documents-drop.png") });
   await page.locator("body").dispatchEvent("drop", { dataTransfer: transfer });
   await expect(page.locator(".documents-drop-overlay")).toHaveCount(0);
@@ -251,9 +282,9 @@ test("PDF можно перетащить, затем привязать из д
     .click();
   const documents = page.getByRole("region", { name: "Документы человека" });
   await documents
-    .getByRole("button", { name: "Привязать PDF из каталога" })
+    .getByRole("button", { name: "Привязать документ из каталога" })
     .click();
-  await documents.getByLabel("Найти PDF").fill(title);
+  await documents.getByLabel("Найти документ").fill(title);
   await documents
     .locator(".person-document-picker .person-document-row")
     .filter({ hasText: title })
@@ -292,17 +323,17 @@ test("каталог документов отклоняет перетаски�
   await expect(page.locator(".documents-add")).toBeVisible();
   const transfer = await page.evaluateHandle(() => {
     const data = new DataTransfer();
-    data.items.add(new File(["image"], "image.png", { type: "image/png" }));
+    data.items.add(new File(["<svg/>"], "unsafe.svg", { type: "image/svg+xml" }));
     return data;
   });
   await page.locator("body").dispatchEvent("drop", { dataTransfer: transfer });
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Можно загрузить только PDF-файл" }),
+      .filter({ hasText: "Поддерживаются PDF, JPEG, PNG, WebP и GIF" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Добавить документ" }),
+    page.locator(".documents-upload-submit"),
   ).toBeDisabled();
 });
 
@@ -350,7 +381,7 @@ test("из карточки человека открываются только
   const documentLink = panel
     .getByRole("heading", { name: title, exact: true })
     .locator("..")
-    .getByRole("link", { name: "Открыть документ" });
+    .getByRole("link", { name: "Открыть файл" });
   const linkedUrl = await documentLink.getAttribute("href");
   expect(linkedUrl).toMatch(/^\/documents\/person\/e2e-child\/[a-f0-9-]{36}$/);
   await documentLink.click();
@@ -404,7 +435,7 @@ test("участник загружает PDF и читает страницы �
   const title = `Архивный документ ${testInfo.project.name}`;
   await page.goto("/documents");
   await expect(page.getByRole("heading", { name: "Документы" })).toBeVisible();
-  await page.getByRole("button", { name: "Добавить PDF" }).click();
+  await page.getByRole("button", { name: "Добавить документ" }).click();
   const form = page.locator(".documents-upload");
   await form.locator('input[type="file"]').setInputFiles({
     name: "archive.pdf",

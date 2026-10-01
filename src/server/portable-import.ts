@@ -9,6 +9,7 @@ import { openPromise } from "yauzl";
 import { randomUUID } from "node:crypto";
 import { validateFamily } from "../domain/validation.ts";
 import { validAnnotationSelection } from "../shared/document-annotations.ts";
+import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import {
@@ -92,7 +93,8 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       !portableId.test(document.id) ||
       documentIds.has(document.id) ||
       typeof document.fileName !== "string" ||
-      !/^[a-zA-Z0-9-]+\.pdf$/.test(document.fileName) ||
+      !/^[a-zA-Z0-9-]+\.[a-z]+$/.test(document.fileName) ||
+      !documentFileTypeFromName(document.fileName) ||
       documentFiles.has(document.fileName) ||
       typeof document.title !== "string" ||
       !document.title.trim() ||
