@@ -5,7 +5,7 @@
 }
 .mode-timeline {
   --timeline-rail: 0px;
-  --timeline-person-width: 228px;
+  --timeline-person-width: 196px;
 }
 .mode-timeline .tree-mode-bar {
   z-index: 7;
@@ -218,14 +218,11 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.timeline-axis-track > .timeline-undated-label {
-  white-space: nowrap;
-}
 .timeline-person-row {
   position: relative;
   display: flex;
-  height: 76px;
-  min-height: 76px;
+  height: 64px;
+  min-height: 64px;
   border-bottom: 1px solid #d4dccc80;
   animation: timeline-person-enter 240ms ease both;
   transition:
@@ -257,9 +254,9 @@
   display: flex;
   flex: 0 0 var(--timeline-person-width);
   align-items: center;
-  gap: 11px;
+  gap: 9px;
   overflow: hidden;
-  padding: 8px 14px;
+  padding: 6px 11px;
   box-sizing: border-box;
   border: 0;
   border-right: 1px solid #d5dece;
@@ -272,31 +269,38 @@
   background: #f2f7ed;
 }
 .timeline-person .person-avatar {
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
 }
 .timeline-person > span:last-child {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 .timeline-person strong {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.25;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .timeline-person small {
   color: #788572;
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .timeline-person > span > span {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.3;
   color: #566650;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .timeline-row-track {
   position: relative;
@@ -304,14 +308,14 @@
 .timeline-row-track::before {
   content: "";
   position: absolute;
-  top: 38px;
+  top: 32px;
   left: 0;
   right: 0;
   border-top: 1px solid #9baa8f2e;
 }
 .timeline-life {
   position: absolute;
-  top: 36px;
+  top: 30px;
   height: 4px;
   border-radius: 99px;
   background: #6c896c;
@@ -326,7 +330,7 @@
 .timeline-event {
   position: absolute;
   z-index: 2;
-  top: 21px;
+  top: 15px;
   width: 34px;
   height: 34px;
   margin-left: -17px;
@@ -415,12 +419,6 @@
 .timeline-event-list span {
   color: #667860;
 }
-.timeline-undated-events {
-  margin-left: 0;
-}
-.timeline-undated-events summary {
-  border-style: dashed;
-}
 .timeline-era-bar {
   bottom: 0;
   height: 44px;
@@ -493,7 +491,7 @@
 }
 @media (max-width: 899px) {
   .mode-timeline {
-    --timeline-person-width: 150px;
+    --timeline-person-width: 132px;
   }
   .timeline-board {
     padding-top: 86px;
@@ -506,30 +504,30 @@
     padding-inline: 9px;
   }
   .timeline-person {
-    gap: 6px;
-    padding: 5px 7px;
+    gap: 5px;
+    padding: 4px 6px;
   }
   .timeline-person-row {
-    height: 72px;
-    min-height: 72px;
+    height: 62px;
+    min-height: 62px;
   }
   .timeline-person-row.is-exiting {
     height: 0;
     min-height: 0;
   }
   .timeline-row-track::before {
-    top: 36px;
+    top: 31px;
   }
   .timeline-life {
-    top: 34px;
+    top: 29px;
   }
   .timeline-event {
-    top: 19px;
+    top: 14px;
   }
   .timeline-person .person-avatar {
-    flex-basis: 36px;
-    width: 36px;
-    height: 36px;
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
   }
   .timeline-person strong {
     font-size: 12px;

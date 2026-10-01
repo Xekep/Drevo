@@ -1,5 +1,5 @@
 import { ageLabel, dateYear, hasRecordedDeath } from "./dates.ts";
-import { END_YEAR, ERAS } from "./layout.ts";
+import { ERAS } from "./layout.ts";
 import { EVENT_NAMES } from "./person-events.ts";
 import type { Person } from "./types.ts";
 
@@ -129,8 +129,7 @@ export function horizontalTimeline(
   );
   const start =
     Math.floor((Math.min(currentYear - 100, ...datedYears) - 5) / 10) * 10;
-  const end =
-    Math.ceil((Math.max(currentYear + 5, ...datedYears) + 5) / 10) * 10;
+  const end = Math.max(currentYear, ...datedYears);
   const width = (end - start) * YEAR_WIDTH;
   const yearX = (year: number) =>
     (reverse ? end - year : year - start) * YEAR_WIDTH;
@@ -203,7 +202,5 @@ export function horizontalTimeline(
     rows,
     eras,
     ticks,
-    undatedWidth: rows.some((row) => row.undated.length) ? 230 : 0,
-    currentYear: Math.min(currentYear, END_YEAR),
   };
 }

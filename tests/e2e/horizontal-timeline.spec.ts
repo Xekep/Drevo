@@ -39,7 +39,8 @@ test("chronology hides the tiny distant-tree portraits behind its background", a
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
     timeout: 30_000,
   });
-  await expect.poll(async () => Number(await canvas.getAttribute("data-portrait-count")))
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-portrait-count")))
     .toBeGreaterThan(0);
   await expect(canvas).toHaveCSS("visibility", "visible");
   await page.getByRole("button", { name: "Хронология", exact: true }).click();
@@ -86,6 +87,9 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(1);
   await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
+  await expect(
+    timeline.locator(".timeline-undated-label, .timeline-undated-events"),
+  ).toHaveCount(0);
   await expect(timeline.locator(".timeline-band img")).not.toHaveCount(0);
   await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(1);
   const marker = page.locator(".timeline-center-marker output");
@@ -156,6 +160,20 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   const portraitBox = await portrait.boundingBox();
   expect(portraitBox?.x).toBeGreaterThanOrEqual(area.x - 1);
   expect(portraitBox?.x).toBeLessThan(area.x + 3);
+  expect(portraitBox?.width).toBeLessThan(200);
+  const rowHeight = await timeline
+    .locator(".timeline-person-row:not(.is-exiting)")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(rowHeight).toBeLessThanOrEqual(64);
+
+  await timeline.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect(marker).toHaveText(String(new Date().getFullYear()));
+  await expect(timeline.locator(".timeline-axis-track")).not.toContainText(
+    "2040",
+  );
 
   await timeline.screenshot({
     path: testInfo.outputPath("timeline-desktop.png"),
@@ -280,7 +298,7 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
     .boundingBox();
   expect(bounds).not.toBeNull();
   expect(portrait).not.toBeNull();
-  expect(portrait!.width).toBeLessThan(160);
+  expect(portrait!.width).toBeLessThan(140);
   expect(portrait!.x).toBeGreaterThanOrEqual(bounds!.x - 1);
   const before = await timeline.evaluate((element) => element.scrollLeft);
   const session = await page.context().newCDPSession(page);
