@@ -3,9 +3,11 @@ import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
-import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { statfs } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
 import pg from "pg";
 import PDFDocument from "pdfkit";
 import { openPromise } from "yauzl";
@@ -39,6 +41,7 @@ import { verifyEmailAccounts } from "./postgres-email.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
+import { restoreStore } from "../../src/server/restore.ts";
 import { startServer } from "../../src/server/index.ts";
 import { adaptLegacyAiFake } from "../legacy-ai-fake.ts";
 import {
@@ -785,6 +788,103 @@ try {
   const fullBackup = await fetch(base + "/api/backup/full");
   assert.equal(fullBackup.status, 200);
   const backupBytes = await fullBackup.arrayBuffer();
+  const restoreBytes = Buffer.from(backupBytes);
+  const stagingRoot = join(dirname(source), "staging");
+  const diskFree = async () => {
+    const disk = await statfs(stagingRoot);
+    return disk.bavail * disk.bsize;
+  };
+  const platformPending = async () => Number((await app!.archive.db
+    .prepare("", "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM platform_upload_reservations")
+    .get())?.bytes || 0);
+  const reservationCount = async () => Number((await app!.archive.db
+    .prepare("", "SELECT count(*) AS count FROM platform_upload_reservations")
+    .get())?.count || 0);
+  const blockRestoreSpace = async (id: string, headroom: number) => {
+    const bytes = (await diskFree()) - (await platformPending()) -
+      256 * 1024 ** 2 - headroom;
+    assert.ok(Number.isSafeInteger(bytes) && bytes > 0);
+    await app!.archive.db.prepare("", `INSERT INTO platform_upload_reservations
+      (id,reserved_bytes,expires_ms) VALUES(?,?,?)`).run(id, bytes, Date.now() + 5 * 60_000);
+  };
+  const firstRestores = restoreStore(app.archive, source);
+  const secondRestores = restoreStore(app.archive, source);
+  let unblockFirst!: () => void;
+  let firstChunkReady!: () => void;
+  const firstChunk = new Promise<void>((resolve) => { firstChunkReady = resolve; });
+  const firstGate = new Promise<void>((resolve) => { unblockFirst = resolve; });
+  let heldPreview: Promise<Awaited<ReturnType<typeof firstRestores.previewStream>>> | undefined;
+  const stageNamesBefore = readdirSync(stagingRoot).filter((name) => name.startsWith("restore-"));
+  const reservationsBefore = await reservationCount();
+  try {
+    await blockRestoreSpace("restore-preview-blocker", 48 * 1024 ** 2);
+    heldPreview = firstRestores.previewStream(Readable.from((async function* () {
+      yield restoreBytes.subarray(0, 1024);
+      firstChunkReady();
+      await firstGate;
+      yield restoreBytes.subarray(1024);
+    })()), owner);
+    await firstChunk;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await reservationCount() > reservationsBefore + 1) break;
+      if (attempt === 99) throw new Error("First restore did not reserve disk space");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await assert.rejects(
+      secondRestores.previewStream(Readable.from([restoreBytes]), owner),
+      (error: unknown) => error instanceof UploadQuotaError && error.status === 507,
+      "a concurrent restore must respect another archive's disk reservation",
+    );
+    assert.equal(readdirSync(stagingRoot).filter((name) => name.startsWith("restore-")).length,
+      stageNamesBefore.length + 1,
+      "a rejected preview removes its partial staging directory");
+  } finally {
+    unblockFirst();
+    try {
+      const held = await heldPreview;
+      if (held) await firstRestores.discard(held.token);
+    } finally {
+      await app.archive.db.prepare("", "DELETE FROM platform_upload_reservations WHERE id='restore-preview-blocker'").run();
+      await firstRestores.close();
+      await secondRestores.close();
+    }
+  }
+  assert.deepEqual(readdirSync(stagingRoot).filter((name) => name.startsWith("restore-")), stageNamesBefore);
+  assert.equal(await reservationCount(), reservationsBefore, "completed previews release disk reservations");
+  const interruptedRestores = restoreStore(app.archive, source);
+  try {
+    let interruptUpload!: () => void;
+    const interruptGate = new Promise<void>((resolve) => { interruptUpload = resolve; });
+    const interrupted = interruptedRestores.previewStream(Readable.from((async function* () {
+      yield restoreBytes.subarray(0, 1024);
+      await interruptGate;
+      throw new Error("Interrupted restore stream");
+    })()), owner);
+    try {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (await reservationCount() > reservationsBefore) break;
+        if (attempt === 99) throw new Error("Interrupted restore did not reserve disk space");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    } finally {
+      interruptUpload();
+    }
+    await assert.rejects(
+      interrupted,
+      /Interrupted restore stream/,
+    );
+    assert.deepEqual(readdirSync(stagingRoot).filter((name) => name.startsWith("restore-")), stageNamesBefore,
+      "an interrupted upload removes its partial stage");
+    assert.equal(await reservationCount(), reservationsBefore, "an interrupted upload releases its reservation");
+    await assert.rejects(
+      interruptedRestores.previewStream(Readable.from([restoreBytes.subarray(0, restoreBytes.length - 1)]), owner),
+    );
+    assert.deepEqual(readdirSync(stagingRoot).filter((name) => name.startsWith("restore-")), stageNamesBefore,
+      "an unpack failure removes its partial stage");
+    assert.equal(await reservationCount(), reservationsBefore, "an unpack failure releases its reservation");
+  } finally {
+    await interruptedRestores.close();
+  }
   const preview = await fetch(base + "/api/restore/preview", {
     method: "POST",
     headers: { "X-Drevo-Restore": "1" },
@@ -793,6 +893,23 @@ try {
   assert.equal(preview.status, 200);
   const previewData = await preview.json();
   assert.equal(previewData.documents, 1);
+  const uploadsBefore = readdirSync(uploads).sort();
+  await blockRestoreSpace("restore-apply-blocker", 0);
+  try {
+    const blockedApply = await fetch(base + "/api/restore/apply", {
+      method: "POST",
+      headers: { "X-Drevo-Restore": "1" },
+      body: JSON.stringify({ token: previewData.token, confirm: true }),
+    });
+    assert.equal(blockedApply.status, 507, await blockedApply.text());
+  } finally {
+    await app.archive.db.prepare("", "DELETE FROM platform_upload_reservations WHERE id='restore-apply-blocker'").run();
+  }
+  assert.equal((await app.archive.db.prepare("", "SELECT count(*) AS count FROM workflow_stages WHERE kind='restore' AND token=?").get(previewData.token))?.count, 1,
+    "a rejected apply keeps the validated stage available for retry");
+  assert.deepEqual(readdirSync(uploads).sort(), uploadsBefore,
+    "a rejected apply does not leave partial media copies");
+  assert.equal(await reservationCount(), reservationsBefore, "a rejected apply releases its reservation");
   const restore = await fetch(base + "/api/restore/apply", {
     method: "POST",
     headers: { "X-Drevo-Restore": "1" },
@@ -820,6 +937,27 @@ try {
     ),
     pdfBytes,
   );
+  const failedRestores = restoreStore(app.archive, source);
+  try {
+    const failedStage = await failedRestores.preview(restoreBytes, owner);
+    const beforeFailedApply = readdirSync(uploads).sort();
+    const originalWrite = app.archive.write;
+    app.archive.write = async () => { throw new Error("Simulated restore apply failure"); };
+    try {
+      await assert.rejects(failedRestores.apply(failedStage.token, owner), /Simulated restore apply failure/);
+    } finally {
+      app.archive.write = originalWrite;
+    }
+    assert.deepEqual(readdirSync(uploads).sort(), beforeFailedApply,
+      "failed apply rolls back already copied originals");
+    assert.equal(await reservationCount(), reservationsBefore,
+      "failed apply releases its copy reservation");
+    assert.equal((await app.archive.db.prepare("", "SELECT count(*) AS count FROM workflow_stages WHERE token=?")
+      .get(failedStage.token))?.count, 1, "failed apply leaves its stage available for retry");
+    await failedRestores.discard(failedStage.token);
+  } finally {
+    await failedRestores.close();
+  }
   const documentId = afterDocuments.items[0].id;
   const linkedBefore = await app.archive.read();
   const linkedFamily = structuredClone(linkedBefore.family);

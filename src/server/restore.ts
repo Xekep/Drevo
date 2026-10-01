@@ -25,6 +25,7 @@ import {
   rename,
   rm,
   stat,
+  statfs,
   unlink,
 } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
@@ -39,6 +40,7 @@ import { imageExtension, mediaPattern } from "./media.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
+import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import {
   documentSearchText,
   parseDocumentDetails,
@@ -48,6 +50,7 @@ import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 
 const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
+const RESERVATION_STEP = 32 * 1024 * 1024;
 export class RestoreTooLargeError extends Error {}
 
 function removeStage(directory: string, stagingRoot: string) {
@@ -70,19 +73,25 @@ const references = (family: Family) => [
   ),
 ];
 
-async function streamUpload(source: Readable, file: string) {
+async function streamUpload(
+  source: Readable,
+  file: string,
+  reserveBytes: (bytes: number) => Promise<void>,
+) {
   let size = 0;
   const guard = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       const bytes = Buffer.from(chunk);
-      size += bytes.length;
-      if (size > RESTORE_LIMIT) {
+      if (size + bytes.length > RESTORE_LIMIT) {
         callback(
           new RestoreTooLargeError("Файл слишком большой. Максимум 12 ГиБ."),
         );
         return;
       }
-      callback(null, bytes);
+      reserveBytes(bytes.length).then(() => {
+        size += bytes.length;
+        callback(null, bytes);
+      }, callback);
     },
   });
   await pipeline(
@@ -117,7 +126,11 @@ function imageExtensionFile(file: string) {
 }
 
 /** Читаем только ожидаемые файлы собственного бэкапа; ссылки и пути наружу запрещены. */
-async function unpack(source: Readable, directory: string) {
+async function unpack(
+  source: Readable,
+  directory: string,
+  reserveBytes: (bytes: number) => Promise<void>,
+) {
   const stream = source.pipe(createGunzip());
   let pending = Buffer.alloc(0),
     total = 0,
@@ -251,6 +264,7 @@ async function unpack(source: Readable, directory: string) {
             if (seen.has(name))
               throw new Error("Повторяющееся имя файла в бэкапе");
             seen.add(name);
+            if (remaining) await reserveBytes(remaining);
             entryFd = openSync(join(directory, name), "wx", 0o600);
           }
           if (!remaining) finish();
@@ -382,15 +396,30 @@ export function restoreStore(
     const directory = mkdtempSync(join(stagingRoot, "restore-")),
       upload = join(directory, ".upload");
     mkdirSync(join(directory, "uploads"));
+    let reservation: Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
+    let neededBytes = 0;
+    let reservedBytes = 0;
+    const reserveBytes = async (bytes: number) => {
+      neededBytes += bytes;
+      if (neededBytes <= reservedBytes) return;
+      const target = Math.ceil(neededBytes / RESERVATION_STEP) * RESERVATION_STEP;
+      const freeBytes = async () => {
+        const disk = await statfs(stagingRoot);
+        return disk.bavail * disk.bsize;
+      };
+      if (reservation) await reservation.grow(target - reservedBytes);
+      else reservation = await reservePlatformDisk(archive.db, target, freeBytes);
+      reservedBytes = target;
+    };
     try {
-      const size = await streamUpload(sourceStream, upload);
+      const size = await streamUpload(sourceStream, upload, reserveBytes);
       await assertAccess?.();
       const header = await fileHeader(upload);
       if (header.toString("binary") === "SQLite format 3\0") {
         if (size > SQLITE_LIMIT) throw new Error("База больше 512 МБ");
         await rename(upload, join(directory, "drevo.sqlite"));
       } else if (header[0] === 31 && header[1] === 139) {
-        await unpack(createReadStream(upload), directory);
+        await unpack(createReadStream(upload), directory, reserveBytes);
         await unlink(upload);
       } else throw new Error("Выберите бэкап Drevo: .sqlite или .tar.gz");
 
@@ -639,6 +668,8 @@ export function restoreStore(
     } catch (error) {
       removeStage(directory, stagingRoot);
       throw error;
+    } finally {
+      await reservation?.release();
     }
   }
 
@@ -673,6 +704,20 @@ export function restoreStore(
       const restoredDocuments: StoredDocument[] = [];
       const documentIdMap = new Map<string, string>();
       let result: Awaited<ReturnType<typeof archive.write>>;
+      const copySources = [
+        ...stage.files.values(),
+        ...stage.documentFiles.values(),
+      ];
+      const copyBytes = (await Promise.all(copySources.map((path) => stat(path))))
+        .reduce((sum, file) => sum + file.size, 0);
+      if (!Number.isSafeInteger(copyBytes))
+        throw new Error("Некорректный размер файлов восстановления");
+      const copyReservation = copyBytes
+        ? await reservePlatformDisk(archive.db, copyBytes, async () => {
+            const disk = await statfs(dirname(dbPath));
+            return disk.bavail * disk.bsize;
+          })
+        : undefined;
       try {
         for (const [url, path] of stage.files) {
           const name = `${randomUUID()}.${imageExtensionFile(path)}`,
@@ -765,6 +810,8 @@ export function restoreStore(
           created.map((path) => rm(path, { force: true })),
         );
         throw error;
+      } finally {
+        await copyReservation?.release();
       }
       // Ошибка уборки временного каталога не должна удалять уже сохранённые фото.
       try {
