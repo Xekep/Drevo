@@ -178,6 +178,11 @@ test("generation settings remain usable while the initial layout is still comput
   await page.goto("/tree");
   const gear = page.getByRole("button", { name: "Настройки древа" });
   await expect(gear).toBeEnabled();
+  await expect(
+    page
+      .getByRole("button", { name: "Хронология", exact: true })
+      .or(page.getByRole("switch", { name: "Древо / Хронология" })),
+  ).toBeDisabled();
   await gear.click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog).toBeVisible();

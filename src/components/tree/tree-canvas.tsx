@@ -1167,6 +1167,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               role="switch"
               aria-label="Древо / Хронология"
               aria-checked={timelineActive}
+              disabled={growthLocked || layoutBusy}
               title={activeFanAnchor || timelineActive ? "Переключить на древо" : "Переключить на хронологию"}
               onClick={() => switchMode(activeFanAnchor || timelineActive ? "generations" : "timeline")}
             >
@@ -1182,12 +1183,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             <div className="segmented" aria-label="Представление дерева">
               <button
                 aria-pressed={!activeFanAnchor && mode === "generations"}
+                disabled={growthLocked || layoutBusy}
                 onClick={() => switchMode("generations")}
               >
                 Древо
               </button>
               <button
                 aria-pressed={timelineActive}
+                disabled={growthLocked || layoutBusy}
                 onClick={() => switchMode("timeline")}
               >
                 Хронология
