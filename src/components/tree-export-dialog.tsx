@@ -4,15 +4,17 @@ import type { GenealogyExportFormat } from "../domain/genealogy-transfer";
 import { EditorDialog } from "./editor-dialog";
 import "../styles/tree-preferences.css";
 
-type ExportFormat = "pdf" | GenealogyExportFormat;
+type ExportFormat = "pdf" | "generation-text" | GenealogyExportFormat;
 
 export function TreeExportDialog({
   onClose,
   onExportPdf,
+  onExportText,
   onExportGenealogy,
 }: {
   onClose: () => void;
   onExportPdf: (signal: AbortSignal) => Promise<void>;
+  onExportText: (signal: AbortSignal) => Promise<void>;
   onExportGenealogy?: (format: GenealogyExportFormat, signal: AbortSignal, onError: (message: string) => void) => Promise<void>;
 }) {
   const [format, setFormat] = useState<ExportFormat>("pdf");
@@ -31,6 +33,7 @@ export function TreeExportDialog({
     setError("");
     try {
       if (format === "pdf") await onExportPdf(next.signal);
+      else if (format === "generation-text") await onExportText(next.signal);
       else await onExportGenealogy?.(format, next.signal, setError);
       if (!next.signal.aborted)
         setStatus(format === "pdf" ? "PDF готов." : "Скачивание началось.");
@@ -55,6 +58,7 @@ export function TreeExportDialog({
               onChange={(event) => setFormat(event.target.value as ExportFormat)}
             >
               <option value="pdf">PDF</option>
+              <option value="generation-text">Поколенная роспись · TXT</option>
               {onExportGenealogy && <>
                 <option value="gedzip7">GEDZIP 7 · с файлами</option>
                 <option value="gedcom7">GEDCOM 7</option>

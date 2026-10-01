@@ -1191,6 +1191,11 @@ export default function App() {
       {treeExportOpen && family && readTree && (
         <TreeExportDialog
           onExportPdf={(signal) => treeCanvas.current!.exportPdf(signal, "current")}
+          onExportText={async (signal) => {
+            const ids = await treeCanvas.current!.visiblePersonIds(signal);
+            const { downloadGenerationReport } = await import("./components/tree/download-generation-report");
+            await downloadGenerationReport(ids, signal);
+          }}
           onExportGenealogy={user?.role === "admin" ? async (format, signal, onError) => {
             const ids = await treeCanvas.current!.visiblePersonIds(signal);
             signal.throwIfAborted();
