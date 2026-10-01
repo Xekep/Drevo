@@ -178,6 +178,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_branch_members') AND c.relforcerowsecurity AND to_regclass('discovery_branch_grants') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archives') AND tgname='revoke_discovery_branches_after_edit' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archive_owners') AND tgname='revoke_discovery_branches_after_owner_transfer' AND NOT tgisinternal)",
       "055_discovery_branch_grants.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_indexes WHERE schemaname=current_schema() AND tablename='person_comments' AND indexname='person_comments_author'",
+      "056_person_comments_author.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

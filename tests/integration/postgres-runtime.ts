@@ -187,6 +187,17 @@ try {
       AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert',
         'discovery_linked_card_update','discovery_linked_card_delete')`)).rows[0].count,
   4, "a repeated 054 migration keeps all four access policies exactly once");
+  const authorIndex = () => client.query(`SELECT indexdef FROM pg_indexes
+    WHERE schemaname=current_schema() AND tablename='person_comments'
+      AND indexname='person_comments_author'`);
+  assert.match((await authorIndex()).rows[0]?.indexdef || "",
+    /\(archive_id, author_id, id\)/,
+    "account comment export has an author-ordered index");
+  await client.query("DROP INDEX person_comments_author");
+  await initializePostgresRuntimeSchema(live.db);
+  assert.match((await authorIndex()).rows[0]?.indexdef || "",
+    /\(archive_id, author_id, id\)/,
+    "upgrading an older database installs the export index without a new import");
   assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
     "the non-superuser runtime migration installs trusted pg_trgm");
   // A second application must safely finish an already installed extension.
