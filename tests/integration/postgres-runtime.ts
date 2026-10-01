@@ -4566,17 +4566,20 @@ try {
     FROM discovery_linked_card_grants WHERE left_person_id=$1 AND right_person_id=$2
       AND expires_at IS NULL`, [parent.id,parent.id])).rows[0].count, 1,
   "reapplying 063 never shortens a legacy until-revoked scalar consent");
-  const legacyCardToken = newSessionToken();
-  await app.archive.db.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
-    VALUES(?,'vk:42',?)`).run(sessionTokenHash(legacyCardToken), Date.now()+60_000);
-  const legacyCardResponse = await fetch(otherBase + revocableSharePath, { headers: {
-    ...archiveAdminHeaders, Cookie: `drevo_session=${legacyCardToken}`,
-    "X-Real-IP": "198.51.100.223",
-  } });
+  const legacyCardResponse = await fetch(securedBase + revocableSharePath, {
+    headers: manualHeaders,
+  });
   assert.equal(legacyCardResponse.status, 200,
-    "the current recipient owner can reopen a legacy scalar grant");
-  assert.deepEqual((await legacyCardResponse.json()).incoming.fields,
-  { birth: "1960" }, "a legacy NULL grant remains readable until revoked");
+    "the grantor can still manage a legacy scalar consent");
+  assert.equal((await legacyCardResponse.json()).outgoing.expiresAt, null,
+    "the API labels a legacy scalar grant as valid until revoked");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT fields->>'birth' AS birth
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.birth,
+      "1960", "the recipient's SQL RLS keeps a legacy NULL grant readable until revoke");
+  }, true);
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
     .get(parent.id,parent.id))?.count, 1);
