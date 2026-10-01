@@ -1,8 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
 
-const DELETED_ACTOR = "deleted-account";
-const DELETED_NAME = "Удалённый участник";
-
 export class AccountDeletionConflict extends Error {}
 
 export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
@@ -85,6 +82,25 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
             "Подтвердите выход из остальных деревьев",
           );
 
+        const cleanupFunction = await client.query(
+          "SELECT to_regprocedure('public.runtime_anonymize_deleted_account_history(text)') AS installed",
+        );
+        if (!cleanupFunction.rows[0]?.installed)
+          throw new AccountDeletionConflict(
+            "Удаление аккаунта пока недоступно: требуется настройка обезличивания истории",
+          );
+        await client.query(
+          "INSERT INTO deleted_account_tombstones(id) VALUES($1) ON CONFLICT(id) DO NOTHING",
+          [accountId],
+        );
+        await client.query("SET LOCAL statement_timeout='5min'");
+        // Installed by a PostgreSQL administrator. It changes only attribution
+        // matching this authenticated account, including archives left earlier.
+        await client.query(
+          "SELECT public.runtime_anonymize_deleted_account_history($1)",
+          [accountId],
+        );
+
         for (const { archive_id: archiveId } of memberships.rows) {
           await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
             archiveId,
@@ -92,84 +108,12 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [
             archiveId,
           ]);
-          // Shared genealogical facts and the action history stay in the
-          // archive, but must no longer expose the departed account's name.
-          await client.query(
-            "UPDATE archive_audit_entries SET actor_id=$2,actor_name=$3 WHERE actor_id=$1",
-            [accountId, DELETED_ACTOR, DELETED_NAME],
-          );
-          await client.query(
-            "UPDATE person_comments SET author_id=$2,author_name=$3 WHERE author_id=$1",
-            [accountId, DELETED_ACTOR, DELETED_NAME],
-          );
-          await client.query(
-            "UPDATE person_removals SET actor_id=$2 WHERE actor_id=$1",
-            [accountId, DELETED_ACTOR],
-          );
-          await client.query(
-            "UPDATE research_suggestions SET created_by=$2 WHERE created_by=$1",
-            [accountId, DELETED_ACTOR],
-          );
-          await client.query(
-            "UPDATE research_suggestions SET reviewed_by=$2 WHERE reviewed_by=$1",
-            [accountId, DELETED_ACTOR],
-          );
-          await client.query(
-            "UPDATE ai_usage SET user_id=$2 WHERE user_id=$1",
-            [accountId, DELETED_ACTOR],
-          );
-          await client.query("DELETE FROM ai_chats WHERE user_id=$1", [
-            accountId,
-          ]);
-          await client.query("DELETE FROM workflow_stages WHERE actor_id=$1", [
-            accountId,
-          ]);
-          await client.query(
-            "DELETE FROM document_upload_requests WHERE user_id=$1",
-            [accountId],
-          );
-          await client.query(
-            "DELETE FROM media_upload_grants WHERE user_id=$1",
-            [accountId],
-          );
-          await client.query(
-            "DELETE FROM user_tree_preferences WHERE user_id=$1",
-            [accountId],
-          );
-          await client.query(
-            "UPDATE share_links SET revoked_at=COALESCE(revoked_at,$2),created_by=$3,created_name=$4 WHERE created_by=$1",
-            [accountId, new Date().toISOString(), DELETED_ACTOR, DELETED_NAME],
-          );
-          await client.query(
-            "UPDATE mcp_tokens SET revoked_at=COALESCE(revoked_at,$2),created_by=$3 WHERE created_by=$1",
-            [accountId, new Date().toISOString(), DELETED_ACTOR],
-          );
-          await client.query(
-            "UPDATE face_descriptors SET created_by=NULL WHERE created_by=$1",
-            [accountId],
-          );
-          await client.query(
-            "UPDATE relations SET created_by=NULL WHERE created_by=$1",
-            [accountId],
-          );
-          await client.query(
-            `UPDATE discovery_match_requests SET
-              requested_by=CASE WHEN requested_by=$1 THEN $2 ELSE requested_by END,
-              responded_by=CASE WHEN responded_by=$1 THEN $2 ELSE responded_by END,
-              revoked_by=CASE WHEN revoked_by=$1 THEN $2 ELSE revoked_by END
-             WHERE requested_by=$1 OR responded_by=$1 OR revoked_by=$1`,
-            [accountId, DELETED_ACTOR],
-          );
           await client.query(
             "DELETE FROM archive_memberships WHERE archive_id=$1 AND user_id=$2",
             [archiveId, accountId],
           );
         }
 
-        await client.query(
-          "INSERT INTO deleted_account_tombstones(id) VALUES($1) ON CONFLICT(id) DO NOTHING",
-          [accountId],
-        );
         const deleted = await client.query("DELETE FROM accounts WHERE id=$1", [
           accountId,
         ]);
