@@ -1110,6 +1110,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     name: "Тест",
     role: "admin",
     createdAt: "",
+    approved: true,
   };
   const auth = { currentUser: () => actor } as unknown as Awaited<
     ReturnType<typeof createAuth>
@@ -1350,7 +1351,9 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       ).status,
       409,
     );
-    actor = { ...actor!, role: "relative" };
+    actor = { ...actor!, approved: false };
+    assert.equal((await request("/api/gedcom/export?format=gedcom7")).status, 403);
+    actor = { ...actor, role: "relative", approved: true };
     assert.equal((await request("/api/gedcom/export")).status, 403);
     actor = null;
     assert.equal((await request("/api/gedcom/export")).status, 401);

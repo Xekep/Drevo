@@ -138,7 +138,7 @@ export function gedcomHttp(
         return true;
       };
       const actor = await auth.currentUser(req);
-      if (!actor || actor.role !== "admin")
+      if (!actor || !actor.approved || actor.role !== "admin")
         return json(actor ? 403 : 401, {
           error: "Перенос данных доступен администратору",
         });
@@ -220,7 +220,8 @@ export function gedcomHttp(
                 family,
                 items,
                 async () => {
-                  if ((await auth.currentUser(req))?.role !== "admin")
+                  const current = await auth.currentUser(req);
+                  if (!current?.approved || current.role !== "admin" || current.id !== actor.id)
                     throw new ForbiddenError("Доступ администратора отозван");
                   res.writeHead(200, {
                     "Content-Type": "application/zip",
@@ -239,6 +240,9 @@ export function gedcomHttp(
             version: format === "gedcom551" ? "5.5.1" : "7.0",
             media: items,
           });
+          const current = await auth.currentUser(req);
+          if (!current?.approved || current.role !== "admin" || current.id !== actor.id)
+            throw new ForbiddenError("Доступ администратора отозван");
           res.writeHead(200, {
             "Content-Type": "text/vnd.familysearch.gedcom; charset=utf-8",
             "Content-Disposition": `attachment; filename="${format === "gedcom551" ? "drevo-5.5.1.ged" : "drevo-7.ged"}"`,
@@ -317,7 +321,8 @@ export function gedcomHttp(
               directory,
               randomUUID(),
             );
-            if ((await auth.currentUser(req))?.role !== "admin")
+            const currentActor = await auth.currentUser(req);
+            if (!currentActor?.approved || currentActor.role !== "admin" || currentActor.id !== actor.id)
               return json(403, { error: "Доступ администратора отозван" });
             if (
               parsed.family.people.length + current.family.people.length >
@@ -437,7 +442,7 @@ export function gedcomHttp(
             );
           }
           const currentActor = await auth.currentUser(req);
-          if (currentActor?.role !== "admin")
+          if (!currentActor?.approved || currentActor.role !== "admin" || currentActor.id !== actor.id)
             throw new Error("Доступ администратора отозван");
           const result = await archive.write(
             {
