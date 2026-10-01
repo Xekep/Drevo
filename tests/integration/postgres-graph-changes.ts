@@ -87,6 +87,12 @@ test("PostgreSQL retains foster, presumed and twin details across graph reads", 
   assert.deepEqual(saved.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })),
     next.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })));
   assert.deepEqual(saved.people.find((p) => p.id === "own")?.parents, []);
+  const changed = {
+    ...saved,
+    links: saved.links?.map((link) => link.type === "twin" ? { ...link, twinKind: "fraternal" as const } : link),
+  };
+  await graph(first, tokens.admin, "tree-a", archiveChanges(saved, changed), 1);
+  assert.equal((await read(first, "tree-a")).family.links?.find((link) => link.type === "twin")?.twinKind, "fraternal");
 });
 
 test("PostgreSQL migration extends an existing relations table without losing rows", async (t) => {
