@@ -61,13 +61,13 @@ export function discoveryPeopleHttp(
   };
   const linkedPeople = async (archiveId: string, personId: string) => {
     const columns = "other.archive_id,other.person_id,other.name,other.birth_surname,other.birth_year,other.death_year,other.birth_place,other.death_place,other.publication_version";
-    const rows = await db.prepare("", `SELECT ${columns} FROM discovery_match_requests m
+    const rows = await db.prepare("", `SELECT ${columns} FROM discovery_linked_pairs m
       JOIN discovery_people other ON other.archive_id=m.right_archive_id AND other.person_id=m.right_person_id
-      WHERE m.status='linked' AND m.left_archive_id=? AND m.left_person_id=?
+      WHERE m.left_archive_id=? AND m.left_person_id=?
       UNION ALL
-      SELECT ${columns} FROM discovery_match_requests m
+      SELECT ${columns} FROM discovery_linked_pairs m
       JOIN discovery_people other ON other.archive_id=m.left_archive_id AND other.person_id=m.left_person_id
-      WHERE m.status='linked' AND m.right_archive_id=? AND m.right_person_id=?
+      WHERE m.right_archive_id=? AND m.right_person_id=?
       ORDER BY name,archive_id,person_id LIMIT 51`).all(archiveId,personId,archiveId,personId);
     return { cards: rows.slice(0,50).map(listedPerson), truncated: rows.length > 50 };
   };

@@ -92,7 +92,8 @@ test("a changed published card requires a fresh review before acceptance", async
   await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
     archiveId: "tree-b", nextCursor: null, matches: [{ id: "match-1", left, right,
       initiatedByArchiveId: "tree-a", status: linked ? "linked" : "pending",
-      reviewToken: stale ? "old-token" : "new-token", requestedAt: "2026-09-30T00:00:00Z" }],
+      reviewToken: stale ? "old-token" : "new-token", changedSinceRequest: !stale,
+      requestedAt: "2026-09-30T00:00:00Z" }],
   } }));
   await page.route("**/api/discovery/matches/match-1", (route) => {
     const body = route.request().postDataJSON();
@@ -110,6 +111,7 @@ test("a changed published card requires a fresh review before acceptance", async
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByRole("alert")).toContainText("Проверьте сведения ещё раз");
+  await expect(page.getByText("Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Подтвердить" })).toHaveAttribute("data-review-token", "new-token");
   await page.getByRole("button", { name: "Подтвердить" }).click();
   await expect(page.getByText("Сопоставлено")).toBeVisible();
