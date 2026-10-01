@@ -89,12 +89,19 @@ test("mobile section links keep native addresses and close the menu on navigatio
   await expect(page.locator(".archive-more")).not.toHaveAttribute("open");
 });
 
-test("account avatar is beside the menu and opens the personal cabinet", async ({
+test("visible about link and account avatar keep the header usable", async ({
   page,
 }, testInfo) => {
   await page.goto("/tree");
   const avatar = page.locator(".nav-account");
   const menu = page.locator(".archive-more > summary");
+  const about = page.getByRole("button", { name: "О проекте", exact: true });
+  await expect(about).toBeVisible();
+  await about.click();
+  await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("link", { name: "Евгений С." })).toHaveAttribute("href", "https://vk.ru/xekep");
+  await page.keyboard.press("Escape");
+  await expect(about).toBeFocused();
   await expect(avatar).toHaveAttribute("href", "/account");
   await expect(avatar).toHaveAttribute("aria-label", /Личный кабинет/);
   await expect(avatar.locator(".nav-account-avatar")).toHaveText("Н");
@@ -107,6 +114,8 @@ test("account avatar is beside the menu and opens the personal cabinet", async (
     const search = page.locator(".archive-search");
     expect((await search.boundingBox())!.width).toBeGreaterThan(150);
     await page.setViewportSize({ width: 320, height: 640 });
+    await expect(about).toBeVisible();
+    expect((await search.boundingBox())!.width).toBeGreaterThan(70);
     await expect
       .poll(() =>
         page.evaluate(
@@ -116,8 +125,28 @@ test("account avatar is beside the menu and opens the personal cabinet", async (
         ),
       )
       .toBeLessThanOrEqual(1);
+    await search.locator("input").fill("Тестов");
+    const results = page.locator(".archive-search-results");
+    await expect(results).toBeVisible();
+    const resultsBox = (await results.boundingBox())!;
+    expect(resultsBox.x).toBeGreaterThanOrEqual(0);
+    expect(resultsBox.x + resultsBox.width).toBeLessThanOrEqual(320);
+    await page.keyboard.press("Escape");
+  } else {
+    for (const width of [1201, 1101, 1024]) {
+      await page.setViewportSize({ width, height: 720 });
+      await expect(about).toBeVisible();
+      expect((await menu.boundingBox())!.x + (await menu.boundingBox())!.width).toBeLessThanOrEqual(width);
+      if (width === 1024) {
+        await menu.click();
+        await expect(page.locator(".mobile-sections").getByRole("link", { name: "Люди", exact: true })).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
   }
   await menu.click();
+  await expect(page.locator(".archive-more .nav-bottom")).not.toContainText("О проекте");
   await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
     "Личный кабинет",
   );

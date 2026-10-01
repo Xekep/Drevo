@@ -1237,18 +1237,36 @@
 .archive-header-actions {
   order: 3;
 }
+.archive-header-actions:empty {
+  display: none;
+}
+.archive-nav .nav-about {
+  order: 4;
+  flex: none;
+  min-height: 44px;
+  padding: 6px 8px;
+  color: #62765b;
+  font-size: 13px;
+  background: transparent;
+  border-radius: 7px;
+}
+.archive-nav .nav-about:hover,
+.archive-nav .nav-about:focus-visible {
+  color: #3e604a;
+  background: #edf1e6;
+}
 .archive-header-actions .primary-action {
   border-radius: 7px;
   padding: 9px 13px;
   background: #59735a;
 }
 .archive-more {
-  order: 5;
+  order: 6;
   position: relative;
   margin-left: 0;
 }
 .archive-nav .nav-account {
-  order: 4;
+  order: 5;
   flex: none;
   width: 44px;
   height: 44px;
@@ -1517,6 +1535,12 @@
   line-height: 1.8;
 }
 @media (max-width: 1100px) {
+  .archive-header .nav-sections {
+    display: none;
+  }
+  .archive-header .archive-more .mobile-sections {
+    display: grid;
+  }
   .archive-nav {
     gap: 8px;
   }
@@ -1614,6 +1638,31 @@
 }
 .mobile-sections {
   display: none;
+}
+@media (max-width: 600px) {
+  .archive-header:has(.nav-about) {
+    gap: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .archive-nav .nav-about {
+    font-size: 12px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .archive-header .archive-search {
+    padding-left: 6px;
+    padding-right: 6px;
+    gap: 6px;
+  }
+  .archive-header .archive-search-results {
+    position: fixed;
+    top: 64px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    min-width: 0;
+  }
 }
 @media (max-width: 380px) {
   .nav-brand span {
