@@ -354,6 +354,8 @@ export function PersonPanel({
                   {!!person.birthDateClaim?.sources.length &&
                     <p>Источники даты: {person.birthDateClaim.sources.map((source) => source.title).join("; ")}</p>}
                   {person.birthPlace && <p>{person.birthPlace}</p>}
+                  {!!person.birthPlaceClaim?.sources.length &&
+                    <p>Источники места: {person.birthPlaceClaim.sources.map((source) => source.title).join("; ")}</p>}
                 </div>
               </div>
             )}
@@ -366,6 +368,8 @@ export function PersonPanel({
                   {!!person.deathDateClaim?.sources.length &&
                     <p>Источники даты: {person.deathDateClaim.sources.map((source) => source.title).join("; ")}</p>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}
+                  {!!person.deathPlaceClaim?.sources.length &&
+                    <p>Источники места: {person.deathPlaceClaim.sources.map((source) => source.title).join("; ")}</p>}
                 </div>
               </div>
             ) : person.birth ? (
