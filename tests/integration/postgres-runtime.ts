@@ -1956,7 +1956,85 @@ try {
   assert.equal((await fetch(securedBase + candidatePath + "&cursor=invalid", {
     headers: ownerHeaders,
   })).status, 400);
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+    await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
+      SELECT 'other-archive','load-'||g,
+        (SELECT max(ordinal) FROM people WHERE archive_id='other-archive')+g,
+        jsonb_build_object('id','load-'||g,'surname','Нагрузов','name','Даниил',
+          'deceased',true,'birth','1900')
+      FROM generate_series(1,600) AS g`);
+    await client.query(`INSERT INTO published_people(archive_id,person_id,published_at,published_by)
+      SELECT 'other-archive','load-'||g,'2026-01-01','owner'
+      FROM generate_series(1,600) AS g`);
+    assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+      WHERE person_id LIKE 'load-%'`)).rows[0].count, 600);
+    await client.query("SET LOCAL enable_seqscan=off");
+    const fuzzyPlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT person_id FROM discovery_people
+      WHERE given_normalized % 'даниил' AND surname_normalized % 'нагрузов'`);
+    assert.match(JSON.stringify(fuzzyPlan.rows), /discovery_people_(given|surname)_trgm/,
+      "the typo branch has an executable trigram index plan with 600 published rows");
+    const exactPlan = await client.query(`EXPLAIN (FORMAT JSON)
+      SELECT person_id FROM discovery_people
+      WHERE name_vector @@ to_tsquery('simple','нагрузов & даниил')`);
+    assert.match(JSON.stringify(exactPlan.rows), /discovery_people_names/,
+      "exact candidate names keep their GIN index path");
+  } finally {
+    await client.query("ROLLBACK");
+  }
   await otherApp.archive.write(beforeCandidatePages.family, paged.revision);
+  const ownBeforeSignals = await app.archive.read();
+  const otherBeforeSignals = await otherApp.archive.read();
+  const ownWithRelative = structuredClone(ownBeforeSignals.family);
+  const otherWithRelative = structuredClone(otherBeforeSignals.family);
+  const ownPerson = ownWithRelative.people.find((person) => person.id === "person-a")!;
+  const otherPerson = otherWithRelative.people.find((person) => person.id === "person-a")!;
+  const parent = { ...structuredClone(ownPerson), id: "published-parent",
+    surname: "Орлов", name: "Пётр", birth: "1960", deceased: true,
+    parents: [], column: 50 };
+  ownWithRelative.people.push(structuredClone(parent));
+  otherWithRelative.people.push(structuredClone(parent));
+  ownPerson.parents = [parent.id];
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "relative-only", surname: "Сидоров", name: "Иван", birth: "1991",
+    deceased: true, parents: [parent.id], spouses: ["closed-relative"], column: 51 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "name-typo", surname: "Тестав", name: "Иван", deceased: true,
+    parents: [], column: 52 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
+    parents: [], spouses: ["relative-only"], column: 53 });
+  const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
+  const otherSignalWrite = await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+  await otherPublication.publish("relative-only", "owner");
+  await otherPublication.publish("name-typo", "owner");
+  const signalIds = async () => (await (await fetch(securedBase + candidatePath,
+    { headers: ownerHeaders })).json()).candidates as {
+      id: string; reasons: string[]; conflicts: string[];
+    }[];
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "a private relative cannot create a cross-archive hint");
+  assert.ok((await signalIds()).some((item) => item.id === "name-typo" &&
+    item.reasons.some((reason) => reason.includes("опечатка"))),
+  "a typo in a published surname is found through the trigram index");
+  await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
+  await otherPublication.publish(parent.id, "owner");
+  const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
+  assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
+  assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
+    "candidate evidence contains no relative names or private card identifiers");
+  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_relative_names WHERE relative_person_id='closed-relative'`).get())?.count, 0);
+  await otherPublication.unpublish(parent.id);
+  assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
+    "revoking either parent publication removes the hint in the same transaction");
+  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_relative_names WHERE relative_person_id='published-parent'
+      AND archive_id='other-archive'`).get())?.count, 0);
+  await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
+  await otherApp.archive.write(otherBeforeSignals.family, otherSignalWrite.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
