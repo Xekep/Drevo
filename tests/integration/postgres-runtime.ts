@@ -3461,7 +3461,8 @@ try {
   })).status, 403, "an invited admin cannot inspect the owner's scalar grants");
   assert.equal((await fetch(otherBase + transferCardPath, {
     method: "PUT", headers: { ...otherOnlyHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["birth"], previewToken: "0".repeat(64) }),
+    body: JSON.stringify({ fields: ["birth"], previewToken: "0".repeat(64),
+      recipientArchiveId: "runtime-test", durationDays: 7 }),
   })).status, 403, "an invited admin cannot issue a scalar grant");
   assert.equal((await fetch(otherBase + transferCardPath, {
     method: "DELETE", headers: otherOnlyHeaders,
