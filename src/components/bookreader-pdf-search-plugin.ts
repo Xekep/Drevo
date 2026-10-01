@@ -6,6 +6,28 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
   return class PdfSearchPlugin extends SearchPlugin {
     private request: AbortController | null = null;
     private hasText = true;
+    private activeMatch = -1;
+
+    private highlightActiveMatch() {
+      document.querySelectorAll(".searchHiliteLayer rect").forEach((box) => {
+        box.classList.toggle(
+          "is-current-match",
+          box.classList.contains(`match-index-${this.activeMatch}`),
+        );
+      });
+    }
+
+    _configurePageContainer(container: unknown) {
+      super._configurePageContainer(container);
+      this.highlightActiveMatch();
+    }
+
+    async jumpToMatch(index: number) {
+      this.activeMatch = index;
+      this.highlightActiveMatch();
+      await super.jumpToMatch(index);
+      this.highlightActiveMatch();
+    }
 
     init() {
       super.init();
@@ -127,6 +149,7 @@ export function makePdfSearchPlugin(text: PdfTextSearch) {
     }
 
     removeSearchResults(suppressFragmentChange = false) {
+      this.activeMatch = -1;
       super.removeSearchResults(suppressFragmentChange);
       // The native method clears mounted highlights; also forget boxes for newly rendered pages.
       this._searchBoxesByIndex = {};

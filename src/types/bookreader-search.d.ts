@@ -24,5 +24,6 @@ declare module "@internetarchive/bookreader/src/plugins/search/plugin.search.js"
     removeSearchResults(suppressFragmentChange?: boolean): void;
     _cancelSearch(): void;
     cancelSearchRequest(): void;
+    jumpToMatch(index: number): Promise<void>;
   }
 }

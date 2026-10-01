@@ -151,12 +151,15 @@ br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
 }
 .BRsearch-navigation .clear { margin-left: auto; }
 .BookReader .searchHiliteLayer rect {
-  fill: rgb(255 207 88 / 28%);
-  stroke: rgb(196 148 32 / 65%);
-  stroke-width: 0.7px;
+  fill: rgb(255 207 88 / 35%);
+  stroke: none;
+  animation: none;
 }
-@media (prefers-reduced-motion: reduce) {
-  .BookReader .searchHiliteLayer rect { animation: none; }
+.BookReader .searchHiliteLayer rect.is-current-match {
+  fill: rgb(255 174 40 / 55%);
+  stroke: rgb(161 91 0 / 80%);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
 }
 @media (max-width: 600px) {
   .BRtoolbar {
