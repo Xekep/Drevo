@@ -106,12 +106,29 @@ test("BookReader searches the PDF text layer and navigates native highlights", a
       .first(),
   ).toBeVisible();
   await expect(book.locator('[data-id="resultsCount"]')).toHaveText("1 / 1");
+  const selected = book
+    .locator(".BRpage-visible .searchHiliteLayer rect.is-current-match")
+    .first();
+  await expect(selected).toBeVisible();
+  await expect(selected).toHaveCSS("fill", "rgba(255, 174, 40, 0.55)");
+  await expect(selected).toHaveCSS("animation-name", "none");
+  await expect(selected).toHaveCSS("vector-effect", "non-scaling-stroke");
   await query.fill("archive");
   await query.press("Enter");
   await expect(book.locator(".BRnavMain .BRnavline .BRsearch")).toHaveCount(3);
   await expect(book.locator('[data-id="resultsCount"]')).toHaveText("1 / 3");
   await book.getByRole("button", { name: "Следующее совпадение" }).click();
   await expect(book.locator('[data-id="resultsCount"]')).toHaveText("2 / 3");
+  await expect(
+    book
+      .locator(
+        ".BRpage-visible .searchHiliteLayer rect.match-index-1.is-current-match",
+      )
+      .first(),
+  ).toBeVisible();
+  await expect(
+    book.locator(".searchHiliteLayer rect.match-index-0.is-current-match"),
+  ).toHaveCount(0);
   await expect(
     book
       .locator('.BRpage-visible[data-index="1"] .searchHiliteLayer rect')
