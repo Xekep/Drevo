@@ -190,3 +190,59 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
   await expect(page.getByRole("checkbox", { name: /Род занятий: Историк/ })).toHaveCount(0);
   await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
+
+test("a linked branch needs both grants and clears a revoked projection", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const parent = { id: "parent-a", relation: "parent", name: "Анна Петрова" };
+  const incoming = { id: "parent-b", relation: "parent", name: "Мария Петрова" };
+  let ownReady = false;
+  let otherReady = false;
+  let linked = true;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share`, (route) => {
+    const method = route.request().method();
+    if (method === "PUT") {
+      expect(route.request().postDataJSON()).toEqual({
+        personIds: ["parent-a"], previewToken: "b".repeat(64),
+      });
+      ownReady = true;
+      return route.fulfill({ json: { shared: true } });
+    }
+    if (method === "DELETE") {
+      ownReady = false;
+      return route.fulfill({ json: { shared: false } });
+    }
+    if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
+    return route.fulfill({ json: { available: [parent], truncated: false,
+      previewToken: "b".repeat(64), ownReady, otherReady,
+      outgoingIds: ownReady ? ["parent-a"] : [],
+      incoming: ownReady && otherReady ? [incoming] : [],
+    } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByText("Поделиться разрешённой веткой").click();
+  await expect(page.getByText("Анна Петрова")).toBeVisible();
+  await expect(page.getByText("Мария Петрова")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: /Родитель: Анна Петрова/ }).check();
+  await page.getByRole("button", { name: "Разрешить выбранное" }).click();
+  await expect(page.getByText("Ожидаем разрешения второй стороны.")).toBeVisible();
+  otherReady = true;
+  await page.getByRole("button", { name: "Обновить просмотр" }).click();
+  await expect(page.getByText("Мария Петрова")).toBeVisible();
+  await page.getByRole("button", { name: "Отозвать доступ к ветке" }).click();
+  await expect(page.getByText("Мария Петрова")).toHaveCount(0);
+  ownReady = true; linked = false;
+  await page.getByRole("button", { name: "Обновить просмотр" }).click();
+  await expect(page.getByText("Анна Петрова")).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText("Связь не найдена");
+});

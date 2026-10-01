@@ -80,6 +80,10 @@ BEGIN
     UPDATE public.discovery_linked_card_grants SET granted_by='deleted-account'
       WHERE granted_by=account_id;
   END IF;
+  IF to_regclass('public.discovery_branch_grants') IS NOT NULL THEN
+    UPDATE public.discovery_branch_grants SET granted_by='deleted-account'
+      WHERE granted_by=account_id;
+  END IF;
 
   UPDATE public.people SET data=jsonb_set(data,'{createdBy}',to_jsonb('deleted-account'::text))
     WHERE data->>'createdBy'=account_id;

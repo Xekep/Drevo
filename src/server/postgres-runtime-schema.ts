@@ -174,6 +174,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_linked_card_grants') AND c.relforcerowsecurity AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants' AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert','discovery_linked_card_update','discovery_linked_card_delete'))=4",
       "054_discovery_linked_card_grants.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_branch_members') AND c.relforcerowsecurity AND to_regclass('discovery_branch_grants') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archives') AND tgname='revoke_discovery_branches_after_edit' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archive_owners') AND tgname='revoke_discovery_branches_after_owner_transfer' AND NOT tgisinternal)",
+      "055_discovery_branch_grants.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {
