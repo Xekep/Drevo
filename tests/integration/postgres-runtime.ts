@@ -3772,10 +3772,13 @@ try {
     WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
       AND expires_at IS NULL`)).rows[0].count, 2,
     "reapplying 062/064 does not silently shorten existing branch consents");
-  assert.equal((await client.query(`SELECT granted_by FROM discovery_branch_grants
-    WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
-      AND grantor_archive_id='other-archive'`)).rows[0]?.granted_by, "owner",
-    "recipient C can still read a legacy NULL grant after reapplying 064");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("third-archive");
+    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
+      WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+        AND grantor_archive_id='other-archive'`).get())?.granted_by, "owner",
+      "recipient C can still read a legacy NULL grant under RLS after reapplying 064");
+  }, true);
   const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
   const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
     ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
