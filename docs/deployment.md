@@ -75,13 +75,14 @@ SSH проверяет закреплённый публичный ключ се
 
 ### PostgreSQL
 
-После выкладки миграции `052_deleted_account_comments.sql` администратор сервера повторно устанавливает привилегированные функции в рабочей БД. Команда берёт точное имя БД из маркера действующего PostgreSQL; её выполняют на сервере из shell с правом `sudo -u postgres`:
+После выкладки миграции `052_deleted_account_comments.sql` администратор сервера повторно устанавливает привилегированные функции в рабочей БД. Команда берёт точное имя БД из маркера действующего PostgreSQL; её выполняют в root shell. Root читает SQL через закрытые каталоги релиза и передаёт его на stdin `psql` от роли `postgres`:
 
 ```bash
+set -euo pipefail
 db=$(cat /var/www/drevo.kiiko.ru/shared/postgres.active)
 [[ "$db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || exit 1
-sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" \
-  -f /var/www/drevo.kiiko.ru/current/ops/postgres/install-account-history-anonymization.sql
+cat /var/www/drevo.kiiko.ru/current/ops/postgres/install-account-history-anonymization.sql \
+  | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
 ```
 
 Следующая проверка только читает метаданные и не удаляет аккаунт. Должны получиться `f` для обоих прав роли приложения, `t` для наличия функции, права её вызова у `site_drevo` и запрета вызова для `PUBLIC`:
