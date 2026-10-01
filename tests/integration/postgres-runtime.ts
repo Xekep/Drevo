@@ -1713,6 +1713,12 @@ try {
       }, async () => {
         await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
       }, false);
+      await runDeferredAnswer("session-revoked", async () => {
+        await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [sessionTokenHash(proposalToken)]);
+      }, async () => {
+        await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+          [sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000]);
+      }, false);
       await runDeferredAnswer("delivery-revoked", async () => {
         await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id=$1",
           [proposalMember]);

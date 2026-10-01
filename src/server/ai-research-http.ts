@@ -131,6 +131,17 @@ export function aiResearchHttp({
     const current = await auth.currentUser(req);
     if (!current || (expectedUserId && current.id !== expectedUserId)) return false;
     if (lockAccess && archive.db.kind === "postgres") {
+      if (!auth.local) {
+        const session = await auth.accountSession(req);
+        if (!session || session.accountId !== current.id) return false;
+        // Account deletion locks the session before the archive. SKIP LOCKED
+        // fails closed without reversing that lock order.
+        const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+          FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+          .get(session.tokenHash);
+        if (lockedSession?.user_id !== current.id ||
+          Number(lockedSession.expires_at) <= Date.now()) return false;
+      }
       // Serialize the durable answer with membership and tier revocation. The
       // archive transaction already locks the graph revision for scoped users.
       const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
