@@ -47,10 +47,11 @@ export async function installPortableOriginals(
       remap.set(basename(path), name);
     }
     const snapshot = structuredClone(parsed.snapshot);
-    // Author IDs belong to the exporting installation. Keeping them live here
-    // could give a matching account in this archive edit rights or visibility.
+    // Author IDs belong to the exporting installation. Yandex IDs have no
+    // reserved prefix, so only removing creator IDs guarantees no target
+    // account gains edit rights or visibility by ID coincidence.
     const detachAuthor = (item: { createdBy?: string }) => {
-      if (item.createdBy) item.createdBy = `imported:${item.createdBy}`;
+      delete item.createdBy;
     };
     for (const person of snapshot.family.people) detachAuthor(person);
     for (const photo of snapshot.family.photos || []) detachAuthor(photo);
@@ -73,10 +74,10 @@ export async function installPortableOriginals(
         throw new PortablePackageError("В пакете нет оригинала документа");
       document.fileName = name;
       for (const annotation of document.annotations)
-        annotation.authorId = `imported:${annotation.authorId}`;
+        annotation.authorId = "";
     }
     for (const comment of snapshot.comments) {
-      comment.authorId = `imported:${comment.authorId}`;
+      comment.authorId = "";
       const installed = [];
       for (const file of comment.attachments || []) {
         const original = parsed.files.get(`media/discussion-files/${file.id}`);

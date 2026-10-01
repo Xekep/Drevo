@@ -111,7 +111,10 @@ test("private package preview and one-time import preserve people, media, docume
         place: "",
         description: "",
         provenance: "",
-        annotations: [],
+        annotations: [{ id: "be1b574f-946f-41be-93a8-1e4c512f5b40", page: 1,
+          x: 0.1, y: 0.1, width: 0.2, height: 0.2, text: "Note",
+          authorId: "remote", authorName: "Historian",
+          createdAt: "2026-09-30T00:00:00Z" }],
         personIds: ["p1"],
       },
     ],
@@ -263,10 +266,10 @@ test("private package preview and one-time import preserve people, media, docume
     );
     const result = await archive.read();
     assert.equal(result.family.people.length, 2);
-    assert.equal(result.family.people[0].createdBy, "imported:remote");
-    assert.equal(result.family.photos?.[0].createdBy, "imported:remote");
-    assert.equal(result.family.links?.[0].createdBy, "imported:remote");
-    assert.equal(result.family.unions?.[0].createdBy, "imported:remote");
+    assert.equal(result.family.people[0].createdBy, undefined);
+    assert.equal(result.family.photos?.[0].createdBy, undefined);
+    assert.equal(result.family.links?.[0].createdBy, undefined);
+    assert.equal(result.family.unions?.[0].createdBy, undefined);
     const portrait = result.family.people[0].photo!;
     assert.notEqual(portrait, "/media/portrait.png");
     assert.deepEqual(
@@ -274,9 +277,11 @@ test("private package preview and one-time import preserve people, media, docume
       image,
     );
     const document = await archive.db
-      .prepare("SELECT file_name AS name FROM documents")
+      .prepare("SELECT file_name AS name,annotations FROM documents")
       .get();
     assert.ok(document);
+    assert.equal(JSON.parse(String(document.annotations))[0].authorId, "");
+    assert.equal(JSON.parse(String(document.annotations))[0].authorName, "Historian");
     assert.deepEqual(
       await readFile(join(target, "uploads", String(document.name))),
       pdf,
@@ -284,7 +289,7 @@ test("private package preview and one-time import preserve people, media, docume
     const comment = await archive.db
       .prepare("SELECT author_id,author_name FROM person_comments")
       .get();
-    assert.equal(comment?.author_id, "imported:remote");
+    assert.equal(comment?.author_id, "");
     assert.equal(comment?.author_name, "Historian");
     assert.equal((await importRequest()).status, 409);
     actor = { ...owner, role: "reader" };

@@ -196,7 +196,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       "/media/portrait.png",
     );
     assert.notEqual(installed.snapshot.documents[0].fileName, "record.pdf");
-    assert.equal(installed.snapshot.comments[0].authorId, "imported:owner");
+    assert.equal(installed.snapshot.comments[0].authorId, "");
     assert.deepEqual(
       await readFile(
         join(destination, installed.snapshot.documents[0].fileName),

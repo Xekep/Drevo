@@ -3703,6 +3703,9 @@ try {
       "another archive owner must not download this tree",
     );
     const importFile = join(directory, "portable-runtime.drevo");
+    const portableDocumentId = "ae972b95-dd27-4a03-beb4-5239df77f48a";
+    const portableAnnotationId = "9818d273-466c-4732-a5f4-c79e358cf70d";
+    writeFileSync(join(directory, "portable-record.pdf"), "%PDF-1.4\nportable document");
     await writePortablePackage(createWriteStream(importFile), directory, {
       family: {
         title: "Transferred", description: "", demo: false,
@@ -3712,8 +3715,14 @@ try {
           createdBy: "owner" }],
         photos: [],
       },
-      documents: [],
-      comments: [{ id: 1, personId: "pg-portable-person", authorId: "remote",
+      documents: [{ id: portableDocumentId, title: "Portable record",
+        fileName: "portable-record.pdf", uploadedBy: "owner",
+        createdAt: "2026-09-30T00:00:00Z", documentType: "", documentDate: "",
+        place: "", description: "", provenance: "", personIds: ["pg-portable-person"],
+        annotations: [{ id: portableAnnotationId, page: 1, x: 0.1, y: 0.1,
+          width: 0.2, height: 0.2, text: "Source note", authorId: "owner",
+          authorName: "Original researcher", createdAt: "2026-09-30T00:00:00Z" }] }],
+      comments: [{ id: 1, personId: "pg-portable-person", authorId: "owner",
         authorName: "Historian", createdMs: 1000, text: "Verified" }],
     }, async () => {});
     const transferHeaders = {
@@ -3882,7 +3891,7 @@ try {
       headers: { Cookie: sessionCookie },
     }).then((response) => response.json());
     assert.equal(transferred.family.people[0].id, "pg-portable-person");
-    assert.equal(transferred.family.people[0].createdBy, "imported:owner",
+    assert.equal(transferred.family.people[0].createdBy, undefined,
       "the source account ID must not become a live author in the target archive");
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
     await client.query(
@@ -3908,6 +3917,30 @@ try {
     assert.equal((await fetch(oauthBase + location.replace(/\/tree$/, "/api/family"), {
       headers: { Cookie: sessionCookie },
     }).then((response) => response.json())).family.people[0].name, "Portable");
+    const researcherHeaders = { Cookie: `drevo_session=${collidingAuthorToken}`,
+      Origin: process.env.PUBLIC_ORIGIN!, "Content-Type": "application/json" };
+    const discussionPath = location.replace(/\/tree$/,
+      "/api/people/pg-portable-person/discussion");
+    const importedDiscussion = await fetch(oauthBase + discussionPath,
+      { headers: researcherHeaders }).then((response) => response.json());
+    assert.equal(importedDiscussion.items[0].author, "Historian");
+    assert.equal(importedDiscussion.items[0].canEdit, false);
+    assert.equal((await fetch(oauthBase + `${discussionPath}/${importedDiscussion.items[0].id}`, {
+      method: "PATCH", headers: researcherHeaders,
+      body: JSON.stringify({ text: "Stolen comment", editedAt: null }),
+    })).status, 403, "a matching source ID cannot edit imported comments");
+    const documentPath = location.replace(/\/tree$/, `/api/documents/${portableDocumentId}`);
+    const importedDocument = await fetch(oauthBase + `${documentPath}/annotations`,
+      { headers: researcherHeaders }).then((response) => response.json());
+    assert.equal(importedDocument.items[0].authorName, "Original researcher");
+    assert.equal(importedDocument.items[0].canDelete, false);
+    assert.equal((await fetch(oauthBase + `${documentPath}/annotations/${portableAnnotationId}`, {
+      method: "DELETE", headers: researcherHeaders,
+    })).status, 403, "a matching source ID cannot delete imported annotations");
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
+    assert.equal((await client.query("SELECT uploaded_by FROM documents WHERE id=$1",
+      [portableDocumentId])).rows[0]?.uploaded_by, newAccountSession.user.id,
+      "the importing owner is the document uploader");
     const vkRegistration = await oauthApp.archive.db.postgresTransaction!((pgClient) =>
       completePostgresOAuthLoginInTransaction(
         pgClient,
