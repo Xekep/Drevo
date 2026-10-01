@@ -70,6 +70,10 @@ assert.equal(
   ).rows[0].n,
   0,
 );
+assert.equal((await client.query("SELECT has_database_privilege(current_user,current_database(),'CREATE') AS allowed")).rows[0].allowed, true,
+  "the runtime database owner must be able to install trusted pg_trgm");
+assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 0,
+  "the runtime migration must install pg_trgm in a fresh database");
 const directory = mkdtempSync(join(tmpdir(), "drevo-pg-runtime-"));
 const source = join(directory, "source.sqlite"),
   uploads = join(directory, "uploads");
@@ -132,6 +136,8 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
+    "the non-superuser runtime migration installs trusted pg_trgm");
   // A second application must safely finish an already installed extension.
   await client.query(readFileSync(new URL("../../ops/postgres/049_discovery_candidate_signals.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_trigger
