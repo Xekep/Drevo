@@ -34,14 +34,47 @@
 .tree-generation-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 32px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
   color: #4d604e;
   font-size: 12px;
   cursor: pointer;
 }
 .tree-generation-toggle input {
-  accent-color: #365b40;
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #9caa98;
+  border-radius: 20px;
+  background: #dce3d6;
+  cursor: inherit;
+}
+.tree-generation-toggle input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px #23372130;
+}
+.tree-generation-toggle input:checked {
+  border-color: #365b40;
+  background: #365b40;
+}
+.tree-generation-toggle input:checked::before {
+  transform: translateX(16px);
+}
+.tree-generation-toggle input:focus-visible {
+  outline: 2px solid #62856a;
+  outline-offset: 3px;
 }
 .tree-generation-anchor {
   display: grid;
@@ -296,6 +329,9 @@
   cursor: wait;
 }
 @media (pointer: coarse) {
+  .tree-generation-toggle {
+    min-height: 44px;
+  }
   .tree-preference-options label,
   .tree-pdf-export button,
   .tree-pdf-export a,

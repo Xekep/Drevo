@@ -29,10 +29,10 @@ test("generation settings trim the visible tree and survive reload without chang
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(
-    dialog.getByRole("checkbox", { name: "Ограничить видимое древо" }),
+    dialog.getByRole("switch", { name: "Ограничить видимое древо" }),
   ).not.toBeChecked();
   await dialog
-    .getByRole("checkbox", { name: "Ограничить видимое древо" })
+    .getByRole("switch", { name: "Ограничить видимое древо" })
     .check();
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
@@ -76,7 +76,7 @@ test("generation settings trim the visible tree and survive reload without chang
   await dialog.getByRole("radio", { name: "Вверх: 7+", exact: true }).check();
   await dialog.getByRole("radio", { name: "Вниз: 50", exact: true }).check();
   await dialog
-    .getByRole("checkbox", { name: "Ограничить видимое древо" })
+    .getByRole("switch", { name: "Ограничить видимое древо" })
     .uncheck();
   await expect(card("e2e-sibling-child")).toBeVisible();
   await expect(
@@ -187,7 +187,7 @@ test("generation settings remain usable while the initial layout is still comput
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog).toBeVisible();
   await dialog
-    .getByRole("checkbox", { name: "Ограничить видимое древо" })
+    .getByRole("switch", { name: "Ограничить видимое древо" })
     .check();
   await dialog
     .getByRole("combobox", { name: "Относительно человека" })
