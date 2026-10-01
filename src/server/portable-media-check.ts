@@ -1,7 +1,10 @@
 import { open } from "node:fs/promises";
 import { extname } from "node:path";
 import sharp from "sharp";
-import { imageExtension } from "./media.ts";
+import {
+  documentImageExtension,
+  tiffDocumentPages,
+} from "./document-images.ts";
 import { PortablePackageError } from "./portable-package.ts";
 
 export async function verifyPortableMediaFile(path: string, name: string) {
@@ -19,11 +22,12 @@ export async function verifyPortableMediaFile(path: string, name: string) {
     return;
   }
   try {
-    if (imageExtension(header) !== extension)
+    if (documentImageExtension(header) !== extension)
       throw new PortablePackageError(
         "Тип изображения не соответствует расширению",
       );
     await sharp(path, { limitInputPixels: 50_000_000 }).metadata();
+    if (extension === "tif") await tiffDocumentPages(path);
   } catch (error) {
     if (error instanceof PortablePackageError) throw error;
     throw new PortablePackageError("Повреждённое изображение в пакете Drevo");

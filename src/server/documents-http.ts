@@ -4,7 +4,11 @@ import {
   documentFileTypeFromMime,
   storedDocumentFileType,
 } from "../shared/document-file.ts";
-import { imageExtension } from "./media.ts";
+import {
+  documentImageExtension,
+  tiffDocumentPages,
+  tiffDocumentRenderer,
+} from "./document-images.ts";
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
@@ -176,6 +180,7 @@ export function documentsHttp({
   mkdirSync(uploadsDirectory, { recursive: true });
   const db = archive.db;
   const quota = uploadQuota(db);
+  const renderTiff = tiffDocumentRenderer();
   const audit = auditStore(db);
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -906,6 +911,43 @@ export function documentsHttp({
           return json(res, 404, { error: "Файл документа не найден" });
         if (!(await accessStillCurrent(req, access)))
           return json(res, 404, { error: "Документ не найден" });
+        const readerView = url.searchParams.get("reader");
+        if (readerView) {
+          if (fileType.extension !== "tif")
+            return json(res, 400, {
+              error: "Постраничный просмотр доступен для TIFF",
+            });
+          if (readerView === "pages") {
+            const pages = await tiffDocumentPages(path);
+            if (!(await accessStillCurrent(req, access)))
+              return json(res, 404, { error: "Документ не найден" });
+            res.setHeader("Cache-Control", "private, no-store");
+            return json(res, 200, { pages });
+          }
+          const index = Number(url.searchParams.get("page")) - 1;
+          if (
+            readerView !== "page" ||
+            !Number.isInteger(index) ||
+            index < 0 || index >= 2000
+          )
+            return json(res, 400, { error: "Некорректная страница TIFF" });
+          const count = (await sharp(path, {
+            limitInputPixels: 50_000_000,
+          }).metadata()).pages ?? 1;
+          if (index >= count)
+            return json(res, 400, { error: "Некорректная страница TIFF" });
+          const bytes = await renderTiff(path, index);
+          if (!(await accessStillCurrent(req, access)))
+            return json(res, 404, { error: "Документ не найден" });
+          res.writeHead(200, {
+            "Content-Type": "image/webp",
+            "Content-Length": String(bytes.length),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          });
+          res.end(bytes);
+          return true;
+        }
         const range = req.headers["if-range"]
           ? undefined
           : httpByteRange(req.headers.range, info.size);
@@ -953,9 +995,9 @@ export function documentsHttp({
         req.headers["content-type"]?.split(";")[0].trim() || "",
       );
       if (!fileType)
-        return json(res, 415, { error: "Загрузите PDF или изображение JPEG, PNG, WebP, GIF" });
-      const sizeLimitMessage = fileType.extension === "pdf"
-        ? "PDF должен быть не больше 50 МБ"
+        return json(res, 415, { error: "Загрузите PDF или изображение TIFF, JPEG, PNG, WebP, GIF" });
+      const sizeLimitMessage = ["pdf", "tif"].includes(fileType.extension)
+        ? "PDF или TIFF должен быть не больше 50 МБ"
         : "Изображение должно быть не больше 20 МБ";
       if (Number(req.headers["content-length"] || 0) > fileType.maxBytes)
         return json(res, 413, { error: sizeLimitMessage });
@@ -1047,8 +1089,9 @@ export function documentsHttp({
             return json(res, 415, { error: "Файл не является PDF" });
         } else {
           try {
-            if (imageExtension(signature) !== fileType.extension)
+            if (documentImageExtension(signature) !== fileType.extension)
               throw new Error("Тип файла не совпадает с содержимым");
+            if (fileType.extension === "tif") await tiffDocumentPages(temporary);
             await sharp(await readFile(temporary), { limitInputPixels: 50_000_000 })
               .rotate()
               .resize({ width: 1, height: 1, fit: "inside" })

@@ -13,7 +13,7 @@ import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { validCommentFiles, type CommentAttachmentFile } from "../shared/person-discussion.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
-const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
+const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)$/;
 
 export class PortablePackageError extends Error {}
 

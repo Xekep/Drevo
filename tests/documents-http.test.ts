@@ -18,6 +18,7 @@ import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import type { DocumentDetails } from "../src/shared/document-details.ts";
 import { writeDatabaseBackup } from "../src/server/backup.ts";
+import { sampleTiff } from "./fixtures/tiff.ts";
 
 async function samplePdf() {
   const pdf = new PDFDocument({ autoFirstPage: false });
@@ -522,9 +523,13 @@ test("image documents keep their type, private bytes and deletion semantics", as
       { mime: "image/png", extension: "png", bytes: await picture.clone().png().toBuffer() },
       { mime: "image/webp", extension: "webp", bytes: await picture.clone().webp().toBuffer() },
       { mime: "image/gif", extension: "gif", bytes: await picture.clone().gif().toBuffer() },
+      // Padding remains part of the original and exercises the TIFF >20 MiB limit in uploads and restore.
+      { mime: "image/tiff", extension: "tif", bytes: Buffer.concat([await sampleTiff(), Buffer.alloc(21 * 1024 * 1024)]) },
     ];
     assert.equal((await upload(samples[1].bytes, "image/jpeg")).status, 415);
     assert.equal((await upload(Buffer.from("not an image"), "image/png")).status, 415);
+    assert.equal((await upload(samples[1].bytes, "image/tiff")).status, 415);
+    assert.equal((await upload(Buffer.from("II*\0not a TIFF"), "image/tiff")).status, 415);
     for (const { mime, extension, bytes } of samples) {
       const created = await upload(bytes, mime);
       assert.equal(created.status, 201, await created.clone().text());
@@ -537,6 +542,26 @@ test("image documents keep their type, private bytes and deletion semantics", as
       assert.equal(file.headers.get("x-content-type-options"), "nosniff");
       assert.deepEqual(Buffer.from(await file.arrayBuffer()), bytes);
       assert.ok(existsSync(join(dir, "uploads", `${id}.${extension}`)));
+      if (extension === "tif") {
+        const pages = await fetch(`${base}/api/documents/${id}/file?reader=pages`);
+        assert.equal(pages.status, 200);
+        assert.equal(pages.headers.get("cache-control"), "private, no-store");
+        assert.deepEqual(await pages.json(), { pages: Array.from({ length: 3 }, () => ({ width: 40, height: 30 })) });
+        for (let page = 1; page <= 3; page++) {
+          const preview = await fetch(`${base}/api/documents/${id}/file?reader=page&page=${page}`);
+          assert.equal(preview.status, 200);
+          assert.equal(preview.headers.get("content-type"), "image/webp");
+          assert.equal(preview.headers.get("cache-control"), "private, no-store");
+          const { data, info } = await sharp(Buffer.from(await preview.arrayBuffer())).raw().toBuffer({ resolveWithObject: true });
+          assert.equal(info.width, 40);
+          assert.equal(info.height, 30);
+          assert.ok(data[page - 1] > 245, `page ${page} retains its own pixels`);
+          assert.ok(data[(page % 3)] < 10);
+        }
+        for (const page of ["0", "4", "1.5", "-1", "no", "2001"]) {
+          assert.equal((await fetch(`${base}/api/documents/${id}/file?reader=page&page=${page}`)).status, 400);
+        }
+      }
       assert.equal((await fetch(`${base}/api/documents/${id}`, { method: "DELETE" })).status, 200);
       assert.equal(existsSync(join(dir, "uploads", `${id}.${extension}`)), false);
       assert.equal((await fetch(`${base}/api/documents/${id}/file`)).status, 404);
@@ -568,6 +593,24 @@ test("image documents keep their type, private bytes and deletion semantics", as
     const restoredFile = await fetch(`${base}/api/documents/${after.items[0].id}/file`);
     assert.equal(restoredFile.headers.get("content-type"), "image/png");
     assert.deepEqual(Buffer.from(await restoredFile.arrayBuffer()), samples[1].bytes);
+    const tiff = samples[4];
+    assert.equal((await upload(tiff.bytes, "image/x-tiff")).status, 201);
+    const tiffBackup = Buffer.from(await (await fetch(`${base}/api/backup/full`)).arrayBuffer());
+    const tiffPreview = await fetch(`${base}/api/restore/preview`, {
+      method: "POST", headers: { "X-Drevo-Restore": "1" }, body: tiffBackup,
+    });
+    assert.equal(tiffPreview.status, 200, await tiffPreview.clone().text());
+    const tiffToken = (await tiffPreview.json()).token;
+    assert.equal((await fetch(`${base}/api/restore/apply`, {
+      method: "POST", headers: { "X-Drevo-Restore": "1" },
+      body: JSON.stringify({ token: tiffToken, confirm: true }),
+    })).status, 200);
+    const restored = (await (await fetch(`${base}/api/documents`)).json()).items.find(
+      (item: { mimeType: string }) => item.mimeType === "image/tiff",
+    );
+    assert.ok(restored);
+    assert.deepEqual(Buffer.from(await (await fetch(`${base}/api/documents/${restored.id}/file`)).arrayBuffer()), tiff.bytes);
+    assert.equal((await (await fetch(`${base}/api/documents/${restored.id}/file?reader=pages`)).json()).pages.length, 3);
   } finally {
     await app.close();
     rmSync(dir, { recursive: true, force: true });
@@ -840,16 +883,16 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       headers: {
         Cookie: cookies.get("owner")!,
         Origin: "https://archive.test",
-        "Content-Type": "application/pdf",
+        "Content-Type": "image/tiff",
         "X-Document-Metadata": encodeURIComponent(
           JSON.stringify({ title: "Без привязки", personIds: [] }),
         ),
       },
-      body: new Uint8Array(pdf).buffer,
+      body: new Uint8Array(await sampleTiff()).buffer,
     });
     assert.equal(scopedUnlinked.status, 201);
     const unlinkedPath = `/api/documents/${(await scopedUnlinked.json()).id}`;
-    for (const suffix of ["", "/file", "/annotations"])
+    for (const suffix of ["", "/file", "/annotations", "/file?reader=pages", "/file?reader=page&page=2"])
       assert.equal((await request(unlinkedPath + suffix, "owner")).status, 200);
     const ownLibrary = await (await request("/api/documents", "owner")).json();
     assert.equal(ownLibrary.total, 1);
@@ -858,7 +901,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
         "UPDATE users SET person_id='outsider',tree_access='common_ancestors' WHERE id='other'",
       )
       .run();
-    for (const suffix of ["", "/file", "/annotations"])
+    for (const suffix of ["", "/file", "/annotations", "/file?reader=pages", "/file?reader=page&page=2"])
       assert.equal((await request(unlinkedPath + suffix, "other")).status, 404);
     assert.equal(
       (await (await request("/api/documents", "other")).json()).total,

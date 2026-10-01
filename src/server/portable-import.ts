@@ -33,7 +33,7 @@ const MAX_ORIGINAL = 1024 ** 3;
 // Earlier Drevo archives can contain short document/annotation IDs. The ZIP
 // manifest constrains file names separately; IDs only identify database rows.
 const portableId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const mediaPath = /^media\/(?:[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)|discussion-files\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
+const mediaPath = /^media\/(?:[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)|discussion-files\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 const digest = /^[a-f0-9]{64}$/;
 
 /** Read ZIP metadata before extracting so concurrent previews can reserve

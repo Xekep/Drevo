@@ -33,7 +33,7 @@ import {
 } from "../domain/genealogy-transfer.ts";
 import type { Family } from "../domain/types.ts";
 import { validateFamily } from "../domain/validation.ts";
-import { imageExtension } from "./media.ts";
+import { documentImageExtension, tiffDocumentPages } from "./document-images.ts";
 import { decodeAnsel } from "../domain/ansel.ts";
 
 export type StagedMedia = {
@@ -149,7 +149,7 @@ async function unpack(
         : MAX_PDF_BYTES;
       if (entry.uncompressedSize > limit || total > TRANSFER_PACKAGE_LIMIT)
         throw new Error(
-          "Превышен размер распакованного пакета (512 МиБ; PDF 50 МиБ, фото 20 МиБ)",
+          "Превышен размер распакованного пакета (512 МиБ; PDF/TIFF 50 МиБ, фото 20 МиБ)",
         );
       const destination = join(directory, randomUUID());
       let size = 0,
@@ -279,16 +279,17 @@ export async function prepareGenealogyImport(
       let extension: string;
       if (data.subarray(0, 5).toString("ascii") === "%PDF-") extension = "pdf";
       else {
-        if (data.length > TRANSFER_FILE_LIMIT)
-          throw new Error("Фотография больше 20 МБ");
         try {
-          extension = imageExtension(data);
+          extension = documentImageExtension(data);
         } catch {
           result.warnings.push(
-            `Файл «${item.title}» не перенесён: поддерживаются JPEG, PNG, GIF, WebP и PDF.`,
+            `Файл «${item.title}» не перенесён: поддерживаются TIFF, JPEG, PNG, GIF, WebP и PDF.`,
           );
           continue;
         }
+        if (extension !== "tif" && data.length > TRANSFER_FILE_LIMIT)
+          throw new Error("Фотография больше 20 МБ");
+        if (extension === "tif") await tiffDocumentPages(source);
         await sharp(data, { limitInputPixels: 50_000_000 })
           .resize(1, 1)
           .toBuffer();
@@ -301,8 +302,8 @@ export async function prepareGenealogyImport(
         size: data.length,
         title: item.title,
         personIds: [],
-        documentId: extension === "pdf" || item.document ? id : undefined,
-        document: extension === "pdf" || item.document ? item.document : undefined,
+        documentId: extension === "pdf" || extension === "tif" || item.document ? id : undefined,
+        document: extension === "pdf" || extension === "tif" || item.document ? item.document : undefined,
       };
       loaded.set(sourceKey, stored);
       result.files.push(stored);
@@ -412,7 +413,7 @@ async function preparePackage(
   const exported = media.map((m) => ({ ...m }));
   for (const item of exported) {
     const match =
-      /^(?:\/media\/|documents\/)([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf))$/.exec(
+      /^(?:\/media\/|documents\/)([a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf))$/.exec(
         item.file,
       );
     if (!match)
@@ -430,7 +431,7 @@ async function preparePackage(
     if (
       limited &&
       (info.size >
-        (name.endsWith(".pdf") ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
+        (/\.(?:pdf|tif)$/.test(name) ? MAX_PDF_BYTES : TRANSFER_FILE_LIMIT) ||
         size > TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT)
     )
       throw new Error(
@@ -505,7 +506,7 @@ export async function installTransferFiles(
   };
   try {
     for (const file of files) {
-      if (!/^[a-f0-9-]{36}\.(jpg|png|webp|gif|pdf)$/.test(file.name))
+      if (!/^[a-f0-9-]{36}\.(jpg|png|webp|gif|tif|pdf)$/.test(file.name))
         throw new Error("Повреждён путь вложения предпросмотра");
       const destination = join(uploads, file.name);
       await copyFile(
