@@ -719,6 +719,34 @@ export function aiResearchHttp({
         },
         signal: controller.signal,
         chatId: chat.id,
+        commitSuggestion: async (name, _actor, family, revision, args) =>
+          archive.db.transaction(async () => {
+            const latest = await auth.currentUser(req);
+            if (controller.signal.aborted || !latest || latest.id !== user.id ||
+              !latest.approved || !(await auth.canEdit(req))) {
+              accessRevoked = true;
+              controller.abort();
+              throw new DOMException("Доступ к предложению отозван", "AbortError");
+            }
+            if (archive.db.kind === "postgres") {
+              const membership = await archive.db.prepare("", `SELECT role,approved
+                FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+                .get(archive.db.archiveId || "", user.id);
+              if (!membership?.approved || !["admin", "researcher", "relative"].includes(String(membership.role))) {
+                accessRevoked = true;
+                controller.abort();
+                throw new DOMException("Доступ к предложению отозван", "AbortError");
+              }
+            }
+            if (!(await accountAiAccess(archive.db, user.id, auth.local, true))) {
+              accessRevoked = true;
+              controller.abort();
+              throw new DOMException("Доступ к ИИ отозван", "AbortError");
+            }
+            if (controller.signal.aborted)
+              throw new DOMException("Запрос остановлен", "AbortError");
+            return suggestions.createFromTool(name, latest, family, revision, args);
+          }),
       });
       if (controller.signal.aborted)
         throw new DOMException("Запрос остановлен", "AbortError");
@@ -869,7 +897,7 @@ export function aiResearchHttp({
         res.end();
         return true;
       }
-      return json(res, error instanceof RangeError ? 400 : 502, {
+      return json(res, accessRevoked ? 403 : error instanceof RangeError ? 400 : 502, {
         error: errorMessage,
       });
     } finally {

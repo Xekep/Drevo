@@ -1522,6 +1522,134 @@ try {
     await app.archive.db
       .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
       .run("owner");
+    const proposalMember = "ai-proposal-member";
+    const proposalToken = newSessionToken();
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'AI proposal member',now())", [proposalMember]);
+    await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [proposalMember]);
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('runtime-test',$1,'researcher',true,'all')`, [proposalMember]);
+    await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
+      .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000);
+    const proposalHeaders = { ...ownerHeaders, Cookie: `drevo_session=${proposalToken}` };
+    const proposalReason = (label: string) => `AI proposal guard ${label}`;
+    const runProposal = async (
+      actorHeaders: typeof ownerHeaders,
+      actorId: string,
+      label: string,
+      duringProvider: (release: () => void) => Promise<void>,
+      allowed: boolean,
+    ) => {
+      let notify!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => { notify = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const reason = proposalReason(label);
+      const fake = adaptLegacyAiFake(async (url, init) => {
+        if (String(url).endsWith("/models"))
+          return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
+        const request = JSON.parse(String(init?.body));
+        if (request.messages.some((item: { role: string }) => item.role === "tool"))
+          return Response.json({ choices: [{ message: { role: "assistant", content: "Предложение обработано." } }] });
+        assert.ok(request.tools.some((item: { function: { name: string } }) =>
+          item.function.name === "propose_person_create"));
+        notify();
+        await gate;
+        return Response.json({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{
+          id: `proposal-${label}`, type: "function", function: {
+            name: "propose_person_create", arguments: JSON.stringify({
+              person: { surname: "Проверка", name: label, sex: "m", birth: "1991" },
+              reason, evidence: ["Данные участника"],
+            }),
+          },
+        }] } }] });
+      });
+      const handler = aiResearchHttp({
+        archive: app!.archive, auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+          process.env.PUBLIC_ORIGIN), suggestions: researchSuggestionStore(app!.archive.db),
+        aiSettings: await aiSettingsStore(app!.archive.db), usage: aiUsageStore(app!.archive.db),
+        media: mediaStore(join(dirname(source), "uploads")),
+        previewImage: imagePreviews(join(dirname(source), "previews")),
+        researchCatalog: researchCatalogStore(app!.archive.db),
+        publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
+      });
+      const server = createServer((req, res) => {
+        void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (server.address() as { port: number }).port;
+        const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [actorId]))
+          .rows.map((row) => row.id as string));
+        const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+          method: "POST", headers: actorHeaders,
+          body: JSON.stringify({ message: "Добавь новую карточку человека" }),
+        });
+        await Promise.race([entered,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Proposal provider did not start")), 15000))]);
+        await duringProvider(release);
+        release();
+        const response = await request;
+        const body = await response.text();
+        assert.equal(response.status, allowed ? 200 : 403, body);
+        if (!allowed) assert.doesNotMatch(body, /Предложение обработано/);
+        assert.equal((await client.query("SELECT count(*)::int AS n FROM research_suggestions WHERE reason=$1", [reason])).rows[0].n,
+          allowed ? 1 : 0, "the proposal write obeys the current account tier and archive role");
+        const chatId = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [actorId]))
+          .rows.map((row) => row.id as string).find((id) => !oldChats.has(id));
+        assert.ok(chatId);
+        await aiChatStore(app!.archive.db).delete(chatId, actorId);
+      } finally {
+        release();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await handler.close();
+      }
+    };
+    try {
+      const rollbackReason = proposalReason("rollback");
+      const rollbackActor = await (await userStore(app.archive.db)).get("owner");
+      const rollbackFamily = await app.archive.read();
+      assert.ok(rollbackActor);
+      await assert.rejects(app.archive.db.transaction(async () => {
+        await researchSuggestionStore(app!.archive.db).createFromTool(
+          "propose_person_create", rollbackActor, rollbackFamily.family, rollbackFamily.revision,
+          { person: { surname: "Проверка", name: "Rollback", sex: "m", birth: "1991" },
+            reason: rollbackReason, evidence: ["Данные участника"] },
+        );
+        throw new Error("rollback proposal transaction");
+      }), /rollback proposal transaction/);
+      assert.equal((await client.query("SELECT count(*)::int AS n FROM research_suggestions WHERE reason=$1", [rollbackReason])).rows[0].n,
+        0, "suggestion insert uses the archive transaction and rolls back with it");
+      await runProposal(ownerHeaders, "owner", "allowed", async (release) => { release(); }, true);
+      await runProposal(ownerHeaders, "owner", "downgraded", async (release) => {
+        const downgrade = client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+        const completed = await Promise.race([downgrade.then(() => true),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000))]);
+        release();
+        await downgrade;
+        assert.equal(completed, true, "waiting for the external model must not hold the tier lock");
+      }, false);
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await runProposal(proposalHeaders, proposalMember, "role-revoked", async (release) => {
+        await client.query("UPDATE archive_memberships SET role='reader' WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+        release();
+      }, false);
+      await client.query("UPDATE archive_memberships SET role='researcher' WHERE archive_id='runtime-test' AND user_id=$1",
+        [proposalMember]);
+      await runProposal(proposalHeaders, proposalMember, "membership-revoked", async (release) => {
+        await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+        release();
+      }, false);
+    } finally {
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await client.query("DELETE FROM research_suggestions WHERE reason=$1", [proposalReason("allowed")]);
+      await client.query("DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id=$1", [proposalMember]);
+      await client.query("DELETE FROM account_sessions WHERE user_id=$1", [proposalMember]);
+      await client.query("DELETE FROM account_tiers WHERE account_id=$1", [proposalMember]);
+      await client.query("DELETE FROM accounts WHERE id=$1", [proposalMember]);
+    }
   } finally {
     releaseAiProvider?.();
     aiKeys.forEach((key, index) => {

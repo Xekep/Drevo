@@ -136,6 +136,7 @@ export function createResearchRunner({
     onStatus,
     signal,
     chatId,
+    commitSuggestion,
   }: {
     body: Record<string, unknown>;
     user: NonNullable<
@@ -149,6 +150,7 @@ export function createResearchRunner({
     onStatus: (text: string) => void;
     signal: AbortSignal;
     chatId: string;
+    commitSuggestion: typeof suggestions.createFromTool;
   }): Promise<ResearchResult> {
     canPropose = canPropose && runtime.capabilities.proposals;
     const search = webSearch?.(runtime, metrics);
@@ -1480,7 +1482,7 @@ export function createResearchRunner({
               (tool) => tool.name === call.function.name,
             )
           ) {
-            const suggestion = await suggestions.createFromTool(
+            const suggestion = await commitSuggestion(
               call.function.name,
               user,
               family,
