@@ -5,6 +5,8 @@ import { createWriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openArchive } from "../src/server/database.ts";
+import { startServer } from "../src/server/index.ts";
+import { archiveChanges } from "../src/domain/changes.ts";
 import { sourceCatalogStore, allCitations } from "../src/server/source-catalog-store.ts";
 import { sourceCitation, type CatalogSource } from "../src/shared/source-catalog.ts";
 import { validateFamily } from "../src/domain/validation.ts";
@@ -101,4 +103,35 @@ test("an editor cannot attach a birth-date citation to another author's person",
     id: "editor", name: "Редактор", role: "researcher", createdAt: "2026-01-01",
   };
   assert.throws(() => authorizeArchive(next, current, editor), /только свои карточки/);
+});
+
+test("archive changes save the birth-date claim through HTTP and reject a stale value", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-birth-http-"));
+  const app = await startServer(0, join(directory, "archive.sqlite"), true);
+  const origin = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const seed = await app.archive.read();
+    await app.archive.write(family(), seed.revision);
+    await sourceCatalogStore(app.archive.db).insert(source);
+    const before = await (await fetch(`${origin}/api/family`)).json();
+    const next = structuredClone(before.family) as Family;
+    next.people[0].birthDateClaim = { value: "1880", sources: [sourceCitation(source)] };
+    const post = (changes: ReturnType<typeof archiveChanges>, revision: number) =>
+      fetch(`${origin}/api/family/changes`, { method: "POST", headers: {
+        Origin: origin, "Content-Type": "application/json", "If-Match": String(revision),
+      }, body: JSON.stringify({ changes }) });
+    const saved = await post(archiveChanges(before.family, next), before.revision);
+    assert.equal(saved.status, 200);
+    assert.equal((await app.archive.read()).family.people[0].birthDateClaim?.sources[0].catalogId,
+      source.id);
+    const after = await app.archive.read();
+    const changed = structuredClone(after.family);
+    changed.people[0].birth = "1881";
+    const rejected = await post(archiveChanges(after.family, changed), after.revision);
+    assert.equal(rejected.status, 400);
+    assert.equal((await app.archive.read()).family.people[0].birth, "1880");
+  } finally {
+    await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
