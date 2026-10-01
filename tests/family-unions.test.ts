@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openArchive } from "../src/server/database.ts";
+import { startServer } from "../src/server/index.ts";
 import { ARCHIVE_SCHEMA_VERSION } from "../src/server/schema.ts";
 import { importGedcom, exportGedcom } from "../src/domain/gedcom.ts";
 import {
@@ -193,4 +194,33 @@ test("union edits participate in revision changes and undo", () => {
     applyArchiveChanges(after, inverseChanges(changes)).family.unions,
     [],
   );
+});
+
+test("HTTP delta endpoint accepts union changes and returns the saved record", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-unions-http-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const initial = await app.archive.read();
+    const prepared = await app.archive.write(family(), initial.revision);
+    const changes = archiveChanges(prepared.family, {
+      ...prepared.family,
+      unions: unions(),
+    });
+    const response = await fetch(`${base}/api/family/changes`, {
+      method: "POST",
+      headers: {
+        Origin: base,
+        "Content-Type": "application/json",
+        "If-Match": String(prepared.revision),
+      },
+      body: JSON.stringify({ changes }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).family.unions, unions());
+    assert.deepEqual((await app.archive.read()).family.unions, unions());
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
