@@ -1,4 +1,5 @@
 import { EXTRA_LINK_TYPES, type Family, type Source } from "./types.ts";
+import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 import { validateEvents } from "./person-events.ts";
 import { validateUnions } from "./family-unions.ts";
@@ -18,8 +19,9 @@ function validPersonSource(s: Source): boolean {
 function validValueClaim(claim: unknown, value: string | undefined): boolean {
   if (claim === undefined) return true;
   if (!claim || typeof claim !== "object") return false;
-  const candidate = claim as { value?: unknown; sources?: unknown };
+  const candidate = claim as { value?: unknown; sources?: unknown; confidence?: unknown };
   return !!value?.trim() && candidate.value === value &&
+    (candidate.confidence === undefined || isClaimConfidence(candidate.confidence)) &&
     Array.isArray(candidate.sources) && candidate.sources.length > 0 &&
     candidate.sources.length <= 50 && candidate.sources.every((source: Source) =>
       validPersonSource(source) && !!(source.catalogId || source.title.trim()));

@@ -34,6 +34,8 @@ import {
   type Family,
   type Person,
   type PersonValueClaim,
+  type ClaimConfidence,
+  CLAIM_CONFIDENCE_LABELS,
   type TwinKind,
   type ArchiveUser,
   owns,
@@ -52,13 +54,14 @@ import {
   useUnsavedChanges,
 } from "../hooks/useUnsavedChanges";
 type Save = (data: Family) => Promise<Family>;
-function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmin }: {
+function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmin, canAssess }: {
   kind: "birth" | "death";
   subject: "date" | "place";
   value: string;
   claim?: PersonValueClaim;
   onChange: (claim: PersonValueClaim | undefined) => void;
   isAdmin: boolean;
+  canAssess: boolean;
 }) {
   const label = kind === "birth" ? "рождения" : "смерти";
   const subjectLabel = subject === "date" ? "даты" : "места";
@@ -66,15 +69,39 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
     <summary>Источники {subjectLabel} {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
     {claim && claim.value !== value
       ? <div>
-          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. Снимите связь или верните прежнее значение перед сохранением.</p>
-          <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>
+          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
+            ? "Верните прежнее значение перед сохранением или попросите исследователя снять оценку."
+            : "Снимите связь или верните прежнее значение перед сохранением."}</p>
+          {claim.confidence && !canAssess
+            ? <p>Оценку и связь с прежним значением может снять только исследователь или администратор.</p>
+            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>}
         </div>
       : value.trim()
-        ? <CitationSourcesEditor
-            sources={claim?.sources || []}
-            onChange={(sources) => onChange(sources.length ? { value, sources } : undefined)}
-            isAdmin={isAdmin}
-          />
+        ? <>
+            <CitationSourcesEditor
+              sources={claim?.sources || []}
+              onChange={(sources) => onChange(sources.length
+                ? { ...claim, value, sources } : undefined)}
+              isAdmin={isAdmin}
+              canRemoveLast={!claim?.confidence || canAssess}
+            />
+            {claim && <label>
+              Достоверность
+              <select
+                value={claim.confidence || ""}
+                disabled={!canAssess}
+                onChange={(event) => onChange({ ...claim,
+                  confidence: event.target.value ? event.target.value as ClaimConfidence : undefined })}
+              >
+                <option value="">Не оценено</option>
+                {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                  <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+              </select>
+              <small>Оценка исследователя; добавление источника не повышает её автоматически.</small>
+              {!canAssess && claim.confidence &&
+                <small>Удалить последний источник и оценку может только исследователь или администратор.</small>}
+            </label>}
+          </>
         : <p>Укажите {subject === "date" ? "дату" : "место"} {label}, чтобы привязать к {subject === "date" ? "ней" : "нему"} источник.</p>}
   </details>;
 }
@@ -624,6 +651,7 @@ export function PersonEditor({
                 claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
                 isAdmin={isAdmin}
+                canAssess={user?.role === "admin" || user?.role === "researcher"}
               />
               <ValueClaimSourcesEditor
                 kind={kind}
@@ -632,6 +660,7 @@ export function PersonEditor({
                 claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
                 isAdmin={isAdmin}
+                canAssess={user?.role === "admin" || user?.role === "researcher"}
               />
               {kind === "death" &&
                 !deathText.trim() &&

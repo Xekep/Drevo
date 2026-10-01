@@ -1,6 +1,7 @@
 import type {
   Family,
   Person,
+  PersonValueClaim,
   PersonEvent,
   PlaceLocation,
   Source,
@@ -9,6 +10,7 @@ import type {
   UnionMilestone,
 } from "./types.ts";
 import { EXTRA_LINK_TYPES } from "./types.ts";
+import { isClaimConfidence } from "./claim-confidence.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import { EVENT_NAMES } from "./person-events.ts";
@@ -378,6 +380,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     });
     return { date: dateClaimed, place: placeClaimed, general };
   };
+  const claimConfidence = (node: Node | undefined, tag: string) => {
+    const status = node ? value(node, tag) : "";
+    return isClaimConfidence(status) ? status : undefined;
+  };
+  const valueClaim = (value: string, sources: Source[], node: Node | undefined,
+    tag: string): PersonValueClaim => {
+    const confidence = claimConfidence(node, tag);
+    return { value, sources, ...(confidence ? { confidence } : {}) };
+  };
   const placeLocation = (n?: Node): PlaceLocation | undefined => {
     const place = n && child(n, "PLAC"),
       map = place && child(place, "MAP");
@@ -480,20 +491,20 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       sex: value(n, "SEX") === "M" ? "m" : value(n, "SEX") === "F" ? "f" : "u",
       birth: parsedBirthDate,
       ...(birthSources.date.length
-        ? { birthDateClaim: { value: parsedBirthDate, sources: birthSources.date } }
+        ? { birthDateClaim: valueClaim(parsedBirthDate, birthSources.date, birth, "_DREVO_DATE_CONFIDENCE") }
         : {}),
       death: parsedDeathDate || undefined,
       ...(deathSources.date.length
-        ? { deathDateClaim: { value: parsedDeathDate, sources: deathSources.date } }
+        ? { deathDateClaim: valueClaim(parsedDeathDate, deathSources.date, death, "_DREVO_DATE_CONFIDENCE") }
         : {}),
       deceased: death && death.value !== "N" ? true : undefined,
       birthPlace: parsedBirthPlace,
       ...(birthSources.place.length
-        ? { birthPlaceClaim: { value: parsedBirthPlace, sources: birthSources.place } }
+        ? { birthPlaceClaim: valueClaim(parsedBirthPlace, birthSources.place, birth, "_DREVO_PLACE_CONFIDENCE") }
         : {}),
       deathPlace: parsedDeathPlace || undefined,
       ...(deathSources.place.length
-        ? { deathPlaceClaim: { value: parsedDeathPlace, sources: deathSources.place } }
+        ? { deathPlaceClaim: valueClaim(parsedDeathPlace, deathSources.place, death, "_DREVO_PLACE_CONFIDENCE") }
         : {}),
       birthLocation: placeLocation(birth),
       deathLocation: placeLocation(death),
@@ -1135,8 +1146,10 @@ export function exportGedcom(
       const placeClaim = kind === "birth" ? p.birthPlaceClaim : p.deathPlaceClaim;
       for (const source of dateClaim?.sources || [])
         citation(2, source, kind === "birth" ? "BIRTH_DATE" : "DEATH_DATE");
+      if (dateClaim?.confidence) emit(2, "_DREVO_DATE_CONFIDENCE", dateClaim.confidence);
       for (const source of placeClaim?.sources || [])
         citation(2, source, kind === "birth" ? "BIRTH_PLACE" : "DEATH_PLACE");
+      if (placeClaim?.confidence) emit(2, "_DREVO_PLACE_CONFIDENCE", placeClaim.confidence);
       eventClaimsEmitted[kind] = true;
     };
     for (const kind of ["birth", "death"] as const)

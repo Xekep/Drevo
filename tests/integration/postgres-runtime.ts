@@ -3899,8 +3899,8 @@ try {
   const placePerson = placeNext.people[0];
   placePerson.birthPlace = "Тула";
   placePerson.deathPlace = "Казань";
-  placePerson.birthPlaceClaim = { value: "Тула", sources: [sourceCitation(placeSource)] };
-  placePerson.deathPlaceClaim = { value: "Казань", sources: [sourceCitation(placeSource)] };
+  placePerson.birthPlaceClaim = { value: "Тула", sources: [sourceCitation(placeSource)], confidence: "confirmed" };
+  placePerson.deathPlaceClaim = { value: "Казань", sources: [sourceCitation(placeSource)], confidence: "conflicting" };
   const placeToken = newSessionToken();
   await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)")
     .run(sessionTokenHash(placeToken), Date.now() + 60_000);
@@ -3915,6 +3915,8 @@ try {
   const placeStored = await app.archive.read();
   assert.equal(placeStored.family.people[0].birthPlaceClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].deathPlaceClaim?.sources[0].catalogId, placeSource.id);
+  assert.equal(placeStored.family.people[0].birthPlaceClaim?.confidence, "confirmed");
+  assert.equal(placeStored.family.people[0].deathPlaceClaim?.confidence, "conflicting");
   assert.equal((await app.archive.db.prepare("", "SELECT data->'birthPlaceClaim'->>'value' AS place FROM people WHERE id=?")
     .get(placePerson.id))?.place, "Тула", "PostgreSQL stores the exact linked place value");
   assert.equal(await sourceCatalogStore(otherApp.archive.db).get(placeSource.id), null,

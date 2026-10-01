@@ -24,6 +24,8 @@ import {
   type Person,
   type Family,
   type FamilyLink,
+  type PersonValueClaim,
+  CLAIM_CONFIDENCE_LABELS,
 } from "../domain";
 import { collectPersonSources } from "../domain/person-sources.ts";
 import { PortraitPlaceholder } from "./portrait-placeholder";
@@ -32,6 +34,9 @@ import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
 const PersonDiscussion = lazy(() => import("./person-discussion").then((module) => ({ default: module.PersonDiscussion })));
+const claimSummary = (claim: PersonValueClaim) =>
+  `${claim.sources.map((source) => source.title).join("; ")}${claim.confidence
+    ? ` · Оценка: ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}` : ""}`;
 export function Avatar({
   person,
   large = false,
@@ -352,10 +357,10 @@ export function PersonPanel({
                   <span className="event-label">Рождение</span>
                   {person.birth && <b>{dateLabel(person.birth)}</b>}
                   {!!person.birthDateClaim?.sources.length &&
-                    <p>Источники даты: {person.birthDateClaim.sources.map((source) => source.title).join("; ")}</p>}
+                    <p>Источники даты: {claimSummary(person.birthDateClaim)}</p>}
                   {person.birthPlace && <p>{person.birthPlace}</p>}
                   {!!person.birthPlaceClaim?.sources.length &&
-                    <p>Источники места: {person.birthPlaceClaim.sources.map((source) => source.title).join("; ")}</p>}
+                    <p>Источники места: {claimSummary(person.birthPlaceClaim)}</p>}
                 </div>
               </div>
             )}
@@ -366,10 +371,10 @@ export function PersonPanel({
                   <span className="event-label">Уход из жизни</span>
                   {person.death && <b>{dateLabel(person.death)}</b>}
                   {!!person.deathDateClaim?.sources.length &&
-                    <p>Источники даты: {person.deathDateClaim.sources.map((source) => source.title).join("; ")}</p>}
+                    <p>Источники даты: {claimSummary(person.deathDateClaim)}</p>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}
                   {!!person.deathPlaceClaim?.sources.length &&
-                    <p>Источники места: {person.deathPlaceClaim.sources.map((source) => source.title).join("; ")}</p>}
+                    <p>Источники места: {claimSummary(person.deathPlaceClaim)}</p>}
                 </div>
               </div>
             ) : person.birth ? (

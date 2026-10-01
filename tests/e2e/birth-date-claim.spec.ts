@@ -30,13 +30,16 @@ test("каталожный источник относится к дате ро�
   await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
   await claim.getByLabel("Поиск источника").fill(title);
   await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+  await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
+  await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption("confirmed");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((person) => person.id === "e2e-child")?.birthDateClaim?.sources[0].catalogId)
     .toBe(source.id);
   const person = family.people.find((item) => item.id === "e2e-child")!;
   expect(person.birthDateClaim?.value).toBe(person.birth);
-  await expect(page.getByText(`Источники даты: ${title}`)).toBeVisible();
+  expect(person.birthDateClaim?.confidence).toBe("confirmed");
+  await expect(page.getByText(`Источники даты: ${title} · Оценка: Подтверждено`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await page.locator(".birth-date-claim > summary").click();
