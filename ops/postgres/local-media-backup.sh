@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Temporary local protection for original photographs and documents while the
-# application still uses SQLite. Run as site_drevo; never delete the source.
+# Local protection for originals in the legacy and private archive directories.
+# Run as site_drevo; never delete the source.
 shared=/var/www/drevo.kiiko.ru/shared
-source_dir="$shared/uploads"
+script_dir="$(dirname "$(readlink -f "$0")")"
 backup_dir="$shared/backups/media"
 [[ "$(id -un)" == site_drevo ]] || { echo 'Run as site_drevo' >&2; exit 2; }
-[[ -d "$source_dir" && ! -L "$source_dir" ]] || { echo 'Uploads directory missing' >&2; exit 2; }
+paths="$("$script_dir/media-backup-paths.sh" "$shared")"
+mapfile -t source_paths <<< "$paths"
 cd "$shared"
 install -d -m 700 "$backup_dir"
-source_kib="$(du -sk "$source_dir" | awk '{print $1}')"
+source_kib="$(du -sk -- "${source_paths[@]}" | awk '{sum += $1} END {print sum + 0}')"
 free_kib="$(df -Pk "$backup_dir" | awk 'NR == 2 {print $4}')"
 [[ "$source_kib" =~ ^[0-9]+$ && "$free_kib" =~ ^[0-9]+$ ]] || exit 2
 (( free_kib > 8 * 1024 * 1024 + 2 * source_kib )) || {
@@ -22,7 +23,8 @@ name="media-$stamp.tar.gz"
 [[ ! -e "$backup_dir/$name" ]] || { echo 'Backup already exists' >&2; exit 2; }
 temporary="$(mktemp "$backup_dir/.media-XXXXXXXX")"
 trap 'rm -f -- "$temporary" "$temporary.sha256"' EXIT
-tar --exclude='uploads/.*' -C "$shared" -czf "$temporary" uploads
+tar --exclude='uploads/.*' --exclude='archives/*/uploads/.*' \
+  -C "$shared" -czf "$temporary" -- "${source_paths[@]}"
 tar -tzf "$temporary" >/dev/null
 hash="$(sha256sum "$temporary" | awk '{print $1}')"
 printf '%s  %s\n' "$hash" "$name" > "$temporary.sha256"
