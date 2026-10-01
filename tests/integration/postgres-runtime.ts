@@ -3384,6 +3384,10 @@ try {
     assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
       FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
     "Архивный исследователь");
+    assert.equal(await matchDb.prepare("", `SELECT grantor_archive_id
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+      FOR SHARE`).get(), undefined,
+    "the recipient can read but cannot directly lock the grantor's row through UPDATE RLS");
     assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
       WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
     "the receiving archive cannot revoke the owner's grant through SQL");
@@ -3445,8 +3449,8 @@ try {
     headers: archiveAdminHeaders,
   });
   assert.equal(freshCopyPreviewResponse.status, 200);
-  const freshCopyPreview = await freshCopyPreviewResponse.json();
-  const copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+  let freshCopyPreview = await freshCopyPreviewResponse.json();
+  let copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
     revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
   assert.equal((await fetch(otherBase + copyPreviewPath, {
     method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.217" },
@@ -3464,6 +3468,44 @@ try {
     method: "POST", headers: copyHeaders,
     body: JSON.stringify({ ...copyBody, reviewToken: "0".repeat(64) }),
   })).status, 409, "a stale review cannot replace a local value");
+  let blockedCopy: Promise<Response> | undefined;
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("runtime-test");
+    await matchDb.prepare("", `SELECT fields FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'
+      FOR UPDATE`).get();
+    blockedCopy = fetch(otherBase + copyPreviewPath, { method: "POST",
+      headers: { ...copyHeaders, "X-Real-IP": "198.51.100.219" },
+      body: JSON.stringify(copyBody) });
+    let waiting = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const result = await client.query(`SELECT 1 FROM pg_stat_activity
+        WHERE pid<>pg_backend_pid() AND wait_event_type='Lock'
+          AND query LIKE '%discovery_linked_card_grants%'
+          AND query LIKE '%FOR SHARE%'`);
+      if (result.rowCount) { waiting = true; break; }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(waiting, true, "the copy holds its own archive lock while waiting for the live source grant");
+    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).run()).changes,
+    1, "the grantor can revoke a grant during an in-flight copy");
+  });
+  assert.equal((await blockedCopy!).status, 404,
+    "a concurrent grant revoke wins before the blocked copy can read source fields");
+  assert.equal((await otherApp.archive.read()).family.people[0].birthPlace, "Местный город",
+    "a copy blocked by revocation cannot change the receiving card");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: sharePreview.previewToken }),
+  })).status, 200, "the source may grant the same scalar snapshot again");
+  freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json());
+  copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+    revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
   const copyAttempts = await Promise.all([
     fetch(otherBase + copyPreviewPath, { method: "POST", headers: copyHeaders,
       body: JSON.stringify(copyBody) }),

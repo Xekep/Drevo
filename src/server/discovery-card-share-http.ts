@@ -146,10 +146,25 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     const own = await db.prepare("", `SELECT data FROM people WHERE archive_id=? AND id=?
       ${lock ? "FOR SHARE" : ""}`).get(archiveId, ownPersonId);
     if (!own) return { code: 404 as const };
-    const grant = await db.prepare("", `SELECT fields,granted_at::text AS granted_at
+    const incomingGrant = () => db.prepare("", `SELECT fields,granted_at::text AS granted_at
       FROM discovery_linked_card_grants WHERE left_archive_id=? AND left_person_id=?
         AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
       ${lock ? "FOR SHARE" : ""}`).get(...pairArgs(pair), sourceArchiveId);
+    let grant: Row | undefined;
+    if (lock) {
+      // Row-locking SELECT also applies the UPDATE RLS policy. The recipient
+      // may read this grant but only its grantor may lock it. Scope the one
+      // exact-row lock to that grantor, then restore the recipient context
+      // before any archive write or auth query. DELETE/revoke must wait for
+      // this lock, including a cascade after unpublication.
+      await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get(sourceArchiveId);
+      try { grant = await incomingGrant(); }
+      finally {
+        await db.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+          .get(archiveId);
+      }
+    } else grant = await incomingGrant();
     if (!grant) return { code: 404 as const };
     const revision = Number((await db.prepare("", `SELECT revision FROM archives WHERE id=?`)
       .get(archiveId))?.revision);
