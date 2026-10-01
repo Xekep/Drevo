@@ -78,3 +78,37 @@ test("corrupt and unavailable guest storage cannot prevent opening the tree", (t
     DEFAULT_TREE_PREFERENCES,
   );
 });
+
+test("guest generation limits survive reload and can be cleared without storing unrelated fields", (t) => {
+  let raw: string | null = null;
+  storageMock(t, {
+    getItem: () => raw,
+    setItem: (_key, value) => {
+      raw = value;
+    },
+  });
+  const value = {
+    ...DEFAULT_TREE_PREFERENCES,
+    generationLimits: {
+      anchorId: "main",
+      ancestors: 3 as const,
+      descendants: 2 as const,
+      collateral: 0 as const,
+    },
+  };
+  writeGuestTreePreferences(value);
+  assert.deepEqual(readGuestTreePreferences(DEFAULT_TREE_PREFERENCES), value);
+  writeGuestTreePreferences({ ...value, generationLimits: null });
+  assert.deepEqual(
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
+    DEFAULT_TREE_PREFERENCES,
+  );
+  raw = JSON.stringify({
+    ...value,
+    generationLimits: { ...value.generationLimits, ancestors: 999 },
+  });
+  assert.deepEqual(
+    readGuestTreePreferences(DEFAULT_TREE_PREFERENCES),
+    DEFAULT_TREE_PREFERENCES,
+  );
+});

@@ -1,4 +1,7 @@
-import type { TreePreferences } from "../domain/tree-preferences.ts";
+import {
+  isTreeGenerationLimits,
+  type TreePreferences,
+} from "../domain/tree-preferences.ts";
 
 const KEY = "drevo:guest-tree-preferences:v1";
 
@@ -19,6 +22,9 @@ export function readGuestTreePreferences(
       colorScheme: ["warm", "white"].includes(value.colorScheme)
         ? value.colorScheme
         : fallback.colorScheme,
+      ...(isTreeGenerationLimits(value.generationLimits)
+        ? { generationLimits: value.generationLimits }
+        : {}),
     };
   } catch {
     return fallback;
@@ -33,6 +39,9 @@ export function writeGuestTreePreferences(value: TreePreferences) {
         reverseTimeline: value.reverseTimeline,
         cardVariant: "portrait",
         colorScheme: value.colorScheme,
+        ...(isTreeGenerationLimits(value.generationLimits)
+          ? { generationLimits: value.generationLimits }
+          : {}),
       }),
     );
   } catch {

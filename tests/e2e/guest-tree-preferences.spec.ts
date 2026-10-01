@@ -77,6 +77,22 @@ for (const mode of ["shared", "public"] as const)
     await dialog.getByRole("radio", { name: "Белая" }).check();
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
+    await dialog
+      .getByRole("checkbox", { name: "Ограничить видимое древо" })
+      .check();
+    await dialog
+      .getByRole("combobox", { name: "Относительно человека" })
+      .selectOption("e2e-child");
+    await dialog.getByRole("radio", { name: "Вниз: 1", exact: true }).check();
+    await dialog
+      .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
+      .check();
+    await expect(
+      dialog.getByText("В области поколений: 4 из 6 карточек"),
+    ).toBeVisible();
+    await expect(
+      page.locator('.flow-person[data-person-id="e2e-sibling"]'),
+    ).toHaveCount(0);
     if (isMobile) await page.setViewportSize({ width: 320, height: 640 });
     const bounds = (await dialog.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0);
@@ -104,6 +120,15 @@ for (const mode of ["shared", "public"] as const)
       .poll(() => page.locator(".react-flow__edge").count())
       .toBeGreaterThan(0);
     await gear.click();
+    await expect(
+      dialog.getByRole("checkbox", { name: "Ограничить видимое древо" }),
+    ).toBeChecked();
+    await expect(
+      dialog.getByRole("combobox", { name: "Относительно человека" }),
+    ).toHaveValue("e2e-child");
+    await expect(
+      page.locator('.flow-person[data-person-id="e2e-sibling"]'),
+    ).toHaveCount(0);
     await expect(
       dialog.getByRole("radio", { name: "Предки сверху" }),
     ).toBeChecked();

@@ -848,6 +848,7 @@ export default function App() {
                       busy={busy}
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
+                      generationLimits={archive.treePreferences.generationLimits}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
@@ -1175,6 +1176,8 @@ export default function App() {
       {treePreferencesOpen && family && readTree && (
         <TreePreferencesDialog
           preferences={archive.treePreferences}
+          people={family.people}
+          anchorId={selected[0] || user?.personId}
           onChange={archive.saveTreePreferences}
           onClose={() => setTreePreferencesOpen(false)}
         />

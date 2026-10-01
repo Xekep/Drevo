@@ -13,6 +13,7 @@ import {
   type PhotoMetadata,
   type TreePreferences,
   DEFAULT_TREE_PREFERENCES,
+  isTreeGenerationLimits,
 } from "../domain";
 import { completeArchive } from "../data/archive-pages";
 import { fetchWithTimeout, RequestTimeoutError } from "../data/request-timeout";
@@ -37,6 +38,9 @@ function treePreferencesFromResponse(data: {
     cardVariant: "portrait",
     colorScheme:
       data.treePreferences?.colorScheme === "white" ? "white" : "warm",
+    ...(isTreeGenerationLimits(data.treePreferences?.generationLimits)
+      ? { generationLimits: data.treePreferences.generationLimits }
+      : {}),
   };
   return data.user?.approved
     ? preferences
@@ -132,7 +136,10 @@ export function useArchive() {
           const result = await completeArchive(
             initial,
             (url) =>
-              archiveFetch(url, { signal: controller.signal, cache: "no-store" }),
+              archiveFetch(url, {
+                signal: controller.signal,
+                cache: "no-store",
+              }),
             (data) => {
               if (active) setFamily(data);
             },

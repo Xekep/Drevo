@@ -507,6 +507,13 @@ try {
     colorScheme: "white",
   });
   assert.equal((await preferences.read("owner")).colorScheme, "white");
+  const generationLimits = { anchorId: "runtime-person", ancestors: 7, descendants: 50, collateral: 2 };
+  await preferences.write("owner", { reverseTimeline: false, generationLimits });
+  assert.deepEqual((await preferences.read("owner")).generationLimits, generationLimits);
+  assert.equal((await preferences.read("reader")).generationLimits, undefined);
+  await assert.rejects(preferences.write("owner", { reverseTimeline: false, generationLimits: { ...generationLimits, collateral: 3 } }), /Некорректные/);
+  await preferences.write("owner", { reverseTimeline: false, generationLimits: null });
+  assert.equal((await preferences.read("owner")).generationLimits, undefined);
   const chats = aiChatStore(live.db);
   const chat = await chats.create("owner", "all");
   await chats.append(chat.id, "user", "Проверка");
