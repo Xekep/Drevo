@@ -105,8 +105,10 @@ export function removePerson(family: Family, id: string): Family {
       spouses: p.spouses.filter((x) => x !== id),
     }));
   next.links = (next.links || []).filter((l) => l.from !== id && l.to !== id);
-  if (next.unions)
+  if (next.unions) {
     next.unions = next.unions.filter((union) => !union.participants.includes(id));
+    if (!next.unions.length) delete next.unions;
+  }
   next.photos = (next.photos || []).map((p) => ({
     ...p,
     tags: p.tags.filter((t) => t.personId !== id),

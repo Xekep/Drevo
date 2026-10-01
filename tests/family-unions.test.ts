@@ -74,7 +74,7 @@ const unions = (): FamilyUnion[] => [
 test("removing a person also removes their unions, and a spouse link cannot hide surviving unions", () => {
   const data = { ...family(), unions: unions() };
   const removed = removePerson(data, "a");
-  assert.deepEqual(removed.unions, []);
+  assert.equal(removed.unions, undefined);
   assert.deepEqual(removed.people.map((entry) => entry.id), ["b", "c"]);
   assert.deepEqual(removed.people.map((entry) => entry.spouses), [[], []]);
 
