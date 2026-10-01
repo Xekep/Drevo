@@ -33,7 +33,7 @@ export function TreeCameraTools({
         disabled={disabled}
         title="Вписать видимую часть дерева"
         aria-label="Вписать видимую часть дерева"
-        onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1 })}
+        onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1, includeHiddenNodes: true })}
       >
         <Maximize2 size={18} />
       </button>
@@ -45,6 +45,7 @@ export function TreeCameraTools({
           onClick={() => {
             void flow.fitView({
               nodes: selected.map((id) => ({ id })),
+              includeHiddenNodes: true,
               minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
               maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
               padding: 0.4,

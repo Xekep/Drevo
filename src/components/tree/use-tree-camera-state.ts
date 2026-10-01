@@ -27,6 +27,7 @@ type CameraFlow = {
   ) => unknown;
   fitView: (options: {
     nodes?: { id: string }[];
+    includeHiddenNodes?: boolean;
     minZoom?: number;
     maxZoom?: number;
     padding?: number;
@@ -257,6 +258,7 @@ export function useTreeCameraState({
               )
             : flow.fitView({
                 nodes: focus.ids.map((id) => ({ id })),
+                includeHiddenNodes: true,
                 maxZoom: focus.purpose === "family" ? 0.95 : 1,
                 minZoom:
                   focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
@@ -268,6 +270,7 @@ export function useTreeCameraState({
           if (changedContext && context.includes(":research:"))
             viewportUpdate = flow.fitView({
               nodes: [...positions.keys()].map((id) => ({ id })),
+              includeHiddenNodes: true,
               minZoom: 0.05,
               maxZoom: narrow ? 0.9 : 1,
               padding: 0.2,
@@ -277,6 +280,7 @@ export function useTreeCameraState({
           else if ((switchedMode || reverseChanged) && selected.length)
             viewportUpdate = flow.fitView({
               nodes: selected.map((id) => ({ id })),
+              includeHiddenNodes: true,
               maxZoom: 1,
               minZoom: narrow ? 0.55 : 0.15,
               padding: 0.4,
@@ -290,6 +294,7 @@ export function useTreeCameraState({
                     .filter((id) => positions.has(id))
                     .map((id) => ({ id }))
                 : [...positions.keys()].map((id) => ({ id })),
+              includeHiddenNodes: true,
               maxZoom: 0.95,
               minZoom: narrow ? 0.55 : 0.25,
               padding: 0.28,
@@ -310,6 +315,7 @@ export function useTreeCameraState({
             // На входе помещаем всё дерево, затем отдельно ведём камеру к человеку.
             viewportUpdate = flow.fitView({
               nodes: [...positions.keys()].map((id) => ({ id })),
+              includeHiddenNodes: true,
               maxZoom: narrow ? 0.9 : 1,
               minZoom: 0.05,
               padding,
