@@ -1110,17 +1110,30 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
     ["union", "22222222-2222-4222-8222-222222222222"],
     ["excluded", "33333333-3333-4333-8333-333333333333"],
   ] as const;
-  const source = (documentId: string) => ({
+  const source = (documentId: string, documentPage = 1) => ({
     title: `Source ${documentId}`, type: "archive", reference: "p. 1", documentId,
+    documentPage,
   });
   family.people[0].birth = "1880";
-  family.people[0].birthDateClaim = { value: "1880", sources: [source(documents[0][1])] };
+  family.people[0].birthDateClaim = { value: "1880", sources: [source(documents[0][1], 2)] };
+  family.people[0].birthPlace = "Town A";
+  family.people[0].birthPlaceClaim = { value: "Town A", sources: [source(documents[0][1], 4)] };
+  family.people[1].death = "1950";
+  family.people[1].deathDateClaim = { value: "1950", sources: [source(documents[0][1], 5)] };
+  family.people[1].deathPlace = "Town B";
+  family.people[1].deathPlaceClaim = { value: "Town B", sources: [source(documents[0][1], 6)] };
   family.people[2].death = "1950";
   family.people[2].deathPlace = "Elsewhere";
   family.people[2].deathPlaceClaim = { value: "Elsewhere", sources: [source(documents[2][1])] };
   family.people[2].events = [{ id: "private-event", type: "work", title: "Private" }];
   family.unions = [{ id: "union", participants: ["parent", "partner"],
-    type: "marriage", formation: { date: "1900", sources: [source(documents[1][1])] } }];
+    type: "marriage", sources: [source(documents[1][1], 2)],
+    formation: { date: "1900", sources: [source(documents[1][1], 3)] },
+    ongoing: { date: "1905", sources: [source(documents[1][1], 4)] },
+    divorce: { date: "1910", sources: [source(documents[1][1], 5)] } },
+  { id: "ended", participants: ["parent", "partner"], type: "partnership",
+    formation: { date: "1890", sources: [source(documents[1][1], 8)] },
+    ending: { date: "1895", sources: [source(documents[1][1], 7)] } }];
   const archive = await openArchive(dbPath, family);
   const auth = { currentUser: () => ({ id: "admin", name: "Admin", role: "admin",
     approved: true, createdAt: "" }) } as unknown as Awaited<ReturnType<typeof createAuth>>;
@@ -1157,23 +1170,158 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
     };
     const withUnion = await exported(["parent", "partner"], "with-union");
     assert.deepEqual(withUnion.files.map((file) => file.title).sort(), ["claim", "union"]);
-    assert.equal(withUnion.family.unions?.length, 1);
+    assert.equal(withUnion.family.unions?.length, 2);
     assert.deepEqual(withUnion.files.find((file) => file.title === "claim")?.document?.eventLinks || [],
       [], "metadata for an excluded person's event stays out of the visible package");
-    assert.equal(withUnion.family.people.find((person) => person.name === "parent")
-      ?.birthDateClaim?.sources[0].documentId, undefined,
-    "GEDCOM currently retains the citation but not its attachment link");
+    assert.deepEqual(withUnion.family.people.find((person) => person.name === "parent")
+      ?.birthDateClaim?.sources.map((citation) => [citation.documentId, citation.documentPage]),
+    [[withUnion.files.find((file) => file.title === "claim")?.documentId, 2]]);
+    const claimId = withUnion.files.find((file) => file.title === "claim")?.documentId;
+    const unionId = withUnion.files.find((file) => file.title === "union")?.documentId;
+    assert.deepEqual([
+      withUnion.family.people.find((person) => person.name === "parent")?.birthPlaceClaim?.sources[0],
+      withUnion.family.people.find((person) => person.name === "partner")?.deathDateClaim?.sources[0],
+      withUnion.family.people.find((person) => person.name === "partner")?.deathPlaceClaim?.sources[0],
+    ].map((citation) => [citation?.documentId, citation?.documentPage]),
+    [[claimId, 4], [claimId, 5], [claimId, 6]]);
+    assert.deepEqual([
+      withUnion.family.unions?.[0].sources?.[0],
+      withUnion.family.unions?.[0].formation?.sources?.[0],
+      withUnion.family.unions?.[0].ongoing?.sources?.[0],
+      withUnion.family.unions?.[0].divorce?.sources?.[0],
+    ].map((citation) => [citation?.documentId, citation?.documentPage]),
+    [[unionId, 2], [unionId, 3], [unionId, 4], [unionId, 5]]);
+    const partnership = withUnion.family.unions?.find((union) => union.id === "ended");
+    assert.deepEqual([
+      partnership?.formation?.sources?.[0], partnership?.ending?.sources?.[0],
+    ].map((citation) => [citation?.documentId, citation?.documentPage]),
+    [[unionId, 8], [unionId, 7]]);
     assert.notEqual(withUnion.family.unions?.[0].formation?.sources?.[0].documentId,
-      withUnion.files.find((file) => file.title === "union")?.documentId,
-    "the union's legacy JSON ID is not remapped to the imported document");
+      documents[1][1], "archive-local IDs are replaced on import");
+    const plainText = exportGedcom(family, { version: "7.0",
+      media: await exportMedia(archive.db, family) });
+    assert.equal(importGedcom(plainText, "retained-citations").citationMedia?.length, 11,
+      "repeated GEDCOM parsing must not retain links to discarded citation objects");
+    assert.throws(() => exportGedcom(family, { version: "7.0", media: [] }),
+      /Документ цитаты отсутствует/);
+    assert.match(plainText, /\d SOUR @S\d+@\r\n\d PAGE p\. 1\r\n\d _DREVO_CLAIM BIRTH_DATE\r\n\d OBJE @M\d+@/);
+    const plainPath = join(dir, "citations.ged");
+    const plainStage = join(dir, "plain-stage");
+    await writeFile(plainPath, plainText);
+    await mkdir(plainStage);
+    const plain = await prepareGenealogyImport(plainPath, plainStage, "plain");
+    assert.deepEqual(plain.files, []);
+    assert.equal(plain.family.people.find((person) => person.name === "parent")
+      ?.birthDateClaim?.sources[0].documentId, undefined);
+    assert.equal(plain.family.unions?.[0].formation?.sources?.[0].documentId, undefined);
+    assert.ok(plain.warnings.some((warning) => warning.includes("Вложение цитаты не загружено")));
+    const brokenPath = join(dir, "broken.gdz");
+    const brokenStage = join(dir, "broken-stage");
+    await zipFile(brokenPath, [["gedcom.ged", Buffer.from(plainText)]]);
+    await mkdir(brokenStage);
+    await assert.rejects(prepareGenealogyImport(brokenPath, brokenStage, "broken"),
+      /отсутствует вложение/);
     const withoutUnion = await exported(["parent"], "without-union");
     assert.deepEqual(withoutUnion.files.map((file) => file.title), ["claim"]);
     assert.equal(withoutUnion.family.unions?.length || 0, 0);
+    const targetDir = join(dir, "target");
+    await mkdir(targetDir);
+    const targetDb = join(targetDir, "archive.sqlite");
+    const targetArchive = await openArchive(targetDb, seed());
+    const targetRoute = gedcomHttp(targetArchive, auth, targetDb, "https://test.invalid");
+    const targetServer = createServer(async (req, res) => {
+      void (await targetRoute.handle(req, res, new URL(req.url!, "https://test.invalid")));
+    });
+    await new Promise<void>((resolve) => targetServer.listen(0, "127.0.0.1", resolve));
+    const targetBase = `http://127.0.0.1:${(targetServer.address() as { port: number }).port}`;
+    try {
+      const previewResponse = await fetch(`${targetBase}/api/gedcom/preview`, {
+        method: "POST", headers: { Origin: "https://test.invalid", "X-Drevo-Import": "1" },
+        body: new Uint8Array(await readFile(join(dir, "with-union.gdz"))),
+      });
+      assert.equal(previewResponse.status, 200,
+        previewResponse.status === 200 ? "" : await previewResponse.text());
+      const preview = await previewResponse.json();
+      const applied = await fetch(`${targetBase}/api/gedcom/import`, {
+        method: "POST", headers: { Origin: "https://test.invalid", "X-Drevo-Import": "1",
+          "Content-Type": "application/json" },
+        body: JSON.stringify({ token: preview.token, confirm: true }),
+      });
+      assert.equal(applied.status, 200, applied.status === 200 ? "" : await applied.text());
+      const imported = (await targetArchive.read()).family.people.find((person) =>
+        person.name === "parent" && person.id !== "parent")!;
+      const importedId = imported.birthDateClaim?.sources[0].documentId;
+      assert.ok(importedId && importedId !== documents[0][1]);
+      assert.equal(imported.birthDateClaim?.sources[0].documentPage, 2);
+      const row = await targetArchive.db.prepare("SELECT file_name FROM documents WHERE id=?")
+        .get(importedId);
+      assert.ok(row?.file_name);
+      assert.match((await readFile(join(targetDir, "uploads", String(row.file_name)))).toString(),
+        /%PDF-1\.4/);
+      assert.equal((await targetArchive.read()).family.unions?.find((union) => union.id === "union")
+        ?.formation?.sources?.[0].documentPage, 3);
+    } finally {
+      targetRoute.close();
+      targetServer.closeAllConnections();
+      await new Promise<void>((resolve) => targetServer.close(() => resolve()));
+      await targetArchive.close();
+    }
   } finally {
     route.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await archive.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("legacy GEDCOM union JSON cannot carry an archive-local document ID into another tree", () => {
+  const oldDocumentId = "44444444-4444-4444-8444-444444444444";
+  const union = { id: "old", participants: ["one", "two"], type: "marriage",
+    sources: [{ title: "Old record", type: "archive", reference: "", documentId: oldDocumentId,
+      documentPage: 8 }] };
+  const text = [
+    "0 HEAD", "1 SOUR DREVO", "1 GEDC", "2 VERS 7.0",
+    "0 @I1@ INDI", "1 NAME One /Test/", "0 @I2@ INDI", "1 NAME Two /Test/",
+    "0 @F1@ FAM", "1 HUSB @I1@", "1 WIFE @I2@",
+    `1 _DREVO_UNION ${JSON.stringify(union)}`, "1 _DREVO_SPOUSE Y", "0 TRLR",
+  ].join("\n");
+  const parsed = importGedcom(text, "legacy-union");
+  assert.equal(parsed.family.unions?.[0].sources?.[0].documentId, undefined);
+  assert.equal(parsed.family.unions?.[0].sources?.[0].documentPage, undefined);
+  const dangling = text.replace("1 _DREVO_SPOUSE Y",
+    "1 SOUR @S1@\n2 OBJE @M1@\n1 _DREVO_SPOUSE Y")
+    .replace("0 TRLR", "0 @S1@ SOUR\n1 TITL Old record\n0 TRLR");
+  assert.throws(() => importGedcom(dangling, "broken-union"), /Не найдено медиа цитаты/);
+});
+
+test("standard GEDCOM 7 citation OBJE imports an image as a cited document", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-standard-citation-"));
+  try {
+    const scan = await sharp({ create: { width: 2, height: 2, channels: 3,
+      background: "white" } }).png().toBuffer();
+    const ged = [
+      "0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @I1@ INDI",
+      "1 NAME Anna /Sample/", "1 BIRT", "2 DATE 1 JAN 1900",
+      "2 SOUR @S1@", "3 PAGE p. 2", "3 OBJE @M1@",
+      "1 OBJE @M1@",
+      "0 @S1@ SOUR", "1 TITL Parish register",
+      "0 @M1@ OBJE", "1 FILE media/scan.png", "2 FORM image/png",
+      "2 TITL Scan", "0 TRLR",
+    ].join("\n");
+    const path = join(dir, "standard.gdz");
+    const stage = join(dir, "stage");
+    await zipFile(path, [["gedcom.ged", Buffer.from(ged)], ["media/scan.png", scan]]);
+    await mkdir(stage);
+    const imported = await prepareGenealogyImport(path, stage, "standard");
+    assert.equal(imported.files.length, 1);
+    assert.ok(imported.files[0].documentId);
+    assert.equal(imported.family.photos?.length, 0);
+    assert.equal(imported.family.people[0].sources[0].documentId,
+      imported.files[0].documentId);
+    assert.equal(imported.family.people[0].sources[0].reference, "p. 2");
+    assert.ok(imported.warnings.some((warning) => warning.includes("как фото и как документ")));
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -233,6 +233,7 @@ export async function prepareGenealogyImport(
     throw new Error("GEDZIP требует GEDCOM версии 7.0.x");
   const result: PreparedImport = { ...parsed, files: [] };
   const loaded = new Map<string, StagedMedia>();
+  const importedDocuments = new Map<string, string>();
   let embeddedTotal = 0;
   for (const item of parsed.media) {
     let source: string | undefined;
@@ -307,6 +308,7 @@ export async function prepareGenealogyImport(
       result.files.push(stored);
     }
     stored.personIds = [...new Set([...stored.personIds, ...item.personIds])];
+    if (stored.documentId) importedDocuments.set(item.id, stored.documentId);
     if (!stored.documentId) {
       const url = `/media/${stored.name}`;
       const tags = item.photo?.tags.length
@@ -332,6 +334,15 @@ export async function prepareGenealogyImport(
       }
     }
   }
+  for (const link of parsed.citationMedia || []) {
+    const documentId = importedDocuments.get(link.mediaId);
+    if (documentId) {
+      link.source.documentId = documentId;
+      if (link.page !== undefined) link.source.documentPage = link.page;
+    } else
+      result.warnings.push("Вложение цитаты не загружено; связь с документом не восстановлена.");
+  }
+  delete result.citationMedia;
   if (result.files.length)
     result.warnings = result.warnings.filter(
       (w) => !w.startsWith("Файлы фотографий и документов не загружаются"),

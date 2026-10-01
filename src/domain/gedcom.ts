@@ -23,12 +23,20 @@ import {
   type TransferMedia,
 } from "./genealogy-transfer.ts";
 
-// GEDCOM transfers readable citations, not archive-local catalogue identities.
+function stripArchiveSourceIds(sources?: Source[]) {
+  for (const source of sources || []) {
+    delete source.catalogId;
+    delete source.documentId;
+    delete source.documentPage;
+  }
+}
+
+// GEDCOM transfers readable citations, not archive-local catalogue/document IDs.
 function inlineUnionSources(union: FamilyUnion): FamilyUnion {
   const copy = structuredClone(union);
   for (const sources of [copy.sources, copy.formation?.sources, copy.ending?.sources,
     copy.divorce?.sources, copy.ongoing?.sources])
-    for (const source of sources || []) delete source.catalogId;
+    stripArchiveSourceIds(sources);
   return copy;
 }
 
@@ -249,6 +257,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_MEDIA",
     "_DREVO_TWIN",
     "_DREVO_CLAIM",
+    "_DREVO_UNION_STAGE",
+    "_DREVO_DOCUMENT_PAGE",
     "_MAIDEN",
     "_UID",
     "_PATR",
@@ -301,6 +311,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       })
       .filter((text) => text && text !== exclude)
       .join("\n\n");
+  const citationObjects: Array<{ source: Source; object: Node; page?: number }> = [];
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
       const record = s.pointer ? records.get(s.value) : undefined,
@@ -346,7 +357,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         warnings.add(
           "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
         );
-      return {
+      const source: Source = {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
           : s.value,
@@ -365,6 +376,21 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             .join("\n") || undefined,
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
+      const objects = children(s, "OBJE");
+      if (objects.length > 1)
+        warnings.add("У цитаты несколько файлов; перенесён только первый документ.");
+      if (objects.length) {
+        const ref = objects[0];
+        const object = ref.pointer ? records.get(ref.value) : ref;
+        if (!object || object.tag !== "OBJE")
+          throw new Error(`Не найдено медиа цитаты ${ref.value}`);
+        const rawPage = value(s, "_DREVO_DOCUMENT_PAGE");
+        const page = rawPage ? Number(rawPage) : undefined;
+        if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > 2000))
+          throw new Error("Некорректная страница документа цитаты GEDCOM");
+        citationObjects.push({ source, object, page });
+      }
+      return source;
     });
   const eventClaimSources = (node: Node | undefined, date: string, place: string,
     kind: "BIRTH" | "DEATH") => {
@@ -540,6 +566,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (extension) {
       try {
         const extra = JSON.parse(extension);
+        stripArchiveSourceIds(extra.sources);
+        for (const item of extra.events || []) stripArchiveSourceIds(item.sources);
         for (const key of [
           "name",
           "surname",
@@ -631,6 +659,18 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   };
   const unions: FamilyUnion[] = [];
   const families = roots.filter((n) => n.tag === "FAM");
+  const restoreUnionCitationMedia = (target: Source[] | undefined, node: Node | undefined) => {
+    if (!target?.length || !node) return;
+    const parsed = sources(node);
+    for (let index = 0; index < target.length; index++) {
+      const candidate = parsed[index];
+      const pending = citationObjects.find((entry) => entry.source === candidate);
+      if (!pending) continue;
+      if (target[index].title === candidate.title && target[index].reference === candidate.reference)
+        pending.source = target[index];
+      else warnings.add("Ссылка на документ союза не сопоставлена с цитатой; проверьте GEDCOM.");
+    }
+  };
   for (const f of families) {
     for (const n of f.children)
       if (
@@ -691,16 +731,32 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (spousePair.length === 2) {
       const explicit = value(f, "_DREVO_UNION");
       if (explicit) {
+        let restored: FamilyUnion | undefined;
         try {
-          const restored = inlineUnionSources(JSON.parse(explicit) as FamilyUnion);
-          unions.push({
-            ...restored,
-            participants: [spousePair[0].id, spousePair[1].id],
-          });
+          restored = inlineUnionSources(JSON.parse(explicit) as FamilyUnion);
         } catch {
           warnings.add(
             "Запись семейного союза Drevo не прочитана; проверьте исходный GEDCOM.",
           );
+        }
+        if (restored) {
+          restoreUnionCitationMedia(restored.sources, f);
+          restoreUnionCitationMedia(restored.formation?.sources,
+            f.children.find((node) => node.tag === "MARR") ||
+            f.children.find((node) => node.tag === "EVEN" &&
+              value(node, "_DREVO_UNION_STAGE") === "FORMATION"));
+          restoreUnionCitationMedia(restored.divorce?.sources,
+            f.children.find((node) => node.tag === "DIV"));
+          restoreUnionCitationMedia(restored.ending?.sources,
+            f.children.find((node) => node.tag === "EVEN" &&
+              ["ENDING", ""].includes(value(node, "_DREVO_UNION_STAGE"))));
+          restoreUnionCitationMedia(restored.ongoing?.sources,
+            f.children.find((node) => node.tag === "EVEN" &&
+              value(node, "_DREVO_UNION_STAGE") === "ONGOING"));
+          unions.push({
+            ...restored,
+            participants: [spousePair[0].id, spousePair[1].id],
+          });
         }
       } else if (marriageRecorded) {
         const milestone = (node: Node): UnionMilestone => {
@@ -900,6 +956,39 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   };
   for (const object of roots.filter((n) => n.tag === "OBJE"))
     readObject(object);
+  const retainedCitations = new Set<Source>();
+  const retain = (sources?: Source[]) => {
+    for (const source of sources || []) retainedCitations.add(source);
+  };
+  for (const person of people) {
+    retain(person.sources);
+    retain(person.birthDateClaim?.sources);
+    retain(person.deathDateClaim?.sources);
+    retain(person.birthPlaceClaim?.sources);
+    retain(person.deathPlaceClaim?.sources);
+    for (const event of person.events || []) retain(event.sources);
+  }
+  for (const union of unions) {
+    retain(union.sources);
+    for (const stage of [union.formation, union.ending, union.divorce, union.ongoing])
+      retain(stage?.sources);
+  }
+  const citationMedia: NonNullable<GenealogyImport["citationMedia"]> = [];
+  const citedImages = new Set<string>();
+  for (const { source, object, page } of citationObjects) {
+    if (!retainedCitations.has(source)) continue;
+    const files = readObject(object);
+    if (files.length > 1)
+      warnings.add("У медиа цитаты несколько файлов; перенесён только первый документ.");
+    const item = files[0];
+    if (!item) continue;
+    if (!item.document) {
+      citedImages.add(item.id);
+      item.document = { documentType: "", documentDate: "", place: "",
+        description: "", provenance: "" };
+    }
+    citationMedia.push({ source, mediaId: item.id, page });
+  }
   const attachMedia = (node: Node, personIds: string[]) => {
     for (const ref of children(node, "OBJE")) {
       if (ref.value === "@VOID@") continue;
@@ -912,7 +1001,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           item.portraitIds = [...new Set([...item.portraitIds, ...personIds])];
       }
     }
-    for (const c of node.children.filter((c) => c.tag !== "OBJE"))
+    for (const c of node.children.filter((c) => c.tag !== "OBJE" && c.tag !== "SOUR"))
       attachMedia(c, personIds);
   };
   for (const n of individuals) attachMedia(n, [ids.get(n.xref)!]);
@@ -923,6 +1012,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         .filter((n) => n.value !== "@VOID@")
         .map((n) => personRef(n.value).id),
     );
+  if (media.some((item) => citedImages.has(item.id) &&
+    (item.personIds.length || item.portraitIds.length || item.photo?.tags.length)))
+    warnings.add("Файл, указанный одновременно как фото и как документ цитаты, перенесён как документ; проверьте портрет и галерею после импорта.");
   if (media.length)
     warnings.add(
       "Файлы фотографий и документов не загружаются из GEDCOM. Добавьте оригиналы в галерею отдельно.",
@@ -942,6 +1034,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     }),
     warnings: [...warnings],
     media,
+    citationMedia,
     version,
   };
 }
@@ -1062,12 +1155,24 @@ export function exportGedcom(
         link.type === "adoptive_parent" ? "adopted" : "foster",
       ).children.push(link.to);
   const sourceRecords: Source[] = [];
+  const documentMedia = new Map(media.flatMap((item, index) =>
+    item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
-    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE") {
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE",
+    union = false) {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
     if (claim) emit(level + 1, "_DREVO_CLAIM", claim);
+    const object = (claim || union) && source.documentId
+      ? documentMedia.get(source.documentId) : undefined;
+    if (options.media && (claim || union) && source.documentId && !object)
+      throw new Error("Документ цитаты отсутствует в экспортируемых медиа GEDCOM");
+    if (object) {
+      emit(level + 1, "OBJE", object, true);
+      if (source.documentPage)
+        emit(level + 1, "_DREVO_DOCUMENT_PAGE", String(source.documentPage));
+    }
   }
   function emitPlace(
     level: number,
@@ -1107,6 +1212,8 @@ export function exportGedcom(
       "_DREVO_MEDIA",
       "_DREVO_TWIN",
       "_DREVO_CLAIM",
+      "_DREVO_DOCUMENT_PAGE",
+      "_DREVO_UNION_STAGE",
       "_TYPE",
       "_URL",
       "_PRIM",
@@ -1310,9 +1417,17 @@ export function exportGedcom(
       _birthDateClaim, _deathDateClaim, _birthPlaceClaim, _deathPlaceClaim];
     // The Drevo extension carries readable evidence, never archive-local source IDs.
     const portableExtra = structuredClone(extra);
-    for (const source of portableExtra.sources || []) delete source.catalogId;
+    for (const source of portableExtra.sources || []) {
+      delete source.catalogId;
+      delete source.documentId;
+      delete source.documentPage;
+    }
     for (const event of portableExtra.events || [])
-      for (const source of event.sources || []) delete source.catalogId;
+      for (const source of event.sources || []) {
+        delete source.catalogId;
+        delete source.documentId;
+        delete source.documentPage;
+      }
     emit(1, "_DREVO", JSON.stringify(portableExtra));
   }
   for (const g of groups.values()) {
@@ -1344,9 +1459,11 @@ export function exportGedcom(
       const unionEvent = (
         tag: string,
         milestone: UnionMilestone | undefined,
+        stage?: "FORMATION" | "ENDING" | "ONGOING",
       ) => {
         if (!milestone) return;
         emit(1, tag, "Y");
+        if (stage) emit(2, "_DREVO_UNION_STAGE", stage);
         if (milestone.date) emit(2, "DATE", exportDate(milestone.date));
         else if (milestone.dateText) {
           const date = portableDate(milestone.dateText, modern);
@@ -1354,14 +1471,17 @@ export function exportGedcom(
           if (date.phrase) emit(3, "PHRASE", date.phrase);
         }
         emitPlace(2, milestone.place);
-        for (const source of milestone.sources || []) citation(2, source);
+        for (const source of milestone.sources || []) citation(2, source, undefined, true);
       };
       if (g.union.type === "marriage")
         unionEvent("MARR", g.union.formation || {});
+      else if (g.union.formation)
+        unionEvent("EVEN", g.union.formation, "FORMATION");
       if (g.union.divorce) unionEvent("DIV", g.union.divorce);
-      if (g.union.ending) unionEvent("EVEN", g.union.ending);
+      if (g.union.ending) unionEvent("EVEN", g.union.ending, "ENDING");
+      if (g.union.ongoing) unionEvent("EVEN", g.union.ongoing, "ONGOING");
       if (g.union.note) emit(1, "NOTE", g.union.note);
-      for (const source of g.union.sources || []) citation(1, source);
+      for (const source of g.union.sources || []) citation(1, source, undefined, true);
     } else if (!g.married) emit(1, "_DREVO_UNMARRIED", "Y");
     else emit(1, "_DREVO_SPOUSE", "Y");
     for (const id of g.children) emit(1, "CHIL", ids.get(id)!, true);
