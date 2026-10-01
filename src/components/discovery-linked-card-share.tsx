@@ -40,7 +40,11 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
       if (!response.ok) throw new Error(body.error || "Не удалось открыть разрешённые сведения");
       setDetail(body);
       setSelected(Object.keys(body.outgoing?.fields || {}) as Field[]);
-    } catch (reason) { setError((reason as Error).message); }
+    } catch (reason) {
+      setDetail(null);
+      setSelected([]);
+      setError((reason as Error).message);
+    }
     finally { setBusy(false); }
   }
   async function save(method: "PUT" | "DELETE") {

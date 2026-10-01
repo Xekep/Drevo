@@ -148,6 +148,7 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
   let shared = false;
+  let linked = true;
   await page.route("**/api/discovery/matches/own-people?**", (route) =>
     route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
   await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
@@ -167,8 +168,10 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
     }
     if (method === "DELETE") {
       shared = false;
+      linked = false; // The match is revoked concurrently before the UI refreshes.
       return route.fulfill({ json: { shared: false } });
     }
+    if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
     return route.fulfill({ json: {
       available: { occupation: "Историк" }, previewToken: "a".repeat(64),
       outgoing: shared ? { fields: { occupation: "Историк" }, grantedAt: "2026-10-01T00:00:00Z" } : null,
@@ -184,4 +187,6 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
   await expect(page.getByText("Сейчас открыто другой стороне")).toBeVisible();
   await page.getByRole("button", { name: "Отозвать доступ" }).click();
   await expect(page.getByText("Сейчас открыто другой стороне")).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /Род занятий: Историк/ })).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
