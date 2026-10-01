@@ -34,6 +34,26 @@ export function makeDrevoPlugin(
     private annotating = false;
     private magnifier = false;
 
+    init() {
+      const closeInfo = document.querySelector<HTMLButtonElement>(
+        ".BRinfo .floatShut",
+      );
+      if (!closeInfo) return;
+      // BookReader's inline onclick is blocked by Drevo's production CSP.
+      closeInfo.removeAttribute("onclick");
+      closeInfo.removeAttribute("href");
+      closeInfo.type = "button";
+      closeInfo.setAttribute("aria-label", "Закрыть сведения");
+      closeInfo.addEventListener("click", () => {
+        const jquery = (
+          window as Window & {
+            $?: { fn?: { colorbox?: { close?: () => void } } };
+          }
+        ).$;
+        jquery?.fn?.colorbox?.close?.();
+      });
+    }
+
     _configureToolbar($toolbar: { 0: HTMLElement }) {
       const section = $toolbar[0].querySelector(".BRtoolbarSectionInfo");
       if (!section) return;

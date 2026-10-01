@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
 
 async function samplePdf() {
@@ -53,6 +54,16 @@ async function openSample(
 test("BookReader keeps its navigation and Drevo comments and lens", async ({
   page,
 }, info) => {
+  const csp = readFileSync("ops/nginx.conf", "utf8").match(
+    /add_header Content-Security-Policy "([^"]+)"/,
+  )![1];
+  await page.route("**/bookreader-frame.html", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), "content-security-policy": csp },
+    });
+  });
   const { reader, book } = await openSample(
     page,
     `BookReader modules ${info.project.name}`,
@@ -62,6 +73,13 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await expect(book.locator(".BRtoolbar .share")).toHaveCount(0);
   await book.locator(".BRtoolbar .info").click();
   await expect(book.locator(".BRinfo")).toContainText("Название");
+  await expect(book.locator(".BRinfo .floatShut")).not.toHaveAttribute(
+    "onclick",
+  );
+  await book.getByRole("button", { name: "Закрыть сведения" }).click();
+  await expect(book.locator("#colorbox")).toBeHidden();
+  await expect(reader).toBeVisible();
+  await book.locator(".BRtoolbar .info").click();
   await book.locator("body").press("Escape");
   await expect(book.locator("#colorbox")).toBeHidden();
   await expect(reader).toBeVisible();
