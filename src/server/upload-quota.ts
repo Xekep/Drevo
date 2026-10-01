@@ -5,6 +5,9 @@ import { UploadQuotaError } from "./upload-quota-error.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 export { UploadQuotaError } from "./upload-quota-error.ts";
 
+const RESERVATION_MS = 10 * 60_000;
+const PLATFORM_DISK_LOCK = 186743293;
+
 /** Reservations count unfinished uploads, including requests in other processes. */
 export function uploadQuota(
   db: StoreDatabase,
@@ -67,12 +70,36 @@ export function uploadQuota(
             "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
           )
           .get())!;
-        // The archive transaction serializes reservations. Read the disk only
-        // after entering it, so a second process sees the first one's files.
-        const currentFreeBytes =
-          typeof freeBytes === "function" ? await freeBytes() : freeBytes;
         const currentImages =
           typeof images === "function" ? await images() : images;
+        // Count this archive's files before the global lock, then serialize
+        // the physical free-space check across archives on the same volume.
+        if (db.kind === "postgres") {
+          await db
+            .prepare("", "SELECT pg_advisory_xact_lock(?)")
+            .get(PLATFORM_DISK_LOCK);
+          await db
+            .prepare(
+              "",
+              "DELETE FROM platform_upload_reservations WHERE expires_ms<?",
+            )
+            .run(time);
+        }
+        const currentFreeBytes =
+          typeof freeBytes === "function" ? await freeBytes() : freeBytes;
+        const platformPending =
+          db.kind === "postgres"
+            ? Number(
+                (
+                  await db
+                    .prepare(
+                      "",
+                      "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM platform_upload_reservations",
+                    )
+                    .get()
+                )?.bytes || 0,
+              )
+            : Number(pending.bytes);
         if (
           currentImages.files + Number(used.n) + Number(pending.n) >= files ||
           currentImages.bytes +
@@ -80,7 +107,7 @@ export function uploadQuota(
             Number(pending.bytes) +
             maximumBytes >
             bytes ||
-          currentFreeBytes - Number(pending.bytes) - maximumBytes < freeReserve
+          currentFreeBytes - platformPending - maximumBytes < freeReserve
         )
           throw new UploadQuotaError(
             "Недостаточно места. Лимит хранилища достигнут.",
@@ -92,15 +119,31 @@ export function uploadQuota(
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
           )
-          .run(id, userId, time, time + 300_000, maximumBytes);
-
-        return async () =>
+          .run(id, userId, time, time + RESERVATION_MS, maximumBytes);
+        if (db.kind === "postgres")
           await db
             .prepare(
-              "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
-              "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+              "",
+              "INSERT INTO platform_upload_reservations(id,reserved_bytes,expires_ms) VALUES(?,?,?)",
             )
-            .run(id);
+            .run(id, maximumBytes, time + RESERVATION_MS);
+
+        return async () =>
+          await db.transaction(async () => {
+            await db
+              .prepare(
+                "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+                "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+              )
+              .run(id);
+            if (db.kind === "postgres")
+              await db
+                .prepare(
+                  "",
+                  "DELETE FROM platform_upload_reservations WHERE id=?",
+                )
+                .run(id);
+          });
       });
     },
   };

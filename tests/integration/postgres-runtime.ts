@@ -43,7 +43,7 @@ import {
   enforcePostgresMediaQuota,
   releaseAttachedMediaGrants,
 } from "../../src/server/postgres-media-quota.ts";
-import { UploadQuotaError } from "../../src/server/upload-quota.ts";
+import { uploadQuota, UploadQuotaError } from "../../src/server/upload-quota.ts";
 import { registerMediaUpload } from "../../src/server/media-access.ts";
 import type { Family } from "../../src/domain/types.ts";
 import { planAdditions } from "../../src/domain/additions-import.ts";
@@ -177,6 +177,33 @@ try {
   ]);
   const other = await openPostgresDatabase("other-archive", source);
   try {
+    const diskOptions = {
+      bytes: 1_000,
+      freeReserve: 10,
+      requestsPerHour: 100,
+      concurrent: 100,
+    };
+    const firstUpload = uploadQuota(live.db, diskOptions);
+    const otherUpload = uploadQuota(other, diskOptions);
+    const reservations = await Promise.allSettled([
+      firstUpload.acquire("first-uploader", 70, 100),
+      otherUpload.acquire("other-uploader", 70, 100),
+    ]);
+    assert.equal(reservations.filter((result) => result.status === "fulfilled").length, 1,
+      "two archives cannot reserve the same physical free space concurrently");
+    const rejectedReservation = reservations.find((result) => result.status === "rejected");
+    assert.ok(rejectedReservation?.status === "rejected" &&
+      rejectedReservation.reason instanceof UploadQuotaError &&
+      rejectedReservation.reason.status === 507);
+    const grantedReservation = reservations.find((result) => result.status === "fulfilled");
+    assert.ok(grantedReservation?.status === "fulfilled");
+    await grantedReservation.value();
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM platform_upload_reservations")).rows[0].n, 0,
+      "finishing an upload releases the platform reservation");
+    await (await (reservations[0].status === "rejected" ?
+      firstUpload.acquire("first-uploader", 70, 100) :
+      otherUpload.acquire("other-uploader", 70, 100)))();
+
     const firstBudget = createSharedRequestLimiter(live.db, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
     const secondBudget = createSharedRequestLimiter(other, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
     const attempts = await Promise.all(Array.from({ length: 8 }, (_, index) =>
