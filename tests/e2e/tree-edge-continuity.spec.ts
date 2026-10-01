@@ -61,6 +61,10 @@ test("new relative asks for an explicit twin type", async ({
   await page.getByLabel("Кого добавить").selectOption("spouse");
   await page.getByRole("button", { name: "Новый человек" }).click();
   await expect(page.getByLabel("Тип близнецов")).toHaveCount(0);
+  const relation = page.getByLabel(/Кем новый человек приходится/);
+  await expect(relation.locator('option[value="adoptive_parent"]')).toHaveText("Усыновитель");
+  await expect(relation.locator('option[value="foster_parent"]')).toHaveText("Приёмный родитель");
+  await expect(relation.locator('option[value="presumed_parent"]')).toHaveText("Предполагаемый родитель");
   await page.getByLabel(/Кем новый человек приходится/).selectOption("twin");
   await page.getByLabel("Тип близнецов").selectOption("fraternal");
   await expect(page.getByLabel("Тип близнецов")).toHaveValue("fraternal");

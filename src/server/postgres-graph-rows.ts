@@ -42,7 +42,7 @@ export async function persistPostgresGraphChanges(
   // changes use a temporary negative range to avoid immediate UNIQUE collisions.
   const oldRows = (
     await client.query(
-      "SELECT id,ordinal,source,target,type,note,created_by FROM relations WHERE archive_id=$1 ORDER BY ordinal",
+      "SELECT id,ordinal,source,target,type,note,twin_kind,created_by FROM relations WHERE archive_id=$1 ORDER BY ordinal",
       [archiveId],
     )
   ).rows;
@@ -53,6 +53,7 @@ export async function persistPostgresGraphChanges(
     target: row.target,
     type: row.type,
     note: row.note,
+    twin_kind: row.twinKind,
     created_by: row.createdBy,
   }));
   const nextById = new Map(rows.map((row) => [row.id, row]));
@@ -133,11 +134,11 @@ export async function persistPostgresGraphChanges(
   );
   if (changed.length)
     await client.query(
-      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,created_by)
-     SELECT $1,r.id,r.ordinal,r.source,r.target,r.type,r.note,r.created_by
-       FROM jsonb_to_recordset($2::jsonb) AS r(id text,ordinal bigint,source text,target text,type text,note text,created_by text)
+      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,twin_kind,created_by)
+     SELECT $1,r.id,r.ordinal,r.source,r.target,r.type,r.note,r.twin_kind,r.created_by
+       FROM jsonb_to_recordset($2::jsonb) AS r(id text,ordinal bigint,source text,target text,type text,note text,twin_kind text,created_by text)
      ON CONFLICT (archive_id,id) DO UPDATE SET ordinal=EXCLUDED.ordinal,source=EXCLUDED.source,
-       target=EXCLUDED.target,type=EXCLUDED.type,note=EXCLUDED.note,created_by=EXCLUDED.created_by`,
+       target=EXCLUDED.target,type=EXCLUDED.type,note=EXCLUDED.note,twin_kind=EXCLUDED.twin_kind,created_by=EXCLUDED.created_by`,
       [archiveId, JSON.stringify(changed)],
     );
   const remaining = new Set(next.people.map((row) => row.id));

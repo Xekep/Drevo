@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type pg from "pg";
 import {
   applyArchiveChanges,
@@ -72,6 +73,34 @@ test("removing a parent clears implicit completeness and undo restores the prior
   )!;
   assert.equal(child.parentageComplete, true);
   assert.deepEqual(child.parents, ["father"]);
+});
+
+test("PostgreSQL retains foster, presumed and twin details across graph reads", async (t) => {
+  const { first } = await fixture(t);
+  const before = (await read(first, "tree-a")).family;
+  let next = connectPeople(before, "father", "own", "foster_parent");
+  next = connectPeople(next, "child", "own", "presumed_parent", "Гипотеза");
+  next = { ...next, people: [...next.people, draft("peer", "1980")] };
+  next = connectPeople(next, "child", "peer", "twin", "", "identical");
+  await graph(first, tokens.admin, "tree-a", archiveChanges(before, next), 0);
+  const saved = (await read(first, "tree-a")).family;
+  assert.deepEqual(saved.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })),
+    next.links?.map((link) => ({ type: link.type, twinKind: link.twinKind, note: link.note })));
+  assert.deepEqual(saved.people.find((p) => p.id === "own")?.parents, []);
+});
+
+test("PostgreSQL migration extends an existing relations table without losing rows", async (t) => {
+  const { first } = await fixture(t);
+  await first.query("ALTER TABLE relations DROP COLUMN twin_kind");
+  await first.query("ALTER TABLE relations DROP CONSTRAINT relations_type_check");
+  await first.query("ALTER TABLE relations ADD CONSTRAINT relations_type_check CHECK (type IN ('parent','spouse','adoptive_parent','step_parent','godparent','nurse','sworn_sibling','guardian'))");
+  await first.query(readFileSync(new URL("../../ops/postgres/044_family_link_types.sql", import.meta.url), "utf8"));
+  assert.equal((await first.query("SELECT count(*)::int AS n FROM relations WHERE archive_id=$1", ["tree-a"])).rows[0].n, 1);
+  await first.query(
+    "INSERT INTO relations(archive_id,id,ordinal,source,target,type,twin_kind) VALUES($1,$2,$3,$4,$5,$6,$7)",
+    ["tree-a", "new-twin", 2, "child", "own", "twin", "fraternal"],
+  );
+  assert.equal((await first.query("SELECT twin_kind FROM relations WHERE archive_id=$1 AND id=$2", ["tree-a", "new-twin"])).rows[0].twin_kind, "fraternal");
 });
 
 test("adding another spouse preserves prior marriages and makes a retry idempotent", async (t) => {

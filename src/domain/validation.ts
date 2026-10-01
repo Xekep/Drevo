@@ -227,7 +227,7 @@ export function validateFamily(value: unknown): Family {
     )
       throw new Error("Родитель и ребёнок не могут быть близнецами");
     if (
-      ["adoptive_parent", "step_parent", "nurse"].includes(link.type) &&
+      ["adoptive_parent", "foster_parent", "presumed_parent", "step_parent", "nurse"].includes(link.type) &&
       map.get(link.from)!.birth &&
       map.get(link.to)!.birth &&
       dateBound(map.get(link.from)!.birth, false) >=
@@ -247,7 +247,7 @@ export function validateFamily(value: unknown): Family {
   // Дополнительные родительские роли не должны создавать цикл происхождения.
   const parentGraph = new Map(data.people.map((p) => [p.id, [...p.parents]]));
   for (const link of data.links || [])
-    if (link.type === "adoptive_parent" || link.type === "step_parent")
+    if (["adoptive_parent", "foster_parent", "presumed_parent", "step_parent"].includes(link.type))
       parentGraph.get(link.to)!.push(link.from);
   assertAcyclic(parentGraph, "Дополнительная родительская связь создаёт цикл");
   if (data.photos !== undefined && !Array.isArray(data.photos))

@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='relations' AND column_name='twin_kind'",
+      "044_family_link_types.sql",
+    ],
+    [
       "SELECT to_regclass('platform_upload_reservations') AS present",
       "043_platform_upload_reservations.sql",
     ],

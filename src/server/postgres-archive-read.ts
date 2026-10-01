@@ -32,7 +32,7 @@ export async function readPostgresArchiveInTransaction(
       [archiveId],
     );
     const relations = await client.query(
-      "SELECT id,source,target,type,note,created_by FROM relations WHERE archive_id=$1 ORDER BY ordinal",
+      "SELECT id,source,target,type,note,twin_kind,created_by FROM relations WHERE archive_id=$1 ORDER BY ordinal",
       [archiveId],
     );
     const photos = await client.query(

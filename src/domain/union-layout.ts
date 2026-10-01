@@ -115,7 +115,7 @@ async function geometryForSeed(
     for (const child of family.children) origins.set(child, family);
   const adoptedBy = new Map<string, string[]>();
   for (const link of links)
-    if (link.type === "adoptive_parent" && !origins.has(link.to)) {
+    if ((link.type === "adoptive_parent" || link.type === "foster_parent") && !origins.has(link.to)) {
       const parents = adoptedBy.get(link.to) || [];
       parents.push(link.from);
       adoptedBy.set(link.to, parents);
@@ -323,7 +323,7 @@ async function geometryForSeed(
   // Усыновление влияет на расположение одиночной карточки, но не на состав союза.
   const adoptions = links.filter(
     (l) =>
-      l.type === "adoptive_parent" &&
+      (l.type === "adoptive_parent" || l.type === "foster_parent") &&
       !origins.has(l.to) &&
       primary.has(l.from) &&
       primary.has(l.to) &&

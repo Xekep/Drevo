@@ -55,9 +55,9 @@ export async function writeArchiveRevisionForParity(
 
   for (const [index, row] of rows.relations.entries()) {
     await client.query(
-      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,created_by)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [archiveId, row.id, index + 1, row.source, row.target, row.type, row.note, row.createdBy],
+      `INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,twin_kind,created_by)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [archiveId, row.id, index + 1, row.source, row.target, row.type, row.note, row.twinKind, row.createdBy],
     );
   }
   for (const [index, row] of rows.tags.entries()) {

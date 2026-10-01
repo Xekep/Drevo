@@ -52,6 +52,7 @@ const tables: Table[] = [
       "target",
       "type",
       "note",
+      "twin_kind",
       "created_by",
     ],
     order: "ordinal",
@@ -188,7 +189,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
     const optionalDocumentColumns = new Set([
       "annotations", "document_type", "document_date", "place", "description", "provenance",
     ]);
-    const expected = table.name === "documents" || table.name === "person_comments"
+    const expected = table.name === "documents" || table.name === "person_comments" || table.name === "relations"
       ? imported.filter((column) => columns.includes(column))
       : imported;
     if (
@@ -196,7 +197,9 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
       (table.name === "documents" && imported.some((column) =>
         !optionalDocumentColumns.has(column) && !columns.includes(column))) ||
       (table.name === "person_comments" && imported.some((column) =>
-        column !== "author_name" && !columns.includes(column)))
+        column !== "author_name" && !columns.includes(column))) ||
+      (table.name === "relations" && imported.some((column) =>
+        column !== "twin_kind" && !columns.includes(column)))
     )
       throw new Error(`Столбцы ${table.name} отличаются от схемы импорта`);
   }
@@ -254,12 +257,12 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
   )
     return [];
   const fields = table.columns.filter((column) => column !== "ordinal");
-  const optionalColumns = table.name === "documents" || table.name === "person_comments"
+  const optionalColumns = table.name === "documents" || table.name === "person_comments" || table.name === "relations"
     ? new Set(db.prepare(`PRAGMA table_info(${table.name})`).all().map((row) => String(row.name)))
     : null;
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? `'${field === "annotations" ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? field === "twin_kind" ? "NULL AS twin_kind" : `'${field === "annotations" ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {
