@@ -118,6 +118,24 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           throw new AccountDeletionConflict(
             "Удаление аккаунта пока недоступно: администратор должен установить миграцию 058 обезличивания авторства союзов",
           );
+        const annotationCleanup = await client.query(`SELECT EXISTS (
+          SELECT 1 FROM pg_proc entrypoint
+          JOIN pg_roles owner_role ON owner_role.oid=entrypoint.proowner
+          JOIN pg_proc annotation_cleanup ON annotation_cleanup.oid=
+            to_regprocedure('public.runtime_anonymize_deleted_account_annotations(text)')
+          JOIN pg_roles annotation_owner ON annotation_owner.oid=annotation_cleanup.proowner
+          WHERE entrypoint.oid=to_regprocedure('public.runtime_anonymize_deleted_account_history(text)')
+            AND entrypoint.prosecdef AND annotation_cleanup.prosecdef
+            AND (owner_role.rolsuper OR owner_role.rolbypassrls)
+            AND (annotation_owner.rolsuper OR annotation_owner.rolbypassrls)
+            AND has_function_privilege(current_user,entrypoint.oid,'EXECUTE')
+            AND position('PERFORM public.runtime_anonymize_deleted_account_annotations(account_id)'
+              IN pg_get_functiondef(entrypoint.oid))>0
+        ) AS installed`);
+        if (annotationCleanup.rows[0]?.installed !== true)
+          throw new AccountDeletionConflict(
+            "Удаление аккаунта пока недоступно: администратор должен установить миграцию 059 обезличивания авторов аннотаций",
+          );
         if (confirmation.redactComments) {
           const redactionFunction = await client.query(
             "SELECT COALESCE(has_function_privilege(current_user,to_regprocedure('public.runtime_redact_deleted_account_comments(text)')::oid,'EXECUTE'),false) AS allowed",

@@ -303,6 +303,91 @@ try {
     await client.query("DELETE FROM people WHERE id='old-union-peer'");
     await client.query("DELETE FROM accounts WHERE id='reused-union-author'");
     await client.query("DELETE FROM deleted_account_tombstones WHERE id IN ('old-union-author','reused-union-author')");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('annotation-upgrade-gate','Upgrade gate',now())");
+    await assert.rejects(
+      accountSelfDeletion(live.db, true).remove("annotation-upgrade-gate",
+        { name: "Upgrade gate", leaveSharedArchives: true }),
+      /059/, "deletion cannot leave document annotation author IDs behind before migration 059",
+    );
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM deleted_account_tombstones WHERE id='annotation-upgrade-gate'")).rows[0].n,
+      0, "the annotation migration gate fails before writing a deletion tombstone");
+    await client.query("DELETE FROM accounts WHERE id='annotation-upgrade-gate'");
+    const backfillDocumentId = "11111111-1111-4111-8111-111111111159";
+    const annotation = (id: string, authorId: string, authorName: string) => ({
+      id, page: 1, x: 0.1, y: 0.1, width: 0.2, height: 0.2,
+      text: "Keep note", authorId, authorName, createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const backfillAnnotations = [
+      annotation("old", "old-annotation-author", "Former name"),
+      annotation("reused", "reused-annotation-author", "Active name"),
+      annotation("other", "owner", "Owner"),
+    ];
+    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('old-annotation-author'),('reused-annotation-author')");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('reused-annotation-author','Active name',now())");
+    await client.query(`INSERT INTO documents(archive_id,id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at,annotations)
+      VALUES('runtime-test',$1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents WHERE archive_id='runtime-test'),
+        'Annotation backfill','annotation backfill','annotation-backfill.pdf',1,'owner',now(),$2)`,
+    [backfillDocumentId, JSON.stringify(backfillAnnotations)]);
+    const migration059 = readFileSync(new URL("../../ops/postgres/059_deleted_account_annotation_authors.sql", import.meta.url), "utf8");
+    if (adminClient !== client) {
+      await assert.rejects(client.query(migration059), /BYPASSRLS/,
+        "the app role cannot replace the privileged annotation function");
+      await client.query("ROLLBACK");
+    }
+    await adminClient.query(migration059);
+    await adminClient.query(migration059);
+    const alreadyBackfilled = JSON.parse((await client.query(
+      "SELECT annotations FROM documents WHERE id=$1", [backfillDocumentId],
+    )).rows[0].annotations);
+    assert.deepEqual(alreadyBackfilled,
+      [{ ...backfillAnnotations[0], authorId: "deleted-account", authorName: "Удалённый участник" },
+        backfillAnnotations[1], backfillAnnotations[2]],
+    "059 backfills only an unambiguously deleted author and preserves other annotations");
+    if (adminClient !== client) {
+      await client.query("INSERT INTO accounts(id,name,created_at) VALUES('first-annotation-author','First annotation',now())");
+      await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+        VALUES('runtime-test','first-annotation-author','researcher',true,'all')`);
+      await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('first-annotation-author')");
+      const writerPid = (await client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      const cleanupPid = (await adminClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE");
+      await client.query("UPDATE documents SET annotations=$2 WHERE id=$1",
+        [backfillDocumentId, JSON.stringify([...alreadyBackfilled,
+          annotation("first", "first-annotation-author", "First annotation")])]);
+      const cleanup = adminClient.query("SELECT public.runtime_anonymize_deleted_account_annotations('first-annotation-author')");
+      let writerCommitted = false;
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const blockers = (await client.query("SELECT pg_blocking_pids($1) AS pids", [cleanupPid])).rows[0].pids as number[];
+          if (blockers.includes(writerPid)) { blocked = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(blocked, true, "annotation cleanup waits for an in-flight first annotation from a current member");
+        await client.query("COMMIT");
+        writerCommitted = true;
+        await cleanup;
+      } finally {
+        if (!writerCommitted) await client.query("ROLLBACK");
+        await cleanup.catch(() => undefined);
+      }
+      assert.deepEqual(JSON.parse((await client.query("SELECT annotations FROM documents WHERE id=$1", [backfillDocumentId])).rows[0].annotations)[3],
+        { ...annotation("first", "first-annotation-author", "First annotation"),
+          authorId: "deleted-account", authorName: "Удалённый участник" });
+      await client.query("DELETE FROM archive_memberships WHERE user_id='first-annotation-author'");
+      await client.query("DELETE FROM accounts WHERE id='first-annotation-author'");
+      await client.query("DELETE FROM deleted_account_tombstones WHERE id='first-annotation-author'");
+    }
+    assert.deepEqual(JSON.parse((await client.query("SELECT annotations FROM documents WHERE id=$1", [backfillDocumentId])).rows[0].annotations),
+      [...alreadyBackfilled,
+        ...(adminClient !== client ? [{ ...annotation("first", "first-annotation-author", "First annotation"),
+          authorId: "deleted-account", authorName: "Удалённый участник" }] : [])],
+    "the concurrent first annotation is redacted without reverting the earlier backfill");
+    await client.query("DELETE FROM documents WHERE id=$1", [backfillDocumentId]);
+    await client.query("DELETE FROM accounts WHERE id='reused-annotation-author'");
+    await client.query("DELETE FROM deleted_account_tombstones WHERE id IN ('old-annotation-author','reused-annotation-author')");
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO ${runtimeRole}`);
   } finally {
@@ -313,6 +398,7 @@ try {
     has_function_privilege(current_user,'public.runtime_redact_deleted_account_comments(text)','EXECUTE') AS comment_redaction,
     has_function_privilege(current_user,'public.runtime_anonymize_account_history_rows(text)','EXECUTE') AS internal,
     has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_unions(text)','EXECUTE') AS unions_internal,
+    has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_annotations(text)','EXECUTE') AS annotations_internal,
     has_function_privilege(current_user,'public.runtime_redact_account_attribution(jsonb,text)','EXECUTE') AS helper,
     (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) AS privileged`)).rows[0];
   if (!runtimePrivileges.privileged) {
@@ -320,6 +406,7 @@ try {
     assert.equal(runtimePrivileges.comment_redaction, true);
     assert.equal(runtimePrivileges.internal, false);
     assert.equal(runtimePrivileges.unions_internal, false);
+    assert.equal(runtimePrivileges.annotations_internal, false);
     assert.equal(runtimePrivileges.helper, false);
   }
   await assert.rejects(
@@ -4643,6 +4730,25 @@ try {
          VALUES('runtime-test',$1,'person-a','former-union-peer',$2::jsonb)`,
         [union.id, JSON.stringify(union)],
       );
+    const formerAnnotationDocumentId = "11111111-1111-4111-8111-111111111160";
+    const otherArchiveAnnotationDocumentId = "11111111-1111-4111-8111-111111111161";
+    const formerAnnotationId = "22222222-2222-4222-8222-222222222260";
+    const formerAnnotation = { id: formerAnnotationId, page: 1, x: 0.1, y: 0.1,
+      width: 0.2, height: 0.2, text: "Keep family note", authorId: "former-member",
+      authorName: "Former member", createdAt: "2026-01-01T00:00:00.000Z" };
+    const ownerAnnotation = { ...formerAnnotation, id: "22222222-2222-4222-8222-222222222261",
+      authorId: "owner", authorName: "Owner" };
+    for (const [archiveId, documentId, annotations] of [
+      ["runtime-test", formerAnnotationDocumentId, [formerAnnotation, ownerAnnotation]],
+      ["other-archive", otherArchiveAnnotationDocumentId, [formerAnnotation]],
+    ] as const) {
+      await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
+      await client.query(`INSERT INTO documents(archive_id,id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at,annotations)
+        VALUES($1,$2,(SELECT COALESCE(max(ordinal),0)+1 FROM documents WHERE archive_id=$1),
+          'Former annotations','former annotations',$3,1,'owner',now(),$4)`,
+      [archiveId, documentId, `${documentId}.pdf`, JSON.stringify(annotations)]);
+    }
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
     await client.query(
       `INSERT INTO history(archive_id,revision,saved_at,data) VALUES
@@ -4693,9 +4799,15 @@ try {
       "former members lose live union authorship without changing union details");
     assert.deepEqual((await client.query("SELECT data FROM family_unions WHERE id='unrelated-union'")).rows[0].data,
       unrelatedUnion, "another author's union is unchanged");
+    assert.deepEqual(JSON.parse((await client.query("SELECT annotations FROM documents WHERE id=$1", [formerAnnotationDocumentId])).rows[0].annotations),
+      [{ ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник" }, ownerAnnotation],
+    "account deletion anonymizes only the matching annotation without changing its text or another author");
     await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM family_unions WHERE id='former-union'")).rows[0].n,
       0, "the other archive cannot read the union through RLS");
+    assert.deepEqual(JSON.parse((await client.query("SELECT annotations FROM documents WHERE id=$1", [otherArchiveAnnotationDocumentId])).rows[0].annotations),
+      [{ ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник" }],
+    "privileged cleanup also anonymizes annotations in archives the account left earlier");
     await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     await client.query("INSERT INTO accounts(id,name,created_at) VALUES('former-member','Returned member',$1)",
       [new Date().toISOString()]);
@@ -4723,6 +4835,21 @@ try {
         "Content-Type": "application/json", "If-Match": String(returnedFamily.revision) },
       body: JSON.stringify(forgedUnion),
     })).status, 403, "re-registering the same ID does not restore union edit rights");
+    const annotationPath = `/api/documents/${formerAnnotationDocumentId}/annotations`;
+    const returnedAnnotations = await fetch(securedBase + annotationPath, { headers: returnedHeaders });
+    assert.equal(returnedAnnotations.status, 200);
+    const annotationItems = (await returnedAnnotations.json()).items as Array<{ id: string; authorId: string; authorName: string; canDelete: boolean }>;
+    assert.deepEqual(annotationItems.find((item) => item.id === formerAnnotationId),
+      { ...formerAnnotation, authorId: "deleted-account", authorName: "Удалённый участник", canDelete: false },
+    "re-registering the same account ID does not regain the annotation delete capability");
+    assert.equal((await fetch(securedBase + `${annotationPath}/${formerAnnotationId}`, {
+      method: "DELETE",
+      headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN! },
+    })).status, 403, "a returned account cannot delete its predecessor's shared annotation");
+    await client.query("DELETE FROM documents WHERE id=$1", [formerAnnotationDocumentId]);
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query("DELETE FROM documents WHERE id=$1", [otherArchiveAnnotationDocumentId]);
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
     await client.query("DELETE FROM archive_memberships WHERE user_id='former-member'");
     await client.query("DELETE FROM accounts WHERE id='former-member'");
     await client.query("DELETE FROM family_unions WHERE id IN ('former-union','unrelated-union')");
