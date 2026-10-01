@@ -16,7 +16,7 @@ import {
   type PortableSnapshot,
   type PortableManifest,
 } from "../src/server/portable-package.ts";
-import { readPortablePackage } from "../src/server/portable-import.ts";
+import { portableUncompressedBytes, readPortablePackage } from "../src/server/portable-import.ts";
 import { installPortableOriginals } from "../src/server/portable-install.ts";
 import { applyPortablePackage } from "../src/server/portable-apply.ts";
 import { openArchive } from "../src/server/database.ts";
@@ -141,6 +141,11 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       "media/record.pdf",
       "media/scan.png",
     ]);
+    assert.equal(
+      await portableUncompressedBytes(path),
+      [...files.values()].reduce((sum, file) => sum + file.length, 0),
+      "the preflight reserves the complete uncompressed ZIP size",
+    );
     const manifest = JSON.parse(
       files.get("manifest.json")!.toString(),
     ) as PortableManifest;

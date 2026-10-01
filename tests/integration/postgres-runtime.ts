@@ -44,6 +44,7 @@ import {
   releaseAttachedMediaGrants,
 } from "../../src/server/postgres-media-quota.ts";
 import { uploadQuota, UploadQuotaError } from "../../src/server/upload-quota.ts";
+import { reservePlatformDisk } from "../../src/server/platform-disk-reservation.ts";
 import { registerMediaUpload } from "../../src/server/media-access.ts";
 import type { Family } from "../../src/domain/types.ts";
 import { planAdditions } from "../../src/domain/additions-import.ts";
@@ -234,6 +235,24 @@ try {
     }
     await assert.rejects(releaseLongUpload.assertValid(), UploadQuotaError);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM platform_upload_reservations")).rows[0].n, 0);
+
+    const previewSpace = await reservePlatformDisk(live.db, 40, async () => 100, {
+      freeReserve: 10,
+    });
+    try {
+      await previewSpace.grow(40);
+      await previewSpace.assertValid();
+      await assert.rejects(previewSpace.grow(15),
+        (error) => error instanceof UploadQuotaError && error.status === 507);
+      await assert.rejects(otherUpload.acquire("other-preview", 30, 100),
+        (error) => error instanceof UploadQuotaError && error.status === 507,
+        "a temporary preview reserves physical disk space against other archives");
+    } finally {
+      await previewSpace.release();
+    }
+    await assert.rejects(previewSpace.assertValid(), UploadQuotaError);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM platform_upload_reservations")).rows[0].n, 0);
+    await (await otherUpload.acquire("after-preview", 30, 100))();
 
     const firstBudget = createSharedRequestLimiter(live.db, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
     const secondBudget = createSharedRequestLimiter(other, "runtime-shared-test", { windowMs: 60_000, limit: 3 });

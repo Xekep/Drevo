@@ -11,12 +11,14 @@ import { ConflictError, type openArchive } from "./database.ts";
 import { applyPortablePackage } from "./portable-apply.ts";
 import {
   PORTABLE_IMPORT_LIMIT,
+  portableUncompressedBytes,
   readPortablePackage,
 } from "./portable-import.ts";
 import { installPortableOriginals } from "./portable-install.ts";
 import { PortablePackageError } from "./portable-package.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { mediaStore } from "./media.ts";
+import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { ForbiddenError } from "./users.ts";
 
@@ -125,17 +127,38 @@ export function portableImportHttp(
   }
 
   async function parsePackage(input: string, directory: string) {
-    try {
-      return await readPortablePackage(input, directory);
-    } catch (error) {
-      if (error instanceof PortablePackageError) throw error;
-      if ((error as NodeJS.ErrnoException).code === "ENOSPC")
+    const read = async <T>(work: () => Promise<T>): Promise<T> => {
+      try {
+        return await work();
+      } catch (error) {
+        if (error instanceof PortablePackageError) throw error;
+        if ((error as NodeJS.ErrnoException).code === "ENOSPC")
+          throw new PortablePackageError(
+            "Недостаточно места для распаковки пакета Drevo",
+          );
         throw new PortablePackageError(
-          "Недостаточно места для распаковки пакета Drevo",
+          "Некорректный или повреждённый пакет Drevo",
         );
-      throw new PortablePackageError(
-        "Некорректный или повреждённый пакет Drevo",
-      );
+      }
+    };
+    const unpackedBytes = await read(() => portableUncompressedBytes(input));
+    const reserve = unpackedBytes
+      ? await reservePlatformDisk(
+          db,
+          unpackedBytes,
+          async () => {
+            const disk = await statfs(directory);
+            return disk.bavail * disk.bsize;
+          },
+          { freeReserve: 128 * 1024 ** 2 },
+        )
+      : undefined;
+    try {
+      const parsed = await read(() => readPortablePackage(input, directory));
+      await reserve?.assertValid();
+      return parsed;
+    } finally {
+      await reserve?.release();
     }
   }
 
@@ -209,31 +232,43 @@ export function portableImportHttp(
     }, 60_000);
     heartbeat.unref();
     let ready = false;
+    let inputReserve: Awaited<ReturnType<typeof reservePlatformDisk>> | undefined;
     try {
-      const disk = await statfs(directory);
-      if (disk.bavail * disk.bsize < (length || 0) + 512 * 1024 ** 2)
-        throw new PortablePackageError(
-          "Недостаточно места для проверки архива",
-        );
+      let reservedBytes = length ?? 512 * 1024 ** 2;
+      inputReserve = await reservePlatformDisk(
+        db,
+        reservedBytes,
+        async () => {
+          const disk = await statfs(directory);
+          return disk.bavail * disk.bsize;
+        },
+        { freeReserve: length === null ? 128 * 1024 ** 2 : 512 * 1024 ** 2 },
+      );
       let size = 0;
       let nextDiskCheck = 64 * 1024 ** 2;
       const guard = new Transform({
         transform(chunk: Buffer, _encoding, callback) {
           size += chunk.length;
           if (size > PORTABLE_IMPORT_LIMIT)
-            callback(new PortablePackageError("Пакет Drevo больше 12 ГиБ"));
-          else if (size >= nextDiskCheck) {
-            nextDiskCheck = size + 64 * 1024 ** 2;
-            void statfs(directory).then((space) => {
+            return callback(new PortablePackageError("Пакет Drevo больше 12 ГиБ"));
+          const needsGrowth = length === null &&
+            size >= reservedBytes - 64 * 1024 ** 2 &&
+            reservedBytes < PORTABLE_IMPORT_LIMIT;
+          const needsDiskCheck = size >= nextDiskCheck;
+          if (!needsGrowth && !needsDiskCheck) return callback(null, chunk);
+          void (async () => {
+            if (needsGrowth) {
+              const additional = Math.min(512 * 1024 ** 2, PORTABLE_IMPORT_LIMIT - reservedBytes);
+              await inputReserve!.grow(additional);
+              reservedBytes += additional;
+            }
+            if (needsDiskCheck) {
+              const space = await statfs(directory);
               if (space.bavail * space.bsize < 128 * 1024 ** 2)
-                callback(
-                  new PortablePackageError(
-                    "Недостаточно места для пакета Drevo",
-                  ),
-                );
-              else callback(null, chunk);
-            }, callback);
-          } else callback(null, chunk);
+                throw new PortablePackageError("Недостаточно места для пакета Drevo");
+              nextDiskCheck = size + 64 * 1024 ** 2;
+            }
+          })().then(() => callback(null, chunk), callback);
         },
       });
       const input = join(directory, "input");
@@ -242,6 +277,9 @@ export function portableImportHttp(
       });
       if (length !== null && size !== length)
         throw new PortablePackageError("Передан неполный файл");
+      await inputReserve.assertValid();
+      await inputReserve.release();
+      inputReserve = undefined;
       const parsed = await parsePackage(input, directory);
       if (parsed.snapshot.family.people.length > 10_000)
         throw new PortablePackageError("В пакете больше 10 000 людей");
@@ -292,14 +330,20 @@ export function portableImportHttp(
       };
     } finally {
       clearInterval(heartbeat);
-      if (!ready) {
-        await db
-          .prepare(
-            "DELETE FROM workflow_stages WHERE kind='drevo' AND token=?",
-            "DELETE FROM workflow_stages WHERE kind='drevo' AND token=?",
-          )
-          .run(token);
-        await rm(directory, { recursive: true, force: true });
+      try {
+        if (!ready) {
+          await db
+            .prepare(
+              "DELETE FROM workflow_stages WHERE kind='drevo' AND token=?",
+              "DELETE FROM workflow_stages WHERE kind='drevo' AND token=?",
+            )
+            .run(token);
+          await rm(directory, { recursive: true, force: true });
+        }
+      } finally {
+        await inputReserve?.release().catch(() => {
+          console.warn("portable_preview_reservation_release_failed");
+        });
       }
     }
   }
