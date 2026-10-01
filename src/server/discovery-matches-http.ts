@@ -5,7 +5,8 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateNameQuery } from "./discovery-candidate-ranking.ts";
+import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery, candidatePlaceQuery,
+  candidateRelativeQuery, type PublishedRelative } from "./discovery-candidate-ranking.ts";
 
 const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
@@ -248,12 +249,50 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
       const source = published(sourceRow);
       const terms = candidateNameQuery(source);
-      if (!terms) return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
+      const sourceRelatives = (await db.prepare("", `SELECT kind,relative_name FROM discovery_relative_names
+        WHERE archive_id=? AND person_id=?
+        ORDER BY CASE kind WHEN 'parent' THEN 0 WHEN 'spouse' THEN 1 ELSE 2 END,
+          relative_name LIMIT 24`)
+        .all(archiveId,sourceId)).map((row) => ({
+          kind: String(row.kind) as PublishedRelative["kind"], name: String(row.relative_name),
+        }));
+      const fuzzy = candidateFuzzyTerms(source);
+      const place = candidatePlaceQuery(source);
+      const relativeTerms = candidateRelativeQuery(sourceRelatives);
+      if (!terms && !fuzzy && !place && !relativeTerms)
+        return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
-      // GIN narrows the candidate set before scoring. No private graph is read.
-      const rows = await db.prepare("", `SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
+      const branches: string[] = [], lookupArgs: string[] = [];
+      if (terms) {
+        branches.push(`SELECT archive_id,person_id FROM discovery_people
+          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)`);
+        lookupArgs.push(archiveId,terms);
+      }
+      if (fuzzy) {
+        const surnames = fuzzy.surnames.map(() =>
+          `(surname_normalized % ? OR birth_surname_normalized % ?)`).join(" OR ");
+        branches.push(`SELECT archive_id,person_id FROM discovery_people
+          WHERE archive_id<>? AND given_normalized % ? AND (${surnames})`);
+        lookupArgs.push(archiveId,fuzzy.given,
+          ...fuzzy.surnames.flatMap((value) => [value,value]));
+      }
+      if (place) {
+        branches.push(`SELECT archive_id,person_id FROM discovery_people
+          WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
+            AND ${place.column} BETWEEN ? AND ?`);
+        lookupArgs.push(archiveId,place.terms,place.from,place.to);
+      }
+      if (relativeTerms) {
+        branches.push(`SELECT archive_id,person_id FROM discovery_relative_names
+          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)`);
+        lookupArgs.push(archiveId,relativeTerms);
+      }
+      // Each branch starts with a GIN index. Only opt-in projections are read.
+      const rows = await db.prepare("", `WITH candidate_keys AS (${branches.join(" UNION ")})
+        SELECT d.archive_id,d.person_id,d.name,d.birth_surname,
           d.birth_year,d.death_year,d.birth_place,d.death_place FROM discovery_people d
-        WHERE d.archive_id<>? AND d.name_vector @@ to_tsquery('simple',?)
+        JOIN candidate_keys k ON k.archive_id=d.archive_id AND k.person_id=d.person_id
+        WHERE d.archive_id<>?
           AND (d.name,d.archive_id,d.person_id) > (?,?,?)
           AND NOT EXISTS (SELECT 1 FROM discovery_ignored_archives a
             WHERE a.archive_id=? AND a.target_archive_id=d.archive_id)
@@ -268,15 +307,34 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
               OR (m.right_archive_id=? AND m.right_person_id=?
                 AND m.left_archive_id=d.archive_id AND m.left_person_id=d.person_id)))
         ORDER BY d.name,d.archive_id,d.person_id LIMIT ${candidatePageSize + 1}`)
-        .all(archiveId,terms,...after,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
+        .all(...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,archiveId,sourceId,archiveId,sourceId);
       const page = rows.slice(0, candidatePageSize);
+      const relativesByPerson = new Map<string, PublishedRelative[]>();
+      if (page.length) {
+        const values = page.map(() => "(?,?)").join(",");
+        const relativeRows = await db.prepare("", `SELECT p.archive_id,p.person_id,r.kind,r.relative_name
+          FROM (VALUES ${values}) AS p(archive_id,person_id)
+          JOIN LATERAL (SELECT kind,relative_name FROM discovery_relative_names
+            WHERE archive_id=p.archive_id AND person_id=p.person_id
+            ORDER BY CASE kind WHEN 'parent' THEN 0 WHEN 'spouse' THEN 1 ELSE 2 END,
+              relative_name LIMIT 24) r ON true`)
+          .all(...page.flatMap((row) => [String(row.archive_id),String(row.person_id)]));
+        for (const row of relativeRows) {
+          const key = `${row.archive_id}\u0000${row.person_id}`;
+          const list = relativesByPerson.get(key) || [];
+          list.push({ kind: String(row.kind) as PublishedRelative["kind"],
+            name: String(row.relative_name) });
+          relativesByPerson.set(key,list);
+        }
+      }
       const nextCursor = rows.length > candidatePageSize
         ? Buffer.from(JSON.stringify([
           page.at(-1)!.name, page.at(-1)!.archive_id, page.at(-1)!.person_id,
         ])).toString("base64url") : null;
       const ranked = page.map((row) => {
         const candidate = published(row);
-        const evidence = candidateEvidence(source,candidate);
+        const evidence = candidateEvidence(source,candidate,sourceRelatives,
+          relativesByPerson.get(`${row.archive_id}\u0000${row.person_id}`) || []);
         return evidence ? { ...candidate, ...evidence } : null;
       }).filter((item) => item !== null)
         .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))

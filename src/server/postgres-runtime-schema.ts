@@ -139,6 +139,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "031_discovery_ignored_archives.sql",
     ],
     [
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('relations') AND tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal",
+      "049_discovery_candidate_signals.sql",
+    ],
+    [
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitations_created_by_fkey' AND confdeltype='c'",
       "040_account_removal_references.sql",
     ],
