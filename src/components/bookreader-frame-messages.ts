@@ -20,6 +20,7 @@ export type ReaderCommand =
       type: "state";
       annotations: DocumentAnnotation[];
       activeAnnotation: string;
+      hoveredAnnotation: string;
       annotating: boolean;
       magnifier: boolean;
       commentsOpen: boolean;

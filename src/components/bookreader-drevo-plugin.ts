@@ -30,6 +30,7 @@ export function makeDrevoPlugin(
     private commentsButton: HTMLButtonElement | null = null;
     private annotations: DocumentAnnotation[] = [];
     private activeAnnotation = "";
+    private hoveredAnnotation = "";
     private selection: AnnotationSelection | null = null;
     private annotating = false;
     private magnifier = false;
@@ -129,6 +130,7 @@ export function makeDrevoPlugin(
     update(state: Extract<ReaderCommand, { type: "state" }>) {
       this.annotations = state.annotations;
       this.activeAnnotation = state.activeAnnotation;
+      this.hoveredAnnotation = state.hoveredAnnotation;
       this.selection = state.selection;
       this.annotating = state.annotating;
       this.magnifier = state.magnifier;
@@ -178,7 +180,8 @@ export function makeDrevoPlugin(
           const mark = document.createElement("span");
           mark.className =
             "drevo-page-mark" +
-            (item.id === this.activeAnnotation ? " is-active" : "");
+            (item.id === this.activeAnnotation ? " is-active" : "") +
+            (item.id === this.hoveredAnnotation ? " is-hovered" : "");
           this.position(mark, item);
           return mark;
         });

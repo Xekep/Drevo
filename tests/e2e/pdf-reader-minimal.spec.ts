@@ -83,8 +83,17 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await book.locator("body").press("Escape");
   await expect(book.locator("#colorbox")).toBeHidden();
   await expect(reader).toBeVisible();
-  if (info.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  const commentsButton = book.getByRole("button", { name: "Комментарии" });
+  const sidebar = reader.locator(".pdf-book-sidebar");
+  await expect(commentsButton).toBeVisible();
+  await expect(commentsButton).toHaveAttribute("aria-expanded", "false");
+  await expect(sidebar).toBeHidden();
+  await commentsButton.click();
+  await expect(sidebar).toBeVisible();
+  await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
+  await commentsButton.click();
+  await expect(sidebar).toBeHidden();
+  await commentsButton.click();
   await reader.locator(".pdf-book-sidebar-tabs button").last().click();
   await reader.locator(".pdf-book-outline button").first().click();
   await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
@@ -102,8 +111,7 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await expect(lensButton).toHaveAttribute("aria-pressed", "false");
   await expect(book.locator(".drevo-magnifier-lens")).toHaveCount(0);
 
-  if (info.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  await commentsButton.click();
   await reader.locator(".pdf-book-sidebar-tabs button").first().click();
   await reader.locator(".pdf-book-add-comment").click();
   await expect(book.locator("body.drevo-annotating")).toHaveCount(1);
