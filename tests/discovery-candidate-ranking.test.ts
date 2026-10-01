@@ -82,4 +82,7 @@ test("a shared country or region cannot stand in for a shared settlement", () =>
   assert.deepEqual(candidatePlaceQuery({ name: "Шульц Анна", deathYear: "1945",
     deathPlace: "Кёнигсберг, Восточная Пруссия" }),
   { terms: "анна & кенигсберг", column: "death_year", from: "1943", to: "1947" });
+  assert.deepEqual(candidatePlaceQuery({ name: "Шульц Анна", deathYear: "1945",
+    deathPlace: "д. Дубровка, Пермь" }),
+  { terms: "анна & дубровка", column: "death_year", from: "1943", to: "1947" });
 });

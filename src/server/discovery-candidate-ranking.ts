@@ -75,8 +75,10 @@ const countries = new Set(["россия", "рф", "ссср", "империя",
 /** Use a settlement, never a country or administrative region, as place evidence. */
 function localityWords(value: string) {
   const segments = value.split(/[,;]+/).map((segment) => words(segment));
-  const settlement = segments.reverse().find((segment) => segment.length &&
+  const eligible = segments.filter((segment) => segment.length &&
     !segment.some((word) => regions.has(word) || countries.has(word)));
+  const settlement = eligible.filter((segment) => placePrefixes.has(segment[0])).at(-1)
+    || eligible.at(-1);
   return settlement?.filter((word) => !placePrefixes.has(word)) || [];
 }
 export function candidateEvidence(

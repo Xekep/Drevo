@@ -2,7 +2,16 @@
 -- been installed. The endpoint remains unavailable until this commits.
 BEGIN;
 LOCK TABLE people, published_people IN SHARE MODE;
-TRUNCATE discovery_people;
+-- Newer catalogs have an opt-in relative projection referencing this table.
+-- Truncate it explicitly; CASCADE could silently remove unrelated future data.
+DO $$
+BEGIN
+  IF to_regclass('discovery_relative_names') IS NOT NULL THEN
+    EXECUTE 'TRUNCATE discovery_relative_names, discovery_people';
+  ELSE
+    EXECUTE 'TRUNCATE discovery_people';
+  END IF;
+END $$;
 DO $$
 DECLARE entry record;
 BEGIN
