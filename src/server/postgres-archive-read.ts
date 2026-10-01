@@ -22,6 +22,7 @@ export async function readPostgresArchiveInTransaction(
   client: pg.Client,
   archiveId: string,
 ) {
+    await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
     const meta = await client.query(
       "SELECT title,description,demo,revision FROM archives WHERE id=$1",
       [archiveId],
@@ -43,11 +44,16 @@ export async function readPostgresArchiveInTransaction(
       "SELECT photo_id,data FROM photo_tags WHERE archive_id=$1 ORDER BY ordinal",
       [archiveId],
     );
+    const unions = await client.query(
+      "SELECT data FROM family_unions WHERE archive_id=$1 ORDER BY ordinal",
+      [archiveId],
+    );
     return hydrateArchive(
       meta.rows[0],
       people.rows,
       relations.rows,
       photos.rows,
       tags.rows,
+      unions.rows,
     );
 }

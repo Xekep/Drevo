@@ -1,6 +1,7 @@
 import { EXTRA_LINK_TYPES, type Family } from "./types.ts";
 import { validDate, dateBound, safeUrl } from "./dates.ts";
 import { validateEvents } from "./person-events.ts";
+import { validateUnions } from "./family-unions.ts";
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -153,6 +154,7 @@ export function validateFamily(value: unknown): Family {
       throw new Error("Семейная связь указана несколько раз");
   }
   const map = new Map(data.people.map((p) => [p.id, p]));
+  validateUnions(data.unions, ids);
   for (const p of data.people) {
     if ([...p.parents, ...p.spouses].some((id) => !ids.has(id) || id === p.id))
       throw new Error("Обнаружена неизвестная семейная связь");

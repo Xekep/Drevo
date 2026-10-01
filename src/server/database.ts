@@ -24,6 +24,7 @@ import {
   type JsonRow,
   type RelationRow,
   type TagRow,
+  type UnionRow,
 } from "./archive-rows.ts";
 import { initializeArchiveSchema } from "./schema.ts";
 import { ConflictError } from "./archive-errors.ts";
@@ -63,14 +64,20 @@ function addsMediaReference(before: Family, after: Family) {
 
 async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
   await db.exec(
-    "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
-    "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM relations; DELETE FROM people;",
+    "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM family_unions; DELETE FROM relations; DELETE FROM people;",
+    "DELETE FROM photo_tags; DELETE FROM photos; DELETE FROM family_unions; DELETE FROM relations; DELETE FROM people;",
   );
   const personQuery = db.prepare(
     "INSERT INTO people(id,data) VALUES(?,?)",
     "INSERT INTO people(id,data) VALUES(?,?)",
   );
   for (const row of rows.people) await personQuery.run(row.id, row.data);
+  const unionQuery = db.prepare(
+    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
+    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
+  );
+  for (const row of rows.unions)
+    await unionQuery.run(row.id, row.participantA, row.participantB, row.data);
 
   const relationQuery = db.prepare(
     "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
@@ -177,7 +184,11 @@ async function syncRelations(
         row.twinKind,
         row.createdBy,
       );
-    else if (old.note !== row.note || old.twinKind !== row.twinKind || old.createdBy !== row.createdBy)
+    else if (
+      old.note !== row.note ||
+      old.twinKind !== row.twinKind ||
+      old.createdBy !== row.createdBy
+    )
       await update.run(row.note, row.twinKind, row.createdBy, row.id);
   }
 }
@@ -210,6 +221,39 @@ async function syncTags(db: StoreDatabase, before: TagRow[], after: TagRow[]) {
   }
 }
 
+async function syncUnions(
+  db: StoreDatabase,
+  before: UnionRow[],
+  after: UnionRow[],
+) {
+  const old = new Map(before.map((row) => [row.id, row]));
+  const next = new Set(after.map((row) => row.id));
+  const remove = db.prepare(
+    "DELETE FROM family_unions WHERE id=?",
+    "DELETE FROM family_unions WHERE id=?",
+  );
+  const insert = db.prepare(
+    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
+    "INSERT INTO family_unions(id,participant_a,participant_b,data) VALUES(?,?,?,?)",
+  );
+  const update = db.prepare(
+    "UPDATE family_unions SET participant_a=?,participant_b=?,data=? WHERE id=?",
+    "UPDATE family_unions SET participant_a=?,participant_b=?,data=? WHERE id=?",
+  );
+  for (const row of before) if (!next.has(row.id)) await remove.run(row.id);
+  for (const row of after) {
+    const prior = old.get(row.id);
+    if (!prior)
+      await insert.run(row.id, row.participantA, row.participantB, row.data);
+    else if (
+      prior.participantA !== row.participantA ||
+      prior.participantB !== row.participantB ||
+      prior.data !== row.data
+    )
+      await update.run(row.participantA, row.participantB, row.data, row.id);
+  }
+}
+
 async function syncArchiveRows(
   db: StoreDatabase,
   before: ArchiveRows,
@@ -220,6 +264,7 @@ async function syncArchiveRows(
   await syncJsonRows(db, "people", before.people, after.people, false);
   await syncJsonRows(db, "photos", before.photos, after.photos, false);
   await syncRelations(db, before.relations, after.relations);
+  await syncUnions(db, before.unions, after.unions);
   await syncTags(db, before.tags, after.tags);
 
   const nextPhotoIds = new Set(after.photos.map((row) => row.id)),
@@ -241,7 +286,7 @@ async function syncArchiveRows(
   for (const row of before.people)
     if (!nextPeopleIds.has(row.id)) await removePerson.run(row.id);
   const restoreOrder = async (
-    table: "people" | "relations" | "photos" | "photo_tags",
+    table: "people" | "relations" | "family_unions" | "photos" | "photo_tags",
     beforeRows: Array<{ id: string }>,
     rows: Array<{ id: string }>,
   ) => {
@@ -261,6 +306,7 @@ async function syncArchiveRows(
   };
   await restoreOrder("people", before.people, after.people);
   await restoreOrder("relations", before.relations, after.relations);
+  await restoreOrder("family_unions", before.unions, after.unions);
   await restoreOrder("photos", before.photos, after.photos);
   await restoreOrder("photo_tags", before.tags, after.tags);
 }
@@ -375,11 +421,17 @@ export async function openArchive(
           : validateFamily(value);
       if (actor && previous)
         await authorizeMediaReferences(db, previous, family, actor);
-      const mediaActorId = actor && previous && addsMediaReference(previous, family)
-        ? actor.id : null;
+      const mediaActorId =
+        actor && previous && addsMediaReference(previous, family)
+          ? actor.id
+          : null;
       const measuredAt = Date.now();
-      const archiveBytesBefore = mediaActorId ? await postgresMediaBytes(db, measuredAt) : 0;
-      const userBytesBefore = mediaActorId ? await userStorageBytes(db, mediaActorId, measuredAt) : 0;
+      const archiveBytesBefore = mediaActorId
+        ? await postgresMediaBytes(db, measuredAt)
+        : 0;
+      const userBytesBefore = mediaActorId
+        ? await userStorageBytes(db, mediaActorId, measuredAt)
+        : 0;
       if (previous && oldRevision !== null)
         await remember(previous, family, oldRevision, actor, operation);
 
@@ -427,7 +479,14 @@ export async function openArchive(
       if (mediaActorId) {
         await releaseAttachedMediaGrants(db);
         await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
-        await enforceUserStorageLimit(db, mediaActorId, 0, false, measuredAt, userBytesBefore);
+        await enforceUserStorageLimit(
+          db,
+          mediaActorId,
+          0,
+          false,
+          measuredAt,
+          userBytesBefore,
+        );
       }
       await finishWrite();
       return { family, revision: expected + 1 };
@@ -483,7 +542,14 @@ export async function openArchive(
         .run(expected + 1);
       await releaseAttachedMediaGrants(db);
       await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
-      await enforceUserStorageLimit(db, actor.id, 0, false, measuredAt, userBytesBefore);
+      await enforceUserStorageLimit(
+        db,
+        actor.id,
+        0,
+        false,
+        measuredAt,
+        userBytesBefore,
+      );
       await finishWrite();
       return { family, revision: expected + 1 };
     });
@@ -607,12 +673,21 @@ async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
       .all(),
     people,
   );
+  const unions = (
+    await db
+      .prepare(
+        "SELECT data FROM family_unions ORDER BY rowid",
+        "SELECT data FROM family_unions ORDER BY ordinal",
+      )
+      .all()
+  ).map((row) => JSON.parse(String(row.data)));
   return {
     family: {
       title: meta.title,
       description: meta.description,
       demo: meta.demo,
       people,
+      ...(unions.length ? { unions } : {}),
       links,
       photos: [],
     } as Family,
@@ -678,6 +753,14 @@ export async function readArchive(db: StoreDatabase) {
       "SELECT * FROM archives WHERE id=current_setting('drevo.archive_id', true)",
     )
     .get())!;
+  // Backups made before schema v19 are read in query-only mode during restore.
+  const hasUnions =
+    db.kind === "postgres" ||
+    !!(await db
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='family_unions'",
+      )
+      .get());
   return hydrateArchive(
     meta,
     await db
@@ -704,5 +787,13 @@ export async function readArchive(db: StoreDatabase) {
         "SELECT photo_id,data FROM photo_tags ORDER BY ordinal",
       )
       .all(),
+    hasUnions
+      ? await db
+          .prepare(
+            "SELECT data FROM family_unions ORDER BY rowid",
+            "SELECT data FROM family_unions ORDER BY ordinal",
+          )
+          .all()
+      : [],
   );
 }

@@ -2,7 +2,7 @@ import type { Family } from "./types.ts";
 import { validateFamily } from "./validation.ts";
 
 export type Change = {
-  collection: "people" | "links" | "photos" | "meta";
+  collection: "people" | "links" | "unions" | "photos" | "meta";
   id?: string;
   field?: string;
   before: unknown;
@@ -36,7 +36,7 @@ export function archiveChanges(before: Family, after: Family): Change[] {
         after: after[field],
       });
   }
-  for (const collection of ["people", "links", "photos"] as const) {
+  for (const collection of ["people", "links", "unions", "photos"] as const) {
     const a = new Map(
       (before[collection] || []).map((p) => [p.id, p] as const),
     );

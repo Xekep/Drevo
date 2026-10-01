@@ -5,6 +5,8 @@ import type {
   PlaceLocation,
   Source,
   FamilyLink,
+  FamilyUnion,
+  UnionMilestone,
 } from "./types.ts";
 import { EXTRA_LINK_TYPES } from "./types.ts";
 import { validDate, fullName, safeUrl } from "./dates.ts";
@@ -570,6 +572,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         ...(type === "twin" ? { twinKind: twinKind || "unknown" } : {}),
       });
   };
+  const unions: FamilyUnion[] = [];
   const families = roots.filter((n) => n.tag === "FAM");
   for (const f of families) {
     for (const n of f.children)
@@ -580,6 +583,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "CHIL",
           "_DREVO_PARENT",
           "_DREVO_UNMARRIED",
+          "_DREVO_SPOUSE",
+          "_DREVO_UNION",
           "NOTE",
           "SOUR",
           "CHAN",
@@ -613,7 +618,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     if (
       spousePair.length === 2 &&
       value(f, "_DREVO_UNMARRIED") !== "Y" &&
-      marriageRecorded
+      (marriageRecorded || value(f, "_DREVO_SPOUSE") === "Y")
     ) {
       for (const p of spousePair)
         p.spouses = [
@@ -626,6 +631,48 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       warnings.add(
         "У двух родителей не указано событие брака: связь супругов не создана. Проверьте её после импорта.",
       );
+    if (spousePair.length === 2) {
+      const explicit = value(f, "_DREVO_UNION");
+      if (explicit) {
+        try {
+          const restored = JSON.parse(explicit) as FamilyUnion;
+          unions.push({
+            ...restored,
+            participants: [spousePair[0].id, spousePair[1].id],
+          });
+        } catch {
+          warnings.add(
+            "Запись семейного союза Drevo не прочитана; проверьте исходный GEDCOM.",
+          );
+        }
+      } else if (marriageRecorded) {
+        const milestone = (node: Node): UnionMilestone => {
+          const item = event(node);
+          return {
+            date: item.date,
+            dateText: item.dateText,
+            place: item.place,
+            sources: item.sources,
+          };
+        };
+        const formation = f.children.find(
+          (node) => node.tag === "MARR" && node.value !== "N",
+        );
+        const divorce = f.children.find(
+          (node) =>
+            ["DIV", "DIVF", "ANUL"].includes(node.tag) && node.value !== "N",
+        );
+        unions.push({
+          id: `${namespace}-u${unions.length + 1}`,
+          participants: [spousePair[0].id, spousePair[1].id],
+          type: "marriage",
+          ...(formation ? { formation: milestone(formation) } : {}),
+          ...(divorce ? { divorce: milestone(divorce) } : {}),
+          sources: sources(f),
+          ...(notes(f) ? { note: notes(f) } : {}),
+        });
+      }
+    }
     for (const c of children(f, "CHIL").filter((n) => n.value !== "@VOID@")) {
       const person = personRef(c.value),
         individual = records.get(c.value)!;
@@ -654,7 +701,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             children(f, adoptionRole).some((n) => ids.get(n.value) === p.id));
         if (pedigree === "adopted" || adoptThis)
           addLink(p.id, person.id, "adoptive_parent");
-        else if (pedigree === "foster") addLink(p.id, person.id, "foster_parent");
+        else if (pedigree === "foster")
+          addLink(p.id, person.id, "foster_parent");
         else person.parents = [...new Set([...person.parents, p.id])];
       }
     }
@@ -832,6 +880,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       demo: false,
       people,
       links,
+      ...(unions.length ? { unions } : {}),
       photos: [],
     }),
     warnings: [...warnings],
@@ -919,14 +968,16 @@ export function exportGedcom(
       children: string[];
       married: boolean;
       pedigree: "birth" | "adopted" | "foster";
+      union?: FamilyUnion;
     }
   >();
   function group(
     parents: string[],
     married = false,
     pedigree: "birth" | "adopted" | "foster" = "birth",
+    union?: FamilyUnion,
   ) {
-    const key = JSON.stringify([[...parents].sort(), pedigree]);
+    const key = JSON.stringify([[...parents].sort(), pedigree, union?.id]);
     if (!groups.has(key))
       groups.set(key, {
         id: `@F${groups.size + 1}@`,
@@ -934,6 +985,7 @@ export function exportGedcom(
         children: [],
         married,
         pedigree,
+        union,
       });
     const g = groups.get(key)!;
     g.married ||= married;
@@ -943,9 +995,15 @@ export function exportGedcom(
     if (p.parents.length) group(p.parents).children.push(p.id);
     for (const spouse of p.spouses) group([p.id, spouse], true);
   }
+  for (const union of family.unions || [])
+    group(union.participants, union.type === "marriage", "birth", union);
   for (const link of family.links || [])
     if (link.type === "adoptive_parent" || link.type === "foster_parent")
-      group([link.from], false, link.type === "adoptive_parent" ? "adopted" : "foster").children.push(link.to);
+      group(
+        [link.from],
+        false,
+        link.type === "adoptive_parent" ? "adopted" : "foster",
+      ).children.push(link.to);
   const sourceRecords: Source[] = [];
   function citation(level: number, source: Source) {
     sourceRecords.push(source);
@@ -985,6 +1043,8 @@ export function exportGedcom(
       "_DREVO",
       "_DREVO_PARENT",
       "_DREVO_UNMARRIED",
+      "_DREVO_SPOUSE",
+      "_DREVO_UNION",
       "_DREVO_MEDIA",
       "_DREVO_TWIN",
       "_TYPE",
@@ -1192,8 +1252,34 @@ export function exportGedcom(
       emit(1, role, ids.get(id)!, true);
       usedRoles.add(role);
     }
-    if (!g.married) emit(1, "_DREVO_UNMARRIED", "Y");
-    else emit(1, "MARR", "Y");
+    if (g.union) {
+      const { createdBy: _createdBy, ...portableUnion } = g.union;
+      void _createdBy;
+      emit(1, "_DREVO_UNION", JSON.stringify(portableUnion));
+      emit(1, "_DREVO_SPOUSE", "Y");
+      const unionEvent = (
+        tag: string,
+        milestone: UnionMilestone | undefined,
+      ) => {
+        if (!milestone) return;
+        emit(1, tag, "Y");
+        if (milestone.date) emit(2, "DATE", exportDate(milestone.date));
+        else if (milestone.dateText) {
+          const date = portableDate(milestone.dateText, modern);
+          emit(2, "DATE", date.date);
+          if (date.phrase) emit(3, "PHRASE", date.phrase);
+        }
+        emitPlace(2, milestone.place);
+        for (const source of milestone.sources || []) citation(2, source);
+      };
+      if (g.union.type === "marriage")
+        unionEvent("MARR", g.union.formation || {});
+      if (g.union.divorce) unionEvent("DIV", g.union.divorce);
+      if (g.union.ending) unionEvent("EVEN", g.union.ending);
+      if (g.union.note) emit(1, "NOTE", g.union.note);
+      for (const source of g.union.sources || []) citation(1, source);
+    } else if (!g.married) emit(1, "_DREVO_UNMARRIED", "Y");
+    else emit(1, "_DREVO_SPOUSE", "Y");
     for (const id of g.children) emit(1, "CHIL", ids.get(id)!, true);
   }
   sourceRecords.forEach((s, i) => {

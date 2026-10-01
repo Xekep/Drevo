@@ -2,7 +2,7 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownUp, Clock3 } from "lucide-react";
 import type { Family } from "../domain/types";
-import { analyzeKinship } from "../domain/kinship";
+import { analyzeKinship } from "../domain/kinship-analysis";
 import { TreeCanvas, type TreeCanvasHandle } from "./tree/tree-canvas";
 import { InspectorDock } from "./inspector-dock";
 import { PersonInspector } from "./person-inspector";
@@ -121,6 +121,7 @@ export default function SharedTree({ token }: { token: string }) {
             chosen[1],
             data.family.people,
             data.family.links,
+            data.family.unions,
           )
         : null,
     [chosen, data],

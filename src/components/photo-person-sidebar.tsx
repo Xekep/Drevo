@@ -59,6 +59,7 @@ export function PhotoPersonSidebar({
         person={person}
         people={family.people}
         links={family.links}
+        unions={family.unions}
         isCurrentUser={isCurrentUser}
         canLoadDocuments={canLoadDocuments}
         onSelect={onSelect}

@@ -59,6 +59,14 @@ const tables: Table[] = [
     numbers: ["ordinal"],
   },
   {
+    name: "family_unions",
+    columns: ["ordinal", "id", "participant_a", "participant_b", "data"],
+    order: "ordinal",
+    json: ["data"],
+    numbers: ["ordinal"],
+    optional: true,
+  },
+  {
     name: "photo_tags",
     columns: ["ordinal", "id", "photo_id", "person_id", "data"],
     order: "ordinal",
@@ -389,6 +397,7 @@ export async function importSqliteSnapshot(
   await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
   try {
     await client.query("SELECT pg_advisory_xact_lock(24050260927)");
+    await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
     await client.query(schema);
     await client.query(serviceSchema);
     await client.query(
@@ -396,6 +405,9 @@ export async function importSqliteSnapshot(
     );
     await client.query(
       readFileSync(new URL("./045_document_events_pages.sql", import.meta.url), "utf8"),
+    );
+    await client.query(
+      readFileSync(new URL("./047_family_unions.sql", import.meta.url), "utf8"),
     );
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(

@@ -437,9 +437,9 @@ export default function App() {
   const relation = useMemo(
     () =>
       chosen.length === 2
-        ? analyzeKinship(chosen[0], chosen[1], people, family?.links)
+        ? analyzeKinship(chosen[0], chosen[1], people, family?.links, family?.unions)
         : null,
-    [chosen, people, family?.links],
+    [chosen, people, family?.links, family?.unions],
   );
   const highlighted = useMemo(() => relation?.path || [], [relation]);
   const navigate = useCallback(

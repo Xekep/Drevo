@@ -29,7 +29,7 @@ function tableNames(db: DatabaseSync) {
   );
 }
 
-test("visit extension preserves v18 rollback compatibility and unknown activity", () => {
+test("visit extension preserves unknown activity on the current schema", () => {
   const db = new DatabaseSync(":memory:");
   try {
     initializeArchiveSchema(db);
@@ -44,8 +44,8 @@ test("visit extension preserves v18 rollback compatibility and unknown activity"
     initializeArchiveSchema(db);
     assert.equal(
       userVersion(db),
-      18,
-      "previous deployed code must still open this database",
+      ARCHIVE_SCHEMA_VERSION,
+      "the additive visit extension must not change the core schema version",
     );
     assert.equal(
       db.prepare("SELECT last_visit_at FROM users WHERE id='existing'").get()!

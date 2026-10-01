@@ -1434,6 +1434,7 @@ export function executeResearchTool(
           person,
           family.people,
           family.links,
+          family.unions,
         );
         if (
           relation.kind !== "blood" ||
@@ -1493,7 +1494,7 @@ export function executeResearchTool(
   if (name === "get_relationship") {
     const first = personOrThrow(family, stringArg(args, "firstPersonId")),
       second = personOrThrow(family, stringArg(args, "secondPersonId")),
-      relation = analyzeKinship(first, second, family.people, family.links);
+      relation = analyzeKinship(first, second, family.people, family.links, family.unions);
     const people = new Map(family.people.map((person) => [person.id, person]));
     const pathIds = new Set(relation.path),
       pathPeople = family.people.filter((person) => pathIds.has(person.id)),

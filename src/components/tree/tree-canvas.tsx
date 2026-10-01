@@ -769,11 +769,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       if (!user?.id) return "";
       const cached = labels.get(person.id);
       if (cached !== undefined) return cached;
-      const label = personRelationLabel(person, reference, family.people, family.links || []);
+      const label = personRelationLabel(person, reference, family.people, family.links || [], family.unions);
       labels.set(person.id, label);
       return label;
     };
-  }, [family.people, family.links, user?.id, user?.personId]);
+  }, [family.people, family.links, family.unions, user?.id, user?.personId]);
   const actions = useMemo(
     () => ({
       relationLabel,

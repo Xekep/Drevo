@@ -38,6 +38,7 @@ export function projectFamilyForUser(family: Family, user: ArchiveUser | null) {
     links: family.links?.filter(
       (link) => visible.has(link.from) && visible.has(link.to),
     ),
+    unions: family.unions?.filter((union) => union.participants.every((id) => visible.has(id))),
     photos: family.photos
       ?.filter(
         (photo) =>

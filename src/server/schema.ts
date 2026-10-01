@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { researchCatalogSeed } from "./research-catalog-seed.ts";
 
-export const ARCHIVE_SCHEMA_VERSION = 18;
+export const ARCHIVE_SCHEMA_VERSION = 19;
 
 const coreSchema = `
 CREATE TABLE IF NOT EXISTS archive (
@@ -124,6 +124,20 @@ function relationHasCreatedBy(db: DatabaseSync) {
 }
 
 function migrate(db: DatabaseSync, target: number) {
+  if (target === 19) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS family_unions (
+        id TEXT PRIMARY KEY,
+        participant_a TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        participant_b TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+        data TEXT NOT NULL CHECK(json_valid(data)),
+        CHECK(participant_a <> participant_b)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS family_unions_participant_a ON family_unions(participant_a);
+      CREATE INDEX IF NOT EXISTS family_unions_participant_b ON family_unions(participant_b);
+    `);
+    return;
+  }
   if (target === 1) {
     db.exec(coreSchema);
     // Legacy-базы до schema v1 создавали relations без created_by.

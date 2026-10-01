@@ -17,6 +17,7 @@ import {
 import { PersonSearch } from "./person-search";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
 import type { ConnectionDraft } from "./tree/tree-canvas";
+import { FamilyUnionsPanel } from "./family-unions-panel";
 export function ConnectionInspector({
   family,
   user,
@@ -132,6 +133,7 @@ export function ConnectionInspector({
             </p>
           )}
         </div>
+        {draft.type === "spouse" && from && to && <FamilyUnionsPanel family={family} participants={[from.id, to.id]} user={user} editable={false} save={save} busy={busy} onSaved={onSaved} />}
       </section>
     );
   return (
@@ -319,6 +321,7 @@ export function ConnectionInspector({
           </footer>
         )}
       </form>
+      {draft.type === "spouse" && draft.original && from && to && <FamilyUnionsPanel family={family} participants={[from.id, to.id]} user={user} editable={canEdit} save={save} busy={busy} onSaved={onSaved} />}
     </section>
   );
 }

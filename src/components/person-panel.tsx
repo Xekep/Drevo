@@ -22,6 +22,7 @@ import {
   years,
   hasRecordedDeath,
   type Person,
+  type Family,
   type FamilyLink,
 } from "../domain";
 import { collectPersonSources } from "../domain/person-sources.ts";
@@ -102,6 +103,7 @@ export function PersonPanel({
   person,
   people,
   links,
+  unions,
   onSelect,
   onCompare,
   suggestions,
@@ -113,6 +115,7 @@ export function PersonPanel({
   person: Person;
   people: Person[];
   links?: FamilyLink[];
+  unions?: Family["unions"];
   onSelect: (id: string) => void;
   onCompare?: () => void;
   suggestions?: ReactNode;
@@ -388,7 +391,7 @@ export function PersonPanel({
                         {p.name} {p.surname}
                       </b>
                       <small>
-                        {analyzeKinship(person, p, people, links).roles?.[1]
+                        {analyzeKinship(person, p, people, links, unions).roles?.[1]
                           .term || edgeLabel(person, p, links)}
                       </small>
                     </span>

@@ -63,6 +63,11 @@ const fields: Record<string, string> = {
   lon: "Долгота",
   label: "Место",
   events: "События жизни",
+  participants: "Участники",
+  formation: "Заключение союза",
+  ending: "Окончание союза",
+  divorce: "Развод",
+  ongoing: "Подтверждение действующего союза",
   date: "Дата",
   endDate: "Конец периода",
   dateText: "Исходная дата",
@@ -144,6 +149,9 @@ export function archiveAudit(before: Family, after: Family): AuditDraft[] {
       if (first.collection === "photos")
         for (const tag of family.photos?.find((p) => p.id === id)?.tags || [])
           personIds.add(tag.personId);
+      if (first.collection === "unions")
+        for (const personId of family.unions?.find((union) => union.id === id)?.participants || [])
+          personIds.add(personId);
     }
     for (const c of changes) {
       if (c.collection !== "people") continue;
@@ -161,11 +169,14 @@ export function archiveAudit(before: Family, after: Family): AuditDraft[] {
     const link =
       after.links?.find((l) => l.id === id) ||
       before.links?.find((l) => l.id === id);
+    const union = after.unions?.find((item) => item.id === id) || before.unions?.find((item) => item.id === id);
     const label =
       first.collection === "people"
         ? names.get(id) || "Человек"
         : first.collection === "links" && link
           ? `${names.get(link.from)} — ${names.get(link.to)}`
+          : first.collection === "unions" && union
+            ? `${names.get(union.participants[0])} — ${names.get(union.participants[1])}`
           : first.collection === "photos"
             ? "Фотография"
             : "Семейный архив";
