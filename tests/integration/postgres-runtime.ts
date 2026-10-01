@@ -2375,6 +2375,9 @@ try {
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
     WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'`)).rows[0].count,
     0, "ownership transfer revokes the previous owner's branch grant in the same transaction");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_members
+    WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0].count,
+    0, "RLS closes A's branch members to B's successor before a new bilateral opt-in");
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
     ...ownerHeaders, "X-Real-IP": "198.51.100.211",
   } }).then((response) => response.json())).incoming, [],
