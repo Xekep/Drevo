@@ -33,8 +33,8 @@ export function portableExportHttp(
       const family = (await readArchive(db)).family;
       const rows = await db
         .prepare(
-          "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations FROM documents ORDER BY id",
-          "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations FROM documents ORDER BY id",
+          "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations,event_links,pages FROM documents ORDER BY id",
+          "SELECT id,title,file_name,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations,event_links,pages FROM documents ORDER BY id",
         )
         .all();
       const links = await db
@@ -63,6 +63,8 @@ export function portableExportHttp(
         provenance: String(row.provenance || ""),
         annotations: JSON.parse(String(row.annotations || "[]")),
         personIds: peopleByDocument.get(String(row.id)) || [],
+        eventLinks: JSON.parse(String(row.event_links || "[]")),
+        pages: JSON.parse(String(row.pages || "[]")),
       }));
       const commentRows = await db
         .prepare(

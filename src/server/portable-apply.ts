@@ -82,8 +82,8 @@ export async function applyPortablePackage(
         if (!size) throw new ConflictError("Нет оригинала документа");
         await transaction
           .prepare(
-            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,annotations,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
           )
           .run(
             document.id,
@@ -99,6 +99,8 @@ export async function applyPortablePackage(
             document.description,
             document.provenance,
             JSON.stringify(document.annotations),
+            JSON.stringify(document.eventLinks || []),
+            JSON.stringify(document.pages || []),
           );
         for (const personId of document.personIds)
           await transaction

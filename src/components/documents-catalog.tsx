@@ -25,8 +25,10 @@ import {
 } from "./document-people-picker";
 import { PdfBookReader } from "./pdf-book-reader";
 import { DocumentDetailsFields } from "./document-details-fields";
+import { DocumentRelationsFields } from "./document-relations-fields";
 import { fullName, type Person } from "../domain";
 import type { DocumentDetails } from "../shared/document-details";
+import type { DocumentEventLink, DocumentPage } from "../shared/document-links";
 import "../styles/documents.css";
 
 export type ListedDocument = DocumentDetails & {
@@ -38,9 +40,12 @@ export type ListedDocument = DocumentDetails & {
   createdAt: string;
   canDelete?: boolean;
   people: Array<{ id: string; name: string }>;
+  eventLinks: Array<DocumentEventLink & { personName: string; eventTitle: string }>;
+  pages: DocumentPage[];
+  sources: Array<{ personId: string; personName: string; eventId?: string; eventTitle?: string; title: string; reference: string; page?: number }>;
 };
 
-type DocumentPage = { items: ListedDocument[]; total: number };
+type DocumentCatalogPage = { items: ListedDocument[]; total: number };
 const PAGE_SIZE = 30;
 const documentSize = (bytes: number) => bytes >= 1024 * 1024
   ? `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`
@@ -101,6 +106,10 @@ export function DocumentsCatalog({
   const [editError, setEditError] = useState("");
   const [selectedPeople, setSelectedPeople] = useState<DocumentPerson[]>([]);
   const [editPeople, setEditPeople] = useState<DocumentPerson[]>([]);
+  const [eventLinks, setEventLinks] = useState<DocumentEventLink[]>([]);
+  const [pages, setPages] = useState<DocumentPage[]>([]);
+  const [editEvents, setEditEvents] = useState<DocumentEventLink[]>([]);
+  const [editPages, setEditPages] = useState<DocumentPage[]>([]);
   const [dragging, setDragging] = useState(false);
   const filteredPerson = people.find((person) => person.id === personFilter);
 
@@ -127,6 +136,8 @@ export function DocumentsCatalog({
       }
       setFile(next);
       setTitle(next.name.replace(/\.[a-z]+$/i, "").slice(0, 160));
+      setEventLinks([]);
+      setPages([]);
       if (filteredPerson)
         setSelectedPeople([
           { id: filteredPerson.id, name: fullName(filteredPerson) },
@@ -210,7 +221,7 @@ export function DocumentsCatalog({
           { signal: request.signal },
         );
         if (!response.ok) throw new Error("Не удалось загрузить документы");
-        const page = (await response.json()) as DocumentPage;
+      const page = (await response.json()) as DocumentCatalogPage;
         if (request.signal.aborted) return;
         setTotal(page.total);
         setDocuments((current) =>
@@ -292,6 +303,8 @@ export function DocumentsCatalog({
       const metadata = JSON.stringify({
         title: title.trim(),
         personIds: selectedPeople.map((person) => person.id),
+        eventLinks,
+        pages,
         ...details,
       });
       const response = await archiveFetch("/api/documents", {
@@ -321,6 +334,13 @@ export function DocumentsCatalog({
           id: person.id,
           name: person.name,
         })),
+        eventLinks: eventLinks.map((link) => {
+          const person = people.find((item) => item.id === link.personId);
+          const event = person?.events?.find((item) => item.id === link.eventId);
+          return { ...link, personName: person ? fullName(person) : "", eventTitle: event?.title || event?.type || "" };
+        }),
+        pages,
+        sources: [],
       });
       onSelectDocument(created.id);
       setUploadOpen(false);
@@ -328,6 +348,8 @@ export function DocumentsCatalog({
       setTitle("");
       setDetails(EMPTY_DETAILS);
       setSelectedPeople([]);
+      setEventLinks([]);
+      setPages([]);
       void load(0);
     } catch (reason) {
       setUploadError(
@@ -346,6 +368,8 @@ export function DocumentsCatalog({
     onSelectDocument(null);
     setEditing(entry);
     setEditPeople(entry.people);
+    setEditEvents(entry.eventLinks.map(({ personId, eventId, page }) => ({ personId, eventId, ...(page ? { page } : {}) })));
+    setEditPages(entry.pages);
     setEditTitle(entry.title);
     setEditDetails({
       documentType: entry.documentType,
@@ -381,6 +405,11 @@ export function DocumentsCatalog({
             expected: editing.people.map((p) => p.id),
             next: editPeople.map((p) => p.id),
           },
+          eventLinks: {
+            expected: editing.eventLinks,
+            next: editEvents,
+          },
+          pages: { expected: editing.pages, next: editPages },
         }),
       });
       const result = (await response.json()) as ListedDocument & {
@@ -569,7 +598,10 @@ export function DocumentsCatalog({
           </label>
           <DocumentPeoplePicker
             value={selectedPeople}
-            onChange={setSelectedPeople}
+            onChange={(next) => {
+              setSelectedPeople(next);
+              setEventLinks((current) => current.filter((link) => next.some((person) => person.id === link.personId)));
+            }}
             optional={allowUnlinked}
             disabled={uploading}
           />
@@ -579,6 +611,8 @@ export function DocumentsCatalog({
               setDetails((current) => ({ ...current, [key]: value }))
             }
           />
+          <DocumentRelationsFields people={people} personIds={selectedPeople.map((person) => person.id)}
+            eventLinks={eventLinks} pages={pages} onEventsChange={setEventLinks} onPagesChange={setPages} disabled={uploading} />
           {uploadError && (
             <p role="alert" className="documents-upload-error">
               {uploadError}
@@ -626,7 +660,10 @@ export function DocumentsCatalog({
           </label>
           <DocumentPeoplePicker
             value={editPeople}
-            onChange={setEditPeople}
+            onChange={(next) => {
+              setEditPeople(next);
+              setEditEvents((current) => current.filter((link) => next.some((person) => person.id === link.personId)));
+            }}
             disabled={savingEdit}
           />
           <DocumentDetailsFields
@@ -636,6 +673,8 @@ export function DocumentsCatalog({
               setEditDetails((current) => ({ ...current, [key]: value }))
             }
           />
+          <DocumentRelationsFields people={people} personIds={editPeople.map((person) => person.id)}
+            eventLinks={editEvents} pages={editPages} onEventsChange={setEditEvents} onPagesChange={setEditPages} disabled={savingEdit} />
           {editError && (
             <p role="alert" className="documents-upload-error">
               {editError}

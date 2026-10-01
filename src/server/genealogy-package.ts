@@ -35,7 +35,6 @@ import type { Family } from "../domain/types.ts";
 import { validateFamily } from "../domain/validation.ts";
 import { imageExtension } from "./media.ts";
 import { decodeAnsel } from "../domain/ansel.ts";
-import type { DocumentDetails } from "../shared/document-details.ts";
 
 export type StagedMedia = {
   name: string;
@@ -43,7 +42,7 @@ export type StagedMedia = {
   title: string;
   personIds: string[];
   documentId?: string;
-  document?: DocumentDetails;
+  document?: TransferMedia["document"];
 };
 export type PreparedImport = GenealogyImport & { files: StagedMedia[] };
 
@@ -350,8 +349,8 @@ export async function exportMedia(
   const media = familyMedia(family);
   const rows = await db
     .prepare(
-      "SELECT id,title,file_name,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
-      "SELECT id,title,file_name,document_type,document_date,place,description,provenance FROM documents ORDER BY id",
+      "SELECT id,title,file_name,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
+      "SELECT id,title,file_name,document_type,document_date,place,description,provenance,event_links,pages FROM documents ORDER BY id",
     )
     .all();
   const associations = await db
@@ -381,6 +380,10 @@ export async function exportMedia(
         place: String(row.place || ""),
         description: String(row.description || ""),
         provenance: String(row.provenance || ""),
+        ...(String(row.event_links || "[]") !== "[]"
+          ? { eventLinks: JSON.parse(String(row.event_links)) } : {}),
+        ...(String(row.pages || "[]") !== "[]"
+          ? { pages: JSON.parse(String(row.pages)) } : {}),
       },
     });
   return media;

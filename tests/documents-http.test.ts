@@ -63,6 +63,7 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
         parents: [],
         spouses: [],
         sources: [],
+        events: [{ id: "anna-move", type: "move", title: "Переезд", date: "1887", sources: [] }],
         column: 0,
         generation: 1,
       },
@@ -91,6 +92,8 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       place: "Rezh",
       description: "Register page 12",
       provenance: "GASO F6 Op13 D104",
+      eventLinks: [{ personId: "anna", eventId: "anna-move", page: 2 }],
+      pages: [{ number: 2, description: "Запись о переезде" }],
     }),
     "utf8",
   ).toString("base64")}`;
@@ -150,6 +153,9 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
           id: string;
           title: string;
           people: Array<{ id: string; name: string }>;
+          eventLinks: unknown[];
+          pages: unknown[];
+          sources: Array<{ title: string }>;
         }
       >;
     };
@@ -166,6 +172,10 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       ["anna"],
     );
     assert.equal(list.items[0].people[0].name, "Тестова Анна");
+    assert.deepEqual(list.items[0].eventLinks,
+      [{ personId: "anna", eventId: "anna-move", page: 2, personName: "Тестова Анна", eventTitle: "Переезд" }]);
+    assert.deepEqual(list.items[0].pages,
+      [{ number: 2, description: "Запись о переезде" }]);
     const direct = await withoutFullRead(() => fetch(`${base}/api/documents/${id}`));
     assert.equal(direct.status, 200);
     assert.deepEqual(await direct.json(), list.items[0]);
@@ -214,6 +224,27 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       (await (await fetch(`${base}/api/documents/${id}`)).json()).provenance,
       next.provenance,
     );
+    const pagesEdit = () => fetch(`${base}/api/documents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pages: { expected: [{ number: 2, description: "Запись о переезде" }],
+        next: [{ number: 2, description: "Архивная запись" }] } }),
+    });
+    assert.equal((await pagesEdit()).status, 200);
+    assert.equal((await pagesEdit()).status, 409);
+    const invalidEvent = await fetch(`${base}/api/documents/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventLinks: { expected: [{ personId: "anna", eventId: "anna-move", page: 2 }],
+        next: [{ personId: "boris", eventId: "anna-move" }] } }),
+    });
+    assert.equal(invalidEvent.status, 400);
+    const withCitation = await app.archive.read();
+    withCitation.family.people[0].sources.push({ title: "Дело 104", type: "archive", reference: "Л. 2", documentId: id, documentPage: 2 });
+    await app.archive.write(withCitation.family, withCitation.revision);
+    const sourced = (await (await fetch(`${base}/api/documents/${id}`)).json()) as {
+      sources: Array<{ title: string; page: number }>;
+    };
+    assert.deepEqual(sourced.sources.map((source) => [source.title, source.page]), [["Дело 104", 2]]);
     const file = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`));
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -291,11 +322,18 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
           id: string;
           url: string;
           people: Array<{ id: string }>;
+          eventLinks: unknown[];
+          pages: unknown[];
+          sources: Array<{ title: string }>;
         }
       >;
     };
     assert.equal(after.items.length, 1);
     assert.equal(after.items[0].provenance, "GASO F6 Op13 D105");
+    assert.deepEqual(after.items[0].pages,
+      [{ number: 2, description: "Архивная запись" }]);
+    assert.equal(after.items[0].eventLinks.length, 1);
+    assert.equal(after.items[0].sources[0].title, "Дело 104");
     assert.notEqual(after.items[0].id, id);
     assert.deepEqual(
       after.items[0].people.map((person) => person.id),
@@ -454,6 +492,7 @@ test("document deletion enforces ownership, scope and origin, removes files and 
           parents: [],
           spouses: [],
           sources: [],
+          events: [{ id: `${id}-event`, type: "move" as const, title: `${id} moved` }],
           column: 0,
           generation: 1,
         })),
@@ -574,11 +613,30 @@ test("document deletion enforces ownership, scope and origin, removes files and 
       (await linkPeople("owner", currentLinks, ["anna", "hidden"])).status,
       200,
     );
+    const eventLinks = await fetch(base + path, {
+      method: "PATCH",
+      headers: { Cookie: cookies.get("owner")!, Origin: "https://archive.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ eventLinks: { expected: [], next: [
+        { personId: "anna", eventId: "anna-event", page: 1 },
+        { personId: "hidden", eventId: "hidden-event", page: 2 },
+      ] } }),
+    });
+    assert.equal(eventLinks.status, 200, await eventLinks.clone().text());
     await db
       .prepare(
         "UPDATE users SET person_id='anna',tree_access='common_ancestors' WHERE id='owner'",
       )
       .run();
+    const scopedDocument = (await (await request(path, "owner")).json()) as { eventLinks: Array<{ personId: string }> };
+    assert.deepEqual(scopedDocument.eventLinks.map((link) => link.personId), ["anna"]);
+    const removeVisibleEvent = await fetch(base + path, {
+      method: "PATCH",
+      headers: { Cookie: cookies.get("owner")!, Origin: "https://archive.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ eventLinks: { expected: [{ personId: "anna", eventId: "anna-event", page: 1 }], next: [] } }),
+    });
+    assert.equal(removeVisibleEvent.status, 200, await removeVisibleEvent.clone().text());
+    assert.equal((await db.prepare("SELECT event_links FROM documents WHERE id=?").get(id))?.event_links,
+      JSON.stringify([{ personId: "hidden", eventId: "hidden-event", page: 2 }]));
     assert.equal(
       (await linkPeople("owner", ["anna"], ["anna", "hidden"])).status,
       403,
@@ -602,6 +660,11 @@ test("document deletion enforces ownership, scope and origin, removes files and 
     await db
       .prepare("UPDATE users SET tree_access='all' WHERE id='owner'")
       .run();
+    assert.equal((await fetch(base + path, {
+      method: "PATCH",
+      headers: { Cookie: cookies.get("owner")!, Origin: "https://archive.test", "Content-Type": "application/json" },
+      body: JSON.stringify({ eventLinks: { expected: [{ personId: "hidden", eventId: "hidden-event", page: 2 }], next: [] } }),
+    })).status, 200);
     assert.equal((await linkPeople("owner", ["hidden"], ["anna"])).status, 200);
     const annotationPath = `${path}/annotations`;
     const annotate = (user: string, origin = "https://archive.test") =>

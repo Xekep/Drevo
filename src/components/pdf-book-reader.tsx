@@ -36,7 +36,7 @@ export function PdfBookReader({
   const navigateToPage = useRef<((index: number) => void) | null>(null);
   const [readerReady, setReaderReady] = useState(false);
   const [outline, setOutline] = useState<OutlineEntry[]>([]);
-  const [sidebarTab, setSidebarTab] = useState<"comments" | "outline">(
+  const [sidebarTab, setSidebarTab] = useState<"comments" | "outline" | "links">(
     "comments",
   );
   const [loading, setLoading] = useState(true);
@@ -391,8 +391,28 @@ export function PdfBookReader({
                   Оглавление
                 </button>
               )}
+              {(entry.eventLinks.length > 0 || entry.pages.length > 0 || entry.sources.length > 0) && (
+                <button type="button" className={sidebarTab === "links" ? "is-active" : ""}
+                  onClick={() => { setSidebarTab("links"); setCommentsOpen(true); }}
+                  aria-pressed={sidebarTab === "links"}>Связи</button>
+              )}
             </div>
-            {sidebarTab === "outline" && outline.length > 0 ? (
+            {sidebarTab === "links" ? (
+              <div className="pdf-book-links">
+                {entry.eventLinks.length > 0 && <section><h3>События</h3>{entry.eventLinks.map((link) => (
+                  <p key={`${link.personId}:${link.eventId}`}>{link.personName} · {link.eventTitle}{link.page &&
+                    <button type="button" onClick={() => navigateToPage.current?.(link.page! - 1)}>Стр. {link.page}</button>}</p>
+                ))}</section>}
+                {entry.sources.length > 0 && <section><h3>Источники</h3>{entry.sources.map((source, index) => (
+                  <p key={`${source.personId}:${source.eventId || "card"}:${index}`}>{source.title} · {source.personName}{source.eventTitle ? ` · ${source.eventTitle}` : ""}
+                    {source.reference ? ` · ${source.reference}` : ""}{source.page &&
+                    <button type="button" onClick={() => navigateToPage.current?.(source.page! - 1)}>Стр. {source.page}</button>}</p>
+                ))}</section>}
+                {entry.pages.length > 0 && <section><h3>Страницы</h3>{entry.pages.map((page) => (
+                  <p key={page.number}><button type="button" onClick={() => navigateToPage.current?.(page.number - 1)}>Стр. {page.number}</button> {page.description}</p>
+                ))}</section>}
+              </div>
+            ) : sidebarTab === "outline" && outline.length > 0 ? (
               <nav
                 className="pdf-book-outline"
                 aria-label="Оглавление документа"

@@ -1123,6 +1123,21 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const documentLinksExtension = "2026-10-document-events-pages";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(documentLinksExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!tableHasColumn(db, "documents", "event_links"))
+        db.exec("ALTER TABLE documents ADD COLUMN event_links TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(event_links) AND json_type(event_links)='array')");
+      if (!tableHasColumn(db, "documents", "pages"))
+        db.exec("ALTER TABLE documents ADD COLUMN pages TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(pages) AND json_type(pages)='array')");
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(documentLinksExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   if (!tableHasColumn(db, "ai_settings", "code_interpreter_enabled"))
     db.exec(
       "ALTER TABLE ai_settings ADD COLUMN code_interpreter_enabled INTEGER NOT NULL DEFAULT 0 CHECK(code_interpreter_enabled IN (0,1))",

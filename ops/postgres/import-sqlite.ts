@@ -82,6 +82,8 @@ const tables: Table[] = [
       "place",
       "description",
       "provenance",
+      "event_links",
+      "pages",
     ],
     order: "ordinal",
     numbers: ["ordinal", "file_size"],
@@ -187,7 +189,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
       .map((row) => String(row.name));
     const imported = table.columns.filter((column) => column !== "ordinal");
     const optionalDocumentColumns = new Set([
-      "annotations", "document_type", "document_date", "place", "description", "provenance",
+      "annotations", "document_type", "document_date", "place", "description", "provenance", "event_links", "pages",
     ]);
     const expected = table.name === "documents" || table.name === "person_comments" || table.name === "relations"
       ? imported.filter((column) => columns.includes(column))
@@ -262,7 +264,7 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
     : null;
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? field === "twin_kind" ? "NULL AS twin_kind" : `'${field === "annotations" ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? field === "twin_kind" ? "NULL AS twin_kind" : `'${["annotations", "event_links", "pages"].includes(field) ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {
@@ -391,6 +393,9 @@ export async function importSqliteSnapshot(
     await client.query(serviceSchema);
     await client.query(
       readFileSync(new URL("./017_document_metadata.sql", import.meta.url), "utf8"),
+    );
+    await client.query(
+      readFileSync(new URL("./045_document_events_pages.sql", import.meta.url), "utf8"),
     );
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(

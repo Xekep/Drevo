@@ -284,6 +284,8 @@ type StoredDocument = Partial<DocumentDetails> & {
   uploadedBy: string;
   createdAt: string;
   annotations?: string;
+  eventLinks?: string;
+  pages?: string;
   personIds: string[];
 };
 
@@ -431,7 +433,7 @@ export function restoreStore(
             documentColumns.has(name) ? name : `'${fallback}' AS ${name}`;
           const rows = source
             .prepare(
-              `SELECT id,title,file_name,file_size,uploaded_by,created_at,${savedColumn("annotations", "[]")},${["document_type", "document_date", "place", "description", "provenance"].map((name) => savedColumn(name, "")).join(",")} FROM documents ORDER BY created_at,id`,
+              `SELECT id,title,file_name,file_size,uploaded_by,created_at,${["annotations", "event_links", "pages"].map((name) => savedColumn(name, "[]")).join(",")},${["document_type", "document_date", "place", "description", "provenance"].map((name) => savedColumn(name, "")).join(",")} FROM documents ORDER BY created_at,id`,
             )
             .all();
           const links = source
@@ -454,6 +456,8 @@ export function restoreStore(
               uploadedBy: String(row.uploaded_by),
               createdAt: String(row.created_at),
               annotations: String(row.annotations || "[]"),
+              eventLinks: String(row.event_links || "[]"),
+              pages: String(row.pages || "[]"),
               documentType: String(row.document_type || ""),
               documentDate: String(row.document_date || ""),
               place: String(row.place || ""),
@@ -667,6 +671,7 @@ export function restoreStore(
         urls = new Map<string, string>();
       const restoredOriginals: Array<{ url: string; size: number }> = [];
       const restoredDocuments: StoredDocument[] = [];
+      const documentIdMap = new Map<string, string>();
       let result: Awaited<ReturnType<typeof archive.write>>;
       try {
         for (const [url, path] of stage.files) {
@@ -690,12 +695,19 @@ export function restoreStore(
           await copyFile(source, destination, constants.COPYFILE_EXCL);
           created.push(destination);
           restoredDocuments.push({ ...document, id, fileName });
+          documentIdMap.set(document.id, id);
         }
         const family = {
           ...stage.family,
           people: stage.family.people.map((p) => ({
             ...p,
             ...(p.photo ? { photo: urls.get(p.photo) || p.photo } : {}),
+            sources: p.sources.map((source) => source.documentId && documentIdMap.has(source.documentId)
+              ? { ...source, documentId: documentIdMap.get(source.documentId) } : source),
+            events: p.events?.map((event) => ({ ...event,
+              sources: event.sources?.map((source) => source.documentId && documentIdMap.has(source.documentId)
+                ? { ...source, documentId: documentIdMap.get(source.documentId) } : source),
+            })),
           })),
           photos: stage.family.photos?.map((p) => ({
             ...p,
@@ -714,8 +726,8 @@ export function restoreStore(
               await recordMediaOriginal(db, file.url, file.size, actor.id);
             await db.exec("DELETE FROM documents", "DELETE FROM documents");
             const insert = db.prepare(
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,annotations,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             );
             const link = db.prepare(
               "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",
@@ -739,6 +751,8 @@ export function restoreStore(
                 document.place || "",
                 document.description || "",
                 document.provenance || "",
+                document.eventLinks || "[]",
+                document.pages || "[]",
               );
               for (const personId of document.personIds)
                 await link.run(document.id, personId);

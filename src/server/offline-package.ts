@@ -99,6 +99,8 @@ export function offlineDocuments(
     place?: string;
     description?: string;
     provenance?: string;
+    event_links?: string;
+    pages?: string;
   }>,
   associations: Array<{ document_id: string; person_id: string }>,
   family: Family,
@@ -131,6 +133,11 @@ export function offlineDocuments(
         description: row.description || "",
         provenance: row.provenance || "",
         personIds: links.get(row.id) || [],
+        eventLinks: (JSON.parse(row.event_links || "[]") as Array<{personId: string; eventId: string; page?: number}>)
+          .filter((link) => (links.get(row.id) || []).includes(link.personId) &&
+            family.people.some((person) => person.id === link.personId &&
+              person.events?.some((event) => event.id === link.eventId))),
+        pages: JSON.parse(row.pages || "[]"),
       };
     });
 }

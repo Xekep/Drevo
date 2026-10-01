@@ -17,6 +17,10 @@ import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
 import { fullName } from "../domain/index.ts";
 import type { Person } from "../domain/types.ts";
+import {
+  parseDocumentEventLinks,
+  parseDocumentPages,
+} from "../shared/document-links.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { owns } from "../domain/access.ts";
@@ -61,6 +65,8 @@ type Row = {
   created_at: string;
   uploaded_by: string;
   annotations: string;
+  event_links: string;
+  pages: string;
 };
 
 function rowDetails(row: Row): DocumentDetails {
@@ -106,7 +112,29 @@ function listedDocument(
   linkedIds: string[],
   people: Map<string, string>,
   canDelete: boolean,
+  visiblePeople: Person[] = [],
 ) {
+  const eventLinks = (parseDocumentEventLinks(JSON.parse(row.event_links || "[]")) || [])
+    .filter((link) => linkedIds.includes(link.personId) &&
+      visiblePeople.some((person) => person.id === link.personId &&
+        person.events?.some((event) => event.id === link.eventId)))
+    .map((link) => {
+      const person = visiblePeople.find((item) => item.id === link.personId)!;
+      const event = person.events!.find((item) => item.id === link.eventId)!;
+      return { ...link, personName: fullName(person), eventTitle: event.title || event.type };
+    });
+  const sources = visiblePeople.flatMap((person) => [
+    ...person.sources.filter((source) => source.documentId === row.id)
+      .map((source) => ({ personId: person.id, personName: fullName(person),
+        title: source.title, reference: source.reference,
+        page: source.documentPage })),
+    ...(person.events || []).flatMap((event) => (event.sources || [])
+      .filter((source) => source.documentId === row.id)
+      .map((source) => ({ personId: person.id, personName: fullName(person),
+        eventId: event.id, eventTitle: event.title || event.type,
+        title: source.title, reference: source.reference,
+        page: source.documentPage }))),
+  ]);
   return {
     id: row.id,
     title: row.title,
@@ -123,6 +151,9 @@ function listedDocument(
     people: linkedIds
       .filter((id) => people.has(id))
       .map((id) => ({ id, name: people.get(id)! })),
+    eventLinks,
+    pages: parseDocumentPages(JSON.parse(row.pages || "[]")) || [],
+    sources,
   };
 }
 
@@ -176,17 +207,14 @@ export function documentsHttp({
     req: IncomingMessage,
     access: Awaited<ReturnType<typeof visible>>,
   ) => !!access.scope && accessScope(await auth.currentUser(req)) === access.scope;
-  const linkedPersonNames = async (ids: string[]) => {
-    if (!ids.length) return new Map<string, string>();
+  const linkedPersons = async (ids: string[]) => {
+    if (!ids.length) return [] as Person[];
     const rows = await db.prepare(
       "SELECT id,data FROM people WHERE id IN (SELECT value FROM json_each(?))",
       "SELECT id,data FROM people WHERE id IN (SELECT value FROM jsonb_array_elements_text(?::jsonb))",
     ).all(JSON.stringify([...new Set(ids)]));
-    return new Map(rows.map((row) => {
-      const person = (typeof row.data === "string"
-        ? JSON.parse(row.data) : row.data) as Person;
-      return [String(row.id), fullName(person)] as const;
-    }));
+    return rows.map((row) => (typeof row.data === "string"
+      ? JSON.parse(row.data) : row.data) as Person);
   };
   const matchingPersonIds = async (query: string) => {
     const rows = await db.prepare(
@@ -333,9 +361,8 @@ export function documentsHttp({
         )
         .all(...args, limit, offset)) as Row[];
       const links = await associations(rows.map((row) => row.id));
-      const people = access.scoped
-        ? new Map(access.people.map((person) => [person.id, fullName(person)]))
-        : await linkedPersonNames([...links.values()].flat());
+      const related = access.scoped ? access.people : await linkedPersons([...links.values()].flat());
+      const people = new Map(related.map((person) => [person.id, fullName(person)]));
       const actor = await auth.currentUser(req),
         mayEdit = await auth.canEdit(req);
       if (!(await accessStillCurrent(req, access)))
@@ -348,6 +375,7 @@ export function documentsHttp({
             links.get(row.id) || [],
             people,
             mayEdit && owns(actor, { createdBy: row.uploaded_by }),
+            related,
           ),
         ),
       });
@@ -365,9 +393,8 @@ export function documentsHttp({
       const linkedIds = (await associations([row.id])).get(row.id) || [];
       if (!canSee(access, row, linkedIds))
         return json(res, 404, { error: "Документ не найден" });
-      const people = access.scoped
-        ? new Map(access.people.map((person) => [person.id, fullName(person)]))
-        : await linkedPersonNames(linkedIds);
+      const related = access.scoped ? access.people : await linkedPersons(linkedIds);
+      const people = new Map(related.map((person) => [person.id, fullName(person)]));
       const actor = await auth.currentUser(req);
       const mayEdit = await auth.canEdit(req);
       if (!(await accessStillCurrent(req, access)))
@@ -380,6 +407,7 @@ export function documentsHttp({
           linkedIds,
           people,
           mayEdit && owns(actor, { createdBy: row.uploaded_by }),
+          related,
         ),
       );
     }
@@ -407,6 +435,14 @@ export function documentsHttp({
       const requestedNext = parsedVersion(input.next);
       const links = input.people as
         { expected?: unknown; next?: unknown } | undefined;
+      const eventInput = input.eventLinks as
+        { expected?: unknown; next?: unknown } | undefined;
+      const pageInput = input.pages as
+        { expected?: unknown; next?: unknown } | undefined;
+      const expectedEvents = eventInput && parseDocumentEventLinks(eventInput.expected);
+      const requestedEvents = eventInput && parseDocumentEventLinks(eventInput.next);
+      const expectedPages = pageInput && parseDocumentPages(pageInput.expected);
+      const requestedPages = pageInput && parseDocumentPages(pageInput.next);
       if (
         (input.expected !== undefined || input.next !== undefined) &&
         (!expected || !requestedNext)
@@ -415,9 +451,11 @@ export function documentsHttp({
           error: "Проверьте название и сведения о документе",
         });
       if (
-        (!expected && !links) ||
+        (!expected && !links && !eventInput && !pageInput) ||
         (links &&
-          (!personIdsInput(links.expected) || !personIdsInput(links.next)))
+          (!personIdsInput(links.expected) || !personIdsInput(links.next))) ||
+        (eventInput && (!expectedEvents || !requestedEvents)) ||
+        (pageInput && (!expectedPages || !requestedPages))
       )
         return json(res, 400, { error: "Некорректные привязки документа" });
       const result = await db.transaction(async () => {
@@ -492,8 +530,30 @@ export function documentsHttp({
         const linksChanged =
           JSON.stringify([...personIds].sort()) !==
           JSON.stringify([...nextIds].sort());
+        const previousEvents = parseDocumentEventLinks(JSON.parse(row.event_links || "[]")) || [];
+        const validEvents = previousEvents.filter((link) => !access.ids.includes(link.personId) ||
+          access.people.some((person) => person.id === link.personId &&
+            person.events?.some((event) => event.id === link.eventId)));
+        const visibleEvents = validEvents.filter((link) => access.ids.includes(link.personId));
+        if (expectedEvents && JSON.stringify(expectedEvents) !== JSON.stringify(visibleEvents))
+          return { status: 409 as const, error: "Связи с событиями изменились. Откройте документ заново" };
+        const nextEvents = requestedEvents
+          ? [...validEvents.filter((link) => !access.ids.includes(link.personId)), ...requestedEvents]
+          : validEvents;
+        if (nextEvents.length > 100 || nextEvents.some((link) => !nextIds.includes(link.personId)) ||
+          (requestedEvents || []).some((link) => !access.people.some((person) =>
+            person.id === link.personId && person.events?.some((event) => event.id === link.eventId))))
+          return { status: 400 as const, error: "Свяжите событие с видимым человеком документа" };
+        const previousPages = parseDocumentPages(JSON.parse(row.pages || "[]")) || [];
+        if (expectedPages && JSON.stringify(expectedPages) !== JSON.stringify(previousPages))
+          return { status: 409 as const, error: "Страницы изменились. Откройте документ заново" };
+        const nextPages = requestedPages || previousPages;
+        const eventsChanged = JSON.stringify(previousEvents) !== JSON.stringify(nextEvents);
+        const pagesChanged = JSON.stringify(previousPages) !== JSON.stringify(nextPages);
         if (
           !linksChanged &&
+          !eventsChanged &&
+          !pagesChanged &&
           editableFields.every(([field]) => previous[field] === next[field])
         )
           return {
@@ -505,6 +565,7 @@ export function documentsHttp({
                 access.people.map((person) => [person.id, fullName(person)]),
               ),
               true,
+              access.people,
             ),
           };
         if (linksChanged) {
@@ -528,8 +589,8 @@ export function documentsHttp({
         }
         await db
           .prepare(
-            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
-            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=? WHERE id=?",
+            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=?,event_links=?,pages=? WHERE id=?",
+            "UPDATE documents SET title=?,title_search=?,document_type=?,document_date=?,place=?,description=?,provenance=?,event_links=?,pages=? WHERE id=?",
           )
           .run(
             next.title,
@@ -539,6 +600,8 @@ export function documentsHttp({
             next.place,
             next.description,
             next.provenance,
+            JSON.stringify(nextEvents),
+            JSON.stringify(nextPages),
             row.id,
           );
         await audit.record(
@@ -574,6 +637,8 @@ export function documentsHttp({
                     },
                   ]
                 : []),
+              ...(eventsChanged ? [{ field: "Связи с событиями", before: String(visibleEvents.length), after: String(nextEvents.filter((link) => access.ids.includes(link.personId)).length) }] : []),
+              ...(pagesChanged ? [{ field: "Описания страниц", before: String(previousPages.length), after: String(nextPages.length) }] : []),
             ],
           },
           actor,
@@ -586,6 +651,8 @@ export function documentsHttp({
           place: next.place,
           description: next.description,
           provenance: next.provenance,
+          event_links: JSON.stringify(nextEvents),
+          pages: JSON.stringify(nextPages),
         };
         return {
           status: 200 as const,
@@ -596,6 +663,7 @@ export function documentsHttp({
               access.people.map((person) => [person.id, fullName(person)]),
             ),
             true,
+            access.people,
           ),
         };
       });
@@ -856,7 +924,7 @@ export function documentsHttp({
         : "Изображение должно быть не больше 20 МБ";
       if (Number(req.headers["content-length"] || 0) > fileType.maxBytes)
         return json(res, 413, { error: sizeLimitMessage });
-      let metadata: { title?: unknown; personIds?: unknown };
+      let metadata: { title?: unknown; personIds?: unknown; eventLinks?: unknown; pages?: unknown };
       try {
         const header = String(req.headers["x-document-metadata"] || "");
         const raw = header.startsWith("base64:")
@@ -872,10 +940,13 @@ export function documentsHttp({
         typeof metadata.title === "string" ? metadata.title.trim() : "";
       const ids = metadata.personIds;
       const details = parseDocumentDetails(metadata);
+      const eventLinks = parseDocumentEventLinks(metadata.eventLinks ?? []);
+      const pages = parseDocumentPages(metadata.pages ?? []);
       if (
         !title ||
         title.length > 160 ||
         !details ||
+        !eventLinks || !pages ||
         !Array.isArray(ids) ||
         ids.length > 30 ||
         ids.some((id) => typeof id !== "string" || !id || id.length > 200) ||
@@ -886,6 +957,10 @@ export function documentsHttp({
         allowed = new Set(access.ids);
       if (ids.some((id) => !allowed.has(id)))
         return json(res, 403, { error: "Нет доступа к выбранному человеку" });
+      if (eventLinks.some((link) => !ids.includes(link.personId) ||
+        !access.people.some((person) => person.id === link.personId &&
+          person.events?.some((event) => event.id === link.eventId))))
+        return json(res, 400, { error: "Свяжите событие с выбранным человеком" });
 
       const id = randomUUID(),
         name = `${id}.${fileType.extension}`,
@@ -949,30 +1024,36 @@ export function documentsHttp({
         }
         await rename(temporary, target);
         const latest = await auth.currentUser(req);
-        const latestVisible = new Set((await visible(req)).ids);
+        const latestPeople = (await visible(req)).people;
+        const latestVisible = new Set(latestPeople.map((person) => person.id));
         if (
           !latest?.approved ||
           !(await auth.canEdit(req)) ||
           latest.id !== uploader.id ||
-          ids.some((personId) => !latestVisible.has(personId as string))
+          ids.some((personId) => !latestVisible.has(personId as string)) ||
+          eventLinks.some((link) => !latestPeople.some((person) => person.id === link.personId &&
+            person.events?.some((event) => event.id === link.eventId)))
         )
           return json(res, 403, {
             error: "Доступ к выбранным людям изменился",
           });
         const committed = await db.transaction(async () => {
           const current = await auth.currentUser(req);
-          const currentVisible = new Set((await visible(req)).ids);
+          const currentPeople = (await visible(req)).people;
+          const currentVisible = new Set(currentPeople.map((person) => person.id));
           if (
             !current?.approved ||
             !(await auth.canEdit(req)) ||
             current.id !== uploader.id ||
-            ids.some((personId) => !currentVisible.has(personId as string))
+            ids.some((personId) => !currentVisible.has(personId as string)) ||
+            eventLinks.some((link) => !currentPeople.some((person) => person.id === link.personId &&
+              person.events?.some((event) => event.id === link.eventId)))
           )
             return false;
           await db
             .prepare(
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at,document_type,document_date,place,description,provenance,event_links,pages) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             )
             .run(
               id,
@@ -987,6 +1068,8 @@ export function documentsHttp({
               details.place,
               details.description,
               details.provenance,
+              JSON.stringify(eventLinks),
+              JSON.stringify(pages),
             );
           const link = db.prepare(
             "INSERT INTO document_people(document_id,person_id) VALUES(?,?)",

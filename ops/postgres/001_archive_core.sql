@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS documents (
   uploaded_by text NOT NULL,
   created_at text NOT NULL,
   annotations text NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(annotations::jsonb) = 'array'),
+  event_links text NOT NULL DEFAULT '[]' CONSTRAINT documents_event_links_array_check CHECK (jsonb_typeof(event_links::jsonb) = 'array'),
+  pages text NOT NULL DEFAULT '[]' CONSTRAINT documents_pages_array_check CHECK (jsonb_typeof(pages::jsonb) = 'array'),
   PRIMARY KEY (archive_id, id),
   UNIQUE (archive_id, ordinal),
   UNIQUE (archive_id, file_name)

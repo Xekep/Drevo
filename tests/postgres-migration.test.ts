@@ -85,6 +85,8 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
     assert.equal(snapshot.rows.get("people")?.length, 1);
     assert.equal(snapshot.rows.get("documents")?.length, 1);
     assert.equal(snapshot.rows.get("document_people")?.length, 1);
+    assert.equal(snapshot.rows.get("documents")?.[0]?.event_links, "[]");
+    assert.equal(snapshot.rows.get("documents")?.[0]?.pages, "[]");
     assert.equal(snapshot.rows.get("person_comments")?.length, 1);
     assert.equal(snapshot.services.length, 33);
     assert.equal(
@@ -158,6 +160,8 @@ test("PostgreSQL staging inspects a consistent SQLite copy and every referenced 
       "place",
       "description",
       "provenance",
+      "event_links",
+      "pages",
     ])
       oldSchema.exec(`ALTER TABLE documents DROP COLUMN ${column}`);
     oldSchema.close();

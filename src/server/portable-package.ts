@@ -7,6 +7,7 @@ import type { Readable, Writable } from "node:stream";
 import { ZipFile } from "yazl";
 import type { Family } from "../domain/types.ts";
 import type { DocumentAnnotation } from "../shared/document-annotations.ts";
+import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
@@ -27,6 +28,8 @@ export type PortableDocument = {
   provenance: string;
   annotations: DocumentAnnotation[];
   personIds: string[];
+  eventLinks?: DocumentEventLink[];
+  pages?: DocumentPage[];
 };
 
 export type PortableComment = {
