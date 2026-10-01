@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createWriteStream } from "node:fs";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -223,11 +223,32 @@ test("private package preview and one-time import preserve people, media, docume
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({ token: preview.token, confirm: true }),
       });
+    await archive.db.exec(
+      "CREATE TRIGGER reject_portable_document BEFORE INSERT ON documents BEGIN SELECT RAISE(ABORT,'reject'); END",
+    );
+    const failed = await importRequest();
+    assert.equal(failed.status, 500);
+    assert.deepEqual(await readdir(join(target, "uploads")), []);
+    assert.equal(
+      Number(
+        (await archive.db.prepare("SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests").get())?.bytes,
+      ),
+      0,
+      "failed portable import releases its disk reservation",
+    );
+    await archive.db.exec("DROP TRIGGER reject_portable_document");
     const applied = await importRequest();
     assert.equal(
       applied.status,
       200,
       applied.status === 200 ? "" : await applied.text(),
+    );
+    assert.equal(
+      Number(
+        (await archive.db.prepare("SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests").get())?.bytes,
+      ),
+      0,
+      "successful portable import releases its disk reservation",
     );
     const result = await archive.read();
     assert.equal(result.family.people.length, 1);

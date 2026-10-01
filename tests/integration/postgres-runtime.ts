@@ -204,6 +204,37 @@ try {
       firstUpload.acquire("first-uploader", 70, 100) :
       otherUpload.acquire("other-uploader", 70, 100)))();
 
+    let uploadClock = Date.now();
+    const longUpload = uploadQuota(live.db, {
+      ...diskOptions,
+      reservationMs: 5_000,
+      renewEveryMs: 25,
+      now: () => uploadClock,
+    });
+    const releaseLongUpload = await longUpload.acquire("long-uploader", 70, 100);
+    try {
+      const initialExpiry = Number((await client.query(
+        "SELECT expires_ms FROM platform_upload_reservations",
+      )).rows[0].expires_ms);
+      uploadClock += 2_500;
+      let renewedExpiry = initialExpiry;
+      for (let attempt = 0; attempt < 40 && renewedExpiry === initialExpiry; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        renewedExpiry = Number((await client.query(
+          "SELECT expires_ms FROM platform_upload_reservations",
+        )).rows[0].expires_ms);
+      }
+      assert.ok(renewedExpiry > initialExpiry,
+        "a long-running import renews the shared platform reservation");
+      await releaseLongUpload.assertValid();
+      await assert.rejects(otherUpload.acquire("cross-archive", 70, 100),
+        (error) => error instanceof UploadQuotaError && error.status === 507);
+    } finally {
+      await releaseLongUpload();
+    }
+    await assert.rejects(releaseLongUpload.assertValid(), UploadQuotaError);
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM platform_upload_reservations")).rows[0].n, 0);
+
     const firstBudget = createSharedRequestLimiter(live.db, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
     const secondBudget = createSharedRequestLimiter(other, "runtime-shared-test", { windowMs: 60_000, limit: 3 });
     const attempts = await Promise.all(Array.from({ length: 8 }, (_, index) =>

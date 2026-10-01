@@ -16,6 +16,8 @@ import {
 import { installPortableOriginals } from "./portable-install.ts";
 import { PortablePackageError } from "./portable-package.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { mediaStore } from "./media.ts";
+import { uploadQuota, UploadQuotaError } from "./upload-quota.ts";
 import { ForbiddenError } from "./users.ts";
 
 const STAGE_LIFETIME = 30 * 60_000;
@@ -38,6 +40,11 @@ export function portableImportHttp(
   const uploads = join(dirname(dbPath), "uploads");
   mkdirSync(root, { recursive: true });
   mkdirSync(uploads, { recursive: true });
+  const media = mediaStore(uploads);
+  const quota = uploadQuota(db, {
+    reservationMs: 30 * 60_000,
+    renewEveryMs: 60_000,
+  });
   const stagePath = (token: string) => {
     if (!tokenPattern.test(token))
       throw new PortablePackageError("Некорректный токен импорта");
@@ -350,15 +357,36 @@ export function portableImportHttp(
     const directory = stagePath(body.token);
     let installed:
       Awaited<ReturnType<typeof installPortableOriginals>> | undefined;
+    let release: Awaited<ReturnType<typeof quota.acquire>> | undefined;
     let committed = false;
     try {
       if (!(await empty()))
         throw new ConflictError("Дерево изменилось после предпросмотра");
       const parsed = await parsePackage(join(directory, "input"), directory);
+      const originalFiles = [...parsed.files].filter(([path]) =>
+        path.startsWith("media/"),
+      );
+      if (originalFiles.length)
+        release = await quota.acquire(
+          actorId,
+          originalFiles.reduce((sum, [, file]) => sum + file.size, 0),
+          async () => {
+            const disk = await statfs(uploads);
+            return disk.bavail * disk.bsize;
+          },
+          async () => {
+            const usage = await media.usage(true);
+            return {
+              ...usage,
+              files: usage.files + originalFiles.length - 1,
+            };
+          },
+        );
       installed = await installPortableOriginals(parsed, uploads);
       const actor = await mayImport(req);
       if (!actor || actor.id !== actorId)
         throw new ForbiddenError("Доступ владельца отозван");
+      await release?.assertValid();
       const result = await applyPortablePackage(
         archive,
         actor,
@@ -378,27 +406,33 @@ export function portableImportHttp(
         documents: parsed.snapshot.documents.length,
       };
     } finally {
-      await installed?.undo();
-      if (!committed) {
-        await db
-          .prepare(
-            "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
-            "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
-          )
-          .run(
-            JSON.stringify({ status: "ready" }),
-            Date.now() + STAGE_LIFETIME,
-            body.token,
-            actorId,
-            Date.now(),
-          );
+      try {
+        await installed?.undo();
+        if (!committed) {
+          await db
+            .prepare(
+              "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
+              "UPDATE workflow_stages SET data=?,expires_at=? WHERE kind='drevo' AND token=? AND actor_id=? AND expires_at>?",
+            )
+            .run(
+              JSON.stringify({ status: "ready" }),
+              Date.now() + STAGE_LIFETIME,
+              body.token,
+              actorId,
+              Date.now(),
+            );
+        }
+        if (!committed)
+          for (const entry of await readdir(directory, {
+            withFileTypes: true,
+          }).catch(() => []))
+            if (entry.isFile() && entry.name !== "input")
+              await rm(join(directory, entry.name), { force: true });
+      } finally {
+        await release?.().catch(() => {
+          console.warn("portable_import_reservation_release_failed");
+        });
       }
-      if (!committed)
-        for (const entry of await readdir(directory, {
-          withFileTypes: true,
-        }).catch(() => []))
-          if (entry.isFile() && entry.name !== "input")
-            await rm(join(directory, entry.name), { force: true });
     }
   }
 
@@ -447,6 +481,8 @@ export function portableImportHttp(
             ? 409
             : error instanceof ForbiddenError
               ? 403
+              : error instanceof UploadQuotaError
+                ? error.status
               : error instanceof PortablePackageError
                 ? 400
                 : 500;
