@@ -98,3 +98,41 @@ test("one catalog source confirms multiple facts, stays current, and legacy cita
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("source catalog search is server-paginated and rejects invalid bounds", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-source-page-"));
+  const app = await startServer(0, join(dir, "archive.sqlite"), true);
+  const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    for (let index = 0; index < 23; index++) {
+      const response = await fetch(base + "/api/sources", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: index === 0 ? "Метрическая книга" : `Запись ${index}`,
+          archive: index === 0 ? "ГАСО" : "", fond: index === 0 ? "6" : "",
+          opis: index === 0 ? "13" : "", delo: index === 0 ? "104" : "",
+          sheet: index === 0 ? "12" : "" }),
+      });
+      assert.equal(response.status, 201);
+    }
+    const first = await fetch(base + "/api/sources?limit=10&offset=0").then((r) => r.json());
+    const second = await fetch(base + "/api/sources?limit=10&offset=10").then((r) => r.json());
+    assert.equal(first.total, 23);
+    assert.equal(first.sources.length, 10);
+    assert.equal(second.sources.length, 10);
+    assert.equal(new Set([...first.sources, ...second.sources].map((source) => source.id)).size, 20);
+    const matched = await fetch(base + "/api/sources?q=метрическая&limit=5").then((r) => r.json());
+    assert.equal(matched.total, 1);
+    assert.equal(matched.sources[0].title, "Метрическая книга");
+    const archiveMatch = await fetch(base + "/api/sources?q=гасо&limit=5").then((r) => r.json());
+    assert.equal(archiveMatch.total, 1);
+    assert.equal(archiveMatch.sources[0].archive, "ГАСО");
+    const cipherMatch = await fetch(base + "/api/sources?q=104&limit=5").then((r) => r.json());
+    assert.equal(cipherMatch.total, 1);
+    assert.equal(cipherMatch.sources[0].delo, "104");
+    assert.equal((await fetch(base + "/api/sources?limit=101")).status, 400);
+    assert.equal((await fetch(base + "/api/sources?offset=-1")).status, 400);
+  } finally {
+    await app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

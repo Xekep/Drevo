@@ -76,6 +76,10 @@ export function storeDatabase(
   if (!(source instanceof DatabaseSync)) return source;
   const cached = connections.get(source);
   if (cached) return cached;
+  // SQLite's built-in lower() only folds ASCII without ICU. Catalog searches
+  // must also match Cyrillic archive names and abbreviations.
+  source.function("drevo_lower", { deterministic: true },
+    (value: unknown) => String(value ?? "").toLocaleLowerCase("ru"));
   // Awaiting SQLite calls yields to other requests too. Serialize complete
   // transactions, not individual statements, and retain ownership across awaits.
   const context = new AsyncLocalStorage<{

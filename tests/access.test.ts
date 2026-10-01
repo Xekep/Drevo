@@ -166,8 +166,11 @@ test("OAuth roles, ownership, public sections and complete backup work through H
     assert.equal((await request("/api/export.json")).status, 401);
     assert.equal((await request("/api/places/locate?q=unknown")).status, 401);
     assert.equal((await request("/api/documents")).status, 401);
+    assert.equal((await request("/api/sources")).status, 403);
     const admin = await login("first"),
       reader = await login("second");
+    assert.equal((await request("/api/sources", reader)).status, 403);
+    assert.equal((await request("/api/sources", admin)).status, 200);
     assert.equal(
       (await request("/api/session", admin).then((r) => r.json())).user.role,
       "admin",

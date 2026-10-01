@@ -13,6 +13,27 @@ export function sourceCatalogStore(db: StoreDatabase) {
     "SELECT data,version FROM source_catalog ORDER BY id",
     "SELECT data,version FROM source_catalog ORDER BY id",
   ).all()).map(parsed);
+  const page = async (query: string, offset: number, limit: number) => {
+    const match = query.toLocaleLowerCase("ru");
+    const fields = ["title", "archive", "reference", "fond", "opis", "delo", "sheet"];
+    const sqliteText = `drevo_lower(${fields.map((field) =>
+      `coalesce(json_extract(data,'$.${field}'),'')`).join(" || ' ' || ")})`;
+    const postgresText = `lower(${fields.map((field) =>
+      `coalesce(data->>'${field}','')`).join(" || ' ' || ")})`;
+    const where = match ? db.kind === "postgres"
+      ? ` WHERE strpos(${postgresText}, ?) > 0`
+      : ` WHERE instr(${sqliteText}, ?) > 0` : "";
+    const args = match ? [match] : [];
+    const total = Number((await db.prepare(
+      `SELECT count(*) AS count FROM source_catalog${where}`,
+      `SELECT count(*) AS count FROM source_catalog${where}`,
+    ).get(...args) as { count: number }).count);
+    const sources = (await db.prepare(
+      `SELECT data,version FROM source_catalog${where} ORDER BY id LIMIT ? OFFSET ?`,
+      `SELECT data,version FROM source_catalog${where} ORDER BY id LIMIT ? OFFSET ?`,
+    ).all(...args, limit, offset)).map(parsed);
+    return { sources, total };
+  };
   const get = async (id: string) => {
     const row = await db.prepare(
       "SELECT data,version FROM source_catalog WHERE id=?",
@@ -38,7 +59,7 @@ export function sourceCatalogStore(db: StoreDatabase) {
         return false;
     return true;
   };
-  return { list, get, insert, update, remove, documentIdsExist };
+  return { list, page, get, insert, update, remove, documentIdsExist };
 }
 
 export function allCitations(family: Family): Source[] {
