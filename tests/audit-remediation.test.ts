@@ -306,6 +306,14 @@ test("upload reservations enforce disk headroom, total quota, concurrency and ho
     await (
       await a.acquire("u", 60, 1000)
     )();
+    await assert.rejects(
+      async () => await b.acquire(
+        "fresh", 20, async () => 1000,
+        async () => ({ files: 1, bytes: 90 }),
+      ),
+      (e) => e instanceof UploadQuotaError && e.status === 507,
+      "a live filesystem measurement must be checked inside the reservation",
+    );
     const firstPending = await a.acquire("one", 1, 1000);
     const secondPending = await b.acquire("two", 1, 1000);
     await assert.rejects(

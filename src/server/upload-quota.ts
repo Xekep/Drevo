@@ -21,8 +21,11 @@ export function uploadQuota(
     async acquire(
       userId: string,
       maximumBytes: number,
-      freeBytes: number,
-      images = { files: 0, bytes: 0 },
+      freeBytes: number | (() => Promise<number>),
+      images:
+        | { files: number; bytes: number }
+        | (() => Promise<{ files: number; bytes: number }>) =
+        { files: 0, bytes: 0 },
     ) {
       const time = now(),
         id = randomUUID();
@@ -64,14 +67,20 @@ export function uploadQuota(
             "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
           )
           .get())!;
+        // The archive transaction serializes reservations. Read the disk only
+        // after entering it, so a second process sees the first one's files.
+        const currentFreeBytes =
+          typeof freeBytes === "function" ? await freeBytes() : freeBytes;
+        const currentImages =
+          typeof images === "function" ? await images() : images;
         if (
-          images.files + Number(used.n) + Number(pending.n) >= files ||
-          images.bytes +
+          currentImages.files + Number(used.n) + Number(pending.n) >= files ||
+          currentImages.bytes +
             Number(used.bytes) +
             Number(pending.bytes) +
             maximumBytes >
             bytes ||
-          freeBytes - Number(pending.bytes) - maximumBytes < freeReserve
+          currentFreeBytes - Number(pending.bytes) - maximumBytes < freeReserve
         )
           throw new UploadQuotaError(
             "Недостаточно места. Лимит хранилища достигнут.",

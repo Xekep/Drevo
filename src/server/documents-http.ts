@@ -896,8 +896,6 @@ export function documentsHttp({
       const header: Buffer[] = [];
       let headerSize = 0;
       try {
-        const images = await media.usage();
-        const disk = await statfs(uploadsDirectory);
         const uploader = await auth.currentUser(req);
         if (!uploader?.approved || !(await auth.canEdit(req)))
           return json(res, 403, { error: "Право загрузки отозвано" });
@@ -906,8 +904,11 @@ export function documentsHttp({
           Number(req.headers["content-length"]) > 0
             ? Math.min(Number(req.headers["content-length"]), fileType.maxBytes)
             : fileType.maxBytes,
-          disk.bavail * disk.bsize,
-          images,
+          async () => {
+            const disk = await statfs(uploadsDirectory);
+            return disk.bavail * disk.bsize;
+          },
+          () => media.usage(true),
         );
         const guard = new Transform({
           transform(chunk: Buffer, _encoding, callback) {
