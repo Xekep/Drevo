@@ -145,6 +145,17 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  assert.equal((await client.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='runtime_visible_person_comments'
+      AND column_name='updated_ms'`)).rowCount, 1,
+  "the clean PostgreSQL runtime applies person comment schema 053 before grant schema 054");
+  assert.equal((await client.query("SELECT to_regclass('discovery_linked_card_grants') AS name")).rows[0].name,
+    "discovery_linked_card_grants");
+  await client.query("DROP TABLE discovery_linked_card_grants");
+  await initializePostgresRuntimeSchema(live.db);
+  assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
+    WHERE oid=to_regclass('discovery_linked_card_grants')`)).rows[0]?.relforcerowsecurity,
+  true, "upgrading a database at schema 053 installs the FORCE RLS grant table as 054");
   assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
     "the non-superuser runtime migration installs trusted pg_trgm");
   // A second application must safely finish an already installed extension.

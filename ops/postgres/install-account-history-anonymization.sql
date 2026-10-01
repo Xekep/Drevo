@@ -1,5 +1,5 @@
 -- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 052,
--- and repeat after schema 053 to anonymize linked-card grant attribution.
+-- and repeat after schema 054 to anonymize linked-card grant attribution.
 -- The app role keeps FORCE RLS and receives EXECUTE only on the checked entry
 -- point. Re-running this script safely cleans remaining old tombstones.
 BEGIN;
