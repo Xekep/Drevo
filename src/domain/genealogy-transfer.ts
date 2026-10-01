@@ -1,4 +1,4 @@
-import type { ArchivePhoto, Family } from "./types.ts";
+import type { ArchivePhoto, Family, Source } from "./types.ts";
 import type { DocumentDetails } from "../shared/document-details.ts";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 
@@ -22,6 +22,8 @@ export type GenealogyImport = {
   version: string;
   warnings: string[];
   media: TransferMedia[];
+  /** Temporary import-only pointers; never persisted in Family. */
+  citationMedia?: Array<{ source: Source; mediaId: string; page?: number }>;
 };
 export type GedcomVersion = "5.5.1" | "7.0";
 export type GenealogyExportFormat = "gedcom551" | "gedcom7" | "gedzip7";
