@@ -153,8 +153,8 @@ export async function fixture(t: TestContext) {
       );
     for (const [index, row] of rows.relations.entries())
       await first.query(
-        "INSERT INTO relations(archive_id,id,ordinal,source,target,type) VALUES($1,$2,$3,$4,$5,$6)",
-        [archiveId, row.id, index, row.source, row.target, row.type],
+        "INSERT INTO relations(archive_id,id,ordinal,source,target,type,note,twin_kind,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        [archiveId, row.id, index, row.source, row.target, row.type, row.note, row.twinKind, row.createdBy],
       );
     for (const [index, row] of rows.photos.entries())
       await first.query(

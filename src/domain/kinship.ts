@@ -622,21 +622,26 @@ function specialRole(link: FamilyLink, subject: Person): KinshipRole {
       return {
         term: forward
           ? f
-            ? "приёмная мать"
-            : "приёмный отец"
+            ? "усыновительница"
+            : "усыновитель"
           : f
-            ? "приёмная дочь"
-            : "приёмный сын",
+            ? "удочерённая дочь"
+            : "усыновлённый сын",
         description: "В архиве явно указано усыновление или удочерение.",
-        aliases: [
-          forward
-            ? f
-              ? "усыновительница"
-              : "усыновитель"
-            : f
-              ? "удочерённая"
-              : "усыновлённый",
-        ],
+      };
+    case "foster_parent":
+      return {
+        term: forward
+          ? f ? "приёмная мать" : "приёмный отец"
+          : f ? "приёмная дочь" : "приёмный сын",
+        description: "Указана приёмная семья без записи об усыновлении.",
+      };
+    case "presumed_parent":
+      return {
+        term: forward
+          ? f ? "предполагаемая мать" : "предполагаемый отец"
+          : f ? "предполагаемая дочь" : "предполагаемый сын",
+        description: "Гипотеза о родительстве, не подтверждённая как установленный факт.",
       };
     case "step_parent":
       return {
@@ -715,6 +720,7 @@ export function analyzeKinship(
     path: string[],
     roles: [KinshipRole, KinshipRole],
     explanation: string,
+    kind: "family" | "unknown" = "family",
   ) =>
     extras.push({
       title,
@@ -722,7 +728,7 @@ export function analyzeKinship(
       roles,
       explanation,
       common: [],
-      kind: "family",
+      kind,
     });
   for (const link of links)
     if (
@@ -738,6 +744,7 @@ export function analyzeKinship(
         [a.id, b.id],
         roles,
         link.note || roles[0].description,
+        link.type === "presumed_parent" ? "unknown" : "family",
       );
       if (link.type === "step_parent") recordedStepParent = extras.at(-1);
     }
@@ -880,7 +887,7 @@ export function analyzeKinship(
         .filter((x) => x.parents.includes(id) || x.spouses.includes(id))
         .map((x) => x.id),
       ...links
-        .filter((l) => l.from === id || l.to === id)
+        .filter((l) => l.type !== "presumed_parent" && (l.from === id || l.to === id))
         .map((l) => (l.from === id ? l.to : l.from)),
     ]);
     for (const next of neighbors) {

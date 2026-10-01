@@ -18,7 +18,9 @@ test("step-parent names follow both recorded sexes", () => {
 
 test("additional relationships show both roles on an edge", () => {
   assert.equal(connectionPairName("godparent", woman, man), "Крёстная мать → крестник");
-  assert.equal(connectionPairName("adoptive_parent", man, woman), "Приёмный отец → приёмная дочь");
+  assert.equal(connectionPairName("adoptive_parent", man, woman), "Усыновитель → удочерённая дочь");
+  assert.equal(connectionPairName("foster_parent", man, woman), "Приёмный отец → приёмная дочь");
+  assert.equal(connectionPairName("presumed_parent", woman, man), "Предполагаемая мать → предполагаемый сын");
   assert.equal(connectionPairName("sworn_sibling", woman, man), "Названая сестра ↔ названый брат");
   assert.equal(connectionPairName("twin", woman, man), "Сестра-близнец ↔ брат-близнец");
 });

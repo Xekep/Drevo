@@ -53,7 +53,7 @@ export function treeGeometry(
   );
   const adoptive = new Map<string, string[]>();
   for (const link of links)
-    if (link.type === "adoptive_parent") {
+    if (link.type === "adoptive_parent" || link.type === "foster_parent") {
       const parents = adoptive.get(link.to) || [];
       parents.push(link.from);
       adoptive.set(link.to, parents);

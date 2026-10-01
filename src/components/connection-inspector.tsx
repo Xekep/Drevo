@@ -195,6 +195,8 @@ export function ConnectionInspector({
                 "spouse",
                 "godparent",
                 "adoptive_parent",
+                "foster_parent",
+                "presumed_parent",
                 "step_parent",
               ].map((type) => (
                 <option key={type} value={type}>

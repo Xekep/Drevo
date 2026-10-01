@@ -362,6 +362,23 @@ test("explicit step-parent survives GEDCOM export and import", () => {
   );
 });
 
+test("foster and presumed parents remain distinct from adoption in GEDCOM", () => {
+  const family = seed();
+  family.people.push(person("foster", { birth: "1950", sex: "f" }));
+  family.people.push(person("possible", { birth: "1945", sex: "m" }));
+  family.links = [
+    { id: "foster", from: "foster", to: "child", type: "foster_parent" },
+    { id: "possible", from: "possible", to: "child", type: "presumed_parent", note: "Гипотеза" },
+  ];
+  const exported = exportGedcom(family);
+  assert.match(exported, /2 PEDI foster/);
+  assert.match(exported, /2 RELA presumed_parent/);
+  const imported = importGedcom(exported, "parentage").family;
+  assert.deepEqual(imported.links?.map((link) => link.type).sort(), ["foster_parent", "presumed_parent"]);
+  assert.equal(imported.people.find((p) => p.name === "child")?.parents.length, 2);
+  assert.equal(imported.links?.find((link) => link.type === "presumed_parent")?.note, "Гипотеза");
+});
+
 const external = `0 HEAD\n1 GEDC\n2 VERS 5.5.1\n1 CHAR UTF-8\n0 @P@ INDI\n1 NAME Пётр /Орлов/\n1 BIRT\n2 DATE 1900\n1 FAMS @F@\n0 @C@ INDI\n1 NAME Анна /Орлова/\n1 BIRT\n2 DATE ABT 1930\n1 DEAT Y\n1 FAMC @F@\n2 PEDI adopted\n1 RESI\n2 DATE FROM 1940 TO 1950\n2 PLAC Москва\n1 OBJE\n2 FILE https://example.org/private.jpg\n0 @F@ FAM\n1 HUSB @P@\n1 CHIL @C@\n0 TRLR\n`;
 test("external GEDCOM preserves uncertain dates, adopted parentage, known death, and warns about media", () => {
   const result = importGedcom(external, "external"),
@@ -370,6 +387,10 @@ test("external GEDCOM preserves uncertain dates, adopted parentage, known death,
   assert.equal(child.deceased, true);
   assert.deepEqual(child.parents, []);
   assert.equal(result.family.links![0].type, "adoptive_parent");
+  assert.equal(
+    importGedcom(external.replace("PEDI adopted", "PEDI foster"), "foster").family.links?.[0].type,
+    "foster_parent",
+  );
   assert.ok(child.events?.some((e) => e.dateText === "ABT 1930"));
   assert.ok(
     child.events?.some((e) => e.date === "1940" && e.endDate === "1950"),

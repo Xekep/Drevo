@@ -12,7 +12,9 @@ import { archiveConnections } from "./connections.ts";
 import type { Family, Person } from "./types.ts";
 
 const graphRelationLabels: Record<string, string> = {
-  adoptive_parent: "приёмный родитель",
+  adoptive_parent: "усыновитель",
+  foster_parent: "приёмный родитель",
+  presumed_parent: "предполагаемый родитель",
   step_parent: "отчим / мачеха",
   godparent: "крёстный родитель",
   nurse: "кормилица",
@@ -601,10 +603,18 @@ function relativeRole(type: string, direction: "from" | "to", person: Person) {
   if (type === "adoptive_parent")
     return direction === "from"
       ? female
-        ? "приёмная мать"
+        ? "усыновительница"
         : male
-          ? "приёмный отец"
-          : "приёмный родитель"
+          ? "усыновитель"
+          : "усыновитель"
+      : child;
+  if (type === "foster_parent")
+    return direction === "from"
+      ? female ? "приёмная мать" : male ? "приёмный отец" : "приёмный родитель"
+      : child;
+  if (type === "presumed_parent")
+    return direction === "from"
+      ? female ? "предполагаемая мать" : male ? "предполагаемый отец" : "предполагаемый родитель"
       : child;
   if (type === "step_parent")
     return direction === "from"

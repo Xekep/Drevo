@@ -16,7 +16,9 @@ const normalized = (value: string) =>
   value.trim().toLocaleLowerCase("ru").replaceAll("ё", "е");
 
 const linkNames: Record<ExtraLinkType, string> = {
-  adoptive_parent: "приёмное родительство",
+  adoptive_parent: "усыновление",
+  foster_parent: "приёмное родительство",
+  presumed_parent: "предполагаемое родительство",
   step_parent: "отчим или мачеха",
   godparent: "крёстное родительство",
   nurse: "вскармливание",
@@ -252,7 +254,7 @@ export function analyzeArchiveWarnings(family: Family): ArchiveWarning[] {
   );
   for (const link of family.links || [])
     if (
-      (link.type === "adoptive_parent" || link.type === "step_parent") &&
+      (["adoptive_parent", "foster_parent", "presumed_parent", "step_parent"].includes(link.type)) &&
       graph.has(link.to) &&
       graph.has(link.from) &&
       link.from !== link.to

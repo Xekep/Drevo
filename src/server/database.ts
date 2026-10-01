@@ -73,8 +73,8 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
   for (const row of rows.people) await personQuery.run(row.id, row.data);
 
   const relationQuery = db.prepare(
-    "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
-    "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
+    "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
   );
   for (const row of rows.relations)
     await relationQuery.run(
@@ -83,6 +83,7 @@ async function replaceArchiveRows(db: StoreDatabase, rows: ArchiveRows) {
       row.target,
       row.type,
       row.note,
+      row.twinKind,
       row.createdBy,
     );
 
@@ -142,12 +143,12 @@ async function syncRelations(
       "DELETE FROM relations WHERE id=?",
     ),
     insert = db.prepare(
-      "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
-      "INSERT INTO relations(id,source,target,type,note,created_by) VALUES(?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
+      "INSERT INTO relations(id,source,target,type,note,twin_kind,created_by) VALUES(?,?,?,?,?,?,?)",
     ),
     update = db.prepare(
-      "UPDATE relations SET note=?,created_by=? WHERE id=?",
-      "UPDATE relations SET note=?,created_by=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=? WHERE id=?",
+      "UPDATE relations SET note=?,twin_kind=?,created_by=? WHERE id=?",
     );
   for (const row of before) {
     const next = following.get(row.id);
@@ -173,10 +174,11 @@ async function syncRelations(
         row.target,
         row.type,
         row.note,
+        row.twinKind,
         row.createdBy,
       );
-    else if (old.note !== row.note || old.createdBy !== row.createdBy)
-      await update.run(row.note, row.createdBy, row.id);
+    else if (old.note !== row.note || old.twinKind !== row.twinKind || old.createdBy !== row.createdBy)
+      await update.run(row.note, row.twinKind, row.createdBy, row.id);
   }
 }
 

@@ -611,6 +611,35 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const familyLinkExtension = "2026-10-family-link-types";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(familyLinkExtension)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE relations_new (
+          id TEXT PRIMARY KEY,
+          source TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          target TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          type TEXT NOT NULL CHECK(type IN ('parent','spouse','adoptive_parent','foster_parent','presumed_parent','step_parent','godparent','nurse','sworn_sibling','guardian','twin')),
+          note TEXT NOT NULL DEFAULT '',
+          twin_kind TEXT CHECK(twin_kind IS NULL OR (type='twin' AND twin_kind IN ('identical','fraternal','unknown'))),
+          created_by TEXT,
+          CHECK(source<>target),
+          UNIQUE(source,target,type)
+        ) STRICT;
+        INSERT INTO relations_new(id,source,target,type,note,created_by)
+          SELECT id,source,target,type,note,created_by FROM relations;
+        DROP TABLE relations;
+        ALTER TABLE relations_new RENAME TO relations;
+        CREATE INDEX relations_target ON relations(target);
+      `);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(familyLinkExtension);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   // Nullable metadata is compatible with the previous release. Keep the base
   // schema version so rollback can still open the database after deployment.
   const visitsExtension = "2026-09-user-last-visit";

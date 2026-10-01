@@ -654,7 +654,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             children(f, adoptionRole).some((n) => ids.get(n.value) === p.id));
         if (pedigree === "adopted" || adoptThis)
           addLink(p.id, person.id, "adoptive_parent");
-        else if (pedigree === "foster") addLink(p.id, person.id, "guardian");
+        else if (pedigree === "foster") addLink(p.id, person.id, "foster_parent");
         else person.parents = [...new Set([...person.parents, p.id])];
       }
     }
@@ -944,8 +944,8 @@ export function exportGedcom(
     for (const spouse of p.spouses) group([p.id, spouse], true);
   }
   for (const link of family.links || [])
-    if (link.type === "adoptive_parent")
-      group([link.from], false, "adopted").children.push(link.to);
+    if (link.type === "adoptive_parent" || link.type === "foster_parent")
+      group([link.from], false, link.type === "adoptive_parent" ? "adopted" : "foster").children.push(link.to);
   const sourceRecords: Source[] = [];
   function citation(level: number, source: Source) {
     sourceRecords.push(source);

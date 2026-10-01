@@ -213,6 +213,8 @@ export const RELATION_PROPOSAL_TOOL = {
           "parent",
           "spouse",
           "adoptive_parent",
+          "foster_parent",
+          "presumed_parent",
           "step_parent",
           "godparent",
           "nurse",

@@ -105,7 +105,9 @@ const fieldLabels: Record<string, string> = {
 const relationLabels: Record<string, string> = {
   parent: "Родитель → ребёнок",
   spouse: "Супруги",
-  adoptive_parent: "Приёмный родитель → ребёнок",
+  adoptive_parent: "Усыновитель → ребёнок",
+  foster_parent: "Приёмный родитель → ребёнок",
+  presumed_parent: "Предполагаемый родитель → ребёнок",
   step_parent: "Отчим / мачеха → ребёнок",
   godparent: "Крёстный родитель → крестник",
   nurse: "Кормилица → ребёнок",

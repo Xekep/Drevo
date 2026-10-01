@@ -98,7 +98,7 @@ test("adoption, milk and sworn relationships do not invent blood parents", () =>
   f = connectPeople(f, "father", "child", "adoptive_parent");
   assert.equal(
     analyzeKinship(f.people[0], f.people[2], f.people, f.links).roles?.[0].term,
-    "приёмный отец",
+    "усыновитель",
   );
   assert.deepEqual(f.people[2].parents, []);
   assert.throws(() => connectPeople(f, "child", "father", "adoptive_parent"));
@@ -153,6 +153,37 @@ test("twins require an explicit symmetric record and retain their recorded type"
     () => connectPeople(parentAndChild, "father", "child", "twin"),
     /не могут быть близнецами/,
   );
+});
+test("SQLite preserves twin type and distinct foster and presumed parents after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-parentage-"));
+  const path = join(dir, "archive.sqlite");
+  let store = await openArchive(path, seed());
+  try {
+    const initial = await store.read();
+    const family = structuredClone(initial.family);
+    family.people[3].birth = "1980";
+    let next = connectPeople(family, "child", "other", "twin", "", "fraternal");
+    next = connectPeople(next, "father", "child", "foster_parent");
+    next = connectPeople(next, "mother", "child", "presumed_parent", "Требует проверки");
+    const saved = await store.write(next, initial.revision);
+    assert.equal(saved.family.links?.find((link) => link.type === "twin")?.twinKind, "fraternal");
+    await store.close();
+    store = await openArchive(path, seed());
+    assert.deepEqual((await store.read()).family.links, saved.family.links);
+    assert.deepEqual((await store.read()).family.people[2].parents, []);
+  } finally {
+    await store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test("presumed parentage is shown as a hypothesis and does not establish an indirect family path", () => {
+  let family = connectPeople(seed(), "mother", "child", "presumed_parent", "Требует подтверждения");
+  family = connectPeople(family, "father", "child", "foster_parent");
+  const [father, mother, child] = family.people;
+  const direct = analyzeKinship(mother, child, family.people, family.links);
+  assert.equal(direct.kind, "unknown");
+  assert.equal(direct.roles?.[0].term, "предполагаемая мать");
+  assert.equal(analyzeKinship(mother, father, family.people, family.links).kind, "unknown");
 });
 
 test("explicit step-parent works with incomplete ancestry and never becomes a blood parent", () => {

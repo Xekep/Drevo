@@ -12,7 +12,9 @@ export type Connection = {
 export const CONNECTION_NAMES: Record<ConnectionType, string> = {
   parent: "Кровный родитель",
   spouse: "Супруг / супруга",
-  adoptive_parent: "Приёмный родитель",
+  adoptive_parent: "Усыновитель",
+  foster_parent: "Приёмный родитель",
+  presumed_parent: "Предполагаемый родитель",
   step_parent: "Супруг родителя",
   godparent: "Крёстный родитель",
   nurse: "Кормилица",
@@ -37,7 +39,7 @@ export function connectPeople(
     if (b.parents.includes(from)) throw new Error("Этот родитель уже указан");
     if (b.parents.length >= 2)
       throw new Error(
-        "Уже указаны два кровных родителя. Для усыновления выберите приёмного родителя.",
+        "Уже указаны два кровных родителя. Для усыновления выберите связь «Усыновитель».",
       );
     b.parents.push(from);
     b.generation = Math.max(b.generation, a.generation + 1);
