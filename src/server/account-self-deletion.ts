@@ -25,10 +25,14 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         "SELECT count(*)::integer AS total FROM archive_memberships WHERE user_id=$1",
         [accountId],
       );
+      const redaction = await client.query(
+        "SELECT to_regprocedure('public.runtime_redact_deleted_account_comments(text)') AS installed",
+      );
       return {
         name: String(account.rows[0].name),
         ownedArchives: Number(owned.rows[0].total),
         sharedArchives: Number(memberships.rows[0].total),
+        canRedactComments: !!redaction.rows[0]?.installed,
       };
     });
   }
@@ -38,7 +42,7 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
     preview: (accountId: string) => summary(accountId, false),
     async remove(
       accountId: string,
-      confirmation: { name: string; leaveSharedArchives: boolean },
+      confirmation: { name: string; leaveSharedArchives: boolean; redactComments?: boolean },
     ) {
       if (!available || !db.postgresTransaction)
         throw new AccountDeletionConflict("Удаление здесь недоступно");
@@ -89,11 +93,32 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           throw new AccountDeletionConflict(
             "Удаление аккаунта пока недоступно: требуется настройка обезличивания истории",
           );
+        if (confirmation.redactComments) {
+          const redactionFunction = await client.query(
+            "SELECT to_regprocedure('public.runtime_redact_deleted_account_comments(text)') AS installed",
+          );
+          if (!redactionFunction.rows[0]?.installed)
+            throw new AccountDeletionConflict(
+              "Удаление текстов комментариев пока недоступно: администратор должен обновить настройку PostgreSQL",
+            );
+        }
+        // Comment writes lock the archive first, then the author. Take these
+        // locks in the same order before the author advisory lock below.
+        for (const { archive_id: archiveId } of memberships.rows) {
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+          await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [archiveId]);
+        }
         await client.query(
-          "INSERT INTO deleted_account_tombstones(id) VALUES($1) ON CONFLICT(id) DO NOTHING",
+          "SELECT pg_advisory_xact_lock(hashtextextended('drevo-comment:' || $1,0))",
           [accountId],
         );
+        await client.query(
+          "INSERT INTO deleted_account_tombstones(id,redact_comments) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET redact_comments=excluded.redact_comments",
+          [accountId, confirmation.redactComments === true],
+        );
         await client.query("SET LOCAL statement_timeout='5min'");
+        if (confirmation.redactComments)
+          await client.query("SELECT public.runtime_redact_deleted_account_comments($1)", [accountId]);
         // Installed by a PostgreSQL administrator. It changes only attribution
         // matching this authenticated account, including archives left earlier.
         await client.query(
@@ -103,9 +128,6 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
 
         for (const { archive_id: archiveId } of memberships.rows) {
           await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
-            archiveId,
-          ]);
-          await client.query("SELECT id FROM archives WHERE id=$1 FOR UPDATE", [
             archiveId,
           ]);
           await client.query(

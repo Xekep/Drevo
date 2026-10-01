@@ -152,16 +152,19 @@ try {
     const runtimeRole = process.env.PGUSER || "";
     assert.match(runtimeRole, /^[a-z_][a-z0-9_]*$/);
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
+    await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO ${runtimeRole}`);
   } finally {
     if (adminClient !== client) await adminClient.end();
   }
   const runtimePrivileges = (await client.query(`SELECT
     has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_history(text)','EXECUTE') AS entrypoint,
+    has_function_privilege(current_user,'public.runtime_redact_deleted_account_comments(text)','EXECUTE') AS comment_redaction,
     has_function_privilege(current_user,'public.runtime_anonymize_account_history_rows(text)','EXECUTE') AS internal,
     has_function_privilege(current_user,'public.runtime_redact_account_attribution(jsonb,text)','EXECUTE') AS helper,
     (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) AS privileged`)).rows[0];
   if (!runtimePrivileges.privileged) {
     assert.equal(runtimePrivileges.entrypoint, true);
+    assert.equal(runtimePrivileges.comment_redaction, true);
     assert.equal(runtimePrivileges.internal, false);
     assert.equal(runtimePrivileges.helper, false);
   }
@@ -2718,6 +2721,17 @@ try {
       "INSERT INTO archive_owner_transfers(archive_id,from_user_id,to_user_id,created_ms,expires_ms) VALUES($1,'transfer-target','deleting-account',$2,$3)",
       [recreatedId, Date.now(), Date.now() + 600_000],
     );
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query(
+      "INSERT INTO person_comments(id,person_id,author_id,author_name,created_ms,text) VALUES(987659,'person-a','deleting-account','Delete me',$1,'Own comment in former tree'),(987660,'person-a','owner','Owner',$1,'Other author remains')",
+      [Date.now()],
+    );
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    await client.query(
+      "INSERT INTO person_comments(id,person_id,author_id,author_name,created_ms,text) VALUES(987661,'person-a','deleting-account','Delete me',$1,'Own comment in another former tree')",
+      [Date.now()],
+    );
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [recreatedId]);
     const accountDeletionPath = "/api/account/deletion";
     const deletingHeaders = {
       Cookie: `drevo_session=${deletingToken}`,
@@ -2730,6 +2744,7 @@ try {
     assert.equal(accountDeletionPlan.name, "Delete me");
     assert.equal(accountDeletionPlan.ownedArchives, 0);
     assert.equal(accountDeletionPlan.sharedArchives, 1);
+    assert.equal(accountDeletionPlan.canRedactComments, true);
     assert.equal((await fetch(oauthBase + accountDeletionPath, {
       method: "DELETE", headers: { ...deletingHeaders, Origin: "https://other.test" },
       body: JSON.stringify({ name: "Delete me", leaveSharedArchives: true }),
@@ -2750,12 +2765,59 @@ try {
       method: "DELETE", headers: { ...transferTargetHeaders, "X-Drevo-Account-Deletion": "1" },
       body: JSON.stringify({ name: ownerAccountPlan.name, leaveSharedArchives: true }),
     })).status, 409, "an owner must transfer or remove their tree first");
-    const removedAccount = await fetch(oauthBase + accountDeletionPath, {
-      method: "DELETE", headers: deletingHeaders,
-      body: JSON.stringify({ name: "Delete me", leaveSharedArchives: true }),
-    });
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('drevo.account_id','owner',true)");
+    await client.query("INSERT INTO deleted_account_tombstones(id,redact_comments) VALUES('deleting-account',true)");
+    await assert.rejects(
+      client.query("SELECT public.runtime_redact_deleted_account_comments('deleting-account')"),
+      /Account comment redaction context is missing/,
+      "the privileged function rejects another account's transaction context",
+    );
+    await client.query("ROLLBACK");
+    const commentWriter = new pg.Client();
+    await commentWriter.connect();
+    let removedAccount: Response;
+    try {
+      await commentWriter.query("BEGIN");
+      await commentWriter.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+      await commentWriter.query(
+        "INSERT INTO person_comments(id,person_id,author_id,author_name,created_ms,text) VALUES(987662,'person-a','deleting-account','Delete me',$1,'In-flight own comment')",
+        [Date.now()],
+      );
+      let deletionSettled = false;
+      const deletionRequest = fetch(oauthBase + accountDeletionPath, {
+        method: "DELETE", headers: deletingHeaders,
+        body: JSON.stringify({ accountId: "owner", name: "Delete me", leaveSharedArchives: true, redactComments: true }),
+      }).then((response) => { deletionSettled = true; return response; });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      assert.equal(deletionSettled, false, "deletion waits for an in-flight comment by the same account");
+      await commentWriter.query("COMMIT");
+      removedAccount = await deletionRequest;
+    } finally {
+      await commentWriter.query("ROLLBACK").catch(() => {});
+      await commentWriter.end();
+    }
     assert.equal(removedAccount.status, 200,
       removedAccount.status === 200 ? "" : await removedAccount.text());
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    assert.deepEqual((await client.query("SELECT author_id,text FROM person_comments WHERE id=987659")).rows[0],
+      { author_id: "deleted-account", text: "Текст удалён по запросу автора" });
+    assert.equal((await client.query("SELECT text FROM person_comments WHERE id=987660")).rows[0].text,
+      "Other author remains", "a spoofed accountId cannot redact another author's comment");
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    assert.deepEqual((await client.query("SELECT author_id,text FROM person_comments WHERE id=987661")).rows[0],
+      { author_id: "deleted-account", text: "Текст удалён по запросу автора" },
+      "comments in another archive left before deletion are redacted");
+    assert.equal((await client.query("SELECT text FROM person_comments WHERE id=987662")).rows[0].text,
+      "Текст удалён по запросу автора", "in-flight comment is redacted before deletion commits");
+    await client.query(
+      "INSERT INTO person_comments(id,person_id,author_id,author_name,created_ms,text) VALUES(987663,'person-a','deleting-account','Delete me',$1,'Late own comment')",
+      [Date.now()],
+    );
+    assert.deepEqual((await client.query("SELECT author_id,text FROM person_comments WHERE id=987663")).rows[0],
+      { author_id: "deleted-account", text: "Текст удалён по запросу автора" },
+      "a stale writer cannot add unredacted text after account deletion");
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [recreatedId]);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);

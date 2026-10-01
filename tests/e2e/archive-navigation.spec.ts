@@ -479,7 +479,7 @@ test("an account with no tree can create a new private tree", async ({
 test("account deletion requires its exact name and shared-tree consent", async ({
   page,
 }) => {
-  let deletionBody: { name: string; leaveSharedArchives: boolean } | null =
+  let deletionBody: { name: string; leaveSharedArchives: boolean; redactComments: boolean } | null =
     null;
   await page.route("**/api/session", async (route) => {
     const response = await route.fetch();
@@ -503,7 +503,7 @@ test("account deletion requires its exact name and shared-tree consent", async (
       return route.fulfill({ json: { deleted: true, sharedArchives: 1 } });
     }
     return route.fulfill({
-      json: { name: "Анна", ownedArchives: 0, sharedArchives: 1 },
+      json: { name: "Анна", ownedArchives: 0, sharedArchives: 1, canRedactComments: true },
     });
   });
   await page.goto("/account");
@@ -514,7 +514,8 @@ test("account deletion requires its exact name and shared-tree consent", async (
     .getByRole("textbox", { name: /Для подтверждения введите имя аккаунта/ })
     .fill("Анна");
   await expect(confirm).toBeDisabled();
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: /теряю доступ/ }).check();
+  await page.getByRole("checkbox", { name: /Удалить тексты моих комментариев/ }).check();
   await expect(confirm).toBeEnabled();
   await confirm.click();
   await expect
@@ -522,6 +523,7 @@ test("account deletion requires its exact name and shared-tree consent", async (
     .toEqual({
       name: "Анна",
       leaveSharedArchives: true,
+      redactComments: true,
     });
 });
 
