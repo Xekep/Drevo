@@ -356,6 +356,58 @@ test("reopening a linked-card panel discards revoked and in-flight snapshots", a
   } finally { releaseSecond(); }
 });
 
+test("an owner previews only granted fields and loses the copy comparison after revoke", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let permitted = true;
+  let hasFields = true;
+  let reads = 0;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share`, (route) =>
+    route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
+      incoming: { fields: { occupation: "Архивный исследователь" }, grantedAt: "2026-10-01T00:00:00Z" },
+    } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share/copy-preview`, (route) => {
+    reads++;
+    return permitted ? route.fulfill({ json: {
+      source: { archiveId: "tree-b", personId: "person-b" },
+      target: { archiveId: "tree-a", personId: "person-a" },
+      fields: hasFields ? [{ field: "occupation", sourceValue: "Архивный исследователь",
+        targetValue: "Местный исследователь", status: "conflict" }] : [],
+      quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
+    } }) : route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
+  await panel.locator("summary").click();
+  await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
+  await expect(panel).toContainText("Предпросмотр копирования");
+  await expect(panel).toContainText("Конфликт");
+  await expect(panel).toContainText("Архивный исследователь");
+  await expect(panel).toContainText("Местный исследователь");
+  await expect(panel).toContainText("Источник: разрешённая связанная карточка другого архива");
+  await expect(panel).not.toContainText("tree-b");
+  await expect(panel.getByRole("button", { name: /копировать|применить/i })).toHaveCount(0);
+  hasFields = false;
+  await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
+  await expect(panel).toContainText("Нет разрешённых текстовых полей для сравнения.");
+  await expect(panel).not.toContainText("Местный исследователь");
+  permitted = false;
+  await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
+  await expect.poll(() => reads).toBe(3);
+  await expect(panel).toContainText("Связь не найдена");
+  await expect(panel).not.toContainText("Местный исследователь");
+});
+
 test("a linked branch needs both grants and clears a revoked projection", async ({ page }) => {
   const id = "11111111-1111-4111-8111-111111111111";
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };

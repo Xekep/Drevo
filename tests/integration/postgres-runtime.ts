@@ -2765,6 +2765,7 @@ try {
   ] as const) {
     const beforeBranch = await runtime.archive.read();
     const branchFamily = structuredClone(beforeBranch.family);
+    if (runtime === otherApp) branchFamily.people[0].occupation = "Местный исследователь";
     branchFamily.people[0].parents = [visibleId, hiddenId];
     for (const [id, name] of [[visibleId, `${label} родитель`],
       [hiddenId, `${label} закрытый`]]) {
@@ -3079,6 +3080,13 @@ try {
     404, "unpublishing immediately closes its direct linked member URL");
   const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
     .then((response) => response.json());
+  const copyPreviewPath = cardSharePath + "/copy-preview";
+  assert.equal((await fetch(securedBase + copyPreviewPath, { headers: ownerHeaders })).status,
+    404, "the first side cannot preview a copy without the other's scalar grant");
+  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: ownerHeaders })).status,
+    403, "an invited admin cannot inspect the owner's copy preview");
+  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: archiveAdminHeaders })).status,
+    404, "the owner cannot preview a copy before the source grants fields");
   assert.equal(sharePreview.available.occupation, "Архивный исследователь");
   assert.equal(sharePreview.available.biography, undefined);
   assert.equal(sharePreview.incoming, null);
@@ -3100,6 +3108,24 @@ try {
   assert.deepEqual(incomingShare.incoming.fields, { occupation: "Архивный исследователь" });
   assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
     "the grant response contains only the chosen scalar snapshot");
+  const copyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  });
+  assert.equal(copyPreviewResponse.status, 200);
+  assert.equal(copyPreviewResponse.headers.get("cache-control"), "private, no-store");
+  const copyPreview = await copyPreviewResponse.json();
+  assert.deepEqual({ source: copyPreview.source, target: copyPreview.target,
+    fields: copyPreview.fields, quotaImpact: copyPreview.quotaImpact }, {
+    source: { archiveId: "runtime-test", personId: "person-a" },
+    target: { archiveId: "other-archive", personId: "person-a" },
+    fields: [{ field: "occupation", sourceValue: "Архивный исследователь",
+      targetValue: "Местный исследователь", status: "conflict" }],
+    quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
+  }, "the preview compares only permitted scalar values with the local linked card");
+  assert.doesNotMatch(JSON.stringify(copyPreview), /Закрытая биография|sources|parents|photo/);
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: archiveAdminHeaders,
+  })).status, 405, "a copy preview cannot apply changes through another method");
   await assert.rejects(matchDb.prepare("", `UPDATE discovery_linked_card_grants
     SET fields=?::jsonb WHERE grantor_archive_id='runtime-test'`).run(
     JSON.stringify({ biography: "Закрытая биография" })),
@@ -3174,6 +3200,9 @@ try {
     "a re-opened panel must revalidate against an uncached grant response");
   assert.equal((await freshAfterGrantRevoke.json()).incoming, null,
     "revocation hides the snapshot from the other side immediately");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  })).status, 404, "a fresh copy preview closes immediately after grant revocation");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
       .get("other-archive");

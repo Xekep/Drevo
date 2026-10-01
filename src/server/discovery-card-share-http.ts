@@ -13,9 +13,9 @@ type Row = Record<string, unknown>;
 const limits: Record<Field, number> = {
   birth: 100, death: 100, birthPlace: 300, deathPlace: 300, occupation: 200,
 };
-const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/card-share$/;
+const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/card-share(?:\/(copy-preview))?$/;
 
-function scalarFields(value: unknown): CardFields {
+function scalarFields(value: unknown, own = false): CardFields {
   let parsed = value;
   if (typeof parsed === "string") {
     try { parsed = JSON.parse(parsed); } catch { return {}; }
@@ -27,7 +27,8 @@ function scalarFields(value: unknown): CardFields {
     const current = source[key];
     if (typeof current !== "string") continue;
     const text = current.trim();
-    if (text && text.length <= limits[key] && !/[<>]/u.test(text)) result[key] = text;
+    if (text && (own || (text.length <= limits[key] && !/[<>]/u.test(text))))
+      result[key] = text;
   }
   return result;
 }
@@ -103,6 +104,46 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (user.role !== "admin" || user.approved !== true)
       return json(res, 403, { error: "Доступно владельцу дерева" });
+    if (detail[2]) {
+      if (req.method !== "GET") return json(res, 405, { error: "Метод не поддерживается" });
+      const archiveId = db.archiveId;
+      const result = await db.transaction(async () => {
+        const owner = await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=?`).get(archiveId, user.id);
+        if (!owner) return { code: 403 };
+        const pair = await linkedPair(detail[1], archiveId);
+        if (!pair) return { code: 404 };
+        const ownPersonId = String(pair.left_archive_id === archiveId
+          ? pair.left_person_id : pair.right_person_id);
+        const sourceArchiveId = String(pair.left_archive_id === archiveId
+          ? pair.right_archive_id : pair.left_archive_id);
+        const sourcePersonId = String(pair.left_archive_id === archiveId
+          ? pair.right_person_id : pair.left_person_id);
+        const own = await db.prepare("", "SELECT data FROM people WHERE archive_id=? AND id=?")
+          .get(archiveId, ownPersonId);
+        if (!own) return { code: 404 };
+        const incoming = (await grantsFor(pair)).find((row) =>
+          row.grantor_archive_id === sourceArchiveId);
+        if (!incoming) return { code: 404 };
+        const permitted = scalarFields(incoming.fields);
+        const target = scalarFields(own.data, true);
+        // This preview compares scalars on an existing linked person. It cannot
+        // create a person, attach media, or apply a change to either archive.
+        return { code: 200, source: { archiveId: sourceArchiveId, personId: sourcePersonId },
+          target: { archiveId, personId: ownPersonId },
+          fields: fields.filter((field) => permitted[field]).map((field) => ({
+            field, sourceValue: permitted[field]!, targetValue: target[field] || null,
+            status: !target[field] ? "empty" : target[field] === permitted[field] ? "same" : "conflict",
+          })),
+          quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 } };
+      }, true);
+      if (result.code === 200) {
+        return json(res, 200, { source: result.source, target: result.target,
+          fields: result.fields, quotaImpact: result.quotaImpact });
+      }
+      return json(res, result.code, { error: result.code === 403
+        ? "Доступно владельцу дерева" : "Связь не найдена" });
+    }
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
     if (req.method !== "GET" && req.method !== "PUT" && req.method !== "DELETE")
