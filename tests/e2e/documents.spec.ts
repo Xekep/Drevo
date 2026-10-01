@@ -784,6 +784,7 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   await mark.press("Space");
   await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
   await expect(target).toHaveClass("is-active");
+  await expect(mark).toBeFocused();
 });
 
 test("BookReader opens a document longer than 300 pages", async ({

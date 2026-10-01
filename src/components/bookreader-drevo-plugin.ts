@@ -198,10 +198,16 @@ export function makeDrevoPlugin(
     }
 
     private renderLayer(layer: PageLayer) {
+      const existing = new Map(
+        Array.from(layer.marks.querySelectorAll<HTMLButtonElement>("button"))
+          .map((mark) => [mark.dataset.annotationId, mark] as const),
+      );
       const marks = this.annotations
         .filter((item) => item.page === layer.page)
         .map((item) => {
-          const mark = document.createElement("button");
+          const previous = existing.get(item.id);
+          const mark = previous ?? document.createElement("button");
+          existing.delete(item.id);
           mark.type = "button";
           mark.disabled = this.annotating || this.magnifier;
           mark.dataset.annotationId = item.id;
@@ -213,22 +219,24 @@ export function makeDrevoPlugin(
             "aria-pressed",
             String(item.id === this.activeAnnotation),
           );
-          mark.addEventListener("pointerdown", (event) =>
-            event.stopPropagation(),
-          );
-          mark.addEventListener("mousedown", (event) =>
-            event.stopPropagation(),
-          );
-          // Native 2up navigation turns pages on mouseup, before click fires.
-          mark.addEventListener("mouseup", (event) => event.stopPropagation());
-          mark.addEventListener("click", (event) => {
-            event.stopPropagation();
-            emit({
-              source: "drevo-bookreader",
-              type: "annotation",
-              id: item.id,
+          if (!previous) {
+            mark.addEventListener("pointerdown", (event) =>
+              event.stopPropagation(),
+            );
+            mark.addEventListener("mousedown", (event) =>
+              event.stopPropagation(),
+            );
+            // Native 2up navigation turns pages on mouseup, before click fires.
+            mark.addEventListener("mouseup", (event) => event.stopPropagation());
+            mark.addEventListener("click", (event) => {
+              event.stopPropagation();
+              emit({
+                source: "drevo-bookreader",
+                type: "annotation",
+                id: item.id,
+              });
             });
-          });
+          }
           mark.className =
             "drevo-page-mark" +
             (item.id === this.activeAnnotation ? " is-active" : "") +
@@ -236,7 +244,12 @@ export function makeDrevoPlugin(
           this.position(mark, item);
           return mark;
         });
-      layer.marks.replaceChildren(...marks);
+      for (const mark of existing.values()) mark.remove();
+      let next = layer.marks.firstElementChild;
+      for (const mark of marks) {
+        if (mark !== next) layer.marks.insertBefore(mark, next);
+        next = mark.nextElementSibling;
+      }
       if (!this.annotating) layer.preview = null;
       this.renderDraft(layer);
     }
