@@ -116,6 +116,56 @@ test("person discussion enforces login, visible scope, authorship and origin", a
     };
     assert.equal(named.items[0].author, admin.user.name);
     await db
+      .prepare("UPDATE users SET person_id='anna' WHERE id='admin'")
+      .run();
+    let cardAuthor = (await (await request(anna, admin.cookie)).json())
+      .items[0];
+    assert.equal(cardAuthor.author, "Тестов anna");
+    assert.equal(cardAuthor.authorPersonId, "anna");
+    await db
+      .prepare(
+        "UPDATE people SET data=json_set(data,'$.name','Новое имя','$.patronymic','Отчество') WHERE id='anna'",
+      )
+      .run();
+    cardAuthor = (await (await request(anna, admin.cookie)).json()).items[0];
+    assert.equal(
+      cardAuthor.author,
+      "Тестов Новое имя Отчество",
+      "existing comments use the current card name",
+    );
+    await db
+      .prepare(
+        "UPDATE people SET data=json_set(data,'$.name','anna','$.patronymic','') WHERE id='anna'",
+      )
+      .run();
+    await db
+      .prepare(
+        "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text) VALUES('boris','admin','Администратор',1,'Скрытая карточка автора')",
+      )
+      .run();
+    const hiddenAuthor = (await (await request(boris, reader.cookie)).json())
+      .items[0];
+    assert.equal(hiddenAuthor.authorPersonId, null);
+    assert.equal(
+      hiddenAuthor.author,
+      "Администратор",
+      "a scoped reader does not receive a hidden card name",
+    );
+    const visibleAuthor = (await (await request(boris, admin.cookie)).json())
+      .items[0];
+    assert.equal(visibleAuthor.authorPersonId, "anna");
+    await db
+      .prepare(
+        "DELETE FROM person_comments WHERE text='Скрытая карточка автора'",
+      )
+      .run();
+    await db.prepare("UPDATE users SET person_id=NULL WHERE id='admin'").run();
+    assert.equal(
+      (await (await request(anna, admin.cookie)).json()).items[0]
+        .authorPersonId,
+      null,
+    );
+    await db
       .prepare("UPDATE users SET name=? WHERE id='admin'")
       .run(admin.user.name);
     await db
@@ -127,6 +177,10 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       items: Array<{ author: string; canDelete: boolean }>;
     };
     assert.equal(imported.items[0].author, "Remote Author");
+    assert.equal(
+      (imported.items[0] as { authorPersonId?: string | null }).authorPersonId,
+      null,
+    );
     assert.equal(imported.items[0].canDelete, true);
     await db
       .prepare("DELETE FROM person_comments WHERE author_id='imported:remote'")
@@ -138,12 +192,24 @@ test("person discussion enforces login, visible scope, authorship and origin", a
       text: "Семейное воспоминание",
     });
     assert.equal(readerPost.status, 201);
-    const readerComment = (await readerPost.json()) as { item: { id: number } };
+    const readerComment = (await readerPost.json()) as {
+      item: { id: number; author: string; authorPersonId: string | null };
+    };
+    assert.equal(readerComment.item.author, "Тестов boris");
+    assert.equal(
+      readerComment.item.authorPersonId,
+      "boris",
+      "new comments immediately expose the author's accessible card",
+    );
     const readerList = (await (await request(boris, reader.cookie)).json()) as {
       items: Array<{ text: string; author: string; canDelete: boolean }>;
     };
     assert.equal(readerList.items[0].text, "Семейное воспоминание");
-    assert.equal(readerList.items[0].author, "Читатель");
+    assert.equal(readerList.items[0].author, "Тестов boris");
+    assert.equal(
+      (readerList.items[0] as { authorPersonId?: string }).authorPersonId,
+      "boris",
+    );
     assert.equal(readerList.items[0].canDelete, true);
     const path = `${boris}/${readerComment.item.id}`;
     const original = (await (await request(boris, reader.cookie)).json())

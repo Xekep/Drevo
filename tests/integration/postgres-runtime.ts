@@ -1377,7 +1377,13 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
-  await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders);
+  const commentAuthorLink = await app.archive.db.prepare("", "SELECT person_id FROM archive_memberships WHERE user_id='owner'").get();
+  await app.archive.db.prepare("", "UPDATE archive_memberships SET person_id='person-a' WHERE user_id='owner'").run();
+  try {
+    await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders);
+  } finally {
+    await app.archive.db.prepare("", "UPDATE archive_memberships SET person_id=? WHERE user_id='owner'").run(commentAuthorLink?.person_id == null ? null : String(commentAuthorLink.person_id));
+  }
   assert.equal(
     (await fetch(securedBase + "/api/family?projection=overview", {
       headers: archiveAdminHeaders,
@@ -3286,6 +3292,7 @@ try {
       headers: ownerHeaders,
     }).then((response) => response.json());
     assert.equal(visibleComments.items.find((item: { text: string }) => item.text === "Historical comment")?.author, "Удалённый участник");
+    assert.equal(visibleComments.items.find((item: { text: string }) => item.text === "Historical comment")?.authorPersonId, null);
     assert.equal((await client.query("SELECT created_by FROM runtime_visible_research_suggestions WHERE id='former-suggestion'")).rows[0].created_by, "deleted-account");
     assert.equal((await sharesStore(app.archive.db).get(oldShareToken)), null,
       "a share created by a former member stops working when their account is deleted");

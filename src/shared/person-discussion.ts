@@ -4,6 +4,7 @@ export type PersonComment = {
   id: number;
   text: string;
   author: string;
+  authorPersonId: string | null;
   createdAt: string;
   editedAt: string | null;
   canDelete: boolean;

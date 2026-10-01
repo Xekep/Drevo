@@ -1,6 +1,54 @@
 import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const endpoint = "/api/people/e2e-child/discussion";
+
+test("comment author names navigate to the linked person while unlinked authors stay plain text", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route(`**${endpoint}`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    await route.fulfill({
+      json: {
+        items: [
+          {
+            id: 910001,
+            text: "Воспоминание автора",
+            author: "Тестов Иван Петрович",
+            authorPersonId: "e2e-memorial-person",
+            createdAt: new Date().toISOString(),
+            editedAt: null,
+            canEdit: false,
+            canDelete: false,
+          },
+          {
+            id: 910002,
+            text: "Автор без карточки",
+            author: "Другой участник",
+            authorPersonId: null,
+            createdAt: new Date().toISOString(),
+            editedAt: null,
+            canEdit: false,
+            canDelete: false,
+          },
+        ],
+        nextBefore: null,
+      },
+    });
+  });
+  const section = await openDiscussion(page);
+  const author = section.getByRole("link", {
+    name: "Тестов Иван Петрович",
+    exact: true,
+  });
+  await expect(author).toHaveAttribute("href", "/people/e2e-memorial-person");
+  await expect(
+    section.getByRole("link", { name: "Другой участник" }),
+  ).toHaveCount(0);
+  await author.click();
+  await expect(page).toHaveURL(/\/people\/e2e-memorial-person$/);
+  await expect(page.getByRole("heading", { name: /Иван Петрович/ })).toBeVisible();
+});
 async function replaceText(page: Page, editor: Locator, text: string) {
   await editor.click();
   await editor.press("ControlOrMeta+A");
@@ -49,9 +97,11 @@ test("comments show Markdown and LaTeX in the editor, support author edits and r
     await expect(section.locator(".comment-block-preview h2")).toContainText(
       marker,
     );
-    await section.locator(".comment-editor .cm-scroller").evaluate((element) => {
-      element.scrollTop = 0;
-    });
+    await section
+      .locator(".comment-editor .cm-scroller")
+      .evaluate((element) => {
+        element.scrollTop = 0;
+      });
     await section
       .locator(".comment-editor")
       .first()
