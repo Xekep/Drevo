@@ -76,7 +76,17 @@ export function PdfBookReader({
   }, []);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "f" &&
+        (!entry.mimeType || entry.mimeType === "application/pdf")
+      ) {
+        event.preventDefault();
+        frame.current?.contentWindow?.postMessage(
+          { source: "drevo-bookreader", type: "focus-search" } satisfies ReaderCommand,
+          window.location.origin,
+        );
+      } else if (event.key === "Escape") {
         if (magnifierLatest.current) {
           event.preventDefault();
           magnifierLatest.current = false;
@@ -101,7 +111,7 @@ export function PdfBookReader({
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, []);
+  }, [entry.mimeType]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent<ReaderEvent>) => {

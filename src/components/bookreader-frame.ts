@@ -3,6 +3,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
 import { makeDrevoPlugin } from "./bookreader-drevo-plugin";
+import { PdfTextSearch } from "./bookreader-pdf-search";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import {
   loadBookReader,
@@ -100,6 +101,7 @@ async function prepareDocument(
   let render: (index: number) => Promise<string>;
   let prefetch: (index: number) => void = () => {};
   let readBookmarks: () => void = () => {};
+  let textSearch: PdfTextSearch | undefined;
   if (command.mimeType === "application/pdf") {
     const loadingTask = getDocument({
       url: command.url,
@@ -111,6 +113,7 @@ async function prepareDocument(
       void loadingTask.destroy();
     };
     const pdf = await loadingTask.promise;
+    textSearch = new PdfTextSearch(pdf);
     if (pdf.numPages < 1 || pdf.numPages > 2000)
       throw new Error("Документ должен содержать от 1 до 2000 страниц");
     pageCount = pdf.numPages;
@@ -208,15 +211,25 @@ async function prepareDocument(
     dimensions = [{ width: image.naturalWidth, height: image.naturalHeight }];
     render = () => Promise.resolve(command.url);
   }
-  return { dimensions, render, prefetch, readBookmarks };
+  return { dimensions, render, prefetch, readBookmarks, textSearch };
 }
 
 async function open(command: Extract<ReaderCommand, { type: "init" }>) {
   if (opening) return;
   opening = true;
   try {
-    const [BookReader, { dimensions, render, prefetch, readBookmarks }] =
-      await Promise.all([loadBookReader(), prepareDocument(command)]);
+    const [
+      BookReader,
+      { dimensions, render, prefetch, readBookmarks, textSearch },
+    ] = await Promise.all([loadBookReader(), prepareDocument(command)]);
+    if (textSearch) {
+      const { makePdfSearchPlugin } =
+        await import("./bookreader-pdf-search-plugin");
+      BookReader.registerPlugin("search", makePdfSearchPlugin(textSearch));
+    }
+    dimensions.forEach((page, index) => {
+      page.leafNum = index + 1;
+    });
     const data: ReaderPage[][] = [[dimensions[0]]];
     for (let index = 1; index < dimensions.length; index += 2)
       data.push(dimensions.slice(index, index + 2));
@@ -242,6 +255,7 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       ui: "full",
       showLogo: false,
       autoResize: true,
+      plugins: { search: { enabled: Boolean(textSearch) } },
       flipSpeed: matchMedia("(prefers-reduced-motion: reduce)").matches
         ? 1
         : 550,
@@ -310,6 +324,11 @@ window.addEventListener("message", (event: MessageEvent<ReaderCommand>) => {
   }
   if (command.type === "jump" && reader)
     reader.jumpToIndex(Math.min(pageCount - 1, Math.max(0, command.page)));
+  if (command.type === "focus-search") {
+    const input = document.querySelector<HTMLInputElement>(".BRsearchInput");
+    input?.focus();
+    input?.select();
+  }
 });
 
 window.addEventListener("keydown", (event) => {

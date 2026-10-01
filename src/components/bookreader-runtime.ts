@@ -3,12 +3,14 @@ import polyfillUrl from "@internetarchive/bookreader/BookReader/webcomponents-bu
 import jqueryUrl from "@internetarchive/bookreader/BookReader/jquery-3.js?url";
 import bookReaderUrl from "@internetarchive/bookreader/BookReader/BookReader.js?url";
 
-export type ReaderPage = { width: number; height: number };
+export type ReaderPage = { width: number; height: number; leafNum?: number };
 export type BookReaderInstance = {
   init(): void;
   currentIndex(): number;
   jumpToIndex(index: number): void;
   bind(name: string, handler: () => void): void;
+  trigger(name: string, properties?: unknown): void;
+  removeProgressPopup(): void;
   mode: number;
   constModeThumb: number;
   plugins: Record<string, unknown>;
@@ -26,6 +28,7 @@ export type BookReaderConstructor = {
     flipSpeed: number;
     imagesBaseURL: string;
     metadata: { label: string; value: string }[];
+    plugins?: { search: { enabled: boolean } };
     getPageNum(index: number): string;
     getPageURI(index: number): string;
     renderPageURI(image: HTMLImageElement, uri: string): void;

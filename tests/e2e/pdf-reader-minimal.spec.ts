@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
 
-async function samplePdf(paddingBytes = 0, pageCount = 3, mixedSizes = false) {
+async function samplePdf(
+  paddingBytes = 0,
+  pageCount = 3,
+  mixedSizes = false,
+  withText = true,
+) {
   const pdf = new PDFDocument({
     autoFirstPage: false,
     compress: !paddingBytes,
@@ -28,7 +33,8 @@ async function samplePdf(paddingBytes = 0, pageCount = 3, mixedSizes = false) {
           }
         : undefined,
     );
-    pdf.text(`Archive page ${page}`);
+    if (withText) pdf.text(`Archive page ${page}`);
+    else pdf.rect(72, 72, 100, 100).fill("#aaa");
     if (page === 2) pdf.outline.addItem("Вторая страница");
   }
   pdf.end();
@@ -38,6 +44,7 @@ async function samplePdf(paddingBytes = 0, pageCount = 3, mixedSizes = false) {
 async function openSample(
   page: import("@playwright/test").Page,
   title: string,
+  pdf?: Buffer,
 ) {
   const uniqueTitle = `${title} ${randomUUID()}`;
   const upload = await page.request.post("/api/documents", {
@@ -47,7 +54,7 @@ async function openSample(
         JSON.stringify({ title: uniqueTitle, personIds: [] }),
       ),
     },
-    data: await samplePdf(),
+    data: pdf ?? (await samplePdf()),
   });
   expect(upload.status()).toBe(201);
   await page.goto("/documents");
@@ -65,6 +72,107 @@ async function openSample(
     .toBeGreaterThan(0);
   return { reader, book };
 }
+
+test("BookReader searches the PDF text layer and navigates native highlights", async ({
+  page,
+}, info) => {
+  const csp = readFileSync("ops/nginx.conf", "utf8").match(
+    /add_header Content-Security-Policy "([^"]+)"/,
+  )![1];
+  await page.route("**/bookreader-frame.html", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), "content-security-policy": csp },
+    });
+  });
+  const { reader, book } = await openSample(
+    page,
+    `PDF search ${info.project.name}`,
+  );
+  const externalRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/archive\.org|inside\.php/.test(request.url()))
+      externalRequests.push(request.url());
+  });
+  const query = book.getByRole("searchbox", { name: "Поиск в документе" });
+  await expect(query).toBeVisible();
+  await query.fill("aRcHiVe pAgE 3");
+  await query.press("Enter");
+  await expect(book.locator('.BRpage-visible[data-index="2"]')).toBeVisible();
+  await expect(
+    book
+      .locator('.BRpage-visible[data-index="2"] .searchHiliteLayer rect')
+      .first(),
+  ).toBeVisible();
+  await expect(book.locator('[data-id="resultsCount"]')).toHaveText("1 / 1");
+  await query.fill("archive");
+  await query.press("Enter");
+  await expect(book.locator(".BRnavMain .BRnavline .BRsearch")).toHaveCount(3);
+  await expect(book.locator('[data-id="resultsCount"]')).toHaveText("1 / 3");
+  await book.getByRole("button", { name: "Следующее совпадение" }).click();
+  await expect(book.locator('[data-id="resultsCount"]')).toHaveText("2 / 3");
+  await expect(
+    book
+      .locator('.BRpage-visible[data-index="1"] .searchHiliteLayer rect')
+      .first(),
+  ).toBeVisible();
+  await book.getByRole("button", { name: "Очистить поиск" }).click();
+  await expect(book.locator(".searchHiliteLayer")).toHaveCount(0);
+  await expect(book.locator(".BRnavline .BRsearch")).toHaveCount(0);
+  await book.locator("body").press("Control+f");
+  await expect(query).toBeFocused();
+  await reader.evaluate((element) => {
+    element.tabIndex = -1;
+    element.focus();
+  });
+  await page.keyboard.press("Control+f");
+  await expect(query).toBeFocused();
+  await query.fill("archive");
+  await query.press("Enter");
+  await query.fill("Archive page 3");
+  await query.press("Enter");
+  await expect(book.locator('[data-id="resultsCount"]')).toHaveText("1 / 1");
+  await expect(book.locator(".BRnavMain .BRnavline .BRsearch")).toHaveCount(1);
+  await expect(
+    book
+      .locator('.BRpage-visible[data-index="2"] .searchHiliteLayer rect')
+      .first(),
+  ).toBeVisible();
+  await query.fill("absent-word");
+  await query.press("Enter");
+  await expect(book.locator(".search_modal")).toHaveText(
+    "Совпадений не найдено.",
+  );
+  await query.press("Escape");
+  await expect(reader).toBeVisible();
+  await expect(query).toHaveValue("");
+  expect(externalRequests).toEqual([]);
+  expect(
+    await book
+      .locator(".BRtoolbar")
+      .evaluate((bar) => bar.scrollWidth - bar.clientWidth),
+  ).toBeLessThanOrEqual(1);
+});
+
+test("BookReader explains when a PDF has no text layer", async ({
+  page,
+}, info) => {
+  const { reader, book } = await openSample(
+    page,
+    `PDF without text ${info.project.name}`,
+    await samplePdf(0, 1, false, false),
+  );
+  const query = book.getByRole("searchbox", { name: "Поиск в документе" });
+  await query.fill("archive");
+  await query.press("Enter");
+  await expect(book.locator(".search_modal")).toHaveText(
+    "В PDF нет текстового слоя.",
+  );
+  await query.press("Escape");
+  await expect(reader).toBeVisible();
+  await expect(book.locator(".searchHiliteLayer")).toHaveCount(0);
+});
 
 test("BookReader keeps its navigation and Drevo comments and lens", async ({
   page,

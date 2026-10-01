@@ -26,7 +26,8 @@ export type ReaderCommand =
       commentsOpen: boolean;
       selection: AnnotationSelection | null;
     }
-  | { source: "drevo-bookreader"; type: "jump"; page: number };
+  | { source: "drevo-bookreader"; type: "jump"; page: number }
+  | { source: "drevo-bookreader"; type: "focus-search" };
 
 export type ReaderEvent =
   | { source: "drevo-bookreader"; type: "ready" }
