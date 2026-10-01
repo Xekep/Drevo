@@ -3428,15 +3428,24 @@ try {
   const copyHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.216",
     "Content-Type": "application/json" };
   const targetBeforeRevision = await otherApp.archive.read();
-  await otherApp.archive.write(targetBeforeRevision.family, targetBeforeRevision.revision);
-  assert.equal((await fetch(otherBase + copyPreviewPath, {
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("other-archive");
+    await matchDb.prepare("", `UPDATE archives SET revision=revision+1
+      WHERE id='other-archive'`).run();
+  });
+  const staleCopyResponse = await fetch(otherBase + copyPreviewPath, {
     method: "POST", headers: copyHeaders,
     body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
       revision: copyPreview.revision, reviewToken: copyPreview.reviewToken }),
-  })).status, 409, "a target revision change invalidates an otherwise identical comparison");
-  const freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
+  });
+  assert.equal(staleCopyResponse.status, 409,
+    `a target revision change invalidates an otherwise identical comparison: ${await staleCopyResponse.text()}`);
+  const freshCopyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
     headers: archiveAdminHeaders,
-  }).then((response) => response.json());
+  });
+  assert.equal(freshCopyPreviewResponse.status, 200);
+  const freshCopyPreview = await freshCopyPreviewResponse.json();
   const copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
     revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
   assert.equal((await fetch(otherBase + copyPreviewPath, {
