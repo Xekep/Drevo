@@ -86,7 +86,7 @@ export function restoreHttp({
         const current = await auth.currentUser(req);
         if (!current || current.id !== actor.id || !(await auth.isPlatformAdmin(req)))
           throw new ForbiddenError("Доступ администратора платформы отозван");
-        if (transaction?.kind === "postgres") {
+        if (!auth.local && transaction?.kind === "postgres") {
           const locked = await transaction.prepare("", `SELECT 1 FROM platform_admins
             WHERE account_id=? FOR SHARE`).get(actor.id);
           if (!locked)

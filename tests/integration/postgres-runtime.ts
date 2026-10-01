@@ -965,6 +965,8 @@ try {
   assert.deepEqual(readdirSync(uploads).sort(), uploadsBefore,
     "a rejected apply does not leave partial media copies");
   assert.equal(await reservationCount(), reservationsBefore, "a rejected apply releases its reservation");
+  assert.equal(await app.archive.db.prepare("", "SELECT 1 FROM platform_admins WHERE account_id=?").get("local"),
+    undefined, "single-user PostgreSQL mode restores without a platform grant row");
   const restore = await fetch(base + "/api/restore/apply", {
     method: "POST",
     headers: { "X-Drevo-Restore": "1" },
