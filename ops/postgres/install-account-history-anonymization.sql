@@ -135,4 +135,3 @@ DO $$ DECLARE deleted_id text; BEGIN
   END LOOP;
 END $$;
 COMMIT;
-
