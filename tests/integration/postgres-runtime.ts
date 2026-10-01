@@ -14,6 +14,7 @@ import {
   sessionTokenHash,
 } from "../../src/server/session-token.ts";
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
+import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
 import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
@@ -1915,6 +1916,12 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "administrator backfill rebuilds the confirmed public transition after truncation");
+  await client.query(readFileSync(new URL("../../ops/postgres/051_discovery_linked_request_rls.sql", import.meta.url), "utf8"));
+  await initializePostgresRuntimeSchema(matchDb);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
+    WHERE schemaname=current_schema() AND tablename='discovery_match_requests'
+      AND policyname='linked_discovery_read'`)).rows[0].count, 0,
+  "a runtime schema check must not recreate the removed global read policy");
   assert.deepEqual((await client.query(`SELECT column_name FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='discovery_linked_pairs'
     ORDER BY ordinal_position`)).rows.map((row) => row.column_name),
@@ -1933,13 +1940,24 @@ try {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
       .get("unrelated-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
-      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 1,
-    "the preceding release retains its linked-read behavior until the follow-up migration");
+      FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id))?.count, 0,
+    "a linked request still hides its reason and actors from unrelated archives");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
       FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
         AND right_archive_id='runtime-test'`).get())?.count, 1,
     "an unrelated archive sees only the published transition keys");
   }, true);
+  for (const participantArchive of ["runtime-test", "other-archive"]) {
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get(participantArchive);
+      const participantView = await matchDb.prepare("", `SELECT reason,requested_by,responded_by
+        FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id);
+      assert.deepEqual(participantView, {
+        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "owner",
+      }, "both participating archives retain their private review details");
+    }, true);
+  }
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "linked");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
