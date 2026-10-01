@@ -180,12 +180,20 @@ try {
     "discovery_linked_card_grants");
   assert.equal((await client.query("SELECT to_regclass('discovery_branch_members') AS name")).rows[0].name,
     "discovery_branch_members", "a clean database applies branch grant schema 055");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='discovery_branch_grants'
+      AND column_name='expires_at'`)).rows[0].count, 1,
+  "a clean database applies finite branch consent schema 062 after 055");
   await client.query("DROP TABLE discovery_branch_members");
   await client.query("DROP TABLE discovery_branch_grants");
   await initializePostgresRuntimeSchema(live.db);
   assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
     WHERE oid=to_regclass('discovery_branch_members')`)).rows[0]?.relforcerowsecurity,
   true, "upgrading schema 054 installs the FORCE RLS branch projection as 055");
+  assert.match((await client.query(`SELECT qual FROM pg_policies WHERE schemaname=current_schema()
+    AND tablename='discovery_branch_members' AND policyname='discovery_branch_members_read'`))
+    .rows[0]?.qual || "", /expires_at/,
+  "reinstalling 055 also restores the active-consent RLS gate as 062");
   await client.query(readFileSync(new URL("../../ops/postgres/055_discovery_branch_grants.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
     WHERE schemaname=current_schema() AND tablename IN
@@ -3241,20 +3249,36 @@ try {
     .then((response) => response.json());
   assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id), ["branch-parent-a"]);
   assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id), ["branch-parent-b"]);
+  assert.equal(firstBranch.recipientArchiveId, "other-archive");
+  assert.equal(secondBranch.recipientArchiveId, "runtime-test");
+  assert.equal(firstBranch.ownExpiresAt, null);
   assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|Закрытая биография ветки/);
   assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
     404, "a confirmed match without mutual branch grants cannot open a member URL");
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-hidden-a"], previewToken: firstBranch.previewToken }),
+    body: JSON.stringify({ personIds: ["branch-hidden-a"], previewToken: firstBranch.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 409, "an unpublished relative cannot be selected by guessing an ID");
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: "0".repeat(64) }),
+    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: "0".repeat(64),
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 409, "a stale preview cannot authorize a branch");
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken }),
+    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+      recipientArchiveId: "third-archive", durationDays: 7 }),
+  })).status, 409, "the grant cannot address an archive outside the confirmed pair");
+  assert.equal((await fetch(securedBase + branchPath, {
+    method: "PUT", headers: ownerHeaders,
+    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 365 }),
+  })).status, 400, "a new grant must have one of the bounded durations");
+  assert.equal((await fetch(securedBase + branchPath, {
+    method: "PUT", headers: ownerHeaders,
+    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
   assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json())).incoming, [],
@@ -3275,11 +3299,22 @@ try {
   }, true);
   assert.equal((await fetch(otherBase + branchPath, {
     method: "PUT", headers: archiveAdminHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken }),
+    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 1 }),
   })).status, 200);
   const bilateralBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
+  assert.ok(bilateralBranch.ownExpiresAt,
+    "new branch consent has a finite owner-visible expiry");
+  const branchLifetimes = await matchDb.prepare("", `SELECT grantor_archive_id,
+    extract(epoch FROM expires_at-now())/86400 AS days_left
+    FROM discovery_branch_grants WHERE left_person_id='person-a'
+      AND right_person_id='person-a'`).all();
+  assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "runtime-test" &&
+    Number(row.days_left) > 6.99 && Number(row.days_left) <= 7));
+  assert.ok(branchLifetimes.some((row) => row.grantor_archive_id === "other-archive" &&
+    Number(row.days_left) > 0.99 && Number(row.days_left) <= 1));
   assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
   const selectedBranchResponse = await fetch(securedBase + branchPersonPath, { headers: navigationHeaders });
   assert.equal(selectedBranchResponse.status, 200);
@@ -3304,6 +3339,63 @@ try {
   assert.equal((await fetch(securedBase + branchPersonPath, {
     method: "POST", headers: navigationHeaders,
   })).status, 405, "the linked member route is read-only");
+  const expiryAHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.216" };
+  const expiryBHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.217" };
+  assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_branch_grants
+    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+  const expiredB = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+    .then((response) => response.json());
+  assert.equal(expiredB.ownReady, true);
+  assert.equal(expiredB.otherReady, false);
+  assert.deepEqual(expiredB.incoming, [], "B's expired consent closes A's branch view");
+  assert.equal((await fetch(securedBase + branchPersonPath, { headers: expiryAHeaders })).status,
+    404, "an expired source grant closes the direct member URL");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
+      0, "RLS closes source members when their grant expires");
+  }, true);
+  const expiredBPreview = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+    .then((response) => response.json());
+  assert.equal(expiredBPreview.ownReady, false);
+  assert.equal((await fetch(otherBase + branchPath, {
+    method: "PUT", headers: expiryBHeaders,
+    body: JSON.stringify({ personIds: ["branch-parent-b"],
+      previewToken: expiredBPreview.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 30 }),
+  })).status, 200, "B can renew only through a fresh explicit PUT");
+  assert.deepEqual((await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+    ["branch-parent-b"]);
+  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_branch_grants
+    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+  const expiredA = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+    .then((response) => response.json());
+  assert.equal(expiredA.otherReady, false);
+  assert.deepEqual(expiredA.incoming, [], "A's expired consent also closes B's branch view");
+  assert.equal((await fetch(otherBase + branchPath + "/people/branch-parent-a", {
+    headers: expiryBHeaders,
+  })).status, 404);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+      0, "RLS closes recipient members when its own grant expires");
+  }, true);
+  const expiredAPreview = await fetch(securedBase + branchPath, { headers: expiryAHeaders })
+    .then((response) => response.json());
+  assert.equal((await fetch(securedBase + branchPath, {
+    method: "PUT", headers: expiryAHeaders,
+    body: JSON.stringify({ personIds: ["branch-parent-a"],
+      previewToken: expiredAPreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
+  })).status, 200);
+  assert.deepEqual((await fetch(otherBase + branchPath, { headers: expiryBHeaders })
+    .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
+    ["branch-parent-a"], "renewing both consents reopens only the selected member");
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','other-only','admin',true,'all')`);
@@ -3390,7 +3482,8 @@ try {
   } }).then((response) => response.json());
   assert.equal((await fetch(otherBase + branchPath, {
     method: "PUT", headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.212" },
-    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: afterTransfer.previewToken }),
+    body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: afterTransfer.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 7 }),
   })).status, 200, "the owner must issue a fresh grant after ownership changes back");
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: {
     ...ownerHeaders, "X-Real-IP": "198.51.100.213",
@@ -3463,7 +3556,8 @@ try {
   assert.equal((await fetch(otherBase + branchPath, {
     method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-b"],
-      previewToken: refreshedSecondBranch.previewToken }),
+      previewToken: refreshedSecondBranch.previewToken,
+      recipientArchiveId: "runtime-test", durationDays: 7 }),
   })).status, 200);
   // B-C is separately linked and mutually granted. It must never extend A-B.
   await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
@@ -3501,6 +3595,15 @@ try {
     right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
     VALUES('other-archive','person-a','third-archive','person-c',
       'third-archive','family:person.1','parent')`);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+    WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+      AND expires_at IS NULL`)).rows[0].count, 2,
+    "legacy grants without an expiry remain valid until revoked");
+  await client.query(readFileSync(new URL("../../ops/postgres/062_discovery_branch_expiry.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
+    WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+      AND expires_at IS NULL`)).rows[0].count, 2,
+    "reapplying 062 does not silently shorten existing branch consents");
   const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
   const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
     ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
@@ -3574,7 +3677,8 @@ try {
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-a"],
-      previewToken: renewedBranch.previewToken }),
+      previewToken: renewedBranch.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),

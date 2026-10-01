@@ -86,6 +86,12 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
      ${lock ? "FOR UPDATE OF m FOR SHARE OF p" : ""}`).get(id, archiveId, archiveId);
   const ownRoot = (pair: Row, archiveId: string) => String(
     pair.left_archive_id === archiveId ? pair.left_person_id : pair.right_person_id);
+  const recipient = (pair: Row, archiveId: string) => ({
+    archiveId: String(pair.left_archive_id === archiveId
+      ? pair.right_archive_id : pair.left_archive_id),
+    personId: String(pair.left_archive_id === archiveId
+      ? pair.right_person_id : pair.left_person_id),
+  });
   const availableFor = async (pair: Row, archiveId: string) => {
     const snapshot = await archive.read();
     const relations = directRelations(snapshot.family, ownRoot(pair, archiveId));
@@ -100,8 +106,10 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     })).digest("hex");
     return { available, truncated: rows.length > 50, previewToken };
   };
-  const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id FROM discovery_branch_grants
-    WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?`)
+  const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id,expires_at
+    FROM discovery_branch_grants
+    WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?
+      AND (expires_at IS NULL OR expires_at>now())`)
     .all(...pairArgs(pair));
   const isOwner = async (archiveId: string, userId: string, lock = false) => Boolean(
     await db.prepare("", `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=?
@@ -139,7 +147,8 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
         if (!pair || !(await isOwner(archiveId, user.id))) return null;
         const grants = await db.prepare("", `SELECT grantor_archive_id FROM discovery_branch_grants
           WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=?
-            AND right_person_id=?`).all(...pairArgs(pair));
+            AND right_person_id=? AND (expires_at IS NULL OR expires_at>now())`)
+          .all(...pairArgs(pair));
         if (!grants.some((row) => row.grantor_archive_id === archiveId) ||
             !grants.some((row) => row.grantor_archive_id !== archiveId)) return null;
         const row = await db.prepare("", `SELECT p.archive_id,p.person_id,p.name,p.birth_year,
@@ -165,9 +174,14 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
       const result = await db.transaction(async () => {
         const pair = await linkedPair(detail[1], archiveId);
         if (!pair) return null;
+        const addressee = recipient(pair, archiveId);
+        const publishedRecipient = await db.prepare("", `SELECT name FROM discovery_people
+          WHERE archive_id=? AND person_id=?`).get(addressee.archiveId,addressee.personId);
+        if (!publishedRecipient) return null;
         const preview = await availableFor(pair, archiveId);
         const grants = await grantsFor(pair);
-        const ownReady = grants.some((row) => row.grantor_archive_id === archiveId);
+        const ownGrant = grants.find((row) => row.grantor_archive_id === archiveId);
+        const ownReady = Boolean(ownGrant);
         const otherReady = grants.some((row) => row.grantor_archive_id !== archiveId);
         const ownRows = ownReady ? await db.prepare("", `SELECT person_id FROM discovery_branch_members
           WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?
@@ -181,6 +195,9 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
             AND b.right_person_id=? AND b.grantor_archive_id<>?
           ORDER BY p.person_id LIMIT ?`).all(...pairArgs(pair), archiveId, maxMembers) : [];
         return { ...preview, ownReady, otherReady, outgoingIds,
+          recipientArchiveId: addressee.archiveId,
+          recipientPersonName: String(publishedRecipient.name),
+          ownExpiresAt: ownGrant?.expires_at || null,
           incoming: incoming.map((row) => listed(row, String(row.relation) as Relation)) };
       }, true);
       return result ? json(res, 200, result) : json(res, 404, { error: "Связь не найдена" });
@@ -188,14 +205,19 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     if (req.method === "PUT") {
       const body = await readBody(req);
       const ids = body?.personIds;
+      const durationDays = body?.durationDays;
       if (!Array.isArray(ids) || ids.length > maxMembers ||
           ids.some((id) => typeof id !== "string" || id.length > 100) ||
           new Set(ids).size !== ids.length ||
+          typeof body?.recipientArchiveId !== "string" || body.recipientArchiveId.length > 64 ||
+          typeof durationDays !== "number" || ![1,7,30].includes(durationDays) ||
           typeof body?.previewToken !== "string" || !/^[0-9a-f]{64}$/.test(body.previewToken))
         return json(res, 400, { error: "Выберите людей после просмотра ветки" });
       const result = await db.transaction(async () => {
         const pair = await linkedPair(detail[1], archiveId);
         if (!pair) return { code: 404, error: "Связь не найдена" };
+        if (body.recipientArchiveId !== recipient(pair, archiveId).archiveId)
+          return { code: 409, error: "Адресат изменился. Проверьте разрешение заново" };
         const selectedIds = ids as string[];
         const lockIds = [ownRoot(pair, archiveId), ...selectedIds];
         await db.prepare("", `SELECT id FROM people WHERE archive_id=?
@@ -216,8 +238,9 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           AND left_person_id=? AND right_archive_id=? AND right_person_id=?
           AND grantor_archive_id=?`).run(...pairArgs(pair), archiveId);
         await db.prepare("", `INSERT INTO discovery_branch_grants(left_archive_id,left_person_id,
-          right_archive_id,right_person_id,grantor_archive_id,granted_by)
-          VALUES(?,?,?,?,?,?)`).run(...pairArgs(pair), archiveId, approved.id);
+          right_archive_id,right_person_id,grantor_archive_id,granted_by,expires_at)
+          VALUES(?,?,?,?,?,?,now() + (?::int * interval '1 day'))`)
+          .run(...pairArgs(pair), archiveId, approved.id, durationDays);
         for (const id of selectedIds) {
           const person = preview.available.find((item) => item.id === id)!;
           await db.prepare("", `INSERT INTO discovery_branch_members(left_archive_id,left_person_id,

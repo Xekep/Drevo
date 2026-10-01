@@ -4,7 +4,8 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 type Member = { id: string; relation: "parent" | "child" | "spouse"; name: string;
   birthYear?: string; deathYear?: string; birthPlace?: string; deathPlace?: string };
 type Detail = { available: Member[]; truncated: boolean; previewToken: string;
-  ownReady: boolean; otherReady: boolean; outgoingIds: string[]; incoming: Member[] };
+  ownReady: boolean; otherReady: boolean; outgoingIds: string[]; incoming: Member[];
+  recipientArchiveId: string; recipientPersonName: string; ownExpiresAt: string | null };
 const relationLabels = { parent: "Родитель", child: "Ребёнок", spouse: "Супруг(а)" };
 
 function MemberCard({ person, matchId, archiveId }: { person: Member; matchId: string;
@@ -25,6 +26,7 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
   const requestVersion = useRef(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [durationDays, setDurationDays] = useState(7);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -68,7 +70,8 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
       const response = await archiveFetch(endpoint, {
         method,
         ...(method === "PUT" ? { headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ personIds: selected, previewToken: detail.previewToken }) } : {}),
+          body: JSON.stringify({ personIds: selected, previewToken: detail.previewToken,
+            recipientArchiveId: detail.recipientArchiveId, durationDays }) } : {}),
       });
       const body = await response.json();
       if (version !== requestVersion.current || !panel.current?.open) return;
@@ -93,6 +96,8 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     <p>Каждый владелец выбирает своих опубликованных прямых родственников. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации сразу убирает карточку из ветки.</p>
     {busy && !detail && <p role="status">Проверяем…</p>}
     {detail && <>
+      <p>Адресат: опубликованная карточка «{detail.recipientPersonName}», архив <code
+        style={{ overflowWrap: "anywhere" }}>{detail.recipientArchiveId}</code>. Доступ только для владельца этого архива и только в данной подтверждённой связи.</p>
       <h4>Ваши опубликованные родственники</h4>
       {detail.truncated && <p>Показаны первые 50 родственников. Этот просмотр ограничен ими.</p>}
       {!detail.available.length && <p>Опубликованных прямых родственников нет. Можно разрешить просмотр без добавления людей.</p>}
@@ -104,13 +109,22 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
         <span>{relationLabels[person.relation]}: {person.name}</span>
       </label>)}
       <p>Можно выбрать до 20 человек. Согласие без выбранных людей позволяет видеть разрешённую ветку другой стороны.</p>
+      <label>Срок нового разрешения <select value={durationDays} disabled={busy}
+        onChange={(event) => setDurationDays(Number(event.target.value))}>
+        <option value={1}>1 день</option><option value={7}>7 дней</option>
+        <option value={30}>30 дней</option>
+      </select></label>
       <div className="match-request-actions">
         <button type="button" disabled={busy} onClick={() => void save("PUT")}>Разрешить выбранное</button>
         {detail.ownReady && <button type="button" disabled={busy}
           onClick={() => void save("DELETE")}>Отозвать доступ к ветке</button>}
         <button type="button" disabled={busy} onClick={() => void load()}>Обновить просмотр</button>
       </div>
-      <p>{detail.ownReady ? "Ваше разрешение действует." : "Вы ещё не разрешили просмотр."} {detail.otherReady
+      <p>{detail.ownReady
+        ? detail.ownExpiresAt
+          ? `Ваше разрешение действует до ${new Date(detail.ownExpiresAt).toLocaleString("ru-RU")}.`
+          : "Ваше прежнее разрешение действует до отзыва."
+        : "Вы ещё не разрешили просмотр."} {detail.otherReady
         ? "Вторая сторона разрешила просмотр." : "Ожидаем разрешения второй стороны."}</p>
       <h4>Разрешённая ветка другого архива</h4>
       {detail.ownReady && detail.otherReady
