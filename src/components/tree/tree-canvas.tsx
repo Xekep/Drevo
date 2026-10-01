@@ -640,6 +640,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         active = false;
       };
     }
+    const camera = flow.getViewport();
+    if (
+      Math.abs(camera.zoom - PERSON_FOCUS_ZOOM) < 0.001 &&
+      Math.abs(
+        camera.x + (introX + nodeWidth / 2) * camera.zoom - canvasWidth / 2,
+      ) < 2 &&
+      Math.abs(
+        camera.y + (introY + nodeHeight / 2) * camera.zoom - canvasHeight / 2,
+      ) < 2
+    ) {
+      done();
+      return () => {
+        active = false;
+      };
+    }
     // Use worker geometry: fitView depends on React Flow's measured nodes,
     // which can still be updating as growth and virtualization finish.
     void flow
@@ -693,6 +708,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       peopleMap,
       context,
       root,
+      initialPersonId:
+        mode !== "timeline" &&
+        !props.skipInitialGrowth &&
+        familyView.mode === "all" &&
+        !props.assistantFilter &&
+        !focus &&
+        !selected.length
+          ? user?.personId || null : null,
       onInitialViewReady: markInitialCameraReady,
       manualCameraOverride,
       expanded: familyView.expanded,
