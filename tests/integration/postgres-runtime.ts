@@ -2631,6 +2631,20 @@ try {
   }
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers: ownerHeaders })
     .then((response) => response.json())).matches[0].status, "linked");
+  // Keep later migration smoke checks on the original two-archive fixture.
+  for (const runtime of [app, otherApp]) {
+    const current = await runtime.archive.read();
+    const restored = structuredClone(current.family);
+    restored.people = restored.people.filter((person) => !person.id.startsWith("branch-"));
+    restored.people[0].parents = restored.people[0].parents.filter((id) => !id.startsWith("branch-"));
+    await runtime.archive.write(restored, current.revision);
+  }
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId]);
+  await client.query("DELETE FROM archives WHERE id='third-archive'");
+  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='vk:42'");
+  await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
   const beforeCandidates = await otherApp.archive.read();
   const similarCandidate = structuredClone(beforeCandidates.family);
@@ -2909,6 +2923,12 @@ try {
   await otherApp.archive.write(otherBeforeSignals.family, otherSignalWrite.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_branch_grants WHERE left_person_id='person-a'
+      AND right_person_id='person-a'`).get())?.count, 0,
+    "unpublishing a linked root atomically removes both branch grants");
+  assert.equal((await fetch(securedBase + branchPath, { headers: ownerHeaders })).status, 404,
+    "a revoked link cannot reopen the previously granted branch");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
   "removing either publication revokes the extra-field grant in the same transaction");
