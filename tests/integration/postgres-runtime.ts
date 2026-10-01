@@ -4002,14 +4002,23 @@ try {
   // Keep the restore concurrency checks in their own archive: later fixtures
   // include cards by other authors, which cannot be replaced by this actor.
   const guardedArchiveId = "restore-guard-test";
+  const guardedOwnerId = "restore-guard-owner";
   await client.query("SELECT set_config('drevo.archive_id',$1,false)", [guardedArchiveId]);
   await client.query(`INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version)
     VALUES($1,'Restore guard','',false,0,18)`, [guardedArchiveId]);
-  await client.query("INSERT INTO people(id,data) VALUES('person-a',$1)",
-    [JSON.stringify(family.people[0])]);
-  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,'owner')", [guardedArchiveId]);
+  await client.query("INSERT INTO accounts(id,name,created_at) VALUES($1,'Restore guard owner',$2)",
+    [guardedOwnerId, new Date().toISOString()]);
+  await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES($1,true)", [guardedOwnerId]);
+  await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+    VALUES($1,$2,'admin',true,'all')`, [guardedArchiveId, guardedOwnerId]);
+  await client.query("INSERT INTO archive_owners(archive_id,user_id) VALUES($1,$2)",
+    [guardedArchiveId, guardedOwnerId]);
+  // The existing platform administrator is an approved editor here, while
+  // ownership belongs to a different account to respect one-tree-per-owner.
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES($1,'owner','admin',true,'all')`, [guardedArchiveId]);
+  await client.query("INSERT INTO people(id,data) VALUES('person-a',$1)",
+    [JSON.stringify(family.people[0])]);
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   restoreGuardApp = await startServer(0, source, true, undefined, undefined, guardedArchiveId);
   const guardedApp = restoreGuardApp;
