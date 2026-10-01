@@ -49,6 +49,9 @@ test("comments show Markdown and LaTeX in the editor, support author edits and r
     await expect(section.locator(".comment-block-preview h2")).toContainText(
       marker,
     );
+    await section.locator(".comment-editor .cm-scroller").evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await section
       .locator(".comment-editor")
       .first()
