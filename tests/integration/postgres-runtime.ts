@@ -1998,10 +1998,46 @@ try {
     birthSurname: true, birthYear: false, deathYear: false,
     birthPlace: false, deathPlace: false,
   };
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+    method: "POST", headers: inviteeHeaders,
+    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  })).status, 403, "a reader cannot preview a private publication batch");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+    method: "POST", headers,
+    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  })).status, 401, "a member of a different archive cannot preview this publication batch");
+  const batchPreviewUrl = otherBase + "/api/admin/published-people/batch/preview";
+  const oldBatchPreview = await fetch(batchPreviewUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  });
+  assert.equal(oldBatchPreview.status, 200);
+  const oldReview = await oldBatchPreview.json();
+  const beforeBatchRevision = await otherApp.archive.read();
+  await otherApp.archive.write(beforeBatchRevision.family, beforeBatchRevision.revision);
   assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
     method: "POST", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields }),
+    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+      revision: oldReview.revision, reviewToken: oldReview.reviewToken }),
+  })).status, 409, "a PostgreSQL revision change invalidates an old publication review");
+  const batchReview = await fetch(batchPreviewUrl, {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ action: "publish", personIds: ["person-a"], fields: selectedDiscoveryFields }),
+  });
+  assert.equal(batchReview.status, 200);
+  const reviewedPublication = await batchReview.json();
+  assert.equal(reviewedPublication.people[0].person.birthSurname, "ПоискРождения");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ personIds: ["person-a"], fields: selectedDiscoveryFields,
+      revision: reviewedPublication.revision, reviewToken: reviewedPublication.reviewToken }),
   })).status, 200);
+  await app!.archive.db.transaction(async () => {
+    await app!.archive.db.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await app!.archive.db.prepare("", `SELECT count(*)::int AS count FROM published_people
+      WHERE archive_id='other-archive' AND person_id='person-a'`).get())?.count, 0,
+    "RLS hides the other archive's publication row from this archive");
+  }, true);
   assert.deepEqual((await (await fetch(otherBase + "/api/admin/published-people/batch?id=person-a", {
     headers: ownerHeaders,
   })).json()).fields["person-a"], selectedDiscoveryFields);
