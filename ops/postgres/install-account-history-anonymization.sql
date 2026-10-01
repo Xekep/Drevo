@@ -116,6 +116,9 @@ BEGIN
   IF to_regprocedure('public.runtime_anonymize_deleted_account_unions(text)') IS NOT NULL THEN
     PERFORM public.runtime_anonymize_deleted_account_unions(account_id);
   END IF;
+  IF to_regprocedure('public.runtime_anonymize_deleted_account_annotations(text)') IS NOT NULL THEN
+    PERFORM public.runtime_anonymize_deleted_account_annotations(account_id);
+  END IF;
 END $$;
 
 -- Only the authenticated deletion transaction may erase its own comment text.

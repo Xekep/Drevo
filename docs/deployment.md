@@ -75,6 +75,56 @@ SSH проверяет закреплённый публичный ключ се
 
 ### PostgreSQL
 
+После установки 058 для версии 059 выполните `ops/postgres/059_deleted_account_annotation_authors.sql`
+от имени PostgreSQL-владельца функций удаления аккаунта **до** активации нового приложения.
+Роль приложения не может заменить функцию `SECURITY DEFINER`; пока она не установлена,
+удаление аккаунта отвечает конфликтом до изменения данных. Сверьте точный SQL из PR и
+поместите его во временный файл с владельцем `root` вне каталога релиза, доступного для
+записи при деплое. Сначала проверьте скрипт на отдельной копии БД, затем примените к рабочей.
+Не вызывайте HTTP-удаление аккаунта для проверки.
+
+```bash
+set -euo pipefail
+db=$(cat /var/www/drevo.kiiko.ru/shared/postgres.active)
+[[ "$db" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || exit 1
+sql=/root/059_deleted_account_annotation_authors.sql
+test "$(stat -c '%U:%a' "$sql")" = root:600
+preflight_db=drevo_annotation_059_preflight
+sudo -u postgres createdb "$preflight_db"
+sudo -u postgres pg_dump -Fc "$db" |
+  sudo -u postgres pg_restore --no-owner --exit-on-error -d "$preflight_db"
+cat "$sql" | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$preflight_db"
+cat "$sql" | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$preflight_db"
+sudo -u postgres dropdb "$preflight_db"
+cat "$sql" | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
+```
+
+Проверьте, что `installed`, `security_definer`, `privileged_owner` и `entrypoint_calls`
+равны `t`, `app_helper_execute` равен `f`, а `remaining_deleted_authors` равен `0`.
+`ambiguous_reused_ids` показывает ID с маркером удаления, которые уже заняты действующим
+аккаунтом: миграция оставляет эти аннотации для отдельной проверки.
+
+```bash
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db" -c "
+SELECT to_regprocedure('public.runtime_anonymize_deleted_account_annotations(text)') IS NOT NULL AS installed,
+       (SELECT prosecdef FROM pg_proc WHERE oid=to_regprocedure('public.runtime_anonymize_deleted_account_annotations(text)')) AS security_definer,
+       (SELECT r.rolsuper OR r.rolbypassrls FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+          WHERE p.oid=to_regprocedure('public.runtime_anonymize_deleted_account_annotations(text)')) AS privileged_owner,
+       position('PERFORM public.runtime_anonymize_deleted_account_annotations(account_id)' IN
+         pg_get_functiondef(to_regprocedure('public.runtime_anonymize_deleted_account_history(text)')::oid)) > 0 AS entrypoint_calls,
+       has_function_privilege('site_drevo','public.runtime_anonymize_deleted_account_annotations(text)','EXECUTE') AS app_helper_execute,
+       (SELECT count(*) FROM documents d, jsonb_array_elements(d.annotations::jsonb) item
+          JOIN deleted_account_tombstones t ON t.id=item->>'authorId'
+          WHERE NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id=t.id)) AS remaining_deleted_authors,
+       (SELECT count(*) FROM documents d, jsonb_array_elements(d.annotations::jsonb) item
+          JOIN deleted_account_tombstones t ON t.id=item->>'authorId'
+          WHERE EXISTS (SELECT 1 FROM accounts a WHERE a.id=t.id)) AS ambiguous_reused_ids"
+```
+
+Версия 059 меняет только совпадающие ID и отображаемые имена авторов аннотаций в текущих
+строках документов. Содержимое аннотаций, другие авторы, старые резервные копии и WAL
+не переписываются.
+
 Для версии 058 отдельно применяют привилегированный SQL до активации приложения: роль `site_drevo` не может заменить принадлежащую PostgreSQL функцию с `SECURITY DEFINER`. Прежний установочный скрипт ниже нужен для первоначальной установки и обновления остальных функций. После него всегда запускают 058. Повторный запуск 058 безопасен; миграция обезличивает только ID с маркером удаления и без действующего аккаунта. Повторно зарегистрированные ID требуют отдельной проверки: старое и новое авторство по одному ID различить нельзя.
 
 ```bash
