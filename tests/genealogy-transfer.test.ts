@@ -519,22 +519,39 @@ const xml = `<?xml version="1.0" encoding="utf-8"?>
 <agelongtree lang="ru" dateformat="DD.MM.YYYY"><persons>
 <person id="a" sex="М" fn="Алексей" sn="Тестов" mn="Иванович" bdate="Около 1900"><comment>Текст &amp; &lt;заметка&gt;</comment><documents><document id="d" ismain="1" /></documents></person>
 <person id="b" sex="Ж" fn="Мария" sn="Тестова" bdate="1902" />
-<person id="c" sex="М" fn="Иван" sn="Тестов" bdate="03.02.1930"><nearest><person id="b" relcode="F" /></nearest></person>
+<person id="c" sex="М" fn="Иван" sn="Тестов" bdate="03.02.1930"><bplace id="mos">Москва</bplace><nearest><person id="b" relcode="F" /></nearest></person>
 </persons><events>
-<event id="birth" type="Рождение" date="03.02.1930"><place>Москва</place><persons><person id="c" role="Родился" /><person id="a" role="Отец" /><person id="b" role="Мать" /></persons></event>
-<event id="union" type="Свадьба" date="1925"><persons><person id="a" role="Муж" /><person id="b" role="Жена" /></persons></event>
-</events><documents><document id="d" path="example.xml.files/photo.png" title="Портрет"><details><detail><person id="a" /></detail></details></document></documents><families><family id="x" /></families></agelongtree>`;
+<event id="birth" type="Рождение" date="03.02.1930"><place id="mos">Москва</place><persons><person id="c" role="Родился" /><person id="a" role="Отец" /><person id="b" role="Мать" /></persons></event>
+<event id="union" type="Свадьба" date="1925" institution="Сельсовет"><persons><person id="a" role="Муж" /><person id="b" role="Жена" /></persons></event>
+<event id="trip" type="Поездка" date="1931" coords="55.7, 37.6" custom="value"><place id="mos">Москва</place><persons><person id="a" role="Участник" /></persons></event>
+</events><places><place id="mos" fullname="Москва" coords="55.7558, 37.6173" /></places><documents><document id="d" path="example.xml.files/photo.png" title="Портрет"><details><detail><person id="a" /></detail></details></document></documents><families><family id="x" /></families></agelongtree>`;
 
 test("Agelong XML uses event roles, preserves uncertainty and escapes; rejects entities and dangling people", () => {
   const result = importAgelongXml(xml, "xml");
   assert.deepEqual(result.family.people[2].parents, ["xml-p1", "xml-p2"]);
   assert.equal(result.family.people[2].birth, "1930-02-03");
   assert.equal(result.family.people[2].birthPlace, "Москва");
+  assert.deepEqual(result.family.people[2].birthLocation, {
+    place: "Москва", lat: 55.7558, lon: 37.6173,
+  });
   assert.equal(result.family.people[0].birth, "");
   assert.equal(result.family.people[0].events?.[0].dateText, "Около 1900");
   assert.equal(result.family.people[0].biography, "Текст & <заметка>");
   assert.equal(result.family.people[0].spouses[0], "xml-p2");
+  assert.match(result.family.people[0].events!.find((event) => event.type === "marriage")!.description!, /Учреждение: Сельсовет/);
+  assert.deepEqual(result.family.people[0].events!.find((event) => event.title === "Поездка")!.location, {
+    place: "Москва", lat: 55.7, lon: 37.6,
+  });
+  assert.ok(result.warnings.includes("Атрибут event.custom не перенесён."));
   assert.deepEqual(result.media[0].portraitIds, ["xml-p1"]);
+  const deathDetails = importAgelongXml(
+    xml.replace("</events>", '<event id="death" type="Смерть" date="1940" deathreason="Болезнь"><persons><person id="a" role="Умер" /></persons></event></events>'),
+    "death-details",
+  );
+  assert.match(deathDetails.family.people[0].biography!, /Причина смерти: Болезнь/);
+  const badCoordinates = importAgelongXml(xml.replace('coords="55.7, 37.6"', 'coords="999, 37.6"'), "invalid-coordinates");
+  assert.equal(badCoordinates.family.people[0].events!.find((event) => event.title === "Поездка")!.location, undefined);
+  assert.ok(badCoordinates.warnings.some((warning) => warning.startsWith("Координаты события")));
   assert.throws(
     () =>
       importAgelongXml(
@@ -553,6 +570,28 @@ test("Agelong XML uses event roles, preserves uncertainty and escapes; rejects e
         "bad",
       ),
     /участник/,
+  );
+});
+
+test("Agelong XML keeps people, relationships, coordinates and events through GEDCOM 7", () => {
+  const source = importAgelongXml(xml, "agelong-roundtrip").family;
+  const restored = importGedcom(
+    exportGedcom(source, { version: "7.0" }),
+    "gedcom-roundtrip",
+  ).family;
+  assert.equal(restored.people.length, source.people.length);
+  assert.equal(
+    restored.people.reduce((total, person) => total + person.parents.length, 0),
+    source.people.reduce((total, person) => total + person.parents.length, 0),
+  );
+  assert.deepEqual(restored.people[2].birthLocation, source.people[2].birthLocation);
+  assert.deepEqual(
+    restored.people[0].events?.find((event) => event.title === "Поездка")?.location,
+    source.people[0].events?.find((event) => event.title === "Поездка")?.location,
+  );
+  assert.match(
+    restored.people[0].events?.find((event) => event.type === "marriage")?.description || "",
+    /Учреждение: Сельсовет/,
   );
 });
 
@@ -919,6 +958,10 @@ test("XML ZIP and base64 load originals; package paths and malformed archives ar
     const result = await prepareGenealogyImport(path, dir, "xml");
     assert.equal(result.files.length, 1);
     assert.equal(result.family.people[0].photo, result.family.photos?.[0].url);
+    assert.deepEqual(result.family.people[2].birthLocation, {
+      place: "Москва", lat: 55.7558, lon: 37.6173,
+    });
+    assert.ok(result.warnings.includes("Атрибут event.custom не перенесён."));
     const windowsZip = replaceZipEntryName(
       await readFile(path),
       "example.xml.files/photo.png",

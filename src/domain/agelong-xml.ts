@@ -1,5 +1,5 @@
 import { SaxesParser } from "saxes";
-import type { Family, Person, PersonEvent } from "./types.ts";
+import type { Family, Person, PersonEvent, PlaceLocation } from "./types.ts";
 import { validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import {
@@ -119,9 +119,39 @@ export function importAgelongXml(
     nodes.map((n, i) => [n.attrs.id, `${namespace}-p${i + 1}`]),
   );
   const places = index(many(one(root, "places"), "place"));
-  const place = (node: XmlNode, tag = "place") => {
+  const coordinates = (
+    raw: string | undefined,
+    name: string,
+    label: string,
+  ): PlaceLocation | undefined => {
+    if (!raw) return undefined;
+    const match = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(raw);
+    const lat = match && Number(match[1]),
+      lon = match && Number(match[2]);
+    if (
+      !name ||
+      lat === null || lon === null ||
+      lat < -90 || lat > 90 || lon < -180 || lon > 180
+    ) {
+      warnings.add(
+        `Координаты ${label} не перенесены: нет названия места или значения вне допустимого диапазона.`,
+      );
+      return undefined;
+    }
+    return { place: name, lat, lon };
+  };
+  const placeDetails = (node: XmlNode, tag = "place") => {
     const ref = one(node, tag);
-    return ref?.text || (ref && places.get(ref.attrs.id)?.attrs.fullname) || "";
+    const placeNode = ref && places.get(ref.attrs.id);
+    const name = (ref?.text || placeNode?.attrs.fullname || "").trim();
+    return {
+      name,
+      location: coordinates(
+        (node.name === "event" && node.attrs.coords) || placeNode?.attrs.coords,
+        name,
+        tag === "place" ? "события или проживания" : tag,
+      ),
+    };
   };
   const uncertain = (
     raw: string | undefined,
@@ -141,6 +171,9 @@ export function importAgelongXml(
       : [];
   const people: Person[] = nodes.map((n, i) => {
     const a = n.attrs;
+    const birthPlace = placeDetails(n, "bplace"),
+      deathPlace = placeDetails(n, "dplace"),
+      residence = placeDetails(n);
     if (!a.fn || !a.sn)
       warnings.add("Отсутствующие имя и фамилия помечены как неизвестные.");
     const p: Person = {
@@ -157,8 +190,10 @@ export function importAgelongXml(
       birth: xmlDate(a.bdate) || "",
       death: xmlDate(a.ddate),
       deceased: a.ddate ? true : undefined,
-      birthPlace: place(n, "bplace"),
-      deathPlace: place(n, "dplace") || undefined,
+      birthPlace: birthPlace.name,
+      birthLocation: birthPlace.location,
+      deathPlace: deathPlace.name || undefined,
+      deathLocation: deathPlace.location,
       occupation: a.occu || undefined,
       biography: textOf(n, "comment") || undefined,
       sources: [],
@@ -175,12 +210,12 @@ export function importAgelongXml(
       p.biography = [p.biography, `Причина смерти: ${a.dreason}`]
         .filter(Boolean)
         .join("\n");
-    const residence = place(n);
-    if (residence)
+    if (residence.name)
       p.events!.push({
         id: `${namespace}-r${i}`,
         type: "residence",
-        place: residence,
+        place: residence.name,
+        location: residence.location,
       });
     const extra = textOf(n, "drevo");
     if (extra) {
@@ -232,6 +267,12 @@ export function importAgelongXml(
   };
   const events = index(many(one(root, "events"), "event"));
   for (const [eventId, n] of events) {
+    for (const key of Object.keys(n.attrs))
+      if (![
+        "id", "type", "date", "passed", "daysleft", "coords",
+        "institution", "deathreason",
+      ].includes(key))
+        warnings.add(`Атрибут event.${key} не перенесён.`);
     const participants = many(one(n, "persons"), "person").map((ref) => ({
       person: resolvePerson(ref.attrs.id),
       role: ref.attrs.role,
@@ -266,18 +307,28 @@ export function importAgelongXml(
         continue;
       const raw = n.attrs.date || "",
         date = xmlDate(raw),
-        location = place(n),
-        description = textOf(n, "comment");
+        place = placeDetails(n),
+        description = [
+          textOf(n, "comment"),
+          n.attrs.institution && `Учреждение: ${n.attrs.institution}`,
+          n.attrs.deathreason &&
+            !p.biography?.includes(`Причина смерти: ${n.attrs.deathreason}`) &&
+            `Причина смерти: ${n.attrs.deathreason}`,
+        ].filter(Boolean).join("\n");
       if (birth || death) {
         if (date) {
           if (birth && !p.birth) p.birth = date;
           if (death && !p.death) p.death = date;
         }
         if (death) p.deceased = true;
-        if (location) {
-          if (birth && !p.birthPlace) p.birthPlace = location;
-          if (death && !p.deathPlace) p.deathPlace = location;
+        if (place.name) {
+          if (birth && !p.birthPlace) p.birthPlace = place.name;
+          if (death && !p.deathPlace) p.deathPlace = place.name;
         }
+        if (birth && place.location && !p.birthLocation)
+          p.birthLocation = place.location;
+        if (death && place.location && !p.deathLocation)
+          p.deathLocation = place.location;
         if (
           raw &&
           !date &&
@@ -310,7 +361,8 @@ export function importAgelongXml(
           title: n.attrs.type,
           date,
           dateText: !date && raw ? raw : undefined,
-          place: location || undefined,
+          place: place.name || undefined,
+          location: place.location,
           description: description || undefined,
         });
       }
