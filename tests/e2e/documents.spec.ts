@@ -75,19 +75,24 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.105");
 });
 
-for (const format of ["png", "jpeg", "tiff"] as const) {
+for (const format of ["png", "jpeg", "jfif", "tiff"] as const) {
 test(`скан ${format} открывается в ридере и по постоянной ссылке`, async ({
   page,
 }, testInfo) => {
   const title = `Скан ${format} ${testInfo.project.name} ${Date.now()}`;
-  const scan = format === "tiff" ? await sampleTiff(360, 480) : await sharp({ create: {
+  const codec = format === "jfif" ? "jpeg" : format;
+  let scan = codec === "tiff" ? await sampleTiff(360, 480) : await sharp({ create: {
     width: 360, height: 480, channels: 3, background: "#e2decf",
-  } })[format]().toBuffer();
+  } })[codec]().toBuffer();
+  if (format === "jfif") {
+    // JPEG APP0 JFIF header: version 1.01, no thumbnail, density 1x1.
+    scan = Buffer.concat([scan.subarray(0, 2), Buffer.from("ffe000104a46494600010100000100010000", "hex"), scan.subarray(2)]);
+  }
   await page.goto("/documents");
   await page.getByRole("button", { name: "Добавить документ" }).click();
   const form = page.locator(".documents-upload");
   await form.locator('input[type="file"]').setInputFiles({
-    name: `scan.${format}`, mimeType: `image/${format}`, buffer: scan,
+    name: `scan.${format}`, mimeType: `image/${codec}`, buffer: scan,
   });
   await form.getByLabel("Название").fill(title);
   await form.getByRole("button", { name: "Добавить документ" }).click();
@@ -367,7 +372,7 @@ test("каталог документов отклоняет перетаски�
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Поддерживаются PDF, TIFF, JPEG, PNG, WebP и GIF" }),
+      .filter({ hasText: "Поддерживаются PDF, TIFF, JPEG/JFIF, PNG, WebP и GIF" }),
   ).toBeVisible();
   await expect(
     page.locator(".documents-upload-submit"),

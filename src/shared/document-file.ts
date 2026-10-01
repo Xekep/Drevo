@@ -10,6 +10,7 @@ const types: Record<string, DocumentFileType> = {
   pdf: { extension: "pdf", mime: "application/pdf", maxBytes: MAX_PDF_BYTES },
   jpg: { extension: "jpg", mime: "image/jpeg", maxBytes: MAX_PHOTO_BYTES },
   jpeg: { extension: "jpg", mime: "image/jpeg", maxBytes: MAX_PHOTO_BYTES },
+  jfif: { extension: "jpg", mime: "image/jpeg", maxBytes: MAX_PHOTO_BYTES },
   png: { extension: "png", mime: "image/png", maxBytes: MAX_PHOTO_BYTES },
   webp: { extension: "webp", mime: "image/webp", maxBytes: MAX_PHOTO_BYTES },
   gif: { extension: "gif", mime: "image/gif", maxBytes: MAX_PHOTO_BYTES },

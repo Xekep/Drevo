@@ -723,13 +723,19 @@ export function documentsHttp({
       const personIds = (await associations([row.id])).get(row.id) || [];
       if (!canSee(access, row, personIds))
         return json(res, 404, { error: "Документ не найден" });
+      const canDeleteAnnotation = (
+        actor: Awaited<ReturnType<typeof auth.currentUser>>,
+        authorId: string,
+      ) => actor?.approved === true && (
+        actor.role === "researcher" || owns(actor, { createdBy: authorId })
+      );
       const visibleItems = (
         items: DocumentAnnotation[],
         actor: Awaited<ReturnType<typeof auth.currentUser>>,
       ) =>
         items.map((item) => ({
           ...item,
-          canDelete: owns(actor, { createdBy: item.authorId }),
+          canDelete: canDeleteAnnotation(actor, item.authorId),
         }));
       if (req.method === "GET" && !annotations[2]) {
         const actor = await auth.currentUser(req);
@@ -797,10 +803,10 @@ export function documentsHttp({
         } else {
           const index = items.findIndex((item) => item.id === annotations[2]);
           if (index < 0) return { status: 404, error: "Комментарий не найден" };
-          if (!owns(latest, { createdBy: items[index].authorId }))
+          if (!canDeleteAnnotation(latest, items[index].authorId))
             return {
               status: 403,
-              error: "Удалить комментарий может его автор или администратор",
+              error: "Удалить комментарий может его автор, исследователь или администратор",
             };
           items.splice(index, 1);
           status = 200;
