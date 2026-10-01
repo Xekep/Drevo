@@ -283,7 +283,13 @@ export function emailCredentials(
       });
       if (!archiveId)
         throw new InvalidEmailCredential("Личный архив недоступен.");
-      return { accountId: row.account_id, archiveId };
+      // A reset can commit between checking the password and issuing a session.
+      // The session issuer rechecks this hash under the credential row lock.
+      return {
+        accountId: row.account_id,
+        archiveId,
+        passwordHash: row.password_hash,
+      };
     },
 
     async requestReset(value: unknown) {

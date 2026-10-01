@@ -7,6 +7,7 @@ import {
   InvalidEmailCredential,
 } from "../../src/server/email-credentials.ts";
 import { postgresEmailRateLimit } from "../../src/server/postgres-email-rate-limit.ts";
+import { issuePostgresEmailSessionInTransaction } from "../../src/server/postgres-sessions.ts";
 
 export async function verifyEmailAccounts(
   db: StoreDatabase,
@@ -99,11 +100,26 @@ export async function verifyEmailAccounts(
     "a duplicate email must not create a second archive",
   );
   await accounts.requestReset("new.person@example.org");
+  const checkedBeforeReset = await accounts.login({
+    email: "new.person@example.org",
+    password: "correct horse battery staple",
+  });
   const resetToken = sent[1].text.match(
     /#email-reset=([A-Za-z0-9_-]{43})/,
   )?.[1];
   assert.ok(resetToken);
   await accounts.resetPassword(resetToken, "a new long safe password");
+  await assert.rejects(
+    db.postgresTransaction!((transaction) =>
+      issuePostgresEmailSessionInTransaction(
+        transaction,
+        checkedBeforeReset.accountId,
+        checkedBeforeReset.passwordHash,
+      ),
+    ),
+    InvalidEmailCredential,
+    "a login checked before reset cannot issue a session after reset",
+  );
   await assert.rejects(
     accounts.resetPassword(resetToken, "yet another safe password"),
     InvalidEmailCredential,

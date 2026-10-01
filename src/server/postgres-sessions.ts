@@ -5,6 +5,7 @@ import {
   validSessionToken,
   SESSION_MAX_AGE,
 } from "./session-token.ts";
+import { InvalidEmailCredential } from "./email-credentials.ts";
 
 const MAX_AGE_MS = SESSION_MAX_AGE * 1000;
 const RENEW_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -39,6 +40,23 @@ export async function issuePostgresSessionInTransaction(
     new Date(now).toISOString(),
   ]);
   return { token, expiresAt };
+}
+
+/** Hold the credential row until insertion so reset cannot miss this session. */
+export async function issuePostgresEmailSessionInTransaction(
+  client: pg.Client,
+  accountId: string,
+  expectedPasswordHash: string,
+  previousToken = "",
+) {
+  const credential = await client.query(
+    `SELECT 1 FROM account_email_credentials
+     WHERE account_id=$1 AND password_hash=$2 FOR UPDATE`,
+    [accountId, expectedPasswordHash],
+  );
+  if (!credential.rowCount)
+    throw new InvalidEmailCredential("Неверная почта или пароль.");
+  return issuePostgresSessionInTransaction(client, accountId, previousToken);
 }
 
 /** An expired or revoked token cannot be extended by a late request. */

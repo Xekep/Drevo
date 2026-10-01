@@ -2,7 +2,7 @@
 
 JSON-ответы имеют `Cache-Control: no-store`. Авторизация — через [Яндекс OAuth](yandex-oauth.md). На компьютере без `PUBLIC_ORIGIN` действует локальный доступ администратора без регистрации.
 
-При настроенном SMTP и PostgreSQL доступны `POST /api/auth/email/register` (`email`, `name`, `password`), `/verify` (`token`), `/login` (`email`, `password`), `/reset/request` (`email`) и `/reset/complete` (`token`, `password`). Письма содержат одноразовые ссылки с токеном во фрагменте URL; вход и подтверждение устанавливают тот же сеансовый cookie, что OAuth. `GET /api/session` возвращает `email: true` только когда почтовый вход реально настроен. Запросы требуют JSON и того же origin; неизвестные адреса при регистрации и запросе восстановления получают общий ответ.
+При `EMAIL_AUTH_ENABLED=1`, настроенном SMTP и PostgreSQL доступны `POST /api/auth/email/register` (`email`, `name`, `password`), `/verify` (`token`), `/login` (`email`, `password`), `/reset/request` (`email`) и `/reset/complete` (`token`, `password`). Письма содержат одноразовые ссылки с токеном во фрагменте URL; вход и подтверждение устанавливают тот же сеансовый cookie, что OAuth. `GET /api/session` возвращает `email: true` только когда почтовый вход включён. Запросы требуют JSON и того же origin; неизвестные адреса при регистрации и запросе восстановления получают общий ответ.
 
 Вошедший через Яндекс или VK пользователь может подключить почту без второго дерева: `POST /api/auth/email/link/request` (`email`, `password`) отправляет письмо, а `POST /api/auth/email/link/verify` (`token`) подтверждает. Оба запроса требуют свежего OAuth-входа в исходный аккаунт; совпадение адреса не объединяет аккаунты.
 
