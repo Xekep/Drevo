@@ -2555,6 +2555,9 @@ try {
   assert.deepEqual({ archiveId: selectedBranchPerson.archiveId, id: selectedBranchPerson.id,
     relation: selectedBranchPerson.relation },
   { archiveId: "other-archive", id: "branch-parent-b", relation: "parent" });
+  assert.ok(Object.keys(selectedBranchPerson).every((key) =>
+    ["archiveId", "id", "relation", "name", "birthYear", "deathYear", "birthPlace", "deathPlace"]
+      .includes(key)), "member navigation exposes only the selected scalar projection");
   assert.doesNotMatch(JSON.stringify(selectedBranchPerson), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
   assert.equal((await fetch(securedBase + branchPath + "/people/branch-hidden-b", {
     headers: navigationHeaders,

@@ -143,14 +143,20 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
         if (!grants.some((row) => row.grantor_archive_id === archiveId) ||
             !grants.some((row) => row.grantor_archive_id !== archiveId)) return null;
         const row = await db.prepare("", `SELECT p.archive_id,p.person_id,p.name,p.birth_year,
-          p.death_year,p.birth_place,p.death_place,p.publication_version,b.relation
+          p.death_year,p.birth_place,p.death_place,b.relation
           FROM discovery_branch_members b JOIN discovery_people p
             ON p.archive_id=b.grantor_archive_id AND p.person_id=b.person_id
           WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
             AND b.right_person_id=? AND b.grantor_archive_id<>? AND b.person_id=?`)
           .get(...pairArgs(pair), archiveId, personId);
-        return row ? { archiveId: String(row.archive_id),
-          ...listed(row, String(row.relation) as Relation) } : null;
+        return row ? {
+          archiveId: String(row.archive_id), id: String(row.person_id),
+          relation: String(row.relation) as Relation, name: String(row.name),
+          ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
+          ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
+          ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
+          ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
+        } : null;
       }, true);
       return person ? json(res, 200, { person })
         : json(res, 404, { error: "Карточка недоступна" });
