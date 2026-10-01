@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT to_regclass('request_rate_limits') AS present",
+      "042_request_rate_limits.sql",
+    ],
+    [
       "SELECT to_regclass('archive_owner_transfers') AS present",
       "039_archive_owner_transfers.sql",
     ],

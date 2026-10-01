@@ -14,10 +14,8 @@ import {
 } from "../domain/archive-projection.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
 import { DEFAULT_TREE_PREFERENCES } from "../domain/tree-preferences.ts";
-import {
-  createRequestLimiter,
-  requestClientKey,
-} from "./request-rate-limit.ts";
+import { requestClientKey } from "./request-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 
 export function archiveQueryHttp({
   archive,
@@ -33,7 +31,7 @@ export function archiveQueryHttp({
   researchCatalog: ReturnType<typeof researchCatalogStore>;
 }) {
   const searchPeople = peopleSearchStore(archive.db);
-  const publicSearchLimiter = createRequestLimiter({
+  const publicSearchLimiter = createSharedRequestLimiter(archive.db, "public-people-search", {
     windowMs: 60_000,
     limit: 60,
   });
@@ -284,9 +282,9 @@ export function archiveQueryHttp({
         return json(res, 401, { error: "Войдите для поиска людей" });
       if (
         !(await auth.canRead(req)) &&
-        !publicSearchLimiter.allow(
+        !(await publicSearchLimiter.allow(
           requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress),
-        )
+        ))
       ) {
         res.setHeader("Retry-After", "60");
         return json(res, 429, {

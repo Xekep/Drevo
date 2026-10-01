@@ -3,7 +3,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { openArchive } from "./database.ts";
 import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
-import { createRequestLimiter, requestClientKey } from "./request-rate-limit.ts";
+import { requestClientKey } from "./request-rate-limit.ts";
+import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { candidateEvidence, candidateNameQuery } from "./discovery-candidate-ranking.ts";
 
 const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
@@ -124,7 +125,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
   publicOrigin?: string;
 }) {
   const db = archive.db;
-  const limiter = createRequestLimiter({ windowMs: 60_000, limit: 20 });
+  const limiter = createSharedRequestLimiter(db, "discovery-matches", { windowMs: 60_000, limit: 20 });
   const json = (res: ServerResponse, code: number, value: unknown) => {
     res.writeHead(code, {
       "Content-Type": "application/json; charset=utf-8",
@@ -169,7 +170,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         })), nextPage: rows.length > 30 ? page + 1 : null });
       }
       if (req.method !== "POST") return json(res, 405, { error: "Ожидается GET или POST" });
-      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+      if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
         return json(res, 429, { error: "Слишком много запросов" });
       const body = await readBody(req);
       const targetArchiveId = body?.targetArchiveId;
@@ -196,7 +197,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
 
     if (ignoredCandidates) {
       if (req.method !== "POST") return json(res, 405, { error: "Ожидается POST" });
-      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+      if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
         return json(res, 429, { error: "Слишком много запросов" });
       const body = await readBody(req);
       const sourceId = body?.sourcePersonId;
@@ -235,7 +236,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
 
     if (candidates) {
       if (req.method !== "GET") return json(res, 405, { error: "Ожидается GET" });
-      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+      if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
         return json(res, 429, { error: "Слишком много запросов" });
       const sourceId = url.searchParams.get("sourcePersonId") || "";
       if (!idPattern.test(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
@@ -327,7 +328,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
         nextCursor: last ? Buffer.from(JSON.stringify([last.requestedAt,last.id])).toString("base64url") : null });
     }
     if (collection && req.method === "POST") {
-      if (!limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress)))
+      if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
         return json(res, 429, { error: "Слишком много запросов" });
       const body = await readBody(req);
       const sourceId = body?.sourcePersonId;
