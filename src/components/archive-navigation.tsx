@@ -14,7 +14,6 @@ import {
   Heart,
   ShieldCheck,
   LogOut,
-  CircleHelp,
   Menu,
   MapPin,
   ChartNoAxesCombined,
@@ -148,6 +147,16 @@ export function ArchiveNavigation({
             </a>
           ))}
       </div>
+      <button
+        className="nav-about"
+        type="button"
+        onClick={() => {
+          if (menu.current) menu.current.open = false;
+          onHelp();
+        }}
+      >
+        О проекте
+      </button>
       {identity && (
         <a
           className="nav-account"
@@ -213,16 +222,6 @@ export function ArchiveNavigation({
             <Users size={18} />
             <span>Поиск опубликованных людей</span>
           </a>
-          <button
-            onClick={() => {
-              if (menu.current) menu.current.open = false;
-              onHelp();
-            }}
-            title="О проекте"
-          >
-            <CircleHelp size={18} />
-            <span>О проекте</span>
-          </button>
           {user?.role === "admin" && (
             <a
               href={scopedArchivePath(archivePaths.admin)}
