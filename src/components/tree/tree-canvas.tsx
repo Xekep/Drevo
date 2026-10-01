@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import {
   archiveConnections,
+  fullName,
   safeUrl,
   type Family,
   type ArchiveUser,
@@ -50,6 +51,7 @@ import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighb
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { DistantPortraits } from "./distant-portraits";
 import { hitDistantScene } from "./distant-scene-hit";
+import { useMiddlePersonAnchor } from "./use-middle-person-anchor";
 import { personRelationLabel } from "./person-relation-label";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
@@ -134,6 +136,7 @@ type Props = {
   reverse: boolean;
   colorScheme?: TreeColorScheme;
   generationLimits?: TreeGenerationLimits | null;
+  onGenerationAnchor?: (id: string) => Promise<void>;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -939,6 +942,44 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
   const distantScene = overviewAvailable && distantZoom;
+  const [anchorNotice, setAnchorNotice] = useState("");
+  useEffect(() => {
+    if (!anchorNotice) return;
+    const timer = window.setTimeout(() => setAnchorNotice(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [anchorNotice]);
+  const savingAnchor = useRef(false);
+  const middleAnchor = useMiddlePersonAnchor(
+    !!props.onGenerationAnchor && !cameraLocked && !layoutBusy && !activeFanAnchor,
+    (target, x, y) => {
+      if (!(target instanceof Element)) return null;
+      const content = target.closest(".flow-person-content, .timeline-person");
+      if (content)
+        return content.closest("[data-person-id]")?.getAttribute("data-person-id") ?? null;
+      if (!distantScene || !target.closest(".react-flow__pane")) return null;
+      const bounds = container.current?.getBoundingClientRect();
+      return bounds
+        ? hitDistantScene(nodes, displayEdges, flow.getViewport(), {
+            x: x - bounds.left,
+            y: y - bounds.top,
+          })?.node?.data.person.id ?? null
+        : null;
+    },
+    (id) => {
+      if (savingAnchor.current || !props.onGenerationAnchor) return;
+      savingAnchor.current = true;
+      const person = peopleMap.get(id);
+      const label = person ? fullName(person) : id;
+      void props.onGenerationAnchor(id)
+        .then(() => {
+          setAnchorNotice(`Опорный человек: ${label}`);
+        })
+        .catch((error: unknown) => {
+          setAnchorNotice(error instanceof Error ? error.message : "Не удалось сохранить опорного человека");
+        })
+        .finally(() => { savingAnchor.current = false; });
+    },
+  );
   const flowNodes = useMemo(() => distantScene
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
     : renderedNodes, [renderedNodes, distantScene]);
@@ -1133,7 +1174,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         ref={container}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
-        onPointerDownCapture={edgePan.onPointerDownCapture}
+        onPointerDownCapture={(event) => {
+          edgePan.onPointerDownCapture(event);
+          middleAnchor.onPointerDownCapture(event);
+        }}
+        onMouseDownCapture={middleAnchor.onMouseDownCapture}
+        onAuxClickCapture={middleAnchor.onAuxClickCapture}
         onClickCapture={edgePan.onClickCapture}
         tabIndex={-1}
         aria-busy={growthPreparing || growthActive}
@@ -1544,6 +1590,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             focus={focus}
             onChoose={onChoose}
           />
+        )}
+        {anchorNotice && !problem && (
+          <div className="tree-notice" role="status">
+            {anchorNotice}
+          </div>
         )}
         {!activeFanAnchor && problem && (
           <div className="tree-notice" role="alert">

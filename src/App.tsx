@@ -42,6 +42,7 @@ import { LoginButtons } from "./components/login-buttons";
 import { AdminPanel } from "./components/admin-panel";
 import { ArchiveSettings } from "./components/archive-settings";
 import { TreePreferencesDialog } from "./components/tree-preferences-dialog";
+import { withGenerationAnchor } from "./domain/tree-preferences";
 import { TreeExportDialog } from "./components/tree-export-dialog";
 import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-download";
 import { TreeImportDialog } from "./components/tree-import-dialog";
@@ -849,6 +850,11 @@ export default function App() {
                       reverse={archive.reverseTimeline}
                       colorScheme={archive.treePreferences.colorScheme}
                       generationLimits={archive.treePreferences.generationLimits}
+                      onGenerationAnchor={async (id) => {
+                        await archive.saveTreePreferences(
+                          withGenerationAnchor(archive.treePreferences, id),
+                        );
+                      }}
                       selected={selected}
                       selectedEdge={connectionDraft?.original?.key}
                       onChoose={choosePerson}
