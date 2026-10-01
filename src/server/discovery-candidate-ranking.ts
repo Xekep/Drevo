@@ -77,7 +77,7 @@ function localityWords(value: string) {
   const segments = value.split(/[,;]+/).map((segment) => words(segment));
   const eligible = segments.filter((segment) => segment.length &&
     !segment.some((word) => regions.has(word) || countries.has(word)));
-  const settlement = eligible.filter((segment) => placePrefixes.has(segment[0])).at(-1)
+  const settlement = eligible.filter((segment) => placePrefixes.has(segment[0] || "")).at(-1)
     || eligible.at(-1);
   return settlement?.filter((word) => !placePrefixes.has(word)) || [];
 }
