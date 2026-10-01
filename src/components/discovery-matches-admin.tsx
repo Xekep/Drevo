@@ -35,8 +35,11 @@ const statusLabel: Record<Match["status"], string> = {
   revoked: "Связь отозвана",
 };
 
-function CandidateCard({ candidate }: { candidate: Candidate }) {
+function CandidateCard({ candidate, ownArchiveId }: { candidate: Candidate; ownArchiveId: string }) {
+  const origin = candidate.archiveId === ownArchiveId
+    ? "Ваш архив" : `Исходный архив: ${candidate.archiveId}`;
   return <div className="match-candidate-card">
+    <small className="match-candidate-origin" title={origin}>{origin}</small>
     {candidate.name ? <a href={`/discover/person/${encodeURIComponent(candidate.archiveId)}/${encodeURIComponent(candidate.id)}`}>
       <strong>{candidate.name}</strong>
     </a> : <strong>Карточка больше не опубликована</strong>}
@@ -343,7 +346,8 @@ export function DiscoveryMatchesAdmin() {
       </details>
       {source && target && <div className="match-review">
         <h2>Проверьте обе карточки</h2>
-        <div className="match-pair"><CandidateCard candidate={source} /><CandidateCard candidate={target} /></div>
+        <div className="match-pair"><CandidateCard candidate={source} ownArchiveId={archiveId} />
+          <CandidateCard candidate={target} ownArchiveId={archiveId} /></div>
         <label>Почему это один человек? <small>Необязательно; сообщение увидит другое дерево</small>
           <textarea value={reason} maxLength={500} rows={2} onChange={(event) => setReason(event.target.value)}
             placeholder="Например: совпадают родители и место рождения" />
@@ -358,7 +362,8 @@ export function DiscoveryMatchesAdmin() {
       {!visibleMatches.length && <p>{deferredCount ? "Сейчас нет запросов для рассмотрения." : "Пока нет запросов на сопоставление."}</p>}
       {visibleMatches.map((item) => <article key={item.id} className="match-request">
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
-        <div className="match-pair"><CandidateCard candidate={item.left} /><CandidateCard candidate={item.right} /></div>
+        <div className="match-pair"><CandidateCard candidate={item.left} ownArchiveId={archiveId} />
+          <CandidateCard candidate={item.right} ownArchiveId={archiveId} /></div>
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
         {item.status === "pending" && item.changedSinceRequest &&
           <p className="match-reason">Опубликованные сведения изменились после запроса. Сверьте обе карточки перед решением.</p>}

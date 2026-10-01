@@ -38,6 +38,7 @@
 .match-candidate-card { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 10px; background: #f4f7f1; border-radius: 8px; }
 .match-candidate-card a { overflow-wrap: anywhere; }
 .match-candidate-card small { color: var(--muted); }
+.match-candidate-origin { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .match-request-heading, .match-request-actions, .match-pages { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .match-request-heading { justify-content: space-between; }
 .match-request-heading time { color: var(--muted); font-size: 12px; }

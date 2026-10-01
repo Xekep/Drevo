@@ -206,6 +206,39 @@ test("later defers only an incoming request for this visit without answering", a
   expect(decisions).toBe(0);
 });
 
+test("linked cards keep their archive of origin visible with identical names", async ({ page }, testInfo) => {
+  const otherArchiveId = "another-archive-with-a-long-identifier-0123456789-abcdef-uvwxyz";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: otherArchiveId, id: "person-b", name: "Иван Петров" };
+  let currentArchiveId = "tree-a";
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: currentArchiveId, people: [] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: currentArchiveId, nextCursor: null, matches: [{
+      id: "linked-1", left, right, initiatedByArchiveId: "tree-a", status: "linked",
+      requestedAt: "2026-09-30T00:00:00Z",
+    }],
+  } }));
+
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const origins = page.locator(".match-request .match-candidate-origin");
+  await expect(page.locator(".match-request .match-candidate-card a")).toHaveText(["Иван Петров", "Иван Петров"]);
+  await expect(origins).toHaveText(["Ваш архив", `Исходный архив: ${otherArchiveId}`]);
+  await expect(origins.nth(1)).toHaveAttribute("title", `Исходный архив: ${otherArchiveId}`);
+  if (testInfo.project.name === "mobile") {
+    expect(await origins.nth(1).evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  }
+
+  currentArchiveId = otherArchiveId;
+  await page.reload();
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await expect(origins).toHaveText(["Исходный архив: tree-a", "Ваш архив"]);
+});
+
 test("candidate suggestions can continue past the first indexed page", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const first = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
