@@ -278,6 +278,7 @@ export async function verifyEmailAccounts(
       }),
     );
     const request = {
+      method: "POST",
       headers: { "content-type": "application/json", origin: "https://mydrevo.org" },
       socket: { remoteAddress: "127.0.0.1" },
       async *[Symbol.asyncIterator]() {
