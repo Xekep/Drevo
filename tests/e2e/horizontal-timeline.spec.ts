@@ -55,6 +55,7 @@ test("хронология переключает десятилетия без 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tree");
+  await expect(page.locator(".react-flow__node").first()).toBeAttached();
   await page
     .getByRole("button", { name: "Хронология", exact: true })
     .or(page.getByRole("switch", { name: "Древо / Хронология" }))
@@ -355,6 +356,7 @@ test("era emblems stay vertically centered while chronology scrolls", async ({
   page,
 }) => {
   await page.goto("/tree");
+  await expect(page.locator(".react-flow__node").first()).toBeAttached();
   await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-growing/, {
     timeout: 5_000,
   });
