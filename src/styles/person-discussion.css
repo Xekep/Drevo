@@ -90,6 +90,22 @@
   font-size: 12px;
   font-weight: 650;
 }
+.person-discussion-author {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.person-discussion-author:hover,
+.person-discussion-author:focus-visible {
+  color: var(--ink);
+}
+.person-discussion-author[aria-disabled="true"] {
+  opacity: 0.65;
+  cursor: default;
+}
 .person-discussion-item > p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

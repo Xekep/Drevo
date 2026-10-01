@@ -2,6 +2,8 @@ import { archiveFetch } from "../data/archive-fetch.ts";
 import { useEffect, useState } from "react";
 import { Pencil, Send, Trash2 } from "lucide-react";
 import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
+import { archiveTargetPath } from "../domain/archive-links";
+import { scopedArchivePath } from "../domain/archive-context";
 import {
   MAX_COMMENT_LENGTH,
   type PersonComment as Comment,
@@ -10,7 +12,13 @@ import {
 import CommentEditor from "./discussion/comment-editor";
 import { CommentMarkdown } from "./discussion/comment-markdown";
 
-export function PersonDiscussion({ personId }: { personId: string }) {
+export function PersonDiscussion({
+  personId,
+  onSelect,
+}: {
+  personId: string;
+  onSelect: (id: string) => void;
+}) {
   const [items, setItems] = useState<Comment[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -238,7 +246,34 @@ export function PersonDiscussion({ personId }: { personId: string }) {
               className="person-discussion-item"
             >
               <div className="person-discussion-meta">
-                <strong>{item.author}</strong>
+                {item.authorPersonId ? (
+                  <a
+                    className="person-discussion-author"
+                    href={scopedArchivePath(
+                      archiveTargetPath({
+                        kind: "person",
+                        id: item.authorPersonId,
+                      }),
+                    )}
+                    aria-disabled={pending || !!editing || undefined}
+                    onClick={(event) => {
+                      if (
+                        event.button !== 0 ||
+                        event.ctrlKey ||
+                        event.metaKey ||
+                        event.shiftKey ||
+                        event.altKey
+                      )
+                        return;
+                      event.preventDefault();
+                      if (!pending && !editing) onSelect(item.authorPersonId!);
+                    }}
+                  >
+                    {item.author}
+                  </a>
+                ) : (
+                  <strong>{item.author}</strong>
+                )}
                 <time dateTime={item.createdAt}>
                   {new Date(item.createdAt).toLocaleString("ru-RU", {
                     dateStyle: "medium",

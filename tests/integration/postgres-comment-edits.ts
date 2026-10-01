@@ -22,6 +22,8 @@ export async function verifyPostgresCommentEdits(
   const original: PersonComment = (await created.json()).item;
   assert.equal(original.editedAt, null);
   assert.equal(original.canEdit, true);
+  assert.equal(original.author, "Тестов Иван");
+  assert.equal(original.authorPersonId, "person-a");
   const path = `${endpoint}/${original.id}`;
   const patch = (
     text: string,
@@ -50,6 +52,7 @@ export async function verifyPostgresCommentEdits(
     await (await attempts.find((response) => response.status === 200)!).json()
   ).item;
   assert.equal(edited.createdAt, original.createdAt);
+  assert.equal(edited.authorPersonId, "person-a");
   assert.ok(edited.editedAt);
   assert.ok(Date.parse(edited.editedAt) > Date.parse(edited.createdAt));
   const items: PersonComment[] = (
@@ -61,6 +64,10 @@ export async function verifyPostgresCommentEdits(
     "the runtime RLS view exposes edit metadata",
   );
   assert.equal(items.find((item) => item.id === edited.id)?.canEdit, false);
+  assert.equal(
+    items.find((item) => item.id === edited.id)?.authorPersonId,
+    "person-a",
+  );
   assert.equal((await patch("Устаревшая версия", null)).status, 409);
   assert.equal(
     (await fetch(path, { method: "DELETE", headers: headers(authorHeaders) }))

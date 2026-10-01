@@ -16,10 +16,24 @@ type CommentRow = {
   person_id: string;
   author_id: string;
   author_name: string | null;
+  author_person_id: string | null;
+  author_surname: string | null;
+  author_given_name: string | null;
+  author_patronymic: string | null;
   created_ms: number;
   updated_ms: number | null;
   text: string;
 };
+
+const sqliteComments = `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms,
+  p.id AS author_person_id,json_extract(p.data,'$.surname') AS author_surname,
+  json_extract(p.data,'$.name') AS author_given_name,json_extract(p.data,'$.patronymic') AS author_patronymic
+  FROM person_comments c LEFT JOIN users u ON u.id=c.author_id LEFT JOIN people p ON p.id=u.person_id`;
+const postgresComments = `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms,
+  p.id AS author_person_id,p.data->>'surname' AS author_surname,
+  p.data->>'name' AS author_given_name,p.data->>'patronymic' AS author_patronymic
+  FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id
+  LEFT JOIN people p ON p.archive_id=c.archive_id AND p.id=u.person_id`;
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, {
@@ -74,28 +88,9 @@ export function personDiscussionHttp({
   const db = archive.db;
   const audit = auditStore(db);
   const comment = db.prepare(
-    `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms
-       FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
-      WHERE c.id=? AND c.person_id=?`,
-    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms\n       FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
+    `${sqliteComments} WHERE c.id=? AND c.person_id=?`,
+    `${postgresComments} WHERE c.id=? AND c.person_id=?`,
   );
-  const present = (
-    row: CommentRow,
-    userId: string,
-    userName: string,
-    admin: boolean,
-  ): PersonComment => ({
-    id: row.id,
-    text: row.text,
-    author:
-      row.author_name ||
-      (row.author_id === userId ? userName : "Участник архива"),
-    createdAt: new Date(row.created_ms).toISOString(),
-    editedAt:
-      row.updated_ms == null ? null : new Date(row.updated_ms).toISOString(),
-    canDelete: admin || row.author_id === userId,
-    canEdit: row.author_id === userId,
-  });
 
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const match =
@@ -112,8 +107,11 @@ export function personDiscussionHttp({
       return json(res, 400, { error: "Некорректный адрес человека" });
     }
     const user = (await auth.currentUser(req))!;
-    const canSee = isScopedUser(user)
-      ? visiblePersonIds((await archive.read()).family, user).has(personId)
+    const visible = isScopedUser(user)
+      ? visiblePersonIds((await archive.read()).family, user)
+      : null;
+    const canSee = visible
+      ? visible.has(personId)
       : !!(await db
           .prepare(
             "SELECT 1 FROM people WHERE id=?",
@@ -121,6 +119,34 @@ export function personDiscussionHttp({
           )
           .get(personId));
     if (!canSee) return json(res, 404, { error: "Человек не найден" });
+    const present = (row: CommentRow): PersonComment => {
+      const authorPersonId =
+        row.author_person_id && (!visible || visible.has(row.author_person_id))
+          ? row.author_person_id
+          : null;
+      const cardName = authorPersonId
+        ? [row.author_surname, row.author_given_name, row.author_patronymic]
+            .map((part) => part?.trim())
+            .filter(Boolean)
+            .join(" ")
+        : "";
+      return {
+        id: row.id,
+        text: row.text,
+        author:
+          cardName ||
+          row.author_name ||
+          (row.author_id === user.id ? user.name : "Участник архива"),
+        authorPersonId,
+        createdAt: new Date(row.created_ms).toISOString(),
+        editedAt:
+          row.updated_ms == null
+            ? null
+            : new Date(row.updated_ms).toISOString(),
+        canDelete: user.role === "admin" || row.author_id === user.id,
+        canEdit: row.author_id === user.id,
+      };
+    };
 
     if (req.method === "GET" && !match[2]) {
       const rawBefore = url.searchParams.get("before");
@@ -131,17 +157,13 @@ export function personDiscussionHttp({
         return json(res, 400, { error: "Некорректная страница" });
       const rows = (await db
         .prepare(
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms
-             FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
-            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
-          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms\n             FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
+          `${sqliteComments} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
+          `${postgresComments} WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
       return json(res, 200, {
-        items: page.map((row) =>
-          present(row, user.id, user.name, user.role === "admin"),
-        ),
+        items: page.map(present),
         nextBefore: rows.length > PAGE_SIZE ? page.at(-1)!.id : null,
       });
     }
@@ -163,8 +185,7 @@ export function personDiscussionHttp({
         return json(res, 400, { error: "Введите сообщение до 2000 символов" });
       }
       const now = Date.now();
-      let id = 0;
-      const changed = await db.transaction(async () => {
+      const createdRow = await db.transaction(async () => {
         const recent = (await db
           .prepare(
             "SELECT count(*) AS count FROM audit_entries WHERE actor_id=? AND entity='person_comment' AND action='Добавлено сообщение в обсуждение' AND at>=?",
@@ -174,9 +195,9 @@ export function personDiscussionHttp({
           count: number;
         };
         if (recent.count >= 5) {
-          return false;
+          return null;
         }
-        id = Number(
+        const id = Number(
           (
             await db
               .prepare(
@@ -186,6 +207,7 @@ export function personDiscussionHttp({
               .run(personId, user.id, user.name, now, text)
           ).lastInsertRowid,
         );
+        const row = (await comment.get(id, personId)) as CommentRow;
         await audit.record(
           {
             action: "Добавлено сообщение в обсуждение",
@@ -198,27 +220,14 @@ export function personDiscussionHttp({
           user,
         );
 
-        return true;
+        return row;
       });
-      if (!changed)
+      if (!createdRow)
         return json(res, 429, {
           error: "Подождите минуту перед новым сообщением",
         });
       return json(res, 201, {
-        item: present(
-          {
-            id,
-            person_id: personId,
-            author_id: user.id,
-            author_name: user.name,
-            created_ms: now,
-            updated_ms: null,
-            text,
-          },
-          user.id,
-          user.name,
-          user.role === "admin",
-        ),
+        item: present(createdRow),
       });
     }
 
@@ -247,12 +256,12 @@ export function personDiscussionHttp({
             status: 409,
             error:
               "Сообщение уже изменено в другой вкладке. Черновик сохранён; загрузите актуальный текст перед повторной правкой.",
-            item: present(row, user.id, user.name, user.role === "admin"),
+            item: present(row),
           };
         if (row.text === edit.text)
           return {
             status: 200,
-            item: present(row, user.id, user.name, user.role === "admin"),
+            item: present(row),
           };
         const updated = Math.max(
           Date.now(),
@@ -267,13 +276,12 @@ export function personDiscussionHttp({
           .run(edit.text, updated, id, personId, user.id, edit.expectedUpdated);
         if (changed.changes !== 1) {
           const latest = (await comment.get(id, personId)) as
-            | CommentRow
-            | undefined;
+            CommentRow | undefined;
           return {
             status: 409,
             error: "Сообщение уже изменено или удалено. Черновик сохранён.",
             ...(latest && {
-              item: present(latest, user.id, user.name, user.role === "admin"),
+              item: present(latest),
             }),
           };
         }
@@ -290,12 +298,7 @@ export function personDiscussionHttp({
         );
         return {
           status: 200,
-          item: present(
-            { ...row, text: edit.text, updated_ms: updated },
-            user.id,
-            user.name,
-            user.role === "admin",
-          ),
+          item: present({ ...row, text: edit.text, updated_ms: updated }),
         };
       });
       const { status, ...body } = result;

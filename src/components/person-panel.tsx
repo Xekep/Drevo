@@ -413,7 +413,7 @@ export function PersonPanel({
           </>
         ) : tab === "discussion" && canDiscuss ? (
           <Suspense fallback={<p className="muted-copy">Загружаем обсуждение…</p>}>
-            <PersonDiscussion key={person.id} personId={person.id} />
+            <PersonDiscussion key={person.id} personId={person.id} onSelect={onSelect} />
           </Suspense>
         ) : (
           <>
