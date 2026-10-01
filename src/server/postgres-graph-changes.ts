@@ -24,7 +24,7 @@ const personFields = new Set([
   "generation",
   "parentageComplete",
 ]);
-const linkFields = new Set(["from", "to", "type", "note", "twinKind"]);
+const linkFields = new Set(["from", "to", "type", "note", "twinKind", "sources"]);
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
@@ -67,7 +67,7 @@ function validateGraphChanges(input: Change[]): Change[] {
           record(change.after) &&
           Object.keys(change.after).some(
             (key) =>
-              !["id", "createdBy", "from", "to", "type", "note", "twinKind"].includes(key),
+              !["id", "createdBy", "from", "to", "type", "note", "twinKind", "sources"].includes(key),
           )
         )
           throw new Error("Неизвестное поле связи");
