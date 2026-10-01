@@ -4566,9 +4566,16 @@ try {
     FROM discovery_linked_card_grants WHERE left_person_id=$1 AND right_person_id=$2
       AND expires_at IS NULL`, [parent.id,parent.id])).rows[0].count, 1,
   "reapplying 063 never shortens a legacy until-revoked scalar consent");
-  assert.deepEqual((await fetch(otherBase + revocableSharePath, { headers: {
-    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.223",
-  } }).then((response) => response.json())).incoming.fields,
+  const legacyCardToken = newSessionToken();
+  await app.archive.db.prepare("", `INSERT INTO account_sessions(token_hash,user_id,expires_at)
+    VALUES(?,'vk:42',?)`).run(sessionTokenHash(legacyCardToken), Date.now()+60_000);
+  const legacyCardResponse = await fetch(otherBase + revocableSharePath, { headers: {
+    ...archiveAdminHeaders, Cookie: `drevo_session=${legacyCardToken}`,
+    "X-Real-IP": "198.51.100.223",
+  } });
+  assert.equal(legacyCardResponse.status, 200,
+    "the current recipient owner can reopen a legacy scalar grant");
+  assert.deepEqual((await legacyCardResponse.json()).incoming.fields,
   { birth: "1960" }, "a legacy NULL grant remains readable until revoked");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
