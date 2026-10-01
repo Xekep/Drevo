@@ -1575,10 +1575,7 @@ try {
           return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
         notify();
         await gate;
-        return new Response(
-          `data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\ndata: [DONE]\n\n`,
-          { headers: { "Content-Type": "text/event-stream" } },
-        );
+        return Response.json({ choices: [{ message: { role: "assistant", content: answer } }] });
       });
       const handler = aiResearchHttp({
         archive: app!.archive,
