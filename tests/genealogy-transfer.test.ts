@@ -1147,6 +1147,13 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     assert.equal((await archive.read()).family.people.length, 3);
     assert.equal((await readdir(join(dir, "uploads"))).length, 0);
     assert.equal(
+      Number(
+        (await archive.db.prepare("SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests").get())?.bytes,
+      ),
+      0,
+      "failed GEDZIP installation releases its disk reservation",
+    );
+    assert.equal(
       (await archive.db
         .prepare("SELECT count(*) AS n FROM media_originals")
         .get())!.n,
@@ -1158,6 +1165,13 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       confirm: true,
     });
     assert.equal(applied.status, 200, await applied.text());
+    assert.equal(
+      Number(
+        (await archive.db.prepare("SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests").get())?.bytes,
+      ),
+      0,
+      "successful GEDZIP installation releases its disk reservation",
+    );
     assert.equal((await archive.read()).family.people.length, 5);
     const original = await archive.db
       .prepare("SELECT url,size_bytes,uploaded_by FROM media_originals")

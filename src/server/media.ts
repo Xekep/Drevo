@@ -57,16 +57,28 @@ export function mediaStore(directory: string) {
   const scanUsage = async () => {
     let files = 0,
       bytes = 0;
-    for (const name of await readdir(directory).catch(
-      () => [] as string[],
-    )) {
-      if (!mediaPattern.test(`/media/${name}`)) continue;
-      const info = await stat(resolve(directory, name)).catch(() => null);
-      if (info?.isFile()) {
-        files++;
-        bytes += info.size;
-      }
-    }
+    const names = (await readdir(directory)).filter(
+      (name) => mediaPattern.test(`/media/${name}`),
+    );
+    const iterator = names.values();
+    await Promise.all(
+      Array.from({ length: Math.min(16, names.length) }, async () => {
+        for (;;) {
+          const next = iterator.next();
+          if (next.done) return;
+          const info = await stat(resolve(directory, next.value)).catch(
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return null;
+              throw error;
+            },
+          );
+          if (info?.isFile()) {
+            files++;
+            bytes += info.size;
+          }
+        }
+      }),
+    );
     return { files, bytes };
   };
   return {
