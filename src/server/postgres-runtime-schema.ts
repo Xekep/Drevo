@@ -127,7 +127,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "027_discovery_candidate_names.sql",
     ],
     [
-      "SELECT 1 AS present FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_match_requests' AND policyname='linked_discovery_read'",
+      "SELECT 1 AS present WHERE to_regclass('discovery_linked_pairs') IS NOT NULL OR EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_match_requests' AND policyname='linked_discovery_read')",
       "028_linked_discovery_read.sql",
     ],
     [
@@ -149,6 +149,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     [
       "SELECT 1 AS present WHERE to_regclass('discovery_linked_pairs') IS NOT NULL AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('discovery_match_requests') AND tgname='sync_discovery_linked_pair' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_match_requests' AND column_name='decision_review_token')",
       "050_discovery_match_audit.sql",
+    ],
+    [
+      "SELECT 1 AS present WHERE to_regclass('discovery_linked_pairs') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_match_requests' AND policyname='linked_discovery_read')",
+      "051_discovery_linked_request_rls.sql",
     ],
     [
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitations_created_by_fkey' AND confdeltype='c'",
