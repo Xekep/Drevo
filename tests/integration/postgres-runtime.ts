@@ -955,6 +955,35 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await client.query(
+    "INSERT INTO account_email_credentials(account_id,email,password_hash) VALUES('reader','reader-export@example.invalid','secret-hash-sentinel')",
+  );
+  await client.query(
+    "INSERT INTO account_identities(provider,subject,account_id) VALUES('email','reader-export@example.invalid','reader')",
+  );
+  const accountExportUrl = securedBase + "/api/account/export";
+  assert.equal((await fetch(accountExportUrl)).status, 401);
+  assert.equal((await fetch(accountExportUrl, { method: "POST", headers: ownerHeaders })).status, 405);
+  const accountExports = await Promise.all(
+    Array.from({ length: 6 }, (_, index) =>
+      fetch(accountExportUrl, { headers: index % 2 ? headers : ownerHeaders }),
+    ),
+  );
+  for (const [index, response] of accountExports.entries()) {
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.match(response.headers.get("content-disposition") || "", /attachment/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const raw = await response.text();
+    assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session/);
+    const exported = JSON.parse(raw);
+    assert.equal(exported.format, "drevo-account-data");
+    assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
+    assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
+    assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
+    assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
+    assert.equal(exported.archives[0].owned, index % 2 === 0);
+    assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
+  }
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
   const previousAiEnvironment = aiKeys.map((key) => process.env[key]);

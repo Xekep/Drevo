@@ -514,6 +514,21 @@ export function AccountPage({
                           true || session?.account?.provider === "email"
                       }
                     />
+                    {session?.account && (
+                      <div className="account-export-actions">
+                        <p className="account-card-copy">
+                          Скачайте сведения об аккаунте, способах входа, доступе к архивам и настройках дерева.
+                        </p>
+                        <a
+                          className="account-row-action"
+                          href="/api/account/export"
+                          download="drevo-account.json"
+                        >
+                          Скачать данные аккаунта
+                          <ExternalLink size={16} aria-hidden="true" />
+                        </a>
+                      </div>
+                    )}
                     <button
                       className="account-signout"
                       onClick={() => void logout()}

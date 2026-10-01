@@ -60,3 +60,35 @@ test("account without membership in the current archive can open another tree", 
   await expect(page.getByRole("button", { name: "Личный кабинет" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Личный кабинет: Другой участник" })).toBeVisible();
 });
+
+test("signed-in account without a tree can download its account data", async ({ page }) => {
+  await page.route("**/api/session", (route) =>
+    route.fulfill({ json: {
+      user: null,
+      account: { id: "account-only", name: "Пользователь", createdAt: "2026-10-01", fullAccess: false, provider: "email" },
+      local: false,
+      email: true,
+      yandex: false,
+      vk: false,
+    } }),
+  );
+  await page.route("**/api/account/archives", (route) =>
+    route.fulfill({ json: { archives: [] } }),
+  );
+  await page.route("**/api/account/sessions", (route) =>
+    route.fulfill({ json: { currentExpiresAt: null, otherCount: 0 } }),
+  );
+  await page.route("**/api/account/export", (route) =>
+    route.fulfill({
+      headers: { "content-type": "application/json", "content-disposition": 'attachment; filename="drevo-account.json"' },
+      body: JSON.stringify({ format: "drevo-account-data", account: { id: "account-only" }, archives: [] }),
+    }),
+  );
+  await page.goto("/account");
+  const link = page.getByRole("link", { name: "Скачать данные аккаунта" });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "/api/account/export");
+  const download = page.waitForEvent("download");
+  await link.click();
+  expect((await download).suggestedFilename()).toBe("drevo-account.json");
+});
