@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { archiveViewAt } from "../domain/archive-routes.ts";
 import { staticAssetsHttp } from "./static-assets-http.ts";
+import { decodePublicPersonId } from "./public-person-id.ts";
 
 const defaultDistDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -82,10 +83,14 @@ export function productionStaticHttp(
       );
     const linkedBranch =
       /^\/discover\/linked\/[A-Za-z0-9-]{3,64}\/[a-f0-9-]{36}\/[^/]{1,1200}$/.test(pathname);
+    const discoveryPerson = /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?([^/]{1,1200})$/.exec(pathname);
+    const validDiscoveryPerson = Boolean(discoveryPerson && decodePublicPersonId(discoveryPerson[1]));
+    if (pathname.startsWith("/discover/person/") && !validDiscoveryPerson)
+      return jsonError(res, 404, "Страница не найдена");
     const discovery =
       pathname === "/discover" ||
       /^\/discover\/search\/[^/]{1,300}$/.test(pathname) ||
-      /^\/discover\/person\/(?:[A-Za-z0-9-]{3,64}\/)?[A-Za-z0-9_-]{1,100}$/.test(pathname) ||
+      validDiscoveryPerson ||
       linkedBranch;
     const filePath =
       archiveViewAt(pathname) ||

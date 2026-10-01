@@ -2461,6 +2461,53 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  const specialId = "family:человек.1";
+  const specialSegment = encodeURIComponent(specialId);
+  const specialBefore = await otherApp.archive.read();
+  const specialFamily = structuredClone(specialBefore.family);
+  specialFamily.people.push({ ...specialFamily.people[0], id: specialId,
+    name: "Особый", surname: "Тестовый", patronymic: "", deceased: true,
+    parents: [], spouses: [] });
+  await otherApp.archive.write(specialFamily, specialBefore.revision);
+  const specialDiscoveryUrl = securedBase + `/api/discovery/people/other-archive/${specialSegment}`;
+  const specialAdminUrl = otherBase + `/api/admin/published-people/${specialSegment}`;
+  assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
+    "a private card with punctuation and Unicode in its ID is absent from discovery");
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: inviteeHeaders })).status, 403,
+    "a reader cannot publish a card through an encoded ID");
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers })).status, 401,
+    "another archive cannot publish the encoded ID");
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders })).status, 200);
+  const specialSearch = await fetch(securedBase + "/api/discovery/people?q=Особый", { headers });
+  assert.equal(specialSearch.status, 200);
+  assert.deepEqual((await specialSearch.json()).results.map((person: { id: string }) => person.id), [specialId]);
+  const specialDetail = await fetch(specialDiscoveryUrl, { headers });
+  assert.equal(specialDetail.status, 200);
+  assert.equal((await specialDetail.json()).person.id, specialId);
+  assert.equal((await fetch(otherBase + `/api/published-people/${specialSegment}`, {
+    headers: ownerHeaders,
+  })).status, 200, "the archive-local published card decodes the same ID");
+  assert.equal((await fetch(otherBase + `/api/admin/published-people/batch?id=${specialSegment}`, {
+    headers: ownerHeaders,
+  })).status, 200, "batch status accepts a URL-encoded published ID");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/batch/preview", {
+    method: "POST", headers: ownerHeaders,
+    body: JSON.stringify({ action: "unpublish", personIds: [specialId] }),
+  })).status, 200, "batch preview accepts the same ID without changing publication");
+  for (const invalid of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "family%00person.1", "bad%"])
+    assert.equal((await fetch(securedBase + `/api/discovery/people/other-archive/${invalid}`, {
+      headers,
+    })).status, 404, "unsafe encoded segments cannot reach another card");
+  assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
+  assert.equal((await fetch(specialDiscoveryUrl, { headers })).status, 404,
+    "revoking publication immediately closes the formerly addressable card");
+  assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people?q=Особый", {
+    headers,
+  })).json()).results, []);
+  const specialAfter = await otherApp.archive.read();
+  const withoutSpecial = structuredClone(specialAfter.family);
+  withoutSpecial.people = withoutSpecial.people.filter((person) => person.id !== specialId);
+  await otherApp.archive.write(withoutSpecial, specialAfter.revision);
   const rootBeforeMatch = await app.archive.read();
   const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
   rootWithPublishedPerson.people[0].deceased = true;

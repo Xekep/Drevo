@@ -1,6 +1,23 @@
 import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
+test("a published card with punctuation and Unicode in its ID opens from search", async ({ page }) => {
+  const personId = "family:человек.1";
+  const segment = encodeURIComponent(personId);
+  await page.route((url) => url.pathname === "/api/discovery/people", (route) =>
+    route.fulfill({ json: { results: [{ archiveId: "tree-a", id: personId, name: "Особый Тестовый" }], nextCursor: null } }),
+  );
+  await page.route((url) => url.pathname === `/api/discovery/people/tree-a/${segment}`, (route) =>
+    route.fulfill({ json: { person: { archiveId: "tree-a", id: personId, name: "Особый Тестовый" }, linkedCards: [] } }),
+  );
+  await page.goto("/discover");
+  await page.getByRole("textbox", { name: "ФИО, год или место" }).fill("Особый");
+  await page.getByRole("button", { name: "Найти" }).click();
+  await page.getByRole("link", { name: "Особый Тестовый" }).click();
+  await expect(page.locator(".public-person-card")).toContainText("Особый Тестовый");
+  expect(new URL(page.url()).pathname).toBe(`/discover/person/tree-a/${segment}`);
+});
+
 test("discovery keeps same-ID cards from different archives distinct and paginates", async ({ page }) => {
   await page.route((url) => url.pathname === "/api/discovery/people", (route) => {
     const cursor = new URL(route.request().url()).searchParams.get("cursor");

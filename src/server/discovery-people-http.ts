@@ -3,6 +3,7 @@ import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
+import { decodePublicPersonId } from "./public-person-id.ts";
 
 type Cursor = [name: string, archiveId: string, personId: string];
 type DiscoveryRow = Record<string, unknown>;
@@ -72,7 +73,7 @@ export function discoveryPeopleHttp(
     return { cards: rows.slice(0,50).map(listedPerson), truncated: rows.length > 50 };
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
-    const detail = /^\/api\/discovery\/people\/([A-Za-z0-9-]{3,64})\/([A-Za-z0-9_-]{1,100})$/.exec(url.pathname);
+    const detail = /^\/api\/discovery\/people\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(url.pathname);
     if (url.pathname !== "/api/discovery/people" && !detail) return false;
     if (db.kind !== "postgres")
       return json(res, 501, { error: "Общий поиск доступен с PostgreSQL" });
@@ -87,11 +88,13 @@ export function discoveryPeopleHttp(
     if (state?.ready !== true)
       return json(res, 503, { error: "Поисковый каталог подготавливается" });
     if (detail) {
+      const personId = decodePublicPersonId(detail[2]);
+      if (!personId) return json(res, 404, { error: "Человек не найден" });
       const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
              birth_place,death_place,publication_version FROM discovery_people
-             WHERE archive_id=? AND person_id=?`).get(detail[1], detail[2]);
+             WHERE archive_id=? AND person_id=?`).get(detail[1], personId);
       if (!row) return json(res, 404, { error: "Человек не найден" });
-      const linked = await linkedPeople(detail[1],detail[2]);
+      const linked = await linkedPeople(detail[1],personId);
       return json(res, 200, { person: listedPerson(row), linkedCards: linked.cards,
         linkedCardsTruncated: linked.truncated });
     }

@@ -8,6 +8,7 @@ import { defaultPublicationFields, type PublicationFields } from "../shared/publ
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
+import { decodePublicPersonId, publicPersonId } from "./public-person-id.ts";
 import type { Person } from "../domain/types.ts";
 
 function visibleFields(person: Person, fields: PublicationFields): PublicationFields {
@@ -51,7 +52,7 @@ async function requestedFields(req: IncomingMessage): Promise<PublicationFields 
 
 function batchIds(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 50 ||
-      value.some((id) => typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) ||
+      value.some((id) => !publicPersonId(id)) ||
       new Set(value).size !== value.length) return null;
   return value as string[];
 }
@@ -111,10 +112,10 @@ export function publishedPeopleHttp({
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const batch = url.pathname === "/api/admin/published-people/batch";
     const batchPreview = url.pathname === "/api/admin/published-people/batch/preview";
-    const admin = /^\/api\/admin\/published-people\/([^/]+)$/.exec(
+    const admin = /^\/api\/admin\/published-people\/([^/]{1,1200})$/.exec(
       url.pathname,
     );
-    const detail = /^\/api\/published-people\/([^/]+)$/.exec(url.pathname);
+    const detail = /^\/api\/published-people\/([^/]{1,1200})$/.exec(url.pathname);
     const search = url.pathname === "/api/published-people/search";
     if (!admin && !batch && !batchPreview && !detail && !search) return false;
 
@@ -231,8 +232,8 @@ export function publishedPeopleHttp({
         .slice(0, 30);
       return json(res, 200, { results });
     }
-    const personId = admin?.[1] || detail?.[1] || "";
-    if (!/^[A-Za-z0-9_-]{1,100}$/.test(personId))
+    const personId = decodePublicPersonId(admin?.[1] || detail?.[1] || "");
+    if (!personId)
       return json(res, 404, { error: "Человек не найден" });
     const person = snapshot.family.people.find(
       (entry) => entry.id === personId,
