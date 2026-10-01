@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { applyArchiveChanges, type Change } from "../../src/domain/changes.ts";
 import type { Family } from "../../src/domain/types.ts";
 
-async function isolatedFamily(page: import("@playwright/test").Page) {
+async function isolatedFamily(page: import("@playwright/test").Page, saves: Change[][] = []) {
   const response = await page.request.get("/api/family?projection=overview");
   const initial = await response.json();
   let family = structuredClone(initial.family) as Family;
@@ -12,6 +12,7 @@ async function isolatedFamily(page: import("@playwright/test").Page) {
   );
   await page.route("**/api/family/changes", (route) => {
     const changes = route.request().postDataJSON().changes as Change[];
+    saves.push(changes);
     family = applyArchiveChanges(family, changes).family;
     revision++;
     return route.fulfill({
@@ -46,7 +47,13 @@ test("каталожный источник связывается с событ
   await page.route("**/api/sources?*", (route) =>
     route.fulfill({ json: { sources: [source], total: 1 } }),
   );
-  const readFamily = await isolatedFamily(page);
+  const saves: Change[][] = [];
+  const archiveRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/family") && request.method() !== "GET")
+      archiveRequests.push(`${request.method()} ${request.url()}`);
+  });
+  const readFamily = await isolatedFamily(page, saves);
   await page.goto("/tree");
   await page
     .getByTestId("rf__node-e2e-child")
@@ -82,15 +89,23 @@ test("каталожный источник связывается с событ
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
-  await expect
-    .poll(
-      () =>
-        readFamily()
-          .people.find((person) => person.id === "e2e-child")
-          ?.events?.find((item) => item.date === "1901")?.sources?.[1]
-          ?.catalogId,
-    )
-    .toBe(source.id);
+  try {
+    await expect
+      .poll(
+        () =>
+          readFamily()
+            .people.find((person) => person.id === "e2e-child")
+            ?.events?.find((item) => item.date === "1901")?.sources?.[1]
+            ?.catalogId,
+      )
+      .toBe(source.id);
+  } catch (reason) {
+    const events = readFamily().people.find((item) => item.id === "e2e-child")?.events;
+    const alerts = await page.getByRole("alert").allTextContents();
+    throw new Error(`${String(reason)}\nEvents: ${JSON.stringify(events)}\n` +
+      `Requests: ${JSON.stringify(archiveRequests)}\n` +
+      `Changes: ${JSON.stringify(saves).slice(0, 5000)}\nAlerts: ${JSON.stringify(alerts)}`);
+  }
   const person = readFamily().people.find((item) => item.id === "e2e-child")!;
   const saved = person.events!.find((item) => item.date === "1901")!;
   expect(saved.sources?.[0].title).toBe("Семейная запись");

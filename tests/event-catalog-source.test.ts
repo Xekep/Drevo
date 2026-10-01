@@ -113,6 +113,10 @@ test("event catalog link requires an admin, while inline editing and retained li
   moved.people[0].sources.push(moved.people[0].events![0].sources!.pop()!);
   assert.throws(() => authorizeArchive(moved, linked, actor("relative")),
     /только администратор/);
+  const forged = structuredClone(linked);
+  forged.people[0].events![0].sources![1].title = "Подмена названия";
+  assert.throws(() => authorizeArchive(forged, linked, actor("relative")),
+    /Изменить каталожную цитату/);
   edited.people[0].events![0].sources!.pop();
   assert.equal(
     authorizeArchive(edited, linked, actor("relative")).people[0].events?.[0]

@@ -9,9 +9,9 @@ import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 
 function catalogCitationSlots(family: Family) {
-  const slots = new Map<string, string[]>();
+  const slots = new Map<string, Source[]>();
   const add = (path: string[], sources?: Source[]) => slots.set(JSON.stringify(path),
-    (sources || []).flatMap((source) => source.catalogId ? [source.catalogId] : []));
+    (sources || []).filter((source) => source.catalogId));
   for (const person of family.people) {
     add(["person", person.id], person.sources);
     for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const)
@@ -189,13 +189,15 @@ export function authorizeArchive(
     if (old && old.url !== p.url) deny();
   }
   const previousSlots = catalogCitationSlots(current);
-  for (const [path, nextIds] of catalogCitationSlots(next)) {
-    const previousIds = previousSlots.get(path) || [];
-    for (const id of nextIds) {
-      const oldIndex = previousIds.indexOf(id);
+  for (const [path, nextSources] of catalogCitationSlots(next)) {
+    const previousSources = previousSlots.get(path) || [];
+    for (const source of nextSources) {
+      const oldIndex = previousSources.findIndex((old) => old.catalogId === source.catalogId);
       if (oldIndex < 0)
         throw new ForbiddenError("Привязать каталожный источник может только администратор");
-      previousIds.splice(oldIndex, 1);
+      const [old] = previousSources.splice(oldIndex, 1);
+      if (!isDeepStrictEqual(source, old))
+        throw new ForbiddenError("Изменить каталожную цитату может только администратор");
     }
   }
   return next;
