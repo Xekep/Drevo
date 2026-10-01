@@ -57,6 +57,9 @@ test("long press selects a card without opening a profile or relationship mode",
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile");
   await page.goto("/tree");
+  // Raw CDP touch events bypass Playwright's check that the card can receive
+  // input. Wait for the entrance animation to release the canvas first.
+  await expect(page.locator(".tree-canvas")).toHaveAttribute("aria-busy", "false");
   await touchGesture(
     page,
     page.getByTestId("rf__node-e2e-child").locator(".flow-person-content"),
