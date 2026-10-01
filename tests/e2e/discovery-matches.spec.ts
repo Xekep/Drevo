@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import { openAdminSection } from "./admin-navigation";
 
 test("archive admin proposes a match using only two published cards", async ({ page }) => {
-  const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров", birthYear: "1900" };
-  const target = { archiveId: "tree-b", id: "person-b", name: "Иван Петров", birthYear: "1901" };
+  const own = { archiveId: "tree-a", id: "family:человек.1", name: "Иван Петров", birthYear: "1900" };
+  const target = { archiveId: "tree-b", id: "ветка:person.2", name: "Иван Петров", birthYear: "1901" };
   let requested = false;
   let ignored = false;
   let archiveIgnored = false;
@@ -17,7 +17,9 @@ test("archive admin proposes a match using only two published cards", async ({ p
       : { results: [target], nextCursor: "page2" } });
   });
   await page.route("**/api/discovery/matches/candidates?**", (route) => {
-    const showIgnored = new URL(route.request().url()).searchParams.get("ignored") === "1";
+    const params = new URL(route.request().url()).searchParams;
+    expect(params.get("sourcePersonId")).toBe(own.id);
+    const showIgnored = params.get("ignored") === "1";
     return route.fulfill({ json: { candidates: !archiveIgnored && showIgnored === ignored ? [{ ...target,
       reasons: ["Совпадают имя и фамилия", "Год рождения близок (±2 года)"], conflicts: [],
     }] : [], truncated: false } });
@@ -33,15 +35,15 @@ test("archive admin proposes a match using only two published cards", async ({ p
   });
   await page.route("**/api/discovery/matches/ignored", (route) => {
     const body = route.request().postDataJSON();
-    expect(body.sourcePersonId).toBe("person-a");
-    expect(body.targetPersonId).toBe("person-b");
+    expect(body.sourcePersonId).toBe(own.id);
+    expect(body.targetPersonId).toBe(target.id);
     ignored = body.ignored;
     return route.fulfill({ json: { ignored } });
   });
   await page.route("**/api/discovery/matches", async (route) => {
     if (route.request().method() === "POST") {
       expect(route.request().postDataJSON()).toEqual({
-        sourcePersonId: "person-a", targetArchiveId: "tree-b", targetPersonId: "person-b",
+        sourcePersonId: own.id, targetArchiveId: "tree-b", targetPersonId: target.id,
         reason: "Совпадает место рождения",
       });
       requested = true;

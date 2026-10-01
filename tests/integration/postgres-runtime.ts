@@ -3552,6 +3552,90 @@ try {
   const restoredFamily = structuredClone(afterDiscovery.family);
   restoredFamily.people[0].deceased = false;
   await otherApp.archive.write(restoredFamily, afterDiscovery.revision);
+  const specialSourceId = "family:человек.1";
+  const specialTargetId = "ветка:person.2";
+  const ownSpecialBefore = await app.archive.read();
+  const ownSpecialFamily = structuredClone(ownSpecialBefore.family);
+  ownSpecialFamily.people.push({ ...structuredClone(ownSpecialFamily.people[0]),
+    id: specialSourceId, name: "Софья", surname: "Редкая", patronymic: "",
+    birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
+  await app.archive.write(ownSpecialFamily, ownSpecialBefore.revision);
+  const otherSpecialBefore = await otherApp.archive.read();
+  const otherSpecialFamily = structuredClone(otherSpecialBefore.family);
+  otherSpecialFamily.people.push({ ...structuredClone(otherSpecialFamily.people[0]),
+    id: specialTargetId, name: "Софья", surname: "Редкая", patronymic: "",
+    birth: "1900", death: "1980", deceased: true, parents: [], spouses: [], column: 54 });
+  await otherApp.archive.write(otherSpecialFamily, otherSpecialBefore.revision);
+  await publishedPeopleStore(app.archive.db).publish(specialSourceId, "owner");
+  await otherPublication.publish(specialTargetId, "owner");
+  const specialMatchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.241" };
+  const specialCandidateUrl = securedBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+    encodeURIComponent(specialSourceId);
+  assert.equal((await fetch(specialCandidateUrl, { headers })).status, 403,
+    "a reader cannot inspect candidates for a Unicode source ID");
+  assert.equal((await fetch(otherBase + "/api/discovery/matches/candidates?sourcePersonId=" +
+    encodeURIComponent(specialSourceId), { headers: specialMatchHeaders })).status, 404,
+  "another archive cannot use a published source ID as its own");
+  const specialCandidates = await fetch(specialCandidateUrl, { headers: specialMatchHeaders });
+  assert.equal(specialCandidates.status, 200);
+  assert.ok((await specialCandidates.json()).candidates.some((candidate: { id: string }) =>
+    candidate.id === specialTargetId), "indexed candidates include an explicitly published Unicode target ID");
+  const specialIgnoreBody = (ignored: boolean) => JSON.stringify({
+    sourcePersonId: specialSourceId, targetArchiveId: "other-archive",
+    targetPersonId: specialTargetId, ignored,
+  });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers, body: specialIgnoreBody(true),
+  })).status, 403, "a reader cannot ignore a candidate through a Unicode ID");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(true),
+  })).status, 200);
+  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+    candidate.id === specialTargetId), false, "ignoring hides only this suggested pair");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+    method: "POST", headers: specialMatchHeaders, body: specialIgnoreBody(false),
+  })).status, 200);
+  assert.ok((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+    candidate.id === specialTargetId), "restoring shows the same suggested pair");
+  const specialRequestBody = JSON.stringify({ sourcePersonId: specialSourceId,
+    targetArchiveId: "other-archive", targetPersonId: specialTargetId });
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers, body: specialRequestBody,
+  })).status, 403, "a reader cannot submit a Unicode-ID match request");
+  const specialRequest = await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: specialMatchHeaders, body: specialRequestBody,
+  });
+  assert.equal(specialRequest.status, 200);
+  const specialMatchId = (await specialRequest.json()).match.id as string;
+  const specialReverseRequest = await fetch(otherBase + "/api/discovery/matches", {
+    method: "POST", headers: specialMatchHeaders,
+    body: JSON.stringify({ sourcePersonId: specialTargetId,
+      targetArchiveId: "runtime-test", targetPersonId: specialSourceId }),
+  });
+  assert.equal(specialReverseRequest.status, 200);
+  assert.equal((await specialReverseRequest.json()).match.id, specialMatchId,
+    "a reverse request with both Unicode IDs reuses the same pair");
+  assert.equal((await fetch(securedBase + `/api/discovery/matches/${specialMatchId}`, {
+    method: "PATCH", headers: specialMatchHeaders, body: JSON.stringify({ decision: "revoke" }),
+  })).status, 200);
+  await otherPublication.unpublish(specialTargetId);
+  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })
+    .then((response) => response.json())).candidates.some((candidate: { id: string }) =>
+    candidate.id === specialTargetId), false,
+  "revoking the target publication removes its suggestion immediately");
+  await publishedPeopleStore(app.archive.db).unpublish(specialSourceId);
+  assert.equal((await fetch(specialCandidateUrl, { headers: specialMatchHeaders })).status, 404,
+    "revoking the source publication closes its candidate endpoint");
+  const ownSpecialAfter = await app.archive.read();
+  const ownWithoutSpecial = structuredClone(ownSpecialAfter.family);
+  ownWithoutSpecial.people = ownWithoutSpecial.people.filter((person) => person.id !== specialSourceId);
+  await app.archive.write(ownWithoutSpecial, ownSpecialAfter.revision);
+  const otherSpecialAfter = await otherApp.archive.read();
+  const otherWithoutSpecial = structuredClone(otherSpecialAfter.family);
+  otherWithoutSpecial.people = otherWithoutSpecial.people.filter((person) => person.id !== specialTargetId);
+  await otherApp.archive.write(otherWithoutSpecial, otherSpecialAfter.revision);
   const originalClientId = process.env.YANDEX_CLIENT_ID;
   const originalClientSecret = process.env.YANDEX_CLIENT_SECRET;
   process.env.YANDEX_CLIENT_ID = "runtime-test-client";
