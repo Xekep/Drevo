@@ -41,6 +41,7 @@ import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
+import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
@@ -1470,6 +1471,69 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  const exportAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  for (const [path, options, revoke] of [
+    ["/api/gedcom/export?format=gedcom7", { headers: archiveAdminHeaders },
+      "UPDATE archive_memberships SET role='reader' WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+    ["/api/gedcom/export-visible?format=gedcom551", {
+      method: "POST",
+      headers: { ...archiveAdminHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ids: JSON.stringify(["person-a"]) }),
+    }, "UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='vk:42'"],
+  ] as const) {
+    let reachedRead!: () => void;
+    let resumeRead!: () => void;
+    const readReached = new Promise<void>((resolve) => { reachedRead = resolve; });
+    const readGate = new Promise<void>((resolve) => { resumeRead = resolve; });
+    const delayedArchive = {
+      ...app.archive,
+      read: async () => {
+        const snapshot = await app!.archive.read();
+        reachedRead();
+        await readGate;
+        return snapshot;
+      },
+    };
+    const delayedExport = gedcomHttp(delayedArchive, exportAuth, source, process.env.PUBLIC_ORIGIN);
+    const exportServer = createServer((req, res) => {
+      void delayedExport.handle(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => exportServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (exportServer.address() as { port: number }).port;
+      const pending = fetch(`http://127.0.0.1:${port}${path}`, options);
+      let timer!: ReturnType<typeof setTimeout>;
+      const progress = await Promise.race([
+        readReached.then(() => "read"),
+        pending.then(() => "responded"),
+        new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
+      ]);
+      clearTimeout(timer);
+      assert.equal(progress, "read", "the export must reach the gated archive snapshot");
+      await client.query(revoke);
+      resumeRead();
+      const response = await pending;
+      assert.equal(response.status, 403,
+        "a revoked archive admin cannot receive a prepared plain GEDCOM export");
+      assert.doesNotMatch(await response.text(), /0 HEAD|1 NAME/);
+    } finally {
+      resumeRead();
+      await client.query("UPDATE archive_memberships SET role='admin',approved=true WHERE archive_id='runtime-test' AND user_id='vk:42'");
+      await delayedExport.close();
+      await new Promise<void>((resolve) => exportServer.close(() => resolve()));
+    }
+  }
+  await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id='vk:42'");
+  try {
+    for (const format of ["gedcom7", "gedzip7"])
+      assert.equal((await fetch(securedBase + `/api/gedcom/export?format=${format}`, {
+        headers: archiveAdminHeaders,
+      })).status, 403, "an unapproved archive admin cannot start a GEDCOM export");
+  } finally {
+    await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id='vk:42'");
+  }
   const commentAuthorLink = await app.archive.db.prepare("", "SELECT person_id FROM archive_memberships WHERE user_id='owner'").get();
   await app.archive.db.prepare("", "UPDATE archive_memberships SET person_id='person-a' WHERE user_id='owner'").run();
   try {
