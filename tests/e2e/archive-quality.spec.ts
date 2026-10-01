@@ -11,6 +11,10 @@ test("quality center separates relationship hints from missing evidence", async 
     );
     child.parents = ["e2e-child", "e2e-spouse", "e2e-memorial-person"];
     child.sources = [];
+    child.birth = "2000";
+    child.birthDateClaim = { value: "2000", sources: [{ title: "Запись о рождении", type: "архив", reference: "л. 1" }], confidence: "probable" };
+    child.birthPlace = "Тверь";
+    child.birthPlaceClaim = { value: "Тверь", sources: [{ title: "Запись о месте", type: "архив", reference: "л. 2" }], confidence: "conflicting" };
     child.events = [
       { id: "e2e-unsourced", type: "move", title: "Переезд", date: "2015" },
     ];
@@ -25,10 +29,15 @@ test("quality center separates relationship hints from missing evidence", async 
   await expect(
     page.getByText("Событие без прикреплённого источника"),
   ).toBeVisible();
+  await expect(page.getByText("Цитируемые факты ещё не подтверждены оценкой исследователя")).toBeVisible();
+  await expect(page.getByText("Факты с ручной оценкой «Противоречиво»")).toHaveCount(0);
   await expect(page.getByText("Больше двух кровных родителей")).toHaveCount(0);
+  await page.getByRole("button", { name: /Противоречия/ }).click();
+  await expect(page.getByText("Факты с ручной оценкой «Противоречиво»")).toBeVisible();
+  await expect(page.getByText("Цитируемые факты ещё не подтверждены оценкой исследователя")).toHaveCount(0);
   await page.getByRole("button", { name: /Пробелы исследования/ }).click();
   await expect(
-    page.getByText("У жизненных данных нет источника в карточке").first(),
+    page.getByText("Нет точных источников для жизненных данных").first(),
   ).toBeVisible();
   await page.getByRole("button", { name: /Возможные ошибки/ }).click();
   await expect(page.getByText("Больше двух кровных родителей")).toBeVisible();
