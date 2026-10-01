@@ -156,6 +156,13 @@ export async function createAuth(
       if (local) return null;
       return (await sessionFor(req))?.userId || null;
     },
+    async accountSession(req: IncomingMessage) {
+      if (local) return null;
+      const session = await sessionFor(req);
+      return session
+        ? { accountId: session.userId, tokenHash: session.tokenHash }
+        : null;
+    },
     async recentOAuthSession(req: IncomingMessage) {
       if (!oauthProof || local) return false;
       const session = await sessionFor(req);

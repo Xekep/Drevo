@@ -4,6 +4,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import {
   accountSelfDeletion,
   AccountDeletionConflict,
+  AccountDeletionSessionExpired,
 } from "./account-self-deletion.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
@@ -58,8 +59,8 @@ export function accountSelfDeletionHttp(
     };
     if (!deletion.available)
       return send(404, { error: "Удаление здесь недоступно" });
-    const accountId = await auth.accountId(req);
-    if (!accountId) return send(401, { error: "Требуется вход в аккаунт" });
+    const session = await auth.accountSession(req);
+    if (!session) return send(401, { error: "Требуется вход в аккаунт" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return send(403, { error: "Недопустимый источник запроса" });
     if (
@@ -69,15 +70,16 @@ export function accountSelfDeletionHttp(
       return send(400, { error: "Откройте удаление в личном кабинете" });
     try {
       if (req.method === "GET") {
-        const preview = await deletion.preview(accountId);
+        const preview = await deletion.preview(session.accountId);
         return preview
           ? send(200, preview)
           : send(404, { error: "Аккаунт не найден" });
       }
       if (req.method === "DELETE") {
         const result = await deletion.remove(
-          accountId,
+          session.accountId,
           await readConfirmation(req),
+          session.tokenHash,
         );
         await auth.logout(req, res);
         console.log(
@@ -94,9 +96,11 @@ export function accountSelfDeletionHttp(
       const status =
         error instanceof SyntaxError
           ? 400
-          : error instanceof AccountDeletionConflict
-            ? 409
-            : 500;
+          : error instanceof AccountDeletionSessionExpired
+            ? 401
+            : error instanceof AccountDeletionConflict
+              ? 409
+              : 500;
       if (status === 500) console.error("account_deletion_failed", error);
       return send(status, {
         error:

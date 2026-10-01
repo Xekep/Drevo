@@ -1,6 +1,7 @@
 import type { StoreDatabase } from "./store-database.ts";
 
 export class AccountDeletionConflict extends Error {}
+export class AccountDeletionSessionExpired extends Error {}
 
 export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
   const available =
@@ -43,6 +44,7 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
     async remove(
       accountId: string,
       confirmation: { name: string; leaveSharedArchives: boolean; redactComments?: boolean },
+      sessionTokenHash: string,
     ) {
       if (!available || !db.postgresTransaction)
         throw new AccountDeletionConflict("Удаление здесь недоступно");
@@ -57,6 +59,18 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         );
         if (!account.rowCount)
           throw new AccountDeletionConflict("Аккаунт уже удалён");
+        // Keep the existing advisory -> account -> session lock order. A
+        // revoke committed before this lock makes deletion fail; a later
+        // revoke waits until the account deletion commits.
+        const session = await client.query(
+          "SELECT user_id,expires_at FROM account_sessions WHERE token_hash=$1 FOR UPDATE",
+          [sessionTokenHash],
+        );
+        if (
+          session.rows[0]?.user_id !== accountId ||
+          Number(session.rows[0]?.expires_at) <= Date.now()
+        )
+          throw new AccountDeletionSessionExpired("Сессия завершена. Войдите снова");
         const name = String(account.rows[0].name);
         if (confirmation.name !== name)
           throw new AccountDeletionConflict("Имя аккаунта не совпало");

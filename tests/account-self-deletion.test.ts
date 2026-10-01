@@ -20,6 +20,8 @@ function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled 
         archiveId = String(args[0]);
         return { rowCount: 1, rows: [{}] };
       }
+      if (sql.includes("FROM account_sessions WHERE token_hash=$1 FOR UPDATE"))
+        return { rowCount: 1, rows: [{ user_id: "account-1", expires_at: Date.now() + 60_000 }] };
       if (sql.includes("FROM accounts WHERE id=$1 FOR UPDATE"))
         return { rowCount: 1, rows: [{ name: "Имя" }] };
       if (sql.startsWith("SELECT name FROM accounts WHERE id=$1"))
@@ -66,7 +68,7 @@ test("account deletion requires consent before changing any rows", async () => {
     accountSelfDeletion(db, true).remove("account-1", {
       name: "Имя",
       leaveSharedArchives: false,
-    }),
+    }, "test-session-hash"),
     AccountDeletionConflict,
   );
   assert.deepEqual(writes, []);
@@ -77,7 +79,7 @@ test("account deletion stops before writing if privileged cleanup is not install
   await assert.rejects(
     accountSelfDeletion(db, true).remove("account-1", {
       name: "Имя", leaveSharedArchives: true,
-    }),
+    }, "test-session-hash"),
     AccountDeletionConflict,
   );
   assert.deepEqual(writes, []);
@@ -88,7 +90,7 @@ test("account deletion stops before writing if union anonymization is not instal
   await assert.rejects(
     accountSelfDeletion(db, true).remove("account-1", {
       name: "Имя", leaveSharedArchives: true,
-    }),
+    }, "test-session-hash"),
     /058/,
   );
   assert.deepEqual(writes, []);
@@ -99,7 +101,7 @@ test("account deletion stops before writing if annotation anonymization is not i
   await assert.rejects(
     accountSelfDeletion(db, true).remove("account-1", {
       name: "Имя", leaveSharedArchives: true,
-    }),
+    }, "test-session-hash"),
     /059/,
   );
   assert.deepEqual(writes, []);
@@ -110,7 +112,7 @@ test("account deletion runs privileged anonymization before removing memberships
   const result = await accountSelfDeletion(db, true).remove("account-1", {
     name: "Имя",
     leaveSharedArchives: true,
-  });
+  }, "test-session-hash");
   assert.deepEqual(result, { deleted: true, sharedArchives: 1 });
   const tombstone = writes.find(({ sql }) => sql.startsWith("INSERT INTO deleted_account_tombstones"));
   assert.ok(tombstone);

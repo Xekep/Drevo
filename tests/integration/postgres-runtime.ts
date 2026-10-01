@@ -46,6 +46,7 @@ import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
 import { accountSelfDeletion } from "../../src/server/account-self-deletion.ts";
+import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
@@ -247,9 +248,11 @@ try {
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO ${runtimeRole}`);
     await client.query("INSERT INTO accounts(id,name,created_at) VALUES('union-upgrade-gate','Upgrade gate',now())");
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES('union-upgrade-session','union-upgrade-gate',$1)",
+      [Date.now() + 60_000]);
     await assert.rejects(
       accountSelfDeletion(live.db, true).remove("union-upgrade-gate",
-        { name: "Upgrade gate", leaveSharedArchives: true }),
+        { name: "Upgrade gate", leaveSharedArchives: true }, "union-upgrade-session"),
       /058/, "the old privileged function cannot delete an account with unredacted union authorship",
     );
     assert.equal((await client.query("SELECT count(*)::int AS n FROM deleted_account_tombstones WHERE id='union-upgrade-gate'")).rows[0].n,
@@ -326,9 +329,11 @@ try {
     await client.query("DELETE FROM accounts WHERE id='reused-union-author'");
     await client.query("DELETE FROM deleted_account_tombstones WHERE id IN ('old-union-author','reused-union-author')");
     await client.query("INSERT INTO accounts(id,name,created_at) VALUES('annotation-upgrade-gate','Upgrade gate',now())");
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES('annotation-upgrade-session','annotation-upgrade-gate',$1)",
+      [Date.now() + 60_000]);
     await assert.rejects(
       accountSelfDeletion(live.db, true).remove("annotation-upgrade-gate",
-        { name: "Upgrade gate", leaveSharedArchives: true }),
+        { name: "Upgrade gate", leaveSharedArchives: true }, "annotation-upgrade-session"),
       /059/, "deletion cannot leave document annotation author IDs behind before migration 059",
     );
     assert.equal((await client.query("SELECT count(*)::int AS n FROM deleted_account_tombstones WHERE id='annotation-upgrade-gate'")).rows[0].n,
@@ -5260,6 +5265,71 @@ try {
       "Content-Type": "application/json",
       "X-Drevo-Account-Deletion": "1",
     };
+    const deletionDb = oauthApp.archive.db;
+    const revokedDeletionToken = newSessionToken();
+    const revokedDeletionHash = sessionTokenHash(revokedDeletionToken);
+    await client.query(
+      "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'deleting-account',$2)",
+      [revokedDeletionHash, Date.now() + 600_000],
+    );
+    const deletionAuth = await createAuth(await userStore(deletionDb), deletionDb,
+      process.env.PUBLIC_ORIGIN);
+    let reachedDeletionAuth!: () => void;
+    let resumeDeletionAuth!: () => void;
+    const deletionAuthReached = new Promise<void>((resolve) => { reachedDeletionAuth = resolve; });
+    const deletionAuthGate = new Promise<void>((resolve) => { resumeDeletionAuth = resolve; });
+    const guardedDeletion = accountSelfDeletionHttp(deletionDb, {
+      ...deletionAuth,
+      accountSession: async (req) => {
+        const session = await deletionAuth.accountSession(req);
+        if (session?.tokenHash === revokedDeletionHash) {
+          reachedDeletionAuth();
+          await deletionAuthGate;
+        }
+        return session;
+      },
+    }, true, process.env.PUBLIC_ORIGIN);
+    const deletionServer = createServer((req, res) => {
+      void guardedDeletion(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => deletionServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (deletionServer.address() as { port: number }).port;
+      const revokedDelete = fetch(`http://127.0.0.1:${port}${accountDeletionPath}`, {
+        method: "DELETE",
+        headers: { ...deletingHeaders, Cookie: `drevo_session=${revokedDeletionToken}`,
+          Origin: process.env.PUBLIC_ORIGIN! },
+        body: JSON.stringify({ name: "Delete me", leaveSharedArchives: true }),
+      });
+      await Promise.race([
+        deletionAuthReached,
+        revokedDelete.then(() => { throw new Error("Deletion completed before the session barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Deletion did not validate its initial session")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      assert.equal((await fetch(oauthBase + "/auth/logout", {
+        method: "POST",
+        headers: { Cookie: `drevo_session=${revokedDeletionToken}`,
+          Origin: process.env.PUBLIC_ORIGIN! },
+      })).status, 200, "logout commits the session revocation before deletion resumes");
+      assert.equal((await client.query("SELECT 1 FROM account_sessions WHERE token_hash=$1",
+        [revokedDeletionHash])).rowCount, 0);
+      resumeDeletionAuth();
+      const revokedResponse = await revokedDelete;
+      assert.equal(revokedResponse.status, 401,
+        "a session revoked after initial HTTP auth cannot delete its account");
+      assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n,
+        1, "the revoked request leaves the account intact");
+      assert.equal((await client.query("SELECT count(*)::int AS n FROM deleted_account_tombstones WHERE id='deleting-account'")).rows[0].n,
+        0, "the revoked request writes no deletion tombstone");
+    } finally {
+      resumeDeletionAuth();
+      deletionServer.closeAllConnections();
+      await new Promise<void>((resolve) => deletionServer.close(() => resolve()));
+    }
     const accountDeletionPlan = await fetch(oauthBase + accountDeletionPath, {
       headers: deletingHeaders,
     }).then((response) => response.json());
