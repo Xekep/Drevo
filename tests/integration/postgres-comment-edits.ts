@@ -4,6 +4,11 @@ import type { StoreDatabase } from "../../src/server/store-database.ts";
 import { userStorageBytes } from "../../src/server/storage-limits.ts";
 import { postgresMediaBytes } from "../../src/server/postgres-media-quota.ts";
 import sharp from "sharp";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { writePortablePostgresBackup } from "../../src/server/postgres-portable-backup.ts";
 
 export async function verifyPostgresCommentEdits(
   base: string,
@@ -52,6 +57,23 @@ export async function verifyPostgresCommentEdits(
   assert.equal(original.author, "Тестов Иван");
   assert.equal(original.authorPersonId, "person-a");
   assert.equal(original.attachments.length, 2);
+  const backupDirectory = await mkdtemp(join(tmpdir(), "drevo-comment-backup-"));
+  try {
+    const backupFile = join(backupDirectory, "backup.sqlite");
+    await writePortablePostgresBackup(db, backupFile);
+    const saved = new DatabaseSync(backupFile, { readOnly: true });
+    try {
+      assert.deepEqual(
+        JSON.parse(String(saved.prepare("SELECT attachments FROM person_comments WHERE id=?").get(original.id)?.attachments)),
+        original.attachments.map(({ id, name, type, size }) => ({ id, name, type, size })),
+        "the downloadable PostgreSQL backup retains attachment metadata as SQLite JSON",
+      );
+    } finally {
+      saved.close();
+    }
+  } finally {
+    await rm(backupDirectory, { recursive: true, force: true });
+  }
   assert.equal(
     await userStorageBytes(db, "owner"),
     userBytesBefore + image.length + note.length,
