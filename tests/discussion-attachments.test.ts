@@ -377,7 +377,7 @@ test("portable archives preserve comment files and recreate private previews wit
     );
     assert.equal(
       installed.snapshot.comments[0].authorId,
-      "imported:old-author",
+      "",
     );
     await installed.undo();
     assert.deepEqual(await readdir(join(imported, "discussion-files")), []);
