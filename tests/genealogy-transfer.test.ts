@@ -677,6 +677,8 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     pdf.write("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
     await writeFile(join(uploads, "photo.png"), picture);
     await writeFile(join(uploads, "file.pdf"), pdf);
+    const tiff = Buffer.concat([await sharp({ create: { width: 20, height: 90, pageHeight: 30, channels: 3, background: "green" } }).tiff().toBuffer(), Buffer.alloc(21 * 1024 * 1024)]);
+    await writeFile(join(uploads, "scan.tif"), tiff);
     const family = seed();
     family.people[0].photo = "/media/photo.png";
     family.people[0].maidenName = "Иванова";
@@ -733,6 +735,7 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
       },
     ];
     const path = join(dir, "test.gdz");
+    media.push({ ...media[1], id: "tiff", file: "documents/scan.tif", mime: "image/tiff", title: "TIFF" });
     await writeGenealogyPackage(path, uploads, family, media);
     const zip = await openPromise(path);
     const names: string[] = [];
@@ -750,6 +753,7 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
       "gedcom.ged",
       "media/file.pdf",
       "media/photo.png",
+      "media/scan.tif",
     ]);
     assert.match(gedcom, /2 TYPE BIRTH\r\n/);
     const standard = gedcom.replace(
@@ -771,7 +775,7 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     await mkdir(stage);
     const parsed = await prepareGenealogyImport(path, stage, "back");
     assert.equal(parsed.family.photos?.length, 1);
-    assert.equal(parsed.files.length, 2);
+    assert.equal(parsed.files.length, 3);
     assert.equal(parsed.family.people[0].photo, parsed.family.photos![0].url);
     assert.deepEqual(
       parsed.family.people[0].birthLocation,
@@ -796,8 +800,9 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
     for (const file of parsed.files)
       assert.deepEqual(
         await readFile(join(stage, file.name)),
-        file.documentId ? pdf : picture,
+        file.name.endsWith(".tif") ? tiff : file.documentId ? pdf : picture,
       );
+    assert.ok(parsed.files.find(file => file.name.endsWith(".tif"))?.documentId);
     assert.deepEqual(parsed.files.find((f) => f.documentId)?.personIds, [
       "back-p3",
     ]);

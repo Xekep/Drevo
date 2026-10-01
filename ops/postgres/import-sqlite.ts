@@ -307,7 +307,7 @@ function mediaReferences(rows: Map<string, Row[]>, uploads: string) {
       return;
     }
     const name = decodeURIComponent(url.slice("/media/".length));
-    if (!/^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/.test(name))
+    if (!/^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)$/.test(name))
       throw new Error("Некорректная ссылка на локальный медиафайл");
     names.add(name);
   }

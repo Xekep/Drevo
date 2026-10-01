@@ -46,9 +46,11 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     const scan = await sharp({
       create: { width: 12, height: 16, channels: 3, background: "#e2decf" },
     }).png().toBuffer();
+    const tiff = await sharp({ create: { width: 12, height: 48, pageHeight: 16, channels: 3, background: "red" } }).tiff().toBuffer();
     await writeFile(join(uploads, "portrait.png"), image);
     await writeFile(join(uploads, "record.pdf"), pdf);
     await writeFile(join(uploads, "scan.png"), scan);
+    await writeFile(join(uploads, "scan.tif"), tiff);
     const family: Family = {
       title: "Family",
       description: "Evidence",
@@ -109,6 +111,14 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           annotations: [],
           personIds: ["p1"],
         },
+        {
+          id: "db91a3f8-5a1d-4794-9b7a-ff7e070d5927", title: "Три страницы TIFF",
+          fileName: "scan.tif", createdAt: "2026-10-01T00:00:00Z", uploadedBy: "owner",
+          documentType: "Письмо", documentDate: "1881", place: "Томск", description: "", provenance: "",
+          annotations: [{ id: "4a71a3f8-5a1d-4794-9b7a-ff7e070d5927", authorId: "owner", authorName: "Владелец", createdAt: "2026-10-01T00:00:00Z",
+            page: 2, x: 0.1, y: 0.2, width: 0.3, height: 0.1, text: "Вторая страница" }],
+          personIds: ["p1"],
+        },
       ],
       comments: [
         {
@@ -147,6 +157,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       "media/portrait.png",
       "media/record.pdf",
       "media/scan.png",
+      "media/scan.tif",
     ]);
     assert.equal(
       await portableUncompressedBytes(path),
@@ -188,6 +199,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       /источник или документ/);
     assert.equal(imported.files.get("media/record.pdf")?.sha256, hash(pdf));
     assert.equal(imported.files.get("media/scan.png")?.sha256, hash(scan));
+    assert.equal(imported.files.get("media/scan.tif")?.sha256, hash(tiff));
     const destination = join(dir, "destination");
     await mkdir(destination);
     const installed = await installPortableOriginals(imported, destination);
@@ -207,6 +219,8 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       await readFile(join(destination, installed.snapshot.documents[1].fileName)),
       scan,
     );
+    assert.deepEqual(await readFile(join(destination, installed.snapshot.documents[2].fileName)), tiff);
+    assert.equal(installed.snapshot.documents[2].annotations[0].page, 2);
     const archive = await openArchive(":memory:", {
       title: "Empty",
       description: "",
@@ -234,7 +248,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       assert.equal(
         (await archive.db.prepare("SELECT count(*) AS n FROM documents").get())
           ?.n,
-        2,
+        3,
       );
       assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM source_catalog").get())?.n, 1);
       assert.equal(result.family.people[0].sources[0].catalogId, "source-1");

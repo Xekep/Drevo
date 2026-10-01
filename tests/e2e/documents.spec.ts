@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import PDFDocument from "pdfkit";
 import sharp from "sharp";
 import { readFileSync } from "node:fs";
+import { sampleTiff } from "../fixtures/tiff.ts";
 
 test.beforeEach(async ({ page }) => {
   const csp = readFileSync("ops/nginx.conf", "utf8").match(
@@ -74,18 +75,19 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.105");
 });
 
-test("скан изображения открывается в ридере и по постоянной ссылке", async ({
+for (const format of ["png", "jpeg", "tiff"] as const) {
+test(`скан ${format} открывается в ридере и по постоянной ссылке`, async ({
   page,
 }, testInfo) => {
-  const title = `Скан документа ${testInfo.project.name} ${Date.now()}`;
-  const scan = await sharp({ create: {
+  const title = `Скан ${format} ${testInfo.project.name} ${Date.now()}`;
+  const scan = format === "tiff" ? await sampleTiff(360, 480) : await sharp({ create: {
     width: 360, height: 480, channels: 3, background: "#e2decf",
-  } }).png().toBuffer();
+  } })[format]().toBuffer();
   await page.goto("/documents");
   await page.getByRole("button", { name: "Добавить документ" }).click();
   const form = page.locator(".documents-upload");
   await form.locator('input[type="file"]').setInputFiles({
-    name: "scan.png", mimeType: "image/png", buffer: scan,
+    name: `scan.${format}`, mimeType: `image/${format}`, buffer: scan,
   });
   await form.getByLabel("Название").fill(title);
   await form.getByRole("button", { name: "Добавить документ" }).click();
@@ -98,11 +100,43 @@ test("скан изображения открывается в ридере и 
     .toBe(360);
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]{36}$/);
   const url = page.url();
+  await expect(book.getByRole("button", { name: "Лупа" })).toBeVisible();
+  await expect(book.getByRole("searchbox", { name: "Поиск в документе" })).toHaveCount(0);
+  const downloadPromise = page.waitForEvent("download");
+  await book.getByRole("link", { name: "Скачать оригинал" }).click();
+  const download = await downloadPromise;
+  expect(readFileSync((await download.path())!)).toEqual(scan);
+  if (format === "tiff") {
+    await page.goto(`${url}/page/3`);
+    const last = book.locator('.BRpage-visible[data-index="2"] img.BRpageimage');
+    await expect(last).toBeVisible();
+    await expect.poll(() => last.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(360);
+    const pixels = await last.evaluate(async (node: HTMLImageElement) => {
+      await node.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(node, 0, 0, 1, 1);
+      return [...context.getImageData(0, 0, 1, 1).data];
+    });
+    expect(pixels[2]).toBeGreaterThan(245);
+    expect(pixels[0]).toBeLessThan(10);
+    const documentId = new URL(url).pathname.split("/").at(-1);
+    const note = await page.request.post(`/api/documents/${documentId}/annotations`, {
+      data: { page: 3, x: 0.1, y: 0.2, width: 0.4, height: 0.1, text: "Третья страница TIFF" },
+    });
+    expect(note.status()).toBe(201);
+    await page.reload();
+    await book.getByRole("button", { name: "Комментарии" }).click();
+    await expect(reader.locator(".pdf-book-sidebar")).toContainText("Третья страница TIFF");
+    await page.goto(url);
+  }
   await page.reload();
   await expect(page).toHaveURL(url);
   await expect(book.locator('.BRpage-visible[data-index="0"] img.BRpageimage'))
     .toBeVisible();
 });
+}
 
 test("верхний поиск находит PDF и открывает постоянную ссылку", async ({
   page,
@@ -333,7 +367,7 @@ test("каталог документов отклоняет перетаски�
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Поддерживаются PDF, JPEG, PNG, WebP и GIF" }),
+      .filter({ hasText: "Поддерживаются PDF, TIFF, JPEG, PNG, WebP и GIF" }),
   ).toBeVisible();
   await expect(
     page.locator(".documents-upload-submit"),

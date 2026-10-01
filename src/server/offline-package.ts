@@ -173,7 +173,7 @@ export async function writeOfflinePackage(
   }> = [];
   let total = 0;
   for (const name of [...mediaPaths].sort()) {
-    if (!/^media\/[a-f0-9-]{36}\.(?:jpg|png|webp|gif|pdf)$/.test(name))
+    if (!/^media\/[a-f0-9-]{36}\.(?:jpg|png|webp|gif|tif|pdf)$/.test(name))
       throw new Error("Некорректный путь вложения.");
     const path = join(uploadsDirectory, name.slice(6));
     const info = await lstat(path);

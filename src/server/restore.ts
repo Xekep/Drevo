@@ -248,7 +248,7 @@ async function unpack(
             if (
               name !== "drevo.sqlite" &&
               name !== "drevo.sqlite.secrets.key" &&
-              !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|pdf)$/.test(name)
+              !/^uploads\/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$/.test(name)
             )
               throw new Error("Недопустимый путь в бэкапе");
             // Full disaster-recovery backups include the encryption key. The
@@ -259,7 +259,7 @@ async function unpack(
               remaining >
               (name === "drevo.sqlite"
                 ? SQLITE_LIMIT
-                : name.endsWith(".pdf")
+                : /\.(?:pdf|tif)$/.test(name)
                   ? MAX_PDF_BYTES
                   : 20 * 1024 * 1024)
             )

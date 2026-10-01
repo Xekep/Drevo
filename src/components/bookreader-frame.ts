@@ -198,6 +198,34 @@ async function prepareDocument(
     readBookmarks = () => {
       void readOutline(pdf);
     };
+  } else if (documentFileTypeFromMime(command.mimeType)?.extension === "tif") {
+    const fileUrl = new URL(command.url, location.href);
+    const pagesUrl = new URL(fileUrl);
+    pagesUrl.searchParams.set("reader", "pages");
+    const response = await fetch(pagesUrl, { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Не удалось подготовить страницы TIFF");
+    const result = (await response.json()) as { pages: ReaderPage[] };
+    if (
+      !Array.isArray(result.pages) ||
+      result.pages.length < 1 ||
+      result.pages.length > 2000 ||
+      result.pages.some(
+        (page) =>
+          !Number.isFinite(page.width) ||
+          !Number.isFinite(page.height) ||
+          page.width <= 0 ||
+          page.height <= 0,
+      )
+    )
+      throw new Error("Некорректные страницы TIFF");
+    dimensions = result.pages;
+    pageCount = dimensions.length;
+    render = (index) => {
+      const url = new URL(fileUrl);
+      url.searchParams.set("reader", "page");
+      url.searchParams.set("page", String(index + 1));
+      return Promise.resolve(url.href);
+    };
   } else {
     const type = documentFileTypeFromMime(command.mimeType);
     if (!type || type.extension === "pdf")

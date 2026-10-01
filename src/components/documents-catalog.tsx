@@ -121,15 +121,15 @@ export function DocumentsCatalog({
       const type = documentFileTypeFromName(next.name);
       if (
         !type ||
-        (next.type && ![type.mime, "application/octet-stream"].includes(next.type))
+        (next.type && ![type.mime, "application/octet-stream", ...(type.extension === "tif" ? ["image/x-tiff"] : [])].includes(next.type))
       ) {
-        setUploadError("Поддерживаются PDF, JPEG, PNG, WebP и GIF");
+        setUploadError("Поддерживаются PDF, TIFF, JPEG, PNG, WebP и GIF");
         setFile(null);
         return;
       }
       if (next.size > type.maxBytes) {
-        setUploadError(type.extension === "pdf"
-          ? "PDF должен быть не больше 50 МБ"
+        setUploadError(["pdf", "tif"].includes(type.extension)
+          ? "PDF или TIFF должен быть не больше 50 МБ"
           : "Изображение должно быть не больше 20 МБ");
         setFile(null);
         return;
@@ -577,7 +577,7 @@ export function DocumentsCatalog({
             </span>
             <input
               type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/jpeg,image/png,image/webp,image/gif"
+              accept=".pdf,.tif,.tiff,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/tiff,image/x-tiff,image/jpeg,image/png,image/webp,image/gif"
               disabled={uploading}
               aria-label="Файл документа"
               onChange={(event) => {
