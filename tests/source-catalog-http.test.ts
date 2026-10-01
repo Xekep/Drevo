@@ -66,6 +66,8 @@ test("one catalog source confirms multiple facts, stays current, and legacy cita
     assert.equal(person.sources[0].title, "Старая запись");
     assert.equal(person.sources[1].title, "Исправленная книга");
     assert.equal(person.events?.[0].sources?.[0].title, "Исправленная книга");
+    assert.equal((await app.archive.peoplePage(0, 10))[0].sources[1].title,
+      "Исправленная книга");
     assert.equal(person.events?.[0].sources?.[0].documentPage, 12);
     assert.equal((await request(`/api/sources/${source.id}`, "PUT", {
       version: 2, documentIds: [],

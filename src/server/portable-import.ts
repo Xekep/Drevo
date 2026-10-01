@@ -12,6 +12,7 @@ import { validAnnotationSelection } from "../shared/document-annotations.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
 import { parseCatalogSource } from "../shared/source-catalog.ts";
+import { allCitations } from "./source-catalog-store.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import {
@@ -181,18 +182,8 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     documentFiles.add(document.fileName);
     documents.push(document as PortableDocument);
   }
-  for (const person of family.people) {
-    const sources = [
-      ...person.sources,
-      ...(person.events || []).flatMap((event) => event.sources || []),
-    ];
-    if (
-      sources.some(
-        (source) => source.documentId && !documentIds.has(source.documentId),
-      )
-    )
-      invalid("Источник ссылается на отсутствующий документ");
-  }
+  if (allCitations(family).some((source) => source.documentId && !documentIds.has(source.documentId)))
+    invalid("Источник ссылается на отсутствующий документ");
   if (data.sources !== undefined && (!Array.isArray(data.sources) || data.sources.length > 50_000))
     invalid("Некорректный каталог источников");
   const sourceIds = new Set<string>();
@@ -204,11 +195,10 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     return source;
   });
   const sourcesById = new Map(sources.map((source) => [source.id, source]));
-  for (const person of family.people)
-    for (const source of [...person.sources, ...(person.events || []).flatMap((event) => event.sources || [])])
-      if (source.catalogId && (!sourceIds.has(source.catalogId) ||
-        (source.documentId && !sourcesById.get(source.catalogId)?.documentIds.includes(source.documentId))))
-        invalid("Ссылка на отсутствующий источник или документ в пакете Drevo");
+  for (const source of allCitations(family))
+    if (source.catalogId && (!sourceIds.has(source.catalogId) ||
+      (source.documentId && !sourcesById.get(source.catalogId)?.documentIds.includes(source.documentId))))
+      invalid("Ссылка на отсутствующий источник или документ в пакете Drevo");
   const commentIds = new Set<number>();
   const comments: PortableComment[] = [];
   for (const raw of data.comments) {

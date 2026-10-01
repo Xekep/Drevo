@@ -42,10 +42,19 @@ export function sourceCatalogStore(db: StoreDatabase) {
 }
 
 export function allCitations(family: Family): Source[] {
-  return family.people.flatMap((person) => [
-    ...person.sources,
-    ...(person.events || []).flatMap((event) => event.sources || []),
-  ]);
+  return [
+    ...family.people.flatMap((person) => [
+      ...person.sources,
+      ...(person.events || []).flatMap((event) => event.sources || []),
+    ]),
+    ...(family.unions || []).flatMap((union) => [
+      ...(union.sources || []),
+      ...(union.formation?.sources || []),
+      ...(union.ending?.sources || []),
+      ...(union.divorce?.sources || []),
+      ...(union.ongoing?.sources || []),
+    ]),
+  ];
 }
 
 /** Archive writes may retain legacy inline citations, but catalog links must be local. */
@@ -81,6 +90,11 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
     person.sources = person.sources.map(resolve);
     for (const event of person.events || [])
       if (event.sources) event.sources = event.sources.map(resolve);
+  }
+  for (const union of family.unions || []) {
+    if (union.sources) union.sources = union.sources.map(resolve);
+    for (const milestone of [union.formation, union.ending, union.divorce, union.ongoing])
+      if (milestone?.sources) milestone.sources = milestone.sources.map(resolve);
   }
   return family;
 }

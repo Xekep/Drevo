@@ -683,16 +683,18 @@ async function readArchiveOverview(db: StoreDatabase, includePortraits = true) {
       )
       .all()
   ).map((row) => JSON.parse(String(row.data)));
+  const family: Family = {
+    title: meta.title,
+    description: meta.description,
+    demo: meta.demo,
+    people,
+    ...(unions.length ? { unions } : {}),
+    links,
+    photos: [],
+  };
+  await hydrateCatalogCitations(db, family);
   return {
-    family: {
-      title: meta.title,
-      description: meta.description,
-      demo: meta.demo,
-      people,
-      ...(unions.length ? { unions } : {}),
-      links,
-      photos: [],
-    } as Family,
+    family,
     revision: meta.revision,
     totals: { people: meta.people, photos: meta.photos },
   };
@@ -703,7 +705,7 @@ async function readPeoplePage(
   offset: number,
   limit: number,
 ): Promise<Person[]> {
-  return (
+  const people = (
     await db
       .prepare(
         "SELECT data FROM people ORDER BY rowid LIMIT ? OFFSET ?",
@@ -718,6 +720,10 @@ async function readPeoplePage(
         spouses: [],
       }) as Person,
   );
+  await hydrateCatalogCitations(db, {
+    title: "", description: "", demo: false, people,
+  });
+  return people;
 }
 
 async function readPhotoPage(

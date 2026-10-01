@@ -36,6 +36,9 @@ const validSources = (sources: Source[] | undefined) =>
     sources.every(
       (s) =>
         s &&
+        (s.catalogId === undefined ||
+          (typeof s.catalogId === "string" &&
+            /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(s.catalogId))) &&
         typeof s.title === "string" &&
         typeof s.type === "string" &&
         typeof s.reference === "string" &&
