@@ -11,6 +11,7 @@ import { authorizeArchive } from "../src/server/permissions.ts";
 import { startServer } from "../src/server/index.ts";
 import { writePortablePackage } from "../src/server/portable-package.ts";
 import { readPortablePackage } from "../src/server/portable-import.ts";
+import { newSessionToken, sessionTokenHash } from "../src/server/session-token.ts";
 import type { ArchiveUser, ClaimConfidence, Family, PersonValueClaim } from "../src/domain/index.ts";
 
 const citation = { title: "Метрическая книга", type: "архивная запись", reference: "ф. 6, д. 104" };
@@ -64,8 +65,17 @@ test("only an owning researcher or administrator may assess an existing claim", 
     .people[0].birthDateClaim?.confidence, "confirmed");
   assert.throws(() => authorizeArchive(next, before, user("researcher", "relative")),
     /Статус достоверности/);
+  const withoutClaim = structuredClone(next);
+  delete withoutClaim.people[0].birthDateClaim;
+  assert.throws(() => authorizeArchive(withoutClaim, next, user("researcher", "relative")),
+    /Статус достоверности/, "a relative cannot erase an assessment by unlinking the claim");
   assert.throws(() => authorizeArchive(next, before, user("other", "researcher")),
     /только свои карточки/);
+  const editedCitation = structuredClone(next);
+  editedCitation.people[0].birthDateClaim!.sources.push({ ...citation, reference: "л. 8" });
+  assert.equal(authorizeArchive(editedCitation, next, user("researcher", "relative"))
+    .people[0].birthDateClaim?.sources.length, 2,
+    "a relative can still improve citations without changing the assessment");
   const unassessed = structuredClone(before);
   unassessed.people[0].birthDateClaim!.sources.push({ ...citation, reference: "л. 8" });
   assert.equal(authorizeArchive(unassessed, before, user("researcher", "relative"))
@@ -137,6 +147,48 @@ test("HTTP writes persist assessment and reject a silent value change", async ()
     assert.equal((await app.archive.read()).family.people[0].birth, "1880");
   } finally {
     await app.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("HTTP relative cannot set or erase an assessment but may edit its citations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-confidence-rights-"));
+  const previousOrigin = process.env.PUBLIC_ORIGIN;
+  process.env.PUBLIC_ORIGIN = "https://archive.test";
+  const app = await startServer(0, join(directory, "archive.sqlite"), true);
+  const origin = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  try {
+    const seed = await app.archive.read();
+    await app.archive.write(assessed(), seed.revision);
+    await app.archive.db.prepare("INSERT INTO users(id,name,role,approved) VALUES('researcher','Участник','relative',1)").run();
+    const token = newSessionToken();
+    await app.archive.db.prepare("INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
+      .run(sessionTokenHash(token), "researcher", Date.now() + 60_000);
+    const post = async (previous: Family, candidate: Family, revision: number) =>
+      fetch(`${origin}/api/family/changes`, { method: "POST", headers: {
+        Origin: "https://archive.test", Cookie: `drevo_session=${token}`, "Content-Type": "application/json",
+        "If-Match": String(revision),
+      }, body: JSON.stringify({ changes: archiveChanges(previous, candidate) }) });
+    const before = await app.archive.read();
+    const removed = structuredClone(before.family);
+    delete removed.people[0].birthDateClaim;
+    assert.equal((await post(before.family, removed, before.revision)).status, 403);
+    const reset = structuredClone(before.family);
+    delete reset.people[0].birthDateClaim!.confidence;
+    assert.equal((await post(before.family, reset, before.revision)).status, 403);
+    const promoted = structuredClone(before.family);
+    promoted.people[0].deathDateClaim!.confidence = "confirmed";
+    assert.equal((await post(before.family, promoted, before.revision)).status, 403);
+    const edited = structuredClone(before.family);
+    edited.people[0].birthDateClaim!.sources.push({ ...citation, reference: "л. 8" });
+    assert.equal((await post(before.family, edited, before.revision)).status, 200);
+    const after = await app.archive.read();
+    assert.equal(after.family.people[0].birthDateClaim?.confidence, "confirmed");
+    assert.equal(after.family.people[0].birthDateClaim?.sources.length, 2);
+  } finally {
+    await app.close();
+    if (previousOrigin === undefined) delete process.env.PUBLIC_ORIGIN;
+    else process.env.PUBLIC_ORIGIN = previousOrigin;
     await rm(directory, { recursive: true, force: true });
   }
 });

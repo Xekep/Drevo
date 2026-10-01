@@ -69,8 +69,12 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
     <summary>Источники {subjectLabel} {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
     {claim && claim.value !== value
       ? <div>
-          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. Снимите связь или верните прежнее значение перед сохранением.</p>
-          <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>
+          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
+            ? "Верните прежнее значение перед сохранением или попросите исследователя снять оценку."
+            : "Снимите связь или верните прежнее значение перед сохранением."}</p>
+          {claim.confidence && !canAssess
+            ? <p>Оценку и связь с прежним значением может снять только исследователь или администратор.</p>
+            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>}
         </div>
       : value.trim()
         ? <>
@@ -79,6 +83,7 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
               onChange={(sources) => onChange(sources.length
                 ? { ...claim, value, sources } : undefined)}
               isAdmin={isAdmin}
+              canRemoveLast={!claim?.confidence || canAssess}
             />
             {claim && <label>
               Достоверность
@@ -93,6 +98,8 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
                   <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
               </select>
               <small>Оценка исследователя; добавление источника не повышает её автоматически.</small>
+              {!canAssess && claim.confidence &&
+                <small>Удалить последний источник и оценку может только исследователь или администратор.</small>}
             </label>}
           </>
         : <p>Укажите {subject === "date" ? "дату" : "место"} {label}, чтобы привязать к {subject === "date" ? "ней" : "нему"} источник.</p>}

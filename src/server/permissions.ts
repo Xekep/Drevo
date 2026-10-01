@@ -48,7 +48,8 @@ export function authorizeArchive(
     for (const person of next.people)
       for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const) {
         const claim = person[key];
-        if (claim && claim.confidence !== previous.get(person.id)?.[key]?.confidence)
+        const earlier = previous.get(person.id)?.[key];
+        if (claim?.confidence !== earlier?.confidence)
           throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       }
   }
