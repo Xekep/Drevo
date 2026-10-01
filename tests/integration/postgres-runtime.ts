@@ -191,6 +191,33 @@ try {
     await client.query("UPDATE request_rate_limits SET started_at=0 WHERE scope='runtime-shared-test'");
     assert.equal(await firstBudget.allow("one-account"), true,
       "an expired window starts a new budget");
+    const sameArchive = await openPostgresDatabase("runtime-test", source);
+    try {
+      let entered!: () => void;
+      let release!: () => void;
+      const active = new Promise<void>((resolve) => { entered = resolve; });
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const firstExport = live.db.withExclusiveArchiveTask!("offline-export", async () => {
+        entered();
+        await held;
+        return "first";
+      });
+      void firstExport.then(entered, entered);
+      try {
+        await active;
+        assert.deepEqual(await sameArchive.withExclusiveArchiveTask!("offline-export", async () => "second"),
+          { acquired: false }, "another backend cannot export the same archive concurrently");
+        assert.deepEqual(await other.withExclusiveArchiveTask!("offline-export", async () => "other tree"),
+          { acquired: true, value: "other tree" }, "another archive has an independent export lock");
+      } finally {
+        release();
+      }
+      assert.deepEqual(await firstExport, { acquired: true, value: "first" });
+      assert.deepEqual(await sameArchive.withExclusiveArchiveTask!("offline-export", async () => "second"),
+        { acquired: true, value: "second" }, "the lock is released after export");
+    } finally {
+      await sameArchive.close();
+    }
     const primaryPublished = publishedPeopleStore(live.db);
     const otherPublished = publishedPeopleStore(other);
     await primaryPublished.publish("person-a", "owner");
