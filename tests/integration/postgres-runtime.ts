@@ -256,6 +256,44 @@ try {
     }
     await adminClient.query(migration058);
     await adminClient.query(migration058);
+    if (adminClient !== client) {
+      await client.query("INSERT INTO accounts(id,name,created_at) VALUES('first-union-author','First union',now())");
+      await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+        VALUES('runtime-test','first-union-author','researcher',true,'all')`);
+      await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('first-union-author')");
+      const writerPid = (await client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      const cleanupPid = (await adminClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE");
+      await client.query(`INSERT INTO family_unions(archive_id,id,participant_a,participant_b,data)
+        VALUES('runtime-test','first-union','person-a','old-union-peer',
+          '{"id":"first-union","participants":["person-a","old-union-peer"],"type":"partnership","createdBy":"first-union-author"}'::jsonb)`);
+      const cleanup = adminClient.query("SELECT public.runtime_anonymize_deleted_account_unions('first-union-author')");
+      let writerCommitted = false;
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const blockers = (await client.query("SELECT pg_blocking_pids($1) AS pids", [cleanupPid])).rows[0].pids as number[];
+          if (blockers.includes(writerPid)) { blocked = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(blocked, true,
+          "union cleanup waits for an in-flight first union from a current member, even though its row is not committed");
+        await client.query("COMMIT");
+        writerCommitted = true;
+        await cleanup;
+      } finally {
+        if (!writerCommitted) await client.query("ROLLBACK");
+        await cleanup.catch(() => undefined);
+      }
+      assert.equal((await client.query("SELECT data->>'createdBy' AS author FROM family_unions WHERE id='first-union'")).rows[0].author,
+        "deleted-account", "the first in-flight union is redacted after its writer commits");
+      await client.query("DELETE FROM family_unions WHERE id='first-union'");
+      await client.query("DELETE FROM archive_memberships WHERE user_id='first-union-author'");
+      await client.query("DELETE FROM accounts WHERE id='first-union-author'");
+      await client.query("DELETE FROM deleted_account_tombstones WHERE id='first-union-author'");
+    }
     assert.deepEqual((await client.query("SELECT id,data->>'createdBy' AS author FROM family_unions WHERE id LIKE '%union-%' ORDER BY id")).rows,
       [{ id: "old-union-backfill", author: "deleted-account" },
         { id: "reused-union-review", author: "reused-union-author" },

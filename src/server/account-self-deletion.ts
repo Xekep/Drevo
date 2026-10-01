@@ -47,6 +47,10 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
       if (!available || !db.postgresTransaction)
         throw new AccountDeletionConflict("Удаление здесь недоступно");
       return await db.postgresTransaction(async (client) => {
+        // The privileged union helper may lock archives left in the past,
+        // after current memberships were locked. Serialize account deletions
+        // so two such archive sets cannot form a cross-account lock cycle.
+        await client.query("SELECT pg_advisory_xact_lock(2408,1)");
         const account = await client.query(
           "SELECT name FROM accounts WHERE id=$1 FOR UPDATE",
           [accountId],

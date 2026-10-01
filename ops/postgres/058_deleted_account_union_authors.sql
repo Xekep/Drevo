@@ -21,10 +21,10 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Hold registration/deletion writes while classifying tombstoned IDs for
--- backfill. A concurrent re-registration cannot slip between the check and
--- the update; live deletions finish after this transaction if necessary.
-LOCK TABLE public.accounts IN SHARE MODE;
+-- Block new account writers while classifying tombstoned IDs. EXCLUSIVE also
+-- waits for in-flight deletions holding a FOR UPDATE row lock, avoiding a
+-- cycle with their later DELETE while this migration locks archive rows.
+LOCK TABLE public.accounts IN EXCLUSIVE MODE;
 
 CREATE OR REPLACE FUNCTION public.runtime_anonymize_deleted_account_unions(account_id text)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
@@ -38,8 +38,11 @@ BEGIN
   -- any in-flight writer, then prevent a stale snapshot from restoring the
   -- deleted author ID after this redaction commits.
   PERFORM 1 FROM public.archives
-    WHERE id IN (SELECT archive_id FROM public.family_unions
-      WHERE data->>'createdBy'=account_id)
+    WHERE id IN (
+      SELECT archive_id FROM public.archive_memberships WHERE user_id=account_id
+      UNION
+      SELECT archive_id FROM public.family_unions WHERE data->>'createdBy'=account_id
+    )
     ORDER BY id FOR UPDATE;
   UPDATE public.family_unions
     SET data=jsonb_set(data,'{createdBy}',to_jsonb('deleted-account'::text))
