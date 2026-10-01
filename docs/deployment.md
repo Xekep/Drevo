@@ -85,13 +85,28 @@ cat /var/www/drevo.kiiko.ru/current/ops/postgres/install-account-history-anonymi
   | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
 ```
 
-До активации релиза с 058 передайте проверенный SQL из подготовленного каталога
-роли PostgreSQL. На новой установке сначала выполните прежний скрипт выше.
-До активации не берите SQL из `current`:
+До merge релизного каталога с 058 ещё нет: оператор переносит сверенный по
+коммиту SQL во временный файл `/root/058_deleted_account_union_authors.sql`
+с владельцем `root` и режимом `0600`, репетирует его на отдельной копии БД и
+лишь после проверки применяет к рабочей БД. На новой установке сначала
+выполните прежний скрипт выше. До активации не берите SQL из `current`:
 
 ```bash
-release_id=<reviewed-release-id>
-cat "/var/www/drevo.kiiko.ru/releases/$release_id/ops/postgres/058_deleted_account_union_authors.sql" \
+test "$(stat -c '%U:%a' /root/058_deleted_account_union_authors.sql)" = root:600
+preflight_db=drevo_union_058_preflight
+sudo -u postgres createdb "$preflight_db"
+sudo -u postgres pg_dump -Fc "$db" \
+  | sudo -u postgres pg_restore --no-owner --exit-on-error -d "$preflight_db"
+cat /root/058_deleted_account_union_authors.sql \
+  | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$preflight_db"
+```
+
+Проверьте функции и количество строк в копии запросами ниже. После ревью
+результатов выполните отдельный шаг для рабочей БД; временную БД затем можно
+удалить командой `sudo -u postgres dropdb "$preflight_db"`:
+
+```bash
+cat /root/058_deleted_account_union_authors.sql \
   | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$db"
 ```
 

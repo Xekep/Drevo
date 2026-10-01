@@ -3,10 +3,6 @@
 -- matching application release. The app role cannot update all archives
 -- through FORCE RLS and must never own this SECURITY DEFINER function.
 BEGIN;
--- Hold registration/deletion writes while classifying tombstoned IDs for
--- backfill. A concurrent re-registration cannot slip between the check and
--- the update; live deletions finish after this transaction if necessary.
-LOCK TABLE public.accounts IN SHARE MODE;
 DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolbypassrls)
@@ -25,6 +21,11 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Hold registration/deletion writes while classifying tombstoned IDs for
+-- backfill. A concurrent re-registration cannot slip between the check and
+-- the update; live deletions finish after this transaction if necessary.
+LOCK TABLE public.accounts IN SHARE MODE;
+
 CREATE OR REPLACE FUNCTION public.runtime_anonymize_deleted_account_unions(account_id text)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
@@ -33,6 +34,13 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'No deletion tombstone for account';
   END IF;
+  -- Archive writes take this row lock before loading their snapshot. Wait for
+  -- any in-flight writer, then prevent a stale snapshot from restoring the
+  -- deleted author ID after this redaction commits.
+  PERFORM 1 FROM public.archives
+    WHERE id IN (SELECT archive_id FROM public.family_unions
+      WHERE data->>'createdBy'=account_id)
+    ORDER BY id FOR UPDATE;
   UPDATE public.family_unions
     SET data=jsonb_set(data,'{createdBy}',to_jsonb('deleted-account'::text))
     WHERE data->>'createdBy'=account_id;
@@ -71,6 +79,13 @@ END $$;
 -- Only unambiguously deleted IDs are backfilled. A tombstoned ID which has
 -- since been re-registered is deliberately left for review: its new rows
 -- cannot be distinguished from old rows by ID alone.
+DO $$ BEGIN
+  PERFORM 1 FROM public.archives
+    WHERE id IN (SELECT u.archive_id FROM public.family_unions u
+      JOIN public.deleted_account_tombstones d ON d.id=u.data->>'createdBy'
+      WHERE NOT EXISTS (SELECT 1 FROM public.accounts a WHERE a.id=d.id))
+    ORDER BY id FOR UPDATE;
+END $$;
 UPDATE public.family_unions u
   SET data=jsonb_set(u.data,'{createdBy}',to_jsonb('deleted-account'::text))
   FROM public.deleted_account_tombstones d
