@@ -2,6 +2,8 @@ import type { StoreDatabase } from "./store-database.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import type { ArchiveUser } from "../domain/access.ts";
 import { readArchive } from "./database.ts";
+import { commentFilesFromJson } from "./discussion-attachments.ts";
+import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
 
 type CommentScope = {
   archiveId: string;
@@ -77,6 +79,7 @@ export function accountDataExport(db: StoreDatabase) {
             text: string;
             createdAt: string;
             editedAt: string | null;
+            attachments: CommentAttachmentFile[];
           }> | null = null;
           if (membership.approved === true) {
             const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
@@ -108,7 +111,7 @@ export function accountDataExport(db: StoreDatabase) {
             const comments = await db
               .prepare(
                 "",
-                `SELECT c.id,c.person_id,c.text,c.created_ms,c.updated_ms
+                `SELECT c.id,c.person_id,c.text,c.created_ms,c.updated_ms,c.attachments
                  FROM person_comments c JOIN people p
                    ON p.archive_id=c.archive_id AND p.id=c.person_id
                  WHERE c.archive_id=? AND c.author_id=? ORDER BY c.id`,
@@ -120,6 +123,7 @@ export function accountDataExport(db: StoreDatabase) {
                 id: String(row.id),
                 personId: String(row.person_id),
                 text: String(row.text),
+                attachments: commentFilesFromJson(row.attachments),
                 createdAt: new Date(Number(row.created_ms)).toISOString(),
                 editedAt:
                   row.updated_ms == null
