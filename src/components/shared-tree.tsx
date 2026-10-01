@@ -10,6 +10,7 @@ import { ComparisonPanel } from "./comparison-panel";
 import { useWorkspaceSelection } from "../hooks/useWorkspaceSelection";
 import {
   DEFAULT_TREE_PREFERENCES,
+  withGenerationAnchor,
   type TreePreferences,
 } from "../domain/tree-preferences";
 import {
@@ -182,6 +183,14 @@ export default function SharedTree({ token }: { token: string }) {
                 }
                 colorScheme={preferences?.colorScheme}
                 generationLimits={preferences?.generationLimits}
+                onGenerationAnchor={async (id) => {
+                  const value = withGenerationAnchor(
+                    preferences ?? DEFAULT_TREE_PREFERENCES,
+                    id,
+                  );
+                  writeGuestTreePreferences(value);
+                  setPreferences(value);
+                }}
                 selected={selected}
                 onChoose={(id, additive) => {
                   choose(id, additive);

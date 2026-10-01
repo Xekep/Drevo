@@ -42,3 +42,19 @@ export const DEFAULT_TREE_PREFERENCES: TreePreferences = {
   cardVariant: "portrait",
   colorScheme: "warm",
 };
+
+export function withGenerationAnchor(
+  preferences: TreePreferences,
+  anchorId: string,
+): TreePreferences {
+  return {
+    ...preferences,
+    generationLimits: {
+      ancestors: 3,
+      descendants: 3,
+      collateral: 1,
+      ...preferences.generationLimits,
+      anchorId,
+    },
+  };
+}
