@@ -491,6 +491,7 @@ test("a linked branch needs both grants and clears a revoked projection", async 
     if (method === "PUT") {
       expect(route.request().postDataJSON()).toEqual({
         personIds: ["parent-a"], previewToken: "b".repeat(64),
+        recipientArchiveId: "tree-b", durationDays: 30,
       });
       ownReady = true;
       return route.fulfill({ json: { shared: true } });
@@ -502,6 +503,8 @@ test("a linked branch needs both grants and clears a revoked projection", async 
     if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
     return route.fulfill({ json: { available: [parent], truncated: false,
       previewToken: "b".repeat(64), ownReady, otherReady,
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
+      ownExpiresAt: ownReady ? "2026-10-30T00:00:00Z" : null,
       outgoingIds: ownReady ? ["parent-a"] : [],
       incoming: ownReady && otherReady ? [incoming] : [],
     } });
@@ -509,10 +512,14 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   await page.goto("/admin");
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByText("Поделиться разрешённой веткой").click();
+  const panel = page.locator(".match-card-share").filter({ hasText: "Поделиться разрешённой веткой" });
+  await expect(panel).toContainText("Адресат: опубликованная карточка «Иван Петров», архив tree-b");
   await expect(page.getByText("Анна Петрова")).toBeVisible();
   await expect(page.getByText("Мария Петрова")).toHaveCount(0);
   await page.getByRole("checkbox", { name: /Родитель: Анна Петрова/ }).check();
+  await page.getByLabel("Срок нового разрешения").selectOption("30");
   await page.getByRole("button", { name: "Разрешить выбранное" }).click();
+  await expect(panel).toContainText("Ваше разрешение действует до");
   await expect(page.getByText("Ожидаем разрешения второй стороны.")).toBeVisible();
   otherReady = true;
   await page.getByRole("button", { name: "Обновить просмотр" }).click();
@@ -546,6 +553,7 @@ test("reopening a linked-branch panel discards revoked and in-flight members", a
     if (read === 2) await secondRead;
     await route.fulfill({ json: { available: [], truncated: false, previewToken: "b".repeat(64),
       ownReady: true, otherReady: true, outgoingIds: [], incoming: read < 3 ? [incoming] : [],
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров", ownExpiresAt: null,
     } }).catch(() => {});
   });
   try {
@@ -584,7 +592,8 @@ test("a selected linked member opens through its own permission-checked URL", as
   } }));
   await page.route(`**/api/discovery/matches/${id}/branch-share`, (route) =>
     route.fulfill({ json: { available: [], truncated: false, previewToken: "b".repeat(64),
-      ownReady: true, otherReady: true, outgoingIds: [], incoming: [incoming] } }));
+      ownReady: true, otherReady: true, outgoingIds: [], incoming: [incoming],
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров", ownExpiresAt: null } }));
   await page.route(`**/api/discovery/matches/${id}/branch-share/people/*`, (route) => {
     expect(decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-1)!))
       .toBe("family:person.1");

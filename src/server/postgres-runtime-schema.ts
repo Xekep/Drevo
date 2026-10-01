@@ -194,6 +194,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_copied_fields') AND c.relforcerowsecurity AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='clear_changed_discovery_copy_provenance' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archive_owners') AND tgname='revoke_discovery_card_grants_after_owner_transfer' AND NOT tgisinternal)",
       "061_discovery_copied_fields.sql",
     ],
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_branch_grants' AND column_name='expires_at' AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_branch_members' AND policyname='discovery_branch_members_read' AND qual LIKE '%expires_at%')",
+      "062_discovery_branch_expiry.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {
