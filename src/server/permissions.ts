@@ -64,18 +64,6 @@ export function authorizeArchive(
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
-  if (!admin) {
-    const previousSlots = catalogCitationSlots(current);
-    for (const [path, nextIds] of catalogCitationSlots(next)) {
-      const previousIds = previousSlots.get(path) || [];
-      for (const id of nextIds) {
-        const oldIndex = previousIds.indexOf(id);
-        if (oldIndex < 0)
-          throw new ForbiddenError("Привязать каталожный источник может только администратор");
-        previousIds.splice(oldIndex, 1);
-      }
-    }
-  }
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
     for (const person of next.people)
@@ -199,6 +187,16 @@ export function authorizeArchive(
   for (const p of next.photos || []) {
     const old = previousPhotos.get(p.id);
     if (old && old.url !== p.url) deny();
+  }
+  const previousSlots = catalogCitationSlots(current);
+  for (const [path, nextIds] of catalogCitationSlots(next)) {
+    const previousIds = previousSlots.get(path) || [];
+    for (const id of nextIds) {
+      const oldIndex = previousIds.indexOf(id);
+      if (oldIndex < 0)
+        throw new ForbiddenError("Привязать каталожный источник может только администратор");
+      previousIds.splice(oldIndex, 1);
+    }
   }
   return next;
 }
