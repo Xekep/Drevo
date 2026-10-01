@@ -165,6 +165,42 @@ test("private package preview and one-time import preserve people, media, docume
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const headers = { Origin: base, "X-Drevo-Import": "1" };
   try {
+    const initialRevision = (await archive.read()).revision;
+    const catalogData = JSON.stringify({
+      id: "existing-source", title: "Existing source", type: "archive",
+      author: "", institution: "", archive: "", fond: "", opis: "",
+      delo: "", sheet: "", reference: "", url: "", accessedAt: "",
+      description: "", documentIds: [],
+    });
+    await archive.db
+      .prepare("INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)")
+      .run("existing-source", catalogData);
+    actor = { ...owner, role: "reader" };
+    const denied = await fetch(`${base}/api/drevo/preview`, {
+      method: "POST",
+      headers,
+      body: Buffer.from("invalid archive"),
+    });
+    assert.equal(denied.status, 403, "a reader cannot probe whether the target archive is empty");
+    actor = owner;
+    const occupied = await fetch(`${base}/api/drevo/preview`, {
+      method: "POST",
+      headers,
+      body: Buffer.from("invalid archive"),
+    });
+    assert.equal(occupied.status, 409, "catalog-only archives are not empty");
+    assert.match((await occupied.json() as { error: string }).error, /только в пустое дерево/);
+    assert.equal((await archive.read()).revision, initialRevision);
+    assert.equal(
+      (await archive.db.prepare("SELECT data FROM source_catalog WHERE id=?").get("existing-source"))?.data,
+      catalogData,
+    );
+    assert.equal(
+      (await archive.db.prepare("SELECT count(*) AS n FROM workflow_stages WHERE kind='drevo'").get())?.n,
+      0,
+    );
+    assert.deepEqual(await readdir(join(target, "staging", "portable")), []);
+    await archive.db.prepare("DELETE FROM source_catalog WHERE id=?").run("existing-source");
     assert.equal(
       (
         await fetch(`${base}/api/drevo/preview`, {

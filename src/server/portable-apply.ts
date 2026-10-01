@@ -9,8 +9,21 @@ import type { installPortableOriginals } from "./portable-install.ts";
 import { enforceUserStorageLimit } from "./storage-limits.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
 import { sourceCatalogStore } from "./source-catalog-store.ts";
+import type { StoreDatabase } from "./store-database.ts";
 
 type Installed = Awaited<ReturnType<typeof installPortableOriginals>>;
+
+export async function portableStoreOccupied(db: StoreDatabase): Promise<boolean> {
+  const rows = await db
+    .prepare(
+      "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
+      "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
+    )
+    .get();
+  return Boolean(
+    Number(rows?.documents) || Number(rows?.comments) || Number(rows?.sources),
+  );
+}
 
 export async function applyPortablePackage(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -55,13 +68,7 @@ export async function applyPortablePackage(
         if (!owner)
           throw new ForbiddenError("Импорт доступен владельцу дерева");
       }
-      const occupied = await transaction
-        .prepare(
-          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
-          "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments,(SELECT count(*) FROM source_catalog) AS sources",
-        )
-        .get();
-      if (Number(occupied?.documents) || Number(occupied?.comments) || Number(occupied?.sources))
+      if (await portableStoreOccupied(transaction))
         throw new ConflictError("Импорт возможен только в пустое дерево");
       const consumed = await transaction
         .prepare(

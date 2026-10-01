@@ -8,7 +8,7 @@ import { pipeline } from "node:stream/promises";
 import type { createAuth } from "./auth.ts";
 import { accountCapacity } from "./account-capacity.ts";
 import { ConflictError, type openArchive } from "./database.ts";
-import { applyPortablePackage } from "./portable-apply.ts";
+import { applyPortablePackage, portableStoreOccupied } from "./portable-apply.ts";
 import {
   PORTABLE_IMPORT_LIMIT,
   portableUncompressedBytes,
@@ -112,17 +112,10 @@ export function portableImportHttp(
 
   async function empty() {
     const current = await archive.read();
-    const rows = await db
-      .prepare(
-        "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments",
-        "SELECT (SELECT count(*) FROM documents) AS documents,(SELECT count(*) FROM person_comments) AS comments",
-      )
-      .get();
     return (
       !current.family.people.length &&
       !current.family.photos?.length &&
-      !Number(rows?.documents) &&
-      !Number(rows?.comments)
+      !(await portableStoreOccupied(db))
     );
   }
 
