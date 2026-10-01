@@ -25,7 +25,7 @@ function ancestors(id: string, map: Map<string, Person>) {
   return paths;
 }
 function praWord(word: string, count: number) {
-  return (count >= 4 ? `пра(${count})` : "пра".repeat(count)) + word;
+  return (count >= 3 ? `пра(${count})` : "пра".repeat(count)) + word;
 }
 function ancestorWord(p: Person, distance: number) {
   if (p.sex === "u")
