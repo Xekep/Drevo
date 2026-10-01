@@ -1470,7 +1470,7 @@ try {
   const commentAuthorLink = await app.archive.db.prepare("", "SELECT person_id FROM archive_memberships WHERE user_id='owner'").get();
   await app.archive.db.prepare("", "UPDATE archive_memberships SET person_id='person-a' WHERE user_id='owner'").run();
   try {
-    await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders);
+    await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders, app.archive.db);
   } finally {
     await app.archive.db.prepare("", "UPDATE archive_memberships SET person_id=? WHERE user_id='owner'").run(commentAuthorLink?.person_id == null ? null : String(commentAuthorLink.person_id));
   }

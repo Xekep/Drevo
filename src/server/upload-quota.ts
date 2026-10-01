@@ -70,8 +70,10 @@ export function uploadQuota(
           );
         const used = (await db
           .prepare(
-            "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
-            "SELECT count(*) AS n,coalesce(sum(file_size),0) AS bytes FROM documents",
+            `SELECT (SELECT count(*) FROM documents)+(SELECT count(*) FROM person_comments c,json_each(c.attachments)) AS n,
+              coalesce((SELECT sum(file_size) FROM documents),0)+coalesce((SELECT sum(json_extract(f.value,'$.size')) FROM person_comments c,json_each(c.attachments) f),0) AS bytes`,
+            `SELECT (SELECT count(*) FROM documents)+(SELECT count(*) FROM person_comments c,jsonb_array_elements(c.attachments)) AS n,
+              coalesce((SELECT sum(file_size) FROM documents),0)+coalesce((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f),0) AS bytes`,
           )
           .get())!;
         const currentImages =

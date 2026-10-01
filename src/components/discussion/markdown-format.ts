@@ -22,7 +22,7 @@ const renderer = parser()
       ...defaultSchema.attributes,
       code: [
         ...(defaultSchema.attributes?.code ?? []),
-        ["className", "math-inline", "math-display"],
+        ["className", "math-inline", "math-display", "language-mermaid"],
       ],
     },
   })

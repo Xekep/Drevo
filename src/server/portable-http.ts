@@ -69,9 +69,9 @@ export function portableExportHttp(
       }));
       const commentRows = await db
         .prepare(
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text,c.updated_ms
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text,c.updated_ms,c.attachments
          FROM person_comments c LEFT JOIN users u ON u.id=c.author_id ORDER BY c.id`,
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text,c.updated_ms
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name,'') AS author_name,c.created_ms,c.text,c.updated_ms,c.attachments
          FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id ORDER BY c.id`,
         )
         .all();
@@ -83,6 +83,7 @@ export function portableExportHttp(
         createdMs: Number(row.created_ms),
         ...(row.updated_ms == null ? {} : { editedMs: Number(row.updated_ms) }),
         text: String(row.text),
+        attachments: typeof row.attachments === "string" ? JSON.parse(row.attachments) : row.attachments as PortableComment["attachments"],
       }));
       const sources = (await sourceCatalogStore(db).list()).map((entry) => {
         const source = { ...entry };

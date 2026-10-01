@@ -33,7 +33,7 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
              SELECT 1 FROM media_upload_grants g
              WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>?
            )
-         ),0) AS media_bytes,
+         ),0) + COALESCE((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f),0) AS media_bytes,
          EXISTS (
            SELECT 1 FROM referenced r
            WHERE r.url LIKE '/media/%'

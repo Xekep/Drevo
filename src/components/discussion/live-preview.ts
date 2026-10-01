@@ -11,6 +11,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import katex from "katex";
+import { enhanceCommentDiagrams } from "./mermaid-preview";
 import type { Nodes } from "mdast";
 import {
   commentMathOptions,
@@ -19,7 +20,7 @@ import {
 } from "./markdown-format";
 
 export const previewFocus = StateEffect.define<boolean>();
-export const previewSource = StateEffect.define<boolean>();
+const diagramCleanup = new WeakMap<HTMLElement, () => void>();
 
 function selectionTouches(
   state: EditorState,
@@ -57,6 +58,11 @@ class PreviewWidget extends WidgetType {
     dom.innerHTML = this.math
       ? katex.renderToString(this.source, commentMathOptions)
       : renderCommentHtml(this.source);
+    if (!this.math)
+      diagramCleanup.set(
+        dom,
+        enhanceCommentDiagrams(dom, () => view.requestMeasure()),
+      );
     dom.addEventListener("mousedown", (event) => {
       // A link in the editor must edit its source, rather than navigate away.
       event.preventDefault();
@@ -69,14 +75,13 @@ class PreviewWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+  destroy(dom: HTMLElement) {
+    diagramCleanup.get(dom)?.();
+    diagramCleanup.delete(dom);
+  }
 }
 
-function decorations(
-  state: EditorState,
-  focused: boolean,
-  sourceMode: boolean,
-): DecorationSet {
-  if (sourceMode) return Decoration.none;
+function decorations(state: EditorState, focused: boolean): DecorationSet {
   const source = state.doc.toString();
   const tree = parseCommentDocument(source);
   const ranges: Range<Decoration>[] = [];
@@ -125,32 +130,26 @@ function decorations(
 
 export const livePreview = StateField.define<{
   focused: boolean;
-  source: boolean;
   decorations: DecorationSet;
 }>({
   create: (state) => ({
     focused: false,
-    source: false,
-    decorations: decorations(state, false, false),
+    decorations: decorations(state, false),
   }),
   update(value, transaction) {
-    let focused = value.focused,
-      source = value.source;
+    let focused = value.focused;
     for (const effect of transaction.effects) {
       if (effect.is(previewFocus)) focused = effect.value;
-      if (effect.is(previewSource)) source = effect.value;
     }
     if (
       !transaction.docChanged &&
       !transaction.selection &&
-      focused === value.focused &&
-      source === value.source
+      focused === value.focused
     )
       return value;
     return {
       focused,
-      source,
-      decorations: decorations(transaction.state, focused, source),
+      decorations: decorations(transaction.state, focused),
     };
   },
   provide: (field) =>

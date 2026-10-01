@@ -172,6 +172,8 @@ export async function archiveHttp({
     archive,
     auth,
     publicOrigin,
+    uploadsDirectory,
+    media,
   });
   const places = placesHttp({
     archive,

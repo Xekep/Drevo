@@ -26,7 +26,7 @@ export async function postgresMediaBytes(db: StoreDatabase, now = Date.now()) {
             WHERE g.archive_id=m.archive_id
               AND g.url=m.url AND g.expires_ms>?
           )
-        ),0) AS bytes`,
+        ),0) + COALESCE((SELECT sum((f->>'size')::bigint) FROM person_comments c,jsonb_array_elements(c.attachments) f),0) AS bytes`,
     )
     .get(now);
   return Number(used?.bytes || 0);

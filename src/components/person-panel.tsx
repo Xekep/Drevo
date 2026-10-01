@@ -33,6 +33,7 @@ import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
+import { useDiscussionCount } from "./discussion/use-discussion-count";
 const PersonDiscussion = lazy(() => import("./person-discussion").then((module) => ({ default: module.PersonDiscussion })));
 const claimSummary = (claim: PersonValueClaim) =>
   `${claim.sources.map((source) => source.title).join("; ")}${claim.confidence
@@ -130,6 +131,7 @@ export function PersonPanel({
   idPrefix?: string;
 }) {
   const [tab, setTab] = useState<"bio" | "sources" | "discussion">("bio");
+  const discussionCount = useDiscussionCount(person.id, canDiscuss);
   const [documents, setDocuments] = useState<{
     personId: string;
     retry: number;
@@ -336,7 +338,8 @@ export function PersonPanel({
             className={tab === "discussion" ? "active" : ""}
             onClick={() => setTab("discussion")}
           >
-            Обсуждение
+            Обсуждение{" "}
+            <span className="count-badge">{discussionCount.count ?? "…"}</span>
           </button>
         )}
       </div>
@@ -426,7 +429,7 @@ export function PersonPanel({
           </>
         ) : tab === "discussion" && canDiscuss ? (
           <Suspense fallback={<p className="muted-copy">Загружаем обсуждение…</p>}>
-            <PersonDiscussion key={person.id} personId={person.id} onSelect={onSelect} />
+            <PersonDiscussion key={person.id} personId={person.id} onSelect={onSelect} onCountChange={discussionCount.update} />
           </Suspense>
         ) : (
           <>

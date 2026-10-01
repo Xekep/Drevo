@@ -15,6 +15,8 @@ import { parseCatalogSource } from "../shared/source-catalog.ts";
 import { allCitations } from "./source-catalog-store.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
+import { prepareCommentFile } from "./discussion-attachments.ts";
+import { validCommentFiles } from "../shared/person-discussion.ts";
 import {
   PortablePackageError,
   type PortableComment,
@@ -31,7 +33,7 @@ const MAX_ORIGINAL = 1024 ** 3;
 // Earlier Drevo archives can contain short document/annotation IDs. The ZIP
 // manifest constrains file names separately; IDs only identify database rows.
 const portableId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const mediaPath = /^media\/[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)$/;
+const mediaPath = /^media\/(?:[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|pdf)|discussion-files\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 const digest = /^[a-f0-9]{64}$/;
 
 /** Read ZIP metadata before extracting so concurrent previews can reserve
@@ -218,7 +220,8 @@ function snapshotFrom(value: unknown): PortableSnapshot {
         (comment.editedMs as number) <= (comment.createdMs as number) ||
         (comment.editedMs as number) > 8_640_000_000_000_000)) ||
       typeof comment.text !== "string" ||
-      !comment.text.trim() ||
+      (!comment.text.trim() && !(Array.isArray(comment.attachments) && comment.attachments.length)) ||
+      (comment.attachments !== undefined && !validCommentFiles(comment.attachments)) ||
       comment.text.length > 2000
     )
       invalid("Некорректное обсуждение в пакете Drevo");
@@ -255,7 +258,7 @@ export async function readPortablePackage(
           ? MAX_MANIFEST
           : name === "archive.json"
             ? MAX_ARCHIVE_JSON
-            : MAX_ORIGINAL;
+            : name.startsWith("media/discussion-files/") ? 10 * 1024 * 1024 : MAX_ORIGINAL;
       if (
         files.has(name) ||
         (name !== "manifest.json" &&
@@ -336,7 +339,7 @@ export async function readPortablePackage(
       invalid("Повреждён файл пакета Drevo: SHA-256 не совпадает");
   }
   for (const [name, file] of files)
-    if (name.startsWith("media/"))
+    if (name.startsWith("media/") && !name.startsWith("media/discussion-files/"))
       await verifyPortableMediaFile(file.path, name);
   const expectedMedia = new Set<string>();
   for (const person of snapshot.family.people)
@@ -347,6 +350,16 @@ export async function readPortablePackage(
       expectedMedia.add(`media/${photo.url.slice(7)}`);
   for (const document of snapshot.documents)
     expectedMedia.add(`media/${document.fileName}`);
+  for (const comment of snapshot.comments) {
+    for (const attachment of comment.attachments || []) {
+      const name = `media/discussion-files/${attachment.id}`;
+      const file = files.get(name);
+      if (!file || file.size !== attachment.size) invalid("В пакете нет оригинала вложения обсуждения");
+      const prepared = await prepareCommentFile(attachment.name, await readFile(file.path));
+      if (prepared.type !== attachment.type) invalid("Некорректный тип вложения обсуждения");
+      expectedMedia.add(name);
+    }
+  }
   const actualMedia = new Set(
     [...files.keys()].filter((name) => name.startsWith("media/")),
   );

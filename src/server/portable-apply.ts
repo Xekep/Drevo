@@ -116,8 +116,8 @@ export async function applyPortablePackage(
       for (const comment of installed.snapshot.comments)
         await transaction
           .prepare(
-            "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms) VALUES(?,?,?,?,?,?)",
-            "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms,attachments) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms,attachments) VALUES(?,?,?,?,?,?,?)",
           )
           .run(
             comment.personId,
@@ -126,6 +126,7 @@ export async function applyPortablePackage(
             comment.createdMs,
             comment.text,
             comment.editedMs ?? null,
+            JSON.stringify(comment.attachments || []),
           );
       await enforcePostgresMediaQuota(transaction);
       await enforceUserStorageLimit(transaction, actor.id);

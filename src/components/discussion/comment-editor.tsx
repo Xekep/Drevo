@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -7,8 +7,9 @@ import {
   defaultHighlightStyle,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { livePreview, previewFocus, previewSource } from "./live-preview";
+import { livePreview, previewFocus } from "./live-preview";
 import "katex/dist/katex.min.css";
+import { GitBranch } from "lucide-react";
 
 type Props = {
   value: string;
@@ -24,7 +25,6 @@ export default function CommentEditor(props: Props) {
   const view = useRef<EditorView | null>(null);
   const callbacks = useRef(props);
   const readonly = useRef(new Compartment());
-  const [sourceMode, setSourceMode] = useState(false);
   useLayoutEffect(() => {
     callbacks.current = props;
   });
@@ -100,28 +100,28 @@ export default function CommentEditor(props: Props) {
     });
   }, [props.disabled]);
   return (
-    <div className={`comment-editor${sourceMode ? " is-source" : ""}`}>
-      <div className="comment-editor-toolbar">
-        <span>Markdown · LaTeX</span>
-        <button
-          type="button"
-          disabled={props.disabled}
-          aria-pressed={sourceMode}
-          onClick={() => {
-            const next = !sourceMode;
-            setSourceMode(next);
-            view.current?.dispatch({ effects: previewSource.of(next) });
-            view.current?.focus();
-          }}
-        >
-          Исходный текст
-        </button>
-      </div>
+    <div className="comment-editor">
+      <button
+        type="button"
+        className="comment-insert-diagram"
+        disabled={props.disabled}
+        aria-label="Добавить схему Mermaid"
+        onClick={() => {
+          const editor = view.current;
+          if (!editor) return;
+          const template =
+            "\n\n```mermaid\ngraph TD\n  A[Родитель] --> B[Ребёнок]\n```\n\n";
+          const range = editor.state.selection.main;
+          editor.dispatch({
+            changes: { from: range.from, to: range.to, insert: template },
+            selection: { anchor: range.from + template.length },
+          });
+          editor.focus();
+        }}
+      >
+        <GitBranch size={15} aria-hidden="true" />
+      </button>
       <div ref={host} />
-      <small className="comment-editor-hint">
-        Формулы: $…$ и $$…$$. Нажмите на текст для правки. Ctrl+Enter —
-        сохранить.
-      </small>
     </div>
   );
 }
