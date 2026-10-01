@@ -402,6 +402,24 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     }
   }, [filterToken, showAllBranches]);
   const { anchor: root, collapsed, toggle: toggleView } = familyView;
+  const generationLimitsKey = JSON.stringify(
+    props.generationLimits ? [
+      props.generationLimits.anchorId,
+      props.generationLimits.ancestors,
+      props.generationLimits.descendants,
+      props.generationLimits.collateral,
+    ] : null,
+  );
+  const previousGenerationLimits = useRef({
+    key: generationLimitsKey,
+    anchorId: props.generationLimits?.anchorId,
+  });
+  const scopeFocusToken = useRef(0);
+  const [scopeFocus, setScopeFocus] = useState<{
+    id: string;
+    token: number;
+    previousFocusToken: number | null;
+  } | null>(null);
   const generationRange = useMemo(
     () => props.generationLimits
       ? generationScope(
@@ -554,6 +572,47 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     displayNodes,
     maxGrowthDelay,
   } = nodeModel;
+  useEffect(() => {
+    const previous = previousGenerationLimits.current;
+    if (previous.key === generationLimitsKey) return;
+    const anchorId = props.generationLimits?.anchorId || previous.anchorId;
+    previousGenerationLimits.current = {
+      key: generationLimitsKey,
+      anchorId: props.generationLimits?.anchorId,
+    };
+    if (!anchorId || !visible.has(anchorId)) return;
+    // Stop the previous flight; the new request waits for current Worker geometry.
+    introHandled.current = true;
+    setGrowing(false);
+    setIntroCameraFinished(true);
+    setManualCameraOverride(true);
+    setBranchAnchor(null);
+    setRestoreViewport(null);
+    clearReturnTarget();
+    void flow.setViewport(flow.getViewport(), { duration: 0 });
+    scopeFocusToken.current += 1;
+    setScopeFocus({
+      id: anchorId,
+      // Explicit navigation uses positive tokens; -1 is the camera's sentinel.
+      token: -scopeFocusToken.current - 1,
+      previousFocusToken: focus?.token ?? null,
+    });
+  }, [generationLimitsKey, props.generationLimits?.anchorId, visible, focus?.token, flow, clearReturnTarget]);
+  useEffect(() => {
+    setScopeFocus((current) => current && current.previousFocusToken !== (focus?.token ?? null)
+      ? null : current);
+  }, [focus?.token]);
+  const activeScopeFocus = scopeFocus?.previousFocusToken === (focus?.token ?? null)
+    ? scopeFocus : null;
+  const scopeOccurrence = activeScopeFocus
+    ? personOccurrences.get(activeScopeFocus.id)?.find((id) => positions.has(id))
+    : undefined;
+  const effectiveCameraFocus = useMemo(() => activeScopeFocus
+    ? scopeOccurrence ? { ids: [scopeOccurrence], token: activeScopeFocus.token } : null
+    : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus]);
+  const effectiveTimelineFocus = useMemo(() => activeScopeFocus
+    ? { ids: [activeScopeFocus.id], token: activeScopeFocus.token }
+    : focus, [activeScopeFocus, focus]);
   useEffect(() => {
     if (problem) {
       const timer = window.setTimeout(() => setGrowing(false), 0);
@@ -713,7 +772,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       reverse,
       ready,
       focusReady: !growing && introCameraFinished,
-      focus: cameraFocus,
+      focus: effectiveCameraFocus,
       returnPersonId: returnTarget?.id || null,
       returnToken: returnTarget?.token || 0,
       restoreViewport,
@@ -1587,7 +1646,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           <HorizontalTimeline
             people={timelinePeople}
             selected={selected}
-            focus={focus}
+            focus={effectiveTimelineFocus}
             onChoose={onChoose}
           />
         )}
