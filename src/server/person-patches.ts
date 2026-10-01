@@ -43,6 +43,7 @@ export async function patchPeople(
   changes: Change[],
   expected: number,
   actor: ArchiveUser,
+  options: { withinTransaction?: boolean } = {},
 ) {
   // Scoped writes retain the complete visibility/relationship authorization.
   if (actor.role !== "admin" && actor.treeAccess === "common_ancestors")
@@ -59,7 +60,7 @@ export async function patchPeople(
   if (ids.length > 500) return null;
   if (actor.role === "reader" || !actor.approved)
     throw new ForbiddenError("Доступен только просмотр архива");
-  return await db.transaction(async () => {
+  const apply = async () => {
     await assertCurrentArchiveActor(db, actor);
     const revision = Number(
       (await db
@@ -179,5 +180,12 @@ export async function patchPeople(
       baseRevision: revision,
       appliedChanges,
     };
-  });
+  };
+  // A trusted caller may add its own checks and metadata in the same archive
+  // transaction. The normal HTTP path still owns the transaction here.
+  if (options.withinTransaction) {
+    if (!db.inTransaction()) throw new Error("Ожидается транзакция архива");
+    return await apply();
+  }
+  return await db.transaction(apply);
 }

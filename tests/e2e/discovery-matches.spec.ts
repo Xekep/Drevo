@@ -381,7 +381,7 @@ test("an owner previews only granted fields and loses the copy comparison after 
       source: { archiveId: "tree-b", personId: "person-b" },
       target: { archiveId: "tree-a", personId: "person-a" },
       fields: hasFields ? [{ field: "occupation", sourceValue: "Архивный исследователь",
-        targetValue: "Местный исследователь", status: "conflict" }] : [],
+        targetValue: "Местный исследователь", status: "conflict", copyable: false }] : [],
       quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
     } }) : route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
   });
@@ -396,7 +396,8 @@ test("an owner previews only granted fields and loses the copy comparison after 
   await expect(panel).toContainText("Местный исследователь");
   await expect(panel).toContainText("Источник: разрешённая связанная карточка другого архива");
   await expect(panel).not.toContainText("tree-b");
-  await expect(panel.getByRole("button", { name: /копировать|применить/i })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Скопировать выбранные поля" })).toBeDisabled();
+  await expect(panel).toContainText("Пока доступно только сравнение");
   hasFields = false;
   await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
   await expect(panel).toContainText("Нет разрешённых текстовых полей для сравнения.");
@@ -406,6 +407,66 @@ test("an owner previews only granted fields and loses the copy comparison after 
   await expect.poll(() => reads).toBe(3);
   await expect(panel).toContainText("Связь не найдена");
   await expect(panel).not.toContainText("Местный исследователь");
+});
+
+test("copying a linked place requires field choice and separate conflict confirmation", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let copied = false;
+  let writes = 0;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share`, (route) =>
+    route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
+      incoming: { fields: { birthPlace: "Архивный город", occupation: "Историк" },
+        grantedAt: "2026-10-01T00:00:00Z" },
+    } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share/copy-preview`, (route) => {
+    if (route.request().method() === "POST") {
+      writes++;
+      expect(route.request().postDataJSON()).toEqual({ fields: ["birthPlace"],
+        confirmConflicts: ["birthPlace"], revision: 7, reviewToken: "c".repeat(64) });
+      copied = true;
+      return route.fulfill({ json: { revision: 8, copied: ["birthPlace"] } });
+    }
+    return route.fulfill({ json: {
+      source: { archiveId: "tree-b", personId: "person-b" },
+      target: { archiveId: "tree-a", personId: "person-a" },
+      revision: copied ? 8 : 7, reviewToken: "c".repeat(64),
+      fields: [{ field: "birthPlace", sourceValue: "Архивный город",
+        targetValue: copied ? "Архивный город" : "Местный город",
+        status: copied ? "same" : "conflict", copyable: true,
+        ...(copied ? { copiedFrom: { archiveId: "tree-b", personId: "person-b",
+          revision: 8, copiedAt: "2026-10-01T00:00:00Z" } } : {}) },
+      { field: "occupation", sourceValue: "Историк", targetValue: null,
+        status: "empty", copyable: false }],
+      quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
+    } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
+  await panel.locator("summary").click();
+  await panel.getByRole("button", { name: "Сравнить с моей карточкой" }).click();
+  const apply = panel.getByRole("button", { name: "Скопировать выбранные поля" });
+  await expect(apply).toBeDisabled();
+  await panel.getByRole("checkbox", { name: "Скопировать место рождения" }).check();
+  await expect(apply).toBeDisabled();
+  await panel.getByRole("checkbox", { name: "Подтверждаю замену моего значения" }).check();
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  await expect.poll(() => writes).toBe(1);
+  await expect(panel).toContainText("Происхождение сохранено");
+  await expect(panel).toContainText("Значение ранее скопировано из другого архива");
+  await expect(apply).toBeDisabled();
+  await expect(panel.getByRole("checkbox", { name: "Скопировать род занятий" })).toHaveCount(0);
 });
 
 test("a linked branch needs both grants and clears a revoked projection", async ({ page }) => {

@@ -197,6 +197,19 @@ try {
       AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert',
         'discovery_linked_card_update','discovery_linked_card_delete')`)).rows[0].count,
   4, "a repeated 054 migration keeps all four access policies exactly once");
+  assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
+    WHERE oid=to_regclass('discovery_copied_fields')`)).rows[0]?.relforcerowsecurity,
+  true, "a clean database installs recipient-only transfer provenance as 061");
+  await client.query("DROP TABLE discovery_copied_fields");
+  await initializePostgresRuntimeSchema(live.db);
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_trigger
+    WHERE tgrelid=to_regclass('people')
+      AND tgname='clear_changed_discovery_copy_provenance' AND NOT tgisinternal`))
+    .rows[0].count, 1, "upgrading to 061 restores the provenance invalidation trigger");
+  await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
+    WHERE schemaname=current_schema() AND tablename='discovery_copied_fields'`)).rows[0].count,
+  1, "reapplying 061 keeps one archive-scoped RLS policy");
   const authorIndex = () => client.query(`SELECT indexdef FROM pg_indexes
     WHERE schemaname=current_schema() AND tablename='person_comments'
       AND indexname='person_comments_author'`);
@@ -2980,7 +2993,10 @@ try {
   ] as const) {
     const beforeBranch = await runtime.archive.read();
     const branchFamily = structuredClone(beforeBranch.family);
-    if (runtime === otherApp) branchFamily.people[0].occupation = "Местный исследователь";
+    if (runtime === otherApp) {
+      branchFamily.people[0].occupation = "Местный исследователь";
+      branchFamily.people[0].birthPlace = "Местный город";
+    }
     branchFamily.people[0].parents = [visibleId, hiddenId];
     for (const [id, name] of [[visibleId, `${label} родитель`],
       [hiddenId, `${label} закрытый`]]) {
@@ -3263,6 +3279,7 @@ try {
   const shareBeforeEdit = await app.archive.read();
   const shareFamily = structuredClone(shareBeforeEdit.family);
   shareFamily.people[0].occupation = "Архивный исследователь";
+  shareFamily.people[0].birthPlace = "Архивный город";
   shareFamily.people[0].biography = "Закрытая биография и источники";
   await app.archive.write(shareFamily,shareBeforeEdit.revision);
   assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
@@ -3316,11 +3333,14 @@ try {
   })).status, 409, "a stale card preview cannot authorize a new snapshot");
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken }),
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: sharePreview.previewToken }),
   })).status, 200);
   const incomingShare = await fetch(otherBase + cardSharePath, { headers: ownerHeaders })
     .then((response) => response.json());
-  assert.deepEqual(incomingShare.incoming.fields, { occupation: "Архивный исследователь" });
+  assert.deepEqual(incomingShare.incoming.fields, {
+    occupation: "Архивный исследователь", birthPlace: "Архивный город",
+  });
   assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
     "the grant response contains only the chosen scalar snapshot");
   const copyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
@@ -3333,14 +3353,16 @@ try {
     fields: copyPreview.fields, quotaImpact: copyPreview.quotaImpact }, {
     source: { archiveId: "runtime-test", personId: "person-a" },
     target: { archiveId: "other-archive", personId: "person-a" },
-    fields: [{ field: "occupation", sourceValue: "Архивный исследователь",
-      targetValue: "Местный исследователь", status: "conflict" }],
+    fields: [{ field: "birthPlace", sourceValue: "Архивный город",
+      targetValue: "Местный город", status: "conflict", copyable: true },
+    { field: "occupation", sourceValue: "Архивный исследователь",
+      targetValue: "Местный исследователь", status: "conflict", copyable: false }],
     quotaImpact: { additionalPeople: 0, additionalMediaBytes: 0 },
   }, "the preview compares only permitted scalar values with the local linked card");
   assert.doesNotMatch(JSON.stringify(copyPreview), /Закрытая биография|sources|parents|photo/);
   assert.equal((await fetch(otherBase + copyPreviewPath, {
     method: "POST", headers: archiveAdminHeaders,
-  })).status, 405, "a copy preview cannot apply changes through another method");
+  })).status, 400, "applying a copy requires explicit selected fields and a fresh review");
   await assert.rejects(matchDb.prepare("", `UPDATE discovery_linked_card_grants
     SET fields=?::jsonb WHERE grantor_archive_id='runtime-test'`).run(
     JSON.stringify({ biography: "Закрытая биография" })),
@@ -3403,6 +3425,90 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_linked_card_grants
     WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).get())?.granted_by,
   "owner", "the deletion probe leaves the live grant intact");
+  const copyHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.216",
+    "Content-Type": "application/json" };
+  const targetBeforeRevision = await otherApp.archive.read();
+  await otherApp.archive.write(targetBeforeRevision.family, targetBeforeRevision.revision);
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: copyHeaders,
+    body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+      revision: copyPreview.revision, reviewToken: copyPreview.reviewToken }),
+  })).status, 409, "a target revision change invalidates an otherwise identical comparison");
+  const freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json());
+  const copyBody = { fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+    revision: freshCopyPreview.revision, reviewToken: freshCopyPreview.reviewToken };
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.217" },
+    body: JSON.stringify(copyBody),
+  })).status, 403, "an invited admin cannot copy into the owner's linked card");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: copyHeaders,
+    body: JSON.stringify({ ...copyBody, fields: ["occupation"] }),
+  })).status, 400, "occupation is visible for comparison but cannot be copied without provenance support");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: copyHeaders,
+    body: JSON.stringify({ ...copyBody, confirmConflicts: [] }),
+  })).status, 409, "a conflicting local value requires separate explicit confirmation");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: copyHeaders,
+    body: JSON.stringify({ ...copyBody, reviewToken: "0".repeat(64) }),
+  })).status, 409, "a stale review cannot replace a local value");
+  const copyAttempts = await Promise.all([
+    fetch(otherBase + copyPreviewPath, { method: "POST", headers: copyHeaders,
+      body: JSON.stringify(copyBody) }),
+    fetch(otherBase + copyPreviewPath, { method: "POST", headers: {
+      ...copyHeaders, "X-Real-IP": "198.51.100.218",
+    }, body: JSON.stringify(copyBody) }),
+  ]);
+  assert.deepEqual(copyAttempts.map((response) => response.status).sort(), [200, 409],
+    "concurrent copies of one review commit once after the archive revision lock");
+  const savedCopy = await copyAttempts.find((response) => response.status === 200)!.json();
+  assert.deepEqual(savedCopy.copied, ["birthPlace"]);
+  assert.equal(savedCopy.revision, freshCopyPreview.revision + 1);
+  const copiedFamily = await otherApp.archive.read();
+  assert.equal(copiedFamily.family.people[0].birthPlace, "Архивный город");
+  assert.deepEqual(copiedFamily.family.people[0].sources,
+    targetBeforeRevision.family.people[0].sources,
+  "transfer provenance does not create or change genealogical citations");
+  assert.equal(copiedFamily.family.people[0].occupation, "Местный исследователь",
+    "copying a selected place cannot overwrite an unselected field");
+  assert.equal((await app.archive.read()).family.people[0].birthPlace, "Архивный город",
+    "the source card is never edited by the copy");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    const provenance = await matchDb.prepare("", `SELECT field,value,source_archive_id,
+      source_person_id,copied_revision FROM discovery_copied_fields
+      WHERE archive_id='other-archive' AND person_id='person-a'`).get();
+    assert.deepEqual(provenance, { field: "birthPlace", value: "Архивный город",
+      source_archive_id: "runtime-test", source_person_id: "person-a",
+      copied_revision: savedCopy.revision },
+    "the receiving archive retains transfer provenance separate from documentary citations");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM history
+      WHERE archive_id='other-archive' AND revision=?`).get(freshCopyPreview.revision))?.count,
+    1, "the ordinary person patch path records undo history");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM archive_audit_entries
+      WHERE archive_id='other-archive' AND revision=? AND entity_id='person-a'`)
+      .get(savedCopy.revision))?.count, 1, "the copy produces a normal person audit entry");
+  }, true);
+  for (const hiddenArchive of ["runtime-test", "unrelated-archive"])
+    await matchDb.transaction(async () => {
+      await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+        .get(hiddenArchive);
+      assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+        FROM discovery_copied_fields WHERE archive_id='other-archive'`).get())?.count,
+      0, "copy provenance is visible only to the receiving archive");
+    }, true);
+  await assert.rejects(matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("runtime-test");
+    await matchDb.prepare("", `INSERT INTO discovery_copied_fields(archive_id,person_id,
+      field,value,source_archive_id,source_person_id,copied_revision)
+      VALUES('other-archive','person-a','birthPlace','Подмена','runtime-test','person-a',1)`)
+      .run();
+  }), (error: unknown) => (error as { code?: string }).code === "42501",
+  "the source archive cannot forge provenance in the recipient's tree");
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "DELETE", headers: ownerHeaders,
   })).status, 200);
@@ -3418,6 +3524,33 @@ try {
   assert.equal((await fetch(otherBase + copyPreviewPath, {
     headers: archiveAdminHeaders,
   })).status, 404, "a fresh copy preview closes immediately after grant revocation");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: copyHeaders, body: JSON.stringify(copyBody),
+  })).status, 404, "a revoked source grant cannot apply an older preview");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
+      WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`)
+      .get())?.value, "Архивный город",
+    "revoking access does not erase an explicitly saved local copy");
+  }, true);
+  const beforeUnrelatedEdit = await otherApp.archive.read();
+  const unrelatedEdit = structuredClone(beforeUnrelatedEdit.family);
+  unrelatedEdit.people[0].occupation = "Другое занятие";
+  await otherApp.archive.write(unrelatedEdit, beforeUnrelatedEdit.revision);
+  const copiedValue = () => matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    return await matchDb.prepare("", `SELECT value FROM discovery_copied_fields
+      WHERE archive_id='other-archive' AND person_id='person-a' AND field='birthPlace'`).get();
+  }, true);
+  assert.equal((await copiedValue())?.value, "Архивный город",
+    "editing another field keeps copy provenance");
+  const beforeCopiedValueEdit = await otherApp.archive.read();
+  const copiedValueEdit = structuredClone(beforeCopiedValueEdit.family);
+  copiedValueEdit.people[0].birthPlace = "Новое местное значение";
+  await otherApp.archive.write(copiedValueEdit, beforeCopiedValueEdit.revision);
+  assert.equal(await copiedValue(), undefined,
+  "editing the copied value removes stale provenance without changing other facts");
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
       .get("other-archive");
