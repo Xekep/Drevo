@@ -1274,6 +1274,57 @@ try {
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
     )
     .run(sessionTokenHash(ownerToken), Date.now() + 60_000);
+  const peopleBeforeQuota = await app.archive.read();
+  assert.ok(peopleBeforeQuota.family.people.length < 149);
+  const quotaFamily = (count: number): Family => ({
+    ...peopleBeforeQuota.family,
+    people: [
+      ...peopleBeforeQuota.family.people,
+      ...Array.from({ length: count - peopleBeforeQuota.family.people.length }, (_, index) => ({
+        ...family.people[0],
+        id: `basic-quota-${index}`,
+        name: `Quota ${index}`,
+        column: index + 10,
+      })),
+    ],
+  });
+  const saveQuotaFamily = (value: Family, revision: number) =>
+    fetch(securedBase + "/api/family", {
+      method: "PUT",
+      headers: {
+        Cookie: `drevo_session=${ownerToken}`,
+        Origin: process.env.PUBLIC_ORIGIN!,
+        "Content-Type": "application/json",
+        "If-Match": String(revision),
+      },
+      body: JSON.stringify(value),
+    });
+  const rejectedPeople = await saveQuotaFamily(quotaFamily(151), peopleBeforeQuota.revision);
+  assert.equal(rejectedPeople.status, 403, await rejectedPeople.text());
+  await assert.rejects(
+    app.archive.write(quotaFamily(151), peopleBeforeQuota.revision),
+    /150/,
+    "background imports through archive.write must obey the owner's tier",
+  );
+  assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
+  assert.equal(
+    (await quotaDb.prepare("", "SELECT count(*) AS count FROM people").get())?.count,
+    peopleBeforeQuota.family.people.length,
+  );
+  const nearLimit = await saveQuotaFamily(quotaFamily(149), peopleBeforeQuota.revision);
+  assert.equal(nearLimit.status, 200, await nearLimit.text());
+  const nearLimitRevision = (await app.archive.read()).revision;
+  const competingSaves = await Promise.all([
+    saveQuotaFamily(quotaFamily(150), nearLimitRevision),
+    saveQuotaFamily(quotaFamily(150), nearLimitRevision),
+  ]);
+  assert.deepEqual(competingSaves.map((response) => response.status).sort(), [200, 409]);
+  const afterCompetingSaves = await app.archive.read();
+  assert.equal(afterCompetingSaves.family.people.length, 150);
+  await app.archive.write(peopleBeforeQuota.family, afterCompetingSaves.revision);
+  assert.equal((await app.archive.read()).family.people.length,
+    peopleBeforeQuota.family.people.length,
+    "shrinking an archive remains possible for a basic owner");
   assert.equal(
     (await fetch(securedBase + "/api/backups", {
       headers: { Cookie: `drevo_session=${ownerToken}` },

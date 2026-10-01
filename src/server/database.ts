@@ -1,6 +1,7 @@
 import { enforceUserStorageLimit, userStorageBytes } from "./storage-limits.ts";
 import { authorizeArchive } from "./permissions.ts";
 import { assertCurrentArchiveActor } from "./users.ts";
+import { checkStorePostgresPeopleGrowth } from "./postgres-people-quota.ts";
 import { authorizeMediaReferences } from "./media-access.ts";
 import {
   enforcePostgresMediaQuota,
@@ -420,6 +421,10 @@ export async function openArchive(
         actor && previous
           ? authorizeArchive(value, previous, actor)
           : validateFamily(value);
+      await checkStorePostgresPeopleGrowth(
+        db,
+        family.people.length - (previous?.people.length || 0),
+      );
       if (actor && previous)
         await authorizeMediaReferences(db, previous, family, actor);
       const mediaActorId =
