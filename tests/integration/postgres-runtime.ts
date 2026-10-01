@@ -2664,10 +2664,16 @@ try {
     await runtime.archive.write(restored, current.revision);
   }
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
-  await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId]);
-  await client.query("DELETE FROM archives WHERE id='third-archive'");
+  assert.equal((await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId])).rowCount,
+    1, "B removes its direct B-C test request before deleting C");
   await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='vk:42'");
   await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
+  await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
+  assert.equal((await client.query("DELETE FROM archives WHERE id='third-archive'")).rowCount,
+    1, "C's FORCE RLS requires selecting C before fixture deletion");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_people
+    WHERE archive_id='third-archive'`)).rows[0].count, 0,
+    "deleting the test archive also clears its public discovery projection");
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", { headers })).status, 403);
   const beforeCandidates = await otherApp.archive.read();
