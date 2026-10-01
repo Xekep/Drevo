@@ -11,10 +11,12 @@ const labels = {
 } as const;
 type Field = keyof typeof labels;
 type SharedFields = Partial<Record<Field, string>>;
-type Grant = { fields: SharedFields; grantedAt: string } | null;
+type Grant = { fields: SharedFields; grantedAt: string; expiresAt: string | null } | null;
 type Detail = {
   available: SharedFields;
   previewToken: string;
+  recipientArchiveId: string;
+  recipientPersonName: string;
   outgoing: Grant;
   incoming: Grant;
 };
@@ -32,6 +34,7 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
   const requestVersion = useRef(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<Field[]>([]);
+  const [durationDays, setDurationDays] = useState(7);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -78,7 +81,8 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
         method,
         ...(method === "PUT" ? {
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fields: selected, previewToken: detail.previewToken }),
+          body: JSON.stringify({ fields: selected, previewToken: detail.previewToken,
+            recipientArchiveId: detail.recipientArchiveId, durationDays }),
         } : {}),
       });
       const body = await response.json();
@@ -103,6 +107,8 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
     <p>Только владелец другого дерева увидит выбранный снимок вашей карточки. Фото, документы, источники и родственники не передаются. Изменения карточки после отправки не обновляют снимок автоматически. После передачи владения оба разрешения на дополнительные сведения отзываются, и владельцы могут выдать их заново.</p>
     {busy && !detail && <p role="status">Загружаем…</p>}
     {detail && <>
+      <p>Адресат: опубликованная карточка «{detail.recipientPersonName}», архив <code
+        style={{ overflowWrap: "anywhere" }}>{detail.recipientArchiveId}</code>. Доступ только для владельца этого архива и только в данной подтверждённой связи.</p>
       <h4>Разрешить другой стороне</h4>
       {(Object.keys(labels) as Field[]).filter((key) => detail.available[key]).length === 0 &&
         <p>В этой карточке нет дополнительных текстовых полей для передачи.</p>}
@@ -113,11 +119,20 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
               ? [...current,key] : current.filter((item) => item !== key))} />
           <span><strong>{labels[key]}</strong>: {detail.available[key]}</span>
         </label>)}
+      <label>Срок нового разрешения <select value={durationDays} disabled={busy}
+        onChange={(event) => setDurationDays(Number(event.target.value))}>
+        <option value={1}>1 день</option><option value={7}>7 дней</option>
+        <option value={30}>30 дней</option>
+      </select></label>
       <div className="match-request-actions">
         <button type="button" disabled={busy || !selected.length} onClick={() => void save("PUT")}>Поделиться выбранным</button>
         {detail.outgoing && <button type="button" disabled={busy} onClick={() => void save("DELETE")}>Отозвать доступ</button>}
       </div>
-      {detail.outgoing && <><h4>Сейчас открыто другой стороне</h4><Fields values={detail.outgoing.fields} /></>}
+      {detail.outgoing && <><h4>Сейчас открыто другой стороне</h4>
+        <p>{detail.outgoing.expiresAt
+          ? `Ваше разрешение действует до ${new Date(detail.outgoing.expiresAt).toLocaleString("ru-RU")}.`
+          : "Ваше прежнее разрешение действует до отзыва."}</p>
+        <Fields values={detail.outgoing.fields} /></>}
       <h4>Другая сторона открыла вам</h4>
       {detail.incoming ? <Fields values={detail.incoming.fields} /> : <p>Дополнительные сведения пока не открыты.</p>}
       {detail.incoming && <DiscoveryCopyPreview matchId={matchId} />}

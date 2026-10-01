@@ -179,6 +179,10 @@ try {
   "the clean PostgreSQL runtime applies person comment schema 053 before grant schema 054");
   assert.equal((await client.query("SELECT to_regclass('discovery_linked_card_grants') AS name")).rows[0].name,
     "discovery_linked_card_grants");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='discovery_linked_card_grants'
+      AND column_name='expires_at'`)).rows[0].count, 1,
+  "a clean database applies finite card consent schema 063 after 054");
   assert.equal((await client.query("SELECT to_regclass('discovery_branch_members') AS name")).rows[0].name,
     "discovery_branch_members", "a clean database applies branch grant schema 055");
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM information_schema.columns
@@ -205,6 +209,10 @@ try {
   assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
     WHERE oid=to_regclass('discovery_linked_card_grants')`)).rows[0]?.relforcerowsecurity,
   true, "upgrading a database at schema 053 installs the FORCE RLS grant table as 054");
+  assert.match((await client.query(`SELECT qual FROM pg_policies WHERE schemaname=current_schema()
+    AND tablename='discovery_linked_card_grants' AND policyname='discovery_linked_card_read'`))
+    .rows[0]?.qual || "", /expires_at/,
+  "reinstalling 054 also restores the active-consent RLS gate as 063");
   await client.query(readFileSync(new URL("../../ops/postgres/054_discovery_linked_card_grants.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
     WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants'
@@ -3411,11 +3419,28 @@ try {
     const preview = await previewResponse.json();
     assert.equal((await fetch(base + transferCardPath, {
       method: "PUT", headers: { ...grantHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: ["birth"], previewToken: preview.previewToken }),
+      body: JSON.stringify({ fields: ["birth"], previewToken: preview.previewToken,
+        recipientArchiveId: preview.recipientArchiveId, durationDays: 7 }),
     })).status, 200);
   };
   await grantBirth(securedBase, ownerHeaders);
   await grantBirth(otherBase, archiveAdminHeaders);
+  assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='other-archive'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+  const recipientAfterReverseExpiry = await fetch(securedBase + transferCardPath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.221" },
+  }).then((response) => response.json());
+  assert.equal(recipientAfterReverseExpiry.incoming, null,
+    "expiry also closes a B-to-A scalar snapshot");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a'`).get())?.count, 0,
+    "RLS denies reverse-direction expired snapshots");
+  }, true);
+  await grantBirth(otherBase, { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.222" });
   assert.equal((await client.query(`SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
   2, "both owners can grant a private scalar snapshot for the confirmed pair");
@@ -3715,27 +3740,101 @@ try {
   assert.equal((await fetch(otherBase + copyPreviewPath, { headers: archiveAdminHeaders })).status,
     404, "the owner cannot preview a copy before the source grants fields");
   assert.equal(sharePreview.available.occupation, "Архивный исследователь");
+  assert.equal(sharePreview.recipientArchiveId, "other-archive");
+  assert.equal(sharePreview.recipientPersonName, "Иван Петров");
   assert.equal(sharePreview.available.biography, undefined);
   assert.equal(sharePreview.incoming, null);
   assert.equal(sharePreview.outgoing, null);
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["biography"], previewToken: sharePreview.previewToken }),
+    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+      recipientArchiveId: "third-archive", durationDays: 7 }),
+  })).status, 409, "a scalar grant cannot address a third archive");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 365 }),
+  })).status, 400, "new scalar grants require a bounded term");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["biography"], previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 400, "free-form biography cannot enter a scalar card grant");
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: "0".repeat(64) }),
+    body: JSON.stringify({ fields: ["occupation"], previewToken: "0".repeat(64),
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 409, "a stale card preview cannot authorize a new snapshot");
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken }),
+      previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
   const incomingShare = await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
   assert.deepEqual(incomingShare.incoming.fields, {
     occupation: "Архивный исследователь", birthPlace: "Архивный город",
   });
+  assert.equal(incomingShare.recipientArchiveId, "runtime-test");
+  assert.ok(incomingShare.incoming.expiresAt);
+  const initialScalarLife = await matchDb.prepare("", `SELECT
+    extract(epoch FROM expires_at-now())/86400 AS days_left
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).get();
+  assert.ok(Number(initialScalarLife?.days_left) > 6.99 && Number(initialScalarLife?.days_left) <= 7);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'
+        AND right_person_id='person-a'`).get())?.count, 0,
+    "a third archive cannot read an addressed scalar grant through SQL");
+  }, true);
+  const beforeScalarExpiry = await fetch(otherBase + copyPreviewPath, {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json());
+  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+    SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
+  const expiredCardHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.219" };
+  const expiredCard = await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders });
+  assert.equal(expiredCard.status, 200);
+  assert.equal(expiredCard.headers.get("cache-control"), "private, no-store");
+  assert.equal((await expiredCard.json()).incoming, null,
+    "an expired scalar grant closes the direct linked-card snapshot");
+  assert.equal((await fetch(otherBase + copyPreviewPath, { headers: expiredCardHeaders })).status,
+    404, "an expired scalar grant closes the copy-preview URL");
+  assert.equal((await fetch(otherBase + copyPreviewPath, {
+    method: "POST", headers: { ...expiredCardHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["birthPlace"], confirmConflicts: ["birthPlace"],
+      revision: beforeScalarExpiry.revision, reviewToken: beforeScalarExpiry.reviewToken }),
+  })).status, 404, "an expired grant cannot apply an earlier copy review");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a'`).get())?.count, 0,
+    "RLS hides an expired scalar snapshot from its recipient");
+  }, true);
+  const renewalHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.220" };
+  const renewalPreview = await fetch(securedBase + cardSharePath, { headers: renewalHeaders })
+    .then((response) => response.json());
+  assert.equal(renewalPreview.outgoing, null,
+    "an expired owner grant is shown as inactive, not as an active snapshot");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...renewalHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation", "birthPlace"],
+      previewToken: renewalPreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 30 }),
+  })).status, 200, "the owner can renew the same fields with a new explicit term");
+  assert.deepEqual((await fetch(otherBase + cardSharePath, { headers: expiredCardHeaders })
+    .then((response) => response.json())).incoming.fields,
+    { occupation: "Архивный исследователь", birthPlace: "Архивный город" });
+  const renewedScalarLife = await matchDb.prepare("", `SELECT
+    extract(epoch FROM expires_at-now())/86400 AS days_left
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+      AND left_person_id='person-a' AND right_person_id='person-a'`).get();
+  assert.ok(Number(renewedScalarLife?.days_left) > 29.99 && Number(renewedScalarLife?.days_left) <= 30);
   assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
     "the grant response contains only the chosen scalar snapshot");
   await client.query("BEGIN");
@@ -3935,7 +4034,8 @@ try {
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ fields: ["occupation", "birthPlace"],
-      previewToken: sharePreview.previewToken }),
+      previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200, "the source may grant the same scalar snapshot again");
   freshCopyPreview = await fetch(otherBase + copyPreviewPath, {
     headers: archiveAdminHeaders,
@@ -4063,7 +4163,8 @@ try {
   }, true);
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken }),
+    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
@@ -4452,8 +4553,21 @@ try {
   assert.equal(revocablePreview.available.birth, "1960");
   assert.equal((await fetch(securedBase + revocableSharePath, {
     method: "PUT", headers: { ...manualHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken }),
+    body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken,
+      recipientArchiveId: revocablePreview.recipientArchiveId, durationDays: 7 }),
   })).status, 200);
+  assert.equal((await app.archive.db.prepare("", `UPDATE discovery_linked_card_grants
+    SET expires_at=NULL WHERE grantor_archive_id='runtime-test'
+      AND left_person_id=? AND right_person_id=?`).run(parent.id,parent.id)).changes, 1);
+  await client.query(readFileSync(new URL("../../ops/postgres/063_discovery_card_expiry.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id=$1 AND right_person_id=$2
+      AND expires_at IS NULL`, [parent.id,parent.id])).rows[0].count, 1,
+  "reapplying 063 never shortens a legacy until-revoked scalar consent");
+  assert.deepEqual((await fetch(otherBase + revocableSharePath, { headers: {
+    ...archiveAdminHeaders, "X-Real-IP": "198.51.100.223",
+  } }).then((response) => response.json())).incoming.fields,
+  { birth: "1960" }, "a legacy NULL grant remains readable until revoked");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
     .get(parent.id,parent.id))?.count, 1);

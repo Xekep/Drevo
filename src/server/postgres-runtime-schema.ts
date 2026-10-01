@@ -198,6 +198,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_branch_grants' AND column_name='expires_at' AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_branch_members' AND policyname='discovery_branch_members_read' AND qual LIKE '%expires_at%')",
       "062_discovery_branch_expiry.sql",
     ],
+    [
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_linked_card_grants' AND column_name='expires_at' AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants' AND policyname='discovery_linked_card_read' AND qual LIKE '%expires_at%')",
+      "063_discovery_card_expiry.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {
