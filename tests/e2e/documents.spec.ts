@@ -486,8 +486,7 @@ test("участник загружает PDF и читает страницы �
   await expect(
     book.getByRole("link", { name: "Скачать оригинал" }),
   ).toBeVisible();
-  if (testInfo.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-sidebar-tabs button").last().click();
   await reader.locator(".pdf-book-outline button").first().click();
   await expect(book.locator('.BRpage-visible[data-index="1"]')).toBeVisible();
@@ -601,8 +600,7 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
   const book = reader.frameLocator("iframe.pdf-book-frame");
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
-  if (info.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
   await reader.locator(".pdf-book-add-comment").click();
   const overlay = book
     .locator('.BRpage-visible[data-index="0"] .drevo-page-layer')
@@ -635,8 +633,20 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   expect(second.status()).toBe(201);
   await book.getByRole("button", { name: "Закрыть документ" }).click();
   await page.locator(".document-item").filter({ hasText: title }).click();
-  if (info.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  const firstMark = book.locator('.BRpage-visible[data-index="0"] .drevo-page-mark').first();
+  await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.1)");
+  const firstComment = reader.locator(".pdf-book-comments-list article").filter({
+    hasText: "Первый фрагмент записи",
+  });
+  await firstComment.hover();
+  await expect(firstMark).toHaveClass(/is-hovered/);
+  await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.3)");
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  await firstMark.hover();
+  await expect(firstMark).not.toHaveClass(/is-hovered/);
+  await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.3)");
+  await book.getByRole("button", { name: "Комментарии" }).click();
   await reader
     .locator(".pdf-book-comments-list article")
     .filter({ hasText: "Последняя страница" })
@@ -657,8 +667,7 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   await book.getByRole("button", { name: "Закрыть документ" }).click();
   await page.goto("/documents");
   await page.locator(".document-item").filter({ hasText: title }).click();
-  if (info.project.name === "mobile")
-    await book.getByRole("button", { name: "Комментарии" }).click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
 });
 
@@ -700,6 +709,7 @@ test("BookReader opens a document longer than 300 pages", async ({
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible({
     timeout: 30_000,
   });
+  await book.getByRole("button", { name: "Комментарии" }).click();
   await reader
     .locator(".pdf-book-comments-list article")
     .filter({ hasText: "Запись в конце" })

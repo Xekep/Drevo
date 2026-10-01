@@ -50,6 +50,7 @@ export function PdfBookReader({
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [activeAnnotation, setActiveAnnotation] = useState("");
+  const [hoveredAnnotation, setHoveredAnnotation] = useState("");
 
   useEffect(() => {
     closeLatest.current = onClose;
@@ -184,6 +185,7 @@ export function PdfBookReader({
         type: "state",
         annotations,
         activeAnnotation,
+        hoveredAnnotation,
         annotating,
         magnifier,
         commentsOpen,
@@ -195,6 +197,7 @@ export function PdfBookReader({
     readerReady,
     annotations,
     activeAnnotation,
+    hoveredAnnotation,
     annotating,
     magnifier,
     commentsOpen,
@@ -497,6 +500,13 @@ export function PdfBookReader({
                       className={
                         item.id === activeAnnotation ? "is-active" : ""
                       }
+                      onMouseEnter={() => setHoveredAnnotation(item.id)}
+                      onMouseLeave={() => setHoveredAnnotation("")}
+                      onFocus={() => setHoveredAnnotation(item.id)}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget))
+                          setHoveredAnnotation("");
+                      }}
                     >
                       <button
                         type="button"

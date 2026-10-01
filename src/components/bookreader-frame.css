@@ -31,16 +31,20 @@ body {
 .drevo-page-draft {
   position: absolute;
   box-sizing: border-box;
-  pointer-events: none;
-  border: 1px solid #a67932;
-  background: #e9c26155;
+  background: rgb(233 194 97 / 10%);
 }
+.drevo-page-mark { pointer-events: auto; }
+.drevo-page-mark:hover,
+.drevo-page-mark.is-hovered,
 .drevo-page-mark.is-active {
-  border-color: #e7b856;
-  background: #e7b85688;
+  background: rgb(233 194 97 / 30%);
+  box-shadow: inset 0 0 0 1px rgb(166 121 50 / 55%);
 }
+.drevo-annotating .drevo-page-mark { pointer-events: none; }
 .drevo-page-draft {
-  border-style: dashed;
+  border: 1px dashed #a67932;
+  pointer-events: none;
+  background: rgb(233 194 97 / 22%);
 }
 .drevo-magnifying .BRpagecontainer {
   cursor: none;
@@ -116,9 +120,4 @@ body {
 }
 .br-mode-2up__leafs[side="left"] .br-leaf-edges__label {
   transform: translate(100%, -10px);
-}
-@media (min-width: 821px) {
-  .BRtoolbar .drevo-toolbar-comments {
-    display: none;
-  }
 }
