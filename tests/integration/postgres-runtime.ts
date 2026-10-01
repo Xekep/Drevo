@@ -199,6 +199,10 @@ try {
     AND tablename='discovery_branch_members' AND policyname='discovery_branch_members_read'`))
     .rows[0]?.qual || "", /expires_at/,
   "reinstalling 055 also restores the active-consent RLS gate as 062");
+  assert.match((await client.query(`SELECT qual FROM pg_policies WHERE schemaname=current_schema()
+    AND tablename='discovery_branch_grants' AND policyname='discovery_branch_grants_read'`))
+    .rows[0]?.qual || "", /expires_at/,
+  "reinstalling 055 also closes expired grant metadata to recipients as 064");
   await client.query(readFileSync(new URL("../../ops/postgres/055_discovery_branch_grants.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
     WHERE schemaname=current_schema() AND tablename IN
@@ -3506,6 +3510,13 @@ try {
   assert.equal((await fetch(securedBase + branchPersonPath, {
     method: "POST", headers: navigationHeaders,
   })).status, 405, "the linked member route is read-only");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
+      WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'
+        AND right_person_id='person-a'`).get())?.granted_by, "vk:42",
+    "the recipient may inspect a still-active addressed branch grant");
+  }, true);
   const expiryAHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.216" };
   const expiryBHeaders = { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.217" };
   assert.equal((await otherApp.archive.db.prepare("", `UPDATE discovery_branch_grants
@@ -3521,8 +3532,19 @@ try {
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+      0, "RLS hides the expired grant's author and timestamps from its recipient");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
       FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
       0, "RLS closes source members when their grant expires");
+  }, true);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+      1, "the grantor keeps its expired row to manage or renew consent");
   }, true);
   const expiredBPreview = await fetch(otherBase + branchPath, { headers: expiryBHeaders })
     .then((response) => response.json());
@@ -3536,6 +3558,13 @@ try {
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: expiryAHeaders })
     .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"]);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_grants WHERE grantor_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+      1, "explicit renewal makes only the current grant visible again");
+  }, true);
   assert.equal((await app.archive.db.prepare("", `UPDATE discovery_branch_grants
     SET expires_at=now()-interval '1 second' WHERE grantor_archive_id='runtime-test'
       AND left_person_id='person-a' AND right_person_id='person-a'`).run()).changes, 1);
@@ -3548,6 +3577,10 @@ try {
   })).status, 404);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' AND right_person_id='person-a'`).get())?.count,
+      0, "the reverse recipient cannot inspect an expired source grant");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
       FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
       0, "RLS closes recipient members when its own grant expires");
@@ -3785,10 +3818,18 @@ try {
       AND expires_at IS NULL`)).rows[0].count, 2,
     "legacy grants without an expiry remain valid until revoked");
   await client.query(readFileSync(new URL("../../ops/postgres/062_discovery_branch_expiry.sql", import.meta.url), "utf8"));
+  await client.query(readFileSync(new URL("../../ops/postgres/064_discovery_branch_grant_read_expiry.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
     WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
       AND expires_at IS NULL`)).rows[0].count, 2,
-    "reapplying 062 does not silently shorten existing branch consents");
+    "reapplying 062/064 does not silently shorten existing branch consents");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("third-archive");
+    assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_branch_grants
+      WHERE left_archive_id='other-archive' AND right_archive_id='third-archive'
+        AND grantor_archive_id='other-archive'`).get())?.granted_by, "owner",
+      "recipient C can still read a legacy NULL grant under RLS after reapplying 064");
+  }, true);
   const encodedMemberPath = `/api/discovery/matches/${secondPairId}/branch-share/people/family%3Aperson.1`;
   const encodedMember = await fetch(otherBase + encodedMemberPath, { headers: {
     ...archiveAdminHeaders, "X-Real-IP": "198.51.100.215",
