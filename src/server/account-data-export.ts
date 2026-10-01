@@ -111,9 +111,9 @@ export function accountDataExport(db: StoreDatabase) {
                 `SELECT c.id,c.person_id,c.text,c.created_ms,c.updated_ms
                  FROM person_comments c JOIN people p
                    ON p.archive_id=c.archive_id AND p.id=c.person_id
-                 WHERE c.author_id=? ORDER BY c.id`,
+                 WHERE c.archive_id=? AND c.author_id=? ORDER BY c.id`,
               )
-              .all(accountId);
+              .all(String(membership.archive_id), accountId);
             ownComments = comments
               .filter((row) => !visible || visible.has(String(row.person_id)))
               .map((row) => ({
