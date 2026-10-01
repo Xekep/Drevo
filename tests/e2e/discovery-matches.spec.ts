@@ -412,6 +412,48 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
 
+test("reopening a linked-branch panel discards revoked and in-flight members", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  const incoming = { id: "parent-b", relation: "parent", name: "Уже отозванный родственник" };
+  let reads = 0;
+  let releaseSecond!: () => void;
+  const secondRead = new Promise<void>((resolve) => { releaseSecond = resolve; });
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/branch-share`, async (route) => {
+    const read = ++reads;
+    if (read === 2) await secondRead;
+    await route.fulfill({ json: { available: [], truncated: false, previewToken: "b".repeat(64),
+      ownReady: true, otherReady: true, outgoingIds: [], incoming: read < 3 ? [incoming] : [],
+    } }).catch(() => {});
+  });
+  try {
+    await page.goto("/admin");
+    await openAdminSection(page, "matches", "Связи деревьев");
+    const panel = page.locator(".match-card-share").filter({ hasText: "Поделиться разрешённой веткой" });
+    await panel.locator("summary").click();
+    await expect(panel).toContainText("Уже отозванный родственник");
+    await panel.locator("summary").click();
+    await panel.locator("summary").click();
+    await expect.poll(() => reads).toBe(2);
+    await expect(panel).not.toContainText("Уже отозванный родственник");
+    await panel.locator("summary").click();
+    releaseSecond();
+    await panel.locator("summary").click();
+    await expect.poll(() => reads).toBe(3);
+    await expect(panel).toContainText("Другая сторона не выбрала родственников.");
+    await expect(panel).not.toContainText("Уже отозванный родственник");
+  } finally { releaseSecond(); }
+});
+
 test("a selected linked member opens through its own permission-checked URL", async ({ page }) => {
   const id = "11111111-1111-4111-8111-111111111111";
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };

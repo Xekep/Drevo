@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 
 type Member = { id: string; relation: "parent" | "child" | "spouse"; name: string;
@@ -20,27 +20,49 @@ function MemberCard({ person, matchId, archiveId }: { person: Member; matchId: s
 }
 
 export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; archiveId: string }) {
+  const panel = useRef<HTMLDetailsElement>(null);
+  const request = useRef<AbortController | null>(null);
+  const requestVersion = useRef(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const endpoint = `/api/discovery/matches/${matchId}/branch-share`;
-  async function load(preserveError = false) {
+  const cancelRead = useCallback(() => {
+    requestVersion.current++;
+    request.current?.abort();
+    request.current = null;
+  }, []);
+  const load = useCallback(async (preserveError = false) => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const version = ++requestVersion.current;
+    setDetail(null); setSelected([]);
     setBusy(true); if (!preserveError) setError("");
     try {
-      const response = await archiveFetch(endpoint, { cache: "no-store" });
+      const response = await archiveFetch(endpoint, { cache: "no-store", signal: controller.signal });
       const body = await response.json();
+      if (controller.signal.aborted || version !== requestVersion.current) return;
       if (!response.ok) throw new Error(body.error || "Не удалось проверить разрешение ветки");
       setDetail(body);
       setSelected(body.outgoingIds);
     } catch (reason) {
+      if (controller.signal.aborted || version !== requestVersion.current) return;
       setDetail(null); setSelected([]);
       setError((reason as Error).message);
-    } finally { setBusy(false); }
-  }
+    } finally {
+      if (version === requestVersion.current) { request.current = null; setBusy(false); }
+    }
+  }, [endpoint]);
+  useEffect(() => {
+    if (panel.current?.open) void load();
+    return cancelRead;
+  }, [load, cancelRead]);
   async function save(method: "PUT" | "DELETE") {
     if (!detail) return;
+    const version = requestVersion.current;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await archiveFetch(endpoint, {
@@ -49,18 +71,23 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
           body: JSON.stringify({ personIds: selected, previewToken: detail.previewToken }) } : {}),
       });
       const body = await response.json();
+      if (version !== requestVersion.current || !panel.current?.open) return;
       if (!response.ok) throw new Error(body.error || "Не удалось изменить разрешение");
       setNotice(method === "PUT" ? "Выбор сохранён. Просмотр откроется после разрешения второй стороны."
         : "Доступ к ветке отозван.");
       await load();
     } catch (reason) {
-      await load();
+      if (version !== requestVersion.current || !panel.current?.open) return;
       setError((reason as Error).message);
-    } finally { setBusy(false); }
+      await load(true);
+    } finally { if (version === requestVersion.current) setBusy(false); }
   }
-  return <details className="match-card-share" onToggle={(event) => {
-    if (event.currentTarget.open && !busy) void load();
-    if (!event.currentTarget.open) { setDetail(null); setSelected([]); }
+  return <details ref={panel} className="match-card-share" onToggle={(event) => {
+    if (event.currentTarget.open) { setNotice(""); void load(); }
+    else {
+      cancelRead();
+      setDetail(null); setSelected([]); setBusy(false);
+    }
   }}>
     <summary>Поделиться разрешённой веткой</summary>
     <p>Каждый владелец выбирает своих опубликованных прямых родственников. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации сразу убирает карточку из ветки.</p>
