@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
@@ -42,6 +43,11 @@ export type StoreDatabase = {
   postgresTransaction?<T>(
     work: (client: pg.PoolClient) => Promise<T>,
   ): Promise<T>;
+  /** Session lock for long archive jobs; never keep a DB transaction open. */
+  withExclusiveArchiveTask?<T>(
+    task: string,
+    work: () => Promise<T>,
+  ): Promise<{ acquired: false } | { acquired: true; value: T }>;
   inTransaction(): boolean;
   close(): Promise<void>;
 };
@@ -267,6 +273,49 @@ export async function openPostgresDatabase(
         throw error;
       } finally {
         client.release();
+      }
+    },
+    async withExclusiveArchiveTask(task, work) {
+      if (!/^[a-z0-9-]{1,64}$/.test(task))
+        throw new Error("Invalid archive task name");
+      const lockKey = createHash("sha256")
+        .update(`${archiveId}:${task}`)
+        .digest()
+        .readBigInt64BE(0)
+        .toString();
+      const client = await pool.connect();
+      let acquired = false;
+      let discard = false;
+      const release = async () => {
+        try {
+          if (acquired) {
+            const result = await client.query<{ released: boolean }>(
+              "SELECT pg_advisory_unlock($1::bigint) AS released",
+              [lockKey],
+            );
+            if (!result.rows[0]?.released)
+              throw new Error("Archive task lock was lost");
+          }
+        } catch (error) {
+          discard = true;
+          throw error;
+        } finally {
+          client.release(discard);
+        }
+      };
+      try {
+        const result = await client.query<{ acquired: boolean }>(
+          "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
+          [lockKey],
+        );
+        if (!result.rows[0]?.acquired) return { acquired: false };
+        acquired = true;
+        return { acquired: true, value: await work() };
+      } catch (error) {
+        if (!acquired) discard = true;
+        throw error;
+      } finally {
+        await release();
       }
     },
     close: () => pool.end(),
