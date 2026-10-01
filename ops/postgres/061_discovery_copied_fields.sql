@@ -36,3 +36,49 @@ DROP TRIGGER IF EXISTS clear_changed_discovery_copy_provenance ON people;
 CREATE TRIGGER clear_changed_discovery_copy_provenance
   AFTER UPDATE OF data ON people FOR EACH ROW
   EXECUTE FUNCTION clear_changed_discovery_copy_provenance();
+
+-- A confirmed public link can survive ownership transfer, but a successor
+-- must never inherit either side's private scalar snapshot. RLS permits only
+-- the grantor to DELETE a grant; visit the two exact grantor scopes in turn.
+CREATE OR REPLACE FUNCTION revoke_discovery_card_grants_after_owner_transfer()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
+DECLARE original_archive text := current_setting('drevo.archive_id',true);
+DECLARE grantors text[];
+DECLARE grantor text;
+BEGIN
+  IF NEW.user_id IS NOT DISTINCT FROM OLD.user_id THEN RETURN NEW; END IF;
+  IF original_archive IS DISTINCT FROM NEW.archive_id THEN
+    RAISE EXCEPTION 'Scalar grant transfer revoke requires the archive context';
+  END IF;
+  SELECT array_agg(DISTINCT g.grantor_archive_id) INTO grantors
+    FROM discovery_linked_card_grants g
+   WHERE g.left_archive_id=NEW.archive_id OR g.right_archive_id=NEW.archive_id;
+  FOREACH grantor IN ARRAY coalesce(grantors,ARRAY[]::text[]) LOOP
+    PERFORM set_config('drevo.archive_id',grantor,true);
+    DELETE FROM discovery_linked_card_grants g
+     WHERE g.grantor_archive_id=grantor
+       AND (g.left_archive_id=NEW.archive_id OR g.right_archive_id=NEW.archive_id);
+  END LOOP;
+  PERFORM set_config('drevo.archive_id',original_archive,true);
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  IF original_archive IS NOT NULL THEN
+    PERFORM set_config('drevo.archive_id',original_archive,true);
+  END IF;
+  RAISE;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger
+      WHERE tgrelid='archive_owners'::regclass
+        AND tgname='revoke_discovery_card_grants_after_owner_transfer'
+        AND NOT tgisinternal) THEN
+    -- 054 did not record both owners at grant time. Existing grants cannot be
+    -- proven to have their current owners' consent, so clear them once on
+    -- installation. The trigger marker prevents a retry from erasing grants
+    -- issued after 061 is installed. TRUNCATE is atomic with this migration.
+    TRUNCATE public.discovery_linked_card_grants;
+    CREATE TRIGGER revoke_discovery_card_grants_after_owner_transfer
+      AFTER UPDATE OF user_id ON archive_owners FOR EACH ROW
+      EXECUTE FUNCTION revoke_discovery_card_grants_after_owner_transfer();
+  END IF;
+END $$;

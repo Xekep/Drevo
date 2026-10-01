@@ -3083,8 +3083,61 @@ try {
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
     VALUES('other-archive','other-only','admin',true,'all')`);
+  const transferCardPath = matchPath + "/card-share";
+  const grantBirth = async (base: string, grantHeaders: Record<string,string>) => {
+    const previewResponse = await fetch(base + transferCardPath, { headers: grantHeaders });
+    assert.equal(previewResponse.status, 200, "the current owner can preview a scalar grant");
+    const preview = await previewResponse.json();
+    assert.equal((await fetch(base + transferCardPath, {
+      method: "PUT", headers: { ...grantHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: ["birth"], previewToken: preview.previewToken }),
+    })).status, 200);
+  };
+  await grantBirth(securedBase, ownerHeaders);
+  await grantBirth(otherBase, archiveAdminHeaders);
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+  2, "both owners can grant a private scalar snapshot for the confirmed pair");
+  await client.query(`DROP TRIGGER revoke_discovery_card_grants_after_owner_transfer
+    ON archive_owners`);
+  await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+  0, "installing 061 clears old scalar grants whose two-owner consent cannot be proven");
+  await grantBirth(securedBase, ownerHeaders);
+  await grantBirth(otherBase, archiveAdminHeaders);
+  await client.query(readFileSync(new URL("../../ops/postgres/061_discovery_copied_fields.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+  2, "reapplying 061 cannot clear fresh grants after its transfer trigger exists");
+  assert.equal((await fetch(otherBase + transferCardPath, {
+    headers: otherOnlyHeaders,
+  })).status, 403, "an invited admin cannot inspect the owner's scalar grants");
+  assert.equal((await fetch(otherBase + transferCardPath, {
+    method: "PUT", headers: { ...otherOnlyHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["birth"], previewToken: "0".repeat(64) }),
+  })).status, 403, "an invited admin cannot issue a scalar grant");
+  assert.equal((await fetch(otherBase + transferCardPath, {
+    method: "DELETE", headers: otherOnlyHeaders,
+  })).status, 403, "an invited admin cannot revoke the owner's scalar grant");
   assert.equal((await client.query(`UPDATE archive_owners SET user_id='other-only'
     WHERE archive_id='other-archive'`)).rowCount, 1);
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+  0, "recipient ownership transfer revokes both its and the source's scalar grants atomically");
+  assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+    "other-archive", "recipient transfer restores its RLS context after deleting both grants");
+  assert.equal((await fetch(otherBase + transferCardPath, {
+    headers: archiveAdminHeaders,
+  })).status, 403, "the former owner cannot inspect scalar grants after transfer");
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_pairs WHERE left_person_id='person-a'`)).rows[0].count, 1,
+  "ownership transfer preserves the confirmed public link");
+  await grantBirth(otherBase, otherOnlyHeaders);
+  assert.deepEqual((await fetch(securedBase + transferCardPath, {
+    headers: ownerHeaders,
+  }).then((response) => response.json())).incoming.fields, { birth: "1990" },
+  "the new owner can explicitly issue a fresh scalar grant");
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM discovery_branch_grants
     WHERE grantor_archive_id='other-archive' AND left_person_id='person-a'`)).rows[0].count,
     0, "ownership transfer revokes the previous owner's branch grant in the same transaction");
@@ -3103,6 +3156,9 @@ try {
   } })).status, 403, "the former owner cannot reauthorize B's branch");
   assert.equal((await client.query(`UPDATE archive_owners SET user_id='vk:42'
     WHERE archive_id='other-archive'`)).rowCount, 1);
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id='person-a'`)).rows[0].count,
+  0, "transferring ownership back revokes the successor's grant too");
   await client.query(`DELETE FROM archive_memberships WHERE archive_id='other-archive'
     AND user_id='other-only'`);
   const afterTransfer = await fetch(otherBase + branchPath, { headers: {
@@ -3340,13 +3396,54 @@ try {
     body: JSON.stringify({ fields: ["occupation", "birthPlace"],
       previewToken: sharePreview.previewToken }),
   })).status, 200);
-  const incomingShare = await fetch(otherBase + cardSharePath, { headers: ownerHeaders })
+  const incomingShare = await fetch(otherBase + cardSharePath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
   assert.deepEqual(incomingShare.incoming.fields, {
     occupation: "Архивный исследователь", birthPlace: "Архивный город",
   });
   assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
     "the grant response contains only the chosen scalar snapshot");
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await client.query(`INSERT INTO accounts(id,name,created_at)
+      VALUES('card-transfer-successor','Card successor',now())`);
+    await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+      VALUES('runtime-test','card-transfer-successor','admin',true,'all')`);
+    await client.query("SAVEPOINT card_transfer_failure");
+    await client.query(`CREATE FUNCTION public.reject_card_grant_revoke()
+      RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        RAISE EXCEPTION 'card grant revoke blocked';
+      END $$`);
+    await client.query(`CREATE TRIGGER reject_card_grant_revoke
+      BEFORE DELETE ON discovery_linked_card_grants FOR EACH ROW
+      EXECUTE FUNCTION public.reject_card_grant_revoke()`);
+    await assert.rejects(client.query(`UPDATE archive_owners
+      SET user_id='card-transfer-successor' WHERE archive_id='runtime-test'`),
+    /card grant revoke blocked/, "a failed grant revoke rolls back ownership transfer");
+    await client.query("ROLLBACK TO SAVEPOINT card_transfer_failure");
+    assert.equal((await client.query(`SELECT user_id FROM archive_owners
+      WHERE archive_id='runtime-test'`)).rows[0].user_id, "owner");
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
+    1, "failed transfer keeps the live source grant");
+    assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+      "runtime-test", "failed transfer restores the source RLS context");
+    await client.query(`UPDATE archive_owners SET user_id='card-transfer-successor'
+      WHERE archive_id='runtime-test'`);
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`)).rows[0].count,
+    0, "source ownership transfer revokes its scalar grant atomically");
+    assert.equal((await client.query("SELECT current_setting('drevo.archive_id') AS id")).rows[0].id,
+      "runtime-test", "successful transfer restores the source RLS context");
+    assert.equal((await client.query(`SELECT count(*)::int AS count
+      FROM discovery_linked_pairs WHERE left_archive_id='other-archive'
+        AND left_person_id='person-a' AND right_archive_id='runtime-test'
+        AND right_person_id='person-a'`)).rows[0].count,
+    1, "transfer does not revoke a previously confirmed public link");
+  } finally {
+    await client.query("ROLLBACK");
+  }
   const copyPreviewResponse = await fetch(otherBase + copyPreviewPath, {
     headers: archiveAdminHeaders,
   });
@@ -3583,7 +3680,9 @@ try {
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "DELETE", headers: ownerHeaders,
   })).status, 200, "repeated grant revocation is idempotent");
-  const freshAfterGrantRevoke = await fetch(otherBase + cardSharePath, { headers: ownerHeaders });
+  const freshAfterGrantRevoke = await fetch(otherBase + cardSharePath, {
+    headers: archiveAdminHeaders,
+  });
   assert.equal(freshAfterGrantRevoke.status, 200);
   assert.equal(freshAfterGrantRevoke.headers.get("cache-control"), "private, no-store",
     "a re-opened panel must revalidate against an uncached grant response");
@@ -4030,7 +4129,9 @@ try {
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
     .get(parent.id,parent.id))?.count, 0,
   "manually revoking the match removes its extra-field grant atomically");
-  assert.equal((await fetch(otherBase + revocableSharePath, { headers: manualHeaders })).status, 404);
+  assert.equal((await fetch(securedBase + revocableSharePath, {
+    headers: manualHeaders,
+  })).status, 404, "the former grantor cannot reopen a revoked linked card");
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200, "repeating a revocation is idempotent");

@@ -191,7 +191,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "057_person_comment_attachments.sql",
     ],
     [
-      "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_copied_fields') AND c.relforcerowsecurity AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='clear_changed_discovery_copy_provenance' AND NOT tgisinternal)",
+      "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_copied_fields') AND c.relforcerowsecurity AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='clear_changed_discovery_copy_provenance' AND NOT tgisinternal) AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('archive_owners') AND tgname='revoke_discovery_card_grants_after_owner_transfer' AND NOT tgisinternal)",
       "061_discovery_copied_fields.sql",
     ],
   ]) {

@@ -297,6 +297,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     const archiveId = db.archiveId;
     if (req.method === "GET") {
       const result = await db.transaction(async () => {
+        if (!await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=?`).get(archiveId,user.id))
+          return { forbidden: true };
         const pair = await linkedPair(detail[1],archiveId);
         if (!pair) return null;
         const ownPersonId = String(pair.left_archive_id === archiveId
@@ -313,6 +316,8 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           outgoing: grant(grants.find((row) => row.grantor_archive_id === archiveId)),
           incoming: grant(grants.find((row) => row.grantor_archive_id !== archiveId)) };
       }, true);
+      if (result && "forbidden" in result)
+        return json(res, 403, { error: "Доступно владельцу дерева" });
       return result ? json(res, 200, result) : json(res, 404, { error: "Связь не найдена" });
     }
     if (req.method === "PUT") {
@@ -322,6 +327,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           !/^[0-9a-f]{64}$/.test(body.previewToken))
         return json(res, 400, { error: "Выберите доступные поля после просмотра карточки" });
       const result = await db.transaction(async () => {
+        if (!await db.prepare("", `SELECT 1 FROM archive_owners
+          WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
+          return { code: 403, error: "Доступно владельцу дерева" };
         const preliminary = await linkedPair(detail[1],archiveId);
         if (!preliminary) return { code: 404, error: "Связь не найдена" };
         const ownPersonId = String(preliminary.left_archive_id === archiveId
@@ -356,6 +364,9 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
         : json(res, result.code, { error: result.error });
     }
     const result = await db.transaction(async () => {
+      if (!await db.prepare("", `SELECT 1 FROM archive_owners
+        WHERE archive_id=? AND user_id=? FOR SHARE`).get(archiveId,user.id))
+        return { code: 403, error: "Доступно владельцу дерева" };
       const pair = await linkedPair(detail[1],archiveId,true);
       if (!pair) return { code: 404, error: "Связь не найдена" };
       const approved = await auth.currentUser(req);
