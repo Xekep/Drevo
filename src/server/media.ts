@@ -54,25 +54,30 @@ export function mediaStore(directory: string) {
       type: mimeTypes[match[2]],
     };
   };
+  const scanUsage = async () => {
+    let files = 0,
+      bytes = 0;
+    for (const name of await readdir(directory).catch(
+      () => [] as string[],
+    )) {
+      if (!mediaPattern.test(`/media/${name}`)) continue;
+      const info = await stat(resolve(directory, name)).catch(() => null);
+      if (info?.isFile()) {
+        files++;
+        bytes += info.size;
+      }
+    }
+    return { files, bytes };
+  };
   return {
-    async usage() {
+    async usage(fresh = false) {
+      // Quota checks must not inherit an earlier process-local scan either.
+      if (fresh) return await scanUsage();
       if (cachedUsage && Date.now() - usageCheckedAt < 30_000)
         return cachedUsage;
       if (usageWork) return usageWork;
       usageWork = (async () => {
-        let files = 0,
-          bytes = 0;
-        for (const name of await readdir(directory).catch(
-          () => [] as string[],
-        )) {
-          if (!mediaPattern.test(`/media/${name}`)) continue;
-          const info = await stat(resolve(directory, name)).catch(() => null);
-          if (info?.isFile()) {
-            files++;
-            bytes += info.size;
-          }
-        }
-        cachedUsage = { files, bytes };
+        cachedUsage = await scanUsage();
         usageCheckedAt = Date.now();
         return cachedUsage;
       })().finally(() => {

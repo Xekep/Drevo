@@ -89,14 +89,16 @@ export function mediaUploadHttp({
     let forgetUpload: (() => unknown) | undefined;
     let release: (() => Promise<unknown>) | undefined;
     try {
-      const disk = await statfs(uploadsDirectory);
       release = await quota.acquire(
         requester.id,
         Number(req.headers["content-length"]) > 0
           ? Math.min(Number(req.headers["content-length"]), MAX_UPLOAD)
           : MAX_UPLOAD,
-        disk.bavail * disk.bsize,
-        await media.usage(),
+        async () => {
+          const disk = await statfs(uploadsDirectory);
+          return disk.bavail * disk.bsize;
+        },
+        () => media.usage(true),
       );
       file = await media.addStream(req, MAX_UPLOAD);
       const actor = await auth.currentUser(req);

@@ -7,6 +7,7 @@ import {
   readdirSync,
   rmSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,20 @@ import { startServer } from "../src/server/index.ts";
 import type { Family } from "../src/domain/types.ts";
 import { MediaTooLargeError, mediaStore } from "../src/server/media.ts";
 import { indexReferencedMediaOriginals } from "../src/server/media-originals.ts";
+
+test("a quota check can bypass another process's cached media usage", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-fresh-media-"));
+  try {
+    const media = mediaStore(directory);
+    writeFileSync(join(directory, "one.jpg"), "a");
+    assert.deepEqual(await media.usage(), { files: 1, bytes: 1 });
+    writeFileSync(join(directory, "two.jpg"), "bb");
+    assert.deepEqual(await media.usage(), { files: 1, bytes: 1 });
+    assert.deepEqual(await media.usage(true), { files: 2, bytes: 3 });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-media-stream-"));
