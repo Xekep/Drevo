@@ -156,6 +156,12 @@ try {
   assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
     WHERE oid=to_regclass('discovery_linked_card_grants')`)).rows[0]?.relforcerowsecurity,
   true, "upgrading a database at schema 053 installs the FORCE RLS grant table as 054");
+  await client.query(readFileSync(new URL("../../ops/postgres/054_discovery_linked_card_grants.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
+    WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants'
+      AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert',
+        'discovery_linked_card_update','discovery_linked_card_delete')`)).rows[0].count,
+  4, "a repeated 054 migration keeps all four access policies exactly once");
   assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
     "the non-superuser runtime migration installs trusted pg_trgm");
   // A second application must safely finish an already installed extension.

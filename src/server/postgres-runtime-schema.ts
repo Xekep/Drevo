@@ -171,7 +171,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "053_person_comment_edits.sql",
     ],
     [
-      "SELECT to_regclass('discovery_linked_card_grants') AS present",
+      "SELECT 1 AS present FROM pg_class c WHERE c.oid=to_regclass('discovery_linked_card_grants') AND c.relforcerowsecurity AND (SELECT count(*) FROM pg_policies WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants' AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert','discovery_linked_card_update','discovery_linked_card_delete'))=4",
       "054_discovery_linked_card_grants.sql",
     ],
   ]) {

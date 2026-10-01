@@ -30,13 +30,27 @@ CREATE TABLE IF NOT EXISTS discovery_linked_card_grants (
 );
 ALTER TABLE discovery_linked_card_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovery_linked_card_grants FORCE ROW LEVEL SECURITY;
-CREATE POLICY discovery_linked_card_read ON discovery_linked_card_grants
-  FOR SELECT USING (left_archive_id=current_setting('drevo.archive_id',true)
-    OR right_archive_id=current_setting('drevo.archive_id',true));
-CREATE POLICY discovery_linked_card_insert ON discovery_linked_card_grants
-  FOR INSERT WITH CHECK (grantor_archive_id=current_setting('drevo.archive_id',true));
-CREATE POLICY discovery_linked_card_update ON discovery_linked_card_grants
-  FOR UPDATE USING (grantor_archive_id=current_setting('drevo.archive_id',true))
-  WITH CHECK (grantor_archive_id=current_setting('drevo.archive_id',true));
-CREATE POLICY discovery_linked_card_delete ON discovery_linked_card_grants
-  FOR DELETE USING (grantor_archive_id=current_setting('drevo.archive_id',true));
+-- Multiple backend processes can enter the runtime migration concurrently.
+-- CREATE TABLE is idempotent; each policy must tolerate the same race.
+DO $$ BEGIN
+  CREATE POLICY discovery_linked_card_read ON discovery_linked_card_grants
+    FOR SELECT USING (left_archive_id=current_setting('drevo.archive_id',true)
+      OR right_archive_id=current_setting('drevo.archive_id',true));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY discovery_linked_card_insert ON discovery_linked_card_grants
+    FOR INSERT WITH CHECK (grantor_archive_id=current_setting('drevo.archive_id',true));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY discovery_linked_card_update ON discovery_linked_card_grants
+    FOR UPDATE USING (grantor_archive_id=current_setting('drevo.archive_id',true))
+    WITH CHECK (grantor_archive_id=current_setting('drevo.archive_id',true));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE POLICY discovery_linked_card_delete ON discovery_linked_card_grants
+    FOR DELETE USING (grantor_archive_id=current_setting('drevo.archive_id',true));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
