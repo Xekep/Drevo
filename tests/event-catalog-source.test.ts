@@ -109,12 +109,58 @@ test("event catalog link requires an admin, while inline editing and retained li
   duplicated.people[0].events![0].sources!.push(sourceCitation(catalogSource));
   assert.throws(() => authorizeArchive(duplicated, linked, actor("relative")),
     /только администратор/);
+  const moved = structuredClone(linked);
+  moved.people[0].sources.push(moved.people[0].events![0].sources!.pop()!);
+  assert.throws(() => authorizeArchive(moved, linked, actor("relative")),
+    /только администратор/);
   edited.people[0].events![0].sources!.pop();
   assert.equal(
     authorizeArchive(edited, linked, actor("relative")).people[0].events?.[0]
       .sources?.length,
     1,
   );
+});
+
+test("non-admin cannot add catalog citations to any person, claim, event, or union slot", () => {
+  const before = family();
+  before.people[0].death = "1950";
+  before.people[0].deathPlace = "Казань";
+  before.people.push({ ...structuredClone(before.people[0]), id: "boris", name: "Борис",
+    events: [], sources: [] });
+  before.unions = [
+    { id: "first", participants: ["anna", "boris"], type: "marriage", createdBy: "owner",
+      formation: {}, ending: {}, ongoing: {} },
+    { id: "second", participants: ["anna", "boris"], type: "marriage", createdBy: "owner",
+      divorce: {} },
+  ];
+  const cases: Array<[string, (value: Family) => void]> = [
+    ["person", (value) => value.people[0].sources.push(sourceCitation(catalogSource))],
+    ["birth date", (value) => { value.people[0].birthDateClaim = {
+      value: "1880", sources: [sourceCitation(catalogSource)] }; }],
+    ["death date", (value) => { value.people[0].deathDateClaim = {
+      value: "1950", sources: [sourceCitation(catalogSource)] }; }],
+    ["birth place", (value) => { value.people[0].birthPlaceClaim = {
+      value: "Тула", sources: [sourceCitation(catalogSource)] }; }],
+    ["death place", (value) => { value.people[0].deathPlaceClaim = {
+      value: "Казань", sources: [sourceCitation(catalogSource)] }; }],
+    ["event", (value) => value.people[0].events![0].sources!.push(sourceCitation(catalogSource))],
+    ["union", (value) => { value.unions![0].sources = [sourceCitation(catalogSource)]; }],
+    ["formation", (value) => { value.unions![0].formation!.sources = [sourceCitation(catalogSource)]; }],
+    ["ending", (value) => { value.unions![0].ending!.sources = [sourceCitation(catalogSource)]; }],
+    ["ongoing", (value) => { value.unions![0].ongoing!.sources = [sourceCitation(catalogSource)]; }],
+    ["divorce", (value) => { value.unions![1].divorce!.sources = [sourceCitation(catalogSource)]; }],
+  ];
+  for (const [scope, edit] of cases) {
+    const linked = structuredClone(before);
+    edit(linked);
+    assert.throws(() => authorizeArchive(linked, before, actor("relative")),
+      /только администратор/, scope);
+    assert.throws(() => authorizeArchive(linked, before, actor("researcher")),
+      /только администратор/, scope);
+    assert.doesNotThrow(() => authorizeArchive(linked, before, actor("admin")), scope);
+    assert.doesNotThrow(() => authorizeArchive(before, linked, actor("relative")),
+      `${scope}: existing link can be removed`);
+  }
 });
 
 test("event citation survives .drevo and GEDCOM as readable evidence without confidence", async () => {

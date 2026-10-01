@@ -3,9 +3,30 @@ import {
   validateFamily,
   type Family,
   type ArchiveUser,
+  type Source,
 } from "../domain/index.ts";
 import { ForbiddenError } from "./users.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
+
+function catalogCitationSlots(family: Family) {
+  const slots = new Map<string, string[]>();
+  const add = (path: string[], sources?: Source[]) => slots.set(JSON.stringify(path),
+    (sources || []).flatMap((source) => source.catalogId ? [source.catalogId] : []));
+  for (const person of family.people) {
+    add(["person", person.id], person.sources);
+    for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const)
+      add(["person", person.id, claim], person[claim]?.sources);
+    for (const event of person.events || [])
+      add(["person", person.id, "event", event.id], event.sources);
+  }
+  for (const union of family.unions || []) {
+    add(["union", union.id], union.sources);
+    for (const milestone of ["formation", "ending", "divorce", "ongoing"] as const)
+      add(["union", union.id, milestone], union[milestone]?.sources);
+  }
+  return slots;
+}
+
 /** Проверяет весь снимок, включая изменения чужих узлов через связи. Автор назначается сервером. */
 export function authorizeArchive(
   nextValue: unknown,
@@ -44,20 +65,14 @@ export function authorizeArchive(
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
   if (!admin) {
-    const previousPeople = new Map(current.people.map((person) => [person.id, person]));
-    for (const person of next.people) {
-      const oldEvents = new Map((previousPeople.get(person.id)?.events || [])
-        .map((event) => [event.id, event]));
-      for (const event of person.events || []) {
-        const previousCatalogIds = (oldEvents.get(event.id)?.sources || [])
-          .map((source) => source.catalogId);
-        for (const source of event.sources || []) {
-          if (!source.catalogId) continue;
-          const oldIndex = previousCatalogIds.indexOf(source.catalogId);
-          if (oldIndex < 0)
-            throw new ForbiddenError("Привязать каталожный источник к событию может только администратор");
-          previousCatalogIds.splice(oldIndex, 1);
-        }
+    const previousSlots = catalogCitationSlots(current);
+    for (const [path, nextIds] of catalogCitationSlots(next)) {
+      const previousIds = previousSlots.get(path) || [];
+      for (const id of nextIds) {
+        const oldIndex = previousIds.indexOf(id);
+        if (oldIndex < 0)
+          throw new ForbiddenError("Привязать каталожный источник может только администратор");
+        previousIds.splice(oldIndex, 1);
       }
     }
   }
