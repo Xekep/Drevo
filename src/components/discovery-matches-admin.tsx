@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { DiscoveryLinkedCardShare } from "./discovery-linked-card-share.tsx";
 import "../styles/discovery-matches-admin.css";
 
 type Candidate = {
@@ -359,6 +360,7 @@ export function DiscoveryMatchesAdmin() {
           {(item.status === "pending" || item.status === "linked") &&
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "revoke")}>Отозвать связь</button>}
         </div>
+        {item.status === "linked" && <DiscoveryLinkedCardShare matchId={item.id} />}
       </article>)}
       {(history.length > 0 || nextCursor) && <nav className="match-pages" aria-label="Страницы запросов">
         <button type="button" disabled={!history.length} onClick={() => { setCursor(history.at(-1) || null); setHistory((current) => current.slice(0, -1)); }}>Назад</button>

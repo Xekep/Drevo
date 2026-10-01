@@ -142,3 +142,51 @@ test("candidate suggestions can continue past the first indexed page", async ({ 
   await expect(page.locator(".match-suggestion")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Показать ещё похожих" })).toHaveCount(0);
 });
+
+test("an admin reviews and revokes an explicit linked-card snapshot", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let shared = false;
+  let linked = true;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share`, (route) => {
+    const method = route.request().method();
+    if (method === "PUT") {
+      expect(route.request().postDataJSON()).toEqual({
+        fields: ["occupation"], previewToken: "a".repeat(64),
+      });
+      shared = true;
+      return route.fulfill({ json: { fields: { occupation: "Историк" } } });
+    }
+    if (method === "DELETE") {
+      shared = false;
+      linked = false; // The match is revoked concurrently before the UI refreshes.
+      return route.fulfill({ json: { shared: false } });
+    }
+    if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
+    return route.fulfill({ json: {
+      available: { occupation: "Историк" }, previewToken: "a".repeat(64),
+      outgoing: shared ? { fields: { occupation: "Историк" }, grantedAt: "2026-10-01T00:00:00Z" } : null,
+      incoming: null,
+    } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByText("Дополнительные сведения связанной карточки").click();
+  await expect(page.getByRole("checkbox", { name: /Род занятий: Историк/ })).toBeVisible();
+  await page.getByRole("checkbox", { name: /Род занятий: Историк/ }).check();
+  await page.getByRole("button", { name: "Поделиться выбранным" }).click();
+  await expect(page.getByText("Сейчас открыто другой стороне")).toBeVisible();
+  await page.getByRole("button", { name: "Отозвать доступ" }).click();
+  await expect(page.getByText("Сейчас открыто другой стороне")).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /Род занятий: Историк/ })).toHaveCount(0);
+  await expect(page.getByRole("alert")).toContainText("Связь не найдена");
+});

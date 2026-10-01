@@ -148,6 +148,23 @@ try {
   await client.query("ALTER TABLE documents DROP COLUMN annotations");
   live = await openArchive(source, family);
   assert.equal(live.db.kind, "postgres");
+  assert.equal((await client.query(`SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='runtime_visible_person_comments'
+      AND column_name='updated_ms'`)).rowCount, 1,
+  "the clean PostgreSQL runtime applies person comment schema 053 before grant schema 054");
+  assert.equal((await client.query("SELECT to_regclass('discovery_linked_card_grants') AS name")).rows[0].name,
+    "discovery_linked_card_grants");
+  await client.query("DROP TABLE discovery_linked_card_grants");
+  await initializePostgresRuntimeSchema(live.db);
+  assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
+    WHERE oid=to_regclass('discovery_linked_card_grants')`)).rows[0]?.relforcerowsecurity,
+  true, "upgrading a database at schema 053 installs the FORCE RLS grant table as 054");
+  await client.query(readFileSync(new URL("../../ops/postgres/054_discovery_linked_card_grants.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
+    WHERE schemaname=current_schema() AND tablename='discovery_linked_card_grants'
+      AND policyname IN ('discovery_linked_card_read','discovery_linked_card_insert',
+        'discovery_linked_card_update','discovery_linked_card_delete')`)).rows[0].count,
+  4, "a repeated 054 migration keeps all four access policies exactly once");
   assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
     "the non-superuser runtime migration installs trusted pg_trgm");
   // A second application must safely finish an already installed extension.
@@ -2062,6 +2079,9 @@ try {
     WHERE id=?`).get(matchBody.match.id))?.request_review_token, matchBody.match.reviewToken,
   "an idempotent reverse proposal preserves the original reviewed revision");
   const matchPath = `/api/discovery/matches/${matchBody.match.id}`;
+  assert.equal((await fetch(securedBase + matchPath + "/card-share", {
+    headers: ownerHeaders,
+  })).status, 404, "a pending proposal never grants additional card access");
   const beforeReviewChange = await otherApp.archive.read();
   const changedBeforeReview = structuredClone(beforeReviewChange.family);
   changedBeforeReview.people[0].name = "Исправленный кандидат";
@@ -2104,16 +2124,19 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "reapplying the additive projection migration keeps one linked pair");
-  const backfillAdmin = process.env.PGADMINUSER
-    ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
-    : client;
-  if (backfillAdmin !== client) await backfillAdmin.connect();
-  try {
-    await backfillAdmin.query(readFileSync(
-      new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
-  } finally {
-    if (backfillAdmin !== client) await backfillAdmin.end();
-  }
+  const runDiscoveryBackfill = async () => {
+    const admin = process.env.PGADMINUSER
+      ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
+      : client;
+    if (admin !== client) await admin.connect();
+    try {
+      await admin.query(readFileSync(
+        new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
+    } finally {
+      if (admin !== client) await admin.end();
+    }
+  };
+  await runDiscoveryBackfill();
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "administrator backfill rebuilds the confirmed public transition after truncation");
@@ -2137,6 +2160,102 @@ try {
   assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
     [person.archiveId,person.id]), [["runtime-test","person-a"]],
   "a signed-in reader can follow only the other published identity after both sides confirm");
+  const cardSharePath = `/api/discovery/matches/${matchBody.match.id}/card-share`;
+  assert.equal((await fetch(securedBase + cardSharePath, { headers })).status, 403,
+    "a reader of the published card cannot inspect private share grants");
+  const shareBeforeEdit = await app.archive.read();
+  const shareFamily = structuredClone(shareBeforeEdit.family);
+  shareFamily.people[0].occupation = "Архивный исследователь";
+  shareFamily.people[0].biography = "Закрытая биография и источники";
+  await app.archive.write(shareFamily,shareBeforeEdit.revision);
+  const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
+    .then((response) => response.json());
+  assert.equal(sharePreview.available.occupation, "Архивный исследователь");
+  assert.equal(sharePreview.available.biography, undefined);
+  assert.equal(sharePreview.incoming, null);
+  assert.equal(sharePreview.outgoing, null);
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["biography"], previewToken: sharePreview.previewToken }),
+  })).status, 400, "free-form biography cannot enter a scalar card grant");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation"], previewToken: "0".repeat(64) }),
+  })).status, 409, "a stale card preview cannot authorize a new snapshot");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken }),
+  })).status, 200);
+  const incomingShare = await fetch(otherBase + cardSharePath, { headers: ownerHeaders })
+    .then((response) => response.json());
+  assert.deepEqual(incomingShare.incoming.fields, { occupation: "Архивный исследователь" });
+  assert.doesNotMatch(JSON.stringify(incomingShare), /Закрытая биография|sources|parents/,
+    "the grant response contains only the chosen scalar snapshot");
+  await assert.rejects(matchDb.prepare("", `UPDATE discovery_linked_card_grants
+    SET fields=?::jsonb WHERE grantor_archive_id='runtime-test'`).run(
+    JSON.stringify({ biography: "Закрытая биография" })),
+  (error: unknown) => (error as { code?: string }).code === "23514",
+  "the database rejects unapproved private fields even outside HTTP");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("unrelated-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE left_person_id='person-a'`).get())?.count, 0,
+    "RLS hides even the presence of a card grant from an unrelated archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM people WHERE archive_id='runtime-test' AND id='person-a'`).get())?.count, 0,
+    "the grant never opens the source people row across archives");
+  }, true);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
+    "Архивный исследователь");
+    assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
+    "the receiving archive cannot revoke the owner's grant through SQL");
+  });
+  await runDiscoveryBackfill();
+  assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
+  "Архивный исследователь", "administrator backfill preserves a still-confirmed grant");
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('share-grant-deleting','Share grant author',$1)",
+      [new Date().toISOString()]);
+    assert.equal((await client.query(`UPDATE discovery_linked_card_grants
+      SET granted_by='share-grant-deleting' WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a' RETURNING granted_by`)).rows[0]?.granted_by,
+    "share-grant-deleting");
+    await client.query("SELECT set_config('drevo.archive_id','unrelated-archive',true)");
+    await client.query("SELECT set_config('drevo.account_id','share-grant-deleting',true)");
+    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('share-grant-deleting')");
+    await client.query("SELECT public.runtime_anonymize_deleted_account_history('share-grant-deleting')");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    assert.equal((await client.query(`SELECT granted_by FROM discovery_linked_card_grants
+      WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`)).rows[0]?.granted_by,
+    "deleted-account", "account deletion anonymizes a grant even when the request archive differs");
+  } finally {
+    await client.query("ROLLBACK");
+  }
+  assert.equal((await matchDb.prepare("", `SELECT granted_by FROM discovery_linked_card_grants
+    WHERE grantor_archive_id='runtime-test' AND left_person_id='person-a'`).get())?.granted_by,
+  "owner", "the deletion probe leaves the live grant intact");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "DELETE", headers: ownerHeaders,
+  })).status, 200);
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "DELETE", headers: ownerHeaders,
+  })).status, 200, "repeated grant revocation is idempotent");
+  assert.equal((await fetch(otherBase + cardSharePath, { headers: ownerHeaders })
+    .then((response) => response.json())).incoming, null,
+  "revocation hides the snapshot from the other side immediately");
+  assert.equal((await fetch(securedBase + cardSharePath, {
+    method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken }),
+  })).status, 200);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
       .get("unrelated-archive");
@@ -2393,9 +2512,25 @@ try {
     method: "PATCH", headers: manualHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken }),
   })).status, 200);
+  const revocableSharePath = revocablePath + "/card-share";
+  const revocablePreview = await fetch(securedBase + revocableSharePath, { headers: manualHeaders })
+    .then((response) => response.json());
+  assert.equal(revocablePreview.available.birth, "1960");
+  assert.equal((await fetch(securedBase + revocableSharePath, {
+    method: "PUT", headers: { ...manualHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken }),
+  })).status, 200);
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+    .get(parent.id,parent.id))?.count, 1);
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200);
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+    .get(parent.id,parent.id))?.count, 0,
+  "manually revoking the match removes its extra-field grant atomically");
+  assert.equal((await fetch(otherBase + revocableSharePath, { headers: manualHeaders })).status, 404);
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200, "repeating a revocation is idempotent");
@@ -2423,6 +2558,15 @@ try {
   await otherApp.archive.write(otherBeforeSignals.family, otherSignalWrite.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
+  "removing either publication revokes the extra-field grant in the same transaction");
+  assert.equal((await fetch(securedBase + cardSharePath, { headers: ownerHeaders })).status, 404,
+    "a revoked match cannot be used to read the old card snapshot");
+  await runDiscoveryBackfill();
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
+  "backfill does not resurrect grants after publication revocation");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
     headers,
   })).json()).linkedCards, [], "revoking either publication removes the transition");

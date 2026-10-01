@@ -42,6 +42,16 @@
 .match-request-heading { justify-content: space-between; }
 .match-request-heading time { color: var(--muted); font-size: 12px; }
 .match-pages { justify-content: space-between; }
+.match-card-share { border-top: 1px solid var(--line); padding-top: 9px; }
+.match-card-share summary { cursor: pointer; font-weight: 600; }
+.match-card-share > p { color: var(--muted); }
+.match-card-share h4 { margin: 12px 0 6px; }
+.match-share-option { display: flex; align-items: flex-start; gap: 8px; margin: 7px 0; overflow-wrap: anywhere; }
+.match-share-option input { margin-top: 3px; }
+.match-shared-fields { display: grid; gap: 5px; margin: 0; }
+.match-shared-fields > div { display: grid; grid-template-columns: minmax(100px,1fr) minmax(0,2fr); gap: 8px; }
+.match-shared-fields dt { color: var(--muted); }
+.match-shared-fields dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 700px) {
   .match-search-grid, .match-pair { grid-template-columns: minmax(0,1fr); }
   .match-review > button { width: 100%; }

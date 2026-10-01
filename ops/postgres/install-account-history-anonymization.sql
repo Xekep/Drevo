@@ -1,4 +1,5 @@
--- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 052.
+-- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 052,
+-- and repeat after schema 054 to anonymize linked-card grant attribution.
 -- The app role keeps FORCE RLS and receives EXECUTE only on the checked entry
 -- point. Re-running this script safely cleans remaining old tombstones.
 BEGIN;
@@ -75,6 +76,10 @@ BEGIN
     responded_by=CASE WHEN responded_by=account_id THEN 'deleted-account' ELSE responded_by END,
     revoked_by=CASE WHEN revoked_by=account_id THEN 'deleted-account' ELSE revoked_by END
     WHERE requested_by=account_id OR responded_by=account_id OR revoked_by=account_id;
+  IF to_regclass('public.discovery_linked_card_grants') IS NOT NULL THEN
+    UPDATE public.discovery_linked_card_grants SET granted_by='deleted-account'
+      WHERE granted_by=account_id;
+  END IF;
 
   UPDATE public.people SET data=jsonb_set(data,'{createdBy}',to_jsonb('deleted-account'::text))
     WHERE data->>'createdBy'=account_id;
