@@ -510,6 +510,71 @@ for (const version of ["5.5.1", "7.0"] as const)
   });
 
 for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version}: repository website and notes stay with each paged citation`, () => {
+    const external = `0 HEAD
+1 SOUR OTHER
+1 GEDC
+2 VERS ${version}
+0 @I1@ INDI
+1 NAME Анна /Тестова/
+1 BIRT
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE л. 3
+3 NOTE Запись о рождении
+1 DEAT
+2 DATE 1980
+2 SOUR @S1@
+3 PAGE л. 9
+3 NOTE Запись о смерти
+0 @S1@ SOUR
+1 TITL Метрическая книга
+1 NOTE URL: https://archive.example.org/book/104
+1 REPO @R1@
+2 CALN Ф. 6, оп. 13, д. 104
+2 NOTE Выдаётся в читальном зале
+0 @R1@ REPO
+1 NAME ГАСО
+1 WWW https://archive.example.org
+1 NOTE Предварительная запись обязательна
+0 TRLR`;
+    const citations = importGedcom(external, `repository-notes-${version}`)
+      .family.people[0].events?.filter((event) => ["BIRT", "DEAT"].includes(event.gedcomTag || ""))
+      .map((event) => event.sources?.[0]);
+    assert.deepEqual(citations?.map((source) => source?.reference), ["л. 3", "л. 9"]);
+    assert.deepEqual(citations?.map((source) => source?.url), [
+      "https://archive.example.org/book/104", "https://archive.example.org/book/104",
+    ]);
+    for (const source of citations || []) {
+      assert.match(source?.note || "", /Сайт хранилища: https:\/\/archive\.example\.org/);
+      assert.match(source?.note || "", /Предварительная запись обязательна/);
+      assert.match(source?.note || "", /Выдаётся в читальном зале/);
+    }
+    assert.match(citations?.[0]?.note || "", /Запись о рождении/);
+    assert.doesNotMatch(citations?.[0]?.note || "", /Запись о смерти/);
+    assert.match(citations?.[1]?.note || "", /Запись о смерти/);
+    assert.doesNotMatch(citations?.[1]?.note || "", /Запись о рождении/);
+    const exported = exportGedcom(importGedcom(external, `repository-export-${version}`).family, { version })
+      .replace(/^1 _DREVO .*(?:\r?\n2 (?:CONC|CONT).*)*\r?\n/gm, "");
+    const restored = importGedcom(exported, `repository-restored-${version}`).family.people[0]
+      .events?.filter((event) => ["BIRT", "DEAT"].includes(event.gedcomTag || ""))
+      .map((event) => event.sources?.[0]);
+    assert.deepEqual(restored?.map((source) => source?.reference), ["л. 3", "л. 9"]);
+    assert.deepEqual(restored?.map((source) => source?.url), [
+      "https://archive.example.org/book/104", "https://archive.example.org/book/104",
+    ]);
+    for (const source of restored || []) {
+      assert.match(source?.note || "", /Сайт хранилища: https:\/\/archive\.example\.org/);
+      assert.match(source?.note || "", /Предварительная запись обязательна/);
+      assert.match(source?.note || "", /Выдаётся в читальном зале/);
+    }
+    assert.match(restored?.[0]?.note || "", /Запись о рождении/);
+    assert.doesNotMatch(restored?.[0]?.note || "", /Запись о смерти/);
+    assert.match(restored?.[1]?.note || "", /Запись о смерти/);
+    assert.doesNotMatch(restored?.[1]?.note || "", /Запись о рождении/);
+  });
+
+for (const version of ["5.5.1", "7.0"] as const)
   test(`GEDCOM ${version}: all citation transcripts and provenance remain visible`, () => {
     const input = `0 HEAD
 1 GEDC
