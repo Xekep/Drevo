@@ -33,7 +33,7 @@ import {
   type ConnectionType,
   type Family,
   type Person,
-  type PersonDateClaim,
+  type PersonValueClaim,
   type TwinKind,
   type ArchiveUser,
   owns,
@@ -52,28 +52,30 @@ import {
   useUnsavedChanges,
 } from "../hooks/useUnsavedChanges";
 type Save = (data: Family) => Promise<Family>;
-function DateClaimSourcesEditor({ kind, date, claim, onChange, isAdmin }: {
+function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmin }: {
   kind: "birth" | "death";
-  date: string;
-  claim?: PersonDateClaim;
-  onChange: (claim: PersonDateClaim | undefined) => void;
+  subject: "date" | "place";
+  value: string;
+  claim?: PersonValueClaim;
+  onChange: (claim: PersonValueClaim | undefined) => void;
   isAdmin: boolean;
 }) {
   const label = kind === "birth" ? "рождения" : "смерти";
-  return <details className={`form-details ${kind}-date-claim`}>
-    <summary>Источники даты {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
-    {claim && claim.value !== date
+  const subjectLabel = subject === "date" ? "даты" : "места";
+  return <details className={`form-details ${kind}-${subject}-claim`}>
+    <summary>Источники {subjectLabel} {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
+    {claim && claim.value !== value
       ? <div>
-          <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(claim.value)}. Снимите связь или верните прежнюю дату перед сохранением.</p>
-          <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежней датой</button>
+          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. Снимите связь или верните прежнее значение перед сохранением.</p>
+          <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>
         </div>
-      : date
+      : value.trim()
         ? <CitationSourcesEditor
             sources={claim?.sources || []}
-            onChange={(sources) => onChange(sources.length ? { value: date, sources } : undefined)}
+            onChange={(sources) => onChange(sources.length ? { value, sources } : undefined)}
             isAdmin={isAdmin}
           />
-        : <p>Укажите дату {label}, чтобы привязать к ней источник.</p>}
+        : <p>Укажите {subject === "date" ? "дату" : "место"} {label}, чтобы привязать к {subject === "date" ? "ней" : "нему"} источник.</p>}
   </details>;
 }
 export function PersonEditor({
@@ -615,11 +617,20 @@ export function PersonEditor({
                   }
                 />
               </div>
-              <DateClaimSourcesEditor
+              <ValueClaimSourcesEditor
                 kind={kind}
-                date={hintDate(kind === "birth" ? birthText : deathText)}
+                subject="date"
+                value={hintDate(kind === "birth" ? birthText : deathText)}
                 claim={kind === "birth" ? draft.birthDateClaim : draft.deathDateClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthDateClaim" : "deathDateClaim", claim)}
+                isAdmin={isAdmin}
+              />
+              <ValueClaimSourcesEditor
+                kind={kind}
+                subject="place"
+                value={kind === "birth" ? draft.birthPlace : draft.deathPlace || ""}
+                claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
+                onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
                 isAdmin={isAdmin}
               />
               {kind === "death" &&

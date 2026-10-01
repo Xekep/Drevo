@@ -364,15 +364,19 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         url: /^https?:\/\//i.test(url) && safeUrl(url) ? url : undefined,
       };
     });
-  const dateSources = (node: Node | undefined, date: string, marker: "BIRTH_DATE" | "DEATH_DATE") => {
-    if (!node) return { claimed: [] as Source[], general: [] as Source[] };
+  const eventClaimSources = (node: Node | undefined, date: string, place: string,
+    kind: "BIRTH" | "DEATH") => {
+    if (!node) return { date: [] as Source[], place: [] as Source[], general: [] as Source[] };
     const citations = sources(node);
     const sourceNodes = children(node, "SOUR");
-    const claimed: Source[] = [], general: Source[] = [];
-    citations.forEach((source, index) =>
-      (date && value(sourceNodes[index], "_DREVO_CLAIM") === marker ? claimed : general)
-        .push(source));
-    return { claimed, general };
+    const dateClaimed: Source[] = [], placeClaimed: Source[] = [], general: Source[] = [];
+    citations.forEach((source, index) => {
+      const marker = value(sourceNodes[index], "_DREVO_CLAIM");
+      if (date && marker === `${kind}_DATE`) dateClaimed.push(source);
+      else if (place.trim() && marker === `${kind}_PLACE`) placeClaimed.push(source);
+      else general.push(source);
+    });
+    return { date: dateClaimed, place: placeClaimed, general };
   };
   const placeLocation = (n?: Node): PlaceLocation | undefined => {
     const place = n && child(n, "PLAC"),
@@ -451,8 +455,10 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       death = child(n, "DEAT");
     const parsedBirthDate = birth ? gedcomDate(value(birth, "DATE")) || "" : "";
     const parsedDeathDate = death ? gedcomDate(value(death, "DATE")) || "" : "";
-    const birthSources = dateSources(birth, parsedBirthDate, "BIRTH_DATE");
-    const deathSources = dateSources(death, parsedDeathDate, "DEATH_DATE");
+    const parsedBirthPlace = birth ? value(birth, "PLAC") : "";
+    const parsedDeathPlace = death ? value(death, "PLAC") : "";
+    const birthSources = eventClaimSources(birth, parsedBirthDate, parsedBirthPlace, "BIRTH");
+    const deathSources = eventClaimSources(death, parsedDeathDate, parsedDeathPlace, "DEATH");
     const events = n.children
       .filter((c) => Object.hasOwn(eventTags, c.tag))
       .map((c) => event(c));
@@ -473,16 +479,22 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       patronymic: value(n, "_PATR"),
       sex: value(n, "SEX") === "M" ? "m" : value(n, "SEX") === "F" ? "f" : "u",
       birth: parsedBirthDate,
-      ...(birthSources.claimed.length
-        ? { birthDateClaim: { value: parsedBirthDate, sources: birthSources.claimed } }
+      ...(birthSources.date.length
+        ? { birthDateClaim: { value: parsedBirthDate, sources: birthSources.date } }
         : {}),
       death: parsedDeathDate || undefined,
-      ...(deathSources.claimed.length
-        ? { deathDateClaim: { value: parsedDeathDate, sources: deathSources.claimed } }
+      ...(deathSources.date.length
+        ? { deathDateClaim: { value: parsedDeathDate, sources: deathSources.date } }
         : {}),
       deceased: death && death.value !== "N" ? true : undefined,
-      birthPlace: birth ? value(birth, "PLAC") : "",
-      deathPlace: death ? value(death, "PLAC") || undefined : undefined,
+      birthPlace: parsedBirthPlace,
+      ...(birthSources.place.length
+        ? { birthPlaceClaim: { value: parsedBirthPlace, sources: birthSources.place } }
+        : {}),
+      deathPlace: parsedDeathPlace || undefined,
+      ...(deathSources.place.length
+        ? { deathPlaceClaim: { value: parsedDeathPlace, sources: deathSources.place } }
+        : {}),
       birthLocation: placeLocation(birth),
       deathLocation: placeLocation(death),
       biography: notes(n) || undefined,
@@ -1039,7 +1051,8 @@ export function exportGedcom(
         link.type === "adoptive_parent" ? "adopted" : "foster",
       ).children.push(link.to);
   const sourceRecords: Source[] = [];
-  function citation(level: number, source: Source, claim?: "BIRTH_DATE" | "DEATH_DATE") {
+  function citation(level: number, source: Source,
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE") {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
@@ -1116,12 +1129,15 @@ export function exportGedcom(
       emit(2, "SURN", p.maidenName);
     }
     if (p.sex !== "u") emit(1, "SEX", p.sex.toUpperCase());
-    const dateClaimEmitted = { birth: false, death: false };
-    const emitDateClaim = (kind: "birth" | "death") => {
-      const claim = kind === "birth" ? p.birthDateClaim : p.deathDateClaim;
-      for (const source of claim?.sources || [])
+    const eventClaimsEmitted = { birth: false, death: false };
+    const emitEventClaims = (kind: "birth" | "death") => {
+      const dateClaim = kind === "birth" ? p.birthDateClaim : p.deathDateClaim;
+      const placeClaim = kind === "birth" ? p.birthPlaceClaim : p.deathPlaceClaim;
+      for (const source of dateClaim?.sources || [])
         citation(2, source, kind === "birth" ? "BIRTH_DATE" : "DEATH_DATE");
-      dateClaimEmitted[kind] = true;
+      for (const source of placeClaim?.sources || [])
+        citation(2, source, kind === "birth" ? "BIRTH_PLACE" : "DEATH_PLACE");
+      eventClaimsEmitted[kind] = true;
     };
     for (const kind of ["birth", "death"] as const)
       if (
@@ -1136,7 +1152,7 @@ export function exportGedcom(
         emit(1, kind === "birth" ? "BIRT" : "DEAT", "Y");
         if (p[kind]) emit(2, "DATE", exportDate(p[kind]));
         emitPlace(2, p[`${kind}Place`], p[`${kind}Location`]);
-        emitDateClaim(kind);
+        emitEventClaims(kind);
       }
     if (p.biography) emit(1, "NOTE", p.biography);
     if (
@@ -1238,7 +1254,7 @@ export function exportGedcom(
       emitPlace(2, e.place, e.location);
       if (e.description) emit(2, "NOTE", e.description);
       for (const source of e.sources || []) citation(2, source);
-      if (kind && !dateClaimEmitted[kind]) emitDateClaim(kind);
+      if (kind && !eventClaimsEmitted[kind]) emitEventClaims(kind);
     }
     for (const g of groups.values()) {
       if (g.children.includes(p.id)) {
@@ -1273,9 +1289,12 @@ export function exportGedcom(
       column: _column,
       birthDateClaim: _birthDateClaim,
       deathDateClaim: _deathDateClaim,
+      birthPlaceClaim: _birthPlaceClaim,
+      deathPlaceClaim: _deathPlaceClaim,
       ...extra
     } = p;
-    void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column, _birthDateClaim, _deathDateClaim];
+    void [_photo, _createdBy, _id, _parents, _spouses, _generation, _column,
+      _birthDateClaim, _deathDateClaim, _birthPlaceClaim, _deathPlaceClaim];
     emit(1, "_DREVO", JSON.stringify(extra));
   }
   for (const g of groups.values()) {

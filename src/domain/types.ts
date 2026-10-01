@@ -46,7 +46,8 @@ export type PersonEvent = {
   description?: string;
   sources?: Source[];
 };
-export type PersonDateClaim = { value: string; sources: Source[] };
+/** A citation confirms one recorded value, not subsequent edits to that field. */
+export type PersonValueClaim = { value: string; sources: Source[] };
 export type Person = {
   createdBy?: string;
   id: string;
@@ -57,15 +58,18 @@ export type Person = {
   /** Пустая строка означает неизвестную дату, без подстановки текущего года. */
   birth: string;
   /** Citations for this exact birth-date value, separate from general person sources. */
-  birthDateClaim?: PersonDateClaim;
+  birthDateClaim?: PersonValueClaim;
   death?: string;
   /** Citations for this exact death-date value, separate from general person sources. */
-  deathDateClaim?: PersonDateClaim;
+  deathDateClaim?: PersonValueClaim;
   deceased?: boolean;
   /** Manual research marker; absence does not mean the card is verified. */
   needsReview?: boolean;
   birthPlace: string;
+  /** Citations for this historical place name; map coordinates are separate. */
+  birthPlaceClaim?: PersonValueClaim;
   deathPlace?: string;
+  deathPlaceClaim?: PersonValueClaim;
   /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */
   birthLocation?: PlaceLocation;
   deathLocation?: PlaceLocation;

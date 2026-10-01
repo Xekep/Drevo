@@ -54,6 +54,9 @@ import {
   releaseAttachedMediaGrants,
 } from "../../src/server/postgres-media-quota.ts";
 import { uploadQuota, UploadQuotaError } from "../../src/server/upload-quota.ts";
+import { archiveChanges } from "../../src/domain/changes.ts";
+import { sourceCatalogStore } from "../../src/server/source-catalog-store.ts";
+import { sourceCitation } from "../../src/shared/source-catalog.ts";
 import { reservePlatformDisk } from "../../src/server/platform-disk-reservation.ts";
 import { registerMediaUpload } from "../../src/server/media-access.ts";
 import type { Family } from "../../src/domain/types.ts";
@@ -3501,6 +3504,47 @@ try {
   await otherApp.archive.write(backfillFamily, beforeBackfill.revision);
   await publishedPeopleStore(otherApp.archive.db).publish("person-a", "owner");
   await app.archive.db.prepare("", "UPDATE discovery_index_state SET ready=false WHERE singleton=true").run();
+  const placeSource = {
+    id: "pg-place-claim", title: "Запись о месте", type: "архивная запись",
+    author: "", institution: "", archive: "ГАСО", fond: "6", opis: "13",
+    delo: "104", sheet: "7", reference: "л. 7", url: "", accessedAt: "",
+    description: "", documentIds: [],
+  };
+  await sourceCatalogStore(app.archive.db).insert(placeSource);
+  const placeBefore = await app.archive.read();
+  const placeNext = structuredClone(placeBefore.family);
+  const placePerson = placeNext.people[0];
+  placePerson.birthPlace = "Тула";
+  placePerson.deathPlace = "Казань";
+  placePerson.birthPlaceClaim = { value: "Тула", sources: [sourceCitation(placeSource)] };
+  placePerson.deathPlaceClaim = { value: "Казань", sources: [sourceCitation(placeSource)] };
+  const placeToken = newSessionToken();
+  await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)")
+    .run(sessionTokenHash(placeToken), Date.now() + 60_000);
+  const placeHeaders = { ...ownerHeaders, Cookie: `drevo_session=${placeToken}` };
+  const postPlaceChanges = (before: typeof placeBefore.family, next: typeof placeBefore.family,
+    revision: number) => fetch(securedBase + "/api/family/changes", {
+      method: "POST", headers: { ...placeHeaders, "If-Match": String(revision) },
+      body: JSON.stringify({ changes: archiveChanges(before, next) }),
+    });
+  const placeSaved = await postPlaceChanges(placeBefore.family, placeNext, placeBefore.revision);
+  assert.equal(placeSaved.status, 200, await placeSaved.text());
+  const placeStored = await app.archive.read();
+  assert.equal(placeStored.family.people[0].birthPlaceClaim?.sources[0].catalogId, placeSource.id);
+  assert.equal(placeStored.family.people[0].deathPlaceClaim?.sources[0].catalogId, placeSource.id);
+  assert.equal((await app.archive.db.prepare("", "SELECT data->'birthPlaceClaim'->>'value' AS place FROM people WHERE id=?")
+    .get(placePerson.id))?.place, "Тула", "PostgreSQL stores the exact linked place value");
+  assert.equal(await sourceCatalogStore(otherApp.archive.db).get(placeSource.id), null,
+    "another PostgreSQL archive cannot read the source");
+  const foreignBefore = await otherApp.archive.read();
+  const foreignNext = structuredClone(foreignBefore.family);
+  foreignNext.people[0].birthPlace = "Тула";
+  foreignNext.people[0].birthPlaceClaim = { value: "Тула", sources: [sourceCitation(placeSource)] };
+  await assert.rejects(otherApp.archive.write(foreignNext, foreignBefore.revision), /Источник отсутствует/);
+  const changedPlace = structuredClone(placeStored.family);
+  changedPlace.people[0].birthPlace = "Другая Тула";
+  assert.equal((await postPlaceChanges(placeStored.family, changedPlace, placeStored.revision)).status, 400);
+  assert.equal((await app.archive.read()).family.people[0].birthPlace, "Тула");
   console.log("runtime_http_and_backup_ok");
 } finally {
   await otherApp?.close();
