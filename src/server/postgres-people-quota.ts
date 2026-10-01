@@ -63,7 +63,9 @@ export async function checkStorePostgresPeopleGrowth(
        WHERE archive_id=current_setting('drevo.archive_id', true) FOR SHARE`,
     )
     .get();
-  if (!owner) throw missingOwner();
+  // Legacy shared archives have no personal owner and therefore no account
+  // whose basic tier can be charged. Their pre-existing write path remains.
+  if (!owner) return;
   const tier = await db
     .prepare(
       "",
