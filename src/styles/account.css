@@ -14,6 +14,10 @@
 .account-heading {
   margin-bottom: 28px;
 }
+.account-heading .account-row-action {
+  min-height: 44px;
+  margin-top: 0;
+}
 .account-eyebrow {
   display: block;
   color: #71866e;

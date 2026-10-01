@@ -73,11 +73,15 @@ test("each viewer can switch direction and colors; legacy card variants stay por
   ]);
   expect(initialOrder[0]!.y).toBeLessThan(initialOrder[1]!.y);
 
-  await page.locator(".archive-more summary").click();
-  await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
-    "Моё древо",
-  );
-  await page.locator(".archive-more summary").click();
+  if (testInfo.project.name === "mobile") {
+    await page.locator(".archive-more summary").click();
+    await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
+      "Моё древо",
+    );
+    await page.locator(".archive-more summary").click();
+  } else {
+    await expect(page.locator(".archive-more summary")).toBeHidden();
+  }
   await page.getByRole("button", { name: "Настройки древа" }).click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(

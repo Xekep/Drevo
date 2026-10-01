@@ -99,18 +99,20 @@ test("visible about link and account avatar keep the header usable", async ({
   await expect(about).toBeVisible();
   await about.click();
   await expect(page.getByRole("dialog", { name: "О проекте" })).toBeVisible();
-  await expect(page.getByRole("dialog").getByRole("link", { name: "Евгений С." })).toHaveAttribute("href", "https://vk.ru/xekep");
+  await expect(
+    page.getByRole("dialog").getByRole("link", { name: "Евгений С." }),
+  ).toHaveAttribute("href", "https://vk.ru/xekep");
   await page.keyboard.press("Escape");
   await expect(about).toBeFocused();
   await expect(avatar).toHaveAttribute("href", "/account");
   await expect(avatar).toHaveAttribute("aria-label", /Личный кабинет/);
   await expect(avatar.locator(".nav-account-avatar")).toHaveText("Н");
   const avatarBox = await avatar.boundingBox();
-  const menuBox = await menu.boundingBox();
   expect(avatarBox).not.toBeNull();
-  expect(menuBox).not.toBeNull();
-  expect(avatarBox!.x + avatarBox!.width).toBeLessThan(menuBox!.x);
   if (testInfo.project.name === "mobile") {
+    await expect(menu).toBeVisible();
+    const menuBox = (await menu.boundingBox())!;
+    expect(avatarBox!.x + avatarBox!.width).toBeLessThan(menuBox.x);
     const search = page.locator(".archive-search");
     expect((await search.boundingBox())!.width).toBeGreaterThan(150);
     await page.setViewportSize({ width: 320, height: 640 });
@@ -136,20 +138,35 @@ test("visible about link and account avatar keep the header usable", async ({
     for (const width of [1201, 1101, 1024]) {
       await page.setViewportSize({ width, height: 720 });
       await expect(about).toBeVisible();
-      expect((await menu.boundingBox())!.x + (await menu.boundingBox())!.width).toBeLessThanOrEqual(width);
       if (width === 1024) {
+        await expect(menu).toBeVisible();
+        const menuBox = (await menu.boundingBox())!;
+        expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
         await menu.click();
-        await expect(page.locator(".mobile-sections").getByRole("link", { name: "Люди", exact: true })).toBeVisible();
+        await expect(
+          page
+            .locator(".mobile-sections")
+            .getByRole("link", { name: "Люди", exact: true }),
+        ).toBeVisible();
         await page.keyboard.press("Escape");
+      } else {
+        await expect(menu).toBeHidden();
+        await expect(page.locator(".nav-sections")).toBeVisible();
       }
     }
     await page.setViewportSize({ width: 1280, height: 720 });
   }
-  await menu.click();
-  await expect(page.locator(".archive-more .nav-bottom")).not.toContainText("О проекте");
-  await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
-    "Личный кабинет",
-  );
+  if (testInfo.project.name === "mobile") {
+    await menu.click();
+    await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
+      "О проекте",
+    );
+    await expect(page.locator(".archive-more .nav-bottom")).not.toContainText(
+      "Личный кабинет",
+    );
+  } else {
+    await expect(menu).toBeHidden();
+  }
   await page.screenshot({
     path: testInfo.outputPath("account-avatar-header.png"),
   });
@@ -159,6 +176,12 @@ test("visible about link and account avatar keep the header usable", async ({
   await expect(
     page.getByRole("heading", { name: "Личный кабинет" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Поиск опубликованных людей" }),
+  ).toHaveAttribute("href", "/discover");
+  await page.getByRole("region", { name: "Доступ и роль" }).getByRole("button", { name: "Управление архивом" }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await avatar.click();
   await expect(
     page.getByRole("heading", { name: "Просмотр древа" }),
   ).toHaveCount(0);
@@ -191,6 +214,39 @@ test("account avatar uses the linked person's portrait when available", async ({
   await expect
     .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
     .toBeGreaterThan(0);
+});
+
+test("a guest can reach sign-in and public discovery from the profile", async ({
+  page,
+}) => {
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({ response, json: { ...data, user: null, local: false } });
+  });
+  await page.route("**/api/session", (route) =>
+    route.fulfill({
+      json: { user: null, account: null, local: false, yandex: true, vk: true },
+    }),
+  );
+  await page.goto("/account");
+  await expect(page.locator(".nav-account")).toBeVisible();
+  await expect(page.locator(".nav-account")).toHaveAttribute(
+    "aria-label",
+    "Личный кабинет",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Войдите в Drevo" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Управление архивом" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Выйти из этого сеанса" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Поиск опубликованных людей" }),
+  ).toHaveAttribute("href", "/discover");
 });
 
 test("account cabinet shows the owner's current tier and quotas", async ({

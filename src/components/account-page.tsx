@@ -244,6 +244,11 @@ export function AccountPage({
             <h1>Личный кабинет</h1>
             <p>Профиль, доступ к семейному архиву и настройки просмотра.</p>
           </div>
+          {identity && (
+            <a className="account-row-action" href="/discover">
+              <Users size={17} aria-hidden="true" /> Поиск опубликованных людей
+            </a>
+          )}
         </div>
         {loading ? (
           <div className="account-card account-empty" role="status">
