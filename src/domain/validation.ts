@@ -110,6 +110,8 @@ export function validateFamily(value: unknown): Family {
       throw new Error("Источник места смерти относится к другому значению; снимите связь перед изменением места");
     if (!validValueClaim(p.occupationClaim, p.occupation))
       throw new Error("Источник занятия относится к другому значению; снимите связь перед изменением занятия");
+    if (!validValueClaim(p.maidenNameClaim, p.maidenName))
+      throw new Error("Источник фамилии при рождении относится к другому значению; снимите связь перед изменением фамилии");
     if (p.awards !== undefined) {
       if (!Array.isArray(p.awards) || p.awards.length > 100)
         throw new Error("Допустимо не более 100 наград у человека");

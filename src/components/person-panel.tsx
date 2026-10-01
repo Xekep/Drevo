@@ -256,6 +256,8 @@ export function PersonPanel({
         {person.maidenName && (
           <div className="maiden-name">
             Фамилия при рождении: {person.maidenName}
+            {!!person.maidenNameClaim?.sources.length &&
+              <p>Источники фамилии при рождении: {claimSummary(person.maidenNameClaim)}</p>}
           </div>
         )}
         {years(person) && (

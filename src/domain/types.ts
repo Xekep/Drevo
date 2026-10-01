@@ -75,6 +75,8 @@ export type Person = {
   birthLocation?: PlaceLocation;
   deathLocation?: PlaceLocation;
   maidenName?: string;
+  /** Citations for the current birth surname, separate from other names. */
+  maidenNameClaim?: PersonValueClaim;
   occupation?: string;
   /** Citations for the current occupation wording, separate from work events. */
   occupationClaim?: PersonValueClaim;

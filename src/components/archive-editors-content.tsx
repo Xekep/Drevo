@@ -56,7 +56,7 @@ import {
 type Save = (data: Family) => Promise<Family>;
 function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmin, canAssess }: {
   kind: "birth" | "death" | "occupation";
-  subject: "date" | "place" | "occupation";
+  subject: "date" | "place" | "occupation" | "surname";
   value: string;
   claim?: PersonValueClaim;
   onChange: (claim: PersonValueClaim | undefined) => void;
@@ -64,19 +64,22 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
   canAssess: boolean;
 }) {
   const occupation = subject === "occupation";
+  const surname = subject === "surname";
   const label = kind === "birth" ? "рождения" : "смерти";
   const subjectLabel = subject === "date" ? "даты" : "места";
-  const title = occupation ? "Источники занятия" : `Источники ${subjectLabel} ${label}`;
-  return <details className={`form-details ${occupation ? "occupation-claim" : `${kind}-${subject}-claim`}`}>
+  const title = occupation ? "Источники занятия" : surname
+    ? "Источники фамилии при рождении" : `Источники ${subjectLabel} ${label}`;
+  return <details className={`form-details ${occupation ? "occupation-claim" : surname
+    ? "birth-surname-claim" : `${kind}-${subject}-claim`}`}>
     <summary>{title}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
     {claim && claim.value !== value
       ? <div>
-          <p role="alert">{occupation ? "Занятие изменилось. Источники относятся к прежнему занятию " : subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
+          <p role="alert">{occupation ? "Занятие изменилось. Источники относятся к прежнему занятию " : surname ? "Фамилия изменилась. Источники относятся к прежней фамилии при рождении " : subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
             ? "Верните прежнее значение перед сохранением или попросите исследователя снять оценку."
             : "Снимите связь или верните прежнее значение перед сохранением."}</p>
           {claim.confidence && !canAssess
             ? <p>Оценку и связь с прежним значением может снять только исследователь или администратор.</p>
-            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : occupation ? "им занятием" : "им местом"}</button>}
+            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : occupation ? "им занятием" : surname ? "ей фамилией" : "им местом"}</button>}
         </div>
       : value.trim()
         ? <>
@@ -104,7 +107,9 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
                 <small>Удалить последний источник и оценку может только исследователь или администратор.</small>}
             </label>}
           </>
-        : <p>{occupation ? "Укажите занятие, чтобы привязать к нему источник." : `Укажите ${subject === "date" ? "дату" : "место"} ${label}, чтобы привязать к ${subject === "date" ? "ней" : "нему"} источник.`}</p>}
+        : <p>{occupation ? "Укажите занятие, чтобы привязать к нему источник." : surname
+          ? "Укажите фамилию при рождении, чтобы привязать к ней источник."
+          : `Укажите ${subject === "date" ? "дату" : "место"} ${label}, чтобы привязать к ${subject === "date" ? "ней" : "нему"} источник.`}</p>}
   </details>;
 }
 export function PersonEditor({
@@ -801,6 +806,15 @@ export function PersonEditor({
               </label>
             ))}
           </div>
+          <ValueClaimSourcesEditor
+            kind="birth"
+            subject="surname"
+            value={draft.maidenName || ""}
+            claim={draft.maidenNameClaim}
+            onChange={(claim) => field("maidenNameClaim", claim)}
+            isAdmin={isAdmin}
+            canAssess={user?.role === "admin" || user?.role === "researcher"}
+          />
         </details>
         <details className="form-details">
           <summary>
