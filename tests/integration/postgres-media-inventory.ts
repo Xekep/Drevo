@@ -16,13 +16,15 @@ test("media inventory separates current, historical, pending and unreferenced fi
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema},pg_catalog`);
     await client.query(`
+      CREATE TABLE archives(id text NOT NULL);
       CREATE TABLE people(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE photos(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE history(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE media_upload_grants(archive_id text NOT NULL, url text NOT NULL, expires_ms bigint NOT NULL);
       CREATE TABLE media_originals(archive_id text NOT NULL, url text NOT NULL, size_bytes bigint NOT NULL);
-      CREATE TABLE documents(archive_id text NOT NULL, file_size bigint NOT NULL);
+      CREATE TABLE documents(archive_id text NOT NULL, file_name text NOT NULL, file_size bigint NOT NULL);
     `);
+    await client.query("INSERT INTO archives VALUES('tree-a'),('tree-b')");
     await client.query("INSERT INTO people VALUES('tree-a',$1),('tree-a',$2),('tree-b',$3)", [
       JSON.stringify({ photo: "/media/current.jpg" }),
       JSON.stringify({ photo: "/media/missing.png" }),
@@ -35,7 +37,7 @@ test("media inventory separates current, historical, pending and unreferenced fi
       ('tree-a','/media/current.jpg',10),('tree-a','/media/photo.png',20),
       ('tree-a','/media/old.webp',30),('tree-a','/media/pending.gif',40),
       ('tree-a','/media/stale.jpg',50),('tree-b','/media/current.jpg',70)`);
-    await client.query("INSERT INTO documents VALUES('tree-a',60)");
+    await client.query("INSERT INTO documents VALUES('tree-a','document.pdf',60)");
     const results = await client.query(
       readFileSync(new URL("../../ops/postgres/media-reference-inventory.sql", import.meta.url), "utf8"),
     );
@@ -55,6 +57,21 @@ test("media inventory separates current, historical, pending and unreferenced fi
     assert.deepEqual(byStatus.get("tree-b:current_image"), [1, 70]);
     assert.deepEqual(byStatus.get("*all*:current_image"), [3, 100]);
 
+    const files = await client.query(
+      readFileSync(new URL("../../ops/postgres/media-filesystem-refs.sql", import.meta.url), "utf8"),
+    );
+    const fileResults = (Array.isArray(files) ? files : [files]) as Array<{
+      fields: Array<{ name: string }>;
+      rows: Array<Record<string, unknown>>;
+    }>;
+    const manifest = fileResults.find((result) => result.fields.length === 1 &&
+      result.fields[0].name === "json_build_object")?.rows.map((row) =>
+      JSON.parse(String(row.json_build_object)) as Record<string, unknown>) || [];
+    assert.equal(manifest.filter((row) => row.kind === "archive").length, 2);
+    assert.ok(manifest.some((row) => row.source === "document" && row.name === "document.pdf"));
+    assert.ok(manifest.some((row) => row.source === "history" && row.name === "old.webp"));
+    assert.ok(manifest.some((row) => row.source === "image_metadata" && row.known_bytes === 10));
+
     await client.query(`CREATE ROLE ${reader} NOLOGIN NOBYPASSRLS`);
     await client.query(`GRANT USAGE ON SCHEMA ${schema} TO ${reader}`);
     await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${reader}`);
@@ -66,6 +83,11 @@ test("media inventory separates current, historical, pending and unreferenced fi
       readFileSync(new URL("../../ops/postgres/media-reference-inventory.sql", import.meta.url), "utf8"),
     ), /row-level security/i,
     "a runtime role must fail instead of receiving an incomplete inventory");
+    await client.query("ROLLBACK").catch(() => {});
+    await assert.rejects(client.query(
+      readFileSync(new URL("../../ops/postgres/media-filesystem-refs.sql", import.meta.url), "utf8"),
+    ), /row-level security/i,
+    "the file manifest must also reject a partial RLS view");
   } finally {
     await client.query("ROLLBACK").catch(() => {});
     await client.query("RESET ROLE").catch(() => {});
