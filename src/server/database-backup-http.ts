@@ -8,13 +8,16 @@ import type { createAuth } from "./auth.ts";
 import type { openArchive } from "./database.ts";
 import { writeDatabaseBackup } from "./backup.ts";
 import { fullBackup } from "./full-backup.ts";
+import { ForbiddenError } from "./users.ts";
 
 export function databaseBackupHttp({
   archive,
   auth,
+  beforeSend,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
+  beforeSend?: () => Promise<void>;
 }) {
   const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -41,7 +44,17 @@ export function databaseBackupHttp({
       });
 
     if (full) {
-      await fullBackup(archive.db, res);
+      try {
+        await fullBackup(archive.db, res, undefined, async () => {
+          await beforeSend?.();
+          if (!(await auth.isPlatformAdmin(req)))
+            throw new ForbiddenError("Доступ администратора отозван");
+        });
+      } catch (error) {
+        if (error instanceof ForbiddenError)
+          return json(res, 403, { error: error.message });
+        throw error;
+      }
       return true;
     }
 
@@ -49,6 +62,9 @@ export function databaseBackupHttp({
       file = join(directory, "drevo.sqlite");
     try {
       await writeDatabaseBackup(archive.db, file);
+      await beforeSend?.();
+      if (!(await auth.isPlatformAdmin(req)))
+        return json(res, 403, { error: "Доступ администратора отозван" });
       const info = await stat(file);
       res.writeHead(200, {
         "Content-Type": "application/vnd.sqlite3",
