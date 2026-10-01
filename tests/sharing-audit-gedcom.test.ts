@@ -548,9 +548,8 @@ test("HTTP share isolation, expiry, revoke, audit permissions and staged GEDCOM 
     assert.equal(created.status, 201);
     const shared = await created.json(),
       token = shared.path.split("/").at(-1);
-    const page = await request(shared.path);
-    assert.equal(page.status, 200);
-    assert.equal(page.headers.get("referrer-policy"), "no-referrer");
+    // The SPA shell and its headers use an isolated fixture in production-static-http.test.ts.
+    assert.match(shared.path, /^\/s\/[A-Za-z0-9_-]{43}$/);
     const publicData = await request(`/api/shared/${token}`);
     assert.equal(publicData.status, 200);
     assert.equal(publicData.headers.get("cache-control"), "no-store");
