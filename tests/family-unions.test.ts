@@ -17,6 +17,7 @@ import {
   type Person,
 } from "../src/domain/index.ts";
 import { projectFamilyForUser } from "../src/domain/tree-access.ts";
+import { removeConnection, removePerson } from "../src/domain/mutations.ts";
 import {
   archiveChanges,
   applyArchiveChanges,
@@ -69,6 +70,21 @@ const unions = (): FamilyUnion[] => [
     ongoing: { date: new Date().toISOString().slice(0, 10), sources: [source] },
   },
 ];
+
+test("removing a person also removes their unions, and a spouse link cannot hide surviving unions", () => {
+  const data = { ...family(), unions: unions() };
+  const removed = removePerson(data, "a");
+  assert.deepEqual(removed.unions, []);
+  assert.deepEqual(removed.people.map((entry) => entry.id), ["b", "c"]);
+  assert.deepEqual(removed.people.map((entry) => entry.spouses), [[], []]);
+
+  const spouse = { from: "a", to: "b", type: "spouse" } as const;
+  assert.throws(() => removeConnection(data, spouse), /Сначала удалите записи семейных союзов/);
+  const withoutUnions = { ...data, unions: [] };
+  const unlinked = removeConnection(withoutUnions, spouse);
+  assert.deepEqual(unlinked.people.find((entry) => entry.id === "a")?.spouses, ["c"]);
+  assert.deepEqual(unlinked.people.find((entry) => entry.id === "b")?.spouses, []);
+});
 
 test("status is derived per union, never from a person's ambiguous divorce event", () => {
   const data = family();

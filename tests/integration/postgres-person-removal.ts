@@ -49,7 +49,16 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
     "godparent",
     "Крёстный",
   );
-  await graph(first, tokens.admin, "tree-a", archiveChanges(before, linked), 0);
+  const withUnion = {
+    ...linked,
+    unions: [{
+      id: "child-own-marriage",
+      participants: ["child", "own"] as [string, string],
+      type: "marriage" as const,
+      formation: { dateText: "около 2000 года" },
+    }],
+  };
+  await graph(first, tokens.admin, "tree-a", archiveChanges(before, withUnion), 0);
   before = (await read(first, "tree-a")).family;
   const other = await fingerprint(first, "tree-b");
   const request = randomUUID();
@@ -105,6 +114,7 @@ test("person deletion/undo preserves graph, authors, photos, documents and discu
   );
   assert.deepEqual(saved.photos, before.photos);
   assert.deepEqual(saved.links, before.links);
+  assert.deepEqual(saved.unions, before.unions);
   assert.deepEqual(
     (await first.query("SELECT * FROM documents WHERE archive_id='tree-a'"))
       .rows,
