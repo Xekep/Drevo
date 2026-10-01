@@ -200,6 +200,10 @@ try {
   assert.equal((await client.query(`SELECT relforcerowsecurity FROM pg_class
     WHERE oid=to_regclass('discovery_copied_fields')`)).rows[0]?.relforcerowsecurity,
   true, "a clean database installs recipient-only transfer provenance as 061");
+  assert.equal((await client.query(`SELECT count(*)::int AS count
+    FROM information_schema.columns WHERE table_schema=current_schema()
+      AND table_name='relations' AND column_name='sources'`)).rows[0].count,
+  1, "a clean database applies family link sources 060 before copy provenance 061");
   await client.query("DROP TABLE discovery_copied_fields");
   await initializePostgresRuntimeSchema(live.db);
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_trigger
