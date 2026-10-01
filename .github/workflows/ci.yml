@@ -140,6 +140,8 @@ jobs:
       - run: bash -n ops/postgres/local-backup.sh
       - run: bash -n ops/postgres/local-backup-health.sh
       - run: bash -n ops/postgres/local-media-backup.sh
+      - run: bash -n ops/postgres/media-backup-paths.sh
+      - run: bash tests/media-backup-paths.sh
       - run: bash -n ops/postgres/local-media-backup-health.sh
       - run: bash -n ops/postgres/verify-local-media-backup.sh
       - run: bash -n ops/postgres/setup-local-media-backup.sh
