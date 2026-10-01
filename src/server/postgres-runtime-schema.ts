@@ -140,7 +140,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     ],
     [
       "SELECT to_regclass('discovery_relative_names') AS present",
-      "046_discovery_candidate_signals.sql",
+      "049_discovery_candidate_signals.sql",
     ],
     [
       "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('archive_invitations') AND conname='archive_invitations_created_by_fkey' AND confdeltype='c'",
