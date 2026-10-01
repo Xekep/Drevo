@@ -57,6 +57,7 @@ type TreeCameraStateInput = {
   peopleMap: Map<string, Person>;
   context: string;
   root: string | null;
+  initialPersonId: string | null;
   onInitialViewReady?: () => void;
   manualCameraOverride: boolean;
   expanded: ReadonlySet<string>;
@@ -102,6 +103,7 @@ export function useTreeCameraState({
   peopleMap,
   context,
   root,
+  initialPersonId,
   onInitialViewReady,
   manualCameraOverride,
   expanded,
@@ -267,7 +269,25 @@ export function useTreeCameraState({
                 ease: (progress) => 1 - (1 - progress) ** 3,
               });
         } else if (changedContext || reverseChanged) {
-          if (changedContext && context.includes(":research:"))
+          const initialOccurrence =
+            !initialViewSent.current && initialPersonId
+              ? personOccurrences
+                  .get(initialPersonId)
+                  ?.find((id) => positions.has(id))
+              : undefined;
+          const initialPosition = initialOccurrence
+            ? positions.get(initialOccurrence)
+            : undefined;
+          // Start near the person so a large archive never reveals tiny portraits.
+          if (initialPosition)
+            viewportUpdate = flow.setCenter(
+              initialPosition.x +
+                (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
+              initialPosition.y +
+                (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
+              { zoom: narrow ? PERSON_FOCUS_ZOOM : 0.42, duration: 0 },
+            );
+          else if (changedContext && context.includes(":research:"))
             viewportUpdate = flow.fitView({
               nodes: [...positions.keys()].map((id) => ({ id })),
               includeHiddenNodes: true,
@@ -360,6 +380,7 @@ export function useTreeCameraState({
     focusReady,
     context,
     root,
+    initialPersonId,
     expanded,
     collapsed,
     layoutKey,
