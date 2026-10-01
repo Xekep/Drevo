@@ -214,6 +214,9 @@ function snapshotFrom(value: unknown): PortableSnapshot {
       comment.authorId.length > 200 ||
       comment.authorName.length > 200 ||
       !Number.isSafeInteger(comment.createdMs) ||
+      (comment.editedMs != null && (!Number.isSafeInteger(comment.editedMs) ||
+        (comment.editedMs as number) <= (comment.createdMs as number) ||
+        (comment.editedMs as number) > 8_640_000_000_000_000)) ||
       typeof comment.text !== "string" ||
       !comment.text.trim() ||
       comment.text.length > 2000

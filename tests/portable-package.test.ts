@@ -117,6 +117,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           authorId: "owner",
           authorName: "Владелец",
           createdMs: 1,
+          editedMs: 5,
           text: "Проверено по книге",
         },
       ],
@@ -237,6 +238,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
       );
       assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM source_catalog").get())?.n, 1);
       assert.equal(result.family.people[0].sources[0].catalogId, "source-1");
+      assert.equal((await archive.db.prepare("SELECT updated_ms FROM person_comments").get())?.updated_ms, 5);
       assert.equal(
         (
           await archive.db

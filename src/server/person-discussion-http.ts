@@ -4,8 +4,12 @@ import type { createAuth } from "./auth.ts";
 import { isScopedUser, visiblePersonIds } from "../domain/tree-access.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { auditStore } from "./audit.ts";
+import {
+  MAX_COMMENT_LENGTH,
+  type PersonComment,
+} from "../shared/person-discussion.ts";
 
-const MAX_TEXT = 2000;
+const MAX_TEXT = MAX_COMMENT_LENGTH;
 const PAGE_SIZE = 20;
 type CommentRow = {
   id: number;
@@ -13,6 +17,7 @@ type CommentRow = {
   author_id: string;
   author_name: string | null;
   created_ms: number;
+  updated_ms: number | null;
   text: string;
 };
 
@@ -25,7 +30,7 @@ function json(res: ServerResponse, status: number, body: unknown) {
   return true;
 }
 
-async function readText(req: IncomingMessage) {
+async function readText(req: IncomingMessage, editing = false) {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -38,10 +43,23 @@ async function readText(req: IncomingMessage) {
     throw new Error("Введите сообщение");
   const text = (body as { text: unknown }).text;
   if (typeof text !== "string") throw new Error("Введите сообщение");
-  const value = text.trim();
-  if (!value || value.length > MAX_TEXT)
+  const value = text.trimEnd();
+  if (!value.trim() || value.length > MAX_TEXT)
     throw new Error("Сообщение должно содержать от 1 до 2000 символов");
-  return value;
+  let expectedUpdated: number | null = null;
+  if (editing) {
+    const version = (body as { editedAt?: unknown }).editedAt;
+    if (version !== null) {
+      if (
+        typeof version !== "string" ||
+        !Number.isFinite(Date.parse(version)) ||
+        new Date(version).toISOString() !== version
+      )
+        throw new Error("Некорректная версия сообщения");
+      expectedUpdated = Date.parse(version);
+    }
+  }
+  return { text: value, expectedUpdated };
 }
 
 export function personDiscussionHttp({
@@ -56,24 +74,27 @@ export function personDiscussionHttp({
   const db = archive.db;
   const audit = auditStore(db);
   const comment = db.prepare(
-    `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
+    `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms
        FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
       WHERE c.id=? AND c.person_id=?`,
-    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n       FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
+    "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms\n       FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n      WHERE c.id=? AND c.person_id=?",
   );
   const present = (
     row: CommentRow,
     userId: string,
     userName: string,
     admin: boolean,
-  ) => ({
+  ): PersonComment => ({
     id: row.id,
     text: row.text,
     author:
       row.author_name ||
       (row.author_id === userId ? userName : "Участник архива"),
     createdAt: new Date(row.created_ms).toISOString(),
+    editedAt:
+      row.updated_ms == null ? null : new Date(row.updated_ms).toISOString(),
     canDelete: admin || row.author_id === userId,
+    canEdit: row.author_id === userId,
   });
 
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -110,10 +131,10 @@ export function personDiscussionHttp({
         return json(res, 400, { error: "Некорректная страница" });
       const rows = (await db
         .prepare(
-          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text
+          `SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms
              FROM person_comments c LEFT JOIN users u ON u.id=c.author_id
             WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?`,
-          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text\n             FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
+          "SELECT c.id,c.person_id,c.author_id,COALESCE(NULLIF(c.author_name,''),u.name) AS author_name,c.created_ms,c.text,c.updated_ms\n             FROM runtime_visible_person_comments c LEFT JOIN runtime_users u ON u.id=c.author_id\n            WHERE c.person_id=? AND c.id<? ORDER BY c.id DESC LIMIT ?",
         )
         .all(personId, before, PAGE_SIZE + 1)) as CommentRow[];
       const page = rows.slice(0, PAGE_SIZE);
@@ -125,7 +146,11 @@ export function personDiscussionHttp({
       });
     }
 
-    if (req.method !== "POST" && req.method !== "DELETE")
+    if (
+      req.method !== "POST" &&
+      req.method !== "DELETE" &&
+      req.method !== "PATCH"
+    )
       return json(res, 405, { error: "Метод не поддерживается" });
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
@@ -133,7 +158,7 @@ export function personDiscussionHttp({
     if (req.method === "POST" && !match[2]) {
       let text: string;
       try {
-        text = await readText(req);
+        ({ text } = await readText(req));
       } catch {
         return json(res, 400, { error: "Введите сообщение до 2000 символов" });
       }
@@ -187,6 +212,7 @@ export function personDiscussionHttp({
             author_id: user.id,
             author_name: user.name,
             created_ms: now,
+            updated_ms: null,
             text,
           },
           user.id,
@@ -194,6 +220,86 @@ export function personDiscussionHttp({
           user.role === "admin",
         ),
       });
+    }
+
+    if (req.method === "PATCH" && match[2]) {
+      const id = Number(match[2]);
+      if (!Number.isSafeInteger(id))
+        return json(res, 400, { error: "Некорректное сообщение" });
+      let edit: Awaited<ReturnType<typeof readText>>;
+      try {
+        edit = await readText(req, true);
+      } catch {
+        return json(res, 400, {
+          error: "Введите сообщение до 2000 символов и его текущую версию",
+        });
+      }
+      const result = await db.transaction(async () => {
+        const row = (await comment.get(id, personId)) as CommentRow | undefined;
+        if (!row) return { status: 404, error: "Сообщение не найдено" };
+        if (row.author_id !== user.id)
+          return {
+            status: 403,
+            error: "Редактировать сообщение может только его автор",
+          };
+        if ((row.updated_ms ?? null) !== edit.expectedUpdated)
+          return {
+            status: 409,
+            error:
+              "Сообщение уже изменено в другой вкладке. Черновик сохранён; загрузите актуальный текст перед повторной правкой.",
+            item: present(row, user.id, user.name, user.role === "admin"),
+          };
+        if (row.text === edit.text)
+          return {
+            status: 200,
+            item: present(row, user.id, user.name, user.role === "admin"),
+          };
+        const updated = Math.max(
+          Date.now(),
+          row.created_ms + 1,
+          (row.updated_ms ?? 0) + 1,
+        );
+        const changed = await db
+          .prepare(
+            "UPDATE person_comments SET text=?,updated_ms=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS ?",
+            "UPDATE person_comments SET text=?,updated_ms=? WHERE id=? AND person_id=? AND author_id=? AND updated_ms IS NOT DISTINCT FROM ?",
+          )
+          .run(edit.text, updated, id, personId, user.id, edit.expectedUpdated);
+        if (changed.changes !== 1) {
+          const latest = (await comment.get(id, personId)) as
+            | CommentRow
+            | undefined;
+          return {
+            status: 409,
+            error: "Сообщение уже изменено или удалено. Черновик сохранён.",
+            ...(latest && {
+              item: present(latest, user.id, user.name, user.role === "admin"),
+            }),
+          };
+        }
+        await audit.record(
+          {
+            action: "Изменено сообщение в обсуждении",
+            entity: "person_comment",
+            entityId: String(id),
+            label: "Обсуждение человека",
+            personIds: [personId],
+            details: [],
+          },
+          user,
+        );
+        return {
+          status: 200,
+          item: present(
+            { ...row, text: edit.text, updated_ms: updated },
+            user.id,
+            user.name,
+            user.role === "admin",
+          ),
+        };
+      });
+      const { status, ...body } = result;
+      return json(res, status, body);
     }
 
     if (req.method === "DELETE" && match[2]) {

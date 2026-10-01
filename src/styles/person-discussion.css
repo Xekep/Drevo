@@ -139,3 +139,226 @@
     right: -6px;
   }
 }
+
+.person-discussion-item {
+  padding-right: 0;
+}
+.person-discussion-meta {
+  padding-right: 76px;
+  min-height: 24px;
+}
+.person-discussion-edit {
+  position: absolute;
+  top: 10px;
+  right: 34px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  border-radius: 7px;
+}
+.person-discussion-edit:hover,
+.person-discussion-edit:focus-visible {
+  background: var(--soft-green);
+  color: var(--green);
+}
+.person-discussion-edited {
+  font-style: italic;
+}
+.person-discussion-edit-buttons {
+  display: flex;
+  gap: 6px;
+}
+.person-discussion-edit-buttons button:last-child {
+  background: var(--soft-green);
+  color: var(--ink);
+}
+.person-discussion-conflict {
+  padding: 8px;
+  margin-bottom: 8px;
+  background: #fff4df;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.person-discussion-conflict button {
+  color: var(--green);
+  text-decoration: underline;
+  min-height: 36px;
+}
+.comment-editor {
+  min-width: 0;
+}
+.comment-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.comment-editor-toolbar button {
+  min-height: 30px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.comment-editor-toolbar button[aria-pressed="true"] {
+  background: var(--soft-green);
+  color: var(--green);
+}
+.comment-editor-hint {
+  display: block;
+  margin: 5px 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.comment-editor .cm-editor {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+.comment-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.comment-editor .cm-scroller {
+  min-height: 76px;
+  max-height: 280px;
+  overflow: auto;
+  font: inherit;
+  line-height: 1.6;
+}
+.comment-editor .cm-content {
+  padding: 7px 0;
+}
+.comment-editor .cm-line {
+  padding-inline: 0;
+}
+.comment-editor .cm-placeholder {
+  color: var(--muted);
+}
+.comment-editor.is-source .cm-content {
+  font-family: monospace;
+}
+.comment-editor .cm-content[contenteditable="false"] {
+  opacity: 0.65;
+}
+.comment-block-preview {
+  cursor: text;
+}
+.comment-math-preview {
+  cursor: text;
+}
+.comment-markdown {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.comment-markdown > :first-child {
+  margin-top: 0;
+}
+.comment-markdown > :last-child {
+  margin-bottom: 0;
+}
+.comment-markdown p {
+  white-space: pre-wrap;
+  margin-block: 6px;
+}
+.comment-markdown h1,
+.comment-markdown h2,
+.comment-markdown h3 {
+  font-size: 1.3em;
+  font-weight: 650;
+  margin-block: 12px 5px;
+  line-height: 1.3;
+}
+.comment-markdown h4,
+.comment-markdown h5,
+.comment-markdown h6 {
+  font-size: 1.05em;
+  font-weight: 650;
+  margin-block: 10px 4px;
+}
+.comment-markdown ul,
+.comment-markdown ol {
+  padding-left: 22px;
+  margin-block: 6px;
+}
+.comment-markdown ul {
+  list-style: disc;
+}
+.comment-markdown ol {
+  list-style: decimal;
+}
+.comment-markdown li + li {
+  margin-top: 3px;
+}
+.comment-markdown blockquote {
+  border-left: 3px solid #b4c8ad;
+  padding-left: 10px;
+  margin: 8px 0;
+  color: var(--muted);
+}
+.comment-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 9px;
+  background: #f2f5ef;
+  border-radius: 7px;
+}
+.comment-markdown code {
+  font-family: monospace;
+  font-size: 0.95em;
+  background: #f2f5ef;
+  border-radius: 3px;
+}
+.comment-markdown a {
+  color: var(--green);
+  text-decoration: underline;
+}
+.comment-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.comment-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-block: 8px;
+}
+.comment-markdown td,
+.comment-markdown th {
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: left;
+}
+.comment-markdown .katex-display {
+  margin-block: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.comment-markdown .katex {
+  font-size: 1.1em;
+}
+@media (pointer: coarse) {
+  .person-discussion-meta {
+    min-height: 36px;
+    padding-right: 92px;
+  }
+  .person-discussion-edit {
+    width: 44px;
+    min-height: 44px;
+    right: 44px;
+  }
+  .person-discussion-delete {
+    right: 0;
+  }
+  .comment-editor-toolbar button {
+    min-height: 40px;
+  }
+}

@@ -36,6 +36,7 @@ import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
+import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -115,6 +116,7 @@ try {
   await users.setRole((await users.get("owner"))!, "vk:42", "researcher");
   await settingsStore(sqlite.db);
   await aiSettingsStore(sqlite.db);
+  await sqlite.db.prepare("INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text,updated_ms) VALUES('person-a','owner','Владелец',1000,'Правка до переноса',2000),('person-a','owner','Владелец',1001,'Без правок',NULL)").run();
   const before = await sqlite.read();
   await sqlite.close();
   const imported = await importSqliteSnapshot(
@@ -129,6 +131,12 @@ try {
     imported.counts.people,
     Object.keys(imported.services).length,
   );
+  await client.query("BEGIN");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+  assert.deepEqual((await client.query("SELECT text,updated_ms FROM person_comments WHERE archive_id='runtime-test' ORDER BY id")).rows,
+    [{ text: "Правка до переноса", updated_ms: "2000" }, { text: "Без правок", updated_ms: null }]);
+  await client.query("DELETE FROM person_comments WHERE archive_id='runtime-test'");
+  await client.query("COMMIT");
   process.env.DATABASE_BACKEND = "postgres";
   process.env.ARCHIVE_ID = "runtime-test";
   // Simulate the deployed schema before the additive VK extension.
@@ -1214,6 +1222,7 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders);
   assert.equal(
     (await fetch(securedBase + "/api/family?projection=overview", {
       headers: archiveAdminHeaders,
