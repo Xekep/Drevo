@@ -52,6 +52,9 @@ export function archiveRoutePool(
     return await exclusive(async () => {
       const existing = entries.get(id);
       if (existing) {
+        // Another request may have opened this archive while we waited in
+        // the pool queue. Do not reuse its earlier access decision.
+        if (!(await permitted(req, id, path))) return null;
         existing.active++;
         existing.usedAt = ++lastUse;
         return existing;
@@ -71,13 +74,22 @@ export function archiveRoutePool(
             const timer = setTimeout(wake, WAIT_FOR_IDLE_MS);
             idleWaiters.add(wake);
           });
+        if (!(await permitted(req, id, path))) return null;
         const idle = oldestIdle();
         if (!idle) throw new ArchivePoolBusyError();
         entries.delete(idle[0]);
         await idle[1].runtime.close();
       }
+      // A queued request may have lost access before opening starts. Opening
+      // can also take time, so check again before publishing the runtime.
+      if (!(await permitted(req, id, path))) return null;
+      const runtime = await open(id);
+      if (!(await permitted(req, id, path))) {
+        await runtime.close();
+        return null;
+      }
       const entry: Entry = {
-        runtime: await open(id),
+        runtime,
         active: 1,
         usedAt: ++lastUse,
       };
