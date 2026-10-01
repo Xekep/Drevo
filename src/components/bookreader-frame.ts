@@ -251,12 +251,13 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
         ...command.metadata,
       ].map(({ label, value }) => ({ label, value: escapeHtml(value) })),
       getPageNum(index) {
-        return String(index + 1);
+        return String(Math.min(pageCount - 1, Math.max(0, index)) + 1);
       },
       getPageURI(index) {
         return `drevo-page:${index}`;
       },
       renderPageURI(image, uri) {
+        image.draggable = false;
         const index = Number(uri.slice("drevo-page:".length));
         if (!Number.isInteger(index) || index < 0 || index >= pageCount) return;
         void render(index)
@@ -324,9 +325,11 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener(
   "contextmenu",
   (event) => {
-    if (!pendingState?.magnifier) return;
-    event.preventDefault();
-    send({ source, type: "magnifier-off" });
+    const onPage =
+      event.target instanceof Element &&
+      event.target.closest(".BRpagecontainer");
+    if (onPage || pendingState?.magnifier) event.preventDefault();
+    if (pendingState?.magnifier) send({ source, type: "magnifier-off" });
   },
   { capture: true },
 );

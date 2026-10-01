@@ -110,14 +110,21 @@ body {
 .BRcontainer::-webkit-scrollbar {
   display: none;
 }
+br-leaf-edges:not(.br-mode-2up__leafs--flipping) {
+  /* The native page lookup divides by offsetWidth, which rounds subpixel edges to zero. */
+  min-width: 1px;
+}
 .br-mode-2up__leafs[side] .br-leaf-edges__label {
-  padding: 2px 3px;
-  font-size: 4px;
-  line-height: 1.2;
+  padding: calc(5px / var(--drevo-edge-scale, 1)) calc(8px / var(--drevo-edge-scale, 1));
+  font-size: calc(13px / var(--drevo-edge-scale, 1));
+  line-height: 1.35;
+  opacity: 1;
+  background: #343936;
+  border-radius: calc(3px / var(--drevo-edge-scale, 1));
 }
 .br-mode-2up__leafs[side="right"] .br-leaf-edges__label {
-  transform: translate(-100%, -10px);
+  transform: translate(-100%, calc(-8px / var(--drevo-edge-scale, 1)));
 }
 .br-mode-2up__leafs[side="left"] .br-leaf-edges__label {
-  transform: translate(100%, -10px);
+  transform: translate(100%, calc(-8px / var(--drevo-edge-scale, 1)));
 }
