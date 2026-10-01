@@ -3680,11 +3680,13 @@ try {
       previewToken: renewedBranch.previewToken,
       recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
-  assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
+  const postEditBranchHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.218" };
+  assert.deepEqual((await fetch(securedBase + branchPath, { headers: postEditBranchHeaders })
     .then((response) => response.json())).incoming.map((person: { id: string }) => person.id),
     ["branch-parent-b"]);
   await publishedPeopleStore(otherApp.archive.db).unpublish("branch-parent-b");
-  const branchAfterUnpublish = await fetch(securedBase + branchPath, { headers: ownerHeaders });
+  const branchAfterUnpublish = await fetch(securedBase + branchPath,
+    { headers: postEditBranchHeaders });
   assert.equal(branchAfterUnpublish.headers.get("cache-control"), "private, no-store",
     "a reopened branch panel must revalidate against an uncached projection");
   assert.deepEqual((await branchAfterUnpublish.json()).incoming, [],
