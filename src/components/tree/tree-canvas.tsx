@@ -49,6 +49,7 @@ import { mediaPreview } from "../../domain/media-preview.ts";
 import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { DistantPortraits } from "./distant-portraits";
+import { hitDistantScene } from "./distant-scene-hit";
 import { personRelationLabel } from "./person-relation-label";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
@@ -763,6 +764,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         if (next)
           void flow.fitView({
             nodes: [{ id: next }],
+            includeHiddenNodes: true,
             maxZoom: 1,
             padding: 0.6,
           });
@@ -897,6 +899,17 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : displayEdges,
     [displayEdges, layoutTransition],
   );
+  const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
+  const distantScene = overviewAvailable && distantZoom;
+  const flowNodes = useMemo(() => distantScene
+    ? renderedNodes.map((node) => ({ ...node, hidden: true }))
+    : renderedNodes, [renderedNodes, distantScene]);
+  const flowEdges = useMemo(() => distantScene
+    ? renderedEdges.map((edge) => ({ ...edge, hidden: true }))
+    : renderedEdges, [renderedEdges, distantScene]);
+  const overviewHouseholds = useMemo(() => displayNodes.filter(
+    (node): node is HouseholdNodeType => node.type === "household",
+  ), [displayNodes]);
   const exportSnapshot = useRef({
     ready,
     layoutBusy,
@@ -1298,8 +1311,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         ) : (
           <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
           proOptions={{ hideAttribution: true }}
-            nodes={renderedNodes}
-            edges={renderedEdges}
+            nodes={flowNodes}
+            edges={flowEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           connectionMode={ConnectionMode.Loose}
@@ -1349,6 +1362,22 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             if (e.data) e.data.onSelect(e.data.connection);
           }}
           onPaneClick={(event) => {
+            if (distantScene) {
+              const bounds = container.current?.getBoundingClientRect();
+              const hit = bounds && hitDistantScene(nodes, displayEdges,
+                flow.getViewport(), {
+                  x: event.clientX - bounds.left,
+                  y: event.clientY - bounds.top,
+                });
+              if (hit?.node) {
+                actions.choose(hit.node.data.person.id, event.shiftKey);
+                return;
+              }
+              if (hit?.edge?.data) {
+                hit.edge.data.onSelect(hit.edge.data.connection);
+                return;
+              }
+            }
             if (screen.fullscreen) {
               const now = performance.now();
               const last = lastPaneTap.current;
@@ -1439,6 +1468,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           <DistantPortraits
             people={family.people}
             nodes={nodes}
+            households={overviewHouseholds}
+            edges={displayEdges}
+            fullScene={overviewAvailable}
             width={canvasWidth}
             height={canvasHeight}
             growing={growing}

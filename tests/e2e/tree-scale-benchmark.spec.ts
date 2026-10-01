@@ -59,7 +59,10 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     }, people[0].id);
   }
   await page.addInitScript((minimumPeople) => {
-    const state = { requestedAt: 0, completedAt: 0, people: 0, occurrences: 0, branches: 0 };
+    const state = { requestedAt: 0, completedAt: 0, people: 0, occurrences: 0, branches: 0,
+      positions: [] as [string, { x: number; y: number }][],
+      occurrenceIds: [] as { id: string; personId: string }[],
+      nodeSize: { width: 0, height: 0 } };
     Object.assign(window, { __scaleLayout: state });
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
@@ -71,6 +74,9 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
             state.completedAt = performance.now();
             state.occurrences = geometry.occurrences.length;
             state.branches = geometry.branches?.length || 0;
+            state.positions = geometry.positions;
+            state.occurrenceIds = geometry.occurrences;
+            state.nodeSize = geometry.nodeSize;
           }
         });
       }
@@ -95,16 +101,24 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
       requestedAt: number; completedAt: number; people: number;
       occurrences: number; branches: number;
     } }).__scaleLayout;
-    return { ...state, workerMs: Math.round(state.completedAt - state.requestedAt),
+    return { people: state.people, occurrences: state.occurrences, branches: state.branches,
+      workerMs: Math.round(state.completedAt - state.requestedAt),
       mountedCards: document.querySelectorAll(".react-flow__node").length,
       mountedEdges: document.querySelectorAll(".react-flow__edge").length,
       distantCards: document.querySelectorAll(".flow-person.is-distant").length,
       distantImages: document.querySelectorAll(".flow-person.is-distant .person-avatar img").length,
+      sceneNodes: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.sceneNodes || 0),
+      sceneEdges: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.sceneEdges || 0),
       distantPortraits: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0) };
   });
   expect(result.people).toBe(people.length);
   expect(result.occurrences).toBeGreaterThanOrEqual(people.length);
-  expect(result.mountedCards).toBeGreaterThan(0);
+  if (people.length >= 600 && !process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
+    expect(result.sceneNodes).toBeGreaterThanOrEqual(people.length);
+    expect(result.sceneEdges).toBeGreaterThan(0);
+    expect(result.mountedCards).toBe(0);
+    expect(result.mountedEdges).toBe(0);
+  } else expect(result.mountedCards).toBeGreaterThan(0);
   if (withPortraits && process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
     const first = await page.evaluate(() => (
       window as typeof window & { __introPortrait: {
@@ -114,13 +128,59 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     expect(first?.loaded).toBe(true);
   }
   if (!process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
-    expect(result.distantCards).toBeGreaterThan(0);
+    if (people.length < 600) expect(result.distantCards).toBeGreaterThan(0);
     expect(result.distantImages).toBe(0);
     if (withPortraits) expect(result.distantPortraits).toBeGreaterThan(0);
     else expect(result.distantPortraits).toBe(0);
   }
   console.log(`scale-browser ${JSON.stringify(result)}`);
-  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT) {
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT && result.sceneNodes > 0) {
+    await expect.poll(() => page.evaluate(() => Number(
+      document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0,
+    ))).toBeGreaterThan(100);
+    const initial = await page.evaluate(() => {
+      const canvas = document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")!;
+      const context = canvas.getContext("2d")!;
+      const state = (window as typeof window & { __scaleLayout: {
+        positions: [string, { x: number; y: number }][];
+        nodeSize: { width: number; height: number };
+      } }).__scaleLayout;
+      const locate = (position: { x: number; y: number }) => {
+        const viewport = document.querySelector<HTMLElement>(".react-flow__viewport")!;
+        const matrix = new DOMMatrix(getComputedStyle(viewport).transform);
+        const box = document.querySelector<HTMLElement>(".react-flow")!.getBoundingClientRect();
+        return { x: box.left + matrix.e + (position.x + state.nodeSize.width / 2) * matrix.a,
+          y: box.top + matrix.f + (position.y + 70) * matrix.a };
+      };
+      const matches = (position: { x: number; y: number }) => {
+        const center = locate(position), box = canvas.getBoundingClientRect();
+        const x = Math.round((center.x - box.x) * canvas.width / box.width);
+        const y = Math.round((center.y - box.y) * canvas.height / box.height);
+        if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return false;
+        const color = context.getImageData(x, y, 1, 1).data;
+        return color[0] >= 115 && color[0] <= 145 &&
+          Math.abs(color[0] - color[1]) <= 3 && Math.abs(color[1] - color[2]) <= 3;
+      };
+      const position = state.positions.map(([, value]) => value).find((value) => {
+        const center = locate(value);
+        return center.x > 100 && center.x < innerWidth - 200 &&
+          center.y > 120 && center.y < innerHeight - 120 && matches(value);
+      });
+      if (!position) return false;
+      const tracker = { active: true, samples: 0, matched: 0 };
+      const sample = () => {
+        if (!tracker.active) return;
+        tracker.samples++;
+        if (matches(position)) tracker.matched++;
+        requestAnimationFrame(sample);
+      };
+      Object.assign(window, { __portraitAlignment: tracker, __portraitTick: sample });
+      requestAnimationFrame(sample);
+      return true;
+    });
+    expect(initial).toBe(true);
+  }
+  if (withPortraits && process.env.DREVO_LAYOUT_SCALE_ALIGNMENT && result.sceneNodes === 0) {
     await expect.poll(() => page.evaluate(() => Number(
       document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0,
     ))).toBeGreaterThan(100);
@@ -134,9 +194,8 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
         const y = Math.round((box.y + box.height / 2 - canvasBox.y) * canvas.height / canvasBox.height);
         if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return false;
         const color = context.getImageData(x, y, 1, 1).data;
-        return color[0] >= 95 && color[0] <= 115 &&
-          color[1] >= 128 && color[1] <= 148 &&
-          color[2] >= 102 && color[2] <= 122;
+        return color[0] >= 115 && color[0] <= 145 &&
+          Math.abs(color[0] - color[1]) <= 3 && Math.abs(color[1] - color[2]) <= 3;
       };
       const candidates = [...document.querySelectorAll(".flow-person.is-distant .person-avatar")];
       const avatar = candidates.find((item) => {
@@ -179,6 +238,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     await page.mouse.move(x + 180, y + 80, { steps: 80 });
     await page.mouse.up();
     await expect(pane).toBeVisible();
+    await page.waitForTimeout(450);
     const frames = await page.evaluate(() => {
       const state = (window as typeof window & { __scaleFrames: {
         active: boolean; gaps: number[];
@@ -250,6 +310,7 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     await expect(page.locator(".tree-distant-portraits")).toHaveCSS("visibility", "hidden");
   }
   if (process.env.DREVO_LAYOUT_SCALE_SCREENSHOT) {
+    await page.screenshot({ path: testInfo.outputPath("canvas-overview.png") });
     const zoomIn = page.locator(".flow-camera-tools button").nth(1);
     for (let index = 0; index < 6; index++) await zoomIn.click();
     await page.waitForTimeout(400);
@@ -257,5 +318,33 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
     for (let index = 0; index < 2; index++) await zoomIn.click();
     await page.waitForTimeout(400);
     await page.screenshot({ path: testInfo.outputPath("normal-portraits.png") });
+  }
+  if (process.env.DREVO_LAYOUT_SCALE_CLICK && result.sceneNodes > 0) {
+    await page.locator(".flow-camera-tools button").nth(2).click();
+    await expect.poll(() => page.evaluate(() =>
+      new DOMMatrix(getComputedStyle(document.querySelector(".react-flow__viewport")!).transform).a,
+    )).toBeLessThan(0.18);
+    await expect.poll(() => page.locator(".react-flow__node").count()).toBe(0);
+    const target = await page.evaluate(() => {
+      const state = (window as typeof window & { __scaleLayout: {
+        positions: [string, { x: number; y: number }][];
+        occurrenceIds: { id: string; personId: string }[];
+        nodeSize: { width: number; height: number };
+      } }).__scaleLayout;
+      const peopleByOccurrence = new Map(state.occurrenceIds.map(({ id, personId }) => [id, personId]));
+      const viewport = document.querySelector<HTMLElement>(".react-flow__viewport")!;
+      const matrix = new DOMMatrix(getComputedStyle(viewport).transform);
+      const box = document.querySelector<HTMLElement>(".react-flow")!.getBoundingClientRect();
+      return state.positions.map(([id, position]) => ({
+        id: peopleByOccurrence.get(id),
+        x: box.left + matrix.e + (position.x + state.nodeSize.width / 2) * matrix.a,
+        y: box.top + matrix.f + (position.y + state.nodeSize.height / 2) * matrix.a,
+      })).find(({ id, x, y }) => id && x > box.left + 120 && x < box.right - 120 &&
+        y > box.top + 120 && y < box.bottom - 120);
+    });
+    expect(target?.id).toBeTruthy();
+    await page.mouse.click(target!.x, target!.y);
+    await expect(page).toHaveURL(new RegExp(`/people/${target!.id}$`));
+    await expect(page.locator(".inspector-dock")).toBeVisible();
   }
 });
