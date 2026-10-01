@@ -91,6 +91,10 @@ export function LoginButtons({
         window.location.replace(`/a/${result.archiveId}/tree`);
         return;
       }
+      if (result.account) {
+        window.location.replace("/account");
+        return;
+      }
       if (result.linked) {
         window.location.replace("/account");
         return;
