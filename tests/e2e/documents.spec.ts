@@ -150,7 +150,7 @@ test("источник карточки связывается с PDF без к�
   await page.getByRole("button", { name: "Изменить человека" }).click();
   await page
     .locator(".form-details > summary")
-    .filter({ hasText: "Источники" })
+    .filter({ hasText: /^Источники$/ })
     .click();
   await page.getByRole("button", { name: "+ Источник" }).click();
   const source = page.locator(".source-editor").last();
@@ -281,7 +281,7 @@ test("PDF можно перетащить, затем привязать из д
   await page.getByRole("button", { name: "Изменить человека" }).click();
   await page
     .locator(".form-details > summary")
-    .filter({ hasText: "Источники" })
+    .filter({ hasText: /^Источники$/ })
     .click();
   const documents = page.getByRole("region", { name: "Документы человека" });
   await documents
