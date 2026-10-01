@@ -322,8 +322,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     () => setInitialCameraReady(true),
     [],
   );
-  const growthPreparing = growing && !narrow && family.people.length > 0 && !growthRevealed;
-  const growthActive = growing && !narrow && growthStarted;
+  const growthPreparing = growing && family.people.length > 0 && !growthRevealed;
+  const growthActive = growing && growthStarted;
   const growthLocked = growthPreparing || growthActive;
   // A click before the first fitView completes would be overwritten by that
   // initial camera placement, especially with reduced motion / a slow layout.
@@ -563,12 +563,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       !growing ||
       !ready ||
       !nodes.length ||
-      (!narrow && !growthStarted && !reduced)
+      (!growthStarted && !reduced)
     )
       return;
     const timer = window.setTimeout(
       () => setGrowing(false),
-      narrow || reduced ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
+      reduced ? 0 : treeGrowthDuration(maxGrowthDelay, growthDelays),
     );
     return () => window.clearTimeout(timer);
   }, [
@@ -577,7 +577,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     nodes.length,
     maxGrowthDelay,
     growthDelays,
-    narrow,
     growthStarted,
     problem,
   ]);
@@ -1032,7 +1031,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [],
   );
   useEffect(() => {
-    if (!growing || narrow || !ready || !initialCameraReady || growthStarted)
+    if (!growing || !ready || !initialCameraReady || growthStarted)
       return;
     let frame = 0;
     let mountAttempts = 0;
@@ -1049,7 +1048,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       // React Flow measures nodes before rendering their edges. Give both a
       // shared animation start, or a late edge may follow its descendant card.
       const mounted =
-        displayNodes.length <= 500
+        displayNodes.length <= 2000
           ? mountedNodes >= displayNodes.length &&
             mountedEdges >= displayEdges.length
           : mountAttempts >= 2 &&
@@ -1068,7 +1067,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     return () => cancelAnimationFrame(frame);
   }, [
     growing,
-    narrow,
     ready,
     initialCameraReady,
     growthStarted,

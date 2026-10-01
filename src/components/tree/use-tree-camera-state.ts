@@ -278,15 +278,17 @@ export function useTreeCameraState({
           const initialPosition = initialOccurrence
             ? positions.get(initialOccurrence)
             : undefined;
-          // Start near the person so a large archive never reveals tiny portraits.
+          // Draw the whole archive at a steady overview scale before the
+          // separate introduction flight brings the account person closer.
           if (initialPosition)
-            viewportUpdate = flow.setCenter(
-              initialPosition.x +
-                (geometry.nodeSize?.width ?? TREE_NODE_WIDTH) / 2,
-              initialPosition.y +
-                (geometry.nodeSize?.height ?? TREE_NODE_HEIGHT) / 2,
-              { zoom: narrow ? PERSON_FOCUS_ZOOM : 0.42, duration: 0 },
-            );
+            viewportUpdate = flow.fitView({
+              nodes: [...positions.keys()].map((id) => ({ id })),
+              includeHiddenNodes: true,
+              minZoom: 0.05,
+              maxZoom: narrow ? 0.32 : 0.38,
+              padding: initialTreePadding(canvasWidth, canvasHeight, narrow),
+              duration: 0,
+            });
           else if (changedContext && context.includes(":research:"))
             viewportUpdate = flow.fitView({
               nodes: [...positions.keys()].map((id) => ({ id })),

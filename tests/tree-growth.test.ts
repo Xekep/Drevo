@@ -154,6 +154,39 @@ test("birth-order stagger stretches incoming lines without an idle gap before an
   }
 });
 
+test("spouse lines finish before the newly connected card, including remarriages and asymmetric records", () => {
+  const people = [
+    person("first", "1900", [], ["second", "third"]),
+    person("second", "1905", [], ["third"]),
+    person("third", "1910"),
+    person("child", "1940", ["first", "third"]),
+  ];
+  const delays = treeGrowthDelays(people);
+  for (const [from, to] of [
+    ["first", "second"],
+    ["first", "third"],
+    ["second", "third"],
+  ]) {
+    const style = treeConnectionGrowthStyle(
+      { from, to, type: "spouse" },
+      delays,
+    );
+    const start = cssMilliseconds(style["--tree-growth-delay"]);
+    const end = start + cssMilliseconds(style["--tree-growth-edge-duration"]!);
+    assert.ok(
+      start >=
+        Math.min(delays.get(from)!, delays.get(to)!) + delays.revealMs - 0.001,
+    );
+    assert.ok(
+      Math.abs(end - Math.max(delays.get(from)!, delays.get(to)!)) < 0.002,
+    );
+    assert.equal(
+      delays.get("child"),
+      delays.get("third")! + delays.revealMs + delays.edgeMs,
+    );
+  }
+});
+
 test("deep archives compress the whole schedule without reversing arrows and cards", () => {
   const people = Array.from({ length: 10_000 }, (_, index) =>
     person(
