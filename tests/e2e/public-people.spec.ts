@@ -52,6 +52,56 @@ test("discovery keeps same-ID cards from different archives distinct and paginat
   await expect(page).toHaveURL(/\/discover\/person\/tree-a\/same$/);
 });
 
+test("an open public card rechecks revoked links and publication on focus", async ({ page }) => {
+  let state: "linked" | "delayed-linked" | "revoked" | "unpublished" = "linked";
+  let signalDelayed!: () => void;
+  const delayedSeen = new Promise<void>((resolve) => { signalDelayed = resolve; });
+  let releaseDelayed!: () => void;
+  const delayedRelease = new Promise<void>((resolve) => { releaseDelayed = resolve; });
+  let signalDelayedDone!: () => void;
+  const delayedDone = new Promise<void>((resolve) => { signalDelayedDone = resolve; });
+  await page.route("**/api/discovery/people/tree-a/root", async (route) => {
+    const current = state;
+    if (current === "delayed-linked") {
+      signalDelayed();
+      await delayedRelease;
+    }
+    try {
+      if (current === "unpublished")
+        await route.fulfill({ status: 404, json: { error: "Карточка недоступна" } });
+      else await route.fulfill({ json: {
+        person: { archiveId: "tree-a", id: "root", name: "Public Root" },
+        linkedCards: current === "linked" || current === "delayed-linked"
+          ? [{ archiveId: "tree-b", id: "other", name: "Former Link" }] : [],
+      } });
+    } finally {
+      if (current === "delayed-linked") signalDelayedDone();
+    }
+  });
+  try {
+    await page.goto("/discover/person/tree-a/root");
+    await expect(page.getByRole("link", { name: "Former Link" })).toBeVisible();
+
+    state = "delayed-linked";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await delayedSeen;
+    state = "revoked";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByRole("heading", { name: "Public Root" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Former Link" })).toHaveCount(0);
+    releaseDelayed();
+    await delayedDone;
+    await expect(page.getByRole("link", { name: "Former Link" })).toHaveCount(0);
+
+    state = "unpublished";
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.getByRole("heading", { name: "Public Root" })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toContainText("Карточка недоступна");
+  } finally {
+    releaseDelayed();
+  }
+});
+
 test("admin changes a card's search privacy from the eye control", async ({ page, isMobile }) => {
   test.skip(isMobile, "Публикация меняет общую тестовую базу; мобильное открытие проверяется отдельно");
   await page.goto("/tree");

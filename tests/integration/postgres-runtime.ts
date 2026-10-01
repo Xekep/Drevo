@@ -4243,6 +4243,11 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
     .get(parent.id,parent.id))?.count, 1);
+  const publicParentPath = `/api/discovery/people/runtime-test/${parent.id}`;
+  const linkedPublicParent = await fetch(securedBase + publicParentPath, { headers });
+  assert.equal(linkedPublicParent.status, 200);
+  assert.equal(linkedPublicParent.headers.get("cache-control"), "private, no-store");
+  assert.equal((await linkedPublicParent.json()).linkedCards.length, 1);
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200);
@@ -4264,6 +4269,11 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_person_id=? AND right_person_id=?`).get(parent.id,parent.id))?.count, 0,
   "manual revocation removes the public transition immediately");
+  const revokedPublicParent = await fetch(securedBase + publicParentPath, { headers });
+  assert.equal(revokedPublicParent.status, 200, "the still-published card remains public");
+  assert.equal(revokedPublicParent.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual((await revokedPublicParent.json()).linkedCards, [],
+    "a fresh public GET cannot return a revoked linked-card transition");
   const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
   assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
   assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
