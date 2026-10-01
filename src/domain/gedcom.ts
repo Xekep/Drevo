@@ -361,21 +361,27 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         warnings.add(
           "Дополнительные сведения цитаты GEDCOM сохранены в примечании источника, а не в отдельных полях.",
         );
-      const repositoryNames: string[] = [], callNumbers: string[] = [];
+      const repositoryNames: string[] = [], callNumbers: string[] = [], repositoryDetails: string[] = [];
       for (const link of record ? children(record, "REPO") : []) {
         const repository = link.pointer ? records.get(link.value) : undefined;
         if (repository?.tag === "REPO") {
           usedRepositories.add(link.value);
           const name = value(repository, "NAME");
           if (name) repositoryNames.push(`Хранилище: ${name}`);
+          for (const website of children(repository, "WWW"))
+            if (website.value) repositoryDetails.push(`Сайт хранилища: ${website.value}`);
+          const repositoryNote = notes(repository);
+          if (repositoryNote) repositoryDetails.push(`Примечание хранилища: ${repositoryNote}`);
         } else if (link.pointer)
           warnings.add(`Хранилище ${link.value} для источника GEDCOM не найдено.`);
         for (const call of children(link, "CALN"))
           if (call.value) callNumbers.push(call.value);
+        const linkNote = notes(link);
+        if (linkNote) repositoryDetails.push(`Примечание о хранении: ${linkNote}`);
       }
       const page = value(s, "PAGE");
-      if (repositoryNames.length || callNumbers.length)
-        warnings.add("Реквизиты хранилища GEDCOM сохранены текстом; структура REPO не восстанавливается.");
+      if (repositoryNames.length || callNumbers.length || repositoryDetails.length)
+        warnings.add("Часть сведений о хранилище GEDCOM сохранена текстом; структура REPO не восстанавливается.");
       const source: Source = {
         title: record
           ? value(record, "TITL") || value(record, "ABBR") || "Источник"
@@ -392,6 +398,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             ...citationDetails,
             ...repositoryNames,
             ...callNumbers.slice(page ? 0 : 1).map((call) => `Шифр хранилища: ${call}`),
+            ...repositoryDetails,
           ]
             .filter(Boolean)
             .join("\n") || undefined,
