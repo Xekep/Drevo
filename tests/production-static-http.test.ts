@@ -70,6 +70,7 @@ test("production static streams SPA routes, files and shared page", async () => 
       "/a/family-one/tree",
       "/a/family-one/people/sample-id",
       "/a/family-one/account",
+      `/discover/person/family-one/${encodeURIComponent("family:человек.1")}`,
     ]) {
       const response = await fetch(app.base + path);
       assert.equal(response.status, 200);
@@ -129,6 +130,8 @@ test("production static streams SPA routes, files and shared page", async () => 
     assert.equal((await head.arrayBuffer()).byteLength, 0);
 
     assert.equal((await fetch(app.base + "/missing.txt")).status, 404);
+    for (const path of ["family%2Fperson.1", "family%5Cperson.1", "family%252Fperson.1", "bad%"])
+      assert.equal((await fetch(app.base + `/discover/person/family-one/${path}`)).status, 404);
     const api = await fetch(app.base + "/api/health");
     assert.equal(api.status, 418);
     assert.equal(await api.text(), "next handler");
