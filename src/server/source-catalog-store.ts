@@ -41,10 +41,10 @@ export function sourceCatalogStore(db: StoreDatabase) {
     ).get(id);
     return row ? parsed(row) : null;
   };
-  const insert = async (source: CatalogSource) => await db.prepare(
-    "INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)",
-    "INSERT INTO source_catalog(archive_id,id,data,version) VALUES(current_setting('drevo.archive_id', true),?,?,1)",
-  ).run(source.id, JSON.stringify(source));
+  const insert = async (source: CatalogSource, version = 1) => await db.prepare(
+    "INSERT INTO source_catalog(id,data,version) VALUES(?,?,?)",
+    "INSERT INTO source_catalog(archive_id,id,data,version) VALUES(current_setting('drevo.archive_id', true),?,?,?)",
+  ).run(source.id, JSON.stringify(source), version);
   const update = async (source: CatalogSource, expected: number) => await db.prepare(
     "UPDATE source_catalog SET data=?,version=version+1 WHERE id=? AND version=?",
     "UPDATE source_catalog SET data=?,version=version+1 WHERE id=? AND version=?",
