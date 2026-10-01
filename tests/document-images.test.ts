@@ -13,6 +13,21 @@ import {
   tiffDocumentRenderer,
 } from "../src/server/document-images.ts";
 
+test("JPEG and JFIF filename aliases use the same JPEG storage and 20 MiB limit", () => {
+  for (const name of [
+    "record.jpg",
+    "record.jpeg",
+    "record.jfif",
+    "record.JFIF",
+  ]) {
+    assert.deepEqual(documentFileTypeFromName(name), {
+      extension: "jpg",
+      mime: "image/jpeg",
+      maxBytes: 20 * 1024 * 1024,
+    });
+  }
+});
+
 test("TIFF aliases use the canonical archival format and 50 MiB limit", () => {
   for (const name of ["record.tif", "record.TIFF"]) {
     assert.deepEqual(documentFileTypeFromName(name), {

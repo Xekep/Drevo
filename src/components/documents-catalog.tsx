@@ -123,7 +123,7 @@ export function DocumentsCatalog({
         !type ||
         (next.type && ![type.mime, "application/octet-stream", ...(type.extension === "tif" ? ["image/x-tiff"] : [])].includes(next.type))
       ) {
-        setUploadError("Поддерживаются PDF, TIFF, JPEG, PNG, WebP и GIF");
+        setUploadError("Поддерживаются PDF, TIFF, JPEG/JFIF, PNG, WebP и GIF");
         setFile(null);
         return;
       }
@@ -577,7 +577,7 @@ export function DocumentsCatalog({
             </span>
             <input
               type="file"
-              accept=".pdf,.tif,.tiff,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/tiff,image/x-tiff,image/jpeg,image/png,image/webp,image/gif"
+              accept=".pdf,.tif,.tiff,.jpg,.jpeg,.jfif,.png,.webp,.gif,application/pdf,image/tiff,image/x-tiff,image/jpeg,image/png,image/webp,image/gif"
               disabled={uploading}
               aria-label="Файл документа"
               onChange={(event) => {
