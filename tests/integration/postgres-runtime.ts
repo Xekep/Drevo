@@ -2348,6 +2348,12 @@ try {
     .then((response) => response.json())).incoming, [],
   "one archive's grant alone does not expose its branch");
   await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("runtime-test");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='other-archive'`).get())?.count,
+      0, "A's own consent cannot read B's branch before B also consents");
+  }, true);
+  await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
       FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,

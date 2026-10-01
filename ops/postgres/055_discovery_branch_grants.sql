@@ -56,6 +56,8 @@ CREATE INDEX IF NOT EXISTS discovery_branch_members_person
   ON discovery_branch_members(grantor_archive_id,person_id);
 ALTER TABLE discovery_branch_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovery_branch_members FORCE ROW LEVEL SECURITY;
+-- The member FK proves the source grant exists; an opposite archive can read
+-- that row only after it has also granted this exact pair.
 DO $$ BEGIN
   CREATE POLICY discovery_branch_members_read ON discovery_branch_members FOR SELECT
     USING (grantor_archive_id=current_setting('drevo.archive_id',true)
