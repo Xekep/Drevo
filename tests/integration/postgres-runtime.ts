@@ -3742,7 +3742,8 @@ try {
     404, "the owner cannot preview a copy before the source grants fields");
   assert.equal(sharePreview.available.occupation, "Архивный исследователь");
   assert.equal(sharePreview.recipientArchiveId, "other-archive");
-  assert.equal(sharePreview.recipientPersonName, "Иван Петров");
+  assert.equal(sharePreview.recipientPersonName, "Тестов Исправленный кандидат",
+    "the addressee is the currently published linked card, not a private archive label");
   assert.equal(sharePreview.available.biography, undefined);
   assert.equal(sharePreview.incoming, null);
   assert.equal(sharePreview.outgoing, null);
