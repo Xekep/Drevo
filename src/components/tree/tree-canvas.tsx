@@ -1121,6 +1121,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       aria-label="Настройки древа"
       title="Настройки древа"
       aria-haspopup="dialog"
+      disabled={growthActive}
       onClick={props.onPreferences}
     >
       <Settings size={19} aria-hidden="true" />
@@ -1137,7 +1138,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         tabIndex={-1}
         aria-busy={growthPreparing || growthActive}
         onContextMenu={(event) => {
-          if ((growthActive || layoutBusy) && !(event.target as Element).closest(".tree-preferences-trigger")) {
+          if (growthActive || layoutBusy) {
             event.preventDefault();
             return;
           }

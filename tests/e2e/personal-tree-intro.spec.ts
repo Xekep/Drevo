@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
 async function waitForFlight(page: Page) {
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).toHaveClass(/is-growing/);
+  await expect(page.getByRole("button", { name: "Настройки древа" })).toBeDisabled();
   await page.waitForFunction(
     () => {
       const canvas = document.querySelector(".tree-canvas");
