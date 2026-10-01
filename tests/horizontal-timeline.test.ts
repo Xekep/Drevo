@@ -108,6 +108,25 @@ test("chronology excludes people without a birth date even when they have dated 
   assert.ok(model.yearX(1900) < model.yearX(2026));
 });
 
+test("chronology ends at the current year unless a recorded event is later", () => {
+  const current = horizontalTimeline([person("dated", "1940")], false, 2026);
+  assert.equal(current.end, 2026);
+  assert.equal(current.ticks.at(-1)?.year, 2020);
+  assert.equal(current.yearAtX(current.width), 2026);
+
+  const future = horizontalTimeline(
+    [
+      person("dated", "1940", {
+        events: [{ id: "future", type: "work", date: "2032" }],
+      }),
+    ],
+    false,
+    2026,
+  );
+  assert.equal(future.end, 2032);
+  assert.equal(future.yearAtX(future.width), 2032);
+});
+
 test("historical year reveals births and removes people only after a recorded death", () => {
   const rows = horizontalTimeline(
     [

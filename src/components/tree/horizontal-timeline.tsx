@@ -121,7 +121,7 @@ export function HorizontalTimeline({
   const [renderedRows, setRenderedRows] = useState(() =>
     visibleRows.map((row) => ({ row, exiting: false })),
   );
-  const contentWidth = model.width + model.undatedWidth + 190;
+  const contentWidth = model.width;
   const focusId = focus?.ids[0];
 
   useLayoutEffect(() => {
@@ -446,16 +446,6 @@ export function HorizontalTimeline({
                   {tick.year}
                 </span>
               ))}
-              {model.undatedWidth > 0 && (
-                <span
-                  className="timeline-undated-label"
-                  style={{
-                    left: `calc(var(--timeline-pad) + ${model.width + 24}px)`,
-                  }}
-                >
-                  Без даты
-                </span>
-              )}
             </div>
           </div>
           {!model.rows.length && (
@@ -536,32 +526,6 @@ export function HorizontalTimeline({
                         onChoose={() => onChoose(row.person.id, false)}
                       />
                     ))}
-                  {!!row.undated.length && (
-                    <details
-                      className="timeline-event timeline-undated-events"
-                      style={{
-                        left: `calc(var(--timeline-pad) + ${model.width + 24}px)`,
-                      }}
-                    >
-                      <summary
-                        aria-label={`Без даты: ${row.undated.length} событий`}
-                        title="События без даты"
-                      >
-                        ?
-                      </summary>
-                      <div className="timeline-event-list">
-                        {row.undated.map((item) => (
-                          <button
-                            type="button"
-                            key={item.id}
-                            onClick={() => onChoose(row.person.id, false)}
-                          >
-                            <EventText item={item} />
-                          </button>
-                        ))}
-                      </div>
-                    </details>
-                  )}
                 </div>
               </div>
             );
@@ -589,7 +553,7 @@ export function HorizontalTimeline({
                       behavior: scrollBehavior(),
                     })
                   }
-                  title={`${era.name} · ${era.start}–${era.end}`}
+                  title={`${era.name} · ${Math.max(model.start, era.start)}–${Math.min(model.end, era.end)}`}
                 >
                   <strong>{era.short}</strong>
                   {era.width > 150 && (

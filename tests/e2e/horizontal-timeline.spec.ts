@@ -1,4 +1,54 @@
 import { expect, test } from "@playwright/test";
+import { randomFamily } from "../layout-fixtures";
+
+test("chronology hides the tiny distant-tree portraits behind its background", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop");
+  test.setTimeout(45_000);
+  const people = randomFamily(1, 4);
+  await page.route("**/api/family?projection=overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.family.people = people.map((person, index) => ({
+      ...person,
+      name: person.id,
+      surname: "Тестов",
+      patronymic: "",
+      sex: "m",
+      birthPlace: "",
+      sources: [],
+      generation: 1,
+      column: 0,
+      ...(index === 0 ? { photo: "/media/timeline-tiny-portrait.jpg" } : {}),
+    }));
+    data.family.links = [];
+    data.family.photos = [];
+    data.partial = false;
+    data.user.personId = null;
+    await route.fulfill({ response, json: data });
+  });
+  await page.route("**/media/timeline-tiny-portrait.jpg?variant=*", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#688a70"/></svg>',
+    }),
+  );
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-distant-portraits");
+  await expect(page.locator(".tree-canvas")).not.toHaveClass(/is-grow/, {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-portrait-count")))
+    .toBeGreaterThan(0);
+  await expect(canvas).toHaveCSS("visibility", "visible");
+  await page.getByRole("button", { name: "Хронология", exact: true }).click();
+  await expect(page.locator(".horizontal-timeline")).toBeVisible();
+  await expect(page.locator(".tree-distant-portrait-clip")).toBeHidden();
+  await page.getByRole("button", { name: "Древо", exact: true }).click();
+  await expect(page.locator(".tree-distant-portrait-clip")).toBeVisible();
+});
 
 test("хронология переключает десятилетия без перетаскивания шкалы", async ({
   page,
@@ -37,6 +87,9 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
     timeline.locator(".timeline-person-row:not(.is-exiting)"),
   ).toHaveCount(1);
   await expect(timeline.locator(".timeline-era-bar")).toBeVisible();
+  await expect(
+    timeline.locator(".timeline-undated-label, .timeline-undated-events"),
+  ).toHaveCount(0);
   await expect(timeline.locator(".timeline-band img")).not.toHaveCount(0);
   await expect(timeline.locator(".timeline-event.is-birth")).toHaveCount(1);
   const marker = page.locator(".timeline-center-marker output");
@@ -107,6 +160,20 @@ test("chronology has a horizontal era strip, sticky portraits and draggable date
   const portraitBox = await portrait.boundingBox();
   expect(portraitBox?.x).toBeGreaterThanOrEqual(area.x - 1);
   expect(portraitBox?.x).toBeLessThan(area.x + 3);
+  expect(portraitBox?.width).toBeLessThan(200);
+  const rowHeight = await timeline
+    .locator(".timeline-person-row:not(.is-exiting)")
+    .first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(rowHeight).toBeLessThanOrEqual(64);
+
+  await timeline.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  await expect(marker).toHaveText(String(new Date().getFullYear()));
+  await expect(timeline.locator(".timeline-axis-track")).not.toContainText(
+    "2040",
+  );
 
   await timeline.screenshot({
     path: testInfo.outputPath("timeline-desktop.png"),
@@ -231,7 +298,7 @@ test("chronology keeps portraits and epochs usable on a phone", async ({
     .boundingBox();
   expect(bounds).not.toBeNull();
   expect(portrait).not.toBeNull();
-  expect(portrait!.width).toBeLessThan(160);
+  expect(portrait!.width).toBeLessThan(140);
   expect(portrait!.x).toBeGreaterThanOrEqual(bounds!.x - 1);
   const before = await timeline.evaluate((element) => element.scrollLeft);
   const session = await page.context().newCDPSession(page);
