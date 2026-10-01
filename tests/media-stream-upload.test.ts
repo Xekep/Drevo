@@ -27,9 +27,20 @@ test("a quota check can bypass another process's cached media usage", async () =
     writeFileSync(join(directory, "two.jpg"), "bb");
     assert.deepEqual(await media.usage(), { files: 1, bytes: 1 });
     assert.deepEqual(await media.usage(true), { files: 2, bytes: 3 });
+    writeFileSync(join(directory, "one.jpg"), "aaaa");
+    assert.deepEqual(await media.usage(true), { files: 2, bytes: 6 });
+    unlinkSync(join(directory, "two.jpg"));
+    assert.deepEqual(await media.usage(true), { files: 1, bytes: 4 });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("a quota check fails closed when its media directory disappears", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "drevo-missing-media-"));
+  const media = mediaStore(directory);
+  rmSync(directory, { recursive: true, force: true });
+  await assert.rejects(media.usage(true), { code: "ENOENT" });
 });
 
 test("streamed media keeps exact bytes when the signature is split across chunks", async () => {

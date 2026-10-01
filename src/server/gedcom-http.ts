@@ -46,6 +46,7 @@ export function gedcomHttp(
   mkdirSync(stageRoot, { recursive: true });
   mkdirSync(uploads, { recursive: true });
   const quota = uploadQuota(archive.db);
+  const media = mediaStore(uploads);
   let exporting = false;
   const stagePath = (token: string) => {
     if (!/^[a-f0-9-]{36}$/.test(token))
@@ -413,13 +414,20 @@ export function gedcomHttp(
           undo: (() => Promise<void>) | undefined;
         try {
           if (stage.files.length) {
-            const usage = await mediaStore(uploads).usage(),
-              disk = await statfs(uploads);
             release = await quota.acquire(
               actor.id,
               stage.files.reduce((n, f) => n + f.size, 0),
-              disk.bavail * disk.bsize,
-              { ...usage, files: usage.files + stage.files.length - 1 },
+              async () => {
+                const disk = await statfs(uploads);
+                return disk.bavail * disk.bsize;
+              },
+              async () => {
+                const usage = await media.usage(true);
+                return {
+                  ...usage,
+                  files: usage.files + stage.files.length - 1,
+                };
+              },
             );
             undo = await installTransferFiles(
               stagePath(body.token),
