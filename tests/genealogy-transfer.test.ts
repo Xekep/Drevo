@@ -573,6 +573,28 @@ test("Agelong XML uses event roles, preserves uncertainty and escapes; rejects e
   );
 });
 
+test("Agelong XML keeps people, relationships, coordinates and events through GEDCOM 7", () => {
+  const source = importAgelongXml(xml, "agelong-roundtrip").family;
+  const restored = importGedcom(
+    exportGedcom(source, { version: "7.0" }),
+    "gedcom-roundtrip",
+  ).family;
+  assert.equal(restored.people.length, source.people.length);
+  assert.equal(
+    restored.people.reduce((total, person) => total + person.parents.length, 0),
+    source.people.reduce((total, person) => total + person.parents.length, 0),
+  );
+  assert.deepEqual(restored.people[2].birthLocation, source.people[2].birthLocation);
+  assert.deepEqual(
+    restored.people[0].events?.find((event) => event.title === "Поездка")?.location,
+    source.people[0].events?.find((event) => event.title === "Поездка")?.location,
+  );
+  assert.match(
+    restored.people[0].events?.find((event) => event.type === "marriage")?.description || "",
+    /Учреждение: Сельсовет/,
+  );
+});
+
 async function zipFile(path: string, entries: [string, Buffer][]) {
   const zip = new ZipFile(),
     writing = pipeline(zip.outputStream, createWriteStream(path));
