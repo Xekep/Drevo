@@ -1101,6 +1101,83 @@ test("legacy UTF-16 decodes, version 7 rejects non-UTF8 and unsupported encoding
   );
 });
 
+test("visible GEDZIP includes documents cited by retained claims and unions only", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-visible-citations-"));
+  const dbPath = join(dir, "archive.sqlite");
+  const family = seed();
+  const documents = [
+    ["claim", "11111111-1111-4111-8111-111111111111"],
+    ["union", "22222222-2222-4222-8222-222222222222"],
+    ["excluded", "33333333-3333-4333-8333-333333333333"],
+  ] as const;
+  const source = (documentId: string) => ({
+    title: `Source ${documentId}`, type: "archive", reference: "p. 1", documentId,
+  });
+  family.people[0].birth = "1880";
+  family.people[0].birthDateClaim = { value: "1880", sources: [source(documents[0][1])] };
+  family.people[2].death = "1950";
+  family.people[2].deathPlace = "Elsewhere";
+  family.people[2].deathPlaceClaim = { value: "Elsewhere", sources: [source(documents[2][1])] };
+  family.people[2].events = [{ id: "private-event", type: "work", title: "Private" }];
+  family.unions = [{ id: "union", participants: ["parent", "partner"],
+    type: "marriage", formation: { date: "1900", sources: [source(documents[1][1])] } }];
+  const archive = await openArchive(dbPath, family);
+  const auth = { currentUser: () => ({ id: "admin", name: "Admin", role: "admin",
+    approved: true, createdAt: "" }) } as unknown as Awaited<ReturnType<typeof createAuth>>;
+  const route = gedcomHttp(archive, auth, dbPath, "https://test.invalid");
+  const server = createServer(async (req, res) => {
+    void (await route.handle(req, res, new URL(req.url!, "https://test.invalid")));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    await mkdir(join(dir, "uploads"), { recursive: true });
+    for (const [title, id] of documents) {
+      const file = `${id}.pdf`;
+      const bytes = Buffer.from(`%PDF-1.4\n${id}\n%%EOF`);
+      await writeFile(join(dir, "uploads", file), bytes);
+      await archive.db.prepare(
+        "INSERT INTO documents(id,title,title_search,file_name,file_size,uploaded_by,created_at) VALUES(?,?,?,?,?,?,?)",
+      ).run(id, title, title, file, bytes.length, "admin", "2026-01-01T00:00:00Z");
+    }
+    await archive.db.prepare("UPDATE documents SET event_links=? WHERE id=?")
+      .run(JSON.stringify([{ personId: "child", eventId: "private-event" }]), documents[0][1]);
+    const exported = async (ids: string[], name: string) => {
+      const response = await fetch(`${base}/api/gedcom/export-visible?format=gedzip7`, {
+        method: "POST",
+        headers: { Origin: "https://test.invalid", "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ ids: JSON.stringify(ids) }),
+      });
+      assert.equal(response.status, 200, response.status === 200 ? "" : await response.text());
+      const path = join(dir, `${name}.gdz`);
+      const stage = join(dir, `${name}-stage`);
+      await writeFile(path, Buffer.from(await response.arrayBuffer()));
+      await mkdir(stage);
+      return prepareGenealogyImport(path, stage, name);
+    };
+    const withUnion = await exported(["parent", "partner"], "with-union");
+    assert.deepEqual(withUnion.files.map((file) => file.title).sort(), ["claim", "union"]);
+    assert.equal(withUnion.family.unions?.length, 1);
+    assert.deepEqual(withUnion.files.find((file) => file.title === "claim")?.document?.eventLinks || [],
+      [], "metadata for an excluded person's event stays out of the visible package");
+    assert.equal(withUnion.family.people.find((person) => person.name === "parent")
+      ?.birthDateClaim?.sources[0].documentId, undefined,
+    "GEDCOM currently retains the citation but not its attachment link");
+    assert.notEqual(withUnion.family.unions?.[0].formation?.sources?.[0].documentId,
+      withUnion.files.find((file) => file.title === "union")?.documentId,
+    "the union's legacy JSON ID is not remapped to the imported document");
+    const withoutUnion = await exported(["parent"], "without-union");
+    assert.deepEqual(withoutUnion.files.map((file) => file.title), ["claim"]);
+    assert.equal(withoutUnion.family.unions?.length || 0, 0);
+  } finally {
+    route.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await archive.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time revision-bound token", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-transfer-http-")),
     dbPath = join(dir, "archive.sqlite");

@@ -27,6 +27,7 @@ import { mediaStore } from "./media.ts";
 import { recordMediaOriginal } from "./media-originals.ts";
 import { enforcePostgresMediaQuota } from "./postgres-media-quota.ts";
 import { documentSearchText } from "../shared/document-details.ts";
+import { personCitations, unionCitations } from "./source-catalog-store.ts";
 
 export function gedcomHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
@@ -196,17 +197,20 @@ export function gedcomHttp(
           }
           let items = await exportMedia(archive.db, family);
           if (visible) {
-            const documents = new Set(family.people.flatMap((person) => [
-              ...person.sources.map((source) => source.documentId),
-              ...(person.events || []).flatMap((event) =>
-                (event.sources || []).map((source) => source.documentId)),
-            ]).filter(Boolean));
+            const documents = new Set([
+              ...family.people.flatMap(personCitations),
+              ...(family.unions || []).flatMap(unionCitations),
+            ].map((source) => source.documentId).filter(Boolean));
             items = items.filter((item) =>
               !item.document || item.personIds.some((id) => visible!.has(id)) || documents.has(item.id),
             ).map((item) => ({
               ...item,
               personIds: item.personIds.filter((id) => visible!.has(id)),
               portraitIds: item.portraitIds.filter((id) => visible!.has(id)),
+              ...(item.document ? { document: {
+                ...item.document,
+                eventLinks: item.document.eventLinks?.filter((link) => visible!.has(link.personId)),
+              } } : {}),
             }));
           }
           if (format === "gedzip7") {
