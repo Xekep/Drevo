@@ -60,6 +60,7 @@ export async function backfillRuntimeServicesInTransaction(
     ),
   );
   const counts: Record<string, number> = {};
+  await client.query(readFileSync(new URL("./046_tree_generation_limits.sql", import.meta.url), "utf8"));
   await client.query(
     readFileSync(
       new URL("./020_code_interpreter.sql", import.meta.url),

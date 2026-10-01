@@ -46,7 +46,7 @@ import {
 } from "../../domain";
 import { archiveContextAt } from "../../domain/archive-context.ts";
 import { mediaPreview } from "../../domain/media-preview.ts";
-import { withoutReviewPeople } from "../../domain/family-neighborhood.ts";
+import { familyNeighbors, withoutReviewPeople } from "../../domain/family-neighborhood.ts";
 import { PersonNode, TreeActions, type PersonNodeType } from "./person-node";
 import { DistantPortraits } from "./distant-portraits";
 import { hitDistantScene } from "./distant-scene-hit";
@@ -61,6 +61,8 @@ import {
 import { HorizontalTimeline } from "./horizontal-timeline";
 import { useNarrowScreen } from "../../hooks/useNarrowScreen";
 import { useFamilyView } from "./use-family-view";
+import { generationScope } from "../../domain/tree-generation-scope";
+import type { TreeGenerationLimits } from "../../domain/tree-preferences";
 import { useTreeLayout } from "./use-tree-layout";
 import { FamilyViewTools } from "./family-view-tools";
 import "../../styles/family-view.css";
@@ -131,6 +133,7 @@ type Props = {
   busy: boolean;
   reverse: boolean;
   colorScheme?: TreeColorScheme;
+  generationLimits?: TreeGenerationLimits | null;
   selected: string[];
   selectedEdge?: string;
   onChoose: (id: string, additive?: boolean) => void;
@@ -396,14 +399,27 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     }
   }, [filterToken, showAllBranches]);
   const { anchor: root, collapsed, toggle: toggleView } = familyView;
+  const generationRange = useMemo(
+    () => props.generationLimits
+      ? generationScope(
+          familyNeighbors({ people: family.people, links: family.links }),
+          props.generationLimits,
+        )
+      : null,
+    [family.people, family.links, props.generationLimits],
+  );
+  const generationVisible = useMemo(() => {
+    if (!generationRange) return familyView.visible;
+    return new Set([...familyView.visible].filter((id) => generationRange.has(id)));
+  }, [generationRange, familyView.visible]);
   const visible = useMemo(() => {
-    if (!props.assistantFilter) return familyView.visible;
+    if (!props.assistantFilter) return generationVisible;
     if ("excludeNeedsReview" in props.assistantFilter)
-      return withoutReviewPeople(family.people, familyView.visible);
+      return withoutReviewPeople(family.people, generationVisible);
     return new Set(
-      props.assistantFilter.ids.filter((id) => familyView.visible.has(id)),
+      props.assistantFilter.ids.filter((id) => generationVisible.has(id)),
     );
-  }, [family.people, familyView.visible, props.assistantFilter]);
+  }, [family.people, generationVisible, props.assistantFilter]);
   const timelinePeople = useMemo(
     () => family.people.filter((person) => visible.has(person.id)),
     [family.people, visible],

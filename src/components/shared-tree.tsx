@@ -180,6 +180,7 @@ export default function SharedTree({ token }: { token: string }) {
                   DEFAULT_TREE_PREFERENCES.reverseTimeline
                 }
                 colorScheme={preferences?.colorScheme}
+                generationLimits={preferences?.generationLimits}
                 selected={selected}
                 onChoose={(id, additive) => {
                   choose(id, additive);
@@ -246,6 +247,8 @@ export default function SharedTree({ token }: { token: string }) {
       {data && preferences && preferencesOpen && (
         <TreePreferencesDialog
           preferences={preferences}
+          people={data.family.people}
+          anchorId={selected[0]}
           onChange={async (value) => {
             writeGuestTreePreferences(value);
             setPreferences(value);

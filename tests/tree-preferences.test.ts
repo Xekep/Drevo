@@ -5,6 +5,51 @@ import { DatabaseSync } from "node:sqlite";
 import { initializeArchiveSchema } from "../src/server/schema.ts";
 import { treePreferencesStore } from "../src/server/tree-preferences.ts";
 import { userStore } from "../src/server/users.ts";
+import { DEFAULT_TREE_PREFERENCES } from "../src/domain/tree-preferences.ts";
+
+test("generation limits are personal, validated, retained by legacy writes and removable", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    initializeArchiveSchema(db);
+    const store = treePreferencesStore(storeDatabase(db));
+    const generationLimits = {
+      anchorId: "main",
+      ancestors: 7,
+      descendants: 50,
+      collateral: 2,
+    };
+    const value = { ...DEFAULT_TREE_PREFERENCES, generationLimits };
+    assert.deepEqual(await store.write("reader", value), value);
+    assert.deepEqual(await store.read("other"), DEFAULT_TREE_PREFERENCES);
+    assert.deepEqual(
+      await store.write("reader", DEFAULT_TREE_PREFERENCES),
+      value,
+    );
+    for (const fields of [
+      { ancestors: 2 },
+      { descendants: 0 },
+      { collateral: 3 },
+      { anchorId: "" },
+      { extra: true },
+    ])
+      await assert.rejects(
+        store.write("reader", {
+          ...value,
+          generationLimits: { ...generationLimits, ...fields },
+        }),
+        /Некорректные/,
+      );
+    assert.deepEqual(await store.read("reader"), value);
+    assert.deepEqual(
+      await store.write("reader", { ...value, generationLimits: null }),
+      DEFAULT_TREE_PREFERENCES,
+    );
+    initializeArchiveSchema(db);
+    assert.deepEqual(await store.read("reader"), DEFAULT_TREE_PREFERENCES);
+  } finally {
+    db.close();
+  }
+});
 
 test("legacy direction becomes individual preferences; deleting an account removes its choice", async () => {
   const db = new DatabaseSync(":memory:");
