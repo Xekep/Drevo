@@ -70,6 +70,7 @@ export function DiscoveryMatchesAdmin() {
   const [target, setTarget] = useState<Candidate | null>(null);
   const [reason, setReason] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
+  const [deferredMatches, setDeferredMatches] = useState<Set<string>>(() => new Set());
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [history, setHistory] = useState<(string | null)[]>([]);
@@ -249,6 +250,10 @@ export function DiscoveryMatchesAdmin() {
     finally { setBusy(false); }
   }
 
+  const visibleMatches = matches.filter((item) => item.status !== "pending" ||
+    !deferredMatches.has(`${archiveId}:${item.id}`));
+  const deferredCount = matches.length - visibleMatches.length;
+
   return <div className="discovery-matches-admin">
     <section className="admin-card archive-form">
       <p>Сопоставление подтверждает, что две опубликованные карточки описывают одного человека. После подтверждения переход между ними доступен вошедшим пользователям. Оно не объединяет деревья и не открывает чужую ветку.</p>
@@ -348,8 +353,10 @@ export function DiscoveryMatchesAdmin() {
     </section>
     <section className="admin-card archive-form">
       <h2>Запросы между деревьями</h2>
-      {!matches.length && <p>Пока нет запросов на сопоставление.</p>}
-      {matches.map((item) => <article key={item.id} className="match-request">
+      {deferredCount > 0 && <p>Отложено до следующего открытия раздела: {deferredCount}. <button type="button"
+        onClick={() => { setDeferredMatches(new Set()); setNotice("Отложенные запросы снова показаны."); }}>Показать сейчас</button></p>}
+      {!visibleMatches.length && <p>{deferredCount ? "Сейчас нет запросов для рассмотрения." : "Пока нет запросов на сопоставление."}</p>}
+      {visibleMatches.map((item) => <article key={item.id} className="match-request">
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
         <div className="match-pair"><CandidateCard candidate={item.left} /><CandidateCard candidate={item.right} /></div>
         {item.reason && <p className="match-reason">Основание: {item.reason}</p>}
@@ -361,6 +368,11 @@ export function DiscoveryMatchesAdmin() {
               data-review-token={item.reviewToken}
               onClick={() => void decide(item.id, "accept", item.reviewToken)}>Подтвердить</button>
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "reject")}>Не тот человек</button>
+            <button type="button" disabled={busy} onClick={() => {
+              setDeferredMatches((current) => new Set(current).add(`${archiveId}:${item.id}`));
+              setError("");
+              setNotice("Запрос отложен до следующего открытия раздела. Ответ другой стороне не отправлен.");
+            }}>Позже</button>
           </>}
           {(item.status === "pending" || item.status === "linked") &&
             <button type="button" disabled={busy} onClick={() => void decide(item.id, "revoke")}>Отозвать связь</button>}
