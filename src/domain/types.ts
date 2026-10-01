@@ -46,8 +46,9 @@ export type PersonEvent = {
   description?: string;
   sources?: Source[];
 };
-/** A citation confirms one recorded value, not subsequent edits to that field. */
-export type PersonValueClaim = { value: string; sources: Source[] };
+export type ClaimConfidence = "confirmed" | "probable" | "tentative" | "conflicting" | "unknown";
+/** Citations and an explicit researcher's assessment of one recorded value. */
+export type PersonValueClaim = { value: string; sources: Source[]; confidence?: ClaimConfidence };
 export type Person = {
   createdBy?: string;
   id: string;

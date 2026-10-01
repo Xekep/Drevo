@@ -1,4 +1,5 @@
 export * from "./types.ts";
+export * from "./claim-confidence.ts";
 export * from "./family-unions.ts";
 export * from "./connection-suggestions.ts";
 export * from "./dates.ts";

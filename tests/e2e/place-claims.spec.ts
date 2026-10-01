@@ -43,13 +43,17 @@ for (const { kind, personId, label, place } of [
     await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
     await claim.getByLabel("Поиск источника").fill(title);
     await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+    await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
+    const confidence = kind === "birth" ? "tentative" : "conflicting";
+    await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption(confidence);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     const claimKey = kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim";
     await expect.poll(() => family.people.find((person) => person.id === personId)?.[claimKey]?.sources[0].catalogId)
       .toBe(source.id);
     expect(family.people.find((person) => person.id === personId)?.[claimKey]?.value).toBe(place);
-    await expect(page.getByText(`Источники места: ${title}`)).toBeVisible();
+    expect(family.people.find((person) => person.id === personId)?.[claimKey]?.confidence).toBe(confidence);
+    await expect(page.getByText(`Источники места: ${title} · Оценка: ${kind === "birth" ? "Предположительно" : "Противоречиво"}`)).toBeVisible();
 
     await page.locator(".inspector-person-actions .person-edit-button").click();
     const changedGroup = page.locator(".person-date-group")

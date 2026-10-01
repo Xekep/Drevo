@@ -43,6 +43,15 @@ export function authorizeArchive(
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
   owners(next.unions || [], current.unions || []);
+  if (user.role !== "admin" && user.role !== "researcher") {
+    const previous = new Map(current.people.map((person) => [person.id, person]));
+    for (const person of next.people)
+      for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim"] as const) {
+        const claim = person[key];
+        if (claim && claim.confidence !== previous.get(person.id)?.[key]?.confidence)
+          throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+      }
+  }
   if (admin) return next;
   if (isScopedUser(user)) {
     const visible = visiblePersonIds(current, user);

@@ -30,13 +30,16 @@ test("каталожный источник относится к дате см�
   await claim.getByRole("button", { name: "Выбрать из каталога" }).click();
   await claim.getByLabel("Поиск источника").fill(title);
   await claim.locator(".union-catalog-results").getByRole("button", { name: title }).click();
+  await expect(claim.getByRole("combobox", { name: /Достоверность/ })).toHaveValue("");
+  await claim.getByRole("combobox", { name: /Достоверность/ }).selectOption("probable");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => family.people.find((person) => person.id === "e2e-memorial-person")?.deathDateClaim?.sources[0].catalogId)
     .toBe(source.id);
   const person = family.people.find((item) => item.id === "e2e-memorial-person")!;
   expect(person.deathDateClaim?.value).toBe(person.death);
-  await expect(page.getByText(`Источники даты: ${title}`)).toBeVisible();
+  expect(person.deathDateClaim?.confidence).toBe("probable");
+  await expect(page.getByText(`Источники даты: ${title} · Оценка: Вероятно`)).toBeVisible();
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
   await page.locator(".death-date-claim > summary").click();
