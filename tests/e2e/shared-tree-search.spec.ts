@@ -156,6 +156,7 @@ test("main tree retains the shared search component and dialog keyboard behavior
   await search.press("Enter");
   await expect(page.locator(".inspector-dock")).toContainText("Пётр");
   await page.getByRole("button", { name: "Закрыть панель" }).click();
+  await expect(page.locator(".archive-search-results")).toHaveCount(0);
   await gear.click();
   const dialog = page.getByRole("dialog", { name: "Вид древа" });
   await expect(dialog).toBeVisible();

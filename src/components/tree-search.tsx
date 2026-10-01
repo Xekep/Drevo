@@ -27,6 +27,7 @@ export function TreeSearch({
   const [open, setOpen] = useState(false),
     [active, setActive] = useState(0),
     ref = useRef<HTMLInputElement>(null);
+  const selectedQuery = useRef<string | null>(null);
   const [documentResults, setDocumentResults] =
     useState<DocumentResults | null>(null);
   const search = query.trim();
@@ -82,6 +83,8 @@ export function TreeSearch({
         )
       ) {
         e.preventDefault();
+        selectedQuery.current = null;
+        setOpen(true);
         ref.current?.focus();
       }
     };
@@ -101,6 +104,7 @@ export function TreeSearch({
   ];
   const activeIndex = options.length ? active % options.length : 0;
   const choose = (option: (typeof options)[number]) => {
+    selectedQuery.current = query;
     if (option.kind === "person") onSelect(option.person.id);
     else {
       onSelectDocument?.(option.document.id);
@@ -125,8 +129,15 @@ export function TreeSearch({
       <input
         ref={ref}
         value={query}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          if (selectedQuery.current !== query) setOpen(true);
+        }}
+        onPointerDown={() => {
+          selectedQuery.current = null;
+          setOpen(true);
+        }}
         onChange={(e) => {
+          selectedQuery.current = null;
           onQuery(e.target.value);
           setActive(0);
           setOpen(true);
@@ -134,6 +145,7 @@ export function TreeSearch({
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {
             e.preventDefault();
+            selectedQuery.current = null;
             setOpen(true);
             setActive((index) =>
               options.length
