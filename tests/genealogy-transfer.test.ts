@@ -542,7 +542,8 @@ test("Agelong XML uses event roles, preserves uncertainty and escapes; rejects e
   assert.deepEqual(result.family.people[0].events!.find((event) => event.title === "Поездка")!.location, {
     place: "Москва", lat: 55.7, lon: 37.6,
   });
-  assert.ok(result.warnings.includes("Атрибут event.custom не перенесён."));
+  assert.ok(result.warnings.some((warning) => warning.includes("Поле event.custom сохранено как текст")));
+  assert.match(result.family.people[0].events!.find((event) => event.title === "Поездка")!.description!, /custom: value/);
   assert.deepEqual(result.media[0].portraitIds, ["xml-p1"]);
   const deathDetails = importAgelongXml(
     xml.replace("</events>", '<event id="death" type="Смерть" date="1940" deathreason="Болезнь"><persons><person id="a" role="Умер" /></persons></event></events>'),
@@ -593,6 +594,37 @@ test("Agelong XML keeps people, relationships, coordinates and events through GE
     restored.people[0].events?.find((event) => event.type === "marriage")?.description || "",
     /Учреждение: Сельсовет/,
   );
+});
+
+test("Agelong XML retains cited sources and custom values while disclosing lost structure", () => {
+  const input = `<agelongtree><persons>
+    <person id="p" fn="Анна" sn="Примерова" nickname="Нюра" fav="1">
+      <family id="group"/><fields><field name="Прозвище">Домашнее имя</field></fields>
+      <sources><source id="s" page="17"/></sources>
+    </person></persons><events>
+    <event id="job" type="Работа" salary="10"><persons><person id="p" role="Работник"/></persons>
+      <sources><source id="s"/></sources></event>
+    </events><sources>
+      <source id="s" title="Архивная книга" type="рукопись" reference="Ф. 1" author="Автор"><comment>Лист 3</comment></source>
+      <source id="orphan" title="Без ссылки"/>
+    </sources><families><family id="group" name="Род Примеровых"/></families></agelongtree>`;
+  const result = importAgelongXml(input, "extra");
+  const person = result.family.people[0];
+  assert.match(person.biography!, /Род в «Древе Жизни»: Род Примеровых/);
+  assert.match(person.biography!, /Флаг избранного в «Древе Жизни»: 1/);
+  assert.match(person.biography!, /nickname: Нюра/);
+  assert.match(person.biography!, /person.fields.field.name: Прозвище/);
+  assert.match(person.biography!, /person.fields.field: Домашнее имя/);
+  assert.equal(person.sources[0].title, "Архивная книга");
+  assert.equal(person.sources[0].reference, "Ф. 1");
+  assert.match(person.sources[0].note!, /author: Автор/);
+  assert.match(person.sources[0].note!, /page: 17/);
+  const event = person.events!.find((item) => item.title === "Работа")!;
+  assert.match(event.description!, /salary: 10/);
+  assert.equal(event.sources?.[0].title, "Архивная книга");
+  assert.ok(result.warnings.some((warning) => warning.includes("Источники без ссылок на людей или события (1)")));
+  assert.ok(result.warnings.some((warning) => warning.includes("структура, дополнительные свойства")));
+  assert.ok(result.warnings.some((warning) => warning.includes("отдельного признака избранного")));
 });
 
 async function zipFile(path: string, entries: [string, Buffer][]) {
@@ -961,7 +993,7 @@ test("XML ZIP and base64 load originals; package paths and malformed archives ar
     assert.deepEqual(result.family.people[2].birthLocation, {
       place: "Москва", lat: 55.7558, lon: 37.6173,
     });
-    assert.ok(result.warnings.includes("Атрибут event.custom не перенесён."));
+    assert.ok(result.warnings.some((warning) => warning.includes("Поле event.custom сохранено как текст")));
     const windowsZip = replaceZipEntryName(
       await readFile(path),
       "example.xml.files/photo.png",

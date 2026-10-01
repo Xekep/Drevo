@@ -1,5 +1,11 @@
 import { SaxesParser } from "saxes";
-import type { Family, Person, PersonEvent, PlaceLocation } from "./types.ts";
+import type {
+  Family,
+  Person,
+  PersonEvent,
+  PlaceLocation,
+  Source,
+} from "./types.ts";
 import { validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import {
@@ -19,6 +25,60 @@ const one = (node: XmlNode, name: string) =>
 const many = (node: XmlNode | undefined, name: string) =>
   node?.children.filter((c) => c.name === name) || [];
 const textOf = (node: XmlNode, name: string) => one(node, name)?.text || "";
+
+function extraAttributes(
+  node: XmlNode,
+  known: string[],
+  context: string,
+  warnings: Set<string>,
+): string[] {
+  return Object.entries(node.attrs)
+    .filter(([key, value]) => !known.includes(key) && value.trim())
+    .map(([key, value]) => {
+      warnings.add(
+        `Поле ${context}.${key} сохранено как текст; его тип и назначение в Drevo не представлены.`,
+      );
+      return `${key}: ${value}`;
+    });
+}
+
+function addNotes(
+  current: string | undefined,
+  notes: string[],
+): string | undefined {
+  return [current, ...notes].filter(Boolean).join("\n") || undefined;
+}
+
+function extraChildren(
+  node: XmlNode,
+  known: string[],
+  context: string,
+  warnings: Set<string>,
+): string[] {
+  const lines: string[] = [];
+  const visit = (child: XmlNode, path: string) => {
+    if (
+      !Object.keys(child.attrs).length &&
+      !child.text.trim() &&
+      !child.children.length
+    )
+      lines.push(`${path}: (пустое значение)`);
+    for (const [key, value] of Object.entries(child.attrs))
+      lines.push(`${path}.${key}: ${value}`);
+    if (child.text.trim()) lines.push(`${path}: ${child.text.trim()}`);
+    for (const nested of child.children)
+      visit(nested, `${path}.${nested.name}`);
+  };
+  for (const child of node.children.filter(
+    (item) => !known.includes(item.name),
+  )) {
+    warnings.add(
+      `Раздел ${context}.${child.name} сохранён как текст без исходной структуры.`,
+    );
+    visit(child, `${context}.${child.name}`);
+  }
+  return lines;
+}
 
 function parseXml(text: string): XmlNode {
   if (new TextEncoder().encode(text).length > TRANSFER_XML_LIMIT)
@@ -119,6 +179,47 @@ export function importAgelongXml(
     nodes.map((n, i) => [n.attrs.id, `${namespace}-p${i + 1}`]),
   );
   const places = index(many(one(root, "places"), "place"));
+  const families = index(many(one(root, "families"), "family"));
+  const sourceNodes = index(many(one(root, "sources"), "source"));
+  const usedSources = new Set<string>();
+  const sourcesFor = (node: XmlNode, context: string): Source[] =>
+    many(one(node, "sources"), "source").flatMap((ref) => {
+      const source = sourceNodes.get(ref.attrs.id);
+      if (!source) {
+        warnings.add(
+          `Источник ${ref.attrs.id || "без ID"} для ${context} отсутствует в XML; ссылка не перенесена.`,
+        );
+        return [];
+      }
+      usedSources.add(ref.attrs.id);
+      const a = source.attrs;
+      const title =
+        a.title ||
+        a.name ||
+        a.fullname ||
+        textOf(source, "title") ||
+        `Источник ${a.id}`;
+      const details = [
+        ...extraAttributes(
+          source,
+          ["id", "title", "name", "fullname", "type", "reference", "url"],
+          "source",
+          warnings,
+        ),
+        ...extraChildren(source, ["title", "comment"], "source", warnings),
+        ...extraAttributes(ref, ["id"], "source-link", warnings),
+        ref.text.trim() && `Ссылка: ${ref.text.trim()}`,
+      ].filter(Boolean) as string[];
+      return [
+        {
+          title,
+          type: a.type || "",
+          reference: a.reference || "",
+          url: a.url || undefined,
+          note: addNotes(textOf(source, "comment") || undefined, details),
+        },
+      ];
+    });
   const coordinates = (
     raw: string | undefined,
     name: string,
@@ -130,8 +231,12 @@ export function importAgelongXml(
       lon = match && Number(match[2]);
     if (
       !name ||
-      lat === null || lon === null ||
-      lat < -90 || lat > 90 || lon < -180 || lon > 180
+      lat === null ||
+      lon === null ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
     ) {
       warnings.add(
         `Координаты ${label} не перенесены: нет названия места или значения вне допустимого диапазона.`,
@@ -196,7 +301,7 @@ export function importAgelongXml(
       deathLocation: deathPlace.location,
       occupation: a.occu || undefined,
       biography: textOf(n, "comment") || undefined,
-      sources: [],
+      sources: sourcesFor(n, `person ${a.id}`),
       parents: [],
       spouses: [],
       generation: 1,
@@ -210,6 +315,30 @@ export function importAgelongXml(
       p.biography = [p.biography, `Причина смерти: ${a.dreason}`]
         .filter(Boolean)
         .join("\n");
+    if (a.fav) {
+      p.biography = addNotes(p.biography, [
+        `Флаг избранного в «Древе Жизни»: ${a.fav}`,
+      ]);
+      warnings.add(
+        "Флаг избранного сохранён в биографии; отдельного признака избранного в Drevo нет.",
+      );
+    }
+    const familyRef = one(n, "family");
+    if (familyRef) {
+      const group = families.get(familyRef.attrs.id);
+      if (group?.attrs.name) {
+        p.biography = addNotes(p.biography, [
+          `Род в «Древе Жизни»: ${group.attrs.name}`,
+        ]);
+        warnings.add(
+          "Названия родов сохранены в биографиях участников; отдельной модели родов в Drevo нет.",
+        );
+      } else if (!group) {
+        warnings.add(
+          `Род ${familyRef.attrs.id} отсутствует в XML; ссылка не перенесена.`,
+        );
+      }
+    }
     if (residence.name)
       p.events!.push({
         id: `${namespace}-r${i}`,
@@ -241,7 +370,7 @@ export function importAgelongXml(
       ] as const)
         if (Object.hasOwn(data, key)) Object.assign(p, { [key]: data[key] });
     }
-    const known = new Set([
+    const known = [
       "id",
       "sex",
       "fullname",
@@ -254,9 +383,28 @@ export function importAgelongXml(
       "ddate",
       "dreason",
       "lifespan",
+      "fav",
+    ];
+    p.biography = addNotes(p.biography, [
+      ...extraAttributes(n, known, "person", warnings),
+      ...extraChildren(
+        n,
+        [
+          "family",
+          "nearest",
+          "events",
+          "documents",
+          "place",
+          "bplace",
+          "dplace",
+          "comment",
+          "drevo",
+          "sources",
+        ],
+        "person",
+        warnings,
+      ),
     ]);
-    for (const key of Object.keys(a))
-      if (!known.has(key)) warnings.add(`Атрибут person.${key} не перенесён.`);
     return p;
   });
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -267,12 +415,30 @@ export function importAgelongXml(
   };
   const events = index(many(one(root, "events"), "event"));
   for (const [eventId, n] of events) {
-    for (const key of Object.keys(n.attrs))
-      if (![
-        "id", "type", "date", "passed", "daysleft", "coords",
-        "institution", "deathreason",
-      ].includes(key))
-        warnings.add(`Атрибут event.${key} не перенесён.`);
+    const extraEvent = [
+      ...extraAttributes(
+        n,
+        [
+          "id",
+          "type",
+          "date",
+          "passed",
+          "daysleft",
+          "coords",
+          "institution",
+          "deathreason",
+        ],
+        "event",
+        warnings,
+      ),
+      ...extraChildren(
+        n,
+        ["place", "comment", "persons", "documents", "sources"],
+        "event",
+        warnings,
+      ),
+    ];
+    const eventSources = sourcesFor(n, `event ${eventId}`);
     const participants = many(one(n, "persons"), "person").map((ref) => ({
       person: resolvePerson(ref.attrs.id),
       role: ref.attrs.role,
@@ -314,8 +480,22 @@ export function importAgelongXml(
           n.attrs.deathreason &&
             !p.biography?.includes(`Причина смерти: ${n.attrs.deathreason}`) &&
             `Причина смерти: ${n.attrs.deathreason}`,
-        ].filter(Boolean).join("\n");
+          ...extraEvent,
+        ]
+          .filter(Boolean)
+          .join("\n");
       if (birth || death) {
+        if (eventSources.length) {
+          p.sources.push(
+            ...eventSources.map((source) => ({
+              ...source,
+              note: addNotes(source.note, [`Событие: ${n.attrs.type}`]),
+            })),
+          );
+          warnings.add(
+            "Источники рождения и смерти прикреплены к карточкам людей с пометкой события.",
+          );
+        }
         if (date) {
           if (birth && !p.birth) p.birth = date;
           if (death && !p.death) p.death = date;
@@ -364,6 +544,9 @@ export function importAgelongXml(
           place: place.name || undefined,
           location: place.location,
           description: description || undefined,
+          sources: eventSources.length
+            ? eventSources.map((source) => ({ ...source }))
+            : undefined,
         });
       }
     }
@@ -395,7 +578,18 @@ export function importAgelongXml(
       personIds: [...personIds],
       portraitIds,
       embedded: textOf(n, "data") || textOf(n, "base64") || undefined,
-      photo: { description: textOf(n, "comment") || undefined, tags: [] },
+      photo: {
+        description: addNotes(textOf(n, "comment") || undefined, [
+          ...extraAttributes(n, ["id", "path", "title"], "document", warnings),
+          ...extraChildren(
+            n,
+            ["details", "comment", "data", "base64", "sources"],
+            "document",
+            warnings,
+          ),
+        ]),
+        tags: [],
+      },
     };
   });
   for (const node of nodes)
@@ -415,10 +609,67 @@ export function importAgelongXml(
     warnings.add(
       "Приблизительные даты и двойной календарь сохранены исходным текстом без подстановки точных дат.",
     );
-  for (const tag of ["sources", "families", "tasks"])
-    if (one(root, tag)?.children.length)
+  if (nodes.some((node) => one(node, "nearest")?.children.length))
+    warnings.add(
+      "Блоки nearest/relcode не перенесены: они не считаются подтверждённым родством.",
+    );
+  if (families.size)
+    warnings.add(
+      `Раздел families (${families.size} родов): структура, дополнительные свойства и документы родов не переносятся. Названия привязанных родов сохранены в биографиях.`,
+    );
+  const placeMetadata = [...places.values()].filter(
+    (place) =>
+      place.attrs.date ||
+      place.attrs.name ||
+      place.attrs.nameshort ||
+      one(place, "parent_id") ||
+      one(place, "sources"),
+  ).length;
+  if (placeMetadata)
+    warnings.add(
+      `У ${placeMetadata} мест не перенесены исторические даты/варианты названий, иерархия или ссылки на источники; текст названия и координаты сохранены там, где место используется.`,
+    );
+  const eventDocuments = [...events.values()].filter(
+    (event) => one(event, "documents")?.children.length,
+  ).length;
+  if (eventDocuments)
+    warnings.add(
+      `Связи документов с ${eventDocuments} событиями не перенесены: в Drevo документы привязываются к людям.`,
+    );
+  const documentSources = [...documents.values()].filter(
+    (document) => one(document, "sources")?.children.length,
+  ).length;
+  if (documentSources)
+    warnings.add(
+      `Связи источников с ${documentSources} документами не перенесены: для них нет соответствующего поля в Drevo.`,
+    );
+  const unlinkedSources = [...sourceNodes.keys()].filter(
+    (id) => !usedSources.has(id),
+  );
+  if (unlinkedSources.length)
+    warnings.add(
+      `Источники без ссылок на людей или события (${unlinkedSources.length}) не перенесены как отдельный каталог.`,
+    );
+  if (one(root, "tasks")?.children.length)
+    warnings.add(
+      "Раздел tasks не представлен в модели Drevo и не перенесён. Сохраните исходный XML.",
+    );
+  for (const child of root.children.filter(
+    (node) =>
+      ![
+        "persons",
+        "events",
+        "documents",
+        "places",
+        "sources",
+        "families",
+        "tasks",
+        "drevoLinks",
+      ].includes(node.name),
+  ))
+    if (child.children.length || child.text.trim())
       warnings.add(
-        `Раздел ${tag} не представлен в модели Drevo и не перенесён. Сохраните исходный XML.`,
+        `Раздел ${child.name} не перенесён. Сохраните исходный XML.`,
       );
   warnings.add(
     "Импорт добавляет новые карточки; совпадения по имени не объединяются автоматически.",
