@@ -390,6 +390,8 @@ export function PersonPanel({
             {(person.biography || person.occupation) && (
               <div className="biography">
                 <h3>{person.occupation || "Сохранённая история"}</h3>
+                {!!person.occupationClaim?.sources.length &&
+                  <p>Источники занятия: {claimSummary(person.occupationClaim)}</p>}
                 {person.biography && <p>{person.biography}</p>}
               </div>
             )}

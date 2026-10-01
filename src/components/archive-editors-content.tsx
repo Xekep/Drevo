@@ -55,26 +55,28 @@ import {
 } from "../hooks/useUnsavedChanges";
 type Save = (data: Family) => Promise<Family>;
 function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmin, canAssess }: {
-  kind: "birth" | "death";
-  subject: "date" | "place";
+  kind: "birth" | "death" | "occupation";
+  subject: "date" | "place" | "occupation";
   value: string;
   claim?: PersonValueClaim;
   onChange: (claim: PersonValueClaim | undefined) => void;
   isAdmin: boolean;
   canAssess: boolean;
 }) {
+  const occupation = subject === "occupation";
   const label = kind === "birth" ? "рождения" : "смерти";
   const subjectLabel = subject === "date" ? "даты" : "места";
-  return <details className={`form-details ${kind}-${subject}-claim`}>
-    <summary>Источники {subjectLabel} {label}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
+  const title = occupation ? "Источники занятия" : `Источники ${subjectLabel} ${label}`;
+  return <details className={`form-details ${occupation ? "occupation-claim" : `${kind}-${subject}-claim`}`}>
+    <summary>{title}{claim?.sources.length ? ` · ${claim.sources.length}` : ""}</summary>
     {claim && claim.value !== value
       ? <div>
-          <p role="alert">{subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
+          <p role="alert">{occupation ? "Занятие изменилось. Источники относятся к прежнему занятию " : subject === "date" ? "Дата изменилась. Источники относятся к прежней дате " : "Место изменилось. Источники относятся к прежнему месту "}{subject === "date" ? dateInputLabel(claim.value) : claim.value}. {claim.confidence && !canAssess
             ? "Верните прежнее значение перед сохранением или попросите исследователя снять оценку."
             : "Снимите связь или верните прежнее значение перед сохранением."}</p>
           {claim.confidence && !canAssess
             ? <p>Оценку и связь с прежним значением может снять только исследователь или администратор.</p>
-            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : "им местом"}</button>}
+            : <button type="button" onClick={() => onChange(undefined)}>Снять связи с прежн{subject === "date" ? "ей датой" : occupation ? "им занятием" : "им местом"}</button>}
         </div>
       : value.trim()
         ? <>
@@ -102,7 +104,7 @@ function ValueClaimSourcesEditor({ kind, subject, value, claim, onChange, isAdmi
                 <small>Удалить последний источник и оценку может только исследователь или администратор.</small>}
             </label>}
           </>
-        : <p>Укажите {subject === "date" ? "дату" : "место"} {label}, чтобы привязать к {subject === "date" ? "ней" : "нему"} источник.</p>}
+        : <p>{occupation ? "Укажите занятие, чтобы привязать к нему источник." : `Укажите ${subject === "date" ? "дату" : "место"} ${label}, чтобы привязать к ${subject === "date" ? "ней" : "нему"} источник.`}</p>}
   </details>;
 }
 export function PersonEditor({
@@ -812,6 +814,15 @@ export function PersonEditor({
               onChange={(e) => field("occupation", e.target.value)}
             />
           </label>
+          <ValueClaimSourcesEditor
+            kind="occupation"
+            subject="occupation"
+            value={draft.occupation || ""}
+            claim={draft.occupationClaim}
+            onChange={(claim) => field("occupationClaim", claim)}
+            isAdmin={isAdmin}
+            canAssess={user?.role === "admin" || user?.role === "researcher"}
+          />
           <label>
             История человека
             <textarea

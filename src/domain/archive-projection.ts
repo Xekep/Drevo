@@ -1,12 +1,13 @@
 import type { Family, Person } from "./types.ts";
 export type PersonDetails = Pick<
   Person,
-  "id" | "sources" | "biography" | "occupation" | "awards" | "events"
+  "id" | "sources" | "biography" | "occupation" | "occupationClaim" | "awards" | "events"
 >;
 export function personDetails(person: PersonDetails): PersonDetails {
   const details: PersonDetails = { id: person.id, sources: person.sources };
   if (person.biography !== undefined) details.biography = person.biography;
   if (person.occupation !== undefined) details.occupation = person.occupation;
+  if (person.occupationClaim !== undefined) details.occupationClaim = person.occupationClaim;
   if (person.awards !== undefined) details.awards = person.awards;
   if (person.events !== undefined) details.events = person.events;
   return details;
@@ -21,6 +22,7 @@ export function archiveOverview(family: Family): Family {
       delete person.biography;
       delete person.awards;
       delete person.occupation;
+      delete person.occupationClaim;
       delete person.events;
       return person;
     }),
