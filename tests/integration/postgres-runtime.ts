@@ -2774,6 +2774,20 @@ try {
       "the privileged function rejects another account's transaction context",
     );
     await client.query("ROLLBACK");
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('drevo.account_id','deleting-account',true)");
+    await client.query("INSERT INTO deleted_account_tombstones(id,redact_comments) VALUES('deleting-account',true)");
+    const firstRedaction = await client.query("SELECT public.runtime_redact_deleted_account_comments('deleting-account') AS count");
+    assert.equal(Number(firstRedaction.rows[0].count), 2);
+    const repeatedRedaction = await client.query("SELECT public.runtime_redact_deleted_account_comments('deleting-account') AS count");
+    assert.equal(Number(repeatedRedaction.rows[0].count), 2, "repeating cleanup changes no text further");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    assert.equal((await client.query("SELECT text FROM person_comments WHERE id=987659")).rows[0].text,
+      "Текст удалён по запросу автора");
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+    assert.equal((await client.query("SELECT text FROM person_comments WHERE id=987661")).rows[0].text,
+      "Текст удалён по запросу автора", "privileged cleanup crosses archives without using the request archive");
+    await client.query("ROLLBACK");
     const commentWriter = new pg.Client();
     await commentWriter.connect();
     let removedAccount: Response;

@@ -1,4 +1,4 @@
--- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 051.
+-- Run as a PostgreSQL administrator (SUPERUSER or BYPASSRLS) after schema 052.
 -- The app role keeps FORCE RLS and receives EXECUTE only on the checked entry
 -- point. Re-running this script safely cleans remaining old tombstones.
 BEGIN;
@@ -107,7 +107,7 @@ BEGIN
 END $$;
 
 -- Only the authenticated deletion transaction may erase its own comment text.
--- The author lock is shared with the insert trigger in schema 051, so a write
+-- The author lock is shared with the insert trigger in schema 052, so a write
 -- that began before deletion either finishes before this UPDATE or observes
 -- the committed tombstone and is redacted by the trigger.
 CREATE OR REPLACE FUNCTION public.runtime_redact_deleted_account_comments(account_id text)
