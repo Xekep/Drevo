@@ -286,6 +286,7 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
     if (method === "PUT") {
       expect(route.request().postDataJSON()).toEqual({
         fields: ["occupation"], previewToken: "a".repeat(64),
+        recipientArchiveId: "tree-b", durationDays: 30,
       });
       shared = true;
       return route.fulfill({ json: { fields: { occupation: "Историк" } } });
@@ -298,16 +299,22 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
     if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
     return route.fulfill({ json: {
       available: { occupation: "Историк" }, previewToken: "a".repeat(64),
-      outgoing: shared ? { fields: { occupation: "Историк" }, grantedAt: "2026-10-01T00:00:00Z" } : null,
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
+      outgoing: shared ? { fields: { occupation: "Историк" },
+        grantedAt: "2026-10-01T00:00:00Z", expiresAt: "2026-10-30T00:00:00Z" } : null,
       incoming: null,
     } });
   });
   await page.goto("/admin");
   await openAdminSection(page, "matches", "Связи деревьев");
   await page.getByText("Дополнительные сведения связанной карточки").click();
+  const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
+  await expect(panel).toContainText("Адресат: опубликованная карточка «Иван Петров», архив tree-b");
   await expect(page.getByRole("checkbox", { name: /Род занятий: Историк/ })).toBeVisible();
   await page.getByRole("checkbox", { name: /Род занятий: Историк/ }).check();
+  await page.getByLabel("Срок нового разрешения").selectOption("30");
   await page.getByRole("button", { name: "Поделиться выбранным" }).click();
+  await expect(panel).toContainText("Ваше разрешение действует до");
   await expect(page.getByText("Сейчас открыто другой стороне")).toBeVisible();
   await page.getByRole("button", { name: "Отозвать доступ" }).click();
   await expect(page.getByText("Сейчас открыто другой стороне")).toHaveCount(0);
@@ -334,8 +341,9 @@ test("reopening a linked-card panel discards revoked and in-flight snapshots", a
     const read = ++reads;
     if (read === 2) await secondRead;
     await route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
       incoming: read < 3 ? { fields: { occupation: "Уже отозванные сведения" },
-        grantedAt: "2026-10-01T00:00:00Z" } : null } }).catch(() => {});
+        grantedAt: "2026-10-01T00:00:00Z", expiresAt: null } : null } }).catch(() => {});
   });
   try {
     await page.goto("/admin");
@@ -373,7 +381,9 @@ test("an owner previews only granted fields and loses the copy comparison after 
   } }));
   await page.route(`**/api/discovery/matches/${id}/card-share`, (route) =>
     route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
-      incoming: { fields: { occupation: "Архивный исследователь" }, grantedAt: "2026-10-01T00:00:00Z" },
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
+      incoming: { fields: { occupation: "Архивный исследователь" },
+        grantedAt: "2026-10-01T00:00:00Z", expiresAt: null },
     } }));
   await page.route(`**/api/discovery/matches/${id}/card-share/copy-preview`, (route) => {
     reads++;
@@ -395,7 +405,7 @@ test("an owner previews only granted fields and loses the copy comparison after 
   await expect(panel).toContainText("Архивный исследователь");
   await expect(panel).toContainText("Местный исследователь");
   await expect(panel).toContainText("Источник: разрешённая связанная карточка другого архива");
-  await expect(panel).not.toContainText("tree-b");
+  await expect(panel.locator(".match-copy-preview")).not.toContainText("tree-b");
   await expect(panel.getByRole("button", { name: "Скопировать выбранные поля" })).toBeDisabled();
   await expect(panel).toContainText("Пока доступно только сравнение");
   hasFields = false;
@@ -425,8 +435,9 @@ test("copying a linked place requires field choice and separate conflict confirm
   } }));
   await page.route(`**/api/discovery/matches/${id}/card-share`, (route) =>
     route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
+      recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
       incoming: { fields: { birthPlace: "Архивный город", occupation: "Историк" },
-        grantedAt: "2026-10-01T00:00:00Z" },
+        grantedAt: "2026-10-01T00:00:00Z", expiresAt: null },
     } }));
   await page.route(`**/api/discovery/matches/${id}/card-share/copy-preview`, (route) => {
     if (route.request().method() === "POST") {

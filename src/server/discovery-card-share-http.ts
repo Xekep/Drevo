@@ -99,6 +99,15 @@ function pairArgs(row: Row) {
     String(row.right_archive_id),String(row.right_person_id)];
 }
 
+function recipient(pair: Row, archiveId: string) {
+  return {
+    archiveId: String(pair.left_archive_id === archiveId
+      ? pair.right_archive_id : pair.left_archive_id),
+    personId: String(pair.left_archive_id === archiveId
+      ? pair.right_person_id : pair.left_person_id),
+  };
+}
+
 /** Extra details require a separate, revocable grant for exactly one confirmed pair. */
 export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -127,8 +136,10 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
        AND (m.left_archive_id=? OR m.right_archive_id=?)
      ${lock ? "FOR UPDATE OF m FOR SHARE OF p" : ""}`).get(id,archiveId,archiveId);
   const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id,fields,
-    granted_by,granted_at::text AS granted_at FROM discovery_linked_card_grants
-    WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?`)
+    granted_by,granted_at::text AS granted_at,expires_at::text AS expires_at
+    FROM discovery_linked_card_grants
+    WHERE left_archive_id=? AND left_person_id=? AND right_archive_id=? AND right_person_id=?
+      AND (expires_at IS NULL OR expires_at>now())`)
     .all(...pairArgs(pair));
   const copyState = async (matchId: string, archiveId: string, userId: string,
     lock = false) => {
@@ -149,6 +160,7 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     const incomingGrant = () => db.prepare("", `SELECT fields,granted_at::text AS granted_at
       FROM discovery_linked_card_grants WHERE left_archive_id=? AND left_person_id=?
         AND right_archive_id=? AND right_person_id=? AND grantor_archive_id=?
+        AND (expires_at IS NULL OR expires_at>now())
       ${lock ? "FOR SHARE" : ""}`).get(...pairArgs(pair), sourceArchiveId);
     let grant: Row | undefined;
     if (lock) {
@@ -302,6 +314,10 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           return { forbidden: true };
         const pair = await linkedPair(detail[1],archiveId);
         if (!pair) return null;
+        const addressee = recipient(pair, archiveId);
+        const publishedRecipient = await db.prepare("", `SELECT name FROM discovery_people
+          WHERE archive_id=? AND person_id=?`).get(addressee.archiveId,addressee.personId);
+        if (!publishedRecipient) return null;
         const ownPersonId = String(pair.left_archive_id === archiveId
           ? pair.left_person_id : pair.right_person_id);
         const own = await db.prepare("", "SELECT data FROM people WHERE archive_id=? AND id=?")
@@ -311,8 +327,11 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
         const grants = await grantsFor(pair);
         const grant = (row: Row | undefined) => row ? {
           fields: scalarFields(row.fields), grantedAt: String(row.granted_at),
+          expiresAt: row.expires_at ? String(row.expires_at) : null,
         } : null;
         return { available, previewToken: previewToken(available),
+          recipientArchiveId: addressee.archiveId,
+          recipientPersonName: String(publishedRecipient.name),
           outgoing: grant(grants.find((row) => row.grantor_archive_id === archiveId)),
           incoming: grant(grants.find((row) => row.grantor_archive_id !== archiveId)) };
       }, true);
@@ -323,8 +342,11 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
     if (req.method === "PUT") {
       const body = await readBody(req);
       const selected = selectedFields(body?.fields);
+      const durationDays = body?.durationDays;
       if (!selected || typeof body?.previewToken !== "string" ||
-          !/^[0-9a-f]{64}$/.test(body.previewToken))
+          !/^[0-9a-f]{64}$/.test(body.previewToken) ||
+          typeof body?.recipientArchiveId !== "string" || body.recipientArchiveId.length > 64 ||
+          typeof durationDays !== "number" || ![1,7,30].includes(durationDays))
         return json(res, 400, { error: "Выберите доступные поля после просмотра карточки" });
       const result = await db.transaction(async () => {
         if (!await db.prepare("", `SELECT 1 FROM archive_owners
@@ -332,6 +354,8 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
           return { code: 403, error: "Доступно владельцу дерева" };
         const preliminary = await linkedPair(detail[1],archiveId);
         if (!preliminary) return { code: 404, error: "Связь не найдена" };
+        if (body.recipientArchiveId !== recipient(preliminary,archiveId).archiveId)
+          return { code: 409, error: "Адресат изменился. Проверьте разрешение заново" };
         const ownPersonId = String(preliminary.left_archive_id === archiveId
           ? preliminary.left_person_id : preliminary.right_person_id);
         // Family edits lock people before refreshing the discovery projection.
@@ -353,11 +377,12 @@ export function discoveryCardShareHttp({ archive, auth, publicOrigin }: {
         for (const field of selected) snapshot[field] = available[field];
         await db.prepare("", `INSERT INTO discovery_linked_card_grants(
           left_archive_id,left_person_id,right_archive_id,right_person_id,
-          grantor_archive_id,fields,granted_by) VALUES(?,?,?,?,?,?::jsonb,?)
+          grantor_archive_id,fields,granted_by,expires_at)
+          VALUES(?,?,?,?,?,?::jsonb,?,now() + (?::int * interval '1 day'))
           ON CONFLICT(left_archive_id,left_person_id,right_archive_id,right_person_id,grantor_archive_id)
-          DO UPDATE SET fields=EXCLUDED.fields,granted_by=EXCLUDED.granted_by,granted_at=now()
-          WHERE discovery_linked_card_grants.fields IS DISTINCT FROM EXCLUDED.fields`)
-          .run(...pairArgs(pair),archiveId,JSON.stringify(snapshot),approved.id);
+          DO UPDATE SET fields=EXCLUDED.fields,granted_by=EXCLUDED.granted_by,
+            granted_at=now(),expires_at=EXCLUDED.expires_at`)
+          .run(...pairArgs(pair),archiveId,JSON.stringify(snapshot),approved.id,durationDays);
         return { code: 200, fields: snapshot };
       });
       return "fields" in result ? json(res, 200, { fields: result.fields })
