@@ -26,7 +26,8 @@ END $$;
 CREATE OR REPLACE FUNCTION clear_changed_discovery_copy_provenance()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  DELETE FROM discovery_copied_fields c
+  -- Account maintenance may change search_path; runtime tables live in public.
+  DELETE FROM public.discovery_copied_fields c
     WHERE c.archive_id=NEW.archive_id AND c.person_id=NEW.id
       AND NEW.data->>c.field IS DISTINCT FROM c.value;
   RETURN NEW;

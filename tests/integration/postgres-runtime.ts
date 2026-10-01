@@ -3543,6 +3543,19 @@ try {
       WHERE archive_id='other-archive' AND revision=? AND entity_id='person-a'`)
       .get(savedCopy.revision))?.count, 1, "the copy produces a normal person audit entry");
   }, true);
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',true)");
+    await client.query("SET LOCAL search_path=pg_catalog");
+    await client.query(`UPDATE public.people SET data=data
+      WHERE archive_id='other-archive' AND id='person-a'`);
+    assert.equal((await client.query(`SELECT value FROM public.discovery_copied_fields
+      WHERE archive_id='other-archive' AND person_id='person-a'
+        AND field='birthPlace'`)).rows[0]?.value, "Архивный город",
+    "a person edit retains copy provenance even when maintenance changes search_path");
+  } finally {
+    await client.query("ROLLBACK");
+  }
   for (const hiddenArchive of ["runtime-test", "unrelated-archive"])
     await matchDb.transaction(async () => {
       await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
