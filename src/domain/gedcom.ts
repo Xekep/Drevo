@@ -23,6 +23,13 @@ import {
   type TransferMedia,
 } from "./genealogy-transfer.ts";
 
+const CLAIM_CONFIDENCE_TAGS = [
+  "_DREVO_DATE_CONFIDENCE",
+  "_DREVO_PLACE_CONFIDENCE",
+  "_DREVO_OCCUPATION_CONFIDENCE",
+  "_DREVO_BIRTH_SURNAME_CONFIDENCE",
+] as const;
+
 function stripArchiveSourceIds(sources?: Source[]) {
   for (const source of sources || []) {
     delete source.catalogId;
@@ -261,7 +268,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_UNION_STAGE",
     "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
-    "_DREVO_BIRTH_SURNAME_CONFIDENCE",
+    ...CLAIM_CONFIDENCE_TAGS,
     "_MAIDEN",
     "_UID",
     "_PATR",
@@ -1299,7 +1306,7 @@ export function exportGedcom(
       "_DREVO_TWIN",
       "_DREVO_CLAIM",
       "_DREVO_DOCUMENT_PAGE",
-      "_DREVO_BIRTH_SURNAME_CONFIDENCE",
+      ...CLAIM_CONFIDENCE_TAGS,
       "_DREVO_UNION_STAGE",
       "_DREVO_EVENT_ID",
       "_TYPE",
