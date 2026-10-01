@@ -17,9 +17,13 @@ export function uploadQuota(
     requestsPerHour = 60,
     concurrent = 16,
     freeReserve = 256 * 1024 ** 2,
+    reservationMs = RESERVATION_MS,
+    renewEveryMs = 0,
     now = Date.now,
   } = {},
 ) {
+  if (renewEveryMs && (renewEveryMs < 1 || renewEveryMs >= reservationMs))
+    throw new Error("Некорректный интервал продления резерва");
   return {
     async acquire(
       userId: string,
@@ -32,13 +36,13 @@ export function uploadQuota(
     ) {
       const time = now(),
         id = randomUUID();
-      return await db.transaction(async () => {
+      await db.transaction(async () => {
         await db
           .prepare(
-            "DELETE FROM document_upload_requests WHERE started_ms<?",
-            "DELETE FROM document_upload_requests WHERE started_ms<?",
+            "DELETE FROM document_upload_requests WHERE started_ms<? AND (reserved_bytes=0 OR expires_ms<?)",
+            "DELETE FROM document_upload_requests WHERE started_ms<? AND (reserved_bytes=0 OR expires_ms<?)",
           )
-          .run(time - 3600_000);
+          .run(time - 3600_000, time);
         await db
           .prepare(
             "UPDATE document_upload_requests SET reserved_bytes=0 WHERE expires_ms<?",
@@ -48,10 +52,10 @@ export function uploadQuota(
         const recent = Number(
           (await db
             .prepare(
-              "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=?",
-              "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=?",
+              "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=? AND started_ms>=?",
+              "SELECT count(*) AS n FROM document_upload_requests WHERE user_id=? AND started_ms>=?",
             )
-            .get(userId))!.n,
+            .get(userId, time - 3600_000))!.n,
         );
         const pending = (await db
           .prepare(
@@ -119,31 +123,93 @@ export function uploadQuota(
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
             "INSERT INTO document_upload_requests(id,user_id,started_ms,expires_ms,reserved_bytes) VALUES(?,?,?,?,?)",
           )
-          .run(id, userId, time, time + RESERVATION_MS, maximumBytes);
+          .run(id, userId, time, time + reservationMs, maximumBytes);
         if (db.kind === "postgres")
           await db
             .prepare(
               "",
               "INSERT INTO platform_upload_reservations(id,reserved_bytes,expires_ms) VALUES(?,?,?)",
             )
-            .run(id, maximumBytes, time + RESERVATION_MS);
-
-        return async () =>
-          await db.transaction(async () => {
+            .run(id, maximumBytes, time + reservationMs);
+      });
+      let renewing: Promise<void> | undefined;
+      let stopped = false;
+      const timer = renewEveryMs
+        ? setInterval(() => {
+            if (stopped || renewing) return;
+            renewing = db
+              .transaction(async () => {
+                const time = now();
+                const local = await db
+                  .prepare(
+                    "UPDATE document_upload_requests SET expires_ms=? WHERE id=? AND reserved_bytes>0 AND expires_ms>?",
+                    "UPDATE document_upload_requests SET expires_ms=? WHERE id=? AND reserved_bytes>0 AND expires_ms>?",
+                  )
+                  .run(time + reservationMs, id, time);
+                if (local.changes !== 1)
+                  throw new Error("Upload reservation expired");
+                if (db.kind === "postgres") {
+                  const shared = await db
+                    .prepare(
+                      "",
+                      "UPDATE platform_upload_reservations SET expires_ms=? WHERE id=? AND expires_ms>?",
+                    )
+                    .run(time + reservationMs, id, time);
+                  if (shared.changes !== 1)
+                    throw new Error("Platform reservation expired");
+                }
+              })
+              .catch(() => console.warn("upload_reservation_renew_failed"))
+              .finally(() => {
+                renewing = undefined;
+              });
+          }, renewEveryMs)
+        : undefined;
+      timer?.unref();
+      const release = async () => {
+        stopped = true;
+        if (timer) clearInterval(timer);
+        await renewing;
+        await db.transaction(async () => {
+          await db
+            .prepare(
+              "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+              "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+            )
+            .run(id);
+          if (db.kind === "postgres")
             await db
               .prepare(
-                "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
-                "UPDATE document_upload_requests SET reserved_bytes=0 WHERE id=?",
+                "",
+                "DELETE FROM platform_upload_reservations WHERE id=?",
               )
               .run(id);
-            if (db.kind === "postgres")
-              await db
+        });
+      };
+      return Object.assign(release, {
+        async assertValid() {
+          await renewing;
+          const time = now();
+          const local = await db
+            .prepare(
+              "SELECT 1 AS valid FROM document_upload_requests WHERE id=? AND reserved_bytes>0 AND expires_ms>?",
+              "SELECT 1 AS valid FROM document_upload_requests WHERE id=? AND reserved_bytes>0 AND expires_ms>?",
+            )
+            .get(id, time);
+          const shared = db.kind === "postgres"
+            ? await db
                 .prepare(
                   "",
-                  "DELETE FROM platform_upload_reservations WHERE id=?",
+                  "SELECT 1 AS valid FROM platform_upload_reservations WHERE id=? AND expires_ms>?",
                 )
-                .run(id);
-          });
+                .get(id, time)
+            : { valid: 1 };
+          if (!local || !shared)
+            throw new UploadQuotaError(
+              "Резерв места истёк. Повторите импорт.",
+              507,
+            );
+        },
       });
     },
   };

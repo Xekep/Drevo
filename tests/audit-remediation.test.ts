@@ -338,6 +338,48 @@ test("upload reservations enforce disk headroom, total quota, concurrency and ho
   }
 });
 
+test("a long upload renews its reservation and stops renewing after release", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "drevo-long-quota-"));
+  const archive = await openArchive(join(dir, "db.sqlite"), family());
+  let now = 1_000_000;
+  try {
+    const quota = uploadQuota(archive.db, {
+      bytes: 100,
+      reservationMs: 2 * 3600_000,
+      renewEveryMs: 20,
+      now: () => now,
+    });
+    const release = await quota.acquire("u", 50, 1e12);
+    const initial = Number(
+      (await archive.db.prepare("SELECT expires_ms FROM document_upload_requests").get())?.expires_ms,
+    );
+    now += 3600_001;
+    let extended = initial;
+    for (let attempt = 0; attempt < 30 && extended === initial; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      extended = Number(
+        (await archive.db.prepare("SELECT expires_ms FROM document_upload_requests").get())?.expires_ms,
+      );
+    }
+    assert.ok(extended > initial, "an active import extends its reservation");
+    await release.assertValid();
+    await assert.rejects(
+      quota.acquire("other", 60, 1e12),
+      (error) => error instanceof UploadQuotaError && error.status === 507,
+      "hourly cleanup must keep an active long-running reservation",
+    );
+    await release();
+    await assert.rejects(release.assertValid(), UploadQuotaError);
+    assert.equal(
+      Number((await archive.db.prepare("SELECT reserved_bytes FROM document_upload_requests").get())?.reserved_bytes),
+      0,
+    );
+  } finally {
+    await archive.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("deployment preflight rejects an incompatible previous release without modifying the backup", async () => {
   const dir = mkdtempSync(join(tmpdir(), "drevo-migration-"));
   const path = join(dir, "backup.sqlite");
