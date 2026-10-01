@@ -4020,7 +4020,7 @@ try {
       await Promise.race([
         ready,
         request.then(async (response) => {
-          throw new Error(`Restore completed before the commit barrier: ${response.status} ${await response.text()}`);
+          throw new Error(`Restore completed before the commit barrier: ${response.status} ${await response.clone().text()}`);
         }),
         new Promise<never>((_, reject) => {
           timeout = setTimeout(() => reject(new Error("Restore did not reach the commit barrier")), 30_000);
