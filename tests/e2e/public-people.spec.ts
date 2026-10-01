@@ -102,6 +102,64 @@ test("an open public card rechecks revoked links and publication on focus", asyn
   }
 });
 
+test("an open discovery search drops withdrawn results and restarts pagination on focus", async ({ page }) => {
+  let withdrawn = false;
+  let delayOldPage = false;
+  let signalOldPage!: () => void;
+  const oldPageSeen = new Promise<void>((resolve) => { signalOldPage = resolve; });
+  let releaseOldPage!: () => void;
+  const oldPageRelease = new Promise<void>((resolve) => { releaseOldPage = resolve; });
+  let signalOldPageDone!: () => void;
+  const oldPageDone = new Promise<void>((resolve) => { signalOldPageDone = resolve; });
+  const cursors: string[] = [];
+  await page.route((url) => url.pathname === "/api/discovery/people", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor") || "";
+    cursors.push(cursor);
+    if (cursor === "old-page" && delayOldPage) {
+      signalOldPage();
+      await oldPageRelease;
+    }
+    try {
+      await route.fulfill({ json: cursor === "old-page"
+        ? { results: [{ archiveId: "tree-a", id: "withdrawn", name: "Former Card" }], nextCursor: null }
+        : cursor === "new-page"
+          ? { results: [{ archiveId: "tree-b", id: "later", name: "Later Card" }], nextCursor: null }
+          : withdrawn
+            ? { results: [{ archiveId: "tree-b", id: "survivor", name: "Surviving Card" }], nextCursor: "new-page" }
+            : { results: [
+                { archiveId: "tree-a", id: "withdrawn", name: "Former Card" },
+                { archiveId: "tree-b", id: "survivor", name: "Surviving Card" },
+              ], nextCursor: "old-page" } });
+    } finally {
+      if (cursor === "old-page" && delayOldPage) signalOldPageDone();
+    }
+  });
+  try {
+    await page.goto("/discover/search/Tester");
+    await expect(page.getByRole("link", { name: "Former Card" })).toBeVisible();
+    await expect(page.getByRole("textbox")).toHaveValue("Tester");
+    delayOldPage = true;
+    await page.getByRole("button", { name: "Показать ещё" }).click();
+    await oldPageSeen;
+
+    withdrawn = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.getByRole("link", { name: "Former Card" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Surviving Card" })).toBeVisible();
+    await expect(page.getByRole("textbox")).toHaveValue("Tester");
+    releaseOldPage();
+    await oldPageDone;
+    await expect(page.getByRole("link", { name: "Former Card" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Показать ещё" }).click();
+    await expect(page.getByRole("link", { name: "Later Card" })).toBeVisible();
+    expect(cursors).toContain("old-page");
+    expect(cursors).toContain("new-page");
+  } finally {
+    releaseOldPage();
+  }
+});
+
 test("admin changes a card's search privacy from the eye control", async ({ page, isMobile }) => {
   test.skip(isMobile, "Публикация меняет общую тестовую базу; мобильное открытие проверяется отдельно");
   await page.goto("/tree");

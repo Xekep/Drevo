@@ -4383,7 +4383,20 @@ try {
     "candidate evidence contains no relative names or private card identifiers");
   assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
     FROM discovery_relative_names WHERE relative_person_id='closed-relative'`).get())?.count, 0);
+  const publicSearchHeaders = { ...headers, "X-Real-IP": "198.51.100.211" };
+  const publicParentResults = async () => {
+    const response = await fetch(securedBase +
+      `/api/discovery/people?q=${encodeURIComponent("Орлов")}`, { headers: publicSearchHeaders });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    return (await response.json()).results as { archiveId: string; id: string }[];
+  };
+  assert.equal((await publicParentResults()).some((item) =>
+    item.archiveId === "other-archive" && item.id === parent.id), true);
   await otherPublication.unpublish(parent.id);
+  assert.equal((await publicParentResults()).some((item) =>
+    item.archiveId === "other-archive" && item.id === parent.id), false,
+  "a fresh indexed search cannot return a withdrawn publication");
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
     "revoking either parent publication removes the hint in the same transaction");
   assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count

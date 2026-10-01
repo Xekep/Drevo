@@ -1,5 +1,5 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LoginButtons } from "./login-buttons";
 
 type PublicPerson = {
@@ -53,91 +53,70 @@ export default function PublicPeople() {
   const [error, setError] = useState("");
   const [needsLogin, setNeedsLogin] = useState(false);
   const [busy, setBusy] = useState(() => Boolean(discoveryLocation().query || discoveryLocation().personId));
+  const request = useRef<AbortController | null>(null);
+  const requestVersion = useRef(0);
   async function read(url: string) {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const version = ++requestVersion.current;
     setBusy(true);
     setError("");
+    setNeedsLogin(false);
     try {
-      let response = await archiveFetch(url, { cache: "no-store" });
+      let response = await archiveFetch(url, { cache: "no-store", signal: controller.signal });
       if (response.status === 501 && url.startsWith("/api/discovery/people?"))
-        response = await archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"), { cache: "no-store" });
+        response = await archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"),
+          { cache: "no-store", signal: controller.signal });
       const data = await response.json();
+      if (controller.signal.aborted || version !== requestVersion.current) return null;
       if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error || "Поиск недоступен");
       setNeedsLogin(false);
       return data;
     } catch (reason) {
-      setError((reason as Error).message);
+      if (!controller.signal.aborted && version === requestVersion.current)
+        setError((reason as Error).message);
       return null;
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted && version === requestVersion.current) setBusy(false);
     }
   }
   useEffect(() => {
-    const { personId, archiveId, query: initialQuery } = discoveryLocation();
-    const url = personId
-      ? archiveId
-        ? `/api/discovery/people/${encodeURIComponent(archiveId)}/${encodeURIComponent(personId)}`
-        : `/api/published-people/${encodeURIComponent(personId)}`
-      : initialQuery
-        ? `/api/discovery/people?q=${encodeURIComponent(initialQuery)}`
-        : "";
-    if (!url) return;
-    let controller: AbortController | null = null;
-    let request = 0;
     function load() {
-      controller?.abort();
-      controller = new AbortController();
-      const currentController = controller;
-      const currentRequest = ++request;
-      setError("");
-      setNeedsLogin(false);
-      setBusy(true);
-      if (personId) {
-        setDetail(null);
-        setLinkedCards([]);
-        setLinkedCardsTruncated(false);
-      }
-      archiveFetch(url, { cache: "no-store", signal: currentController.signal })
-        .then((response) =>
-          response.status === 501 && url.startsWith("/api/discovery/people?")
-            ? archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"), { cache: "no-store", signal: currentController.signal })
-            : response,
-        )
-        .then(async (response) => {
-          const data = await response.json();
-          if (currentController.signal.aborted || currentRequest !== request) return;
-          if (response.status === 401) setNeedsLogin(true);
-          if (!response.ok) throw new Error(data.error || "Поиск недоступен");
-          if (personId) {
-            setDetail(data.person || null);
-            setLinkedCards(data.linkedCards || []);
-            setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
-          }
-          else {
-            setResults(data.results || []);
-            setNextCursor(data.nextCursor || null);
-          }
-        })
-        .catch((reason) => {
-          if (!currentController.signal.aborted && currentRequest === request)
-            setError(reason.message || "Поиск недоступен");
-        })
-        .finally(() => {
-          if (!currentController.signal.aborted && currentRequest === request) setBusy(false);
-        });
+      const { personId, archiveId, query: currentQuery } = discoveryLocation();
+      const url = personId
+        ? archiveId
+          ? `/api/discovery/people/${encodeURIComponent(archiveId)}/${encodeURIComponent(personId)}`
+          : `/api/published-people/${encodeURIComponent(personId)}`
+        : currentQuery
+          ? `/api/discovery/people?q=${encodeURIComponent(currentQuery)}`
+          : "";
+      if (!url) return;
+      setDetail(null);
+      setLinkedCards([]);
+      setLinkedCardsTruncated(false);
+      setResults([]);
+      setNextCursor(null);
+      void read(url).then((data) => {
+        if (!data) return;
+        if (personId) {
+          setDetail(data.person || null);
+          setLinkedCards(data.linkedCards || []);
+          setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
+        } else {
+          setResults(data.results || []);
+          setNextCursor(data.nextCursor || null);
+        }
+      });
     }
-    const recheck = () => {
-      if (personId && document.visibilityState === "visible" &&
-        discoveryLocation().personId === personId && discoveryLocation().archiveId === archiveId) load();
-    };
+    const recheck = () => { if (document.visibilityState === "visible") load(); };
     load();
-    if (personId) {
-      window.addEventListener("focus", recheck);
-      document.addEventListener("visibilitychange", recheck);
-    }
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
     return () => {
-      request += 1;
-      controller?.abort();
+      requestVersion.current += 1;
+      request.current?.abort();
       window.removeEventListener("focus", recheck);
       document.removeEventListener("visibilitychange", recheck);
     };
@@ -156,8 +135,9 @@ export default function PublicPeople() {
     void read(
       `/api/discovery/people?q=${encodeURIComponent(value)}`,
     ).then((data) => {
-      setResults(data?.results || []);
-      setNextCursor(data?.nextCursor || null);
+      if (!data) return;
+      setResults(data.results || []);
+      setNextCursor(data.nextCursor || null);
     });
   }
   function loadMore() {
