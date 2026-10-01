@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { DiscoveryCopyPreview } from "./discovery-copy-preview.tsx";
 
 const labels = {
   birth: "Полная дата рождения",
@@ -119,6 +120,7 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
       {detail.outgoing && <><h4>Сейчас открыто другой стороне</h4><Fields values={detail.outgoing.fields} /></>}
       <h4>Другая сторона открыла вам</h4>
       {detail.incoming ? <Fields values={detail.incoming.fields} /> : <p>Дополнительные сведения пока не открыты.</p>}
+      {detail.incoming && <DiscoveryCopyPreview matchId={matchId} />}
     </>}
     {error && <p role="alert" className="form-error">{error}</p>}
     {notice && <p role="status" className="admin-notice">{notice}</p>}
