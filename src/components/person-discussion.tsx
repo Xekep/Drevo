@@ -1,18 +1,16 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
-import { useEffect, useRef, useState } from "react";
-import { Send, Trash2 } from "lucide-react";
-
-type Comment = {
-  id: number;
-  text: string;
-  author: string;
-  createdAt: string;
-  canDelete: boolean;
-};
-type Page = { items: Comment[]; nextBefore: number | null };
+import { useEffect, useState } from "react";
+import { Pencil, Send, Trash2 } from "lucide-react";
+import { useUnsavedChanges } from "../hooks/useUnsavedChanges";
+import {
+  MAX_COMMENT_LENGTH,
+  type PersonComment as Comment,
+  type PersonDiscussionPage as Page,
+} from "../shared/person-discussion";
+import CommentEditor from "./discussion/comment-editor";
+import { CommentMarkdown } from "./discussion/comment-markdown";
 
 export function PersonDiscussion({ personId }: { personId: string }) {
-  const textarea = useRef<HTMLTextAreaElement>(null);
   const [items, setItems] = useState<Comment[]>([]);
   const [nextBefore, setNextBefore] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -21,11 +19,19 @@ export function PersonDiscussion({ personId }: { personId: string }) {
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [retry, setRetry] = useState(0);
+  const [editing, setEditing] = useState<{
+    original: Comment;
+    text: string;
+  } | null>(null);
   const endpoint = `/api/people/${encodeURIComponent(personId)}/discussion`;
+  useUnsavedChanges(!!editing && editing.text !== editing.original.text);
 
   useEffect(() => {
     const controller = new AbortController();
-    void archiveFetch(endpoint, { signal: controller.signal, cache: "no-store" })
+    void archiveFetch(endpoint, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error("Не удалось загрузить обсуждение");
         return (await response.json()) as Page;
@@ -48,7 +54,7 @@ export function PersonDiscussion({ personId }: { personId: string }) {
 
   async function request(
     url: string,
-    method: "POST" | "DELETE",
+    method: "POST" | "DELETE" | "PATCH",
     body?: unknown,
   ) {
     const response = await archiveFetch(url, {
@@ -60,14 +66,22 @@ export function PersonDiscussion({ personId }: { personId: string }) {
       error?: string;
       item?: Comment;
     };
-    if (!response.ok)
+    if (!response.ok) {
+      if (response.status === 409 && result.item) {
+        const latest = result.item;
+        setItems((current) =>
+          current.map((item) => (item.id === latest.id ? latest : item)),
+        );
+      }
       throw new Error(result.error || "Не удалось выполнить действие");
+    }
     return result;
   }
 
   async function send() {
-    const text = draft.trim();
-    if (!text || pending) return;
+    const text = draft.trimEnd();
+    if (!text.trim() || text.length > MAX_COMMENT_LENGTH || pending || editing)
+      return;
     setPending(true);
     setError("");
     try {
@@ -75,12 +89,47 @@ export function PersonDiscussion({ personId }: { personId: string }) {
       const item = result.item;
       if (item) setItems((current) => [item, ...current]);
       setDraft("");
-      if (textarea.current) textarea.current.style.height = "auto";
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
           : "Не удалось отправить сообщение",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function saveEdit() {
+    if (
+      !editing ||
+      pending ||
+      !editing.text.trim() ||
+      editing.text.length > MAX_COMMENT_LENGTH
+    )
+      return;
+    setPending(true);
+    setError("");
+    try {
+      const result = await request(
+        `${endpoint}/${editing.original.id}`,
+        "PATCH",
+        {
+          text: editing.text.trimEnd(),
+          editedAt: editing.original.editedAt,
+        },
+      );
+      const saved = result.item;
+      if (saved)
+        setItems((current) =>
+          current.map((item) => (item.id === saved.id ? saved : item)),
+        );
+      setEditing(null);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Не удалось сохранить сообщение",
       );
     } finally {
       setPending(false);
@@ -137,27 +186,26 @@ export function PersonDiscussion({ personId }: { personId: string }) {
           void send();
         }}
       >
-        <label className="sr-only" htmlFor={`discussion-${personId}`}>
-          Сообщение для обсуждения
-        </label>
-        <textarea
-          ref={textarea}
-          id={`discussion-${personId}`}
+        <CommentEditor
+          label="Сообщение для обсуждения"
           value={draft}
-          disabled={pending}
-          maxLength={2000}
-          rows={2}
-          placeholder="Напишите вопрос или воспоминание…"
-          onChange={(event) => setDraft(event.target.value)}
-          onInput={(event) => {
-            const field = event.currentTarget;
-            field.style.height = "auto";
-            field.style.height = `${Math.min(field.scrollHeight, 180)}px`;
-          }}
+          disabled={pending || !!editing}
+          onChange={setDraft}
+          onSubmit={() => void send()}
         />
         <div className="person-discussion-compose-footer">
-          <small>{draft.length}/2000</small>
-          <button type="submit" disabled={!draft.trim() || pending}>
+          <small>
+            {draft.length}/{MAX_COMMENT_LENGTH}
+          </small>
+          <button
+            type="submit"
+            disabled={
+              !draft.trim() ||
+              draft.length > MAX_COMMENT_LENGTH ||
+              pending ||
+              !!editing
+            }
+          >
             <Send size={15} aria-hidden="true" /> Отправить
           </button>
         </div>
@@ -184,7 +232,11 @@ export function PersonDiscussion({ personId }: { personId: string }) {
       ) : items.length ? (
         <div className="person-discussion-list">
           {items.map((item) => (
-            <article key={item.id} className="person-discussion-item">
+            <article
+              key={item.id}
+              data-comment-id={item.id}
+              className="person-discussion-item"
+            >
               <div className="person-discussion-meta">
                 <strong>{item.author}</strong>
                 <time dateTime={item.createdAt}>
@@ -193,8 +245,98 @@ export function PersonDiscussion({ personId }: { personId: string }) {
                     timeStyle: "short",
                   })}
                 </time>
+                {item.editedAt && (
+                  <time
+                    className="person-discussion-edited"
+                    dateTime={item.editedAt}
+                    title={`Изменено ${new Date(item.editedAt).toLocaleString("ru-RU")}`}
+                  >
+                    изменено
+                  </time>
+                )}
               </div>
-              <p>{item.text}</p>
+              {editing?.original.id === item.id ? (
+                <form
+                  className="person-discussion-edit-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveEdit();
+                  }}
+                >
+                  {item.editedAt !== editing.original.editedAt && (
+                    <div className="person-discussion-conflict" role="status">
+                      <p>Актуальная версия сообщения:</p>
+                      <CommentMarkdown text={item.text} />
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          setEditing({ original: item, text: item.text });
+                          setError("");
+                        }}
+                      >
+                        Загрузить актуальный текст
+                      </button>
+                    </div>
+                  )}
+                  <CommentEditor
+                    label="Редактирование сообщения"
+                    value={editing.text}
+                    disabled={pending}
+                    focusOnMount
+                    onChange={(text) =>
+                      setEditing((current) =>
+                        current ? { ...current, text } : null,
+                      )
+                    }
+                    onSubmit={() => void saveEdit()}
+                  />
+                  <div className="person-discussion-compose-footer">
+                    <small>
+                      {editing.text.length}/{MAX_COMMENT_LENGTH}
+                    </small>
+                    <div className="person-discussion-edit-buttons">
+                      <button
+                        type="submit"
+                        disabled={
+                          pending ||
+                          !editing.text.trim() ||
+                          editing.text.length > MAX_COMMENT_LENGTH
+                        }
+                      >
+                        Сохранить
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() => {
+                          setEditing(null);
+                          setError("");
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              ) : (
+                <CommentMarkdown text={item.text} />
+              )}
+              {item.canEdit && editing?.original.id !== item.id && (
+                <button
+                  type="button"
+                  className="person-discussion-edit"
+                  aria-label="Редактировать сообщение"
+                  disabled={pending || !!editing}
+                  onClick={() => {
+                    setEditing({ original: item, text: item.text });
+                    setConfirmDelete(null);
+                    setError("");
+                  }}
+                >
+                  <Pencil size={14} aria-hidden="true" />
+                </button>
+              )}
               {item.canDelete &&
                 (confirmDelete === item.id ? (
                   <div className="person-discussion-delete-confirm">
@@ -217,6 +359,7 @@ export function PersonDiscussion({ personId }: { personId: string }) {
                   <button
                     type="button"
                     className="person-discussion-delete"
+                    disabled={pending || !!editing}
                     aria-label="Удалить сообщение"
                     onClick={() => setConfirmDelete(item.id)}
                   >

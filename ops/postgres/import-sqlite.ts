@@ -118,9 +118,9 @@ const tables: Table[] = [
   },
   {
     name: "person_comments",
-    columns: ["id", "person_id", "author_id", "author_name", "created_ms", "text"],
+    columns: ["id", "person_id", "author_id", "author_name", "created_ms", "text", "updated_ms"],
     order: "id",
-    numbers: ["id", "created_ms"],
+    numbers: ["id", "created_ms", "updated_ms"],
     optional: true,
   },
 ];
@@ -214,7 +214,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
       (table.name === "documents" && imported.some((column) =>
         !optionalDocumentColumns.has(column) && !columns.includes(column))) ||
       (table.name === "person_comments" && imported.some((column) =>
-        column !== "author_name" && !columns.includes(column))) ||
+        !["author_name", "updated_ms"].includes(column) && !columns.includes(column))) ||
       (table.name === "relations" && imported.some((column) =>
         column !== "twin_kind" && !columns.includes(column)))
     )
@@ -279,7 +279,7 @@ function sqliteRows(db: DatabaseSync, table: Table): Row[] {
     : null;
   return db
     .prepare(
-      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? field === "twin_kind" ? "NULL AS twin_kind" : `'${["annotations", "event_links", "pages"].includes(field) ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
+      `SELECT ${table.columns.includes("ordinal") ? "rowid AS ordinal," : ""}${fields.map((field) => optionalColumns && !optionalColumns.has(field) ? ["twin_kind", "updated_ms"].includes(field) ? `NULL AS ${field}` : `'${["annotations", "event_links", "pages"].includes(field) ? "[]" : ""}' AS ${field}` : field).join(",")} FROM ${table.name} ORDER BY ${table.columns.includes("ordinal") ? "rowid" : table.order}`,
     )
     .all()
     .map((row) => {
@@ -456,7 +456,7 @@ export async function importSqliteSnapshot(
         )
       ).rows.map((row: Row) => {
         for (const number of table.numbers || [])
-          row[number] = Number(row[number]);
+          if (row[number] !== null) row[number] = Number(row[number]);
         return row;
       });
       if (!isDeepStrictEqual(actual, rows))

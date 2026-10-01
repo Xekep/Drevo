@@ -1,7 +1,7 @@
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   ArrowDownUp,
   ArrowUpRight,
@@ -31,7 +31,7 @@ import { PersonAwards } from "./person-awards";
 import { PersonEvents } from "./person-events";
 import { MemorialName } from "./memorial-name";
 import { mediaPreview } from "../domain/media-preview";
-import { PersonDiscussion } from "./person-discussion";
+const PersonDiscussion = lazy(() => import("./person-discussion").then((module) => ({ default: module.PersonDiscussion })));
 export function Avatar({
   person,
   large = false,
@@ -412,7 +412,9 @@ export function PersonPanel({
             )}
           </>
         ) : tab === "discussion" && canDiscuss ? (
-          <PersonDiscussion key={person.id} personId={person.id} />
+          <Suspense fallback={<p className="muted-copy">Загружаем обсуждение…</p>}>
+            <PersonDiscussion key={person.id} personId={person.id} />
+          </Suspense>
         ) : (
           <>
             <div className="section-label">ДОКУМЕНТЫ И СВИДЕТЕЛЬСТВА</div>

@@ -36,6 +36,7 @@ import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
+import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
 import { startServer } from "../../src/server/index.ts";
@@ -1214,6 +1215,7 @@ try {
   }).then((response) => response.json());
   assert.equal(archiveAdminSession.user.role, "admin");
   assert.equal(archiveAdminSession.user.platformAdmin, false);
+  await verifyPostgresCommentEdits(securedBase, ownerHeaders, archiveAdminHeaders);
   assert.equal(
     (await fetch(securedBase + "/api/family?projection=overview", {
       headers: archiveAdminHeaders,

@@ -145,6 +145,113 @@ test("person discussion enforces login, visible scope, authorship and origin", a
     assert.equal(readerList.items[0].text, "Семейное воспоминание");
     assert.equal(readerList.items[0].author, "Читатель");
     assert.equal(readerList.items[0].canDelete, true);
+    const path = `${boris}/${readerComment.item.id}`;
+    const original = (await (await request(boris, reader.cookie)).json())
+      .items[0];
+    assert.equal(original.canEdit, true);
+    assert.equal(original.editedAt, null);
+    const foreignList = await (await request(boris, admin.cookie)).json();
+    assert.equal(foreignList.items[0].canDelete, true);
+    assert.equal(foreignList.items[0].canEdit, false);
+    for (const cookie of [other.cookie, admin.cookie])
+      assert.equal(
+        (
+          await request(path, cookie, "PATCH", {
+            text: "Чужая правка",
+            editedAt: null,
+          })
+        ).status,
+        403,
+      );
+    assert.equal(
+      (await request(path, "", "PATCH", { text: "Правка", editedAt: null }))
+        .status,
+      401,
+    );
+    assert.equal(
+      (
+        await request(
+          path,
+          reader.cookie,
+          "PATCH",
+          { text: "Правка", editedAt: null },
+          "https://other.test",
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request(path, reader.cookie, "PATCH", {
+          text: " ",
+          editedAt: null,
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await request(path, reader.cookie, "PATCH", { text: "Без версии" }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (
+        await request(path, reader.cookie, "PATCH", {
+          text: "x".repeat(2001),
+          editedAt: null,
+        })
+      ).status,
+      400,
+    );
+    const editedResponse = await request(path, reader.cookie, "PATCH", {
+      text: "    код $x$\n\n**Уточнено** $x^2$",
+      editedAt: null,
+    });
+    assert.equal(editedResponse.status, 200);
+    const edited = (await editedResponse.json()).item;
+    assert.equal(edited.createdAt, original.createdAt);
+    assert.equal(edited.text, "    код $x$\n\n**Уточнено** $x^2$");
+    assert.ok(Date.parse(edited.editedAt) > Date.parse(original.createdAt));
+    assert.equal(
+      (
+        await request(path, reader.cookie, "PATCH", {
+          text: "Старая версия",
+          editedAt: null,
+        })
+      ).status,
+      409,
+    );
+    const unchanged = await request(path, reader.cookie, "PATCH", {
+      text: edited.text,
+      editedAt: edited.editedAt,
+    });
+    assert.equal((await unchanged.json()).item.editedAt, edited.editedAt);
+    const raced = await Promise.all(
+      ["Первая", "Вторая"].map((text) =>
+        request(path, reader.cookie, "PATCH", {
+          text,
+          editedAt: edited.editedAt,
+        }),
+      ),
+    );
+    assert.deepEqual(
+      raced.map((response) => response.status).sort(),
+      [200, 409],
+    );
+    const saved = (await (await request(boris, reader.cookie)).json()).items[0];
+    assert.ok(["Первая", "Вторая"].includes(saved.text));
+    assert.ok(Date.parse(saved.editedAt) > Date.parse(edited.editedAt));
+    assert.equal(
+      (
+        await request(
+          `${anna}/${readerComment.item.id}`,
+          admin.cookie,
+          "PATCH",
+          { text: "Не тот человек", editedAt: null },
+        )
+      ).status,
+      404,
+    );
     assert.equal(
       (
         await request(

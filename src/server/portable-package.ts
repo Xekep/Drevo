@@ -39,6 +39,7 @@ export type PortableComment = {
   authorId: string;
   authorName: string;
   createdMs: number;
+  editedMs?: number | null;
   text: string;
 };
 

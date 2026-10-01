@@ -953,6 +953,17 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  if (!tableHasColumn(db, "person_comments", "updated_ms")) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!tableHasColumn(db, "person_comments", "updated_ms"))
+        db.exec("ALTER TABLE person_comments ADD COLUMN updated_ms INTEGER CHECK(updated_ms IS NULL OR updated_ms > created_ms)");
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   const treePreferencesExtension = "2026-09-user-tree-preferences";
   if (
     !db
