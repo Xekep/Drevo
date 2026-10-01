@@ -2347,6 +2347,12 @@ try {
   assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json())).incoming, [],
   "one archive's grant alone does not expose its branch");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+      0, "RLS hides the other side's selected relatives until B also consents");
+  }, true);
   assert.equal((await fetch(otherBase + branchPath, {
     method: "PUT", headers: archiveAdminHeaders,
     body: JSON.stringify({ personIds: ["branch-parent-b"], previewToken: secondBranch.previewToken }),
@@ -2355,6 +2361,12 @@ try {
     .then((response) => response.json());
   assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
   assert.doesNotMatch(JSON.stringify(bilateralBranch), /branch-hidden-b|Закрытая биография ветки|sources|photo/);
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+      1, "RLS opens exactly the other side's selected member after mutual consent");
+  }, true);
   await matchDb.transaction(async () => {
     await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("unrelated-archive");
     assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_branch_grants`).get())?.count,
@@ -2400,6 +2412,12 @@ try {
   assert.deepEqual((await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json())).incoming, [],
     "revoking either side closes the branch immediately");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)").get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'`).get())?.count,
+      0, "RLS closes the other side's members in the same revocation transaction");
+  }, true);
   const refreshedSecondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
   assert.equal((await fetch(otherBase + branchPath, {
@@ -2927,7 +2945,9 @@ try {
     FROM discovery_branch_grants WHERE left_person_id='person-a'
       AND right_person_id='person-a'`).get())?.count, 0,
     "unpublishing a linked root atomically removes both branch grants");
-  assert.equal((await fetch(securedBase + branchPath, { headers: ownerHeaders })).status, 404,
+  assert.equal((await fetch(securedBase + branchPath, { headers: {
+    ...ownerHeaders, "X-Real-IP": "198.51.100.210",
+  } })).status, 404,
     "a revoked link cannot reopen the previously granted branch");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,

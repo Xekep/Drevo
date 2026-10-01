@@ -58,8 +58,15 @@ ALTER TABLE discovery_branch_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discovery_branch_members FORCE ROW LEVEL SECURITY;
 DO $$ BEGIN
   CREATE POLICY discovery_branch_members_read ON discovery_branch_members FOR SELECT
-    USING (left_archive_id=current_setting('drevo.archive_id',true)
-      OR right_archive_id=current_setting('drevo.archive_id',true));
+    USING (grantor_archive_id=current_setting('drevo.archive_id',true)
+      OR ((left_archive_id=current_setting('drevo.archive_id',true)
+        OR right_archive_id=current_setting('drevo.archive_id',true))
+        AND EXISTS (SELECT 1 FROM discovery_branch_grants own_grant
+          WHERE own_grant.left_archive_id=discovery_branch_members.left_archive_id
+            AND own_grant.left_person_id=discovery_branch_members.left_person_id
+            AND own_grant.right_archive_id=discovery_branch_members.right_archive_id
+            AND own_grant.right_person_id=discovery_branch_members.right_person_id
+            AND own_grant.grantor_archive_id=current_setting('drevo.archive_id',true))));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE POLICY discovery_branch_members_insert ON discovery_branch_members FOR INSERT
