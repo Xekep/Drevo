@@ -1044,7 +1044,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     ? renderedNodes.map((node) => ({ ...node, hidden: true }))
     : renderedNodes, [renderedNodes, distantScene]);
   const flowEdges = useMemo(() => distantScene
-    ? renderedEdges.map((edge) => ({ ...edge, hidden: true }))
+    // Hidden EdgeWrappers still subscribe to every camera update and resolve
+    // their handles. Canvas owns these routes; React Flow only needs the nodes
+    // (with dimensions intact) for fitView and person camera targets.
+    ? []
     : renderedEdges, [renderedEdges, distantScene]);
   const overviewHouseholds = useMemo(() => displayNodes.filter(
     (node): node is HouseholdNodeType => node.type === "household",
@@ -1567,8 +1570,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           // Culling uses final coordinates, not the CSS-interpolated position.
           // Keep nodes mounted while they move, even across the viewport edge.
           onlyRenderVisibleElements={
-            !layoutSettling && (!growing || displayNodes.length > 500) &&
-            !(distantZoom && displayNodes.length <= 2000)
+            distantScene || (
+              !layoutSettling && (!growing || displayNodes.length > 500) &&
+              !(distantZoom && displayNodes.length <= 2000)
+            )
           }
           fitView={false}
           fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
