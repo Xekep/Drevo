@@ -1,7 +1,7 @@
 ﻿import { readStorageLimits, writeStorageLimits, enforceUserStorageLimit } from "../../src/server/storage-limits.ts";
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -37,6 +37,8 @@ import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
+import { documentsHttp } from "../../src/server/documents-http.ts";
+import { sampleTiff } from "../fixtures/tiff.ts";
 import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
@@ -2580,6 +2582,125 @@ try {
     archive.ownComments.map((item) => item.text).filter((value) => value.startsWith("account-export-probe:")))),
   new Set(["account-export-probe:other-owner", "account-export-probe:root-owner"]),
   "the owner receives only their own comments across their current memberships");
+  const scopedDocumentId = randomUUID();
+  const scopedDocumentFile = `${randomUUID()}.pdf`;
+  const scopedUploads = join(dirname(source), "uploads");
+  writeFileSync(join(scopedUploads, scopedDocumentFile), "%PDF-1.4\nscoped-document-secret");
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('document-access-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  await client.query(
+    `INSERT INTO documents(id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+     VALUES($1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents),
+       'Scoped document','scoped document',$2,32,'owner',$3)`,
+    [scopedDocumentId, scopedDocumentFile, new Date().toISOString()],
+  );
+  await client.query(
+    "INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden')",
+    [scopedDocumentId],
+  );
+  const scopedDocumentPath = `/api/documents/${scopedDocumentId}/file`;
+  const firstDocumentDownload = await fetch(securedBase + scopedDocumentPath, { headers });
+  assert.equal(firstDocumentDownload.status, 200,
+    "the scoped reader initially sees a document linked to an ancestor");
+  assert.match(await firstDocumentDownload.text(), /scoped-document-secret/);
+  const documentAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const raceDocumentDownload = async (
+    change: () => Promise<void>,
+    path = scopedDocumentPath,
+  ) => {
+    let reachedRead!: () => void;
+    let resumeRead!: () => void;
+    const readReady = new Promise<void>((resolve) => { reachedRead = resolve; });
+    const readGate = new Promise<void>((resolve) => { resumeRead = resolve; });
+    const delayedArchive = {
+      ...app!.archive,
+      read: async () => {
+        const snapshot = await app!.archive.read();
+        reachedRead();
+        await readGate;
+        return snapshot;
+      },
+    };
+    const download = documentsHttp({
+      archive: delayedArchive,
+      auth: documentAuth,
+      media: mediaStore(scopedUploads),
+      uploadsDirectory: scopedUploads,
+    });
+    const downloadServer = createServer((req, res) => {
+      void download(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => downloadServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (downloadServer.address() as { port: number }).port;
+      const pending = fetch(`http://127.0.0.1:${port}${path}`, { headers });
+      await Promise.race([
+        readReady,
+        pending.then(() => { throw new Error("Document sent before snapshot barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Document read did not reach barrier")), 10_000);
+          timer.unref();
+        }),
+      ]);
+      await change();
+      resumeRead();
+      const response = await pending;
+      assert.equal(response.status, 404,
+        "a document hidden while preparing its download must not be delivered");
+      assert.doesNotMatch(await response.text(), /scoped-document-secret/);
+    } finally {
+      resumeRead();
+      await new Promise<void>((resolve) => downloadServer.close(() => resolve()));
+    }
+  };
+  await raceDocumentDownload(async () => {
+    await client.query("DELETE FROM relations WHERE id='document-access-parent'");
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  });
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('document-access-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const relinkedDocumentDownload = await fetch(securedBase + scopedDocumentPath, { headers });
+  assert.equal(relinkedDocumentDownload.status, 200);
+  assert.match(await relinkedDocumentDownload.text(), /scoped-document-secret/);
+  await raceDocumentDownload(async () => {
+    await client.query("DELETE FROM document_people WHERE document_id=$1", [scopedDocumentId]);
+  });
+  await client.query("DELETE FROM documents WHERE id=$1", [scopedDocumentId]);
+  rmSync(join(scopedUploads, scopedDocumentFile));
+  const scopedTiffId = randomUUID();
+  const scopedTiffFile = `${randomUUID()}.tif`;
+  const scopedTiff = await sampleTiff();
+  writeFileSync(join(scopedUploads, scopedTiffFile), scopedTiff);
+  await client.query(
+    `INSERT INTO documents(id,ordinal,title,title_search,file_name,file_size,uploaded_by,created_at)
+     VALUES($1,(SELECT COALESCE(max(ordinal),0)+1 FROM documents),
+       'Scoped TIFF','scoped tiff',$2,$3,'owner',$4)`,
+    [scopedTiffId, scopedTiffFile, scopedTiff.length, new Date().toISOString()],
+  );
+  await client.query(
+    "INSERT INTO document_people(document_id,person_id) VALUES($1,'account-export-hidden')",
+    [scopedTiffId],
+  );
+  const scopedTiffPages = `/api/documents/${scopedTiffId}/file?reader=pages`;
+  const visibleTiffPages = await fetch(securedBase + scopedTiffPages, { headers });
+  assert.equal(visibleTiffPages.status, 200);
+  assert.equal((await visibleTiffPages.json()).pages.length, 3);
+  await raceDocumentDownload(async () => {
+    await client.query("DELETE FROM document_people WHERE document_id=$1", [scopedTiffId]);
+  }, scopedTiffPages);
+  await client.query("DELETE FROM documents WHERE id=$1", [scopedTiffId]);
+  await client.query("DELETE FROM relations WHERE id='document-access-parent'");
+  rmSync(join(scopedUploads, scopedTiffFile));
   const preparedCommentExport = await accountDataExport(app.archive.db).read("reader");
   assert.ok(preparedCommentExport);
   await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
