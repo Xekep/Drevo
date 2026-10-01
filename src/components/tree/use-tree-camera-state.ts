@@ -154,7 +154,11 @@ export function useTreeCameraState({
     const timer = setTimeout(
       () => {
         let viewportUpdate: unknown;
-        if (manualCameraOverride && !initialViewSent.current) {
+        if (
+          manualCameraOverride &&
+          !initialViewSent.current &&
+          !(focusReady && focus)
+        ) {
           initialViewSent.current = true;
           previousContext.current = context;
           previousReverse.current = reverse;
