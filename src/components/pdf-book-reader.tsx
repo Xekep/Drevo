@@ -30,6 +30,7 @@ export function PdfBookReader({
 }) {
   const dialog = useRef<HTMLElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
+  const commentsList = useRef<HTMLDivElement>(null);
   const closeLatest = useRef(onClose);
   const editLatest = useRef(onEdit);
   const magnifierLatest = useRef(false);
@@ -155,6 +156,13 @@ export function PdfBookReader({
         setSelection(message.selection);
         setSidebarTab("comments");
         setCommentsOpen(true);
+      } else if (message.type === "annotation") {
+        setActiveAnnotation(message.id);
+        setSidebarTab("comments");
+        setCommentsOpen(true);
+        setAnnotating(false);
+        setSelection(null);
+        setComment("");
       } else if (message.type === "magnifier-off") {
         setMagnifier(false);
       } else if (message.type === "toggle-magnifier") {
@@ -186,6 +194,12 @@ export function PdfBookReader({
     initialPage,
     onEdit,
   ]);
+
+  useEffect(() => {
+    if (commentsOpen && sidebarTab === "comments" && activeAnnotation)
+      commentsList.current?.querySelector<HTMLElement>("article.is-active")
+        ?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [activeAnnotation, commentsOpen, sidebarTab]);
 
   useEffect(() => {
     if (!readerReady) return;
@@ -529,7 +543,7 @@ export function PdfBookReader({
                       Комментариев пока нет.
                     </p>
                   )}
-                <div className="pdf-book-comments-list">
+                <div className="pdf-book-comments-list" ref={commentsList}>
                   {annotations.map((item) => (
                     <article
                       key={item.id}
@@ -546,6 +560,7 @@ export function PdfBookReader({
                     >
                       <button
                         type="button"
+                        aria-pressed={item.id === activeAnnotation}
                         disabled={loading || !!error}
                         onClick={() => {
                           navigateToPage.current?.(item.page - 1);

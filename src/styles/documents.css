@@ -268,7 +268,10 @@
   position: relative;
   border-top: 1px solid rgb(255 255 255 / 8%);
 }
-.pdf-book-comments-list article.is-active { background: rgb(195 161 100 / 12%); }
+.pdf-book-comments-list article.is-active {
+  background: rgb(195 161 100 / 18%);
+  box-shadow: inset 2px 0 0 #d9bd85;
+}
 .pdf-book-comments-list article > button:first-child {
   display: grid;
   gap: 7px;

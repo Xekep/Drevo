@@ -647,13 +647,31 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   const overlay = book
     .locator('.BRpage-visible[data-index="0"] .drevo-page-layer')
     .first();
+  await expect(book.locator("body")).toHaveClass(/drevo-annotating/);
+  await overlay.hover();
   const box = (await overlay.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.42, {
     steps: 5,
   });
+  const draft = book.locator('.BRpage-visible[data-index="0"] .drevo-page-draft').first();
+  await expect(draft).toBeVisible();
+  await expect(draft).toHaveCSS("border-style", "dashed");
+  await expect(draft).toHaveCSS("border-width", "2px");
+  await expect.poll(async () => (await draft.boundingBox())?.width || 0).toBeGreaterThan(box.width * 0.2);
+  await overlay.dispatchEvent("pointercancel", { pointerId: 1 });
   await page.mouse.up();
+  await expect(draft).toBeHidden();
+  await expect(reader.locator(".pdf-book-comment-form")).toBeHidden();
+  // Selecting in the opposite direction produces the same normalized rectangle.
+  await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.42);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.3, { steps: 5 });
+  await expect(draft).toBeVisible();
+  await page.screenshot({ path: info.outputPath("comment-live-draft.png") });
+  await page.mouse.up();
+  await expect(draft).toBeVisible();
   await reader
     .locator(".pdf-book-comment-form textarea")
     .fill("Первый фрагмент записи");
@@ -688,7 +706,15 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   await firstMark.hover();
   await expect(firstMark).not.toHaveClass(/is-hovered/);
   await expect(firstMark).toHaveCSS("background-color", "rgba(233, 194, 97, 0.3)");
+  await firstMark.click();
+  await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
+  await expect(firstComment).toHaveClass("is-active");
+  await expect(firstMark).toHaveAttribute("aria-pressed", "true");
   await book.getByRole("button", { name: "Комментарии" }).click();
+  await firstMark.focus();
+  await firstMark.press("Enter");
+  await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
+  await expect(firstComment).toHaveClass("is-active");
   await reader
     .locator(".pdf-book-comments-list article")
     .filter({ hasText: "Последняя страница" })
@@ -711,6 +737,54 @@ test("PDF comments remain attached to their pages", async ({ page }, info) => {
   await page.locator(".document-item").filter({ hasText: title }).click();
   await book.getByRole("button", { name: "Комментарии" }).click();
   await expect(reader.getByText("Первый фрагмент записи")).toBeVisible();
+});
+
+test("clicking a document mark opens comments, selects its entry and scrolls past other comments", async ({ page }, info) => {
+  const title = `Comment mark navigation ${info.project.name}`;
+  const uploaded = await page.request.post("/api/documents", {
+    headers: { "Content-Type": "application/pdf", "X-Document-Metadata": encodeURIComponent(JSON.stringify({ title, personIds: [] })) },
+    data: await samplePdf(3),
+  });
+  expect(uploaded.status()).toBe(201);
+  const { id } = await uploaded.json();
+  let targetId = "";
+  const targetText = "Нужный комментарий в конце списка";
+  for (let index = 0; index < 20; index++) {
+    const response = await page.request.post(`/api/documents/${id}/annotations`, {
+      data: { page: 1, x: 0.1, y: index === 19 ? 0.75 : 0.1, width: 0.4, height: 0.1,
+        text: index === 19 ? targetText : `Комментарий ${index + 1}: сведения об источнике и месте записи. Подробное описание фрагмента архивного документа.` },
+    });
+    expect(response.status()).toBe(201);
+    if (index === 19) targetId = (await response.json()).items.at(-1).id;
+  }
+  await page.goto(`/documents/${id}`);
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  const mark = book.locator(`.BRpage-visible[data-index="0"] [data-annotation-id="${targetId}"]`).first();
+  await expect(mark).toBeVisible();
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  const outlineTab = reader.locator(".pdf-book-sidebar-tabs").getByRole("button", { name: "Оглавление", exact: true });
+  await outlineTab.click();
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  await mark.click();
+  const target = reader.locator(".pdf-book-comments-list article").filter({ hasText: targetText });
+  await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
+  await expect(outlineTab).toHaveAttribute("aria-pressed", "false");
+  await expect(target).toHaveClass("is-active");
+  await expect(mark).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => target.evaluate(node => {
+    const scroll = node.closest(".pdf-book-comments")!;
+    const bounds = node.getBoundingClientRect(), viewport = scroll.getBoundingClientRect();
+    return scroll.scrollTop > 0 && bounds.top >= viewport.top - 1 && bounds.bottom <= viewport.bottom + 1;
+  })).toBe(true);
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+  await page.screenshot({ path: info.outputPath("comment-mark-selected.png") });
+  await book.getByRole("button", { name: "Комментарии" }).click();
+  await mark.focus();
+  await mark.press("Space");
+  await expect(reader.locator(".pdf-book-sidebar")).toBeVisible();
+  await expect(target).toHaveClass("is-active");
+  await expect(mark).toBeFocused();
 });
 
 test("BookReader opens a document longer than 300 pages", async ({
