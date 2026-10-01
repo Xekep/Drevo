@@ -72,6 +72,8 @@ import { planAdditions } from "../../src/domain/additions-import.ts";
 import { listAdditionBatches, planUndoAdditions } from "../../src/server/additions-undo.ts";
 import { auditStore } from "../../src/server/audit.ts";
 import { writePortablePackage } from "../../src/server/portable-package.ts";
+import { portableExportHttp } from "../../src/server/portable-http.ts";
+import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { createSharedRequestLimiter } from "../../src/server/shared-request-rate-limit.ts";
 
 if (!/^drevo_migration_runtime_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -3472,6 +3474,16 @@ try {
       }).then((response) => response.json())).archives.map((row: { id: string }) => row.id),
       [location.split("/")[2]],
     );
+    const personalArchiveId = location.split("/")[2];
+    const selectedDbPath = join(directory, "archives", personalArchiveId, "source.sqlite");
+    const setOwnerApproved = async (approved: boolean) => {
+      await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
+      const changed = await client.query(
+        "UPDATE archive_memberships SET approved=$1 WHERE archive_id=$2 AND user_id=$3",
+        [approved, personalArchiveId, newAccountSession.user.id],
+      );
+      assert.equal(changed.rowCount, 1);
+    };
     const portablePath = location.replace(/\/tree$/, "/api/drevo/export");
     const assertPortableTaskBlocked = async (
       taskName: string,
@@ -3514,6 +3526,52 @@ try {
       }),
       429,
     );
+    const exportArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    const portableAuth = await createAuth(await userStore(exportArchive.db), exportArchive.db,
+      process.env.PUBLIC_ORIGIN);
+    let exportReady!: () => void;
+    let releaseExport!: () => void;
+    const exportReached = new Promise<void>((resolve) => { exportReady = resolve; });
+    const exportGate = new Promise<void>((resolve) => { releaseExport = resolve; });
+    const delayedPortableExport = portableExportHttp(
+      exportArchive, portableAuth, join(dirname(selectedDbPath), "uploads"),
+      async () => { exportReady(); await exportGate; },
+    );
+    const portableExportServer = createServer((req, res) => {
+      void delayedPortableExport(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => portableExportServer.listen(0, "127.0.0.1", resolve));
+    const portableExportBase = `http://127.0.0.1:${(portableExportServer.address() as { port: number }).port}`;
+    try {
+      await setOwnerApproved(false);
+      assert.equal((await fetch(portableExportBase + "/api/drevo/export", {
+        headers: { Cookie: sessionCookie },
+      })).status, 403, "an unapproved owner cannot start a portable export");
+      await setOwnerApproved(true);
+      const pending = fetch(portableExportBase + "/api/drevo/export", {
+        headers: { Cookie: sessionCookie },
+      });
+      let timer!: ReturnType<typeof setTimeout>;
+      const progress = await Promise.race([
+        exportReached.then(() => "ready"),
+        pending.then(() => "responded"),
+        new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
+      ]);
+      clearTimeout(timer);
+      assert.equal(progress, "ready", "portable export must reach the pre-send barrier");
+      await setOwnerApproved(false);
+      releaseExport();
+      const denied = await pending;
+      assert.equal(denied.status, 403, "revoking approval before the first byte blocks export");
+      assert.notEqual((await denied.text()).slice(0, 2), "PK");
+    } finally {
+      releaseExport();
+      await setOwnerApproved(true);
+      portableExportServer.closeAllConnections();
+      await new Promise<void>((resolve) => portableExportServer.close(() => resolve()));
+      await exportArchive.close();
+    }
     const portable = await fetch(oauthBase + portablePath, {
       headers: { Cookie: sessionCookie },
     });
@@ -3571,6 +3629,57 @@ try {
     const overLimitSummary = await overLimitPreview.json();
     assert.equal(overLimitSummary.canImport, false);
     assert.match(overLimitSummary.warning, /150/);
+    const previewArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    const previewAuth = await createAuth(await userStore(previewArchive.db), previewArchive.db,
+      process.env.PUBLIC_ORIGIN);
+    let previewReadReady!: () => void;
+    let releasePreviewRead!: () => void;
+    const previewReadReached = new Promise<void>((resolve) => { previewReadReady = resolve; });
+    const previewReadGate = new Promise<void>((resolve) => { releasePreviewRead = resolve; });
+    const delayedPreview = portableImportHttp({
+      ...previewArchive,
+      read: async () => {
+        const snapshot = await previewArchive.read();
+        previewReadReady();
+        await previewReadGate;
+        return snapshot;
+      },
+    }, previewAuth, selectedDbPath, process.env.PUBLIC_ORIGIN);
+    const previewServer = createServer((req, res) => {
+      void delayedPreview.handle(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => previewServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const previewBase = `http://127.0.0.1:${(previewServer.address() as { port: number }).port}`;
+      const pending = fetch(previewBase + "/api/drevo/preview", {
+        method: "POST", headers: transferHeaders, body: readFileSync(importFile),
+      });
+      let timer!: ReturnType<typeof setTimeout>;
+      const progress = await Promise.race([
+        previewReadReached.then(() => "read"),
+        pending.then(() => "responded"),
+        new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
+      ]);
+      clearTimeout(timer);
+      assert.equal(progress, "read", "portable preview must reach the gated archive read");
+      await setOwnerApproved(false);
+      releasePreviewRead();
+      assert.equal((await pending).status, 403,
+        "a revoked owner cannot receive a completed preview");
+      assert.equal((await previewArchive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='drevo'")
+        .get())?.n, 0, "a revoked preview removes its stage");
+      assert.deepEqual(readdirSync(join(dirname(selectedDbPath), "staging", "portable"))
+        .filter((name) => /^[a-f0-9-]{36}$/.test(name)), [],
+      "a revoked preview removes staged files");
+    } finally {
+      releasePreviewRead();
+      await setOwnerApproved(true);
+      previewServer.closeAllConnections();
+      await new Promise<void>((resolve) => previewServer.close(() => resolve()));
+      await delayedPreview.close();
+      await previewArchive.close();
+    }
     const previewTransfer = await fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/preview"), {
       method: "POST", headers: transferHeaders, body: readFileSync(importFile),
     });
@@ -3579,6 +3688,67 @@ try {
     const transferSummary = await previewTransfer.json();
     assert.equal(transferSummary.canImport, true);
     const transferToken = transferSummary.token;
+    const importArchive = await openArchive(selectedDbPath, family, personalArchiveId);
+    const importAuth = await createAuth(await userStore(importArchive.db), importArchive.db,
+      process.env.PUBLIC_ORIGIN);
+    let importReadReady!: () => void;
+    let releaseImportRead!: () => void;
+    const importReadReached = new Promise<void>((resolve) => { importReadReady = resolve; });
+    const importReadGate = new Promise<void>((resolve) => { releaseImportRead = resolve; });
+    let holdImportRead = false;
+    const delayedImport = portableImportHttp({
+      ...importArchive,
+      read: async () => {
+        const snapshot = await importArchive.read();
+        if (holdImportRead) {
+          holdImportRead = false;
+          importReadReady();
+          await importReadGate;
+        }
+        return snapshot;
+      },
+    }, importAuth, selectedDbPath, process.env.PUBLIC_ORIGIN);
+    const portableImportServer = createServer((req, res) => {
+      void delayedImport.handle(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => portableImportServer.listen(0, "127.0.0.1", resolve));
+    const portableImportBase = `http://127.0.0.1:${(portableImportServer.address() as { port: number }).port}`;
+    try {
+      await setOwnerApproved(false);
+      assert.equal((await fetch(portableImportBase + "/api/drevo/preview", {
+        method: "POST", headers: transferHeaders, body: readFileSync(importFile),
+      })).status, 403, "an unapproved owner cannot start a portable preview");
+      await setOwnerApproved(true);
+      holdImportRead = true;
+      const pending = fetch(portableImportBase + "/api/drevo/import", {
+        method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ token: transferToken, confirm: true }),
+      });
+      let timer!: ReturnType<typeof setTimeout>;
+      const progress = await Promise.race([
+        importReadReached.then(() => "read"),
+        pending.then(() => "responded"),
+        new Promise<string>((resolve) => { timer = setTimeout(() => resolve("timed out"), 10_000); }),
+      ]);
+      clearTimeout(timer);
+      assert.equal(progress, "read", "portable apply must reach the gated archive read");
+      await setOwnerApproved(false);
+      releaseImportRead();
+      assert.equal((await pending).status, 403,
+        "revoking approval after apply starts must prevent the archive write");
+      assert.equal((await importArchive.db.prepare("", "SELECT data->>'status' AS status FROM workflow_stages WHERE token=?")
+        .get(transferToken))?.status, "ready", "failed apply returns its stage to ready");
+      assert.equal((await importArchive.read()).family.people.length, 0,
+        "revoked apply must not import a person");
+    } finally {
+      releaseImportRead();
+      await setOwnerApproved(true);
+      portableImportServer.closeAllConnections();
+      await new Promise<void>((resolve) => portableImportServer.close(() => resolve()));
+      await delayedImport.close();
+      await importArchive.close();
+    }
     const applyTransfer = () => fetch(oauthBase + location.replace(/\/tree$/, "/api/drevo/import"), {
       method: "POST", headers: { ...transferHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({ token: transferToken, confirm: true }),
@@ -3601,7 +3771,6 @@ try {
     assert.equal(vkRegistration.accountCreated, true);
     assert.equal(vkRegistration.archiveCreated, true);
     assert.notEqual(vkRegistration.archiveId, location.split("/")[2]);
-    const personalArchiveId = location.split("/")[2];
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [
       personalArchiveId,
     ]);

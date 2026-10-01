@@ -15,6 +15,7 @@ export function portableExportHttp(
   archive: Awaited<ReturnType<typeof openArchive>>,
   auth: Awaited<ReturnType<typeof createAuth>>,
   uploads: string,
+  beforeSend?: () => Promise<void>,
 ) {
   const db = archive.db;
   let exporting = false;
@@ -25,7 +26,7 @@ export function portableExportHttp(
 
   async function mayExport(req: IncomingMessage) {
     const actor = await auth.currentUser(req);
-    if (!actor || actor.role !== "admin") return false;
+    if (!actor?.approved || actor.role !== "admin") return false;
     return auth.local || !!(await owner?.get(actor.id));
   }
 
@@ -123,6 +124,7 @@ export function portableExportHttp(
           uploads,
           data,
           async () => {
+            await beforeSend?.();
             if (!(await mayExport(req)))
               throw new ForbiddenError("Доступ владельца отозван");
             res.writeHead(200, {

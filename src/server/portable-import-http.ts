@@ -58,7 +58,7 @@ export function portableImportHttp(
       : null;
   async function mayImport(req: IncomingMessage) {
     const actor = await auth.currentUser(req);
-    if (!actor || actor.role !== "admin") return null;
+    if (!actor?.approved || actor.role !== "admin") return null;
     if (!auth.local && !(await owner?.get(actor.id))) return null;
     return actor;
   }
@@ -306,6 +306,9 @@ export function portableImportHttp(
         )
           limits.push("Лимит фотографий и документов: 500 МБ");
       }
+      const currentActor = await mayImport(req);
+      if (!currentActor || currentActor.id !== actorId)
+        throw new ForbiddenError("Доступ владельца отозван");
       for (const file of parsed.files.values())
         await rm(file.path, { force: true });
       const updated = await db
