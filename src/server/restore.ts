@@ -48,6 +48,7 @@ import {
 } from "../shared/document-details.ts";
 import { validateFamily, type Family } from "../domain/index.ts";
 import type { ArchiveUser } from "../domain/access.ts";
+import type { StoreDatabase } from "./store-database.ts";
 
 const RESTORE_LIMIT = 12 * 1024 * 1024 * 1024;
 const RESERVATION_STEP = 32 * 1024 * 1024;
@@ -681,7 +682,11 @@ export function restoreStore(
     },
     previewStream,
     discard,
-    async apply(token: string, actor: ArchiveUser) {
+    async apply(
+      token: string,
+      actor: ArchiveUser,
+      assertAccess: (transaction?: StoreDatabase) => Promise<void>,
+    ) {
       const stage = await readStage(token);
       if (
         actor.role !== "admin" ||
@@ -694,6 +699,7 @@ export function restoreStore(
         throw new ConflictError(
           "После проверки бэкапа архив изменился. Проверьте файл повторно перед восстановлением.",
         );
+      await assertAccess();
       const backups = join(dirname(dbPath), "backups");
       mkdirSync(backups, { recursive: true });
       const backupName = `before-import-${Date.now()}-${randomUUID()}.sqlite`;
@@ -767,6 +773,9 @@ export function restoreStore(
           undefined,
           stage.faceDescriptors,
           async (db) => {
+            // This runs in archive.write's transaction. A platform-admin row
+            // lock obtained here remains held through the archive commit.
+            await assertAccess(db);
             for (const file of restoredOriginals)
               await recordMediaOriginal(db, file.url, file.size, actor.id);
             await db.exec("DELETE FROM documents", "DELETE FROM documents");

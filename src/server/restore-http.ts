@@ -6,6 +6,7 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { UploadQuotaError } from "./upload-quota.ts";
+import type { StoreDatabase } from "./store-database.ts";
 
 export function restoreHttp({
   restores,
@@ -81,7 +82,18 @@ export function restoreHttp({
       const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if (body.confirm !== true || typeof body.token !== "string")
         return json(res, 400, { error: "Подтвердите замену данных" });
-      return json(res, 200, await restores.apply(body.token, actor));
+      const assertAccess = async (transaction?: StoreDatabase) => {
+        const current = await auth.currentUser(req);
+        if (!current || current.id !== actor.id || !(await auth.isPlatformAdmin(req)))
+          throw new ForbiddenError("Доступ администратора платформы отозван");
+        if (transaction?.kind === "postgres") {
+          const locked = await transaction.prepare("", `SELECT 1 FROM platform_admins
+            WHERE account_id=? FOR SHARE`).get(actor.id);
+          if (!locked)
+            throw new ForbiddenError("Доступ администратора платформы отозван");
+        }
+      };
+      return json(res, 200, await restores.apply(body.token, actor, assertAccess));
     } catch (error) {
       if (isInfrastructureError(error)) throw error;
       return json(

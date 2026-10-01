@@ -999,7 +999,7 @@ try {
     const originalWrite = app.archive.write;
     app.archive.write = async () => { throw new Error("Simulated restore apply failure"); };
     try {
-      await assert.rejects(failedRestores.apply(failedStage.token, owner), /Simulated restore apply failure/);
+      await assert.rejects(failedRestores.apply(failedStage.token, owner, async () => {}), /Simulated restore apply failure/);
     } finally {
       app.archive.write = originalWrite;
     }
@@ -1540,6 +1540,98 @@ try {
     resumeSend();
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
     await new Promise<void>((resolve) => backupServer.close(() => resolve()));
+  }
+  // A platform grant can be revoked while a restore is copying staged media.
+  // The final grant check must run inside archive.write's transaction and lock
+  // the grant until commit, without holding that lock during file copying.
+  const securedRestoreHeaders = { ...ownerHeaders, "X-Drevo-Restore": "1" };
+  const guardedPreviewResponse = await fetch(securedBase + "/api/restore/preview", {
+    method: "POST", headers: securedRestoreHeaders, body: restoreBytes,
+  });
+  assert.equal(guardedPreviewResponse.status, 200, await guardedPreviewResponse.clone().text());
+  const guardedPreview = await guardedPreviewResponse.json() as { token: string };
+  const revisionBeforeRevocation = (await app.archive.read()).revision;
+  const filesBeforeRevocation = readdirSync(uploads).sort();
+  const originalRestoreWrite = app.archive.write;
+  let restoreAtCommit!: () => void;
+  let resumeRestoreCommit!: () => void;
+  const restoreCommitReady = new Promise<void>((resolve) => { restoreAtCommit = resolve; });
+  const restoreCommitGate = new Promise<void>((resolve) => { resumeRestoreCommit = resolve; });
+  const awaitRestoreBarrier = async (ready: Promise<void>, request: Promise<Response>) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        ready,
+        request.then(() => { throw new Error("Restore completed before the commit barrier"); }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Restore did not reach the commit barrier")), 30_000);
+          timeout.unref();
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  };
+  app.archive.write = async (...args) => {
+    restoreAtCommit();
+    await restoreCommitGate;
+    return originalRestoreWrite(...args);
+  };
+  try {
+    const pendingApply = fetch(securedBase + "/api/restore/apply", {
+      method: "POST", headers: securedRestoreHeaders,
+      body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
+    });
+    await awaitRestoreBarrier(restoreCommitReady, pendingApply);
+    await client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+    resumeRestoreCommit();
+    const deniedApply = await pendingApply;
+    assert.equal(deniedApply.status, 403, await deniedApply.text());
+    assert.equal((await app.archive.read()).revision, revisionBeforeRevocation);
+    assert.deepEqual(readdirSync(uploads).sort(), filesBeforeRevocation,
+      "revoked restore removes copies made before the commit check");
+    assert.equal((await app.archive.db.prepare("", "SELECT count(*)::int AS n FROM workflow_stages WHERE kind='restore' AND token=?")
+      .get(guardedPreview.token))?.n, 1, "the failed stage stays available for an authorized retry");
+  } finally {
+    resumeRestoreCommit();
+    app.archive.write = originalRestoreWrite;
+    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
+  }
+  let platformLockHeld!: () => void;
+  let releasePlatformLock!: () => void;
+  const platformLockReady = new Promise<void>((resolve) => { platformLockHeld = resolve; });
+  const platformLockGate = new Promise<void>((resolve) => { releasePlatformLock = resolve; });
+  app.archive.write = async (...args) => {
+    const afterWrite = args[6];
+    args[6] = async (db) => {
+      await afterWrite?.(db);
+      platformLockHeld();
+      await platformLockGate;
+    };
+    return originalRestoreWrite(...args);
+  };
+  try {
+    const pendingApply = fetch(securedBase + "/api/restore/apply", {
+      method: "POST", headers: securedRestoreHeaders,
+      body: JSON.stringify({ token: guardedPreview.token, confirm: true }),
+    });
+    await awaitRestoreBarrier(platformLockReady, pendingApply);
+    const concurrentRevocation = client.query("DELETE FROM platform_admins WHERE account_id='owner'");
+    try {
+      assert.equal(await Promise.race([
+        concurrentRevocation.then(() => "revoked"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("waiting"), 100)),
+      ]), "waiting", "grant revocation waits for an authorized restore commit");
+    } finally {
+      releasePlatformLock();
+    }
+    const allowedApply = await pendingApply;
+    assert.equal(allowedApply.status, 200, await allowedApply.text());
+    await concurrentRevocation;
+  } finally {
+    releasePlatformLock();
+    app.archive.write = originalRestoreWrite;
+    await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
   await app.archive.db
     .prepare("", "UPDATE archive_memberships SET role='reader' WHERE user_id='vk:42'")
