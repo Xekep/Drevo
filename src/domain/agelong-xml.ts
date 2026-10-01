@@ -5,6 +5,7 @@ import type {
   PersonEvent,
   PlaceLocation,
   Source,
+  FamilyUnion,
 } from "./types.ts";
 import { validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
@@ -414,6 +415,7 @@ export function importAgelongXml(
     return p;
   };
   const events = index(many(one(root, "events"), "event"));
+  const unions: FamilyUnion[] = [];
   for (const [eventId, n] of events) {
     const extraEvent = [
       ...extraAttributes(
@@ -459,7 +461,7 @@ export function importAgelongXml(
       const pair = participants
         .filter((v) => spouseRoles.has(v.role))
         .map((v) => v.person);
-      if (pair.length === 2)
+      if (pair.length === 2) {
         for (const p of pair)
           p.spouses = [
             ...new Set([
@@ -467,6 +469,25 @@ export function importAgelongXml(
               ...pair.filter((s) => s !== p).map((s) => s.id),
             ]),
           ];
+        const raw = n.attrs.date || "";
+        const milestone = {
+          ...(xmlDate(raw)
+            ? { date: xmlDate(raw) }
+            : raw
+              ? { dateText: raw }
+              : {}),
+          ...(placeDetails(n).name ? { place: placeDetails(n).name } : {}),
+          ...(eventSources.length ? { sources: eventSources } : {}),
+        };
+        unions.push({
+          id: `agelong-union-${eventId}`,
+          participants: [pair[0].id, pair[1].id],
+          type: "marriage",
+          ...(type === "marriage"
+            ? { formation: milestone }
+            : { divorce: milestone }),
+        });
+      }
     }
     for (const { person: p, role } of participants) {
       if ((birth && !birthRoles.has(role)) || (death && !deathRoles.has(role)))
@@ -696,6 +717,7 @@ export function importAgelongXml(
       demo: false,
       people,
       links,
+      ...(unions.length ? { unions } : {}),
       photos: [],
     }),
     media,

@@ -27,7 +27,11 @@ function parseChanges(value: unknown): Change[] {
       throw new Error(`Некорректное изменение #${index + 1}`);
     const record = item as Record<string, unknown>,
       collection = record.collection;
-    if (!["people", "links", "photos", "meta"].includes(String(collection)))
+    if (
+      !["people", "links", "unions", "photos", "meta"].includes(
+        String(collection),
+      )
+    )
       throw new Error(`Некорректная коллекция в изменении #${index + 1}`);
 
     const id = record.id,

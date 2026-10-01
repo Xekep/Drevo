@@ -112,6 +112,7 @@ export async function fixture(t: TestContext) {
     "005_archive_owner_uniqueness.sql",
     "008_account_tiers.sql",
     "009_person_removals.sql",
+    "047_family_unions.sql",
   ])
     await first.query(
       readFileSync(
@@ -142,6 +143,7 @@ export async function fixture(t: TestContext) {
   );
   const rows = archiveRows(family);
   for (const archiveId of ["tree-a", "tree-b"]) {
+    await first.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
     await first.query(
       "INSERT INTO archives(id,title,description,demo,revision,sqlite_schema_version) VALUES($1,$2,'',false,0,1)",
       [archiveId, family.title],
@@ -179,10 +181,12 @@ export async function fixture(t: TestContext) {
 }
 
 export async function fingerprint(client: pg.Client, archiveId = "tree-a") {
+  await client.query("SELECT set_config('drevo.archive_id',$1,false)", [archiveId]);
   const tables = [
     "archives",
     "people",
     "relations",
+    "family_unions",
     "photos",
     "photo_tags",
     "history",

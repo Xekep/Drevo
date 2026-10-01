@@ -9,6 +9,9 @@ export async function persistPostgresGraphChanges(
   before: Family,
   after: Family,
 ) {
+  await client.query("SELECT set_config('drevo.archive_id',$1,true)", [
+    archiveId,
+  ]);
   const previous = archiveRows(before),
     next = archiveRows(after);
   const oldPeople = new Map(
@@ -36,6 +39,51 @@ export async function persistPostgresGraphChanges(
         [archiveId, row.id, row.data],
       );
     }
+  }
+  const unionRows = await client.query(
+    "SELECT id,ordinal,participant_a,participant_b,data FROM family_unions WHERE archive_id=$1 ORDER BY ordinal",
+    [archiveId],
+  );
+  const oldUnions = new Map(unionRows.rows.map((row) => [String(row.id), row]));
+  const nextUnions = new Set(next.unions.map((row) => row.id));
+  for (const row of unionRows.rows)
+    if (!nextUnions.has(String(row.id)))
+      await client.query(
+        "DELETE FROM family_unions WHERE archive_id=$1 AND id=$2",
+        [archiveId, row.id],
+      );
+  const reorderUnions = unionRows.rows.some(
+    (row, index) => next.unions[index]?.id !== row.id,
+  );
+  if (reorderUnions)
+    await client.query(
+      "UPDATE family_unions SET ordinal=-ordinal WHERE archive_id=$1",
+      [archiveId],
+    );
+  for (const [index, row] of next.unions.entries()) {
+    const old = oldUnions.get(row.id);
+    if (
+      !old ||
+      old.participant_a !== row.participantA ||
+      old.participant_b !== row.participantB ||
+      !isDeepStrictEqual(old.data, JSON.parse(row.data)) ||
+      reorderUnions ||
+      Number(old.ordinal) !== index + 1
+    )
+      await client.query(
+        `INSERT INTO family_unions(archive_id,id,ordinal,participant_a,participant_b,data)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb)
+         ON CONFLICT (archive_id,id) DO UPDATE SET ordinal=EXCLUDED.ordinal,
+         participant_a=EXCLUDED.participant_a,participant_b=EXCLUDED.participant_b,data=EXCLUDED.data`,
+        [
+          archiveId,
+          row.id,
+          index + 1,
+          row.participantA,
+          row.participantB,
+          row.data,
+        ],
+      );
   }
   // Preserve existing marriage order when adding another spouse. Parent and
   // extra-link order follows the requested graph. Only changed rows are touched;

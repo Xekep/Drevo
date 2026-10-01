@@ -184,6 +184,7 @@ export function gedcomHttp(
                 spouses: person.spouses.filter((id) => visible!.has(id)),
               })),
               links: family.links?.filter((link) => visible!.has(link.from) && visible!.has(link.to)),
+              unions: family.unions?.filter((union) => union.participants.every((id) => visible!.has(id))),
               photos: family.photos?.filter((photo) =>
                 photo.tags.some((tag) => visible!.has(tag.personId)) ||
                 family.people.some((person) => visible!.has(person.id) && person.photo === photo.url),
@@ -445,6 +446,10 @@ export function gedcomHttp(
               links: [
                 ...(current.family.links || []),
                 ...(stage.family.links || []),
+              ],
+              unions: [
+                ...(current.family.unions || []),
+                ...(stage.family.unions || []),
               ],
               photos: [
                 ...(current.family.photos || []),

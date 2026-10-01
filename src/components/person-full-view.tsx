@@ -66,6 +66,7 @@ export function PersonFullView({
           spouses: p.spouses.filter((id) => ids.has(id)),
         })),
       links: family.links?.filter((l) => ids.has(l.from) && ids.has(l.to)),
+      unions: family.unions?.filter((union) => union.participants.every((id) => ids.has(id))),
     };
   }, [family, active.id]);
   const photos = readPhotos
@@ -133,6 +134,7 @@ export function PersonFullView({
                 canLoadDocuments={user?.approved === true}
                 people={family.people}
                 links={family.links}
+                unions={family.unions}
                 onSelect={selectActive}
                 onCompare={() => {
                   onClose(activeId);

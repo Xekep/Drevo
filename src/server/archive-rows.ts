@@ -16,9 +16,11 @@ export type TagRow = {
   personId: string;
   data: string;
 };
+export type UnionRow = { id: string; participantA: string; participantB: string; data: string };
 
 export type ArchiveRows = {
   people: JsonRow[];
+  unions: UnionRow[];
   relations: RelationRow[];
   photos: JsonRow[];
   tags: TagRow[];
@@ -33,6 +35,12 @@ export function archiveRows(family: Family): ArchiveRows {
       parents: undefined,
       spouses: undefined,
     }),
+  }));
+  const unions = (family.unions || []).map((union) => ({
+    id: union.id,
+    participantA: union.participants[0],
+    participantB: union.participants[1],
+    data: JSON.stringify(union),
   }));
   const relations: RelationRow[] = [];
   const spouses = new Set<string>();
@@ -89,5 +97,5 @@ export function archiveRows(family: Family): ArchiveRows {
         data: JSON.stringify(tag),
       });
   }
-  return { people, relations, photos, tags };
+  return { people, unions, relations, photos, tags };
 }

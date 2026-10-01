@@ -237,6 +237,7 @@ export function PersonInspector({
         canLoadDocuments={user?.approved === true}
         people={family.people}
         links={family.links}
+        unions={family.unions}
         onSelect={onSelect}
         onCompare={onCompare}
         suggestions={

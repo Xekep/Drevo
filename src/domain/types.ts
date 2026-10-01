@@ -87,8 +87,31 @@ export type Family = {
   description: string;
   demo: boolean;
   people: Person[];
+  /** Documented unions; legacy spouse links remain independent when their history is unknown. */
+  unions?: FamilyUnion[];
   links?: FamilyLink[];
   photos?: ArchivePhoto[];
+};
+export type UnionMilestone = {
+  /** Calendar date, which may be only a year or a year and month. */
+  date?: string;
+  /** Original approximate/qualified wording, retained without inventing a precise date. */
+  dateText?: string;
+  place?: string;
+  sources?: Source[];
+};
+export type FamilyUnion = {
+  id: string;
+  createdBy?: string;
+  participants: [string, string];
+  type: "marriage" | "civil_union" | "partnership";
+  formation?: UnionMilestone;
+  ending?: UnionMilestone;
+  divorce?: UnionMilestone;
+  /** Explicit evidence that the union was ongoing at the recorded time. */
+  ongoing?: UnionMilestone;
+  note?: string;
+  sources?: Source[];
 };
 export type PhotoTag = {
   id: string;

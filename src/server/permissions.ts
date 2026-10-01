@@ -42,6 +42,7 @@ export function authorizeArchive(
   owners(next.people, current.people);
   owners(next.photos || [], current.photos || []);
   owners(next.links || [], current.links || []);
+  owners(next.unions || [], current.unions || []);
   if (admin) return next;
   if (isScopedUser(user)) {
     const visible = visiblePersonIds(current, user);
@@ -51,6 +52,7 @@ export function authorizeArchive(
     const oldLinks = new Map(
       (current.links || []).map((link) => [link.id, link]),
     );
+    const oldUnions = new Map((current.unions || []).map((union) => [union.id, union]));
     const oldPhotos = new Map(
       (current.photos || []).map((photo) => [photo.id, photo]),
     );
@@ -73,6 +75,11 @@ export function authorizeArchive(
         const old = oldLinks.get(link.id);
         if (!old || !isDeepStrictEqual(old, link)) deny();
       }
+    for (const union of next.unions || [])
+      if (!union.participants.every(allowed)) {
+        const old = oldUnions.get(union.id);
+        if (!old || !isDeepStrictEqual(old, union)) deny();
+      }
     for (const photo of next.photos || []) {
       const old = oldPhotos.get(photo.id);
       if (
@@ -87,12 +94,14 @@ export function authorizeArchive(
       people: undefined,
       photos: undefined,
       links: undefined,
+      unions: undefined,
     },
     nextMeta = {
       ...next,
       people: undefined,
       photos: undefined,
       links: undefined,
+      unions: undefined,
     };
   if (!isDeepStrictEqual(currentMeta, nextMeta)) deny();
   const people = new Map(next.people.map((p) => [p.id, p]));
@@ -127,6 +136,15 @@ export function authorizeArchive(
           !people.get(l.to) ||
           !own(people.get(l.to)!))
       )
+        deny();
+  }
+  const oldUnions = new Map((current.unions || []).map((union) => [union.id, union])),
+    newUnions = new Map((next.unions || []).map((union) => [union.id, union]));
+  for (const id of new Set([...oldUnions.keys(), ...newUnions.keys()])) {
+    const a = oldUnions.get(id), b = newUnions.get(id);
+    if (isDeepStrictEqual(a, b)) continue;
+    for (const union of [a, b])
+      if (union && (!own(union) || union.participants.some((personId) => !own(people.get(personId)!))))
         deny();
   }
   const photos = new Map((next.photos || []).map((p) => [p.id, p]));

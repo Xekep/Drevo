@@ -85,6 +85,9 @@ export function offlineFamily(
     links: (family.links || [])
       .filter((link) => ids.has(link.from) && ids.has(link.to))
       .map(withoutCreator),
+    unions: (family.unions || [])
+      .filter((union) => union.participants.every((id) => ids.has(id)))
+      .map(withoutCreator),
   };
 }
 

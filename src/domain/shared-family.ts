@@ -65,5 +65,16 @@ export function sharedFamily(
     links: (family.links || [])
       .filter((l) => ids.has(l.from) && ids.has(l.to))
       .map(({ id, from, to, type, note }) => ({ id, from, to, type, note })),
+    unions: (family.unions || [])
+      .filter((union) => union.participants.every((id) => ids.has(id)))
+      .map((union) => ({
+        ...union,
+        createdBy: undefined,
+        sources: union.sources?.map(publicSource),
+        formation: union.formation && { ...union.formation, sources: union.formation.sources?.map(publicSource) },
+        ending: union.ending && { ...union.ending, sources: union.ending.sources?.map(publicSource) },
+        divorce: union.divorce && { ...union.divorce, sources: union.divorce.sources?.map(publicSource) },
+        ongoing: union.ongoing && { ...union.ongoing, sources: union.ongoing.sources?.map(publicSource) },
+      })),
   };
 }

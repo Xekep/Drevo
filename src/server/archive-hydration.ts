@@ -2,6 +2,7 @@ import type {
   ArchivePhoto,
   Family,
   FamilyLink,
+  FamilyUnion,
   Person,
   PhotoTag,
 } from "../domain/index.ts";
@@ -47,6 +48,7 @@ export function hydrateArchive(
   relationRows: StoredRelation[],
   photoRows: Array<Record<string, unknown>>,
   tagRows: StoredTag[],
+  unionRows: Array<Record<string, unknown>> = [],
 ): { family: Family; revision: number } {
   const people = personRows.map((row) => ({
     ...jsonValue<Person>(row.data),
@@ -69,6 +71,7 @@ export function hydrateArchive(
       description: String(meta.description),
       demo: Boolean(meta.demo),
       people,
+      ...(unionRows.length ? { unions: unionRows.map((row) => jsonValue<FamilyUnion>(row.data)) } : {}),
       links,
       photos,
     },

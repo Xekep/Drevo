@@ -50,6 +50,7 @@ export async function writeArchiveRevisionForParity(
   // new order. This preserves ordering without transient UNIQUE collisions.
   await client.query("DELETE FROM photo_tags WHERE archive_id=$1", [archiveId]);
   await client.query("DELETE FROM relations WHERE archive_id=$1", [archiveId]);
+  await client.query("DELETE FROM family_unions WHERE archive_id=$1", [archiveId]);
   await upsertJsonRows(client, "people", archiveId, rows.people);
   await upsertJsonRows(client, "photos", archiveId, rows.photos);
 
@@ -60,6 +61,12 @@ export async function writeArchiveRevisionForParity(
       [archiveId, row.id, index + 1, row.source, row.target, row.type, row.note, row.twinKind, row.createdBy],
     );
   }
+  for (const [index, row] of rows.unions.entries())
+    await client.query(
+      `INSERT INTO family_unions(archive_id,id,ordinal,participant_a,participant_b,data)
+       VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
+      [archiveId, row.id, index + 1, row.participantA, row.participantB, row.data],
+    );
   for (const [index, row] of rows.tags.entries()) {
     await client.query(
       `INSERT INTO photo_tags(archive_id,id,ordinal,photo_id,person_id,data)
