@@ -82,34 +82,65 @@ export default function PublicPeople() {
         ? `/api/discovery/people?q=${encodeURIComponent(initialQuery)}`
         : "";
     if (!url) return;
-    const controller = new AbortController();
-    archiveFetch(url, { cache: "no-store", signal: controller.signal })
-      .then((response) =>
-        response.status === 501 && url.startsWith("/api/discovery/people?")
-          ? archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"), { cache: "no-store", signal: controller.signal })
-          : response,
-      )
-      .then(async (response) => {
-        const data = await response.json();
-        if (response.status === 401) setNeedsLogin(true);
-        if (!response.ok) throw new Error(data.error || "Поиск недоступен");
-        if (personId) {
-          setDetail(data.person || null);
-          setLinkedCards(data.linkedCards || []);
-          setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
-        }
-        else {
-          setResults(data.results || []);
-          setNextCursor(data.nextCursor || null);
-        }
-      })
-      .catch((reason) => {
-        if (!controller.signal.aborted) setError(reason.message || "Поиск недоступен");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setBusy(false);
-      });
-    return () => controller.abort();
+    let controller: AbortController | null = null;
+    let request = 0;
+    function load() {
+      controller?.abort();
+      controller = new AbortController();
+      const currentController = controller;
+      const currentRequest = ++request;
+      setError("");
+      setNeedsLogin(false);
+      setBusy(true);
+      if (personId) {
+        setDetail(null);
+        setLinkedCards([]);
+        setLinkedCardsTruncated(false);
+      }
+      archiveFetch(url, { cache: "no-store", signal: currentController.signal })
+        .then((response) =>
+          response.status === 501 && url.startsWith("/api/discovery/people?")
+            ? archiveFetch(url.replace("/api/discovery/people?", "/api/published-people/search?"), { cache: "no-store", signal: currentController.signal })
+            : response,
+        )
+        .then(async (response) => {
+          const data = await response.json();
+          if (currentController.signal.aborted || currentRequest !== request) return;
+          if (response.status === 401) setNeedsLogin(true);
+          if (!response.ok) throw new Error(data.error || "Поиск недоступен");
+          if (personId) {
+            setDetail(data.person || null);
+            setLinkedCards(data.linkedCards || []);
+            setLinkedCardsTruncated(Boolean(data.linkedCardsTruncated));
+          }
+          else {
+            setResults(data.results || []);
+            setNextCursor(data.nextCursor || null);
+          }
+        })
+        .catch((reason) => {
+          if (!currentController.signal.aborted && currentRequest === request)
+            setError(reason.message || "Поиск недоступен");
+        })
+        .finally(() => {
+          if (!currentController.signal.aborted && currentRequest === request) setBusy(false);
+        });
+    }
+    const recheck = () => {
+      if (personId && document.visibilityState === "visible" &&
+        discoveryLocation().personId === personId && discoveryLocation().archiveId === archiveId) load();
+    };
+    load();
+    if (personId) {
+      window.addEventListener("focus", recheck);
+      document.addEventListener("visibilitychange", recheck);
+    }
+    return () => {
+      request += 1;
+      controller?.abort();
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
   }, []);
   function search(event: FormEvent) {
     event.preventDefault();
