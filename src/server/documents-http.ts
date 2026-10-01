@@ -198,15 +198,19 @@ export function documentsHttp({
     const user = await auth.currentUser(req);
     const scope = accessScope(user);
     const scoped = isScopedUser(user);
-    const people = !scope || (!scoped && !includePeople)
+    const snapshot = scope && (scoped || includePeople)
+      ? await archive.read()
+      : null;
+    const people = !snapshot
       ? []
       : scoped
-        ? projectFamilyForUser((await archive.read()).family, user).people
-        : (await archive.read()).family.people;
+        ? projectFamilyForUser(snapshot.family, user).people
+        : snapshot.family.people;
     return {
       userId: user?.id,
       scope,
       scoped,
+      revision: snapshot?.revision,
       people,
       ids: people.map((person) => person.id),
     };
@@ -290,6 +294,23 @@ export function documentsHttp({
         row.person_id,
       ]);
     return result;
+  };
+  const canDeliverFile = async (
+    req: IncomingMessage,
+    access: Awaited<ReturnType<typeof visible>>,
+    row: Row,
+  ) => {
+    if (!(await accessStillCurrent(req, access))) return false;
+    if (!access.scoped) return true;
+    // The graph and document associations can change separately while a file
+    // or rendered TIFF page is being prepared. Check both before responding.
+    if ((await archive.meta()).revision !== access.revision) return false;
+    const current = (await db.prepare(
+      "SELECT * FROM documents WHERE id=?",
+      "SELECT * FROM documents WHERE id=?",
+    ).get(row.id)) as Row | undefined;
+    return !!current && current.file_name === row.file_name &&
+      canSee(access, current, (await associations([row.id])).get(row.id) || []);
   };
 
   return async (
@@ -909,7 +930,7 @@ export function documentsHttp({
         const info = await stat(path);
         if (!info.isFile())
           return json(res, 404, { error: "Файл документа не найден" });
-        if (!(await accessStillCurrent(req, access)))
+        if (!(await canDeliverFile(req, access, row)))
           return json(res, 404, { error: "Документ не найден" });
         const readerView = url.searchParams.get("reader");
         if (readerView) {
@@ -919,7 +940,7 @@ export function documentsHttp({
             });
           if (readerView === "pages") {
             const pages = await tiffDocumentPages(path);
-            if (!(await accessStillCurrent(req, access)))
+            if (!(await canDeliverFile(req, access, row)))
               return json(res, 404, { error: "Документ не найден" });
             res.setHeader("Cache-Control", "private, no-store");
             return json(res, 200, { pages });
@@ -937,7 +958,7 @@ export function documentsHttp({
           if (index >= count)
             return json(res, 400, { error: "Некорректная страница TIFF" });
           const bytes = await renderTiff(path, index);
-          if (!(await accessStillCurrent(req, access)))
+          if (!(await canDeliverFile(req, access, row)))
             return json(res, 404, { error: "Документ не найден" });
           res.writeHead(200, {
             "Content-Type": "image/webp",
