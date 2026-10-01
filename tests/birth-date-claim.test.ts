@@ -124,6 +124,11 @@ test("archive changes save the birth-date claim through HTTP and reject a stale 
     assert.equal(saved.status, 200);
     assert.equal((await app.archive.read()).family.people[0].birthDateClaim?.sources[0].catalogId,
       source.id);
+    const deleteLinked = await fetch(`${origin}/api/sources/${source.id}`, {
+      method: "DELETE", headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ version: 1 }),
+    });
+    assert.equal(deleteLinked.status, 409);
     const after = await app.archive.read();
     const changed = structuredClone(after.family);
     changed.people[0].birth = "1881";
