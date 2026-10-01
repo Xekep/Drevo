@@ -1101,7 +1101,7 @@ test("legacy UTF-16 decodes, version 7 rejects non-UTF8 and unsupported encoding
   );
 });
 
-test("visible GEDZIP includes documents cited by retained claims and unions only", async () => {
+test("visible GEDZIP restores documents cited by retained people, events, claims and unions only", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-visible-citations-"));
   const dbPath = join(dir, "archive.sqlite");
   const family = seed();
@@ -1118,6 +1118,12 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
   family.people[0].birthDateClaim = { value: "1880", sources: [source(documents[0][1], 2)] };
   family.people[0].birthPlace = "Town A";
   family.people[0].birthPlaceClaim = { value: "Town A", sources: [source(documents[0][1], 4)] };
+  family.people[0].sources = [source(documents[0][1], 9)];
+  family.people[0].events = [
+    { id: "birth-event", type: "other", gedcomTag: "BIRT", sources: [source(documents[0][1], 10)] },
+    { id: "residence-event", type: "residence", title: "Town A", sources: [source(documents[0][1], 11)] },
+    { id: "work-event", type: "work", title: "Farmer", sources: [source(documents[0][1], 12)] },
+  ];
   family.people[1].death = "1950";
   family.people[1].deathDateClaim = { value: "1950", sources: [source(documents[0][1], 5)] };
   family.people[1].deathPlace = "Town B";
@@ -1184,6 +1190,13 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
       withUnion.family.people.find((person) => person.name === "partner")?.deathPlaceClaim?.sources[0],
     ].map((citation) => [citation?.documentId, citation?.documentPage]),
     [[claimId, 4], [claimId, 5], [claimId, 6]]);
+    const parent = withUnion.family.people.find((person) => person.name === "parent")!;
+    assert.deepEqual([
+      parent.sources[0],
+      ...["birth-event", "residence-event", "work-event"].map((id) =>
+        parent.events?.find((event) => event.id === id)?.sources?.[0]),
+    ].map((citation) => [citation?.documentId, citation?.documentPage]),
+    [[claimId, 9], [claimId, 10], [claimId, 11], [claimId, 12]]);
     assert.deepEqual([
       withUnion.family.unions?.[0].sources?.[0],
       withUnion.family.unions?.[0].formation?.sources?.[0],
@@ -1200,8 +1213,22 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
       documents[1][1], "archive-local IDs are replaced on import");
     const plainText = exportGedcom(family, { version: "7.0",
       media: await exportMedia(archive.db, family) });
-    assert.equal(importGedcom(plainText, "retained-citations").citationMedia?.length, 11,
+    assert.equal(importGedcom(plainText, "retained-citations").citationMedia?.length, 15,
       "repeated GEDCOM parsing must not retain links to discarded citation objects");
+    const mismatched = plainText.replace(/^1 _DREVO (.+)$/m, (_line, json: string) => {
+      const extra = JSON.parse(json);
+      extra.sources[0].documentId = documents[2][1];
+      const work = extra.events.find((event: { id: string }) => event.id === "work-event");
+      work.sources[0].title = "Another record";
+      work.sources[0].documentId = documents[2][1];
+      return `1 _DREVO ${JSON.stringify(extra)}`;
+    });
+    const mismatch = importGedcom(mismatched, "mismatched-event");
+    assert.equal(mismatch.family.people[0].sources[0].documentId, undefined);
+    assert.equal(mismatch.family.people[0].events?.find((event) =>
+      event.id === "work-event")?.sources?.[0].documentId, undefined,
+    "neither a stale archive ID nor an unrelated GEDCOM citation can attach");
+    assert.ok(mismatch.warnings.some((warning) => warning.includes("не сопоставлена с цитатой")));
     assert.throws(() => exportGedcom(family, { version: "7.0", media: [] }),
       /Документ цитаты отсутствует/);
     assert.match(plainText, /\d SOUR @S\d+@\r\n\d PAGE p\. 1\r\n\d _DREVO_CLAIM BIRTH_DATE\r\n\d OBJE @M\d+@/);
@@ -1213,11 +1240,30 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
     assert.deepEqual(plain.files, []);
     assert.equal(plain.family.people.find((person) => person.name === "parent")
       ?.birthDateClaim?.sources[0].documentId, undefined);
+    assert.equal(plain.family.people.find((person) => person.name === "parent")
+      ?.sources[0].documentId, undefined);
+    assert.equal(plain.family.people.find((person) => person.name === "parent")
+      ?.events?.find((event) => event.id === "work-event")?.sources?.[0].documentId,
+    undefined);
     assert.equal(plain.family.unions?.[0].formation?.sources?.[0].documentId, undefined);
     assert.ok(plain.warnings.some((warning) => warning.includes("Вложение цитаты не загружено")));
+    const generalOnly = seed();
+    generalOnly.people[0].sources = [source(documents[0][1], 9)];
+    generalOnly.people[0].events = [{ id: "work-event", type: "work", title: "Farmer",
+      sources: [source(documents[0][1], 12)] }];
+    const generalText = exportGedcom(generalOnly, { version: "7.0",
+      media: await exportMedia(archive.db, generalOnly) });
+    const generalPath = join(dir, "general.ged");
+    const generalStage = join(dir, "general-stage");
+    await writeFile(generalPath, generalText);
+    await mkdir(generalStage);
+    const generalPlain = await prepareGenealogyImport(generalPath, generalStage, "general-only");
+    assert.equal(generalPlain.family.people[0].sources[0].documentId, undefined);
+    assert.equal(generalPlain.family.people[0].events?.[0].sources?.[0].documentId, undefined);
+    assert.ok(generalPlain.warnings.some((warning) => warning.includes("Вложение цитаты не загружено")));
     const brokenPath = join(dir, "broken.gdz");
     const brokenStage = join(dir, "broken-stage");
-    await zipFile(brokenPath, [["gedcom.ged", Buffer.from(plainText)]]);
+    await zipFile(brokenPath, [["gedcom.ged", Buffer.from(generalText)]]);
     await mkdir(brokenStage);
     await assert.rejects(prepareGenealogyImport(brokenPath, brokenStage, "broken"),
       /отсутствует вложение/);
@@ -1253,6 +1299,12 @@ test("visible GEDZIP includes documents cited by retained claims and unions only
       const importedId = imported.birthDateClaim?.sources[0].documentId;
       assert.ok(importedId && importedId !== documents[0][1]);
       assert.equal(imported.birthDateClaim?.sources[0].documentPage, 2);
+      assert.deepEqual([
+        imported.sources[0],
+        ...["birth-event", "residence-event", "work-event"].map((id) =>
+          imported.events?.find((event) => event.id === id)?.sources?.[0]),
+      ].map((citation) => [citation?.documentId, citation?.documentPage]),
+      [[importedId, 9], [importedId, 10], [importedId, 11], [importedId, 12]]);
       const row = await targetArchive.db.prepare("SELECT file_name FROM documents WHERE id=?")
         .get(importedId);
       assert.ok(row?.file_name);
@@ -1304,6 +1356,8 @@ test("standard GEDCOM 7 citation OBJE imports an image as a cited document", asy
       "0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @I1@ INDI",
       "1 NAME Anna /Sample/", "1 BIRT", "2 DATE 1 JAN 1900",
       "2 SOUR @S1@", "3 PAGE p. 2", "3 OBJE @M1@",
+      "1 RESI", "2 TYPE Town", "2 SOUR @S1@", "3 PAGE p. 3", "3 OBJE @M1@",
+      "1 SOUR @S1@", "2 PAGE p. 4", "2 OBJE @M1@",
       "1 OBJE @M1@",
       "0 @S1@ SOUR", "1 TITL Parish register",
       "0 @M1@ OBJE", "1 FILE media/scan.png", "2 FORM image/png",
@@ -1319,7 +1373,10 @@ test("standard GEDCOM 7 citation OBJE imports an image as a cited document", asy
     assert.equal(imported.family.photos?.length, 0);
     assert.equal(imported.family.people[0].sources[0].documentId,
       imported.files[0].documentId);
-    assert.equal(imported.family.people[0].sources[0].reference, "p. 2");
+    assert.equal(imported.family.people[0].sources[0].reference, "p. 4");
+    assert.equal(imported.family.people[0].sources[1].reference, "p. 2");
+    assert.equal(imported.family.people[0].events?.find((event) => event.gedcomTag === "RESI")
+      ?.sources?.[0].documentId, imported.files[0].documentId);
     assert.ok(imported.warnings.some((warning) => warning.includes("как фото и как документ")));
   } finally {
     await rm(dir, { recursive: true, force: true });

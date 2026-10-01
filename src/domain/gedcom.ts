@@ -258,6 +258,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_TWIN",
     "_DREVO_CLAIM",
     "_DREVO_UNION_STAGE",
+    "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
     "_MAIDEN",
     "_UID",
@@ -312,6 +313,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       .filter((text) => text && text !== exclude)
       .join("\n\n");
   const citationObjects: Array<{ source: Source; object: Node; page?: number }> = [];
+  const citationObjectBySource = new Map<Source, (typeof citationObjects)[number]>();
   const sources = (n: Node): Source[] =>
     children(n, "SOUR").map((s) => {
       const record = s.pointer ? records.get(s.value) : undefined,
@@ -388,7 +390,9 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const page = rawPage ? Number(rawPage) : undefined;
         if (page !== undefined && (!Number.isInteger(page) || page < 1 || page > 2000))
           throw new Error("Некорректная страница документа цитаты GEDCOM");
-        citationObjects.push({ source, object, page });
+        const pending = { source, object, page };
+        citationObjects.push(pending);
+        citationObjectBySource.set(source, pending);
       }
       return source;
     });
@@ -405,6 +409,17 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       else general.push(source);
     });
     return { date: dateClaimed, place: placeClaimed, general };
+  };
+  const restoreCitationMedia = (target: Source[] | undefined, parsed: Source[], context: string) => {
+    if (!target?.length) return;
+    for (let index = 0; index < target.length; index++) {
+      const candidate = parsed[index];
+      const pending = citationObjectBySource.get(candidate);
+      if (!pending) continue;
+      if (target[index].title === candidate.title && target[index].reference === candidate.reference)
+        pending.source = target[index];
+      else warnings.add(`Ссылка на документ ${context} не сопоставлена с цитатой; проверьте GEDCOM.`);
+    }
   };
   const claimConfidence = (node: Node | undefined, tag: string) => {
     const status = node ? value(node, tag) : "";
@@ -589,6 +604,28 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         ] as const)
           if (Object.hasOwn(extra, key))
             Object.assign(p, { [key]: extra[key] });
+        if (Object.hasOwn(extra, "sources"))
+          restoreCitationMedia(p.sources, sources(n), "человека");
+        if (Object.hasOwn(extra, "events")) {
+          const eventNodes = n.children.filter((node) =>
+            (Object.hasOwn(eventTags, node.tag) || ["BIRT", "DEAT"].includes(node.tag)) &&
+            value(node, "_DREVO_EVENT_ID"));
+          for (const item of p.events || []) {
+            const matched = eventNodes.filter((node) =>
+              value(node, "_DREVO_EVENT_ID") === item.id);
+            const uniqueTarget = p.events?.filter((event) => event.id === item.id).length === 1;
+            if (matched.length === 1 && uniqueTarget) {
+              const node = matched[0];
+              const general = children(node, "SOUR")
+                .filter((source) => !value(source, "_DREVO_CLAIM"));
+              restoreCitationMedia(item.sources,
+                sources({ ...node, children: general }), `события ${item.id}`);
+            } else if (item.sources?.length &&
+              (!uniqueTarget || matched.length > 1 || n.children.some((node) =>
+                children(node, "SOUR").some((source) => children(source, "OBJE").length))))
+              warnings.add(`Событие ${item.id} не сопоставлено однозначно; связь с документом не перенесена.`);
+          }
+        }
       } catch {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
       }
@@ -660,16 +697,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
   const unions: FamilyUnion[] = [];
   const families = roots.filter((n) => n.tag === "FAM");
   const restoreUnionCitationMedia = (target: Source[] | undefined, node: Node | undefined) => {
-    if (!target?.length || !node) return;
-    const parsed = sources(node);
-    for (let index = 0; index < target.length; index++) {
-      const candidate = parsed[index];
-      const pending = citationObjects.find((entry) => entry.source === candidate);
-      if (!pending) continue;
-      if (target[index].title === candidate.title && target[index].reference === candidate.reference)
-        pending.source = target[index];
-      else warnings.add("Ссылка на документ союза не сопоставлена с цитатой; проверьте GEDCOM.");
-    }
+    if (node) restoreCitationMedia(target, sources(node), "союза");
   };
   for (const f of families) {
     for (const n of f.children)
@@ -1158,15 +1186,14 @@ export function exportGedcom(
   const documentMedia = new Map(media.flatMap((item, index) =>
     item.document ? [[item.id, `@M${index + 1}@`] as const] : []));
   function citation(level: number, source: Source,
-    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE",
-    union = false) {
+    claim?: "BIRTH_DATE" | "DEATH_DATE" | "BIRTH_PLACE" | "DEATH_PLACE") {
     sourceRecords.push(source);
     emit(level, "SOUR", `@S${sourceRecords.length}@`, true);
     if (source.reference) emit(level + 1, "PAGE", source.reference);
     if (claim) emit(level + 1, "_DREVO_CLAIM", claim);
-    const object = (claim || union) && source.documentId
+    const object = source.documentId
       ? documentMedia.get(source.documentId) : undefined;
-    if (options.media && (claim || union) && source.documentId && !object)
+    if (options.media && source.documentId && !object)
       throw new Error("Документ цитаты отсутствует в экспортируемых медиа GEDCOM");
     if (object) {
       emit(level + 1, "OBJE", object, true);
@@ -1214,6 +1241,7 @@ export function exportGedcom(
       "_DREVO_CLAIM",
       "_DREVO_DOCUMENT_PAGE",
       "_DREVO_UNION_STAGE",
+      "_DREVO_EVENT_ID",
       "_TYPE",
       "_URL",
       "_PRIM",
@@ -1375,6 +1403,7 @@ export function exportGedcom(
       if (e.description) emit(2, "NOTE", e.description);
       for (const source of e.sources || []) citation(2, source);
       if (kind && !eventClaimsEmitted[kind]) emitEventClaims(kind);
+      emit(2, "_DREVO_EVENT_ID", e.id);
     }
     for (const g of groups.values()) {
       if (g.children.includes(p.id)) {
@@ -1471,7 +1500,7 @@ export function exportGedcom(
           if (date.phrase) emit(3, "PHRASE", date.phrase);
         }
         emitPlace(2, milestone.place);
-        for (const source of milestone.sources || []) citation(2, source, undefined, true);
+        for (const source of milestone.sources || []) citation(2, source);
       };
       if (g.union.type === "marriage")
         unionEvent("MARR", g.union.formation || {});
@@ -1481,7 +1510,7 @@ export function exportGedcom(
       if (g.union.ending) unionEvent("EVEN", g.union.ending, "ENDING");
       if (g.union.ongoing) unionEvent("EVEN", g.union.ongoing, "ONGOING");
       if (g.union.note) emit(1, "NOTE", g.union.note);
-      for (const source of g.union.sources || []) citation(1, source, undefined, true);
+      for (const source of g.union.sources || []) citation(1, source);
     } else if (!g.married) emit(1, "_DREVO_UNMARRIED", "Y");
     else emit(1, "_DREVO_SPOUSE", "Y");
     for (const id of g.children) emit(1, "CHIL", ids.get(id)!, true);
