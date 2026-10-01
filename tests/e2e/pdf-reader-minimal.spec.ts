@@ -3,16 +3,31 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import PDFDocument from "pdfkit";
 
-async function samplePdf() {
-  const pdf = new PDFDocument({ autoFirstPage: false });
+async function samplePdf(paddingBytes = 0, pageCount = 3, mixedSizes = false) {
+  const pdf = new PDFDocument({
+    autoFirstPage: false,
+    compress: !paddingBytes,
+  });
   const chunks: Buffer[] = [];
   pdf.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve, reject) => {
     pdf.on("end", () => resolve(Buffer.concat(chunks)));
     pdf.on("error", reject);
   });
-  for (let page = 1; page <= 3; page++) {
-    pdf.addPage();
+  if (paddingBytes) {
+    // An unused stream keeps the PDF valid while making full downloads expensive.
+    const padding = pdf.ref({});
+    padding.end(Buffer.alloc(paddingBytes, 32));
+  }
+  for (let page = 1; page <= pageCount; page++) {
+    pdf.addPage(
+      mixedSizes
+        ? {
+            size: page % 3 === 0 ? "A3" : "A4",
+            layout: page % 3 === 2 ? "landscape" : "portrait",
+          }
+        : undefined,
+    );
     pdf.text(`Archive page ${page}`);
     if (page === 2) pdf.outline.addItem("Вторая страница");
   }
@@ -142,6 +157,55 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   ).toHaveCount(1);
 });
 
+test("large PDFs open from byte ranges at the requested page with exact page sizes", async ({
+  page,
+}) => {
+  const data = await samplePdf(5 * 1024 * 1024, 12, true);
+  const upload = await page.request.post("/api/documents", {
+    headers: {
+      "Content-Type": "application/pdf",
+      "X-Document-Metadata": encodeURIComponent(
+        JSON.stringify({
+          title: `Partial PDF ${randomUUID()}`,
+          personIds: [],
+        }),
+      ),
+    },
+    data,
+  });
+  expect(upload.status()).toBe(201);
+  const { id } = await upload.json();
+  const chunks: number[] = [];
+  page.on("response", (response) => {
+    if (
+      response.url().includes(`/api/documents/${id}/file`) &&
+      response.status() === 206
+    )
+      chunks.push(Number(response.headers()["content-length"]));
+  });
+  await page.goto(`/documents/${id}/page/5`);
+  const reader = page.getByRole("dialog");
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  const image = book
+    .locator('.BRpage-visible[data-index="4"] img.BRpageimage')
+    .first();
+  await expect(image).toBeVisible();
+  await expect
+    .poll(() => image.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBeGreaterThan(0);
+  const size = await image.evaluate((image: HTMLImageElement) => ({
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  }));
+  expect(size.width / size.height).toBeCloseTo(841.89 / 595.28, 2);
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(chunks.reduce((sum, length) => sum + length, 0)).toBeLessThan(
+    data.length / 4,
+  );
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
+  await expect(reader).toHaveCount(0);
+});
+
 test("BookReader turns the cover and preloads the next spread", async ({
   page,
 }, info) => {
@@ -175,9 +239,9 @@ test("BookReader turns the cover and preloads the next spread", async ({
   expect(labelBounds.width).toBeLessThan(100);
   expect(labelBounds.height).toBeLessThan(40);
   expect(
-    await book.locator(".br-mode-2up__root").evaluate((root) =>
-      root.scrollWidth - root.clientWidth,
-    ),
+    await book
+      .locator(".br-mode-2up__root")
+      .evaluate((root) => root.scrollWidth - root.clientWidth),
   ).toBeLessThanOrEqual(1);
   await book.locator(".BRicon.book_left:visible").first().click();
   await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();

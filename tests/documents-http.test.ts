@@ -248,7 +248,35 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const file = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`));
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
+    assert.equal(file.headers.get("accept-ranges"), "bytes");
     assert.deepEqual(Buffer.from(await file.arrayBuffer()), pdf);
+
+    for (const [range, start, end] of [
+      ["bytes=0-63", 0, 63],
+      ["bytes=-64", pdf.length - 64, pdf.length - 1],
+      [`bytes=${pdf.length - 64}-`, pdf.length - 64, pdf.length - 1],
+      [`bytes=${pdf.length - 64}-${pdf.length + 100}`, pdf.length - 64, pdf.length - 1],
+    ] as const) {
+      const part = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`, {
+        headers: { Range: range },
+      }));
+      assert.equal(part.status, 206);
+      assert.equal(part.headers.get("content-range"), `bytes ${start}-${end}/${pdf.length}`);
+      assert.equal(part.headers.get("content-length"), String(end - start + 1));
+      assert.equal(part.headers.get("cache-control"), "private, no-store");
+      assert.deepEqual(Buffer.from(await part.arrayBuffer()), pdf.subarray(start, end + 1));
+    }
+    const outside = await fetch(`${base}/api/documents/${id}/file`, {
+      headers: { Range: `bytes=${pdf.length}-` },
+    });
+    assert.equal(outside.status, 416);
+    assert.equal(outside.headers.get("content-range"), `bytes */${pdf.length}`);
+    assert.equal((await outside.arrayBuffer()).byteLength, 0);
+    const conditional = await fetch(`${base}/api/documents/${id}/file`, {
+      headers: { Range: "bytes=0-63", "If-Range": '"old-version"' },
+    });
+    assert.equal(conditional.status, 200);
+    assert.deepEqual(Buffer.from(await conditional.arrayBuffer()), pdf);
 
     const annotationUrl = `${base}/api/documents/${id}/annotations`;
     const selection = {
