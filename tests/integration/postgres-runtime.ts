@@ -35,6 +35,7 @@ import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
+import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
@@ -1986,6 +1987,45 @@ try {
   await client.query(
     "UPDATE archive_memberships SET tree_access='common_ancestors',person_id='person-a' WHERE user_id='reader'",
   );
+  // A parent edge exposes the reader's old comment through common ancestors.
+  // Removing that edge while export.read() is preparing the response must
+  // invalidate the snapshot even though the membership itself has not changed.
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('account-export-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const graphSnapshot = await accountDataExport(app.archive.db).read("reader");
+  assert.ok(graphSnapshot);
+  assert.ok(graphSnapshot.download.archives[0].ownComments?.some(
+    (comment) => comment.text === "account-export-probe:hidden",
+  ), "a recorded parent relation exposes the comment before the graph change");
+  const graphAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  let graphChanged = false;
+  const graphExportEndpoint = accountDataExportHttp(app.archive.db, graphAuth, async () => {
+    await client.query("DELETE FROM relations WHERE id='account-export-parent'");
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+    graphChanged = true;
+  });
+  const graphExportServer = createServer((req, res) => {
+    void graphExportEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => graphExportServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const graphPort = (graphExportServer.address() as { port: number }).port;
+    const changedGraphResponse = await fetch(
+      `http://127.0.0.1:${graphPort}/api/account/export`, { headers },
+    );
+    assert.equal(graphChanged, true);
+    assert.equal(changedGraphResponse.status, 409,
+      "a graph edit after the snapshot blocks delivery of formerly visible comments");
+    assert.doesNotMatch(await changedGraphResponse.text(), /account-export-probe:hidden/);
+  } finally {
+    await new Promise<void>((resolve) => graphExportServer.close(() => resolve()));
+  }
   const scopedExport = await fetch(accountExportUrl, { headers }).then((response) => response.json());
   assert.deepEqual(scopedExport.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
   assert.deepEqual(scopedExport.archives[0].ownComments

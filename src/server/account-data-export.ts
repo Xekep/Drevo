@@ -8,6 +8,7 @@ type CommentScope = {
   role: string;
   treeAccess: string;
   personId: string | null;
+  revision: number;
 };
 
 /** A consistent snapshot of the account's own profile and archive access. */
@@ -78,6 +79,9 @@ export function accountDataExport(db: StoreDatabase) {
             editedAt: string | null;
           }> | null = null;
           if (membership.approved === true) {
+            const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
+              .get(String(membership.archive_id));
+            if (!archive) return null;
             commentScopes.push({
               archiveId: String(membership.archive_id),
               role: String(membership.role),
@@ -85,6 +89,7 @@ export function accountDataExport(db: StoreDatabase) {
               personId: membership.person_id == null
                 ? null
                 : String(membership.person_id),
+              revision: Number(archive.revision),
             });
             const user: ArchiveUser = {
               id: accountId,
@@ -163,8 +168,8 @@ export function accountDataExport(db: StoreDatabase) {
         } };
       }, true);
     },
-    /** A fresh authorization read catches a revoked or narrowed membership
-     * after a large snapshot was assembled, before HTTP response headers. */
+    /** Recheck membership and graph revision before sending the snapshot.
+     * A graph edit can narrow scoped visibility without changing membership. */
     async canDeliver(accountId: string, scopes: CommentScope[]) {
       if (db.kind !== "postgres") return false;
       return await db.transaction(async () => {
@@ -172,14 +177,16 @@ export function accountDataExport(db: StoreDatabase) {
           .get(accountId);
         if (!(await db.prepare("", "SELECT 1 FROM accounts WHERE id=?")
           .get(accountId))) return false;
-        const rows = await db.prepare("", `SELECT archive_id,role,tree_access,person_id,approved
-          FROM archive_memberships WHERE user_id=?`).all(accountId);
+        const rows = await db.prepare("", `SELECT m.archive_id,m.role,m.tree_access,
+          m.person_id,m.approved,a.revision FROM archive_memberships m
+          JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`).all(accountId);
         const current = new Map(rows.map((row) => [String(row.archive_id), row]));
         return scopes.every((scope) => {
           const row = current.get(scope.archiveId);
           return row?.approved === true && row.role === scope.role &&
             row.tree_access === scope.treeAccess &&
-            (row.person_id == null ? null : String(row.person_id)) === scope.personId;
+            (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
+            Number(row.revision) === scope.revision;
         });
       }, true);
     },
