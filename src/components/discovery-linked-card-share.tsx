@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 
 const labels = {
@@ -26,29 +26,51 @@ function Fields({ values }: { values: SharedFields }) {
 }
 
 export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
+  const panel = useRef<HTMLDetailsElement>(null);
+  const request = useRef<AbortController | null>(null);
+  const requestVersion = useRef(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [selected, setSelected] = useState<Field[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const endpoint = `/api/discovery/matches/${matchId}/card-share`;
-  async function load(preserveError = false) {
+  const cancelRead = useCallback(() => {
+    requestVersion.current++;
+    request.current?.abort();
+    request.current = null;
+  }, []);
+  const load = useCallback(async (preserveError = false) => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const version = ++requestVersion.current;
+    setDetail(null); setSelected([]);
     setBusy(true); if (!preserveError) setError("");
     try {
-      const response = await archiveFetch(endpoint, { cache: "no-store" });
+      const response = await archiveFetch(endpoint, { cache: "no-store", signal: controller.signal });
       const body = await response.json();
+      if (controller.signal.aborted || version !== requestVersion.current) return;
       if (!response.ok) throw new Error(body.error || "Не удалось открыть разрешённые сведения");
       setDetail(body);
       setSelected(Object.keys(body.outgoing?.fields || {}) as Field[]);
     } catch (reason) {
+      if (controller.signal.aborted || version !== requestVersion.current) return;
       setDetail(null);
       setSelected([]);
       setError((reason as Error).message);
     }
-    finally { setBusy(false); }
-  }
+    finally {
+      if (version === requestVersion.current) { request.current = null; setBusy(false); }
+    }
+  }, [endpoint]);
+  useEffect(() => {
+    if (panel.current?.open) void load();
+    return cancelRead;
+  }, [load, cancelRead]);
   async function save(method: "PUT" | "DELETE") {
     if (!detail) return;
+    const version = requestVersion.current;
     setBusy(true); setError(""); setNotice("");
     try {
       const response = await archiveFetch(endpoint, {
@@ -59,16 +81,22 @@ export function DiscoveryLinkedCardShare({ matchId }: { matchId: string }) {
         } : {}),
       });
       const body = await response.json();
+      if (version !== requestVersion.current || !panel.current?.open) return;
       if (!response.ok) throw new Error(body.error || "Не удалось изменить разрешение");
       setNotice(method === "PUT" ? "Выбранные сведения открыты другой стороне." : "Доступ к дополнительным сведениям отозван.");
       await load();
     } catch (reason) {
+      if (version !== requestVersion.current || !panel.current?.open) return;
       setError((reason as Error).message);
-      if (method === "PUT") await load(true);
-    } finally { setBusy(false); }
+      await load(true);
+    } finally { if (version === requestVersion.current) setBusy(false); }
   }
-  return <details className="match-card-share" onToggle={(event) => {
-    if (event.currentTarget.open && !detail && !busy) void load();
+  return <details ref={panel} className="match-card-share" onToggle={(event) => {
+    if (event.currentTarget.open) { setNotice(""); void load(); }
+    else {
+      cancelRead();
+      setDetail(null); setSelected([]); setBusy(false);
+    }
   }}>
     <summary>Дополнительные сведения связанной карточки</summary>
     <p>Только администратор другого дерева увидит выбранный снимок вашей карточки. Фото, документы, источники и родственники не передаются. Изменения карточки после отправки не обновляют снимок автоматически.</p>

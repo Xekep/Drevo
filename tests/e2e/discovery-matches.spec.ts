@@ -315,6 +315,47 @@ test("an admin reviews and revokes an explicit linked-card snapshot", async ({ p
   await expect(page.getByRole("alert")).toContainText("Связь не найдена");
 });
 
+test("reopening a linked-card panel discards revoked and in-flight snapshots", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let reads = 0;
+  let releaseSecond!: () => void;
+  const secondRead = new Promise<void>((resolve) => { releaseSecond = resolve; });
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => route.fulfill({ json: {
+    archiveId: "tree-a", nextCursor: null, matches: [{ id, left, right,
+      initiatedByArchiveId: "tree-a", status: "linked", requestedAt: "2026-09-30T00:00:00Z" }],
+  } }));
+  await page.route(`**/api/discovery/matches/${id}/card-share`, async (route) => {
+    const read = ++reads;
+    if (read === 2) await secondRead;
+    await route.fulfill({ json: { available: {}, previewToken: "a".repeat(64), outgoing: null,
+      incoming: read < 3 ? { fields: { occupation: "Уже отозванные сведения" },
+        grantedAt: "2026-10-01T00:00:00Z" } : null } }).catch(() => {});
+  });
+  try {
+    await page.goto("/admin");
+    await openAdminSection(page, "matches", "Связи деревьев");
+    const panel = page.locator(".match-card-share").filter({ hasText: "Дополнительные сведения связанной карточки" });
+    await panel.locator("summary").click();
+    await expect(panel).toContainText("Уже отозванные сведения");
+    await panel.locator("summary").click();
+    await panel.locator("summary").click();
+    await expect.poll(() => reads).toBe(2);
+    await expect(panel).not.toContainText("Уже отозванные сведения");
+    await panel.locator("summary").click();
+    releaseSecond();
+    await panel.locator("summary").click();
+    await expect.poll(() => reads).toBe(3);
+    await expect(panel).toContainText("Дополнительные сведения пока не открыты.");
+    await expect(panel).not.toContainText("Уже отозванные сведения");
+  } finally { releaseSecond(); }
+});
+
 test("a linked branch needs both grants and clears a revoked projection", async ({ page }) => {
   const id = "11111111-1111-4111-8111-111111111111";
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };

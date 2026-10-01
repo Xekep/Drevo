@@ -3075,9 +3075,20 @@ try {
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "DELETE", headers: ownerHeaders,
   })).status, 200, "repeated grant revocation is idempotent");
-  assert.equal((await fetch(otherBase + cardSharePath, { headers: ownerHeaders })
-    .then((response) => response.json())).incoming, null,
-  "revocation hides the snapshot from the other side immediately");
+  const freshAfterGrantRevoke = await fetch(otherBase + cardSharePath, { headers: ownerHeaders });
+  assert.equal(freshAfterGrantRevoke.status, 200);
+  assert.equal(freshAfterGrantRevoke.headers.get("cache-control"), "private, no-store",
+    "a re-opened panel must revalidate against an uncached grant response");
+  assert.equal((await freshAfterGrantRevoke.json()).incoming, null,
+    "revocation hides the snapshot from the other side immediately");
+  await matchDb.transaction(async () => {
+    await matchDb.prepare("", "SELECT set_config('drevo.archive_id',?,true)")
+      .get("other-archive");
+    assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+      FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'
+        AND left_person_id='person-a'`).get())?.count, 0,
+    "the recipient cannot read a formerly granted snapshot after revocation");
+  }, true);
   assert.equal((await fetch(securedBase + cardSharePath, {
     method: "PUT", headers: { ...ownerHeaders, "Content-Type": "application/json" },
     body: JSON.stringify({ fields: ["occupation"], previewToken: sharePreview.previewToken }),
