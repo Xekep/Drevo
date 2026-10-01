@@ -1558,6 +1558,76 @@ try {
     await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)")
       .run(sessionTokenHash(proposalToken), proposalMember, Date.now() + 60000);
     const proposalHeaders = { ...ownerHeaders, Cookie: `drevo_session=${proposalToken}` };
+    const runDeferredAnswer = async (
+      label: string,
+      changeAccess: () => Promise<void>,
+      restoreAccess: () => Promise<void>,
+      allowed: boolean,
+      revokeAfterWrite = false,
+    ) => {
+      let notify!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => { notify = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const answer = `Deferred AI answer ${label}`;
+      const fake = adaptLegacyAiFake(async (url) => {
+        if (String(url).endsWith("/models"))
+          return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
+        notify();
+        await gate;
+        return new Response(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: answer } }] })}\n\ndata: [DONE]\n\n`,
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      });
+      const handler = aiResearchHttp({
+        archive: app!.archive,
+        auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+          process.env.PUBLIC_ORIGIN),
+        suggestions: researchSuggestionStore(app!.archive.db),
+        aiSettings: await aiSettingsStore(app!.archive.db),
+        usage: aiUsageStore(app!.archive.db),
+        media: mediaStore(join(dirname(source), "uploads")),
+        previewImage: imagePreviews(join(dirname(source), "previews")),
+        researchCatalog: researchCatalogStore(app!.archive.db),
+        publicOrigin: process.env.PUBLIC_ORIGIN,
+        fetcher: fake,
+        beforeAnswerDelivery: revokeAfterWrite ? changeAccess : undefined,
+      });
+      const server = createServer((req, res) => {
+        void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+        .rows.map((row) => row.id as string));
+      try {
+        const port = (server.address() as { port: number }).port;
+        const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+          method: "POST", headers: proposalHeaders,
+          body: JSON.stringify({ message: `Проверь отложенный ответ ${label}` }),
+        });
+        await Promise.race([entered,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI provider did not start")), 15000))]);
+        if (!revokeAfterWrite) await changeAccess();
+        release();
+        const response = await request;
+        const body = await response.text();
+        assert.equal(response.status, allowed ? 200 : 403, body);
+        assert.equal(body.includes(answer), allowed, "revoked access cannot receive the model answer");
+        assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chat_messages WHERE content=$1", [answer])).rows[0].n,
+          allowed || revokeAfterWrite ? 1 : 0,
+          "the durable answer follows the membership and tier lock order");
+      } finally {
+        release();
+        await restoreAccess();
+        const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+          .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
+        for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await handler.close();
+      }
+    };
     const proposalReason = (label: string) => `AI proposal guard ${label}`;
     const runProposal = async (
       actorHeaders: typeof ownerHeaders,
@@ -1633,6 +1703,26 @@ try {
       }
     };
     try {
+      await runDeferredAnswer("allowed", async () => {}, async () => {}, true);
+      await runDeferredAnswer("membership-revoked", async () => {
+        await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+      }, async () => {
+        await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+      }, false);
+      await runDeferredAnswer("tier-downgraded", async () => {
+        await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+      }, async () => {
+        await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+      }, false);
+      await runDeferredAnswer("delivery-revoked", async () => {
+        await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+      }, async () => {
+        await client.query("UPDATE archive_memberships SET approved=true WHERE archive_id='runtime-test' AND user_id=$1",
+          [proposalMember]);
+      }, false, true);
       const rollbackReason = proposalReason("rollback");
       const rollbackActor = await (await userStore(app.archive.db)).get("owner");
       const rollbackFamily = await app.archive.read();
