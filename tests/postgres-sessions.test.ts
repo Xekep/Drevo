@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type pg from "pg";
 import {
+  issuePostgresEmailSessionInTransaction,
   issuePostgresSessionInTransaction,
   recordPostgresVisit,
   renewPostgresSession,
   revokePostgresSession,
 } from "../src/server/postgres-sessions.ts";
+import { InvalidEmailCredential } from "../src/server/email-credentials.ts";
 import {
   sessionTokenHash,
   validSessionToken,
@@ -57,4 +59,21 @@ test("invalid tokens never reach session renewal, visit or revocation SQL", asyn
   assert.equal(await recordPostgresVisit(client, "invalid", 1_000), false);
   assert.equal(await revokePostgresSession(client, "invalid"), false);
   assert.equal(queries, 0);
+});
+
+test("email session issuance rejects a stale password before inserting a session", async () => {
+  const calls: string[] = [];
+  const client = {
+    async query(sql: string) {
+      calls.push(sql);
+      return { rowCount: 0 };
+    },
+  } as unknown as pg.Client;
+  await assert.rejects(
+    issuePostgresEmailSessionInTransaction(client, "account-1", "old-hash"),
+    InvalidEmailCredential,
+  );
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /FOR UPDATE/);
+  assert.ok(!calls[0].includes("INSERT INTO account_sessions"));
 });

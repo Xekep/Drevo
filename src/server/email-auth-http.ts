@@ -46,10 +46,16 @@ export function emailAuthHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
   origin?: string,
-  sender: EmailSender | null = configuredSender(),
+  sender: EmailSender | null = process.env.EMAIL_AUTH_ENABLED === "1"
+    ? configuredSender()
+    : null,
 ) {
   const enabled =
-    db.kind === "postgres" && !!db.postgresTransaction && !!origin && !!sender;
+    process.env.EMAIL_AUTH_ENABLED === "1" &&
+    db.kind === "postgres" &&
+    !!db.postgresTransaction &&
+    !!origin &&
+    !!sender;
   const credentials = enabled ? emailCredentials(db, sender!, origin!) : null;
   const sharedLimit = enabled ? postgresEmailRateLimit(db) : null;
   const ipLimit = createRequestLimiter({ limit: 25, windowMs: 10 * 60_000 });
@@ -141,7 +147,12 @@ export function emailAuthHttp(
             email: body.email,
             password: body.password,
           });
-          await auth.issueAccountSession(req, res, account.accountId);
+          await auth.issueAccountSession(
+            req,
+            res,
+            account.accountId,
+            account.passwordHash,
+          );
           return json(res, 200, { archiveId: account.archiveId });
         }
         if (url.pathname === "/api/auth/email/reset/request") {

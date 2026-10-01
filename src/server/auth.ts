@@ -9,7 +9,10 @@ import {
   SESSION_MAX_AGE,
 } from "./session-token.ts";
 import { completePostgresOAuthLoginInTransaction } from "./postgres-yandex-login.ts";
-import { issuePostgresSessionInTransaction } from "./postgres-sessions.ts";
+import {
+  issuePostgresEmailSessionInTransaction,
+  issuePostgresSessionInTransaction,
+} from "./postgres-sessions.ts";
 export { SESSION_MAX_AGE } from "./session-token.ts";
 const RENEW_INTERVAL = 24 * 60 * 60 * 1000;
 const VISIT_INTERVAL = 60 * 1000;
@@ -192,12 +195,20 @@ export async function createAuth(
       req: IncomingMessage,
       res: ServerResponse,
       accountId: string,
+      expectedPasswordHash?: string,
     ) {
       if (db.kind !== "postgres" || !db.postgresTransaction)
         throw new Error("Для входа по почте требуется PostgreSQL");
-      const result = await db.postgresTransaction((client) =>
-        issuePostgresSessionInTransaction(client, accountId, cookie(req)),
-      );
+      const result = await db.postgresTransaction(async (client) => {
+        return expectedPasswordHash
+          ? issuePostgresEmailSessionInTransaction(
+              client,
+              accountId,
+              expectedPasswordHash,
+              cookie(req),
+            )
+          : issuePostgresSessionInTransaction(client, accountId, cookie(req));
+      });
       setCookie(res, result.token);
     },
     async issueOAuthSession(
