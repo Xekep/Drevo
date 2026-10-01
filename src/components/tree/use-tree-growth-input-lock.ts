@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useLayoutEffect, type RefObject } from "react";
 
 /** Keep camera gestures from remounting virtualized arrows during the intro. */
 export function useTreeGrowthInputLock(
@@ -6,7 +6,9 @@ export function useTreeGrowthInputLock(
   locked: boolean,
   allowPersonSelection = false,
 ) {
-  useEffect(() => {
+  // Sync interception before the browser can interact with newly enabled
+  // toolbar controls. A passive effect can leave the previous lock installed.
+  useLayoutEffect(() => {
     const element = container.current;
     if (!element || !locked) return;
     const stop = (event: Event) => {
