@@ -1,10 +1,45 @@
 -- Run with psql -qAt -X -v ON_ERROR_STOP=1 as a PostgreSQL administrator.
 -- JSONL manifest for media-filesystem-inventory.ts. No files are changed.
+-- Include live restore previews that still read from production uploads.
 BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL row_security = off;
 SET LOCAL statement_timeout = '60s';
 
-WITH refs AS (
+WITH live_restores AS (
+  SELECT archive_id, data, directory FROM workflow_stages
+  WHERE kind='restore'
+    AND expires_at > floor(extract(epoch FROM transaction_timestamp())*1000)::bigint
+),
+restore_images AS (
+  SELECT s.archive_id, s.data, p.value->>'photo' AS url
+  FROM live_restores s
+  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.data->'family'->'people','[]'::jsonb)) p(value)
+  UNION ALL
+  SELECT s.archive_id, s.data, p.value->>'url'
+  FROM live_restores s
+  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.data->'family'->'photos','[]'::jsonb)) p(value)
+),
+restore_current_images AS (
+  SELECT DISTINCT r.archive_id, r.url FROM restore_images r
+  WHERE r.url LIKE '/media/%'
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(COALESCE(r.data->'files','[]'::jsonb)) f(value)
+      WHERE f.value->>0=r.url
+    )
+),
+restore_current_documents AS (
+  SELECT DISTINCT s.archive_id, d.value->>'fileName' AS file_name,
+    (d.value->>'fileSize')::bigint AS file_size
+  FROM live_restores s
+  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.data->'documents','[]'::jsonb)) d(value)
+  JOIN LATERAL jsonb_array_elements(COALESCE(s.data->'documentFiles','[]'::jsonb)) f(value)
+    ON f.value->>0=d.value->>'id'
+  WHERE s.directory IS NULL OR NOT (
+    starts_with(f.value->>1,s.directory||'/')
+    OR starts_with(f.value->>1,s.directory||chr(92))
+  )
+),
+refs AS (
   SELECT archive_id, substring(data->>'photo' FROM '^/media/(.+)$') AS name,
     'person' AS source, NULL::bigint AS known_bytes
   FROM people WHERE data->>'photo' LIKE '/media/%'
@@ -31,6 +66,13 @@ WITH refs AS (
   UNION ALL
   SELECT archive_id, file_name, 'document', file_size
   FROM documents
+  UNION ALL
+  SELECT archive_id, substring(url FROM '^/media/(.+)$'),
+    'restore_stage_image', NULL::bigint
+  FROM restore_current_images
+  UNION ALL
+  SELECT archive_id, file_name, 'restore_stage_document', file_size
+  FROM restore_current_documents
 )
 SELECT json_build_object('kind', 'archive', 'archive_id', id)::text
 FROM archives
