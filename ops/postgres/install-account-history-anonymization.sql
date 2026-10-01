@@ -113,6 +113,9 @@ BEGIN
     RAISE EXCEPTION 'Account already removed' USING ERRCODE='42501';
   END IF;
   PERFORM public.runtime_anonymize_account_history_rows(account_id);
+  IF to_regprocedure('public.runtime_anonymize_deleted_account_unions(text)') IS NOT NULL THEN
+    PERFORM public.runtime_anonymize_deleted_account_unions(account_id);
+  END IF;
 END $$;
 
 -- Only the authenticated deletion transaction may erase its own comment text.

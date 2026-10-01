@@ -40,6 +40,7 @@ import { mediaStore } from "../../src/server/media.ts";
 import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
+import { accountSelfDeletion } from "../../src/server/account-self-deletion.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
@@ -223,6 +224,87 @@ try {
     assert.match(runtimeRole, /^[a-z_][a-z0-9_]*$/);
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
     await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO ${runtimeRole}`);
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('union-upgrade-gate','Upgrade gate',now())");
+    await assert.rejects(
+      accountSelfDeletion(live.db, true).remove("union-upgrade-gate",
+        { name: "Upgrade gate", leaveSharedArchives: true }),
+      /058/, "the old privileged function cannot delete an account with unredacted union authorship",
+    );
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM deleted_account_tombstones WHERE id='union-upgrade-gate'")).rows[0].n,
+      0, "the migration gate fails before creating a deletion tombstone");
+    await client.query("DELETE FROM accounts WHERE id='union-upgrade-gate'");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query(`INSERT INTO people(archive_id,id,ordinal,data)
+      SELECT 'runtime-test','old-union-peer',
+        (SELECT COALESCE(max(ordinal),0)+1 FROM people WHERE archive_id='runtime-test'),
+        jsonb_set(data,'{id}',to_jsonb('old-union-peer'::text))
+      FROM people WHERE id='person-a'`);
+    await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('old-union-author'),('reused-union-author')");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('reused-union-author','Reused ID',now())");
+    for (const [id, createdBy] of [
+      ["old-union-backfill", "old-union-author"],
+      ["reused-union-review", "reused-union-author"],
+      ["unrelated-union-backfill", "owner"],
+    ]) await client.query(`INSERT INTO family_unions(archive_id,id,participant_a,participant_b,data)
+      VALUES('runtime-test',$1,'person-a','old-union-peer',$2::jsonb)`,
+    [id, JSON.stringify({ id, participants: ["person-a", "old-union-peer"], type: "partnership", createdBy, note: "Keep" })]);
+    const migration058 = readFileSync(new URL("../../ops/postgres/058_deleted_account_union_authors.sql", import.meta.url), "utf8");
+    if (adminClient !== client) {
+      await assert.rejects(client.query(migration058), /BYPASSRLS/,
+        "the app role cannot run the privileged migration");
+      await client.query("ROLLBACK");
+    }
+    await adminClient.query(migration058);
+    await adminClient.query(migration058);
+    if (adminClient !== client) {
+      await client.query("INSERT INTO accounts(id,name,created_at) VALUES('first-union-author','First union',now())");
+      await client.query(`INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access)
+        VALUES('runtime-test','first-union-author','researcher',true,'all')`);
+      await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('first-union-author')");
+      const writerPid = (await client.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      const cleanupPid = (await adminClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+      await client.query("SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE");
+      await client.query(`INSERT INTO family_unions(archive_id,id,participant_a,participant_b,data)
+        VALUES('runtime-test','first-union','person-a','old-union-peer',
+          '{"id":"first-union","participants":["person-a","old-union-peer"],"type":"partnership","createdBy":"first-union-author"}'::jsonb)`);
+      const cleanup = adminClient.query("SELECT public.runtime_anonymize_deleted_account_unions('first-union-author')");
+      let writerCommitted = false;
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const blockers = (await client.query("SELECT pg_blocking_pids($1) AS pids", [cleanupPid])).rows[0].pids as number[];
+          if (blockers.includes(writerPid)) { blocked = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(blocked, true,
+          "union cleanup waits for an in-flight first union from a current member, even though its row is not committed");
+        await client.query("COMMIT");
+        writerCommitted = true;
+        await cleanup;
+      } finally {
+        if (!writerCommitted) await client.query("ROLLBACK");
+        await cleanup.catch(() => undefined);
+      }
+      assert.equal((await client.query("SELECT data->>'createdBy' AS author FROM family_unions WHERE id='first-union'")).rows[0].author,
+        "deleted-account", "the first in-flight union is redacted after its writer commits");
+      await client.query("DELETE FROM family_unions WHERE id='first-union'");
+      await client.query("DELETE FROM archive_memberships WHERE user_id='first-union-author'");
+      await client.query("DELETE FROM accounts WHERE id='first-union-author'");
+      await client.query("DELETE FROM deleted_account_tombstones WHERE id='first-union-author'");
+    }
+    assert.deepEqual((await client.query("SELECT id,data->>'createdBy' AS author FROM family_unions WHERE id LIKE '%union-%' ORDER BY id")).rows,
+      [{ id: "old-union-backfill", author: "deleted-account" },
+        { id: "reused-union-review", author: "reused-union-author" },
+        { id: "unrelated-union-backfill", author: "owner" }],
+    "migration 058 only backfills tombstoned IDs without an active account and leaves unrelated unions unchanged");
+    await client.query("DELETE FROM family_unions WHERE id IN ('old-union-backfill','reused-union-review','unrelated-union-backfill')");
+    await client.query("DELETE FROM people WHERE id='old-union-peer'");
+    await client.query("DELETE FROM accounts WHERE id='reused-union-author'");
+    await client.query("DELETE FROM deleted_account_tombstones WHERE id IN ('old-union-author','reused-union-author')");
+    await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_anonymize_deleted_account_history(text) TO ${runtimeRole}`);
+    await adminClient.query(`GRANT EXECUTE ON FUNCTION public.runtime_redact_deleted_account_comments(text) TO ${runtimeRole}`);
   } finally {
     if (adminClient !== client) await adminClient.end();
   }
@@ -230,12 +312,14 @@ try {
     has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_history(text)','EXECUTE') AS entrypoint,
     has_function_privilege(current_user,'public.runtime_redact_deleted_account_comments(text)','EXECUTE') AS comment_redaction,
     has_function_privilege(current_user,'public.runtime_anonymize_account_history_rows(text)','EXECUTE') AS internal,
+    has_function_privilege(current_user,'public.runtime_anonymize_deleted_account_unions(text)','EXECUTE') AS unions_internal,
     has_function_privilege(current_user,'public.runtime_redact_account_attribution(jsonb,text)','EXECUTE') AS helper,
     (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname=current_user) AS privileged`)).rows[0];
   if (!runtimePrivileges.privileged) {
     assert.equal(runtimePrivileges.entrypoint, true);
     assert.equal(runtimePrivileges.comment_redaction, true);
     assert.equal(runtimePrivileges.internal, false);
+    assert.equal(runtimePrivileges.unions_internal, false);
     assert.equal(runtimePrivileges.helper, false);
   }
   await assert.rejects(
@@ -4514,6 +4598,24 @@ try {
     );
     await client.query("UPDATE people SET data=jsonb_set(data,'{createdBy}',to_jsonb('former-member'::text)) WHERE id='person-a'");
     await client.query(
+      `INSERT INTO people(archive_id,id,ordinal,data)
+       SELECT 'runtime-test','former-union-peer',
+         (SELECT COALESCE(max(ordinal),0)+1 FROM people WHERE archive_id='runtime-test'),
+         jsonb_set(jsonb_set(data,'{id}',to_jsonb('former-union-peer'::text)),
+           '{createdBy}',to_jsonb('owner'::text))
+       FROM people WHERE id='person-a'`,
+    );
+    const formerUnion = { id: "former-union", participants: ["person-a", "former-union-peer"],
+      type: "partnership", createdBy: "former-member", note: "Keep this note" };
+    const unrelatedUnion = { ...formerUnion, id: "unrelated-union", createdBy: "owner" };
+    for (const union of [formerUnion, unrelatedUnion])
+      await client.query(
+        `INSERT INTO family_unions(archive_id,id,participant_a,participant_b,data)
+         VALUES('runtime-test',$1,'person-a','former-union-peer',$2::jsonb)`,
+        [union.id, JSON.stringify(union)],
+      );
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+    await client.query(
       `INSERT INTO history(archive_id,revision,saved_at,data) VALUES
        ('runtime-test',987656,$1,'{"people":[{"id":"person-a","createdBy":"former-member","name":"Preserved"}],"photos":[],"links":[]}'::jsonb)`,
       [new Date().toISOString()],
@@ -4523,9 +4625,12 @@ try {
     await client.query("INSERT INTO deleted_account_tombstones(id) VALUES('former-member')");
     await client.query("SELECT public.runtime_anonymize_deleted_account_history('former-member')");
     const once = (await client.query("SELECT data FROM history WHERE revision=987656")).rows[0].data;
+    const unionOnce = (await client.query("SELECT data FROM family_unions WHERE id='former-union'")).rows[0].data;
     await client.query("SELECT public.runtime_anonymize_deleted_account_history('former-member')");
     assert.deepEqual((await client.query("SELECT data FROM history WHERE revision=987656")).rows[0].data, once,
       "a repeated cleanup does not change the historical snapshot again");
+    assert.deepEqual((await client.query("SELECT data FROM family_unions WHERE id='former-union'")).rows[0].data,
+      unionOnce, "a repeated cleanup does not change the union again");
     await client.query("ROLLBACK");
     await client.query(
       "DELETE FROM archive_memberships WHERE archive_id='runtime-test' AND user_id='former-member'",
@@ -4554,6 +4659,46 @@ try {
       { author_id: "deleted-account", author_name: "Удалённый участник" });
     assert.equal((await client.query("SELECT created_by FROM research_suggestions WHERE id='former-suggestion'")).rows[0].created_by, "deleted-account");
     assert.equal((await client.query("SELECT data->>'createdBy' AS creator FROM people WHERE id='person-a'")).rows[0].creator, "deleted-account");
+    assert.deepEqual((await client.query("SELECT data FROM family_unions WHERE id='former-union'")).rows[0].data,
+      { ...formerUnion, createdBy: "deleted-account" },
+      "former members lose live union authorship without changing union details");
+    assert.deepEqual((await client.query("SELECT data FROM family_unions WHERE id='unrelated-union'")).rows[0].data,
+      unrelatedUnion, "another author's union is unchanged");
+    await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+    assert.equal((await client.query("SELECT count(*)::int AS n FROM family_unions WHERE id='former-union'")).rows[0].n,
+      0, "the other archive cannot read the union through RLS");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+    await client.query("INSERT INTO accounts(id,name,created_at) VALUES('former-member','Returned member',$1)",
+      [new Date().toISOString()]);
+    await client.query("INSERT INTO account_tiers(account_id,full_access) VALUES('former-member',false)");
+    await client.query(
+      "INSERT INTO archive_memberships(archive_id,user_id,role,approved,tree_access) VALUES('runtime-test','former-member','researcher',true,'all')",
+    );
+    const returnedToken = newSessionToken();
+    await client.query("INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'former-member',$2)",
+      [sessionTokenHash(returnedToken), Date.now() + 600_000]);
+    const returnedHeaders = { Cookie: `drevo_session=${returnedToken}` };
+    const returnedSession = await fetch(securedBase + "/api/session", { headers: returnedHeaders })
+      .then((response) => response.json());
+    assert.equal(returnedSession.user.role, "researcher");
+    assert.equal(returnedSession.canEdit, true);
+    const returnedFamily = await fetch(securedBase + "/api/family", { headers: returnedHeaders })
+      .then((response) => response.json());
+    assert.equal(returnedFamily.family.unions.find((union: { id: string }) =>
+      union.id === "former-union")?.createdBy, "deleted-account");
+    const forgedUnion = structuredClone(returnedFamily.family);
+    forgedUnion.unions.find((union: { id: string }) => union.id === "former-union").note = "Taken over";
+    assert.equal((await fetch(securedBase + "/api/family", {
+      method: "PUT",
+      headers: { ...returnedHeaders, Origin: process.env.PUBLIC_ORIGIN!,
+        "Content-Type": "application/json", "If-Match": String(returnedFamily.revision) },
+      body: JSON.stringify(forgedUnion),
+    })).status, 403, "re-registering the same ID does not restore union edit rights");
+    await client.query("DELETE FROM archive_memberships WHERE user_id='former-member'");
+    await client.query("DELETE FROM accounts WHERE id='former-member'");
+    await client.query("DELETE FROM family_unions WHERE id IN ('former-union','unrelated-union')");
+    await client.query("DELETE FROM people WHERE id='former-union-peer'");
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
     const historicalSnapshot = (await client.query("SELECT revision,data FROM history WHERE revision=987656")).rows[0];
     assert.equal(historicalSnapshot.revision, "987656");
     assert.deepEqual(historicalSnapshot.data, {
