@@ -66,7 +66,7 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           spouses: [],
           generation: 1,
           column: 0,
-          sources: [],
+          sources: [{ catalogId: "source-1", title: "Метрическая книга", type: "архив", reference: "ф. 6" }],
           photo: "/media/portrait.png",
         },
       ],
@@ -74,6 +74,12 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
     };
     const snapshot: PortableSnapshot = {
       family,
+      sources: [{
+        id: "source-1", title: "Метрическая книга", type: "архив", author: "",
+        institution: "", archive: "ГАСО", fond: "6", opis: "13", delo: "104",
+        sheet: "12", reference: "ф. 6", url: "", accessedAt: "2026-10-01",
+        description: "Запись о рождении", documentIds: ["a38e540d-841d-4205-9548-847939860299"],
+      }],
       documents: [
         {
           id: "a38e540d-841d-4205-9548-847939860299",
@@ -215,6 +221,8 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
           ?.n,
         2,
       );
+      assert.equal((await archive.db.prepare("SELECT count(*) AS n FROM source_catalog").get())?.n, 1);
+      assert.equal(result.family.people[0].sources[0].catalogId, "source-1");
       assert.equal(
         (
           await archive.db

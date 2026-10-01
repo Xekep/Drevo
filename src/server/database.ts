@@ -31,6 +31,7 @@ import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
 import { archiveSnapshotReader } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
+import { assertCatalogLinks, hydrateCatalogCitations } from "./source-catalog-store.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
@@ -476,6 +477,7 @@ export async function openArchive(
           );
       }
       await afterWrite?.(db);
+      await assertCatalogLinks(db, family);
       if (mediaActorId) {
         await releaseAttachedMediaGrants(db);
         await enforcePostgresMediaQuota(db, archiveBytesBefore, measuredAt);
@@ -761,7 +763,7 @@ export async function readArchive(db: StoreDatabase) {
         "SELECT 1 AS present FROM sqlite_schema WHERE type='table' AND name='family_unions'",
       )
       .get());
-  return hydrateArchive(
+  const snapshot = hydrateArchive(
     meta,
     await db
       .prepare(
@@ -796,4 +798,6 @@ export async function readArchive(db: StoreDatabase) {
           .all()
       : [],
   );
+  await hydrateCatalogCitations(db, snapshot.family);
+  return snapshot;
 }

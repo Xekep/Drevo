@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import type { Readable, Writable } from "node:stream";
 import { ZipFile } from "yazl";
 import type { Family } from "../domain/types.ts";
+import type { CatalogSource } from "../shared/source-catalog.ts";
 import type { DocumentAnnotation } from "../shared/document-annotations.ts";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
@@ -45,6 +46,7 @@ export type PortableSnapshot = {
   family: Family;
   documents: PortableDocument[];
   comments: PortableComment[];
+  sources?: CatalogSource[];
 };
 
 export type PortableManifest = {

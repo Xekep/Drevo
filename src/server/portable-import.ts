@@ -11,6 +11,7 @@ import { validateFamily } from "../domain/validation.ts";
 import { validAnnotationSelection } from "../shared/document-annotations.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
+import { parseCatalogSource } from "../shared/source-catalog.ts";
 import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import { verifyPortableMediaFile } from "./portable-media-check.ts";
 import {
@@ -192,6 +193,20 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     )
       invalid("Источник ссылается на отсутствующий документ");
   }
+  if (data.sources !== undefined && (!Array.isArray(data.sources) || data.sources.length > 50_000))
+    invalid("Некорректный каталог источников");
+  const sourceIds = new Set<string>();
+  const sources = (data.sources || []).map((raw: unknown) => {
+    const source = parseCatalogSource(raw);
+    if (!source || sourceIds.has(source.id) || source.documentIds.some((id) => !documentIds.has(id)))
+      invalid("Некорректный источник в пакете Drevo");
+    sourceIds.add(source.id);
+    return source;
+  });
+  for (const person of family.people)
+    for (const source of [...person.sources, ...(person.events || []).flatMap((event) => event.sources || [])])
+      if (source.catalogId && !sourceIds.has(source.catalogId))
+        invalid("Ссылка на отсутствующий источник в пакете Drevo");
   const commentIds = new Set<number>();
   const comments: PortableComment[] = [];
   for (const raw of data.comments) {
@@ -215,7 +230,7 @@ function snapshotFrom(value: unknown): PortableSnapshot {
     commentIds.add(comment.id as number);
     comments.push(comment as PortableComment);
   }
-  return { family, documents, comments };
+  return { family, documents, comments, sources };
 }
 
 export async function readPortablePackage(

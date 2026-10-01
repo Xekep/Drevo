@@ -10,6 +10,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "046_tree_generation_limits.sql",
     ],
     [
+      "SELECT to_regclass('source_catalog') AS present",
+      "048_source_catalog.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='documents' AND column_name='event_links'",
       "045_document_events_pages.sql",
     ],

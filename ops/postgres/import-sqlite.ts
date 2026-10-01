@@ -30,6 +30,13 @@ type Table = {
 // Имена таблиц и столбцов заданы кодом, в SQL из параметров CLI они не попадают.
 const tables: Table[] = [
   {
+    name: "source_catalog",
+    columns: ["id", "data", "version"],
+    order: "id",
+    json: ["data"],
+    optional: true,
+  },
+  {
     name: "people",
     columns: ["ordinal", "id", "data"],
     order: "ordinal",
@@ -177,7 +184,7 @@ function sqliteServiceTables(db: DatabaseSync): ServiceTable[] {
   ]
     .filter(
       (name) =>
-        !["person_comments", "vk_auth_settings", "media_originals", "upload_limits"].includes(
+        !["person_comments", "vk_auth_settings", "media_originals", "upload_limits", "source_catalog"].includes(
           name,
         ) || actual.includes(name),
     )
@@ -408,6 +415,9 @@ export async function importSqliteSnapshot(
     );
     await client.query(
       readFileSync(new URL("./047_family_unions.sql", import.meta.url), "utf8"),
+    );
+    await client.query(
+      readFileSync(new URL("./048_source_catalog.sql", import.meta.url), "utf8"),
     );
     if ((await client.query("SELECT 1 FROM archives LIMIT 1")).rowCount)
       throw new Error(

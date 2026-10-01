@@ -625,6 +625,12 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  // Independent additive migration; the family-union schema owns v19.
+  db.exec(`CREATE TABLE IF NOT EXISTS source_catalog (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL CHECK(json_valid(data)),
+    version INTEGER NOT NULL DEFAULT 1 CHECK(version>0)
+  ) STRICT;`);
   const familyLinkExtension = "2026-10-family-link-types";
   if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(familyLinkExtension)) {
     db.exec("BEGIN IMMEDIATE");
