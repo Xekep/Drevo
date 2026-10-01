@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Family, Person } from "../domain/types.ts";
 import { fullName } from "../domain/dates.ts";
 import { archiveFetch } from "../data/archive-fetch.ts";
@@ -9,6 +9,14 @@ const PAGE_SIZE = 20;
 const endpoint = "/api/admin/published-people/batch";
 const publishable = (person: Person) => person.deceased === true || Boolean(person.death);
 const year = (value?: string) => value?.match(/\b\d{4}\b/)?.[0];
+type BatchReview = {
+  revision: number;
+  reviewToken: string;
+  people: { id: string; published: boolean; person: {
+    name: string; birthSurname?: string; birthYear?: string; deathYear?: string;
+    birthPlace?: string; deathPlace?: string;
+  } }[];
+};
 
 export function PublicationAdmin({ family }: { family: Family }) {
   const [query, setQuery] = useState("");
@@ -20,6 +28,8 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const [statusError, setStatusError] = useState("");
   const [fields, setFields] = useState<PublicationFields>(defaultPublicationFields);
   const [confirm, setConfirm] = useState<"publish" | "unpublish" | null>(null);
+  const [review, setReview] = useState<{ data: BatchReview; family: Family } | null>(null);
+  const reviewRequest = useRef(0);
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -41,6 +51,7 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const statusFor = (id: string) => !statusesReady
     ? failedStatusKey === statusKey ? "Не удалось проверить" : "Проверяем…"
     : statuses[id] ? "Можно найти" : "Скрыт";
+  const validReview = review?.family === family ? review.data : null;
 
   useEffect(() => {
     if (!pageKey) return;
@@ -75,10 +86,38 @@ export function PublicationAdmin({ family }: { family: Family }) {
       return next;
     });
     setConfirm(null);
+    setReview(null);
+    reviewRequest.current += 1;
+  }
+
+  async function openReview(action: "publish" | "unpublish") {
+    if (!chosen.length || !statusesReady || busy) return;
+    const requestId = ++reviewRequest.current;
+    setBusy(true);
+    setConfirm(null);
+    setReview(null);
+    setError("");
+    setNotice("");
+    try {
+      const response = await archiveFetch(`${endpoint}/preview`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, personIds: chosen.map((person) => person.id), fields }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Не удалось проверить публикацию");
+      if (requestId === reviewRequest.current) {
+        setReview({ data: body as BatchReview, family });
+        setConfirm(action);
+      }
+    } catch (reason) {
+      if (requestId === reviewRequest.current) setError((reason as Error).message);
+    } finally {
+      if (requestId === reviewRequest.current) setBusy(false);
+    }
   }
 
   async function apply() {
-    if (!confirm || !chosen.length || !statusesReady) return;
+    if (!confirm || !validReview || !chosen.length || !statusesReady) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -86,7 +125,8 @@ export function PublicationAdmin({ family }: { family: Family }) {
       const response = await archiveFetch(endpoint, {
         method: confirm === "publish" ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personIds: chosen.map((person) => person.id), fields }),
+        body: JSON.stringify({ personIds: chosen.map((person) => person.id), fields,
+          revision: validReview.revision, reviewToken: validReview.reviewToken }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Не удалось изменить публикации");
@@ -101,8 +141,13 @@ export function PublicationAdmin({ family }: { family: Family }) {
       });
       setSelected(new Set());
       setConfirm(null);
+      setReview(null);
       setReload((value) => value + 1);
-    } catch (reason) { setError((reason as Error).message); }
+    } catch (reason) {
+      setError((reason as Error).message);
+      setConfirm(null);
+      setReview(null);
+    }
     finally { setBusy(false); }
   }
 
@@ -126,11 +171,11 @@ export function PublicationAdmin({ family }: { family: Family }) {
     </label>
     <div className="publication-admin-toolbar">
       <span>{filtered.length} человек · выбрано {chosen.length} из 50</span>
-      <button type="button" disabled={!statusesReady || !pagePeople.length || chosen.length + pageIds.filter((id) => !selected.has(id)).length > 50}
-        onClick={() => { setSelected((current) => new Set([...current, ...pageIds])); setConfirm(null); }}>
+      <button type="button" disabled={busy || !statusesReady || !pagePeople.length || chosen.length + pageIds.filter((id) => !selected.has(id)).length > 50}
+        onClick={() => { setSelected((current) => new Set([...current, ...pageIds])); setConfirm(null); setReview(null); reviewRequest.current += 1; }}>
         Выбрать страницу
       </button>
-      <button type="button" disabled={!chosen.length} onClick={() => { setSelected(new Set()); setConfirm(null); }}>Сбросить</button>
+      <button type="button" disabled={busy || !chosen.length} onClick={() => { setSelected(new Set()); setConfirm(null); setReview(null); reviewRequest.current += 1; }}>Сбросить</button>
       {failedStatusKey === statusKey && <button type="button" onClick={() => setReload((value) => value + 1)}>Повторить проверку</button>}
     </div>
     <div className="publication-admin-list" aria-label="Люди для публикации">
@@ -147,33 +192,38 @@ export function PublicationAdmin({ family }: { family: Family }) {
       <span>Страница {page + 1} из {Math.ceil(filtered.length / PAGE_SIZE)}</span>
       <button type="button" disabled={(page + 1) * PAGE_SIZE >= filtered.length} onClick={() => { setPage(page + 1); setLoadedStatusKey(""); setFailedStatusKey(""); }}>Далее</button>
     </nav>}
-    {chosen.length > 0 && <div className="publication-admin-actions">
-      <button type="button" disabled={busy || !statusesReady} onClick={() => setConfirm("publish")}>Опубликовать выбранных</button>
-      <button type="button" disabled={busy || !statusesReady} onClick={() => setConfirm("unpublish")}>Снять выбранных с поиска</button>
-    </div>}
-    {confirm && <section className="publication-admin-confirm" aria-label="Проверка публикации">
-      <h2>{confirm === "publish" ? "Проверьте публикацию" : "Проверьте отзыв публикации"}</h2>
-      {confirm === "publish" && <fieldset><legend>Какие поля открыть</legend>
+    {chosen.length > 0 && <fieldset className="publication-admin-fields"><legend>Какие поля открыть при публикации</legend>
         <p>ФИО публикуется обязательно. Отсутствующее у человека значение не появится в поиске позднее без нового разрешения.</p>
         {availableFields.map(({ key, label }) => <label key={key} className="publication-field">
-          <input type="checkbox" checked={fields[key]} onChange={(event) => setFields((current) => ({ ...current, [key]: event.target.checked }))} />{label}
+          <input type="checkbox" checked={fields[key]} disabled={busy} onChange={(event) => {
+            setFields((current) => ({ ...current, [key]: event.target.checked }));
+            setConfirm(null); setReview(null); reviewRequest.current += 1;
+          }} />{label}
         </label>)}
-      </fieldset>}
-      <ul>{chosen.map((person) => <li key={person.id}>
-        <strong>{fullName(person)}</strong>
-        {confirm === "publish" && <span>{[
-          fields.birthSurname && person.maidenName && `при рождении ${person.maidenName}`,
-          fields.birthYear && year(person.birth) && `р. ${year(person.birth)}`,
-          fields.deathYear && year(person.death) && `ум. ${year(person.death)}`,
-          fields.birthPlace && person.birthPlace && `рождение: ${person.birthPlace}`,
-          fields.deathPlace && person.deathPlace && `смерть: ${person.deathPlace}`,
-        ].filter(Boolean).join(" · ")}</span>}
+    </fieldset>}
+    {chosen.length > 0 && <div className="publication-admin-actions">
+      <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("publish")}>Опубликовать выбранных</button>
+      <button type="button" disabled={busy || !statusesReady} onClick={() => void openReview("unpublish")}>Снять выбранных с поиска</button>
+    </div>}
+    {confirm && validReview && <section className="publication-admin-confirm" aria-label="Проверка публикации">
+      <h2>{confirm === "publish" ? "Проверьте публикацию" : "Проверьте отзыв публикации"}</h2>
+      <p>Данные проверены сервером для версии архива {validReview.revision}. Если карточки или публикации изменятся, потребуется новый предпросмотр.</p>
+      <ul>{validReview.people.map((item) => <li key={item.id}>
+        <strong>{item.person.name}</strong>
+        <span>{item.published ? "Сейчас можно найти" : "Сейчас скрыт"}</span>
+        <span>{[
+          item.person.birthSurname && `при рождении ${item.person.birthSurname}`,
+          item.person.birthYear && `р. ${item.person.birthYear}`,
+          item.person.deathYear && `ум. ${item.person.deathYear}`,
+          item.person.birthPlace && `рождение: ${item.person.birthPlace}`,
+          item.person.deathPlace && `смерть: ${item.person.deathPlace}`,
+        ].filter(Boolean).join(" · ")}</span>
       </li>)}</ul>
       <div className="publication-admin-actions">
         <button type="button" className="primary-action" disabled={busy || !statusesReady} onClick={() => void apply()}>
           {busy ? "Сохраняем…" : confirm === "publish" ? `Подтвердить публикацию ${chosen.length}` : `Подтвердить отзыв ${chosen.length}`}
         </button>
-        <button type="button" disabled={busy} onClick={() => setConfirm(null)}>Отмена</button>
+        <button type="button" disabled={busy} onClick={() => { setConfirm(null); setReview(null); }}>Отмена</button>
       </div>
     </section>}
     {error && <p role="alert" className="form-error">{error}</p>}

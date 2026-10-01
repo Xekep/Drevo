@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { startServer } from "../src/server/index.ts";
+import { defaultPublicationFields } from "../src/shared/publication.ts";
 
 test("only explicitly published people are searchable without tree access, and unpublishing revokes the direct link", async () => {
   const directory = mkdtempSync(join(tmpdir(), "drevo-public-people-"));
@@ -146,18 +147,61 @@ test("only explicitly published people are searchable without tree access, and u
       "/api/admin/published-people/published-person", admin, "PUT", { fields: { birthYear: true } },
     )).status, 400);
     const batch = "/api/admin/published-people/batch";
-    assert.equal((await request(batch, admin, "POST", {
-      personIds: [person.id, "living-person"], fields: chosenFields,
-    })).status, 409);
-    assert.equal((await request("/api/published-people/living-person")).status, 404);
+    const previewPath = `${batch}/preview`;
+    const preview = async (personIds: string[], action: "publish" | "unpublish") =>
+      await request(previewPath, admin, "POST", { personIds, action, fields: chosenFields });
+    assert.equal((await request(previewPath, reader, "POST", {
+      personIds: [person.id], action: "publish", fields: chosenFields,
+    })).status, 403, "only an archive admin can inspect a private batch");
     assert.equal((await request(batch, admin, "POST", {
       personIds: [person.id, "second-person"], fields: chosenFields,
+    })).status, 400, "a batch cannot publish without a server review");
+    assert.equal((await preview([person.id, "living-person"], "publish")).status, 409);
+    assert.equal((await request("/api/published-people/living-person")).status, 404);
+    const staleReview = await (await preview([person.id, "second-person"], "publish")).json();
+    assert.equal(staleReview.people.length, 2);
+    assert.equal(staleReview.people[1].published, false);
+    assert.deepEqual(Object.keys(staleReview.people[1].person).sort(),
+      ["id", "name", "birthSurname", "deathYear"].sort(),
+      "the server review shows exactly the scalar fields it would publish");
+    assert.doesNotMatch(JSON.stringify(staleReview), /Private biography|biography|parents|sources/);
+    const beforeBatchEdit = await app.archive.read();
+    await app.archive.write({ ...beforeBatchEdit.family, people: beforeBatchEdit.family.people.map((entry) =>
+      entry.id === "second-person" ? { ...entry, birthPlace: "Новое место" } : entry),
+    }, beforeBatchEdit.revision);
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "second-person"], fields: chosenFields,
+      revision: staleReview.revision, reviewToken: staleReview.reviewToken,
+    })).status, 409, "an archive revision change invalidates the whole batch");
+    assert.equal((await request("/api/published-people/second-person")).status, 404);
+    const publishReview = await (await preview([person.id, "second-person"], "publish")).json();
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id], fields: chosenFields,
+      revision: publishReview.revision, reviewToken: publishReview.reviewToken,
+    })).status, 409, "confirmation is bound to the complete reviewed list");
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "second-person"], fields: defaultPublicationFields,
+      revision: publishReview.revision, reviewToken: publishReview.reviewToken,
+    })).status, 409, "confirmation is bound to the exact reviewed field choice");
+    assert.equal((await request(batch, admin, "POST", {
+      personIds: [person.id, "second-person"], fields: chosenFields,
+      revision: publishReview.revision, reviewToken: publishReview.reviewToken,
     })).status, 200);
     const statuses = await (await request(`${batch}?id=${person.id}&id=second-person`, admin)).json();
     assert.deepEqual(statuses.fields[person.id], chosenFields);
     assert.deepEqual(statuses.fields["second-person"], chosenFields);
     assert.equal((await request("/api/published-people/second-person")).status, 200);
-    assert.equal((await request(batch, admin, "DELETE", { personIds: ["second-person"] })).status, 200);
+    const revokeReview = await (await preview(["second-person"], "unpublish")).json();
+    assert.equal((await request("/api/admin/published-people/second-person", admin, "PUT")).status, 200);
+    assert.equal((await request(batch, admin, "DELETE", {
+      personIds: ["second-person"], revision: revokeReview.revision,
+      reviewToken: revokeReview.reviewToken,
+    })).status, 409, "a changed publication invalidates a stale revocation review");
+    const freshRevoke = await (await preview(["second-person"], "unpublish")).json();
+    assert.equal((await request(batch, admin, "DELETE", {
+      personIds: ["second-person"], revision: freshRevoke.revision,
+      reviewToken: freshRevoke.reviewToken,
+    })).status, 200);
     assert.equal((await request("/api/published-people/second-person")).status, 404);
     const beforeStatusChange = await app.archive.read();
     await app.archive.write(

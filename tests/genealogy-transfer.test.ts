@@ -1200,6 +1200,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       0,
     );
     await archive.db.exec("DROP TRIGGER reject_document");
+    const beforeImportIds = new Set((await archive.read()).family.people.map((person) => person.id));
     const applied = await request("/api/gedcom/import", {
       token: preview.token,
       confirm: true,
@@ -1213,6 +1214,14 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       "successful GEDZIP installation releases its disk reservation",
     );
     assert.equal((await archive.read()).family.people.length, 5);
+    const importedIds = (await archive.read()).family.people
+      .filter((person) => !beforeImportIds.has(person.id)).map((person) => person.id);
+    assert.equal(importedIds.length, 2);
+    const importedPublications = await archive.db.prepare(
+      `SELECT person_id FROM published_people WHERE person_id IN (${importedIds.map(() => "?").join(",")})`,
+    ).all(...importedIds);
+    assert.deepEqual(importedPublications, [],
+      "GEDCOM import leaves every new card hidden from cross-archive search until explicit publication");
     const original = await archive.db
       .prepare("SELECT url,size_bytes,uploaded_by FROM media_originals")
       .get();

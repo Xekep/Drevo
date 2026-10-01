@@ -85,9 +85,21 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
 
 test("admin can review and revoke a selected discovery publication", async ({ page }) => {
   let published = false;
+  const reviewToken = "a".repeat(64);
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch/preview", (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.personIds).toEqual(["e2e-memorial-person"]);
+    return route.fulfill({ json: { revision: 7, reviewToken, people: [{
+      id: "e2e-memorial-person", published,
+      person: { name: "Проверено сервером", birthYear: "1940" },
+    }] } });
+  });
   await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) => {
     if (route.request().method() === "GET")
       return route.fulfill({ json: { fields: published ? { "e2e-memorial-person": {} } : {} } });
+    expect(route.request().postDataJSON()).toMatchObject({
+      personIds: ["e2e-memorial-person"], revision: 7, reviewToken,
+    });
     published = route.request().method() === "POST";
     return route.fulfill({ json: { count: 1 } });
   });
@@ -97,13 +109,38 @@ test("admin can review and revoke a selected discovery publication", async ({ pa
   const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
-  await expect(page.getByRole("region", { name: "Проверка публикации" })).toContainText("Тестов Иван");
+  await expect(page.getByRole("region", { name: "Проверка публикации" })).toContainText("Проверено сервером");
   await page.getByRole("button", { name: "Подтвердить публикацию 1" }).click();
   await expect(page.getByRole("status")).toContainText("Опубликовано карточек: 1");
   await row.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Снять выбранных с поиска" }).click();
   await page.getByRole("button", { name: "Подтвердить отзыв 1" }).click();
   await expect(page.getByRole("status")).toContainText("Снято с поиска: 1");
+});
+
+test("a changed archive requires a fresh server review before batch publication", async ({ page }) => {
+  let previews = 0;
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch/preview", (route) => {
+    previews += 1;
+    return route.fulfill({ json: { revision: previews, reviewToken: String(previews).repeat(64),
+      people: [{ id: "e2e-memorial-person", published: false,
+        person: { name: "Проверено сервером" } }] } });
+  });
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { fields: {} } });
+    return route.fulfill({ status: 409, json: { error: "Архив изменился; проверьте публикацию заново" } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "publications", "Можно найти");
+  const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
+  await row.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
+  await page.getByRole("button", { name: "Подтвердить публикацию 1" }).click();
+  await expect(page.getByRole("alert")).toContainText("Архив изменился");
+  await expect(page.getByRole("region", { name: "Проверка публикации" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Опубликовать выбранных" }).click();
+  await expect(page.getByRole("region", { name: "Проверка публикации" })).toContainText("Проверено сервером");
+  expect(previews).toBe(2);
 });
 
 test("publication status is not reported as hidden before the server answers", async ({ page }) => {
