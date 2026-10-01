@@ -16,8 +16,12 @@ const limits: Record<Field, number> = {
 const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/card-share$/;
 
 function scalarFields(value: unknown): CardFields {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const source = value as Record<string, unknown>;
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch { return {}; }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const source = parsed as Record<string, unknown>;
   const result: CardFields = {};
   for (const key of fields) {
     const current = source[key];

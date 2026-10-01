@@ -1969,16 +1969,19 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "reapplying the additive projection migration keeps one linked pair");
-  const backfillAdmin = process.env.PGADMINUSER
-    ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
-    : client;
-  if (backfillAdmin !== client) await backfillAdmin.connect();
-  try {
-    await backfillAdmin.query(readFileSync(
-      new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
-  } finally {
-    if (backfillAdmin !== client) await backfillAdmin.end();
-  }
+  const runDiscoveryBackfill = async () => {
+    const admin = process.env.PGADMINUSER
+      ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
+      : client;
+    if (admin !== client) await admin.connect();
+    try {
+      await admin.query(readFileSync(
+        new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
+    } finally {
+      if (admin !== client) await admin.end();
+    }
+  };
+  await runDiscoveryBackfill();
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "administrator backfill rebuilds the confirmed public transition after truncation");
@@ -2057,17 +2060,8 @@ try {
     assert.equal((await matchDb.prepare("", `DELETE FROM discovery_linked_card_grants
       WHERE grantor_archive_id='runtime-test'`).run()).changes, 0,
     "the receiving archive cannot revoke the owner's grant through SQL");
-  }, true);
-  const shareAdmin = process.env.PGADMINUSER
-    ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
-    : client;
-  if (shareAdmin !== client) await shareAdmin.connect();
-  try {
-    await shareAdmin.query(readFileSync(
-      new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
-  } finally {
-    if (shareAdmin !== client) await shareAdmin.end();
-  }
+  });
+  await runDiscoveryBackfill();
   assert.equal((await matchDb.prepare("", `SELECT fields->>'occupation' AS occupation
     FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.occupation,
   "Архивный исследователь", "administrator backfill preserves a still-confirmed grant");
@@ -2340,9 +2334,25 @@ try {
     method: "PATCH", headers: manualHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: revocableReview.reviewToken }),
   })).status, 200);
+  const revocableSharePath = revocablePath + "/card-share";
+  const revocablePreview = await fetch(securedBase + revocableSharePath, { headers: manualHeaders })
+    .then((response) => response.json());
+  assert.equal(revocablePreview.available.birth, "1960");
+  assert.equal((await fetch(securedBase + revocableSharePath, {
+    method: "PUT", headers: { ...manualHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: ["birth"], previewToken: revocablePreview.previewToken }),
+  })).status, 200);
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+    .get(parent.id,parent.id))?.count, 1);
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200);
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE left_person_id=? AND right_person_id=?`)
+    .get(parent.id,parent.id))?.count, 0,
+  "manually revoking the match removes its extra-field grant atomically");
+  assert.equal((await fetch(otherBase + revocableSharePath, { headers: manualHeaders })).status, 404);
   assert.equal((await fetch(securedBase + revocablePath, {
     method: "PATCH", headers: manualHeaders, body: JSON.stringify({ decision: "revoke" }),
   })).status, 200, "repeating a revocation is idempotent");
@@ -2375,6 +2385,10 @@ try {
   "removing either publication revokes the extra-field grant in the same transaction");
   assert.equal((await fetch(securedBase + cardSharePath, { headers: ownerHeaders })).status, 404,
     "a revoked match cannot be used to read the old card snapshot");
+  await runDiscoveryBackfill();
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_linked_card_grants WHERE grantor_archive_id='runtime-test'`).get())?.count, 0,
+  "backfill does not resurrect grants after publication revocation");
   assert.deepEqual((await (await fetch(securedBase + "/api/discovery/people/runtime-test/person-a", {
     headers,
   })).json()).linkedCards, [], "revoking either publication removes the transition");
