@@ -553,6 +553,14 @@ test("Agelong XML uses event roles, preserves uncertainty and escapes; rejects e
   const badCoordinates = importAgelongXml(xml.replace('coords="55.7, 37.6"', 'coords="999, 37.6"'), "invalid-coordinates");
   assert.equal(badCoordinates.family.people[0].events!.find((event) => event.title === "Поездка")!.location, undefined);
   assert.ok(badCoordinates.warnings.some((warning) => warning.startsWith("Координаты события")));
+  const placeMetadata = importAgelongXml(
+    xml.replace('fullname="Москва" coords=', 'fullname="Москва" name="Москва" nameshort="Москва" date="1900" coords=')
+      .replace('coords="55.7558, 37.6173" />', 'coords="55.7558, 37.6173"><parent_id id="region" /></place>'),
+    "place-metadata",
+  );
+  assert.ok(placeMetadata.warnings.some((warning) => warning.includes("Даты исторических названий мест (1)")));
+  assert.ok(placeMetadata.warnings.some((warning) => warning.includes("Иерархия родительских мест (1)")));
+  assert.ok(!placeMetadata.warnings.some((warning) => warning.includes("Альтернативные названия мест")));
   assert.throws(
     () =>
       importAgelongXml(

@@ -617,31 +617,36 @@ export function importAgelongXml(
     warnings.add(
       `Раздел families (${families.size} родов): структура, дополнительные свойства и документы родов не переносятся. Названия привязанных родов сохранены в биографиях.`,
     );
-  const placeMetadata = [...places.values()].filter(
-    (place) =>
-      place.attrs.date ||
-      place.attrs.name ||
-      place.attrs.nameshort ||
-      one(place, "parent_id") ||
-      one(place, "sources"),
+  const placeList = [...places.values()];
+  const datedPlaces = placeList.filter((place) => place.attrs.date).length;
+  const alternateNames = placeList.filter((place) =>
+    [place.attrs.name, place.attrs.nameshort].some(
+      (name) => name && name !== place.attrs.fullname,
+    ),
   ).length;
-  if (placeMetadata)
-    warnings.add(
-      `У ${placeMetadata} мест не перенесены исторические даты/варианты названий, иерархия или ссылки на источники; текст названия и координаты сохранены там, где место используется.`,
-    );
+  const parentPlaces = placeList.filter((place) => one(place, "parent_id")).length;
+  const sourcedPlaces = placeList.filter((place) => one(place, "sources")?.children.length).length;
+  if (datedPlaces)
+    warnings.add(`Даты исторических названий мест (${datedPlaces}) не перенесены.`);
+  if (alternateNames)
+    warnings.add(`Альтернативные названия мест (${alternateNames}) не перенесены; основное название сохранено там, где место используется.`);
+  if (parentPlaces)
+    warnings.add(`Иерархия родительских мест (${parentPlaces}) не перенесена.`);
+  if (sourcedPlaces)
+    warnings.add(`Ссылки на источники для мест (${sourcedPlaces}) не перенесены.`);
   const eventDocuments = [...events.values()].filter(
     (event) => one(event, "documents")?.children.length,
   ).length;
   if (eventDocuments)
     warnings.add(
-      `Связи документов с ${eventDocuments} событиями не перенесены: в Drevo документы привязываются к людям.`,
+      `Текущий XML-импортёр не переносит связи документов с ${eventDocuments} событиями.`,
     );
   const documentSources = [...documents.values()].filter(
     (document) => one(document, "sources")?.children.length,
   ).length;
   if (documentSources)
     warnings.add(
-      `Связи источников с ${documentSources} документами не перенесены: для них нет соответствующего поля в Drevo.`,
+      `Текущий XML-импортёр не переносит связи источников с ${documentSources} документами.`,
     );
   const unlinkedSources = [...sourceNodes.keys()].filter(
     (id) => !usedSources.has(id),
