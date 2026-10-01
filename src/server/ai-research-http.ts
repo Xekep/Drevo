@@ -142,14 +142,16 @@ export function aiResearchHttp({
         if (lockedSession?.user_id !== current.id ||
           Number(lockedSession.expires_at) <= Date.now()) return false;
       }
-      // Serialize the durable answer with membership and tier revocation. The
-      // archive transaction already locks the graph revision for scoped users.
-      const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
-        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
-        .get(archive.db.archiveId || "", current.id);
-      if (!membership?.approved || membership.role !== current.role ||
-        (membership.person_id || "") !== (current.personId || "") ||
-        membership.tree_access !== (current.treeAccess || "all")) return false;
+      if (!auth.local) {
+        // Serialize the durable answer with membership and tier revocation.
+        // The trusted local identity has no membership row in PostgreSQL.
+        const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+          FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+          .get(archive.db.archiveId || "", current.id);
+        if (!membership?.approved || membership.role !== current.role ||
+          (membership.person_id || "") !== (current.personId || "") ||
+          membership.tree_access !== (current.treeAccess || "all")) return false;
+      }
     }
     return (await auth.canRead(req)) &&
       (await accountAiAccess(archive.db, current.id, auth.local, lockAccess)) &&

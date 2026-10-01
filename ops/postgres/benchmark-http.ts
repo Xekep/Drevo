@@ -57,7 +57,10 @@ try {
   async function launch() {
     const child = fork(join(import.meta.dirname, "benchmark-http-worker.ts"), [], {
       execArgv: ["--experimental-strip-types"],
-      env: process.env,
+      // Never use an operator's AI credentials or endpoint in this profile.
+      env: { ...process.env, YANDEX_AI_API_KEY: "benchmark-only-key",
+        YANDEX_AI_FOLDER_ID: "benchmark-only-folder", YANDEX_AI_MODEL: "benchmark-only-model",
+        YANDEX_AI_BASE_URL: "https://benchmark.invalid/v1" },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
     children.push(child);
@@ -78,7 +81,15 @@ try {
   const bases = await Promise.all([launch(), launch()]);
   const initial = await fetch(bases[0] + "/api/family?projection=overview").then(r => r.json());
   assert.equal(initial.totals.people, count);
-  const png = await sharp({ create: { width: 256, height: 256, channels: 3, background: "#558855" } }).png().toBuffer();
+  // A flat-color PNG compresses to almost nothing and understates file traffic.
+  const pixels = Buffer.alloc(256 * 256 * 3);
+  let seed = 0x13579bdf;
+  for (let i = 0; i < pixels.length; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    pixels[i] = seed >>> 24;
+  }
+  const png = await sharp(pixels, { raw: { width: 256, height: 256, channels: 3 } }).png().toBuffer();
+  assert.ok(png.length > 100_000, "Synthetic original must exercise real file traffic");
   const uploaded = await fetch(bases[0] + "/api/photos", {
     method: "POST", headers: { Origin: bases[0], "X-Drevo-Upload": "1", "If-Match": String(initial.revision) }, body: png,
   });
@@ -86,10 +97,13 @@ try {
   const photoUrl = (await uploaded.json()).family.photos[0].url as string;
   assert.ok(photoUrl.startsWith("/media/"));
   for (const base of bases) {
-    const result = await fetch(base + photoUrl + "?variant=thumb");
-    assert.equal(result.status, 200, "Both processes must see shared media");
-    assert.equal(result.headers.get("content-type"), "image/webp");
-    await result.arrayBuffer();
+    for (const [path, type] of [[photoUrl, "image/png"],
+      [photoUrl + "?variant=thumb", "image/webp"]]) {
+      const result = await fetch(base + path);
+      assert.equal(result.status, 200, "Both processes must see shared media");
+      assert.equal(result.headers.get("content-type"), type);
+      await result.arrayBuffer();
+    }
   }
   const routes = [
     ["overview", "/api/family?projection=overview"],
@@ -97,12 +111,14 @@ try {
     ["search", "/api/people/search?q=Тестов"],
     ["documents", "/api/documents?limit=20"],
     ["ai_status", "/api/ai/status"],
+    ["media_original", photoUrl],
     ["media_thumb", photoUrl + "?variant=thumb"],
   ] as const;
   const results = new Map<string, { durations: number[]; bytes: number; errors: number }>(
     routes.map(([name]) => [name, { durations: [], bytes: 0, errors: 0 }]),
   );
   results.set("edit", { durations: [], bytes: 0, errors: 0 });
+  results.set("ai_mock_turn", { durations: [], bytes: 0, errors: 0 });
   const concurrency = 12;
   const until = performance.now() + seconds * 1000;
   let next = 0;
@@ -155,7 +171,40 @@ try {
     }
     return personIndex;
   })();
-  const [, writes] = await Promise.all([Promise.all(readers), writer]);
+  // Two real HTTP turns overlap the readers and writer, but the Responses API
+  // itself is an in-process fake with fixed latency and no network access.
+  const aiTurns = (async () => {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const metric = results.get("ai_mock_turn")!;
+    await Promise.all(bases.map(async (base, index) => {
+      const began = performance.now();
+      try {
+        const response = await fetch(base + "/api/ai/chat", {
+          method: "POST",
+          headers: { Origin: base, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Проверь синтетический архив ${index}` }),
+          signal: AbortSignal.timeout(30000),
+        });
+        const raw = await response.text();
+        assert.equal(response.status, 200, raw);
+        const { chatId, answer } = JSON.parse(raw) as { chatId: string; answer: string };
+        assert.match(answer, /Синтетический ответ ИИ/);
+        assert.match(chatId, /^[a-f0-9-]{36}$/i);
+        const history = await fetch(bases[1 - index] + `/api/ai/chats/${chatId}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        const historyRaw = await history.text();
+        assert.equal(history.status, 200, historyRaw);
+        assert.ok(historyRaw.includes(answer), "The other backend must see the AI answer");
+        metric.bytes += Buffer.byteLength(raw) + Buffer.byteLength(historyRaw);
+      } catch (error) {
+        metric.errors++;
+        console.error("Synthetic AI turn failed", error);
+      }
+      metric.durations.push(performance.now() - began);
+    }));
+  })();
+  const [, writes] = await Promise.all([Promise.all(readers), writer, aiTurns]);
   assert.ok(writes > 0, "No edits completed during mixed HTTP load");
   const final = await fetch(bases[1] + "/api/family").then(r => r.json());
   assert.equal(final.family.people.find((person: { id: string }) =>
@@ -179,7 +228,7 @@ try {
     cores: cpus().length, memoryBytes: totalmem(), people: count,
     processes: processMetrics,
     concurrency, durationSeconds: Math.round(elapsedMs / 1000),
-    scope: "isolated local HTTP, synthetic data; AI status only, no model inference or background jobs",
+    scope: "isolated local HTTP, synthetic archive and media; two AI turns against an in-process fake with 150 ms provider delay; no external model, network, or background jobs",
   }}));
   for (const [operation, metric] of results) {
     const samples = metric.durations.length;

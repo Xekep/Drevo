@@ -1396,6 +1396,57 @@ try {
   );
   await app.close();
   app = undefined;
+  // Local PostgreSQL mode uses the trusted "local" identity without an archive
+  // membership row. A completed model answer must still pass the commit guard.
+  const localAiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID",
+    "YANDEX_AI_MODEL", "YANDEX_AI_BASE_URL"] as const;
+  const savedLocalAiEnvironment = localAiKeys.map((key) => process.env[key]);
+  process.env.YANDEX_AI_API_KEY = "local-test-key";
+  process.env.YANDEX_AI_FOLDER_ID = "local-test-folder";
+  process.env.YANDEX_AI_MODEL = "local-test-model";
+  process.env.YANDEX_AI_BASE_URL = "https://local-ai.invalid/v1";
+  const localAnswer = "Ответ локального PostgreSQL архива";
+  let localModelCalls = 0;
+  const localAiFetch: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin, "https://local-ai.invalid");
+    assert.equal(init?.method, "POST");
+    if (url.pathname === "/v1/conversations")
+      return Response.json({ id: "local-test-conversation" });
+    assert.equal(url.pathname, "/v1/responses");
+    localModelCalls++;
+    return Response.json({ id: "local-test-response", status: "completed",
+      output_text: localAnswer, output: [],
+      usage: { input_tokens: 1, output_tokens: 1 } });
+  };
+  try {
+    app = await startServer(0, source, true, undefined, localAiFetch);
+    assert.equal((await client.query(`SELECT count(*)::int AS n FROM archive_memberships
+      WHERE archive_id='runtime-test' AND user_id='local'`)).rows[0].n, 0);
+    const localBase = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    const response = await fetch(localBase + "/api/ai/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Проверь локальный архив" }),
+    });
+    const raw = await response.text();
+    assert.equal(response.status, 200, raw);
+    const { chatId, answer } = JSON.parse(raw) as { chatId: string; answer: string };
+    assert.equal(answer, localAnswer);
+    assert.ok(localModelCalls >= 1, "the answer must pass through the fake provider");
+    const history = await fetch(localBase + `/api/ai/chats/${chatId}`);
+    assert.equal(history.status, 200, await history.clone().text());
+    assert.match(await history.text(), /Ответ локального PostgreSQL архива/);
+    await aiChatStore(app.archive.db).delete(chatId, "local");
+    await app.archive.db.prepare("", "DELETE FROM ai_usage WHERE user_id='local'").run();
+  } finally {
+    await app?.close();
+    app = undefined;
+    for (const [index, key] of localAiKeys.entries()) {
+      const oldValue = savedLocalAiEnvironment[index];
+      if (oldValue === undefined) delete process.env[key];
+      else process.env[key] = oldValue;
+    }
+  }
   // Production-style authentication and persisted sessions across restart.
   process.env.PUBLIC_ORIGIN = "https://migration-check.invalid";
   process.env.INITIAL_ADMIN_YANDEX_ID = "owner";
