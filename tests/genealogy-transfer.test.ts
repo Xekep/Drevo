@@ -469,6 +469,47 @@ for (const version of ["5.5.1", "7.0"] as const)
   });
 
 for (const version of ["5.5.1", "7.0"] as const)
+  test(`GEDCOM ${version}: repository name and call number remain with a cited source`, () => {
+    const external = `0 HEAD
+1 SOUR OTHER
+1 GEDC
+2 VERS ${version}
+0 @I1@ INDI
+1 NAME Анна /Тестова/
+1 SOUR @S1@
+1 BIRT
+2 DATE 1900
+2 SOUR @S1@
+3 PAGE л. 3
+0 @S1@ SOUR
+1 TITL Метрическая книга
+1 REPO @R1@
+2 CALN Ф. 6, оп. 13, д. 104
+0 @R1@ REPO
+1 NAME ГАСО
+0 TRLR`;
+    const imported = importGedcom(external, `repository-${version}`);
+    const personCitation = imported.family.people[0].sources?.[0];
+    assert.equal(personCitation?.reference, "Ф. 6, оп. 13, д. 104");
+    assert.match(personCitation?.note || "", /Хранилище: ГАСО/);
+    const citation = imported.family.people[0].events?.find((event) =>
+      event.gedcomTag === "BIRT")?.sources?.[0];
+    assert.equal(citation?.reference, "л. 3");
+    assert.match(citation?.note || "", /ГАСО/);
+    assert.match(citation?.note || "", /Ф\. 6, оп\. 13, д\. 104/);
+    assert.ok(imported.warnings.some((warning) => warning.includes("хранилищ")));
+    assert.ok(!imported.warnings.some((warning) => warning.includes("Запись REPO") && warning.includes("не перенесена")));
+    const exported = exportGedcom(imported.family, { version });
+    const restored = importGedcom(exported, `repository-again-${version}`);
+    assert.equal(restored.family.people[0].sources?.[0].reference, personCitation?.reference);
+    assert.match(restored.family.people[0].sources?.[0].note || "", /ГАСО/);
+    const note = restored.family.people[0].events?.find((event) =>
+      event.gedcomTag === "BIRT")?.sources?.[0].note || "";
+    assert.match(note, /ГАСО/);
+    assert.match(note, /Ф\. 6, оп\. 13, д\. 104/);
+  });
+
+for (const version of ["5.5.1", "7.0"] as const)
   test(`GEDCOM ${version}: all citation transcripts and provenance remain visible`, () => {
     const input = `0 HEAD
 1 GEDC
