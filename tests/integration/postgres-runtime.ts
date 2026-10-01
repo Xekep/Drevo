@@ -34,6 +34,8 @@ import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
+import { accountDataExport } from "../../src/server/account-data-export.ts";
+import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
@@ -1151,12 +1153,14 @@ try {
     assert.doesNotMatch(raw, /secret-hash-sentinel|password_hash|token_hash|drevo_session/);
     const exported = JSON.parse(raw);
     assert.equal(exported.format, "drevo-account-data");
+    assert.equal(exported.version, 2);
     assert.equal(exported.account.id, index % 2 ? "reader" : "owner");
     assert.equal(exported.account.verifiedEmail, index % 2 ? "reader-export@example.invalid" : null);
     assert.deepEqual(exported.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
     assert.equal(exported.archives[0].role, index % 2 ? "reader" : "admin");
     assert.equal(exported.archives[0].owned, index % 2 === 0);
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
+    assert.deepEqual(exported.archives[0].ownComments, []);
   }
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
@@ -1957,6 +1961,106 @@ try {
   assert.deepEqual(readerArchives.archives.map((archive: { id: string }) => archive.id), ["runtime-test"]);
   assert.equal(readerArchives.archives[0].owned, false);
   assert.equal((await fetch(securedBase + "/api/account/archives")).status, 401);
+  // The account download includes only the caller's current comments in trees
+  // they can still read. A restricted reader must not recover a hidden branch.
+  const hiddenForExport = {
+    ...family.people[0], id: "account-export-hidden", name: "Скрытый",
+    parents: [], spouses: [],
+  };
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(
+    `INSERT INTO people(id,ordinal,data)
+     VALUES('account-export-hidden',(SELECT max(ordinal)+1 FROM people),$1)`,
+    [JSON.stringify(hiddenForExport)],
+  );
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     VALUES('person-a','owner','Owner',$1,'account-export-probe:root-owner'),
+           ('person-a','reader','Reader',$1,'account-export-probe:visible'),
+           ('account-export-hidden','reader','Reader',$1,'account-export-probe:hidden')`,
+    [Date.now()],
+  );
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(
+    `INSERT INTO person_comments(person_id,author_id,author_name,created_ms,text)
+     VALUES('person-a','owner','Owner',$1,'account-export-probe:other-owner')`,
+    [Date.now()],
+  );
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
+  await client.query(
+    "UPDATE archive_memberships SET tree_access='common_ancestors',person_id='person-a' WHERE user_id='reader'",
+  );
+  // A parent edge exposes the reader's old comment through common ancestors.
+  // Removing that edge while export.read() is preparing the response must
+  // invalidate the snapshot even though the membership itself has not changed.
+  await client.query(
+    `INSERT INTO relations(id,ordinal,source,target,type)
+     VALUES('account-export-parent',(SELECT COALESCE(max(ordinal),0)+1 FROM relations),
+       'account-export-hidden','person-a','parent')`,
+  );
+  await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+  const graphSnapshot = await accountDataExport(app.archive.db).read("reader");
+  assert.ok(graphSnapshot);
+  assert.ok(graphSnapshot.download.archives[0].ownComments?.some(
+    (comment) => comment.text === "account-export-probe:hidden",
+  ), "a recorded parent relation exposes the comment before the graph change");
+  const graphAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  let graphChanged = false;
+  const graphExportEndpoint = accountDataExportHttp(app.archive.db, graphAuth, async () => {
+    await client.query("DELETE FROM relations WHERE id='account-export-parent'");
+    await client.query("UPDATE archives SET revision=revision+1 WHERE id='runtime-test'");
+    graphChanged = true;
+  });
+  const graphExportServer = createServer((req, res) => {
+    void graphExportEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => graphExportServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const graphPort = (graphExportServer.address() as { port: number }).port;
+    const changedGraphResponse = await fetch(
+      `http://127.0.0.1:${graphPort}/api/account/export`, { headers },
+    );
+    assert.equal(graphChanged, true);
+    assert.equal(changedGraphResponse.status, 409,
+      "a graph edit after the snapshot blocks delivery of formerly visible comments");
+    assert.doesNotMatch(await changedGraphResponse.text(), /account-export-probe:hidden/);
+  } finally {
+    await new Promise<void>((resolve) => graphExportServer.close(() => resolve()));
+  }
+  const scopedExport = await fetch(accountExportUrl, { headers }).then((response) => response.json());
+  assert.deepEqual(scopedExport.archives.map((item: { id: string }) => item.id), ["runtime-test"]);
+  assert.deepEqual(scopedExport.archives[0].ownComments
+    .filter((item: { text: string }) => item.text.startsWith("account-export-probe:"))
+    .map((item: { text: string }) => item.text), ["account-export-probe:visible"],
+  "a scoped member cannot export their old comment in a now-hidden branch");
+  const ownerCommentExport = await fetch(accountExportUrl, { headers: ownerHeaders })
+    .then((response) => response.json());
+  assert.deepEqual(new Set(ownerCommentExport.archives.map((item: { id: string }) => item.id)),
+    new Set(["runtime-test", "other-archive"]));
+  assert.deepEqual(new Set(ownerCommentExport.archives.flatMap((archive: { ownComments: Array<{ text: string }> }) =>
+    archive.ownComments.map((item) => item.text).filter((value) => value.startsWith("account-export-probe:")))),
+  new Set(["account-export-probe:other-owner", "account-export-probe:root-owner"]),
+  "the owner receives only their own comments across their current memberships");
+  const preparedCommentExport = await accountDataExport(app.archive.db).read("reader");
+  assert.ok(preparedCommentExport);
+  await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
+  assert.equal(await accountDataExport(app.archive.db).canDeliver(
+    "reader", preparedCommentExport.commentScopes), false,
+  "a membership revoked during snapshot preparation cannot receive its old comments");
+  const revokedCommentExport = await fetch(accountExportUrl, { headers })
+    .then((response) => response.json());
+  assert.equal(revokedCommentExport.archives[0].ownComments, null,
+    "a revoked archive remains in the account directory without exposing its comments");
+  await client.query(
+    "UPDATE archive_memberships SET approved=true,tree_access='all',person_id=NULL WHERE user_id='reader'",
+  );
+  await client.query("DELETE FROM person_comments WHERE text LIKE 'account-export-probe:%'");
+  await client.query("DELETE FROM people WHERE id='account-export-hidden'");
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query("DELETE FROM person_comments WHERE text='account-export-probe:other-owner'");
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   assert.equal(
     (await fetch(otherBase + "/api/account/archives", { headers: ownerHeaders })
       .then((r) => r.json())).archives.find((archive: { id: string }) => archive.id === "other-archive").current,

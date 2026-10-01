@@ -86,6 +86,8 @@ test("signed-in account without a tree can download its account data", async ({ 
   );
   await page.goto("/account");
   const link = page.getByRole("link", { name: "Скачать данные аккаунта" });
+  await expect(page.getByText(/свои текущие комментарии в доступных частях деревьев/)).toBeVisible();
+  await expect(page.getByText(/Тексты из закрытых ветвей и архивов без действующего доступа/)).toBeVisible();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", "/api/account/export");
   const download = page.waitForEvent("download");

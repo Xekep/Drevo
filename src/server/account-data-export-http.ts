@@ -6,6 +6,7 @@ import type { StoreDatabase } from "./store-database.ts";
 export function accountDataExportHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
+  beforeSend?: () => Promise<void>,
 ) {
   const exporter = accountDataExport(db);
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
@@ -30,8 +31,11 @@ export function accountDataExportHttp(
     const accountId = await auth.accountId(req);
     if (!accountId)
       return send(401, { error: "Требуется вход в аккаунт" });
-    const snapshot = await exporter.read(accountId);
-    if (!snapshot) return send(404, { error: "Аккаунт не найден" });
-    return send(200, snapshot, true);
+    const prepared = await exporter.read(accountId);
+    if (!prepared) return send(404, { error: "Аккаунт не найден" });
+    await beforeSend?.();
+    if (!(await exporter.canDeliver(accountId, prepared.commentScopes)))
+      return send(409, { error: "Доступ к дереву изменился. Повторите экспорт" });
+    return send(200, prepared.download, true);
   };
 }
