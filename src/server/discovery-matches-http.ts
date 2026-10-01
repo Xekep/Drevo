@@ -7,8 +7,8 @@ import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery, candidatePlaceQuery,
   candidateRelativeQuery, type PublishedRelative } from "./discovery-candidate-ranking.ts";
+import { publicPersonId } from "./public-person-id.ts";
 
-const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
 const matchPattern = /^[a-f0-9-]{36}$/;
 const candidatePageSize = 24;
@@ -217,9 +217,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       const targetArchiveId = body?.targetArchiveId;
       const targetId = body?.targetPersonId;
       const ignored = body?.ignored;
-      if (typeof sourceId !== "string" || !idPattern.test(sourceId) ||
+      if (!publicPersonId(sourceId) ||
           typeof targetArchiveId !== "string" || !archivePattern.test(targetArchiveId) ||
-          typeof targetId !== "string" || !idPattern.test(targetId) ||
+          !publicPersonId(targetId) ||
           targetArchiveId === archiveId || typeof ignored !== "boolean")
         return json(res, 400, { error: "Выберите две опубликованные карточки из разных архивов" });
       const approved = await auth.currentUser(req);
@@ -252,7 +252,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       if (!(await limiter.allow(requestClientKey(req.headers["x-real-ip"], req.socket.remoteAddress))))
         return json(res, 429, { error: "Слишком много запросов" });
       const sourceId = url.searchParams.get("sourcePersonId") || "";
-      if (!idPattern.test(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
+      if (!publicPersonId(sourceId)) return json(res, 400, { error: "Выберите опубликованную карточку" });
       const after = candidateCursor(url.searchParams.get("cursor"));
       if (!after) return json(res, 400, { error: "Некорректная страница подсказок" });
       const columns = `archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place`;
@@ -405,9 +405,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin }: {
       const targetArchiveId = body?.targetArchiveId;
       const targetId = body?.targetPersonId;
       const reason = body?.reason ?? "";
-      if (typeof sourceId !== "string" || !idPattern.test(sourceId) ||
+      if (!publicPersonId(sourceId) ||
           typeof targetArchiveId !== "string" || !archivePattern.test(targetArchiveId) ||
-          typeof targetId !== "string" || !idPattern.test(targetId) || targetArchiveId === archiveId)
+          !publicPersonId(targetId) || targetArchiveId === archiveId)
         return json(res, 400, { error: "Выберите две опубликованные карточки из разных архивов" });
       if (typeof reason !== "string" || reason.trim().length > 500)
         return json(res, 400, { error: "Комментарий должен быть короче 500 символов" });
