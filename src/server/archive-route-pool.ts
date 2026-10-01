@@ -84,7 +84,14 @@ export function archiveRoutePool(
       // can also take time, so check again before publishing the runtime.
       if (!(await permitted(req, id, path))) return null;
       const runtime = await open(id);
-      if (!(await permitted(req, id, path))) {
+      let stillPermitted: boolean;
+      try {
+        stillPermitted = await permitted(req, id, path);
+      } catch (error) {
+        await runtime.close();
+        throw error;
+      }
+      if (!stillPermitted) {
         await runtime.close();
         return null;
       }

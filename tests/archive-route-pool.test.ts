@@ -191,3 +191,55 @@ test("revocation during archive opening closes it without dispatching", async ()
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("a failed access recheck after opening closes the runtime and propagates the error", async () => {
+  const accessError = new Error("permission lookup failed");
+  let failRecheck = false;
+  let handled = 0;
+  let closed = 0;
+  let propagated: unknown;
+  let opening!: () => void;
+  let finishOpening!: () => void;
+  const openingStarted = new Promise<void>((resolve) => { opening = resolve; });
+  const openingGate = new Promise<void>((resolve) => { finishOpening = resolve; });
+  const pool = archiveRoutePool(
+    async () => {
+      if (failRecheck) throw accessError;
+      return true;
+    },
+    async () => {
+      opening();
+      await openingGate;
+      return {
+        async handle(_req, res) {
+          handled++;
+          res.end("archive");
+        },
+        async close() { closed++; },
+      };
+    },
+  );
+  const server = createServer((req, res) => {
+    void pool.route(req, res, new URL(req.url!, "http://localhost")).catch((error: unknown) => {
+      propagated = error;
+      res.writeHead(500).end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const pending = fetch(`${base}/a/private-tree/api/health`);
+    await openingStarted;
+    failRecheck = true;
+    finishOpening();
+    assert.equal((await pending).status, 500);
+    assert.equal(propagated, accessError);
+    assert.equal(handled, 0);
+    assert.equal(closed, 1);
+  } finally {
+    finishOpening();
+    await pool.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
