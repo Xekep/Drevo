@@ -180,6 +180,17 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
         ),
       ),
   ).toBe(true);
+  const pageImage = book
+    .locator('.BRpage-visible[data-index="1"] img.BRpageimage')
+    .first();
+  await expect(pageImage).toHaveAttribute("draggable", "false");
+  expect(
+    await pageImage.evaluate((image) =>
+      image.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      ),
+    ),
+  ).toBe(false);
   await commentsButton.click();
 
   await commentsButton.click();
@@ -288,12 +299,60 @@ test("BookReader turns the cover and preloads the next spread", async ({
   }
   await expect(book.locator(".br-mode-2up__leafs--flipping")).toHaveCount(0);
   const edge = book.locator("br-leaf-edges:visible").last();
-  await edge.hover();
   const label = edge.locator(".br-leaf-edges__label");
+  const hoverEdge = async () => {
+    await edge.hover();
+    const bounds = (await edge.boundingBox())!;
+    // The native reader fills the label on movement after entering the edge.
+    await page.mouse.move(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2 + 4,
+    );
+    await expect(label).toContainText(/\d+/);
+  };
+  await hoverEdge();
   await expect(label).toBeVisible();
+  expect(
+    Number((await label.textContent())!.match(/\d+/)![0]),
+  ).toBeGreaterThanOrEqual(1);
+  expect(
+    Number((await label.textContent())!.match(/\d+/)![0]),
+  ).toBeLessThanOrEqual(3);
   const labelBounds = (await label.boundingBox())!;
   expect(labelBounds.width).toBeLessThan(100);
+  expect(labelBounds.height).toBeGreaterThan(24);
   expect(labelBounds.height).toBeLessThan(40);
+  const renderedFontSize = () =>
+    label.evaluate((label) => {
+      const book = label.closest(".br-mode-2up__book")!;
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(book).transform);
+      return (
+        parseFloat(getComputedStyle(label).fontSize) *
+        Math.hypot(matrix.a, matrix.b)
+      );
+    });
+  await expect.poll(renderedFontSize).toBeGreaterThan(12.5);
+  await expect.poll(renderedFontSize).toBeLessThan(13.5);
+  await book.locator(".BRicon.zoom_in:visible").first().click();
+  await hoverEdge();
+  await expect(label).toBeVisible();
+  await expect.poll(renderedFontSize).toBeGreaterThan(12.5);
+  await expect.poll(renderedFontSize).toBeLessThan(13.5);
+  const transform = await book
+    .locator(".br-mode-2up__book")
+    .evaluate((book) => getComputedStyle(book).transform);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expect
+    .poll(() =>
+      book
+        .locator(".br-mode-2up__book")
+        .evaluate((book) => getComputedStyle(book).transform),
+    )
+    .not.toBe(transform);
+  await hoverEdge();
+  await expect(label).toBeVisible();
+  await expect.poll(renderedFontSize).toBeGreaterThan(12.5);
+  await expect.poll(renderedFontSize).toBeLessThan(13.5);
   expect(
     await book
       .locator(".br-mode-2up__root")

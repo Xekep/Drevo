@@ -36,6 +36,18 @@ export function makeDrevoPlugin(
     private magnifier = false;
 
     init() {
+      const sizeEdgeLabel = (event: MouseEvent) => {
+        if (!(event.target instanceof Element)) return;
+        const edge = event.target.closest<HTMLElement>("br-leaf-edges");
+        const book = edge?.closest<HTMLElement>(".br-mode-2up__book");
+        if (!edge || !book) return;
+        // The native label lives inside the zoomed book. Keep its screen size fixed.
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(book).transform);
+        const scale = Math.hypot(matrix.a, matrix.b);
+        if (scale > 0) edge.style.setProperty("--drevo-edge-scale", String(scale));
+      };
+      document.addEventListener("mouseover", sizeEdgeLabel);
+      document.addEventListener("mousemove", sizeEdgeLabel);
       const closeInfo = document.querySelector<HTMLButtonElement>(
         ".BRinfo .floatShut",
       );
