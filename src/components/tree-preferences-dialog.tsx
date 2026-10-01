@@ -91,32 +91,45 @@ export function TreePreferencesDialog({
             ))}
           </div>
         </fieldset>
+        <fieldset disabled={saving}>
+          <legend>Тема</legend>
+          <div className="tree-preference-options color-options">
+            {(
+              [
+                { scheme: "warm", title: "Тёплая" },
+                { scheme: "white", title: "Белая" },
+              ] as const
+            ).map(({ scheme, title }) => (
+              <label
+                key={scheme}
+                className={draft.colorScheme === scheme ? "is-selected" : ""}
+              >
+                <input
+                  type="radio"
+                  name="tree-color-scheme"
+                  aria-label={title}
+                  checked={draft.colorScheme === scheme}
+                  onChange={() =>
+                    void choose({ ...draft, colorScheme: scheme })
+                  }
+                />
+                <span
+                  className={`tree-color-preview ${scheme}-preview`}
+                  aria-hidden="true"
+                />
+                <span>
+                  <strong>{title}</strong>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
         {!!people.length && (
           <fieldset disabled={saving} className="tree-generation-settings">
             <legend>Поколения</legend>
             <p className="tree-generation-hint">
               Нажмите колесо мыши на карточке, чтобы выбрать опорного человека.
             </p>
-            <label className="tree-generation-toggle">
-              <input
-                type="checkbox"
-                checked={!!limits}
-                onChange={(event) =>
-                  void choose({
-                    ...draft,
-                    generationLimits: event.target.checked
-                      ? {
-                          anchorId: defaultAnchor,
-                          ancestors: 3,
-                          descendants: 3,
-                          collateral: 1,
-                        }
-                      : null,
-                  })
-                }
-              />
-              Ограничить видимое древо
-            </label>
             {limits && (
               <>
                 <p className="tree-generation-count" role="status">
@@ -201,41 +214,29 @@ export function TreePreferencesDialog({
                 </p>
               </>
             )}
+            <label className="tree-generation-toggle">
+              <span>Ограничить видимое древо</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={!!limits}
+                onChange={(event) =>
+                  void choose({
+                    ...draft,
+                    generationLimits: event.target.checked
+                      ? {
+                          anchorId: defaultAnchor,
+                          ancestors: 3,
+                          descendants: 3,
+                          collateral: 1,
+                        }
+                      : null,
+                  })
+                }
+              />
+            </label>
           </fieldset>
         )}
-        <fieldset disabled={saving}>
-          <legend>Тема</legend>
-          <div className="tree-preference-options color-options">
-            {(
-              [
-                { scheme: "warm", title: "Тёплая" },
-                { scheme: "white", title: "Белая" },
-              ] as const
-            ).map(({ scheme, title }) => (
-              <label
-                key={scheme}
-                className={draft.colorScheme === scheme ? "is-selected" : ""}
-              >
-                <input
-                  type="radio"
-                  name="tree-color-scheme"
-                  aria-label={title}
-                  checked={draft.colorScheme === scheme}
-                  onChange={() =>
-                    void choose({ ...draft, colorScheme: scheme })
-                  }
-                />
-                <span
-                  className={`tree-color-preview ${scheme}-preview`}
-                  aria-hidden="true"
-                />
-                <span>
-                  <strong>{title}</strong>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
         <p className="tree-preferences-status" role="status">
           {saving ? "Сохраняем…" : ""}
         </p>

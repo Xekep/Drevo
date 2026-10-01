@@ -110,7 +110,7 @@ test("scope and anchor changes center the current anchor, even with unchanged ge
 
   dialog = await settings(page);
   await dialog
-    .getByRole("checkbox", { name: "Ограничить видимое древо" })
+    .getByRole("switch", { name: "Ограничить видимое древо" })
     .uncheck();
   await dialog.getByRole("button", { name: "Закрыть" }).click();
   await expect(page.locator(".flow-person")).toHaveCount(6);

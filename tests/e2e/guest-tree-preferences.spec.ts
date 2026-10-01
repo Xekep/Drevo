@@ -78,7 +78,7 @@ for (const mode of ["shared", "public"] as const)
     await expect(canvas).toHaveClass(/theme-white/);
     await expect(canvas).toHaveClass(/has-portrait-cards/);
     await dialog
-      .getByRole("checkbox", { name: "Ограничить видимое древо" })
+      .getByRole("switch", { name: "Ограничить видимое древо" })
       .check();
     await dialog
       .getByRole("combobox", { name: "Относительно человека" })
@@ -103,6 +103,9 @@ for (const mode of ["shared", "public"] as const)
     expect(
       await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth),
     ).toBe(true);
+    await dialog
+      .getByRole("switch", { name: "Ограничить видимое древо" })
+      .scrollIntoViewIfNeeded();
     await dialog.screenshot({
       path: testInfo.outputPath(`${mode}-tree-settings.png`),
     });
@@ -121,7 +124,7 @@ for (const mode of ["shared", "public"] as const)
       .toBeGreaterThan(0);
     await gear.click();
     await expect(
-      dialog.getByRole("checkbox", { name: "Ограничить видимое древо" }),
+      dialog.getByRole("switch", { name: "Ограничить видимое древо" }),
     ).toBeChecked();
     await expect(
       dialog.getByRole("combobox", { name: "Относительно человека" }),
