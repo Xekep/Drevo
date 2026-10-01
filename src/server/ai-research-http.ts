@@ -58,6 +58,7 @@ export function aiResearchHttp({
   publicOrigin,
   fetcher = fetch,
   uploadsDirectory,
+  beforeChatDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -70,6 +71,7 @@ export function aiResearchHttp({
   publicOrigin?: string;
   fetcher?: typeof fetch;
   uploadsDirectory?: string;
+  beforeChatDelivery?: () => Promise<void>;
 }) {
   const chats = aiChatStore(archive.db);
   const attachments = aiAttachmentStore(
@@ -389,14 +391,19 @@ export function aiResearchHttp({
         const chat = await chats.read(id, user.id);
         if (!chat || chat.accessScope !== (await accessScope(user)))
           return json(res, 404, { error: "Диалог не найден" });
+        const busy = !!(await chats.isBusy(id));
+        const messages = await chats.messages(id, user.id);
+        await beforeChatDelivery?.();
+        if (!(await canDeliverAiData(req, chat.accessScope)))
+          return json(res, 403, { error: "Доступ к диалогу изменился" });
         return json(res, 200, {
           chat: {
             id: chat.id,
             createdAt: chat.createdAt,
             updatedAt: chat.updatedAt,
-            busy: !!(await chats.isBusy(id)),
+            busy,
           },
-          messages: await chats.messages(id, user.id),
+          messages,
         });
       }
       if (req.method === "DELETE") {

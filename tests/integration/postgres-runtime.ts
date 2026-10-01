@@ -32,7 +32,12 @@ import {
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
+import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
+import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
+import { researchCatalogStore } from "../../src/server/research-catalog.ts";
+import { mediaStore } from "../../src/server/media.ts";
+import { imagePreviews } from "../../src/server/image-previews.ts";
 import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
@@ -1163,6 +1168,56 @@ try {
     assert.deepEqual(exported.archives[0].ownComments, []);
   }
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
+  const aiOwner = await (await userStore(app.archive.db)).get("owner");
+  assert.ok(aiOwner);
+  const delayedChat = await aiChatStore(app.archive.db).create("owner", JSON.stringify([
+    aiOwner.role, aiOwner.treeAccess || "all", aiOwner.personId || "",
+  ]));
+  await aiChatStore(app.archive.db).append(delayedChat.id, "assistant", "downgrade-private-answer");
+  const visibleBeforeDowngrade = await fetch(
+    securedBase + `/api/ai/chats/${delayedChat.id}`, { headers: ownerHeaders },
+  );
+  assert.equal(visibleBeforeDowngrade.status, 200);
+  assert.match(await visibleBeforeDowngrade.text(), /downgrade-private-answer/);
+  const delayedAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  let downgradedBeforeDelivery = false;
+  const delayedAi = aiResearchHttp({
+    archive: app.archive,
+    auth: delayedAuth,
+    suggestions: researchSuggestionStore(app.archive.db),
+    aiSettings: await aiSettingsStore(app.archive.db),
+    usage: aiUsageStore(app.archive.db),
+    media: mediaStore(join(dirname(source), "uploads")),
+    previewImage: imagePreviews(join(dirname(source), "previews")),
+    researchCatalog: researchCatalogStore(app.archive.db),
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+    beforeChatDelivery: async () => {
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      downgradedBeforeDelivery = true;
+    },
+  });
+  const delayedServer = createServer((req, res) => {
+    void delayedAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => delayedServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const delayedPort = (delayedServer.address() as { port: number }).port;
+    const response = await fetch(
+      `http://127.0.0.1:${delayedPort}/api/ai/chats/${delayedChat.id}`,
+      { headers: ownerHeaders },
+    );
+    assert.equal(downgradedBeforeDelivery, true);
+    assert.equal(response.status, 403,
+      "a tier downgrade after loading messages blocks the old answer");
+    assert.doesNotMatch(await response.text(), /downgrade-private-answer/);
+  } finally {
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    await aiChatStore(app.archive.db).delete(delayedChat.id, "owner");
+    await new Promise<void>((resolve) => delayedServer.close(() => resolve()));
+    await delayedAi.close();
+  }
   const aiKeys = ["YANDEX_AI_API_KEY", "YANDEX_AI_FOLDER_ID", "YANDEX_AI_MODEL"] as const;
   const previousAiEnvironment = aiKeys.map((key) => process.env[key]);
   process.env.YANDEX_AI_API_KEY = "test-key";
