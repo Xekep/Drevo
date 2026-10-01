@@ -1873,6 +1873,19 @@ try {
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
     WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
   "reapplying the additive projection migration keeps one linked pair");
+  const backfillAdmin = process.env.PGADMINUSER
+    ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
+    : client;
+  if (backfillAdmin !== client) await backfillAdmin.connect();
+  try {
+    await backfillAdmin.query(readFileSync(
+      new URL("../../ops/postgres/backfill-discovery.sql", import.meta.url), "utf8"));
+  } finally {
+    if (backfillAdmin !== client) await backfillAdmin.end();
+  }
+  assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count FROM discovery_linked_pairs
+    WHERE left_archive_id='other-archive' AND right_archive_id='runtime-test'`).get())?.count, 1,
+  "administrator backfill rebuilds the confirmed public transition after truncation");
   assert.deepEqual((await client.query(`SELECT column_name FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='discovery_linked_pairs'
     ORDER BY ordinal_position`)).rows.map((row) => row.column_name),
