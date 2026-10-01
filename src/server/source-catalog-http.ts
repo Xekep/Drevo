@@ -122,11 +122,18 @@ export function sourceCatalogHttp(
         const changed = await db.transaction(async () => {
           await assertCurrentArchiveActor(db, actor);
           if (!await catalog.documentIdsExist(source.documentIds)) throw new Error("Документ отсутствует в архиве");
+          const family = (await readArchive(db)).family;
+          if (allCitations(family).some((citation) => citation.catalogId === id &&
+            citation.documentId && !source.documentIds.includes(citation.documentId)))
+            return "linked-document";
           const result = await catalog.update(source, input.version as number);
           if (result.changes) await bumpRevision();
-          return result.changes;
+          return result.changes ? "updated" : "stale";
         });
-        return changed ? json(res, 200, { source: { ...source, version: (input.version as number) + 1 } })
+        if (changed === "linked-document")
+          return json(res, 409, { error: "Документ используется цитатой; сначала снимите связь с фактом" });
+        return changed === "updated"
+          ? json(res, 200, { source: { ...source, version: (input.version as number) + 1 } })
           : json(res, 409, { error: "Источник изменён в другой вкладке" });
       } catch (error) { return json(res, 400, { error: (error as Error).message }); }
     }

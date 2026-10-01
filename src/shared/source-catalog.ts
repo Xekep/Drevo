@@ -1,5 +1,5 @@
 import type { Source } from "../domain/types.ts";
-import { safeUrl } from "../domain/dates.ts";
+import { safeUrl, validDate } from "../domain/dates.ts";
 
 export type CatalogSource = {
   id: string;
@@ -31,7 +31,7 @@ export function parseCatalogSource(value: unknown): CatalogSource | null {
       (input[key] as string).length > (key === "description" ? 10_000 : 2_000)) ||
     !(input.title as string).trim() ||
     (input.url && (!/^https?:\/\/[^\s]+$/i.test(input.url as string) || !safeUrl(input.url as string))) ||
-    (input.accessedAt && !/^\d{4}-\d{2}-\d{2}$/.test(input.accessedAt as string)) ||
+    (input.accessedAt && ((input.accessedAt as string).length !== 10 || !validDate(input.accessedAt))) ||
     !Array.isArray(input.documentIds) || input.documentIds.length > 100 ||
     input.documentIds.some((id) => typeof id !== "string" || !idPattern.test(id)) ||
     new Set(input.documentIds).size !== input.documentIds.length) return null;
