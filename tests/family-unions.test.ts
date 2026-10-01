@@ -86,6 +86,17 @@ test("status is derived per union, never from a person's ambiguous divorce event
   assert.equal(unionStatus(data.unions[0], "2026-01-01"), "former");
   assert.equal(unionStatus(data.unions[1], "1960-01-01"), "unknown");
   assert.equal(unionStatus(data.unions[1]), "current");
+  const dated: FamilyUnion = {
+    id: "dated",
+    participants: ["a", "c"],
+    type: "marriage",
+    formation: { date: "2000" },
+    ongoing: { date: "2010-03-04" },
+    divorce: { date: "2020" },
+  };
+  assert.equal(unionStatus(dated, "1999-12-31"), "unknown");
+  assert.equal(unionStatus(dated, "2010-03-04"), "current");
+  assert.equal(unionStatus(dated, "2021-01-01"), "former");
   assert.equal(
     analyzeKinship(data.people[0], data.people[1], data.people, [], data.unions)
       .title,

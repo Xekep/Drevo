@@ -8,6 +8,11 @@ export function unionStatus(
   union: FamilyUnion,
   asOf = new Date().toISOString().slice(0, 10),
 ): UnionStatus {
+  if (
+    union.formation?.date &&
+    dateBound(asOf, true) < dateBound(union.formation.date, false)
+  )
+    return "unknown";
   const ended = union.divorce || union.ending;
   if (
     ended &&
@@ -18,7 +23,8 @@ export function unionStatus(
   if (
     union.ongoing?.date === asOf &&
     /^\d{4}-\d{2}-\d{2}$/.test(asOf) &&
-    !ended
+    (!ended ||
+      (ended.date && dateBound(asOf, true) < dateBound(ended.date, false)))
   )
     return "current";
   return "unknown";
