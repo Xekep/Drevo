@@ -48,6 +48,7 @@ function readCursor(value: string | null): Cursor | null {
 export function discoveryPeopleHttp(
   db: StoreDatabase,
   auth: Awaited<ReturnType<typeof createAuth>>,
+  beforeDetailLookup?: () => Promise<void>,
 ) {
   const limiter = createSharedRequestLimiter(db, "discovery-people", { windowMs: 60_000, limit: 60 });
   const json = (res: ServerResponse, status: number, value: unknown) => {
@@ -60,17 +61,40 @@ export function discoveryPeopleHttp(
     res.end(JSON.stringify(value));
     return true;
   };
-  const linkedPeople = async (archiveId: string, personId: string) => {
-    const columns = "other.archive_id,other.person_id,other.name,other.birth_surname,other.birth_year,other.death_year,other.birth_place,other.death_place,other.publication_version";
-    const rows = await db.prepare("", `SELECT ${columns} FROM discovery_linked_pairs m
-      JOIN discovery_people other ON other.archive_id=m.right_archive_id AND other.person_id=m.right_person_id
-      WHERE m.left_archive_id=? AND m.left_person_id=?
-      UNION ALL
-      SELECT ${columns} FROM discovery_linked_pairs m
-      JOIN discovery_people other ON other.archive_id=m.left_archive_id AND other.person_id=m.left_person_id
-      WHERE m.right_archive_id=? AND m.right_person_id=?
-      ORDER BY name,archive_id,person_id LIMIT 51`).all(archiveId,personId,archiveId,personId);
-    return { cards: rows.slice(0,50).map(listedPerson), truncated: rows.length > 50 };
+  const detailColumns = "archive_id,person_id,name,birth_surname,birth_year,death_year,birth_place,death_place,publication_version";
+  const linkedColumns = detailColumns.split(",").map((column) => `other.${column}`).join(",");
+  const linkedPeople = async (archiveId: string, personId: string,
+    publicationVersion: string, rowVersion: string) => {
+    // One final PostgreSQL snapshot covers the requested card and every linked
+    // card. A second independent query would leave either side stale on revoke.
+    const rows = await db.prepare("", `WITH chosen AS (
+        SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people
+        WHERE archive_id=? AND person_id=?
+      )
+      SELECT chosen.*,to_jsonb(other) AS linked_card FROM chosen
+      LEFT JOIN LATERAL (
+        SELECT ${linkedColumns} FROM discovery_linked_pairs m
+        JOIN discovery_people other ON other.archive_id=m.right_archive_id AND other.person_id=m.right_person_id
+        WHERE m.left_archive_id=chosen.archive_id AND m.left_person_id=chosen.person_id
+        UNION ALL
+        SELECT ${linkedColumns} FROM discovery_linked_pairs m
+        JOIN discovery_people other ON other.archive_id=m.left_archive_id AND other.person_id=m.left_person_id
+        WHERE m.right_archive_id=chosen.archive_id AND m.right_person_id=chosen.person_id
+        ORDER BY name,archive_id,person_id LIMIT 51
+      ) other ON true
+      WHERE chosen.publication_version=? AND chosen.row_version=?`).all(
+      archiveId,personId,publicationVersion,rowVersion);
+    const cards = rows.flatMap((row) => {
+      if (!row.linked_card) return [];
+      // The PostgreSQL store intentionally leaves jsonb as text for callers.
+      const linked: unknown = typeof row.linked_card === "string"
+        ? JSON.parse(row.linked_card) : row.linked_card;
+      if (!linked || typeof linked !== "object" || Array.isArray(linked))
+        throw new Error("Invalid linked discovery card projection");
+      return [listedPerson(linked as DiscoveryRow)];
+    });
+    return rows.length ? { person: listedPerson(rows[0]), cards: cards.slice(0,50),
+      truncated: cards.length > 50 } : null;
   };
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     const detail = /^\/api\/discovery\/people\/([A-Za-z0-9-]{3,64})\/([^/]{1,1200})$/.exec(url.pathname);
@@ -90,12 +114,14 @@ export function discoveryPeopleHttp(
     if (detail) {
       const personId = decodePublicPersonId(detail[2]);
       if (!personId) return json(res, 404, { error: "Человек не найден" });
-      const row = await db.prepare("", `SELECT archive_id,person_id,name,birth_surname,birth_year,death_year,
-             birth_place,death_place,publication_version FROM discovery_people
+      const row = await db.prepare("", `SELECT ${detailColumns},xmin::text AS row_version FROM discovery_people
              WHERE archive_id=? AND person_id=?`).get(detail[1], personId);
       if (!row) return json(res, 404, { error: "Человек не найден" });
-      const linked = await linkedPeople(detail[1],personId);
-      return json(res, 200, { person: listedPerson(row), linkedCards: linked.cards,
+      await beforeDetailLookup?.();
+      const linked = await linkedPeople(detail[1],personId,
+        String(row.publication_version),String(row.row_version));
+      if (!linked) return json(res, 404, { error: "Человек не найден" });
+      return json(res, 200, { person: linked.person, linkedCards: linked.cards,
         linkedCardsTruncated: linked.truncated });
     }
     const query = (url.searchParams.get("q") || "").trim();

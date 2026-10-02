@@ -56,6 +56,7 @@ import { sharesStore } from "../../src/server/shares.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
+import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
@@ -3315,6 +3316,59 @@ try {
   const specialDetail = await fetch(specialDiscoveryUrl, { headers });
   assert.equal(specialDetail.status, 200);
   assert.equal((await specialDetail.json()).person.id, specialId);
+  const discoveryAuth = await createAuth(await userStore(app.archive.db), app.archive.db,
+    process.env.PUBLIC_ORIGIN);
+  const pausedDiscoveryDetail = async (change: () => Promise<void>) => {
+    let reached!: () => void, resume!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { resume = resolve; });
+    const endpoint = discoveryPeopleHttp(app!.archive.db, discoveryAuth,
+      async () => { reached(); await gate; });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const request = fetch(`http://127.0.0.1:${port}/api/discovery/people/other-archive/${specialSegment}`,
+      { headers: { ...headers, "X-Real-IP": "198.51.100.226" } });
+    try {
+      await Promise.race([
+        ready,
+        request.then(() => { throw new Error("Discovery detail sent before the lookup barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Discovery detail did not reach the lookup barrier")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      await change();
+      resume();
+      return await request;
+    } finally {
+      resume();
+      await request.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+  const unchangedDetail = await pausedDiscoveryDetail(async () => {});
+  assert.equal(unchangedDetail.status, 200,
+    "an unchanged published card is still delivered after the lookup barrier");
+  assert.deepEqual((await unchangedDetail.json()).linkedCards, []);
+  assert.equal((await pausedDiscoveryDetail(async () => {
+    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
+  })).status, 404, "revocation between projection reads cannot deliver the old card");
+  assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders,
+    body: JSON.stringify({ fields: selectedDiscoveryFields }) })).status, 200);
+  assert.equal((await fetch(specialDiscoveryUrl, { headers }).then((response) => response.json()))
+    .person.birthSurname, "ПоискРождения");
+  assert.equal((await pausedDiscoveryDetail(async () => {
+    assert.equal((await fetch(specialAdminUrl, { method: "DELETE", headers: ownerHeaders })).status, 200);
+    assert.equal((await fetch(specialAdminUrl, { method: "PUT", headers: ownerHeaders })).status, 200);
+  })).status, 404,
+  "republication with narrower fields cannot deliver a card from the previous publication");
+  const narrowedDetail = await fetch(specialDiscoveryUrl, { headers });
+  assert.equal(narrowedDetail.status, 200);
+  assert.equal((await narrowedDetail.json()).person.birthSurname, undefined);
   assert.equal((await fetch(otherBase + `/api/published-people/${specialSegment}`, {
     headers: ownerHeaders,
   })).status, 200, "the archive-local published card decodes the same ID");
@@ -3948,6 +4002,9 @@ try {
     headers,
   });
   const linkedPublicBody = await linkedPublicCard.json();
+  assert.equal(linkedPublicCard.status, 200);
+  assert.equal(linkedPublicBody.linkedCards.length, 2,
+    "unchanged confirmed links survive the final discovery snapshot");
   assert.doesNotMatch(JSON.stringify(linkedPublicBody), /Совпадают семейные записи/,
     "the proposal note is visible to participant admins, not global discovery readers");
   assert.deepEqual(linkedPublicBody.linkedCards.map((person: { archiveId: string; id: string }) =>
