@@ -5,7 +5,7 @@ import sharp from "sharp";
 import { renderPortraits } from "./render-portraits";
 
 test.use({
-  trace: "off",
+  trace: "retain-on-failure",
   launchOptions: {
     args: [
       "--enable-unsafe-swiftshader",
@@ -287,6 +287,8 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
   if (testInfo.project.name === "desktop") {
     await page.keyboard.press("Shift+Enter");
     await expect(card).toHaveClass(/is-selected/);
+    // Entering the selected handle must keep its React Flow node stable: a
+    // replacement briefly drops measured handle bounds and loses a fast drag.
     // Dragging a connection temporarily unmounts the GPU scene. Cancelling it
     // keeps the geometry, but the new canvas still needs its own ready handoff.
     // Hold portrait responses to make stale readiness observable on frame one.
