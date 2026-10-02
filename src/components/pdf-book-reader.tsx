@@ -613,13 +613,18 @@ export function PdfBookReader({
                         type="button"
                         aria-pressed={item.id === activeAnnotation}
                         disabled={loading || !!error}
-                        onClick={() => {
+                        onClick={(event) => {
+                          const selected = window.getSelection();
+                          if (
+                            event.detail > 0 && selected && !selected.isCollapsed &&
+                            (event.currentTarget.contains(selected.anchorNode) ||
+                              event.currentTarget.contains(selected.focusNode))
+                          ) return;
                           navigateToPage.current?.(item.page - 1);
                           setActiveAnnotation(item.id);
                           setAnnotating(false);
                           setSelection(null);
                           setComment("");
-                          setCommentsOpen(false);
                         }}
                       >
                         <small>
