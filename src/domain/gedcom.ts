@@ -15,6 +15,7 @@ import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
+import { parseDocumentPages } from "../shared/document-links.ts";
 import {
   familyMedia,
   TRANSFER_TEXT_LIMIT,
@@ -1115,7 +1116,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
             const document = parseDocumentDetails(extra.document);
             if (!document)
               throw new Error("Повреждены сведения о документе Drevo");
-            item.document = document;
+            const pages = extra.document.pages === undefined
+              ? undefined : parseDocumentPages(extra.document.pages);
+            if (pages === null)
+              throw new Error("Повреждены страницы документа Drevo");
+            item.document = { ...document, ...(pages === undefined ? {} : { pages }) };
           }
         } catch {
           throw new Error("Повреждены сведения о медиа Drevo");

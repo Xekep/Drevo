@@ -954,11 +954,23 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
           place: "Мурзинка",
           description: "Лист 7",
           provenance: "ГАСО, Ф. 6",
+          pages: [{ number: 7, description: "Рождение Анны Ивановой" }],
         },
       },
     ];
     const path = join(dir, "test.gdz");
-    media.push({ ...media[1], id: "tiff", file: "documents/scan.tif", mime: "image/tiff", title: "TIFF" });
+    media.push({ ...media[1], id: "tiff", file: "documents/scan.tif", mime: "image/tiff", title: "TIFF",
+      document: { ...media[1].document!, pages: [{ number: 2, description: "Продолжение записи" }] } });
+    for (const version of ["5.5.1", "7.0"] as const) {
+      const text = exportGedcom(family, { version, media });
+      const plain = importGedcom(text, `pages-${version}`);
+      assert.deepEqual(plain.media.find((item) => item.title === "Запись")?.document?.pages,
+        media[1].document?.pages);
+      assert.deepEqual(plain.media.find((item) => item.title === "TIFF")?.document?.pages,
+        media[2].document?.pages);
+      assert.throws(() => importGedcom(text.replace('"number":7', '"number":0'), `bad-pages-${version}`),
+        /Повреждены сведения о медиа Drevo/);
+    }
     await writeGenealogyPackage(path, uploads, family, media);
     const zip = await openPromise(path);
     const names: string[] = [];
@@ -1033,6 +1045,8 @@ test("GEDZIP round trip includes exact photo/PDF bytes, portraits, tags, documen
       parsed.files.find((f) => f.documentId)?.document,
       media[1].document,
     );
+    assert.deepEqual(parsed.files.find((f) => f.name.endsWith(".tif"))?.document?.pages,
+      media[2].document?.pages);
     const broken = join(dir, "missing.gdz");
     await zipFile(broken, [["gedcom.ged", Buffer.from(external7)]]);
     await assert.rejects(
@@ -1722,6 +1736,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
       place: "Мурзинка",
       description: "Лист 7",
       provenance: "ГАСО, Ф. 6",
+      pages: [{ number: 7, description: "Запись о семье" }],
     };
     const ged = external7
       .replace(
@@ -1810,7 +1825,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     );
     const importedDocument = await archive.db
       .prepare(
-        "SELECT title_search,document_type,document_date,place,description,provenance FROM documents",
+        "SELECT title_search,document_type,document_date,place,description,provenance,pages FROM documents",
       )
       .get();
     assert.equal(importedDocument?.document_type, documentDetails.documentType);
@@ -1818,6 +1833,7 @@ test("HTTP GEDZIP default, persistent stage, PDF import, rollback and one-time r
     assert.equal(importedDocument?.place, documentDetails.place);
     assert.equal(importedDocument?.description, documentDetails.description);
     assert.equal(importedDocument?.provenance, documentDetails.provenance);
+    assert.deepEqual(JSON.parse(String(importedDocument?.pages)), documentDetails.pages);
     assert.match(String(importedDocument?.title_search), /мурзинка/);
     assert.equal(
       (await archive.db
