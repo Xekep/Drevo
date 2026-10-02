@@ -782,6 +782,31 @@ test("Agelong XML keeps people, relationships, coordinates and events through GE
   );
 });
 
+test("Agelong XML keeps each event participant role through GEDCOM 7", () => {
+  const input = `<agelongtree><persons>
+    <person id="a" fn="Anna" sn="Example"/>
+    <person id="b" fn="Boris" sn="Example"/>
+    </persons><events><event id="trip" type="Поездка" date="1920">
+      <persons><person id="a" role="Путешественница"/>
+      <person id="b" role="Сопровождающий"/></persons>
+    </event></events></agelongtree>`;
+  const imported = importAgelongXml(input, "roles");
+  const role = (name: string, family = imported.family) =>
+    family.people.find((person) => person.name === name)?.events?.find(
+      (event) => event.title === "Поездка",
+    )?.description || "";
+  assert.match(role("Anna"), /Роль в «Древе Жизни»: Путешественница/);
+  assert.doesNotMatch(role("Anna"), /Сопровождающий/);
+  assert.match(role("Boris"), /Роль в «Древе Жизни»: Сопровождающий/);
+  assert.ok(imported.warnings.some((warning) => warning.includes("Роли участников событий сохранены текстом")));
+  const restored = importGedcom(
+    exportGedcom(imported.family, { version: "7.0" }),
+    "roles-roundtrip",
+  );
+  assert.equal(role("Anna", restored.family), role("Anna"));
+  assert.equal(role("Boris", restored.family), role("Boris"));
+});
+
 test("Agelong XML attaches former-spouse divorce to the right marriage regardless of event order", () => {
   const input = `<agelongtree><persons>
     <person id="a" fn="Anna" sn="Example"/><person id="b" fn="Boris" sn="Example"/>

@@ -499,11 +499,15 @@ export function importAgelongXml(
     for (const { person: p, role } of participants) {
       if ((birth && !birthRoles.has(role)) || (death && !deathRoles.has(role)))
         continue;
+      const participantRole = !birth && !death && role?.trim()
+        ? `Роль в «Древе Жизни»: ${role.trim()}`
+        : "";
       const raw = n.attrs.date || "",
         date = xmlDate(raw),
         place = placeDetails(n),
         description = [
           textOf(n, "comment"),
+          participantRole,
           n.attrs.institution && `Учреждение: ${n.attrs.institution}`,
           n.attrs.deathreason &&
             !p.biography?.includes(`Причина смерти: ${n.attrs.deathreason}`) &&
@@ -563,6 +567,10 @@ export function importAgelongXml(
           "drevo",
         )
       ) {
+        if (participantRole)
+          warnings.add(
+            "Роли участников событий сохранены текстом в описаниях событий; отдельной модели ролей событий в Drevo нет.",
+          );
         (p.events ||= []).push({
           id: `${namespace}-e${eventId}`,
           type,
