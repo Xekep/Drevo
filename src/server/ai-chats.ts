@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { StoreDatabase } from "./store-database.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
 import { AI_CHAT_LIMIT } from "../shared/research-attachments.ts";
+import type { GeneratedResearchFileMeta } from "./generated-research-files.ts";
 
 export class AiChatLimitError extends Error {
   constructor() {
@@ -28,6 +29,7 @@ export type AiChatMessage = {
   references?: unknown[];
   suggestionIds?: string[];
   files?: Array<{ name: string; url: string }>;
+  generatedFileMeta?: GeneratedResearchFileMeta[];
   attachments?: ResearchAttachment[];
 };
 

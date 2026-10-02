@@ -36,9 +36,8 @@ import { requestedArchiveExport } from "../domain/research-export.ts";
 import {
   CODE_INTERPRETER_TOOL,
   runCodeInterpreter,
-  type GeneratedResearchFile,
 } from "./code-interpreter.ts";
-import { storeGeneratedResearchFile } from "./generated-research-files.ts";
+import type { generatedResearchFileStore } from "./generated-research-files.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -119,7 +118,7 @@ export function createResearchRunner({
     metrics: ResearchMetrics,
   ) => ReturnType<typeof createWebSearchService> | undefined;
   chats: ReturnType<typeof aiChatStore>;
-  generatedFiles: Map<string, GeneratedResearchFile>;
+  generatedFiles: ReturnType<typeof generatedResearchFileStore>;
   attachments?: ReturnType<typeof aiAttachmentStore>;
 }) {
   const responses = yandexResponsesClient(fetcher);
@@ -1268,14 +1267,14 @@ export function createResearchRunner({
             });
             const links: Array<{ name: string; url: string }> = [];
             for (const file of calculation.files) {
-              const id = storeGeneratedResearchFile(generatedFiles, {
+              const saved = await generatedFiles.save({
                 ...file,
                 ownerId: user.id,
                 chatId,
                 expires: Date.now() + 30 * 60_000,
               });
-              if (!id) break;
-              links.push({ name: file.name, url: `/api/ai/files/${id}` });
+              if (!saved) break;
+              links.push(saved);
             }
             files.push(...links);
             result = {
@@ -1303,7 +1302,7 @@ export function createResearchRunner({
                 graphInPdfRequested ? archiveGraph(family) : undefined,
               ),
               name = researchPdfFilename(title);
-            const id = storeGeneratedResearchFile(generatedFiles, {
+            const saved = await generatedFiles.save({
               ownerId: user.id,
               chatId,
               contentType: "application/pdf",
@@ -1311,11 +1310,10 @@ export function createResearchRunner({
               bytes,
               expires: Date.now() + 30 * 60_000,
             });
-            if (!id)
+            if (!saved)
               throw new Error("Временное хранилище файлов заполнено. Повторите позже.");
-            const url = `/api/ai/files/${id}`;
-            files.push({ name, url });
-            result = { created: true, file: { name, url } };
+            files.push(saved);
+            result = { created: true, file: saved };
           } else if (call.function.name === ANALYZE_PHOTO_TOOL.name) {
             if (!photoAnalysisRequested)
               throw new Error(
