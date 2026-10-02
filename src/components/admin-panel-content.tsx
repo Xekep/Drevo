@@ -475,7 +475,9 @@ export function AdminPanel({
         <header className="admin-page-header">
           <span className="section-label">УПРАВЛЕНИЕ АРХИВОМ</span>
           <h1>{ADMIN_INTRO[section].title}</h1>
-          <p className="admin-subtitle">{ADMIN_INTRO[section].description}</p>
+          {(publicationOwnership === "owner" ||
+            (section !== "publications" && section !== "matches")) &&
+            <p className="admin-subtitle">{ADMIN_INTRO[section].description}</p>}
         </header>
         {!settings && !error && <p role="status">Загружаем настройки…</p>}
         {settings && section === "users" && (
