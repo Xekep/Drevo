@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS media_originals (
   archive_id text NOT NULL DEFAULT current_setting('drevo.archive_id', true)
     REFERENCES archives(id) ON DELETE CASCADE,
-  url text NOT NULL CHECK (url ~ '^/media/[a-zA-Z0-9-]+\.(jpg|png|webp|gif)$'),
+  url text NOT NULL CHECK (url ~ '^/media/[a-zA-Z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$'),
   size_bytes bigint NOT NULL CHECK (size_bytes > 0),
   uploaded_by text,
   created_at text NOT NULL DEFAULT (now()::text),

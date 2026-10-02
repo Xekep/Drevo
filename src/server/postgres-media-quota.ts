@@ -1,5 +1,7 @@
 import type { StoreDatabase } from "./store-database.ts";
 import { UploadQuotaError } from "./upload-quota.ts";
+import { postgresMediaReferencesSql } from "./media-reference-sql.ts";
+export { postgresMediaReferencesSql } from "./media-reference-sql.ts";
 
 export const BASIC_MEDIA_BYTES = 500_000_000;
 
@@ -7,15 +9,6 @@ export const BASIC_MEDIA_BYTES = 500_000_000;
  * fragments/query strings before comparing with the stored original URL.
  * The EXISTS below counts an original once even when several facts cite it.
  */
-export const postgresMediaReferencesSql = `
-  SELECT data->>'photo' AS url FROM people
-  UNION ALL SELECT data->>'url' FROM photos
-  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
-    FROM people p CROSS JOIN LATERAL jsonb_path_query(p.data, '$.**.sources[*].url') cited(value)
-  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
-    FROM family_unions u CROSS JOIN LATERAL jsonb_path_query(u.data, '$.**.sources[*].url') cited(value)
-  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
-    FROM relations r CROSS JOIN LATERAL jsonb_path_query(r.sources, '$[*].url') cited(value)`;
 
 /** Referenced originals and live temporary grants are counted once per URL. */
 export async function postgresMediaBytes(db: StoreDatabase, now = Date.now()) {

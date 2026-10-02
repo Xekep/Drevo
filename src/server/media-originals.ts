@@ -2,7 +2,8 @@ import { lstat } from "node:fs/promises";
 import type { Family } from "../domain/types.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import type { mediaStore } from "./media.ts";
-import { mediaPattern } from "./media.ts";
+import { originalMediaPattern } from "./media.ts";
+import { allCitations } from "./source-catalog-store.ts";
 
 const insertSqlite =
   "INSERT INTO media_originals(url,size_bytes,uploaded_by,created_at) VALUES(?,?,?,?) ON CONFLICT(url) DO NOTHING";
@@ -17,7 +18,7 @@ export async function recordMediaOriginal(
   uploadedBy: string | null,
 ) {
   if (
-    !mediaPattern.test(url) ||
+    !originalMediaPattern.test(url) ||
     !Number.isSafeInteger(sizeBytes) ||
     sizeBytes <= 0
   )
@@ -38,6 +39,17 @@ export async function indexReferencedMediaOriginals(
   const urls = new Set<string>();
   for (const person of family.people) if (person.photo) urls.add(person.photo);
   for (const photo of family.photos || []) urls.add(photo.url);
+  for (const citation of allCitations(family)) {
+    const url = citation.url?.split(/[?#]/, 1)[0];
+    if (url?.startsWith("/media/")) urls.add(url);
+  }
+  // A citation may also link a catalogued document's original directly.
+  // Its size is already tracked in documents.file_size, so do not count it
+  // again as a source-only original on restart.
+  for (const row of await db.prepare(
+    "SELECT file_name FROM documents", "SELECT file_name FROM documents",
+  ).all())
+    urls.delete(`/media/${String(row.file_name)}`);
 
   const known = new Set(
     (
@@ -60,7 +72,7 @@ export async function indexReferencedMediaOriginals(
         const next = iterator.next();
         if (next.done) return;
         const url = next.value;
-        const source = media.open(url);
+        const source = media.openOriginal(url);
         if (!source) continue;
         const file = await lstat(source.path).catch(() => null);
         if (

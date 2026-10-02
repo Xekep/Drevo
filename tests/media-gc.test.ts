@@ -31,7 +31,9 @@ test("media GC removes only old unreferenced images", () => {
     writeFileSync(join(dir, orphanTiff), orphanTiff);
     utimesSync(join(dir, orphanTiff), old, old);
     db.prepare("INSERT INTO people(data) VALUES(?)").run(
-      JSON.stringify({ photo: "/media/referenced.jpg" }),
+      JSON.stringify({ photo: "/media/referenced.jpg", sources: [
+        { url: "/media/cited.pdf#page=2" },
+      ], birthDateClaim: { sources: [{ url: "/media/cited.tif" }] } }),
     );
     db.prepare("INSERT INTO photos(data) VALUES(?)").run(
       JSON.stringify({ url: "/media/gallery.png" }),
@@ -39,6 +41,8 @@ test("media GC removes only old unreferenced images", () => {
 
     for (const name of [
       "referenced.jpg",
+      "cited.pdf",
+      "cited.tif",
       "gallery.png",
       "old-orphan.webp",
       "fresh-orphan.gif",
@@ -50,6 +54,8 @@ test("media GC removes only old unreferenced images", () => {
 
     for (const name of [
       "referenced.jpg",
+      "cited.pdf",
+      "cited.tif",
       "gallery.png",
       "old-orphan.webp",
       "notes.txt",
@@ -66,6 +72,8 @@ test("media GC removes only old unreferenced images", () => {
     ]);
     assert.equal(existsSync(join(dir, "old-orphan.webp")), false);
     assert.equal(existsSync(join(dir, "referenced.jpg")), true);
+    assert.equal(existsSync(join(dir, "cited.pdf")), true);
+    assert.equal(existsSync(join(dir, "cited.tif")), true);
     assert.equal(existsSync(join(dir, "gallery.png")), true);
     assert.equal(existsSync(join(dir, "fresh-orphan.gif")), true);
     assert.equal(existsSync(join(dir, "notes.txt")), true);

@@ -255,6 +255,23 @@ test("portrait size is recorded once and a referenced original is recovered on r
       await indexReferencedMediaOriginals(app.archive.db, family, store),
       { indexed: 0, missing: 1 },
     );
+    const citation = structuredClone(family);
+    delete citation.people[0].photo;
+    citation.people[0].sources = [{ title: "Scan", type: "archive", reference: "",
+      url: "/media/evidence.pdf#page=2" }];
+    const evidence = Buffer.from("%PDF-1.4\ncitation original");
+    writeFileSync(join(directory, "uploads", "evidence.pdf"), evidence);
+    assert.deepEqual(await indexReferencedMediaOriginals(app.archive.db, citation, store),
+      { indexed: 1, missing: 0 });
+    assert.equal((await app.archive.db.prepare(
+      "SELECT size_bytes FROM media_originals WHERE url='/media/evidence.pdf'",
+    ).get())?.size_bytes, evidence.length);
+    await app.archive.db.prepare("DELETE FROM media_originals WHERE url='/media/evidence.pdf'").run();
+    await app.archive.db.prepare(`INSERT INTO documents
+      (id,title,title_search,file_name,file_size,uploaded_by,created_at)
+      VALUES('evidence','Scan','scan','evidence.pdf',?,'local','2026-10-02')`).run(evidence.length);
+    assert.deepEqual(await indexReferencedMediaOriginals(app.archive.db, citation, store),
+      { indexed: 0, missing: 0 }, "a catalogued document is already counted by file_size");
   } finally {
     await app?.close();
     rmSync(directory, { recursive: true, force: true });

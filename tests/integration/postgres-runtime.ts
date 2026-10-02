@@ -6606,12 +6606,19 @@ try {
     const portableDocumentId = "ae972b95-dd27-4a03-beb4-5239df77f48a";
     const portableAnnotationId = "9818d273-466c-4732-a5f4-c79e358cf70d";
     writeFileSync(join(directory, "portable-record.pdf"), "%PDF-1.4\nportable document");
+    const citationPdf = Buffer.from("%PDF-1.4\nportable citation only");
+    const citationTiff = await sampleTiff();
+    writeFileSync(join(directory, "portable-citation.pdf"), citationPdf);
+    writeFileSync(join(directory, "portable-citation.tif"), citationTiff);
     await writePortablePackage(createWriteStream(importFile), directory, {
       family: {
         title: "Transferred", description: "", demo: false,
         people: [{ id: "pg-portable-person", name: "Portable", surname: "Person",
           patronymic: "", sex: "u", birth: "1900", birthPlace: "",
-          parents: [], spouses: [], generation: 1, column: 0, sources: [],
+          parents: [], spouses: [], generation: 1, column: 0, sources: [
+            { title: "PDF citation", type: "archive", reference: "", url: "/media/portable-citation.pdf#page=2" },
+            { title: "TIFF citation", type: "archive", reference: "", url: "/media/portable-citation.tif?page=2" },
+          ],
           createdBy: "owner" }],
         photos: [],
       },
@@ -6791,6 +6798,61 @@ try {
       headers: { Cookie: sessionCookie },
     }).then((response) => response.json());
     assert.equal(transferred.family.people[0].id, "pg-portable-person");
+    const importedOriginals = transferred.family.people[0].sources.map(
+      (citation: { url: string }) => citation.url.split(/[?#]/, 1)[0],
+    );
+    for (const [index, bytes, type] of [
+      [0, citationPdf, "application/pdf"],
+      [1, citationTiff, "image/tiff"],
+    ] as const) {
+      const citationUrl = transferred.family.people[0].sources[index].url;
+      assert.match(citationUrl, /^\/media\/[a-f0-9-]+\.(?:pdf|tif)(?:[?#]page=2)$/);
+      const filePath = citationUrl.split(/[?#]/, 1)[0];
+      const response = await fetch(oauthBase + location.replace(/\/tree$/, citationUrl), {
+        headers: { Cookie: sessionCookie },
+      });
+      assert.equal(response.status, 200, `the imported citation original must be readable: ${filePath}`);
+      assert.equal(response.headers.get("content-type"), type);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+      assert.notEqual((await fetch(oauthBase + location.replace(/\/tree$/, filePath), {
+        headers: ownerHeaders,
+      })).status, 200, "another archive owner cannot read a private citation original");
+    }
+    await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);
+    const originalRows = await client.query(
+      "SELECT url,size_bytes,uploaded_by FROM media_originals WHERE url=ANY($1::text[]) ORDER BY url",
+      [importedOriginals],
+    );
+    assert.equal(originalRows.rowCount, 2, "both citation-only originals must be indexed for quota and lifecycle");
+    assert.equal(originalRows.rows.reduce((sum, row) => sum + Number(row.size_bytes), 0),
+      citationPdf.length + citationTiff.length);
+    assert.ok(originalRows.rows.every((row) => row.uploaded_by === newAccountSession.user.id));
+    const quotaArchive = await openPostgresDatabase(personalArchiveId, source);
+    try {
+      assert.equal((await accountCapacity(quotaArchive, newAccountSession.user.id)).mediaBytes,
+        citationPdf.length + citationTiff.length + Buffer.byteLength("%PDF-1.4\nportable document"),
+        "basic-account quota includes citation-only originals once");
+    } finally {
+      await quotaArchive.close();
+    }
+    const roundtripResponse = await fetch(oauthBase + portablePath, {
+      headers: { Cookie: sessionCookie },
+    });
+    assert.equal(roundtripResponse.status, 200);
+    const roundtripPath = join(directory, "portable-citations-roundtrip.drevo");
+    writeFileSync(roundtripPath, Buffer.from(await roundtripResponse.arrayBuffer()));
+    const roundtripZip = await openPromise(roundtripPath);
+    const roundtripEntries = new Map<string, Buffer>();
+    for await (const entry of roundtripZip.eachEntry()) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of await roundtripZip.openReadStreamPromise(entry))
+        chunks.push(Buffer.from(chunk));
+      roundtripEntries.set(entry.fileName, Buffer.concat(chunks));
+    }
+    assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[0].slice(7)}`), citationPdf);
+    assert.deepEqual(roundtripEntries.get(`media/${importedOriginals[1].slice(7)}`), citationTiff);
+    assert.deepEqual(JSON.parse(roundtripEntries.get("archive.json")!.toString()).family.people[0].sources,
+      transferred.family.people[0].sources);
     assert.equal(transferred.family.people[0].createdBy, undefined,
       "the source account ID must not become a live author in the target archive");
     await client.query("SELECT set_config('drevo.archive_id',$1,false)", [personalArchiveId]);

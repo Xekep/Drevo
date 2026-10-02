@@ -19,6 +19,7 @@ test("inventory reconciles separate archive media without treating files as dele
     await writeFile(join(root, "uploads", "old.png"), "history");
     await writeFile(join(root, "uploads", "stage-only.jpg"), "restore");
     await writeFile(join(root, "uploads", "old.pdf"), "document");
+    await writeFile(join(root, "uploads", "cited.tif"), "citation");
     await writeFile(join(root, "uploads", "untracked.png"), "orphan?");
     await writeFile(join(root, "archives", "tree-b", "uploads", "one.jpg"), "x");
     const data = manifest(
@@ -29,13 +30,14 @@ test("inventory reconciles separate archive media without treating files as dele
       { kind: "ref", archive_id: "legacy-primary", name: "old.png", source: "history", known_bytes: null },
       { kind: "ref", archive_id: "legacy-primary", name: "stage-only.jpg", source: "restore_stage_image", known_bytes: null },
       { kind: "ref", archive_id: "legacy-primary", name: "old.pdf", source: "restore_stage_document", known_bytes: 8 },
+      { kind: "ref", archive_id: "legacy-primary", name: "cited.tif", source: "citation", known_bytes: null },
       { kind: "ref", archive_id: "legacy-primary", name: "missing.pdf", source: "document", known_bytes: 20 },
       { kind: "ref", archive_id: "tree-b", name: "one.jpg", source: "photo", known_bytes: 2 },
     );
     const report = await inventoryMediaFiles(root, "legacy-primary", data);
     assert.deepEqual(report.results.map(({ archiveId, files, references }) =>
       [archiveId, files, references]), [
-      ["legacy-primary", 5, 5], ["tree-b", 1, 1],
+      ["legacy-primary", 6, 6], ["tree-b", 1, 1],
     ]);
     assert.deepEqual(report.results[0].missing, ["missing.pdf"]);
     assert.deepEqual(report.results[0].untracked, ["untracked.png"]);

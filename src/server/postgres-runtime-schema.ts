@@ -107,6 +107,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "015_media_originals.sql",
     ],
     [
+      "SELECT 1 AS present FROM pg_constraint WHERE conrelid=to_regclass('media_originals') AND conname='media_originals_url_check' AND pg_get_constraintdef(oid) LIKE '%tif%pdf%'",
+      "072_citation_original_types.sql",
+    ],
+    [
       "SELECT to_regclass('platform_admins') AS present",
       "016_platform_admins.sql",
     ],

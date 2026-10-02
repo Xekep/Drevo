@@ -10,6 +10,19 @@ WITH live_restores AS (
   WHERE kind='restore'
     AND expires_at > floor(extract(epoch FROM transaction_timestamp())*1000)::bigint
 ),
+current_citations AS (
+  SELECT DISTINCT archive_id, url FROM (
+    SELECT p.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1) AS url
+    FROM people p CROSS JOIN LATERAL jsonb_path_query(p.data, '$.**.sources[*].url') cited(value)
+    UNION ALL
+    SELECT u.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM family_unions u CROSS JOIN LATERAL jsonb_path_query(u.data, '$.**.sources[*].url') cited(value)
+    UNION ALL
+    SELECT r.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM relations r CROSS JOIN LATERAL jsonb_path_query(r.sources, '$[*].url') cited(value)
+  ) citations
+  WHERE url ~ '^/media/[A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$'
+),
 restore_images AS (
   SELECT s.archive_id, s.data, p.value->>'photo' AS url
   FROM live_restores s
@@ -51,9 +64,13 @@ refs AS (
   SELECT h.archive_id, (match.parts)[1], 'history', NULL::bigint
   FROM history h
   CROSS JOIN LATERAL regexp_matches(
-    h.data::text, '/media/([A-Za-z0-9-]+\.(jpg|png|webp|gif))', 'g'
+    h.data::text, '/media/([A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf))', 'g'
   ) AS match(parts)
   WHERE h.data::text LIKE '%/media/%'
+  UNION ALL
+  SELECT archive_id, substring(url FROM '^/media/(.+)$'),
+    'citation', NULL::bigint
+  FROM current_citations
   UNION ALL
   SELECT archive_id, substring(url FROM '^/media/(.+)$'),
     'upload_grant', NULL::bigint
