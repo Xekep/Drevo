@@ -2674,6 +2674,66 @@ try {
       {
         let notify!: () => void;
         let release!: () => void;
+        const waitingToDeliver = new Promise<void>((resolve) => { notify = resolve; });
+        const deliveryGate = new Promise<void>((resolve) => { release = resolve; });
+        const answer = "Committed answer cancelled before SSE delivery";
+        const actor = await (await userStore(app!.archive.db)).get(proposalMember);
+        assert.ok(actor);
+        const chat = await aiChatStore(app!.archive.db).create(proposalMember,
+          JSON.stringify([actor.role, actor.treeAccess || "all", actor.personId || ""]));
+        const handler = aiResearchHttp({
+          archive: app!.archive,
+          auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+            process.env.PUBLIC_ORIGIN),
+          suggestions: researchSuggestionStore(app!.archive.db),
+          aiSettings: await aiSettingsStore(app!.archive.db),
+          usage: aiUsageStore(app!.archive.db),
+          media: mediaStore(join(dirname(source), "uploads")),
+          previewImage: imagePreviews(join(dirname(source), "previews")),
+          researchCatalog: researchCatalogStore(app!.archive.db),
+          publicOrigin: process.env.PUBLIC_ORIGIN,
+          fetcher: adaptLegacyAiFake(async () =>
+            Response.json({ choices: [{ message: { role: "assistant", content: answer } }] })),
+          beforeAnswerDelivery: async () => { notify(); await deliveryGate; },
+        });
+        const server = createServer((req, res) => {
+          void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+            .catch((error) => { res.destroy(error); });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        try {
+          const port = (server.address() as { port: number }).port;
+          const stream = await fetch(`http://127.0.0.1:${port}/api/ai/chat/stream`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ chatId: chat.id, message: "Tell me about this archive" }),
+          });
+          assert.equal(stream.status, 200);
+          await Promise.race([waitingToDeliver,
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI answer did not reach delivery gate")), 15_000))]);
+          const stopped = await fetch(`http://127.0.0.1:${port}/api/ai/chats/${chat.id}/stop`, {
+            method: "POST", headers: proposalHeaders,
+          });
+          assert.equal(stopped.status, 200, await stopped.clone().text());
+          assert.equal((await stopped.json()).busy, true,
+            "the server turn remains at the delivery gate after cancellation");
+          release();
+          const frames = await stream.text();
+          assert.match(frames, /event: error/);
+          assert.doesNotMatch(frames, /event: done|Committed answer cancelled before SSE delivery/,
+            "stop must not deliver a committed answer on the cancelled stream");
+          const saved = await aiChatStore(app!.archive.db).messages(chat.id, proposalMember);
+          assert.equal(saved?.filter((message) => message.role === "assistant" && message.content === answer).length,
+            1, "stop after the durable commit does not erase an already committed answer");
+        } finally {
+          release();
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await handler.close();
+          await aiChatStore(app!.archive.db).delete(chat.id, proposalMember);
+        }
+      }
+      {
+        let notify!: () => void;
+        let release!: () => void;
         const entered = new Promise<void>((resolve) => { notify = resolve; });
         const gate = new Promise<void>((resolve) => { release = resolve; });
         const fake = adaptLegacyAiFake(async () => {
