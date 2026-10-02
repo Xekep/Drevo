@@ -3,6 +3,7 @@ import { PersonDocumentsEditor } from "./person-documents-editor";
 import { DocumentSourcePicker } from "./document-source-picker";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
+import { PersonAlternativeClaims } from "./person-alternative-claims.tsx";
 import {
   Pencil,
   UserRound,
@@ -351,6 +352,9 @@ export function PersonEditor({
     try {
       if (!draft.name.trim() || !draft.surname.trim())
         throw new Error("Укажите фамилию и имя. Отчество можно пропустить.");
+      if (draft.factAlternatives?.some((alternative) =>
+        !alternative.value.trim() || !alternative.sources.length))
+        throw new Error("У каждого альтернативного варианта должны быть значение и источник.");
       const birth = normalizeDateInput(birthText),
         death = normalizeDateInput(deathText) || undefined;
       const current = family;
@@ -365,6 +369,12 @@ export function PersonEditor({
         ...draft,
         birth,
         death,
+        factAlternatives: draft.factAlternatives?.map((alternative) => ({
+          ...alternative,
+          value: alternative.field === "birth" || alternative.field === "death"
+            ? normalizeDateInput(alternative.value)
+            : alternative.value.trim(),
+        })),
         events: draft.events?.map((event) => ({
           ...event,
           date: event.date ? normalizeDateInput(event.date) : undefined,
@@ -680,6 +690,13 @@ export function PersonEditor({
                 value={kind === "birth" ? draft.birthPlace : draft.deathPlace || ""}
                 claim={kind === "birth" ? draft.birthPlaceClaim : draft.deathPlaceClaim}
                 onChange={(claim) => field(kind === "birth" ? "birthPlaceClaim" : "deathPlaceClaim", claim)}
+                isAdmin={isAdmin}
+                canAssess={user?.role === "admin" || user?.role === "researcher"}
+              />
+              <PersonAlternativeClaims kind={kind}
+                alternatives={draft.factAlternatives || []}
+                savedIds={new Set(person?.factAlternatives?.map((item) => item.id) || [])}
+                onChange={(alternatives) => field("factAlternatives", alternatives)}
                 isAdmin={isAdmin}
                 canAssess={user?.role === "admin" || user?.role === "researcher"}
               />

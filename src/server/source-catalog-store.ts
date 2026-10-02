@@ -73,6 +73,7 @@ export function personCitations(person: Person): Source[] {
     ...(person.deathDateClaim?.sources || []),
     ...(person.birthPlaceClaim?.sources || []),
     ...(person.deathPlaceClaim?.sources || []),
+    ...(person.factAlternatives || []).flatMap((alternative) => alternative.sources),
     ...(person.occupationClaim?.sources || []),
     ...(person.maidenNameClaim?.sources || []),
     ...(person.events || []).flatMap((event) => [
@@ -139,6 +140,8 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
       person.birthPlaceClaim.sources = person.birthPlaceClaim.sources.map(resolve);
     if (person.deathPlaceClaim)
       person.deathPlaceClaim.sources = person.deathPlaceClaim.sources.map(resolve);
+    for (const alternative of person.factAlternatives || [])
+      alternative.sources = alternative.sources.map(resolve);
     if (person.occupationClaim)
       person.occupationClaim.sources = person.occupationClaim.sources.map(resolve);
     if (person.maidenNameClaim)

@@ -38,6 +38,19 @@ const PersonDiscussion = lazy(() => import("./person-discussion").then((module) 
 const claimSummary = (claim: PersonValueClaim) =>
   `${claim.sources.map((source) => source.title).join("; ")}${claim.confidence
     ? ` · Оценка: ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}` : ""}`;
+function alternativeFacts(person: Person, kind: "birth" | "death") {
+  const label = {
+    birth: "Другая дата рождения", death: "Другая дата смерти",
+    birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
+  } as const;
+  return (person.factAlternatives || []).filter((alternative) =>
+    alternative.field === kind || alternative.field === `${kind}Place`).map((alternative) =>
+      <p key={alternative.id} className="life-fact-alternative">
+        {label[alternative.field]}: {alternative.field.endsWith("Place")
+          ? alternative.value : dateLabel(alternative.value)}
+        {" · "}{claimSummary(alternative)}
+      </p>);
+}
 export function Avatar({
   person,
   large = false,
@@ -353,7 +366,8 @@ export function PersonPanel({
       >
         {tab === "bio" ? (
           <>
-            {(person.birth || person.birthPlace) && (
+            {(person.birth || person.birthPlace || person.factAlternatives?.some((alternative) =>
+              alternative.field === "birth" || alternative.field === "birthPlace")) && (
               <div className="life-event">
                 <span className="event-icon">
                   <Sprout size={13} />
@@ -366,20 +380,24 @@ export function PersonPanel({
                   {person.birthPlace && <p>{person.birthPlace}</p>}
                   {!!person.birthPlaceClaim?.sources.length &&
                     <p>Источники места: {claimSummary(person.birthPlaceClaim)}</p>}
+                  {alternativeFacts(person, "birth")}
                 </div>
               </div>
             )}
-            {hasRecordedDeath(person) ? (
+            {hasRecordedDeath(person) || person.factAlternatives?.some((alternative) =>
+              alternative.field === "death" || alternative.field === "deathPlace") ? (
               <div className="life-event">
                 <span className="event-icon">†</span>
                 <div>
-                  <span className="event-label">Уход из жизни</span>
+                  <span className="event-label">{hasRecordedDeath(person)
+                    ? "Уход из жизни" : "Возможные сведения о смерти"}</span>
                   {person.death && <b>{dateLabel(person.death)}</b>}
                   {!!person.deathDateClaim?.sources.length &&
                     <p>Источники даты: {claimSummary(person.deathDateClaim)}</p>}
                   {person.deathPlace && <p>{person.deathPlace}</p>}
                   {!!person.deathPlaceClaim?.sources.length &&
                     <p>Источники места: {claimSummary(person.deathPlaceClaim)}</p>}
+                  {alternativeFacts(person, "death")}
                 </div>
               </div>
             ) : person.birth ? (
