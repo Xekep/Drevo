@@ -43,6 +43,7 @@ export async function backupCoordinator(
                 .get())!.bytes,
             )
         : undefined,
+      db.archiveId,
     );
   const audit = auditStore(db),
     settings = store.settings,
