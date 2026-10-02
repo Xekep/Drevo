@@ -170,12 +170,17 @@ export function makeDrevoPlugin(
         };
         setTimeout(() => {
           fit();
+          let fullscreenChanged = false;
+          this.br.bind("fullscreenToggled", () => { fullscreenChanged = true; });
           this.br.bind("resize", () => {
             if (
-              fittedScale !== undefined &&
-              Math.abs(onePage.scale - fittedScale) < 1e-6
-            )
-              fit();
+              fullscreenChanged ||
+              (fittedScale !== undefined && Math.abs(onePage.scale - fittedScale) < 1e-6)
+            ) {
+              fullscreenChanged = false;
+              // Fullscreen also sets the native default scale after resize.
+              queueMicrotask(fit);
+            }
           });
         });
       }

@@ -196,6 +196,10 @@ for (const scan of [
     await expect(async () => checkFit()).toPass();
     await page.setViewportSize(initialViewport);
     await expect(async () => checkFit()).toPass();
+    await book.locator(".BRicon.full:visible").first().click();
+    await expect(async () => checkFit()).toPass();
+    await book.locator(".BRicon.full:visible").first().click();
+    await expect(async () => checkFit()).toPass();
     if (info.project.name === "desktop") {
       const originalWidth = (await image.boundingBox())!.width;
       await book.locator(".BRicon.zoom_in:visible").first().click();
