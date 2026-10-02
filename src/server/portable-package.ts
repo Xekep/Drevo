@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { join } from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Readable, Writable } from "node:stream";
 import { ZipFile } from "yazl";
@@ -157,9 +158,11 @@ export async function writePortablePackage(
   const entries: PortableManifest["entries"] = [
     { path: "archive.json", size: data.length, sha256: sha256(data) },
   ];
+  const originals = new Map<string, Awaited<ReturnType<typeof hashOriginal>>>();
   for (const name of names) {
     if (signal?.aborted) throw signal.reason;
     const digest = await hashOriginal(join(uploads, name), signal);
+    originals.set(name, digest);
     entries.push({ path: `media/${name}`, ...digest });
   }
   const manifest: PortableManifest = {
@@ -180,8 +183,33 @@ export async function writePortablePackage(
   try {
     zip.addBuffer(manifestData, "manifest.json");
     zip.addBuffer(data, "archive.json");
-    for (const name of names)
-      zip.addFile(join(uploads, name), `media/${name}`, { compress: false });
+    // ZIP checks size and CRC, but a same-size edit after prehashing would make
+    // the published SHA-256 manifest false unless we verify the streamed bytes.
+    for (const name of names) {
+      const expected = originals.get(name)!;
+      zip.addReadStreamLazy(`media/${name}`, { compress: false, size: expected.size },
+        (callback) => {
+          const source = createReadStream(join(uploads, name), { signal });
+          const actual = createHash("sha256");
+          const checked = new Transform({
+            transform(chunk: Buffer, _encoding, done) {
+              actual.update(chunk);
+              done(null, chunk);
+            },
+            flush(done) {
+              done(actual.digest("hex") === expected.sha256
+                ? undefined
+                : new PortablePackageError("Оригинал изменился во время экспорта"));
+            },
+          });
+          source.on("error", (error) => checked.destroy(error));
+          checked.on("error", (error) => {
+            source.destroy();
+            zip.emit("error", error);
+          });
+          callback(null, source.pipe(checked));
+        });
+    }
     zip.end();
     await output;
   } catch (error) {
