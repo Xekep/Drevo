@@ -4576,6 +4576,31 @@ try {
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
     WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+  const ownerPublication = publishedPeopleStore(app.archive.db);
+  const publicationBeforeAdmin = await ownerPublication.getFields("person-a");
+  assert.ok(publicationBeforeAdmin, "the owner has published the card before an invited admin tries to revoke it");
+  const publicationPath = "/api/admin/published-people/person-a";
+  assert.equal((await fetch(securedBase + publicationPath, {
+    method: "DELETE", headers: archiveAdminHeaders,
+  })).status, 403, "an invited admin cannot revoke the owner's selective publication");
+  assert.equal((await fetch(securedBase + publicationPath, {
+    method: "PUT", headers: archiveAdminHeaders,
+    body: JSON.stringify({ fields: selectedDiscoveryFields }),
+  })).status, 403, "an invited admin cannot change the owner's published fields");
+  assert.equal((await fetch(securedBase + publicationPath, { headers: archiveAdminHeaders })).status,
+    403, "an invited admin cannot inspect unpublished field choices");
+  const publicationBatchPath = "/api/admin/published-people/batch";
+  assert.equal((await fetch(securedBase + publicationBatchPath + "/preview", {
+    method: "POST", headers: archiveAdminHeaders,
+    body: JSON.stringify({ action: "unpublish", personIds: ["person-a"] }),
+  })).status, 403, "an invited admin cannot prepare a batch revocation");
+  assert.equal((await fetch(securedBase + publicationBatchPath, {
+    method: "DELETE", headers: archiveAdminHeaders,
+    body: JSON.stringify({ personIds: ["person-a"], revision: (await app.archive.read()).revision,
+      reviewToken: "0".repeat(64) }),
+  })).status, 403, "an invited admin cannot apply a batch revocation");
+  assert.deepEqual(await ownerPublication.getFields("person-a"), publicationBeforeAdmin,
+    "the owner's selective publication survives unauthorized admin requests");
   assert.equal((await fetch(securedBase + "/api/discovery/matches", {
     headers: archiveAdminHeaders,
   })).status, 403, "an invited archive admin cannot read owners' match reasons");
