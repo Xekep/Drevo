@@ -606,6 +606,7 @@ export function createResearchRunner({
             metrics,
             signal,
             question: message,
+            assertAiAccess,
           })
         : { content: [], files: [] };
     const currentInput: ResponseItem = {
@@ -1178,6 +1179,7 @@ export function createResearchRunner({
                 metrics,
                 signal,
                 question: message,
+                assertAiAccess,
               });
               result = {
                 files: chatAttachmentCatalog(selected),

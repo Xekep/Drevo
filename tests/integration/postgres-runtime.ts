@@ -1736,6 +1736,66 @@ try {
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
   try {
+    let notifyVisionModels!: () => void;
+    let releaseVisionModels!: () => void;
+    const visionModelsStarted = new Promise<void>((resolve) => { notifyVisionModels = resolve; });
+    const visionModelsGate = new Promise<void>((resolve) => { releaseVisionModels = resolve; });
+    let visionSubmissions = 0;
+    const visionAi = aiResearchHttp({
+      archive: app.archive,
+      auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      suggestions: researchSuggestionStore(app.archive.db),
+      aiSettings: await aiSettingsStore(app.archive.db),
+      usage: aiUsageStore(app.archive.db),
+      media: mediaStore(join(dirname(source), "uploads")),
+      previewImage: imagePreviews(join(dirname(source), "previews")),
+      researchCatalog: researchCatalogStore(app.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      fetcher: async (url) => {
+        if (String(url).endsWith("/models")) {
+          notifyVisionModels();
+          await visionModelsGate;
+          return Response.json({ data: [{ id: "gpt://folder-1/qwen3.6-35b-a3b" }] });
+        }
+        if (String(url).endsWith("/chat/completions")) {
+          visionSubmissions++;
+          return Response.json({ choices: [{ message: { content: "private image analysis" } }] });
+        }
+        throw new Error(`Unexpected provider call: ${url}`);
+      },
+    });
+    const visionServer = createServer((req, res) => {
+      void visionAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => visionServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const image = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: "white" },
+      }).png().toBuffer();
+      const visionPort = (visionServer.address() as { port: number }).port;
+      const readingImage = fetch(`http://127.0.0.1:${visionPort}/api/ai/chat`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ message: "Опиши приложенное фото", attachments: [
+          { name: "photo.png", data: image.toString("base64") },
+        ] }),
+      });
+      await Promise.race([visionModelsStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Vision model lookup did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseVisionModels();
+      const blockedVision = await readingImage;
+      assert.equal(blockedVision.status, 403, await blockedVision.clone().text());
+      assert.equal(visionSubmissions, 0,
+        "a downgraded account cannot submit its image after queued vision model discovery");
+    } finally {
+      releaseVisionModels();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await new Promise<void>((resolve) => visionServer.close(() => resolve()));
+      await visionAi.close();
+    }
+
     let notifyAdminConversation!: () => void;
     let releaseAdminConversation!: () => void;
     const adminConversationStarted = new Promise<void>((resolve) => { notifyAdminConversation = resolve; });
