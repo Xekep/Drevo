@@ -6969,10 +6969,25 @@ try {
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'deleting-account',$2)",
       [sessionTokenHash(deletingToken), Date.now() + 600_000],
     );
+    const deletedChatId = randomUUID();
+    const retainedChatId = randomUUID();
     await client.query(
-      "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES($1,'delete-chat','deleting-account','all')",
-      [recreatedId],
+      "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES($1,$2,'deleting-account','all'),($1,$3,'transfer-target','all')",
+      [recreatedId, deletedChatId, retainedChatId],
     );
+    const recreatedFiles = join(dirname(oauthApp.archive.db.file), "archives", recreatedId);
+    const accountChatFiles = [
+      join(recreatedFiles, "uploads", "ai-chat-files", deletedChatId, randomUUID()),
+      join(recreatedFiles, "ai-generated-files", deletedChatId, randomUUID()),
+    ];
+    const retainedChatFiles = [
+      join(recreatedFiles, "uploads", "ai-chat-files", retainedChatId, randomUUID()),
+      join(recreatedFiles, "ai-generated-files", retainedChatId, randomUUID()),
+    ];
+    for (const path of [...accountChatFiles, ...retainedChatFiles]) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "private AI file bytes", { mode: 0o600 });
+    }
     await client.query(
       "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES($1,987654,$2,'deleting-account','Delete me','update','archive',$1,'Test','[]'::jsonb)",
       [recreatedId, new Date().toISOString()],
@@ -7164,6 +7179,10 @@ try {
     assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
+    assert.deepEqual(accountChatFiles.map((path) => existsSync(path)), [false, false],
+      "account deletion removes both attachment and generated AI bytes before HTTP success");
+    assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
+      "deleting one account preserves another member's AI files");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
     assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0],
