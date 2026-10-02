@@ -277,7 +277,8 @@ try {
         child.on("message", received);
         child.send("backup");
       })));
-      const winner = outcomes.find(outcome => outcome.state === "succeeded");
+      const winnerIndex = outcomes.findIndex(outcome => outcome.state === "succeeded");
+      const winner = outcomes[winnerIndex];
       const loser = outcomes.find(outcome => outcome.state === "busy");
       assert.equal(outcomes.filter(outcome => outcome.state === "succeeded").length, 1,
         `Exactly one process must own the backup lease: ${JSON.stringify(outcomes)}`);
@@ -286,7 +287,7 @@ try {
       assert.equal(winner?.records, 1, "Background job must publish one copy");
       results.get("backup_job")!.durations.push(winner!.durationMs);
       results.get("backup_lease_rejection")!.durations.push(loser!.durationMs);
-      const other = children[1];
+      const other = children[1 - winnerIndex];
       const remoteCount = await new Promise<number>((resolve, reject) => {
         const timer = setTimeout(() => {
           other.off("message", received);
