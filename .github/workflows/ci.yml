@@ -139,6 +139,7 @@ jobs:
       - run: bash -n ops/postgres/run-restore-rehearsal.sh
       - run: bash -n ops/postgres/setup-restore-rehearsal.sh
       - run: python3 -B -m unittest discover -s tests -p 'test_restore_preflight.py'
+      - run: python3 -B -m unittest discover -s tests -p 'test_verify_media_archive.py'
       - run: systemd-analyze calendar '*-*-01 06:30:00 UTC'
       - run: bash -n ops/postgres/setup-local-backup.sh
       - run: bash -n ops/postgres/local-backup.sh
