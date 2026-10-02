@@ -197,19 +197,21 @@ test("known public ports keep offscreen cards and surfaces culled before DOM mea
   const visibleId = model.nodes[0].id;
   const nodes = model.displayNodes.map((node, index) => ({
     ...node,
-    position: node.id === visibleId
-      ? { x: 20, y: 20 }
-      : { x: 5000 + index * 400, y: 5000 },
+    position:
+      node.id === visibleId
+        ? { x: 20, y: 20 }
+        : { x: 5000 + index * 400, y: 5000 },
   }));
   type ModelNode = (typeof nodes)[number];
   const lookup = new Map<string, InternalNodeBase<ModelNode>>();
   const parents = new Map<string, Map<string, InternalNodeBase<ModelNode>>>();
-  const visible = () => getNodesInside(
-    lookup,
-    { x: 0, y: 0, width: 360, height: 400 },
-    [0, 0, 1],
-    true,
-  ).map((node) => node.id);
+  const visible = () =>
+    getNodesInside(
+      lookup,
+      { x: 0, y: 0, width: 360, height: 400 },
+      [0, 0, 1],
+      true,
+    ).map((node) => node.id);
 
   // No browser measurement has happened. Width/height alone did not prevent
   // React Flow's forceInitialRender from mounting the entire offscreen archive.
@@ -226,28 +228,71 @@ test("known public ports keep offscreen cards and surfaces culled before DOM mea
   const ports = lookup.get(visibleId)!.internals.handleBounds!;
   assert.deepEqual(ports.target, []);
   assert.ok(ports.source);
-  assert.deepEqual(ports.source.map((handle) => ({
-    id: handle.id,
-    position: handle.position,
-    nodeId: handle.nodeId,
-    width: handle.width,
-    height: handle.height,
-    center: [handle.x + handle.width / 2, handle.y + handle.height / 2],
-  })), [
-    { id: "top", position: Position.Top, nodeId: visibleId, width: 12, height: 12, center: [140, 0] },
-    { id: "bottom", position: Position.Bottom, nodeId: visibleId, width: 12, height: 12, center: [140, 320] },
-    { id: "left", position: Position.Left, nodeId: visibleId, width: 12, height: 12, center: [0, 160] },
-    { id: "right", position: Position.Right, nodeId: visibleId, width: 12, height: 12, center: [280, 160] },
-  ]);
+  assert.deepEqual(
+    ports.source.map((handle) => ({
+      id: handle.id,
+      position: handle.position,
+      nodeId: handle.nodeId,
+      width: handle.width,
+      height: handle.height,
+      center: [handle.x + handle.width / 2, handle.y + handle.height / 2],
+    })),
+    [
+      {
+        id: "top",
+        position: Position.Top,
+        nodeId: visibleId,
+        width: 12,
+        height: 12,
+        center: [140, 0],
+      },
+      {
+        id: "bottom",
+        position: Position.Bottom,
+        nodeId: visibleId,
+        width: 12,
+        height: 12,
+        center: [140, 320],
+      },
+      {
+        id: "left",
+        position: Position.Left,
+        nodeId: visibleId,
+        width: 12,
+        height: 12,
+        center: [0, 160],
+      },
+      {
+        id: "right",
+        position: Position.Right,
+        nodeId: visibleId,
+        width: 12,
+        height: 12,
+        center: [280, 160],
+      },
+    ],
+  );
 
   // GPU handoff creates fresh user-node objects with hidden flags. A subsequent
   // native remount must preserve culling without requiring a measurement pass.
-  adoptUserNodes(nodes.map((node) => ({ ...node, hidden: true })), lookup, parents);
+  adoptUserNodes(
+    nodes.map((node) => ({ ...node, hidden: true })),
+    lookup,
+    parents,
+  );
   assert.deepEqual(visible(), []);
-  adoptUserNodes(nodes.map((node) => ({ ...node, hidden: false })), lookup, parents);
+  adoptUserNodes(
+    nodes.map((node) => ({ ...node, hidden: false })),
+    lookup,
+    parents,
+  );
   assert.deepEqual(visible(), [visibleId]);
 
   // Historical input illustrates the regression through the actual library API.
-  adoptUserNodes(nodes.map((node) => ({ ...node, handles: undefined })), lookup, parents);
+  adoptUserNodes(
+    nodes.map((node) => ({ ...node, handles: undefined })),
+    lookup,
+    parents,
+  );
   assert.equal(visible().length, nodes.length);
 });

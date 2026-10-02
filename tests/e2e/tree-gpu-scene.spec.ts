@@ -18,14 +18,16 @@ test.use({
       : {}),
   },
 });
-test("large GPU tree keeps one camera, sparse controls and a working context-loss fallback", async ({
+test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and context-loss fallback", async ({
   page,
 }, testInfo) => {
   test.setTimeout(240_000);
   const people =
     process.env.DREVO_GPU_PEOPLE === "977"
       ? randomFamily(5, 9)
-      : randomFamily(1, 6);
+      : testInfo.project.name === "desktop"
+        ? randomFamily(5, 12)
+        : randomFamily(1, 6);
   if (process.env.DREVO_GPU_CPU_THROTTLE) {
     const session = await page.context().newCDPSession(page);
     await session.send("Emulation.setCPUThrottlingRate", {
@@ -178,6 +180,20 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
   expect(
     Number(await canvas.getAttribute("data-gpu-buffer-bytes")),
   ).toBeLessThan(24 * 1024 * 1024);
+  expect(
+    Number(await canvas.getAttribute("data-gpu-label-cpu-bytes")),
+  ).toBeGreaterThan(Number(await canvas.getAttribute("data-gpu-label-bytes")));
+  const verifyLabelBudget = async (lod: number) => {
+    await expect(canvas).toHaveAttribute("data-gpu-label-lod", String(lod));
+    const labels = Number(await canvas.getAttribute("data-gpu-label-bytes"));
+    expect(labels).toBeGreaterThan(0);
+    expect(
+      Number(await canvas.getAttribute("data-gpu-label-cpu-bytes")),
+    ).toBeGreaterThan(labels);
+    expect(
+      Number(await canvas.getAttribute("data-gpu-buffer-bytes")),
+    ).toBeLessThan(24 * 1024 * 1024);
+  };
   const requests = await page.evaluate(
     () =>
       (window as typeof window & { __gpuLayout: { requests: number } })
@@ -192,11 +208,19 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
         (element) => new DOMMatrix(getComputedStyle(element).transform).a,
       );
   if (testInfo.project.name === "desktop") {
+    // Optional profiling finishes at a close zoom; return to the name-only
+    // level before checking that LOD uploads fit the same geometry budget.
+    for (let i = 0; i < 16 && (await zoom()) > 0.4; i++)
+      await page
+        .getByRole("button", { name: "Уменьшить", exact: true })
+        .click();
     for (let i = 0; i < 16 && (await zoom()) < 0.3; i++)
       await page
         .getByRole("button", { name: "Увеличить", exact: true })
         .click();
     expect(await zoom()).toBeGreaterThan(0.18);
+    expect(await zoom()).toBeLessThan(0.52);
+    await verifyLabelBudget(1);
     await expect(tree).toBeVisible();
     expect(await page.locator(".react-flow__node-person").count()).toBeLessThan(
       25,
@@ -263,6 +287,7 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     page.locator(".tree-gpu-node-overlay .flow-person-content:focus"),
   ).toHaveCount(1);
   await expect.poll(zoom).toBeGreaterThanOrEqual(0.52);
+  await verifyLabelBudget(2);
   const button = page.locator(
     ".tree-gpu-node-overlay .flow-person-content:focus",
   );

@@ -109,6 +109,7 @@ export function TreeGpuScene({
               current.nodeRelationLabel,
             )
           ) {
+            element.dataset.gpuBuildReason = "update:" + element.dataset.gpuUpdateReason;
             scene.current.destroy(true);
             scene.current = factory(
               element,
@@ -160,6 +161,7 @@ export function TreeGpuScene({
         if (!active) return;
         factory = createGpuScene;
         const current = state.current;
+        element.dataset.gpuBuildReason = "mount";
         scene.current = createGpuScene(
           element,
           current.nodes,

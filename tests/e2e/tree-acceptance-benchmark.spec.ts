@@ -125,7 +125,10 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     }
   };
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    errors.push(error.message);
+    console.log("tree-acceptance pageerror " + error.message);
+  });
   const phases: unknown[] = [];
   const metrics = async () =>
     Object.fromEntries(
@@ -140,12 +143,19 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       const root = document.querySelector<HTMLElement>(".tree-canvas");
       const canvas = root?.querySelector<HTMLCanvasElement>(".tree-gpu-scene");
       const viewport = root?.querySelector(".react-flow__viewport");
+      const gl = canvas?.getContext("webgl2");
+      const debug = gl?.getExtension("WEBGL_debug_renderer_info");
       return {
         renderer: root?.dataset.renderer,
         fallback: root?.dataset.gpuFallback,
         nodes: Number(canvas?.dataset.sceneNodes || 0),
         textureBytes: Number(canvas?.dataset.gpuTextureBytes || 0),
         bufferBytes: Number(canvas?.dataset.gpuBufferBytes || 0),
+        labelBytes: Number(canvas?.dataset.gpuLabelBytes || 0),
+        labelCpuBytes: Number(canvas?.dataset.gpuLabelCpuBytes || 0),
+        buildReason: canvas?.dataset.gpuBuildReason,
+        gpuRenderer: debug && gl ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
+        labelLod: Number(canvas?.dataset.gpuLabelLod ?? -1),
         dom: document.querySelectorAll("*").length,
         mountedCards: document.querySelectorAll(".react-flow__node-person")
           .length,
@@ -178,19 +188,41 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     return result;
   };
   const fullReady = async () => {
-    await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    try {
+      await expect(page.locator(".tree-canvas")).toHaveAttribute(
       "data-layout-ready",
       "true",
       { timeout: 180_000 },
     );
-    await expect.poll(async () => {
-      const root = page.locator(".tree-canvas");
-      return await root.getAttribute("data-renderer") === "webgl2" ||
-        !!await root.getAttribute("data-gpu-fallback");
-    }, { timeout: 180_000 }).toBe(true);
-    const fallback = await page.locator(".tree-canvas").getAttribute("data-gpu-fallback");
+    } catch (error) {
+      console.log("tree-acceptance startup-diagnostic " + JSON.stringify({
+        errors,
+        probe: await readTreeAcceptanceProbe(page),
+        html: await page.locator("main").evaluate((element) => element.outerHTML.slice(0, 3000)),
+      }));
+      await page.screenshot({ path: testInfo.outputPath("startup-failure.png") });
+      throw error;
+    }
+    await expect
+      .poll(
+        async () => {
+          const root = page.locator(".tree-canvas");
+          return (
+            (await root.getAttribute("data-renderer")) === "webgl2" ||
+            !!(await root.getAttribute("data-gpu-fallback"))
+          );
+        },
+        { timeout: 180_000 },
+      )
+      .toBe(true);
+    const fallback = await page
+      .locator(".tree-canvas")
+      .getAttribute("data-gpu-fallback");
     if (fallback) await snapshot("gpu-fallback");
-    expect(fallback, "Production GPU initialization must succeed for this fixture").toBeFalsy();
+    expect(
+      fallback,
+      "Production GPU initialization must succeed for this fixture",
+    ).toBeFalsy();
     await expect(page.locator(".tree-gpu-scene")).toHaveAttribute(
       "data-scene-nodes",
       String(count),
@@ -239,6 +271,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   await reloadDocument();
   await fullReady();
   const warm = await snapshot("persistent-reload");
+  // Detail hydration must not repeatedly restart an already-running intro.
+  expect(warm.firstGpuAt).toBeLessThan(cold.firstGpuAt + 3000);
   expect(warm.requests).toHaveLength(0);
   const stableResources = warm.resources;
   // Explicit GC checkpoints measure retained JS heap, not natural peak memory.
@@ -251,6 +285,9 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     await waitForMediaIdle();
     const result = await snapshot(gesture);
     expect(result.requests).toHaveLength(before);
+    // Live resource counts can look unchanged after destroy/recreate. Camera
+    // gestures and detail hydration must preserve the already compiled scene.
+    expect(result.programCreations).toBe(warm.programCreations);
     expect(result.resources).toMatchObject({
       textures: stableResources.textures,
       programs: stableResources.programs,
@@ -259,6 +296,47 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     expect(result.resources.buffers).toBeLessThanOrEqual(
       stableResources.buffers + 1,
     );
+  }
+  // Cross every text LOD with real zoom controls, then return to overview.
+  // Label data must replace one buffer instead of allocating each text tier.
+  const zoom = () =>
+    page
+      .locator(".react-flow__viewport")
+      .evaluate(
+        (element) => new DOMMatrix(getComputedStyle(element).transform).a,
+      );
+  for (const [target, lod] of [
+    [0.3, 1],
+    [0.6, 2],
+    [0.1, 0],
+  ] as const) {
+    const increasing = (await zoom()) < target;
+    for (let step = 0; step < 24; step++) {
+      const current = await zoom();
+      if (increasing ? current >= target : current <= target) break;
+      await page
+        .getByRole("button", {
+          name: increasing ? "Увеличить" : "Уменьшить",
+          exact: true,
+        })
+        .click();
+    }
+    await expect(page.locator(".tree-gpu-scene")).toHaveAttribute(
+      "data-gpu-label-lod",
+      String(lod),
+    );
+    await waitForMediaIdle();
+    const result = await snapshot("label-lod-" + lod);
+    expect(result.labelBytes).toBeGreaterThan(0);
+    expect(result.labelCpuBytes).toBeGreaterThanOrEqual(result.labelBytes);
+    expect(result.resources).toMatchObject({
+      textures: stableResources.textures,
+      programs: stableResources.programs,
+    });
+    expect(result.resources.buffers).toBeLessThanOrEqual(
+      stableResources.buffers + 1,
+    );
+    expect(await workerCount()).toBe(0);
   }
   // Selection/profile must neither calculate layout nor allocate a fresh GPU scene.
   await page.locator(".tree-canvas").focus();
@@ -359,7 +437,10 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     );
     if (profileScope && cycle === 0) {
       const { profile } = await session.send("Profiler.stop");
-      await writeFile(testInfo.outputPath("scope.cpuprofile"), JSON.stringify(profile));
+      await writeFile(
+        testInfo.outputPath("scope.cpuprofile"),
+        JSON.stringify(profile),
+      );
       await session.send("Profiler.disable");
       // Profiling is a separate diagnostic run, never an acceptance result.
       await session.detach();
@@ -424,8 +505,10 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         "src/components/tree/tree-canvas.tsx",
         "src/components/tree/person-node.tsx",
         "src/components/tree/tree-node-model.ts",
+        "src/components/tree/tree-growth.ts",
         "src/components/research-assistant.tsx",
         "src/components/tree/gpu-scene.ts",
+        "src/components/tree/tree-gpu-scene.tsx",
         "src/components/tree/distant-portraits.tsx",
         "src/components/tree/use-tree-layout.ts",
         "src/components/tree/layout-cache.ts",
@@ -444,6 +527,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       project: testInfo.project.name,
       viewport: page.viewportSize(),
       cpuThrottle: throttle,
+      angle: process.env.DREVO_E2E_ANGLE || "default",
     },
     method:
       "Production application, disposable SQLite/backend JPEG/previews, no response routing. Navigation timestamps are performance.now; resource counts are explicit allocations, not total VRAM. Mobile is Chrome touch emulation, not a physical phone. No GPU eligibility override. One run.",

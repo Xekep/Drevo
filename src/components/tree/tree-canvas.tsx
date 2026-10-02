@@ -42,6 +42,7 @@ import {
   type ArchiveUser,
   type GraphConnection,
   type Person,
+  type LayoutPerson,
   type TreeMode,
   type TreeColorScheme,
 } from "../../domain";
@@ -84,6 +85,7 @@ import {
   treeGrowthCanvasStyle,
   treeGrowthDelays,
   treeGrowthDuration,
+  treeGrowthInputKey,
 } from "./tree-growth";
 import { TreeCreateAt, type TreeCreateAtDraft } from "./tree-create-at";
 import { PERSON_FOCUS_ZOOM, useTreeCameraState } from "./use-tree-camera-state";
@@ -524,9 +526,20 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const progressiveIntroRequested = growing && renderVisible.size >= 500 &&
     (distantZoom || !initialCameraReady) && !extraVisible && !activeFanAnchor && mode !== "timeline";
+  const growthInputKey = useMemo(
+    () => treeGrowthInputKey(family.people),
+    [family.people],
+  );
+  const growthPeople = useMemo(
+    () => JSON.parse(growthInputKey) as LayoutPerson[],
+    [growthInputKey],
+  );
+  const growthMinimumBudget = progressiveIntroRequested && renderVisible.size >= 2500 ? 2200 : 0;
+  // Detail pages replace person objects without changing the timing facts.
+  // Keep the same schedule so they cannot restart the introduction's timer.
   const growthDelays = useMemo(
-    () => treeGrowthDelays(family.people, progressiveIntroRequested && renderVisible.size >= 2500 ? 2200 : 0),
-    [family.people, progressiveIntroRequested, renderVisible.size],
+    () => treeGrowthDelays(growthPeople, growthMinimumBudget),
+    [growthPeople, growthMinimumBudget],
   );
   const growthCanvasStyle = useMemo(
     () => treeGrowthCanvasStyle(growthDelays),
@@ -1035,7 +1048,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     user?.platformAdmin ?? null,
     user?.approved ?? null,
     props.restricted ?? false,
-    props.canEdit,
   ]);
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
   const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);

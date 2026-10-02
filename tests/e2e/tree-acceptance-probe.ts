@@ -13,6 +13,8 @@ export type AcceptanceSnapshot = {
   firstGpuAt: number;
   firstPortraitUploadAt: number;
   portraitUploads: number;
+  /** Successful program allocations since navigation, including deleted programs. */
+  programCreations: number;
   resources: { textures: number; buffers: number; programs: number };
   frames: { count: number; p95Ms: number; maxMs: number; over50Ms: number };
   longTasks: { startTime: number; duration: number }[];
@@ -38,6 +40,7 @@ export async function installTreeAcceptanceProbe(page: Page) {
       firstGpuAt: 0,
       firstPortraitUploadAt: 0,
       portraitUploads: 0,
+      programCreations: 0,
       resources: { textures: 0, buffers: 0, programs: 0 },
       frameGaps: [],
       lastFrame: 0,
@@ -172,6 +175,7 @@ export async function installTreeAcceptanceProbe(page: Page) {
           if (program) {
             programs.add(program);
             state.resources.programs++;
+            state.programCreations++;
           }
           return program;
         },
@@ -318,6 +322,7 @@ export async function readTreeAcceptanceProbe(
       firstGpuAt: state.firstGpuAt,
       firstPortraitUploadAt: state.firstPortraitUploadAt,
       portraitUploads: state.portraitUploads,
+      programCreations: state.programCreations,
       resources: { ...state.resources },
       frames: {
         count: sorted.length,

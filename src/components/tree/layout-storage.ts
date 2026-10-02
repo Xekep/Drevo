@@ -45,7 +45,10 @@ function access<T>(
     };
     const timer = setTimeout(
       () => finish(false),
-      mode === "readonly" ? 150 : 1000,
+      // Large scene preparation can occupy the main thread while IndexedDB
+      // completes. Keep reads bounded, and give background writes time to
+      // dispatch their completion instead of aborting an otherwise valid cache.
+      mode === "readonly" ? 500 : 5000,
     );
     try {
       const request = indexedDB.open(DATABASE, 1);

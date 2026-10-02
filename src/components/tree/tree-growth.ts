@@ -17,6 +17,13 @@ export function treeGrowthBudget(personCount: number) {
   return Math.max(600, 4_000 * Math.sqrt(25 / Math.max(25, personCount)));
 }
 
+/** Whole-family timing ignores text/media hydration but preserves input order. */
+export function treeGrowthInputKey(people: readonly LayoutPerson[]) {
+  return JSON.stringify(people.map(({ id, birth, parents, spouses }) => ({
+    id, birth, parents, spouses,
+  })));
+}
+
 type GrowthStyle = CSSProperties & {
   "--tree-growth-delay": string;
   "--tree-edge-label-delay"?: string;

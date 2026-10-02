@@ -69,10 +69,18 @@ export function DistantPortraits({
   const pending = useRef(new Map<string, Promise<void>>());
   const requestDraw = useRef<() => void>(() => {});
   const growthStartedAt = useRef<number | null>(null);
-  const urls = useMemo(() => [...new Set(people.flatMap((person) => {
+  const pathCache = useRef(new Map<string, {
+    path: Path2D;
+    segments: ReturnType<typeof gpuRoute> | null;
+    length: number;
+  }>());
+  const urlKey = useMemo(() => JSON.stringify([...new Set(people.flatMap((person) => {
     const url = tinyPortraitUrl(person.photo);
     return url ? [url] : [];
-  }))], [people]);
+  }))]), [people]);
+  // Detail pages replace people without changing portraits. Keep the running
+  // loader queue rather than restarting its ready prefix on every page.
+  const urls = useMemo(() => JSON.parse(urlKey) as string[], [urlKey]);
 
   useEffect(() => {
     let active = true;
@@ -109,6 +117,7 @@ export function DistantPortraits({
     let settleTimer = 0;
     let base = store.getState().transform;
     let handingOff = false;
+    const activePaths = new Set<string>();
     const paths = fullScene ? edges.map((edge) => {
       const points = edge.data?.route?.points;
       const path = edge.data?.path || (points?.length ? roundedRoute(points).path : null);
@@ -116,19 +125,37 @@ export function DistantPortraits({
         left: Math.min(box.left, point.x), top: Math.min(box.top, point.y),
         right: Math.max(box.right, point.x), bottom: Math.max(box.bottom, point.y),
       }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
-      const segments = growing && path ? gpuRoute(path) : [];
-      const length = segments.reduce((total, segment) =>
-        total + Math.hypot(segment.bx - segment.ax, segment.by - segment.ay), 0);
+      let compiled = path ? pathCache.current.get(path) : undefined;
+      if (path) {
+        activePaths.add(path);
+        if (!compiled) {
+          compiled = { path: new Path2D(path), segments: null, length: 0 };
+          pathCache.current.set(path, compiled);
+        }
+        if (growing && !compiled.segments) {
+          compiled.segments = gpuRoute(path);
+          compiled.length = compiled.segments.reduce((total, segment) =>
+            total + Math.hypot(segment.bx - segment.ax, segment.by - segment.ay), 0);
+        } else if (!growing) {
+          compiled.segments = null;
+          compiled.length = 0;
+        }
+      }
+      const segments = growing ? compiled?.segments || [] : [];
+      const length = growing ? compiled?.length || 0 : 0;
       const style = edge.style as (typeof edge.style & {
         "--tree-growth-delay"?: string;
         "--tree-growth-edge-duration"?: string;
       });
-      return { edge, bounds, path: path ? new Path2D(path) : null, segments, length,
+      return { edge, bounds, path: compiled?.path || null, segments, length,
         starts: Number.parseFloat(style?.["--tree-growth-delay"] || "0"),
         duration: Number.parseFloat(style?.["--tree-growth-edge-duration"] || String(growthDelays.edgeMs)),
         dash: String(edge.style?.strokeDasharray || "")
           .split(/[ ,]+/).map(Number).filter((value) => value > 0) };
     }) : [];
+    // Bound the cache to this projection; old branches/grants need no paths.
+    for (const key of pathCache.current.keys())
+      if (!activePaths.has(key)) pathCache.current.delete(key);
     const normalPortraitsReady = () => {
       const root = canvas.closest(".tree-canvas");
       if (!root?.querySelector(".flow-person:not(.is-distant)")) return false;
@@ -201,7 +228,7 @@ export function DistantPortraits({
           context.strokeStyle = String(edge.style?.stroke || "#58775a");
           context.lineWidth = Math.max(Number(edge.style?.strokeWidth) || 1.6, 0.4 / zoom);
           context.setLineDash(dash);
-          if (growing) {
+          if (growing && progress < 1) {
             let remaining = length * progress;
             context.beginPath();
             for (const segment of segments) {

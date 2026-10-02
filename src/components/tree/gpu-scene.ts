@@ -51,6 +51,7 @@ export function createGpuScene(
   const buffers: WebGLBuffer[] = [],
     textures: WebGLTexture[] = [],
     programs: WebGLProgram[] = [];
+  let labelArrays: Float32Array[] = [];
   let portraits: GpuPortraitCache | undefined,
     bufferBytes = 0,
     disposed = false;
@@ -58,6 +59,7 @@ export function createGpuScene(
     if (disposed) return;
     disposed = true;
     if (!preservePortraits) portraits?.destroy();
+    labelArrays.length = 0;
     for (const buffer of buffers) gl.deleteBuffer(buffer);
     for (const texture of textures) gl.deleteTexture(texture);
     for (const program of programs) gl.deleteProgram(program);
@@ -157,11 +159,18 @@ export function createGpuScene(
       camera: gl.getUniformLocation(p, "camera"),
       viewport: gl.getUniformLocation(p, "viewport"),
     }));
-    const makeBuffer = (data: number[], stride: number): Batch => {
-      const array = new Float32Array(data);
-      bufferBytes += array.byteLength;
-      if (bufferBytes > MAX_BUFFERS)
-        throw new Error("GPU geometry budget exceeded");
+    const makeBuffer = (
+      data: number[] | Float32Array,
+      stride: number,
+      name: string,
+    ): Batch => {
+      const array = data instanceof Float32Array ? data : new Float32Array(data);
+      const nextBytes = bufferBytes + array.byteLength;
+      if (nextBytes > MAX_BUFFERS)
+        throw new Error(
+          `GPU geometry budget exceeded: ${name} (${array.byteLength} bytes; total ${nextBytes})`,
+        );
+      bufferBytes = nextBytes;
       const buffer = gl.createBuffer()!;
       buffers.push(buffer);
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -220,8 +229,8 @@ export function createGpuScene(
           64,
         );
     }
-    const lineBatch = makeBuffer(lines, 12),
-      junctionBatch = makeBuffer(junctions, 15);
+    const lineBatch = makeBuffer(lines, 12, "lines"),
+      junctionBatch = makeBuffer(junctions, 15, "junctions");
     lines.length = 0;
     junctions.length = 0;
     const surfaces: number[] = [];
@@ -241,7 +250,7 @@ export function createGpuScene(
         0.08,
         node.data.label ? 129 : 128,
       );
-    const surfaceBatch = makeBuffer(surfaces, 15);
+    const surfaceBatch = makeBuffer(surfaces, 15, "surfaces");
     surfaces.length = 0;
     const fontCanvas = document.createElement("canvas");
     fontCanvas.width = fontCanvas.height = FONT_SIZE;
@@ -269,7 +278,7 @@ export function createGpuScene(
       gx += width;
       return result;
     };
-    const labels: number[] = [];
+    const labels: number[][] = [[], [], []];
     const text = (
       value: string,
       node: Pick<PersonNodeType, "position" | "width"> & {
@@ -285,6 +294,11 @@ export function createGpuScene(
       alignRight = false,
     ) => {
       if (!value) return 0;
+      // Preserve each layout exactly, retaining only its typed CPU data after
+      // construction. Household captions belong to all three zoom ranges.
+      const targets = low === 0 && high === 10
+        ? labels
+        : [labels[low === 0 ? 0 : low === 0.18 ? 1 : 2]];
       // Separate glyphs cannot shape joining scripts or combining sequences.
       // Use the native text renderer for these archives instead of corrupting names.
       if (/[\u0300-\u036f\u0590-\u0fff\u200d]/u.test(value))
@@ -322,32 +336,35 @@ export function createGpuScene(
             : ((node.width || 220) - measure(line)) / 2);
         for (const letter of [...line]) {
           const g = glyph(letter, bold);
-          labels.push(
-            x - scale * 2,
-            node.position.y + top + index * lineHeight,
-            g.width * scale,
-            84 * scale,
-            g.x / FONT_SIZE,
-            g.y / FONT_SIZE,
-            g.width / FONT_SIZE,
-            84 / FONT_SIZE,
-            low,
-            high,
-            0.145,
-            0.227,
-            0.173,
-            node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
-            0,
-          );
+          for (const target of targets)
+            target.push(
+              x - scale * 2,
+              node.position.y + top + index * lineHeight,
+              g.width * scale,
+              84 * scale,
+              g.x / FONT_SIZE,
+              g.y / FONT_SIZE,
+              g.width / FONT_SIZE,
+              84 / FONT_SIZE,
+              low,
+              high,
+              0.145,
+              0.227,
+              0.173,
+              node.data.outsideSpotlight ? 0.3 : node.data.dimmed ? 0.6 : 1,
+              0,
+            );
           x += g.advance * scale;
         }
       }
       return Math.min(rows.length, maxLines);
     };
+    const nodeLabels = new Map<string, readonly string[]>();
     for (const node of nodes) {
       const name = fullName(node.data.person),
         dates = years(node.data.person),
         relation = relationLabel(node);
+      nodeLabels.set(node.id, [name, dates, relation]);
       text(name, node, 146, 29, 30, 2, true, 0, 0.18);
       const overviewLines = text(name, node, 146, 22, 23, 2, true, 0.18, 0.52);
       const overviewDates = 146 + overviewLines * 23 + 4;
@@ -392,8 +409,17 @@ export function createGpuScene(
           10,
           true,
         );
-    const labelBatch = makeBuffer(labels, 15);
-    labels.length = 0;
+    labelArrays = labels.map((data) => {
+      const array = new Float32Array(data);
+      data.length = 0;
+      return array;
+    });
+    const labelCpuBytes = labelArrays.reduce((sum, array) => sum + array.byteLength, 0);
+    // The first draw chooses the actual camera LOD. Keep one GPU allocation,
+    // including when panning or crossing a zoom threshold later.
+    const labelBatch = makeBuffer(new Float32Array(0), 15, "labels");
+    let labelLod = -1,
+      labelBytes = 0;
     glyphs.clear();
     const fontTexture = gl.createTexture()!;
     textures.push(fontTexture);
@@ -480,27 +506,35 @@ export function createGpuScene(
         nextHouseholds: readonly HouseholdNodeType[],
         nextRelationLabel: (node: PersonNodeType) => string,
       ) {
+        const changed = (reason: string) => {
+          canvas.dataset.gpuUpdateReason = reason;
+          return false;
+        };
         if (
           disposed ||
-          relationLabel !== nextRelationLabel ||
           currentNodes.length !== nextNodes.length ||
           edges.length !== nextEdges.length ||
           households.length !== nextHouseholds.length
         )
-          return false;
+          return changed("membership");
         for (let i = 0; i < currentNodes.length; i++) {
           const a = currentNodes[i], b = nextNodes[i];
+          const labels = nodeLabels.get(a.id)!;
           if (
             a.id !== b.id ||
             a.position.x !== b.position.x ||
             a.position.y !== b.position.y ||
             a.width !== b.width ||
             a.height !== b.height ||
-            a.data.person !== b.data.person ||
+            // Detail hydration replaces Person objects without changing the
+            // rendered text. Compare the immutable label values, not identities.
+            labels[0] !== fullName(b.data.person) ||
+            labels[1] !== years(b.data.person) ||
+            labels[2] !== nextRelationLabel(b) ||
             a.data.dimmed !== b.data.dimmed ||
             a.data.outsideSpotlight !== b.data.outsideSpotlight
           )
-            return false;
+            return changed("node");
         }
         for (let i = 0; i < edges.length; i++) {
           const a = edges[i], b = nextEdges[i];
@@ -509,8 +543,8 @@ export function createGpuScene(
             a.source !== b.source ||
             a.target !== b.target ||
             a.selected !== b.selected ||
-            a.data?.path !== b.data?.path ||
-            a.data?.route !== b.data?.route ||
+            (a.data?.path || (a.data?.route && roundedRoute(a.data.route.points).path)) !==
+              (b.data?.path || (b.data?.route && roundedRoute(b.data.route.points).path)) ||
             a.data?.junction?.x !== b.data?.junction?.x ||
             a.data?.junction?.y !== b.data?.junction?.y ||
             a.style?.stroke !== b.style?.stroke ||
@@ -518,7 +552,7 @@ export function createGpuScene(
             a.style?.strokeDasharray !== b.style?.strokeDasharray ||
             a.style?.opacity !== b.style?.opacity
           )
-            return false;
+            return changed("edge");
         }
         for (let i = 0; i < households.length; i++) {
           const a = households[i], b = nextHouseholds[i];
@@ -531,10 +565,13 @@ export function createGpuScene(
             a.data.label !== b.data.label ||
             a.data.reverse !== b.data.reverse
           )
-            return false;
+            return changed("household");
         }
         currentNodes = nextNodes;
         currentNodesById = new Map(nextNodes.map((node) => [node.id, node]));
+        portraits!.update(photoDraw, failure, new Set(nextNodes.flatMap((node) =>
+          node.data.person.photo ? [node.data.person.photo] : [],
+        )));
         portraitDirty = true;
         return true;
       },
@@ -702,6 +739,24 @@ export function createGpuScene(
           bind(batch, 15, [4, 4, 2, 4, 1]);
         }
         gl.bindTexture(gl.TEXTURE_2D, fontTexture);
+        const nextLabelLod = camera.zoom < 0.18 ? 0 : camera.zoom < 0.52 ? 1 : 2;
+        if (nextLabelLod !== labelLod) {
+          const array = labelArrays[nextLabelLod];
+          const nextBytes = bufferBytes - labelBytes + array.byteLength;
+          if (nextBytes > MAX_BUFFERS)
+            throw new Error(
+              `GPU geometry budget exceeded: labels LOD ${nextLabelLod} (${array.byteLength} bytes; total ${nextBytes})`,
+            );
+          gl.bindBuffer(gl.ARRAY_BUFFER, labelBatch.buffer);
+          gl.bufferData(gl.ARRAY_BUFFER, array, gl.STATIC_DRAW);
+          labelBatch.count = array.length / 15;
+          bufferBytes = nextBytes;
+          labelBytes = array.byteLength;
+          labelLod = nextLabelLod;
+          canvas.dataset.gpuLabelBytes = String(labelBytes);
+          canvas.dataset.gpuLabelCpuBytes = String(labelCpuBytes);
+          canvas.dataset.gpuLabelLod = String(labelLod);
+        }
         bind(labelBatch, 15, [4, 4, 2, 4, 1]);
         if (!draws && gl.getError() !== gl.NO_ERROR) {
           failure();

@@ -10,6 +10,7 @@ import {
   treeConnectionGrowthStyle,
   treeGrowthCanvasStyle,
   treeGrowthDelays,
+  treeGrowthInputKey,
 } from "../src/components/tree/tree-growth.ts";
 
 function person(
@@ -24,6 +25,48 @@ function person(
 function cssMilliseconds(value: string) {
   return Number.parseFloat(value);
 }
+
+test("intro input stays stable across detail hydration and retains whole-family timing", () => {
+  const people = [
+    person("root", "1900", [], ["partner"]),
+    person("partner", "1905", [], ["root"]),
+    person("child", "1930", ["root", "partner"]),
+    person("other-branch", "1940"),
+  ];
+  const key = treeGrowthInputKey(people);
+  const hydrated = people.map((person, index) => ({
+    ...person,
+    parents: [...person.parents],
+    spouses: [...person.spouses],
+    name: `Загруженное имя ${index}`,
+    photo: `/media/photo-${index}.jpg`,
+    biography: "Новые подробности",
+    sources: [{ title: "Запись архива" }],
+    needsReview: true,
+    generation: 99,
+    column: 100,
+  }));
+  assert.equal(treeGrowthInputKey(hydrated), key);
+  const stableInput: LayoutPerson[] = JSON.parse(key);
+  assert.deepEqual(stableInput, people);
+  const expected = treeGrowthDelays(people, 2200);
+  const actual = treeGrowthDelays(stableInput, 2200);
+  assert.deepEqual(actual, expected);
+  assert.equal(
+    treeGrowthDuration(Math.max(...actual.values()), actual),
+    treeGrowthDuration(Math.max(...expected.values()), expected),
+  );
+  assert.ok(actual.has("other-branch"), "timing includes the whole family, not a viewport projection");
+
+  for (const field of ["id", "birth", "parents", "spouses"] as const) {
+    const changed = people.map((person, index) => index === 2
+      ? { ...person, [field]: field === "parents" || field === "spouses" ? ["other-branch"] : "changed" }
+      : person);
+    assert.notEqual(treeGrowthInputKey(changed), key, `${field} changes timing input`);
+  }
+  assert.notEqual(treeGrowthInputKey([...people].reverse()), key, "input order is preserved");
+  assert.notEqual(treeGrowthInputKey(people.slice(0, -1)), key, "membership changes timing input");
+});
 
 test("the entire introduction gets a shorter budget as archives grow", () => {
   let previous = Infinity;
