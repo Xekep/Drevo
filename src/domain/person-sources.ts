@@ -76,6 +76,7 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
   const alternativeName = {
     birth: "Другая дата рождения", death: "Другая дата смерти",
     birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
+    maidenName: "Другая фамилия при рождении",
   } as const;
   for (const alternative of person.factAlternatives || [])
     for (const source of alternative.sources)

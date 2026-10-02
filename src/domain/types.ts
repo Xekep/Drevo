@@ -64,7 +64,7 @@ export type PersonValueClaim = { value: string; sources: Source[]; confidence?: 
 /** A cited competing record; it never silently replaces the displayed value. */
 export type PersonFactAlternative = PersonValueClaim & {
   id: string;
-  field: "birth" | "death" | "birthPlace" | "deathPlace";
+  field: "birth" | "death" | "birthPlace" | "deathPlace" | "maidenName";
 };
 export type Person = {
   createdBy?: string;
@@ -88,7 +88,7 @@ export type Person = {
   birthPlaceClaim?: PersonValueClaim;
   deathPlace?: string;
   deathPlaceClaim?: PersonValueClaim;
-  /** Source-backed alternatives to the four displayed life facts. */
+  /** Source-backed alternatives to displayed life facts and birth surname. */
   factAlternatives?: PersonFactAlternative[];
   /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */
   birthLocation?: PlaceLocation;

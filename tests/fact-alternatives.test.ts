@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeArchiveCoverage, qualityCategory } from "../src/domain/archive-coverage.ts";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
+import { preserveBirthSurnameClaim } from "../src/domain/person-fact-alternatives.ts";
 import { collectPersonSources } from "../src/domain/person-sources.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import type { ArchiveUser, Family, PersonFactAlternative } from "../src/domain/index.ts";
@@ -41,7 +42,7 @@ test("alternative life records remain distinct, source-backed and date-validated
   const invalid = (change: (value: Family) => void) => {
     const value = structuredClone(valid);
     change(value);
-    assert.throws(() => validateFamily(value), /альтернативные даты и места/);
+    assert.throws(() => validateFamily(value), /альтернативные значения/);
   };
   invalid((value) => { value.people[0].factAlternatives![0].sources = []; });
   invalid((value) => { value.people[0].factAlternatives![0].value = "1880"; });
@@ -146,5 +147,76 @@ test("GEDCOM 5.5.1 and 7 preserve distinct alternatives without leaking archive-
     assert.equal(imported.factAlternatives?.[0].value, "1881");
     assert.equal(imported.factAlternatives?.[0].sources[0].title, source.title);
     assert.equal(imported.factAlternatives?.[0].sources[0].catalogId, undefined);
+  }
+});
+
+test("changing a cited birth surname can retain the former value and its citation as an alternative", () => {
+  const before = family();
+  const person = before.people[0];
+  person.maidenName = "Иванова";
+  person.maidenNameClaim = { value: "Иванова", sources: [sourceCitation(source)],
+    confidence: "confirmed" };
+  const edited = structuredClone(before);
+  edited.people[0].maidenName = "Петрова";
+  assert.throws(() => validateFamily(edited), /Источник фамилии при рождении относится к другому значению/);
+  edited.people[0] = preserveBirthSurnameClaim(edited.people[0], "old-birth-surname");
+  edited.people[0].maidenNameClaim = { value: "Петрова", sources: [inline] };
+  assert.doesNotThrow(() => validateFamily(edited));
+  assert.equal(edited.people[0].factAlternatives?.[0].value, "Иванова");
+  assert.equal(edited.people[0].factAlternatives?.[0].sources[0].catalogId, source.id);
+  assert.equal(edited.people[0].factAlternatives?.[0].confidence, "confirmed");
+  assert.equal(edited.people[0].maidenNameClaim?.sources[0].title, inline.title);
+  assert.throws(() => authorizeArchive(edited, before, actor("relative")),
+    /Статус достоверности/);
+  assert.doesNotThrow(() => authorizeArchive(edited, before, actor("researcher")));
+  const changedCitation = structuredClone(edited);
+  changedCitation.people[0].factAlternatives![0].sources[0].reference = "другой лист";
+  assert.throws(() => authorizeArchive(changedCitation, before, actor("researcher")),
+    /Привязать каталожный источник/);
+  const duplicatedCitation = structuredClone(edited);
+  duplicatedCitation.people[0].maidenNameClaim!.sources.push(sourceCitation(source));
+  assert.throws(() => authorizeArchive(duplicatedCitation, before, actor("researcher")),
+    /Привязать каталожный источник/);
+  const warning = analyzeArchiveCoverage(edited).find((item) =>
+    item.code === "competing-life-evidence");
+  assert.ok(warning);
+  assert.match(warning.detail, /фамилия при рождении — Петрова и Иванова/);
+  assert.deepEqual(warning.sourceTitles,
+    [inline.title, source.title]);
+  assert.ok(collectPersonSources(edited.people[0]).some((entry) =>
+    entry.origin === "Другая фамилия при рождении: Иванова" && entry.catalogId === source.id));
+  const invalid = structuredClone(edited);
+  invalid.people[0].factAlternatives![0].sources = [];
+  assert.throws(() => validateFamily(invalid), /альтернативные значения/);
+});
+
+test("a birth-surname alternative keeps its source through GEDCOM and .drevo", async () => {
+  const value = family();
+  value.people[0].maidenName = "Петрова";
+  value.people[0].maidenNameClaim = { value: "Петрова", sources: [inline] };
+  value.people[0].factAlternatives = [{ id: "old-birth-surname", field: "maidenName",
+    value: "Иванова", sources: [sourceCitation(source)], confidence: "confirmed" }];
+  for (const version of ["5.5.1", "7.0"] as const) {
+    const imported = importGedcom(exportGedcom(value, { version }),
+      `surname-alternative-${version}`).family.people[0];
+    assert.equal(imported.maidenName, "Петрова");
+    assert.equal(imported.factAlternatives?.[0].value, "Иванова");
+    assert.equal(imported.factAlternatives?.[0].sources[0].title, source.title);
+    assert.equal(imported.factAlternatives?.[0].sources[0].catalogId, undefined);
+  }
+  const directory = await mkdtemp(join(tmpdir(), "drevo-birth-surname-alternative-"));
+  try {
+    const uploads = join(directory, "uploads"), stage = join(directory, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const path = join(directory, "family.drevo");
+    await writePortablePackage(createWriteStream(path), uploads,
+      { family: value, sources: [source], documents: [], comments: [] }, async () => {});
+    const restored = await readPortablePackage(path, stage);
+    assert.equal(restored.snapshot.family.people[0].factAlternatives?.[0].value, "Иванова");
+    assert.equal(restored.snapshot.family.people[0].factAlternatives?.[0].sources[0].catalogId,
+      source.id);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

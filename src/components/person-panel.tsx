@@ -38,16 +38,17 @@ const PersonDiscussion = lazy(() => import("./person-discussion").then((module) 
 const claimSummary = (claim: PersonValueClaim) =>
   `${claim.sources.map((source) => source.title).join("; ")}${claim.confidence
     ? ` · Оценка: ${CLAIM_CONFIDENCE_LABELS[claim.confidence]}` : ""}`;
-function alternativeFacts(person: Person, kind: "birth" | "death") {
+function alternativeFacts(person: Person, kind: "birth" | "death" | "maidenName") {
   const label = {
     birth: "Другая дата рождения", death: "Другая дата смерти",
     birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
+    maidenName: "Другая фамилия при рождении",
   } as const;
   return (person.factAlternatives || []).filter((alternative) =>
-    alternative.field === kind || alternative.field === `${kind}Place`).map((alternative) =>
+    alternative.field === kind || (kind !== "maidenName" && alternative.field === `${kind}Place`)).map((alternative) =>
       <p key={alternative.id} className="life-fact-alternative">
-        {label[alternative.field]}: {alternative.field.endsWith("Place")
-          ? alternative.value : dateLabel(alternative.value)}
+        {label[alternative.field]}: {["birth", "death"].includes(alternative.field)
+          ? dateLabel(alternative.value) : alternative.value}
         {" · "}{claimSummary(alternative)}
       </p>);
 }
@@ -266,11 +267,13 @@ export function PersonPanel({
             {person.name} {person.patronymic}
           </span>
         </h2>
-        {person.maidenName && (
+        {(person.maidenName || person.factAlternatives?.some((alternative) =>
+          alternative.field === "maidenName")) && (
           <div className="maiden-name">
-            Фамилия при рождении: {person.maidenName}
+            {person.maidenName && <>Фамилия при рождении: {person.maidenName}</>}
             {!!person.maidenNameClaim?.sources.length &&
               <p>Источники фамилии при рождении: {claimSummary(person.maidenNameClaim)}</p>}
+            {alternativeFacts(person, "maidenName")}
           </div>
         )}
         {years(person) && (

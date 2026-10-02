@@ -38,7 +38,7 @@ function validFactAlternatives(person: Family["people"][number]): boolean {
       typeof alternative.id !== "string" ||
       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(alternative.id) ||
       ids.has(alternative.id) ||
-      !["birth", "death", "birthPlace", "deathPlace"].includes(alternative.field) ||
+      !["birth", "death", "birthPlace", "deathPlace", "maidenName"].includes(alternative.field) ||
       typeof alternative.value !== "string" ||
       !alternative.value.trim() || alternative.value.length > 1000 ||
       alternative.value !== alternative.value.trim() ||
@@ -146,7 +146,7 @@ export function validateFamily(value: unknown): Family {
     if (!validValueClaim(p.maidenNameClaim, p.maidenName))
       throw new Error("Источник фамилии при рождении относится к другому значению; снимите связь перед изменением фамилии");
     if (!validFactAlternatives(p))
-      throw new Error("Проверьте альтернативные даты и места: каждому варианту нужен отдельный источник");
+      throw new Error("Проверьте альтернативные значения: каждому варианту нужен отдельный источник");
     if (p.awards !== undefined) {
       if (!Array.isArray(p.awards) || p.awards.length > 100)
         throw new Error("Допустимо не более 100 наград у человека");
