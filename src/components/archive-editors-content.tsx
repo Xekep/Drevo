@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useId, type FormEvent } from "react";
 import { PersonDocumentsEditor } from "./person-documents-editor";
 import { DocumentSourcePicker } from "./document-source-picker";
-import { repositorySummary } from "../domain/person-sources.ts";
+import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { CitationSourcesEditor } from "./union-sources-editor.tsx";
 import {
   Pencil,
@@ -333,6 +333,19 @@ export function PersonEditor({
         parent = parent.parentElement;
       }
       input?.focus();
+      return;
+    }
+    const unnamedRepository = formRef.current?.querySelector<HTMLInputElement>(
+      '.source-repository-editor input[aria-invalid="true"]',
+    );
+    if (unnamedRepository) {
+      let parent = unnamedRepository.parentElement;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      setError("Укажите название хранилища перед сохранением.");
+      unnamedRepository.focus();
       return;
     }
     try {
@@ -862,7 +875,9 @@ export function PersonEditor({
             <h3>Источники</h3>
             {draft.sources.map((s, i) => (
               <div className="source-editor" key={i}>
-                {s.repository && <small>{repositorySummary(s)}</small>}
+                <SourceRepositoryEditor source={s} onChange={(next) =>
+                  field("sources", draft.sources.map((source, index) =>
+                    index === i ? next : source))} />
                 {(
                   [
                     ["title", "Название"],
