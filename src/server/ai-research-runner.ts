@@ -106,6 +106,7 @@ export function createResearchRunner({
   generatedFiles,
   attachments,
   webSearch,
+  renderPdf = researchPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
@@ -121,6 +122,7 @@ export function createResearchRunner({
   chats: ReturnType<typeof aiChatStore>;
   generatedFiles: ReturnType<typeof generatedResearchFileStore>;
   attachments?: ReturnType<typeof aiAttachmentStore>;
+  renderPdf?: typeof researchPdf;
 }) {
   const responses = yandexResponsesClient(fetcher);
   const vision = aiVision(fetcher);
@@ -1310,7 +1312,7 @@ export function createResearchRunner({
               title = typeof raw.title === "string" ? raw.title.trim() : "",
               content =
                 typeof raw.content === "string" ? raw.content.trim() : "",
-              bytes = await researchPdf(
+              bytes = await renderPdf(
                 title,
                 content,
                 graphInPdfRequested ? archiveGraph(family) : undefined,
