@@ -1,5 +1,5 @@
 import { startServer } from "../../src/server/index.ts";
-import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
+import { backupCoordinator, BackupBusyError } from "../../src/server/backup-coordinator.ts";
 
 if (process.env.DATABASE_BACKEND !== "postgres" ||
     !/^drevo_migration_bench_[a-z0-9_]+$/.test(process.env.PGDATABASE || ""))
@@ -62,7 +62,7 @@ process.on("message", (message) => {
       process.send?.({ backup: { state: status.job?.state,
         error: status.job?.error, records: status.records.length } });
     } catch (error) {
-      process.send?.({ backup: { state: "failed",
+      process.send?.({ backup: { state: error instanceof BackupBusyError ? "busy" : "failed",
         error: error instanceof Error ? error.message : String(error) } });
     } finally {
       await backups.close();
