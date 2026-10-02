@@ -159,7 +159,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "031_discovery_ignored_archives.sql",
     ],
     [
-      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('relations') AND tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal",
+      "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_people' AND column_name='given_normalized'",
       "049_discovery_candidate_signals.sql",
     ],
     [
@@ -225,6 +225,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
     [
       "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='discovery_revoke_ineligible_publication' AND NOT tgisinternal AND to_regclass('discovery_publication_reconciled_archives') IS NOT NULL",
       "074_revoke_ineligible_discovery_publication.sql",
+    ],
+    [
+      "SELECT 1 AS present WHERE to_regclass('discovery_relative_names') IS NULL AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass('relations') AND tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal)",
+      "075_private_discovery_relations.sql",
     ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;

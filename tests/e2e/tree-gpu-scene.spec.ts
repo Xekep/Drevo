@@ -418,10 +418,13 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     releaseOverviewPortraits();
     portraitGate = null;
     await expect.poll(() => portraitResponses).toBeGreaterThan(0);
+    // Software GL may take longer than the default 5s to process the released
+    // image uploads. Keep the real upload assertion within the same 30s media
+    // deadline used by the unrestricted backend acceptance, not the test's 240s.
     await expect.poll(() => page.evaluate(() =>
       (window as typeof window & { __gpuPortraitUploads: { count: number } })
         .__gpuPortraitUploads.count,
-    )).toBeGreaterThan(0);
+    ), { timeout: 30_000 }).toBeGreaterThan(0);
     await page.evaluate(() => new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     ));

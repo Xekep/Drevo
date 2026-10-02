@@ -281,10 +281,11 @@ try {
     "upgrading an older database installs the export index without a new import");
   assert.equal((await client.query("SELECT 1 FROM pg_extension WHERE extname='pg_trgm'")).rowCount, 1,
     "the non-superuser runtime migration installs trusted pg_trgm");
-  // A second application must safely finish an already installed extension.
-  await client.query(readFileSync(new URL("../../ops/postgres/049_discovery_candidate_signals.sql", import.meta.url), "utf8"));
-  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_trigger
-    WHERE tgname='refresh_discovery_relatives_after_relation' AND NOT tgisinternal`)).rows[0].count, 1);
+  assert.equal((await client.query(`SELECT to_regclass('discovery_relative_names') AS name`)).rows[0].name,
+    null, "the obsolete relation projection is removed, not merely hidden from the API");
+  await client.query(readFileSync(new URL("../../ops/postgres/075_private_discovery_relations.sql", import.meta.url), "utf8"));
+  assert.equal((await client.query(`SELECT to_regclass('discovery_relative_names') AS name`)).rows[0].name,
+    null, "the privacy migration is safe to reapply");
   const adminClient = process.env.PGADMINUSER
     ? new pg.Client({ user: process.env.PGADMINUSER, password: process.env.PGADMINPASSWORD })
     : client;
@@ -6730,19 +6731,16 @@ try {
   assert.deepEqual((await revokedPublicParent.json()).linkedCards, [],
     "a fresh public GET cannot return a revoked linked-card transition");
   const relativeHint = (await signalIds()).find((item) => item.id === "relative-only");
-  assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
-  assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
-    "candidate evidence contains no relative names or private card identifiers");
-  const candidateDelivery = async (change: () => Promise<void>,
-    barrier: "delivery" | "relatives" = "delivery") => {
+  assert.equal(relativeHint, undefined,
+    "publishing both people does not opt their relationship into candidate hints");
+  const candidateDelivery = async (change: () => Promise<void>) => {
     let reached!: () => void, resume!: () => void;
     const ready = new Promise<void>((resolve) => { reached = resolve; });
     const gate = new Promise<void>((resolve) => { resume = resolve; });
     const pause = async () => { reached(); await gate; };
     const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: discoveryAuth,
       publicOrigin: process.env.PUBLIC_ORIGIN,
-      beforeCandidateRelatives: barrier === "relatives" ? pause : undefined,
-      beforeCandidateDelivery: barrier === "delivery" ? pause : undefined });
+      beforeCandidateDelivery: pause });
     const server = createServer((req, res) => {
       void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
         .catch((error) => { res.destroy(error); });
@@ -6776,35 +6774,14 @@ try {
   assert.equal(unchangedPage.truncated, false);
   assert.equal(unchangedPage.nextCursor, null);
   assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
-    item.id === "relative-only"), "unchanged published candidates remain available");
+    item.id === "name-typo"), "unchanged published candidates remain available");
   const revokedCandidateDelivery = await candidateDelivery(async () => {
-    await otherPublication.unpublish("relative-only");
+    await otherPublication.unpublish("name-typo");
   });
   assert.equal(revokedCandidateDelivery.status, 409,
     "withdrawing a candidate after ranking prevents delivery of its old card");
   assert.equal((await revokedCandidateDelivery.json()).candidates, undefined);
-  await otherPublication.publish("relative-only", "owner");
-  const revokedDuringLookup = await candidateDelivery(async () => {
-    await otherPublication.unpublish(parent.id);
-  }, "relatives");
-  assert.equal(revokedDuringLookup.status, 409,
-    "a relative withdrawn between indexed paging and evidence lookup invalidates the page");
-  const stalePage = await revokedDuringLookup.json();
-  assert.equal(stalePage.candidates, undefined);
-  assert.equal(stalePage.truncated, undefined,
-    "the stale indexed page cannot reveal even an outdated pagination count");
-  await otherPublication.publish(parent.id, "owner");
-  const revokedRelativeDelivery = await candidateDelivery(async () => {
-    await otherPublication.unpublish(parent.id);
-  });
-  assert.equal(revokedRelativeDelivery.status, 409,
-    "withdrawing a published relative after ranking prevents stale evidence delivery");
-  assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
-  await otherPublication.publish(parent.id, "owner");
-  assert.ok((await signalIds()).some((item) => item.id === "relative-only"),
-    "restoring the relative publication restores its candidate evidence");
-  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_relative_names WHERE relative_person_id='closed-relative'`).get())?.count, 0);
+  await otherPublication.publish("name-typo", "owner");
   const publicSearchHeaders = { ...headers, "X-Real-IP": "198.51.100.211" };
   const publicParentResults = async () => {
     const response = await fetch(securedBase +
@@ -6820,10 +6797,7 @@ try {
     item.archiveId === "other-archive" && item.id === parent.id), false,
   "a fresh indexed search cannot return a withdrawn publication");
   assert.equal((await signalIds()).some((item) => item.id === "relative-only"), false,
-    "revoking either parent publication removes the hint in the same transaction");
-  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
-    FROM discovery_relative_names WHERE relative_person_id='published-parent'
-      AND archive_id='other-archive'`).get())?.count, 0);
+    "withdrawing a published parent never reveals a relationship hint");
   await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
   await otherApp.archive.write(otherBeforeSignals.family, afterBothPlaces.revision);
   await otherPublication.unpublish("person-a");

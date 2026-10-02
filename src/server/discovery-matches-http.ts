@@ -5,8 +5,8 @@ import type { createAuth } from "./auth.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
-import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery, candidatePlaceQueries,
-  candidateRelativeQuery, type PublishedRelative } from "./discovery-candidate-ranking.ts";
+import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery,
+  candidatePlaceQueries } from "./discovery-candidate-ranking.ts";
 import { publicPersonId } from "./public-person-id.ts";
 
 const archivePattern = /^[A-Za-z0-9-]{3,64}$/;
@@ -124,11 +124,10 @@ function candidateCursor(value: string | null): [string,string,string] | null {
 }
 
 export function discoveryMatchesHttp({ archive, auth, publicOrigin,
-  beforeCandidateRelatives, beforeCandidateDelivery }: {
+  beforeCandidateDelivery }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
   publicOrigin?: string;
-  beforeCandidateRelatives?: () => Promise<void>;
   beforeCandidateDelivery?: () => Promise<void>;
 }) {
   const db = archive.db;
@@ -275,19 +274,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       if (!sourceRow) return json(res, 404, { error: "Карточка больше не опубликована" });
       const source = published(sourceRow);
       const terms = candidateNameQuery(source);
-      const sourceRelativeRows = await db.prepare("", `SELECT relative_person_id,kind,relative_name
-        FROM discovery_relative_names
-        WHERE archive_id=? AND person_id=?
-        ORDER BY CASE kind WHEN 'parent' THEN 0 WHEN 'spouse' THEN 1 ELSE 2 END,
-          relative_name LIMIT 24`)
-        .all(archiveId,sourceId);
-      const sourceRelatives = sourceRelativeRows.map((row) => ({
-          kind: String(row.kind) as PublishedRelative["kind"], name: String(row.relative_name),
-        }));
       const fuzzy = candidateFuzzyTerms(source);
       const places = candidatePlaceQueries(source);
-      const relativeTerms = candidateRelativeQuery(sourceRelatives);
-      if (!terms && !fuzzy && !places.length && !relativeTerms)
+      if (!terms && !fuzzy && !places.length)
         return json(res, 200, { candidates: [], truncated: false, nextCursor: null });
       const showIgnored = url.searchParams.get("ignored") === "1";
       const branches: string[] = [], lookupArgs: string[] = [];
@@ -309,11 +298,6 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           WHERE archive_id<>? AND search_vector @@ to_tsquery('simple',?)
             AND birth_year BETWEEN ? AND ?`);
         lookupArgs.push(archiveId,place.terms,place.from,place.to);
-      }
-      if (relativeTerms) {
-        branches.push(`SELECT archive_id,person_id FROM discovery_relative_names
-          WHERE archive_id<>? AND name_vector @@ to_tsquery('simple',?)`);
-        lookupArgs.push(archiveId,relativeTerms);
       }
       // Each branch starts with a GIN index. Only opt-in projections are read.
       const candidateSql = `WITH candidate_keys AS (${branches.join(" UNION ")})
@@ -340,36 +324,14 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const candidateArgs = [...lookupArgs,archiveId,...after,archiveId,archiveId,sourceId,
         archiveId,sourceId,archiveId,sourceId];
       const rows = await db.prepare("", candidateSql).all(...candidateArgs);
-      await beforeCandidateRelatives?.();
       const page = rows.slice(0, candidatePageSize);
-      const relativesByPerson = new Map<string, PublishedRelative[]>();
-      let relativeRows: Row[] = [];
-      if (page.length) {
-        const values = page.map(() => "(?,?)").join(",");
-        relativeRows = await db.prepare("", `SELECT p.archive_id,p.person_id,
-          r.relative_person_id,r.kind,r.relative_name
-          FROM (VALUES ${values}) AS p(archive_id,person_id)
-          JOIN LATERAL (SELECT relative_person_id,kind,relative_name FROM discovery_relative_names
-            WHERE archive_id=p.archive_id AND person_id=p.person_id
-            ORDER BY CASE kind WHEN 'parent' THEN 0 WHEN 'spouse' THEN 1 ELSE 2 END,
-              relative_name LIMIT 24) r ON true`)
-          .all(...page.flatMap((row) => [String(row.archive_id),String(row.person_id)]));
-        for (const row of relativeRows) {
-          const key = `${row.archive_id}\u0000${row.person_id}`;
-          const list = relativesByPerson.get(key) || [];
-          list.push({ kind: String(row.kind) as PublishedRelative["kind"],
-            name: String(row.relative_name) });
-          relativesByPerson.set(key,list);
-        }
-      }
       const nextCursor = rows.length > candidatePageSize
         ? Buffer.from(JSON.stringify([
           page.at(-1)!.name, page.at(-1)!.archive_id, page.at(-1)!.person_id,
         ])).toString("base64url") : null;
       const ranked = page.map((row) => {
         const candidate = published(row);
-        const evidence = candidateEvidence(source,candidate,sourceRelatives,
-          relativesByPerson.get(`${row.archive_id}\u0000${row.person_id}`) || []);
+        const evidence = candidateEvidence(source,candidate);
         return evidence ? { ...candidate, ...evidence } : null;
       }).filter((item) => item !== null)
         .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name,"ru-RU"))
@@ -387,42 +349,16 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         archive_id: String(row.archive_id), person_id: String(row.person_id),
         publication_version: String(row.publication_version), row_version: String(row.row_version),
       }));
-      const expectedFocals = [sourceRow,...page].map((row) => ({
-        archive_id: String(row.archive_id), person_id: String(row.person_id),
-      }));
-      const expectedRelatives = [
-        ...sourceRelativeRows.map((row) => ({ ...expectedFocals[0],
-          relative_person_id: String(row.relative_person_id), kind: String(row.kind),
-          relative_name: String(row.relative_name) })),
-        ...relativeRows.map((row) => ({
-          archive_id: String(row.archive_id), person_id: String(row.person_id),
-          relative_person_id: String(row.relative_person_id), kind: String(row.kind),
-          relative_name: String(row.relative_name),
-        })),
-      ];
       const expectedPage = rows.map((row) => ({ archive_id: String(row.archive_id),
         person_id: String(row.person_id) }));
-      // One MVCC snapshot checks the indexed page (including its overflow row),
-      // selected publications and the complete top-24 relatives used for ranking.
+      // One MVCC snapshot checks the indexed page (including its overflow row)
+      // and selected publications before delivery.
       const current = await db.prepare("", `WITH expected_people AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
             archive_id text,person_id text,publication_version text,row_version text)
-        ), expected_focals AS (
-          SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(archive_id text,person_id text)
-        ), expected_relatives AS (
-          SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(
-            archive_id text,person_id text,relative_person_id text,kind text,relative_name text)
         ), expected_page AS (
           SELECT * FROM jsonb_to_recordset(?::jsonb) AS e(archive_id text,person_id text)
         ), current_page AS (${candidateSql}
-        ), current_relatives AS (
-          SELECT f.archive_id,f.person_id,r.relative_person_id,r.kind,r.relative_name
-          FROM expected_focals f
-          JOIN LATERAL (SELECT relative_person_id,kind,relative_name
-            FROM discovery_relative_names
-            WHERE archive_id=f.archive_id AND person_id=f.person_id
-            ORDER BY CASE kind WHEN 'parent' THEN 0 WHEN 'spouse' THEN 1 ELSE 2 END,
-              relative_name LIMIT 24) r ON true
         ) SELECT
           (SELECT count(*) FROM expected_people e JOIN discovery_people d
             ON d.archive_id=e.archive_id AND d.person_id=e.person_id
@@ -430,16 +366,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
             AND d.xmin::text=e.row_version) AS people_count,
           (SELECT count(*) FROM current_page c JOIN expected_page e
             ON c.archive_id=e.archive_id AND c.person_id=e.person_id) AS page_count,
-          (SELECT count(*) FROM current_page) AS current_page_count,
-          NOT EXISTS (SELECT * FROM expected_relatives EXCEPT SELECT * FROM current_relatives)
-            AND NOT EXISTS (SELECT * FROM current_relatives EXCEPT SELECT * FROM expected_relatives)
-            AS relatives_current`)
-        .get(JSON.stringify(expectedPeople),JSON.stringify(expectedFocals),
-          JSON.stringify(expectedRelatives),JSON.stringify(expectedPage),...candidateArgs);
+          (SELECT count(*) FROM current_page) AS current_page_count`)
+        .get(JSON.stringify(expectedPeople),JSON.stringify(expectedPage),...candidateArgs);
       if (Number(current?.people_count) !== expectedPeople.length ||
           Number(current?.page_count) !== expectedPage.length ||
-          Number(current?.current_page_count) !== expectedPage.length ||
-          current?.relatives_current !== true)
+          Number(current?.current_page_count) !== expectedPage.length)
         return json(res, 409, { error: "Опубликованные карточки изменились. Обновите подсказки." });
       return json(res, 200, { candidates: ranked, truncated: nextCursor !== null, nextCursor });
     }
