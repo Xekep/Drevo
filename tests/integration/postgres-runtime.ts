@@ -1608,7 +1608,8 @@ try {
   const stagedSave = stagedStore.save({ ownerId: "owner", chatId: stagedChat.id,
     name: "staged.pdf", contentType: "application/pdf",
     bytes: Buffer.from("%PDF- staged before tier downgrade"),
-    expires: Date.now() + 30 * 60_000 });
+    expires: Date.now() + 30 * 60_000 }).then(
+    (value) => ({ value }), (error: unknown) => ({ error }));
   try {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -1621,21 +1622,19 @@ try {
     await runtimeHttpUsers.setFullAccess((await runtimeHttpUsers.get("owner"))!, "owner", false);
     assert.equal(await accountAiAccess(app.archive.db, "owner"), false);
     releaseInstall();
-    const admitted = await stagedSave.catch((error) => {
-      if (error instanceof ForbiddenError) return null;
-      throw error;
-    });
-    assert.equal(admitted, null,
+    const result = await stagedSave;
+    if ("error" in result && !(result.error instanceof ForbiddenError)) throw result.error;
+    assert.equal("value" in result ? result.value : null, null,
       "downgrade during staging cannot install a generated file");
     assert.deepEqual(readdirSync(stagedPath), [],
       "rejected installation must also remove its staged bytes");
   } finally {
     releaseInstall();
-    await stagedSave.catch(() => {});
-    await runtimeHttpUsers.setFullAccess((await runtimeHttpUsers.get("owner"))!, "owner", true);
-    await stagedStore.deleteChat(stagedChat.id);
+    await stagedSave;
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    await stagedStore.deleteChat(stagedChat.id).catch(() => {});
     stagedStore.close();
-    await generatedChats.delete(stagedChat.id, "owner");
+    await generatedChats.delete(stagedChat.id, "owner").catch(() => {});
   }
   const generatedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
   const generatedBytes = Buffer.from("%PDF- synthetic private report");
