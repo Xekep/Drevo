@@ -34,6 +34,8 @@ export function accountDataExportHttp(
     const prepared = await exporter.read(accountId);
     if (!prepared) return send(404, { error: "Аккаунт не найден" });
     await beforeSend?.();
+    if (await auth.accountId(req) !== accountId)
+      return send(401, { error: "Сеанс завершён. Войдите снова" });
     if (!(await exporter.canDeliver(accountId, prepared.commentScopes)))
       return send(409, { error: "Доступ к дереву изменился. Повторите экспорт" });
     return send(200, prepared.download, true);

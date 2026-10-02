@@ -1615,6 +1615,39 @@ try {
     assert.equal(exported.archives[0].preferences?.colorScheme, index % 2 ? undefined : "white");
     assert.deepEqual(exported.archives[0].ownComments, []);
   }
+  const revokedExportToken = newSessionToken();
+  const revokedExportHash = sessionTokenHash(revokedExportToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [revokedExportHash, Date.now() + 60_000],
+  );
+  const revokedExportAuth = await createAuth(
+    await userStore(app.archive.db), app.archive.db, process.env.PUBLIC_ORIGIN,
+  );
+  let exportPrepared = false;
+  const revokedExportEndpoint = accountDataExportHttp(
+    app.archive.db, revokedExportAuth, async () => {
+      exportPrepared = true;
+      await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [revokedExportHash]);
+    },
+  );
+  const revokedExportServer = createServer((req, res) => {
+    void revokedExportEndpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => revokedExportServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const revokedExportPort = (revokedExportServer.address() as { port: number }).port;
+    const response = await fetch(
+      `http://127.0.0.1:${revokedExportPort}/api/account/export`,
+      { headers: { Cookie: `drevo_session=${revokedExportToken}` } },
+    );
+    assert.equal(exportPrepared, true, "session is revoked after the export snapshot");
+    assert.equal(response.status, 401, "revoked session cannot download prepared account data");
+    assert.doesNotMatch(await response.text(), /reader-export@example.invalid|drevo-account-data/);
+  } finally {
+    await new Promise<void>((resolve) => revokedExportServer.close(() => resolve()));
+  }
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);
