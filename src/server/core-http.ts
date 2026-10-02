@@ -63,6 +63,24 @@ export function coreHttp({
         : json(res, 200, { revoked });
     }
 
+    const managedSession = path.match(
+      /^\/api\/account\/sessions\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/revoke$/i,
+    );
+    if (managedSession && req.method === "POST") {
+      if (!isSameOriginRequest(req, publicOrigin))
+        return json(res, 403, { error: "Invalid origin" });
+      const revoked = await auth.revokeManagedSession(
+        req,
+        managedSession[1].toLowerCase(),
+      );
+      if (revoked === null) return json(res, 401, { error: "Требуется вход" });
+      if (revoked === "current")
+        return json(res, 409, {
+          error: "Для выхода из текущего сеанса используйте кнопку «Выйти».",
+        });
+      return json(res, 200, { revoked });
+    }
+
     if (path === "/auth/logout" && req.method === "POST") {
       if (!isSameOriginRequest(req, publicOrigin))
         return json(res, 403, { error: "Invalid origin" });
