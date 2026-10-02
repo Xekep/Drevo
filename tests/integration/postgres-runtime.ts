@@ -1742,6 +1742,10 @@ try {
     let releaseAdminResponse!: () => void;
     const adminResponseStarted = new Promise<void>((resolve) => { notifyAdminResponse = resolve; });
     const adminResponseGate = new Promise<void>((resolve) => { releaseAdminResponse = resolve; });
+    let notifyAdminModels!: () => void;
+    let releaseAdminModels!: () => void;
+    const adminModelsStarted = new Promise<void>((resolve) => { notifyAdminModels = resolve; });
+    const adminModelsGate = new Promise<void>((resolve) => { releaseAdminModels = resolve; });
     let holdAdminResponse = false;
     let adminResponseCalls = 0;
     const guardedAdminAi = adminAiHttp({
@@ -1765,6 +1769,11 @@ try {
             await adminResponseGate;
           }
           return Response.json({ id: "admin-tier-response", status: "completed", output_text: "OK" });
+        }
+        if (path.endsWith("/models")) {
+          notifyAdminModels();
+          await adminModelsGate;
+          return Response.json({ data: [{ id: "gpt://test/hidden-after-downgrade" }] });
         }
         return Response.json({ deleted: true });
       },
@@ -1799,9 +1808,23 @@ try {
       assert.equal(hidden.status, 403,
         "a downgraded admin cannot receive a completed connection-check answer");
       assert.doesNotMatch(await hidden.text(), /OK/);
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      const listing = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/models`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ folderId: "folder-1", apiKey: "test-key" }),
+      });
+      await Promise.race([adminModelsStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI model discovery did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseAdminModels();
+      const modelResponse = await listing;
+      assert.equal(modelResponse.status, 403,
+        "a downgraded admin cannot receive models fetched before the downgrade");
+      assert.doesNotMatch(await modelResponse.text(), /hidden-after-downgrade/);
     } finally {
       releaseAdminConversation();
       releaseAdminResponse();
+      releaseAdminModels();
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
     }
