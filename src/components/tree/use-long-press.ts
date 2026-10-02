@@ -8,7 +8,7 @@ type Press = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-export function useLongPress(onLongPress: () => void) {
+export function useLongPress<T extends HTMLElement = HTMLButtonElement>(onLongPress: () => void) {
   const press = useRef<Press | null>(null);
   const suppressClick = useRef(false);
 
@@ -29,7 +29,7 @@ export function useLongPress(onLongPress: () => void) {
     suppressClick,
     active: () => !!press.current,
     handlers: {
-      onPointerDown(event: PointerEvent<HTMLButtonElement>) {
+      onPointerDown(event: PointerEvent<T>) {
         if (
           event.pointerType !== "touch" ||
           !event.isPrimary ||
@@ -53,7 +53,7 @@ export function useLongPress(onLongPress: () => void) {
         }, 520);
         press.current = current;
       },
-      onPointerMove(event: PointerEvent<HTMLButtonElement>) {
+      onPointerMove(event: PointerEvent<T>) {
         const current = press.current;
         if (!current || current.pointerId !== event.pointerId || current.fired)
           return;
@@ -62,7 +62,7 @@ export function useLongPress(onLongPress: () => void) {
         )
           clearPress();
       },
-      onPointerUp(event: PointerEvent<HTMLButtonElement>) {
+      onPointerUp(event: PointerEvent<T>) {
         const current = press.current;
         if (!current || current.pointerId !== event.pointerId) return;
         clearPress();

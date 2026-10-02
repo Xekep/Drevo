@@ -18,6 +18,7 @@ import {
   TREE_NODE_WIDTH,
 } from "../../domain/tree-layout-constants";
 export const TreeActions = createContext<{
+  gpu?: boolean;
   choose: (id: string, additive: boolean) => void;
   selectOnly: (id: string) => void;
   collapse: (id: string, occurrenceId?: string) => void;
@@ -65,6 +66,7 @@ export const PersonNode = memo(function PersonNode({
   isConnectable,
 }: NodeProps<PersonNodeType>) {
   const {
+    gpu,
     choose,
     selectOnly,
     collapse,
@@ -210,7 +212,7 @@ export const PersonNode = memo(function PersonNode({
         aria-label={cardLabel}
         title={cardLabel}
       >
-        {detail === "distant" ? (
+        {detail === "distant" || gpu ? (
           <span
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"

@@ -2254,6 +2254,20 @@
   height: 144px;
 }
 
+.tree-gpu-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+.tree-canvas[data-renderer="webgl2"] .react-flow__viewport { z-index: 2; }
+.tree-gpu-node-overlay .person-avatar,
+.tree-gpu-node-overlay .portrait-card-info { visibility: hidden; }
+.tree-gpu-node-overlay .flow-person-content { background: transparent; }
+.tree-canvas[data-renderer="webgl2"]:focus-visible { outline: 2px solid #789567; outline-offset: -2px; }
+
 .tree-display-actions {
   position: absolute;
   top: 18px;

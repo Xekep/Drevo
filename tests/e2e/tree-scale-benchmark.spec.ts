@@ -111,12 +111,33 @@ test("a large tree completes worker layout and remains interactive", async ({ pa
       mountedEdges: document.querySelectorAll(".react-flow__edge").length,
       distantCards: document.querySelectorAll(".flow-person.is-distant").length,
       distantImages: document.querySelectorAll(".flow-person.is-distant .person-avatar img").length,
+      gpu: document.querySelector<HTMLElement>(".tree-canvas")?.dataset.renderer === "webgl2",
       sceneNodes: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.sceneNodes || 0),
       sceneEdges: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.sceneEdges || 0),
       distantPortraits: Number(document.querySelector<HTMLCanvasElement>(".tree-distant-portraits")?.dataset.portraitCount || 0) };
   });
   expect(result.people).toBe(people.length);
   expect(result.occurrences).toBeGreaterThanOrEqual(people.length);
+  if (result.gpu) {
+    const canvas = page.locator(".tree-gpu-scene");
+    await expect(canvas).toHaveAttribute("data-scene-nodes", String(result.occurrences));
+    expect(Number(await canvas.getAttribute("data-scene-edges"))).toBeGreaterThan(0);
+    expect(result.mountedCards).toBe(0);
+    expect(result.mountedEdges).toBe(0);
+    if (process.env.DREVO_RENDER_PROFILE) await profileTreeRenderer(page, testInfo);
+    const before = await page.locator(".react-flow__viewport").getAttribute("style");
+    const pane = await page.locator(".react-flow__pane").boundingBox();
+    expect(pane).toBeTruthy();
+    await page.mouse.move(pane!.x + pane!.width / 2, pane!.y + pane!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(pane!.x + pane!.width / 2 + 100, pane!.y + pane!.height / 2 + 80, { steps: 20 });
+    await page.mouse.up();
+    await expect(page.locator(".react-flow__viewport")).not.toHaveAttribute("style", before!);
+    await expect(page.locator('.tree-canvas[data-renderer="webgl2"]')).toBeVisible();
+    expect(Number(await canvas.getAttribute("data-gpu-texture-bytes"))).toBeLessThan(38 * 1024 * 1024);
+    console.log(`scale-browser ${JSON.stringify({ ...result, gpuTextureBytes: Number(await canvas.getAttribute("data-gpu-texture-bytes")) })}`);
+    return;
+  }
   if (people.length >= 600 && !process.env.DREVO_LAYOUT_SCALE_KINSHIP) {
     expect(result.sceneNodes).toBeGreaterThanOrEqual(people.length);
     expect(result.sceneEdges).toBeGreaterThan(0);
