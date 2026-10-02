@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { open as openFile } from "node:fs/promises";
-import { pipeline } from "node:stream/promises";
+import { finished, pipeline } from "node:stream/promises";
 import type { openArchive } from "./database.ts";
 import type { mediaStore } from "./media.ts";
 import type { imagePreviews } from "./image-previews.ts";
@@ -13,11 +13,13 @@ export function publicSharingHttp({
   media,
   previewImage,
   shares,
+  beforeDelivery,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   media: ReturnType<typeof mediaStore>;
   previewImage: ReturnType<typeof imagePreviews>;
   shares: ReturnType<typeof sharesStore>;
+  beforeDelivery?: () => Promise<void>;
 }) {
   return async (
     req: IncomingMessage,
@@ -131,11 +133,32 @@ export function publicSharingHttp({
         ? !!(await shares.get(shared![1]))
         : await shares.recordVisit(share.id);
     if (!stillValid) return json(410, { error: "Срок ссылки истёк" });
-    return json(200, {
+    const payload = {
       family: sharedFamily(family, share, shared![1]),
       expiresAt: share.expiresAt,
       serverTime: new Date().toISOString(),
       reverseTimeline: DEFAULT_TREE_PREFERENCES.reverseTimeline,
+    };
+    const delivered = await shares.deliverWhileActive(shared![1], async () => {
+      await beforeDelivery?.();
+      if (res.destroyed) return;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort();
+        res.destroy();
+      }, 5000);
+      timeout.unref();
+      try {
+        json(200, payload);
+        await finished(res, { signal: controller.signal });
+      } catch {
+        if (!res.destroyed) res.destroy();
+      } finally {
+        clearTimeout(timeout);
+      }
     });
+    if (!delivered && !res.destroyed)
+      return json(410, { error: "Срок ссылки истёк" });
+    return true;
   };
 }

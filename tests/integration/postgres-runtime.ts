@@ -68,6 +68,7 @@ import { sharesStore } from "../../src/server/shares.ts";
 import { adminSharingHttp } from "../../src/server/admin-sharing-http.ts";
 import { archiveInvitationsHttp } from "../../src/server/archive-invitations-http.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
+import { publicSharingHttp } from "../../src/server/public-sharing-http.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
@@ -4261,13 +4262,80 @@ try {
     })).status,
     405,
   );
-  assert.equal(
-    (await fetch(securedBase + `/a/other-archive/api/shares/${selectedShare.share.id}`, {
-      method: "DELETE",
-      headers: ownerHeaders,
-    })).status,
-    200,
-  );
+  let releaseShareDelivery!: () => void;
+  let shareDeliveryLocked!: () => void;
+  let releaseAbortedDelivery!: () => void;
+  let abortedDeliveryLocked!: () => void;
+  const shareDeliveryGate = new Promise<void>((resolve) => { releaseShareDelivery = resolve; });
+  const shareDeliveryEntered = new Promise<void>((resolve) => { shareDeliveryLocked = resolve; });
+  const abortedDeliveryGate = new Promise<void>((resolve) => { releaseAbortedDelivery = resolve; });
+  const abortedDeliveryEntered = new Promise<void>((resolve) => { abortedDeliveryLocked = resolve; });
+  let deliveryAttempts = 0;
+  const lockedShareHandler = publicSharingHttp({
+    archive: otherApp.archive,
+    media: mediaStore(join(directory, "archives", "other-archive", "uploads")),
+    previewImage: imagePreviews(join(directory, "archives", "other-archive", "previews")),
+    shares: sharesStore(otherApp.archive.db),
+    beforeDelivery: async () => {
+      if (++deliveryAttempts === 1) {
+        abortedDeliveryLocked();
+        await abortedDeliveryGate;
+        return;
+      }
+      shareDeliveryLocked();
+      await shareDeliveryGate;
+    },
+  });
+  const lockedShareServer = createServer((req, res) => {
+    void lockedShareHandler(req, res, new URL(req.url || "/", "http://127.0.0.1"))
+      .catch((error) => {
+        if (!res.headersSent) res.writeHead(500).end(String(error));
+        else res.destroy();
+      });
+  });
+  await new Promise<void>((resolve) => lockedShareServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (lockedShareServer.address() as { port: number }).port;
+    const abortedController = new AbortController();
+    const aborted = fetch(`http://127.0.0.1:${port}/api/shared/${selectedShareToken}`,
+      { signal: abortedController.signal });
+    await abortedDeliveryEntered;
+    abortedController.abort();
+    await assert.rejects(aborted);
+    releaseAbortedDelivery();
+    // The abandoned response must release the share lock and its connection.
+    await client.query("BEGIN");
+    try {
+      await client.query("SET LOCAL lock_timeout='1s'");
+      await client.query("UPDATE share_links SET title=title WHERE archive_id='other-archive' AND id=$1",
+        [selectedShare.share.id]);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+    const inFlight = fetch(`http://127.0.0.1:${port}/api/shared/${selectedShareToken}`);
+    await shareDeliveryEntered;
+    const revocation = fetch(
+      securedBase + `/a/other-archive/api/shares/${selectedShare.share.id}`,
+      { method: "DELETE", headers: ownerHeaders },
+    );
+    const revokedBeforeDelivery = await Promise.race([
+      revocation.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 150)),
+    ]);
+    assert.equal(revokedBeforeDelivery, false,
+      "share revocation waits for a locked HTTP family delivery");
+    releaseShareDelivery();
+    const delivered = await inFlight;
+    assert.equal(delivered.status, 200);
+    assert.equal((await delivered.json()).family.people[0].name, "Исправленный сосед");
+    assert.equal((await revocation).status, 200);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/shared/${selectedShareToken}`)).status,
+      410, "a completed revoke cannot deliver the family again");
+  } finally {
+    releaseAbortedDelivery();
+    releaseShareDelivery();
+    await new Promise<void>((resolve) => lockedShareServer.close(() => resolve()));
+  }
   assert.equal(
     (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`)).status,
     410,
