@@ -3157,7 +3157,7 @@ try {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call",
-          params: { name: "search_people", arguments: { query: "" } } }),
+          params: { name: "search_people", arguments: { query: "Иван" } } }),
       });
       await Promise.race([entered,
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP tool did not reach final authentication")), 15_000))]);
