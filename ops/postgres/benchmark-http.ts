@@ -200,10 +200,29 @@ try {
   assert.equal(restartedPdf.status, 200,
     "A restarted backend must read the PDF from shared temporary storage");
   await restartedPdf.arrayBuffer();
+  const remoteDelete = new Promise<string>((resolve, reject) => {
+    // The original first backend was removed before its replacement was
+    // appended, so the backend behind bases[1] is now children[0].
+    const child = children[0];
+    const timer = setTimeout(() => {
+      child.off("message", received);
+      reject(new Error("Synthetic remote AI conversation was not deleted"));
+    }, 5000);
+    const received = (message: unknown) => {
+      if (!message || typeof message !== "object" || !("aiDelete" in message)) return;
+      clearTimeout(timer);
+      child.off("message", received);
+      resolve(String(message.aiDelete));
+    };
+    child.on("message", received);
+  });
   const deletedPdfChat = await fetch(bases[1] + `/api/ai/chats/${pdfTurn.chatId}`, {
     method: "DELETE", headers: { Origin: bases[1] },
   });
   assert.equal(deletedPdfChat.status, 200, await deletedPdfChat.clone().text());
+  assert.match(await remoteDelete,
+    /^\/v1\/conversations\/benchmark-conversation-[0-9]+-[0-9]+$/,
+    "The fake provider must observe remote conversation cleanup");
   assert.equal((await fetch(bases[0] + pdfTurn.files[0].url)).status, 404,
     "Chat deletion on another process must revoke the generated file");
   const routes = [
