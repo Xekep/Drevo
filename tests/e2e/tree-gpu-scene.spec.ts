@@ -7,7 +7,12 @@ import { renderPortraits } from "./render-portraits";
 test.use({
   trace: "off",
   launchOptions: {
-    args: ["--enable-unsafe-swiftshader"],
+    args: [
+      "--enable-unsafe-swiftshader",
+      ...(process.env.DREVO_GPU_SOFTWARE === "1"
+        ? ["--use-angle=swiftshader"]
+        : []),
+    ],
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
       ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
       : {}),
@@ -21,6 +26,12 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     process.env.DREVO_GPU_PEOPLE === "977"
       ? randomFamily(5, 9)
       : randomFamily(1, 6);
+  if (process.env.DREVO_GPU_CPU_THROTTLE) {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Emulation.setCPUThrottlingRate", {
+      rate: Number(process.env.DREVO_GPU_CPU_THROTTLE),
+    });
+  }
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
     // CI uses SwiftShader. Exercise the shaders and interaction path there too;
@@ -136,10 +147,30 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     );
   });
   await page.goto("/tree");
-  await expect(page.locator(".tree-canvas")).toBeVisible();
+  await expect(page.locator(".tree-canvas")).toBeVisible({ timeout: 15_000 });
   const tree = page.locator('.tree-canvas[data-renderer="webgl2"]');
   await expect(tree).toBeVisible({ timeout: 210_000 });
   const canvas = tree.locator(".tree-gpu-scene");
+  const verifyContextLoss = async () => {
+    expect(
+      await page.evaluate(
+        () =>
+          (window as typeof window & { __gpuLayout: { requests: number } })
+            .__gpuLayout.requests,
+      ),
+    ).toBe(requests);
+    await canvas.evaluate((element: HTMLCanvasElement) =>
+      element
+        .getContext("webgl2")!
+        .getExtension("WEBGL_lose_context")!
+        .loseContext(),
+    );
+    await expect(
+      page.locator('.tree-canvas[data-renderer="react-flow"]'),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".tree-gpu-scene")).toHaveCount(0);
+    await expect(page.locator(".flow-person-content").first()).toBeVisible();
+  };
   await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
   expect(
     Number(await canvas.getAttribute("data-gpu-texture-bytes")),
@@ -267,6 +298,7 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     const cameraBefore = await page
       .locator(".react-flow__viewport")
       .getAttribute("style");
+    let handoffStartedAt = 0;
     try {
       const handle = card.locator('.react-flow__handle[data-handleid="right"]');
       const box = await handle.boundingBox();
@@ -280,7 +312,15 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
       await page.mouse.move(x + 18, y + 18, { steps: 2 });
       await expect(root).toHaveAttribute("data-renderer", "react-flow");
       await expect(page.locator(".tree-gpu-scene")).toHaveCount(0);
-      await page.mouse.move(x, y, { steps: 2 });
+      // Use the committed native control, whose box can differ from the GPU
+      // overlay. Releasing at stale coordinates can click the card underneath.
+      const nativeBox = await handle.boundingBox();
+      expect(nativeBox).toBeTruthy();
+      await page.mouse.move(
+        nativeBox!.x + nativeBox!.width / 2,
+        nativeBox!.y + nativeBox!.height / 2,
+        { steps: 2 },
+      );
       await page.evaluate(() => {
         const state = { rendererOnFirstFrame: "" };
         Object.assign(window, { __gpuHandoff: state });
@@ -300,6 +340,7 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
           attributeFilter: ["data-gpu-draws"],
         });
       });
+      handoffStartedAt = Date.now();
       await page.mouse.up();
       await page.waitForFunction(
         () =>
@@ -323,67 +364,92 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
         "style",
         cameraBefore!,
       );
-    } finally {
-      await page.mouse.up();
-      portraitGate = null;
-      releasePortraits();
-    }
-    await expect(tree).toBeVisible();
-    await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
-    const resourcesBeforeSelection = await page.evaluate(
-      () =>
-        (
-          window as typeof window & {
-            __gpuResources: { programs: number; glyphUploads: number };
-          }
-        ).__gpuResources,
-    );
-    expect(resourcesBeforeSelection.programs).toBeGreaterThan(0);
-    expect(resourcesBeforeSelection.glyphUploads).toBeGreaterThan(0);
-    await card.locator(".flow-person-content").focus();
-    await page.keyboard.press("Shift+Enter");
-    await expect(card).not.toHaveClass(/is-selected/);
-    // Let the resulting scene update and two paints finish before comparing.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-        ),
-    );
-    expect(
-      await page.evaluate(
+      // Keep downloads held while the bounded handoff deadline expires. This
+      // verifies recovery independently of software GL's mipmap upload speed.
+      await expect(tree).toBeVisible({ timeout: 15_000 });
+      console.log(
+        "GPU handoff recovered while portraits held",
+        Date.now() - handoffStartedAt,
+      );
+      await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
+      const resourcesBeforeSelection = await page.evaluate(
         () =>
           (
             window as typeof window & {
               __gpuResources: { programs: number; glyphUploads: number };
             }
           ).__gpuResources,
-      ),
-    ).toEqual(resourcesBeforeSelection);
+      );
+      expect(resourcesBeforeSelection.programs).toBeGreaterThan(0);
+      expect(resourcesBeforeSelection.glyphUploads).toBeGreaterThan(0);
+      await card.locator(".flow-person-content").focus();
+      await page.keyboard.press("Shift+Enter");
+      await expect(card).not.toHaveClass(/is-selected/);
+      // Let the resulting scene update and two paints finish before comparing.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuResources: { programs: number; glyphUploads: number };
+              }
+            ).__gpuResources,
+        ),
+      ).toEqual(resourcesBeforeSelection);
+      await verifyContextLoss();
+    } catch (error) {
+      const diagnostics = await root.evaluate((element) => ({
+        url: location.href,
+        renderer: element.getAttribute("data-renderer"),
+        fallback: element.getAttribute("data-gpu-fallback"),
+        className: element.className,
+        personOverlays: element.querySelectorAll(".flow-person").length,
+        layoutRequests: (
+          window as typeof window & { __gpuLayout: { requests: number } }
+        ).__gpuLayout.requests,
+        canvas: [...element.querySelectorAll<HTMLCanvasElement>("canvas")].map(
+          (item) => ({
+            className: item.className,
+            width: item.width,
+            height: item.height,
+            visibility: item.style.visibility,
+            data: { ...item.dataset },
+          }),
+        ),
+        connectionLine: element.querySelector(".react-flow__connection")
+          ?.outerHTML,
+        dialogs: [...document.querySelectorAll('[role="dialog"]')].map((item) =>
+          item.getAttribute("aria-label"),
+        ),
+      }));
+      console.log("GPU handoff failure", JSON.stringify(diagnostics));
+      console.log(
+        "GPU handoff elapsed after cancellation",
+        Date.now() - handoffStartedAt,
+      );
+      await testInfo.attach("gpu-handoff-diagnostics", {
+        body: JSON.stringify(diagnostics, null, 2),
+        contentType: "application/json",
+      });
+      throw error;
+    } finally {
+      await page.mouse.up();
+      portraitGate = null;
+      releasePortraits();
+    }
   } else {
     const bounds = await button.boundingBox();
     expect(bounds).toBeTruthy();
     await page.touchscreen.tap(bounds!.x + bounds!.width / 2, bounds!.y + 65);
     await expect(card).toHaveClass(/is-selected/);
   }
-  expect(
-    await page.evaluate(
-      () =>
-        (window as typeof window & { __gpuLayout: { requests: number } })
-          .__gpuLayout.requests,
-    ),
-  ).toBe(requests);
-  await canvas.evaluate((element: HTMLCanvasElement) =>
-    element
-      .getContext("webgl2")!
-      .getExtension("WEBGL_lose_context")!
-      .loseContext(),
-  );
-  await expect(
-    page.locator('.tree-canvas[data-renderer="react-flow"]'),
-  ).toBeVisible();
-  await expect(page.locator(".tree-gpu-scene")).toHaveCount(0);
-  await expect(page.locator(".flow-person-content").first()).toBeVisible();
+  if (testInfo.project.name !== "desktop") await verifyContextLoss();
 });
 
 test("shared GPU tree keeps review rings and releases its scene when access is revoked", async ({
