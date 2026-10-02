@@ -1873,6 +1873,9 @@ try {
     const pdfRenderStarted = new Promise<void>((resolve) => { notifyPdfRender = resolve; });
     const pdfRenderGate = new Promise<void>((resolve) => { releasePdfRender = resolve; });
     const pdfFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-pdf-tier-"));
+    const pdfUsageBefore = Number((await client.query(
+      "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner'",
+    )).rows[0].id);
     const pdfAi = aiResearchHttp({
       archive: app.archive,
       auth: await createAuth(await userStore(app.archive.db), app.archive.db,
@@ -1932,6 +1935,8 @@ try {
       await new Promise<void>((resolve) => pdfServer.close(() => resolve()));
       await pdfAi.close();
       rmSync(pdfFilesRoot, { recursive: true, force: true });
+      await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner' AND id>$1",
+        [pdfUsageBefore]);
     }
 
     let notifyAdminConversation!: () => void;
