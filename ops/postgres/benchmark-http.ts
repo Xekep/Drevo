@@ -167,6 +167,7 @@ try {
   results.set("edit", { durations: [], bytes: 0, errors: 0 });
   results.set("ai_mock_turn", { durations: [], bytes: 0, errors: 0 });
   results.set("backup_job", { durations: [], bytes: 0, errors: 0 });
+  results.set("backup_lease_rejection", { durations: [], bytes: 0, errors: 0 });
   const concurrency = 12;
   const until = performance.now() + seconds * 1000;
   let next = 0;
@@ -254,27 +255,39 @@ try {
   })();
   const backgroundBackup = (async () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const metric = results.get("backup_job")!;
+    // Both workers ask their independent coordinators to create a managed
+    // backup at once. One lease must win; the loser must report busy rather
+    // than treating the other process's job as its own.
     const began = performance.now();
     try {
-      const child = children[0];
-      const outcome = await new Promise<{ state?: string; error?: string; records?: number }>((resolve, reject) => {
+      const outcomes = await Promise.all(children.map(child => new Promise<{
+        state?: string; error?: string; records?: number; durationMs: number;
+      }>((resolve, reject) => {
+        const attemptAt = performance.now();
         const timer = setTimeout(() => {
           child.off("message", received);
-          reject(new Error("Background backup timed out"));
+          reject(new Error("Background backup attempt timed out"));
         }, 60000);
         const received = (message: unknown) => {
           if (!message || typeof message !== "object" || !("backup" in message)) return;
           clearTimeout(timer);
           child.off("message", received);
-          resolve(message.backup as { state?: string; error?: string; records?: number });
+          resolve({ ...(message.backup as object), durationMs: performance.now() - attemptAt });
         };
         child.on("message", received);
         child.send("backup");
-      });
-      assert.equal(outcome.state, "succeeded", outcome.error);
-      assert.equal(outcome.records, 1, "Background job must publish one copy");
-      const other = children[1];
+      })));
+      const winnerIndex = outcomes.findIndex(outcome => outcome.state === "succeeded");
+      const winner = outcomes[winnerIndex];
+      const loser = outcomes.find(outcome => outcome.state === "busy");
+      assert.equal(outcomes.filter(outcome => outcome.state === "succeeded").length, 1,
+        `Exactly one process must own the backup lease: ${JSON.stringify(outcomes)}`);
+      assert.equal(outcomes.filter(outcome => outcome.state === "busy").length, 1,
+        `Other process must reject the foreign lease: ${JSON.stringify(outcomes)}`);
+      assert.equal(winner?.records, 1, "Background job must publish one copy");
+      results.get("backup_job")!.durations.push(winner!.durationMs);
+      results.get("backup_lease_rejection")!.durations.push(loser!.durationMs);
+      const other = children[1 - winnerIndex];
       const remoteCount = await new Promise<number>((resolve, reject) => {
         const timer = setTimeout(() => {
           other.off("message", received);
@@ -291,10 +304,13 @@ try {
       });
       assert.equal(remoteCount, 1, "Other backend must see the background copy");
     } catch (error) {
-      metric.errors++;
+      results.get("backup_job")!.errors++;
       console.error("Synthetic background backup failed", error);
     }
-    metric.durations.push(performance.now() - began);
+    if (results.get("backup_job")!.durations.length === 0)
+      results.get("backup_job")!.durations.push(performance.now() - began);
+    if (results.get("backup_lease_rejection")!.durations.length === 0)
+      results.get("backup_lease_rejection")!.durations.push(performance.now() - began);
   })();
   const [, writes] = await Promise.all([Promise.all(readers), writer, aiTurns, backgroundBackup]);
   assert.ok(writes > 0, "No edits completed during mixed HTTP load");
@@ -320,7 +336,7 @@ try {
     cores: cpus().length, memoryBytes: totalmem(), people: count,
     processes: processMetrics,
     concurrency, durationSeconds: Math.round(elapsedMs / 1000),
-    scope: "isolated local HTTP, synthetic archive and media; cold shared preview and one background managed backup during mixed traffic; two AI turns against an in-process fake with 150 ms provider delay; no external model or network",
+    scope: "isolated local HTTP, synthetic archive and media; cold shared preview and two simultaneous background backup attempts for one lease during mixed traffic; two AI turns against an in-process fake with 150 ms provider delay; no external model or network",
   }}));
   for (const [operation, metric] of results) {
     const samples = metric.durations.length;
