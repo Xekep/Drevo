@@ -1,0 +1,44 @@
+.source-repository-add {
+  justify-self: start;
+}
+.source-repository-editor {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #dce6da;
+  border-radius: 8px;
+  padding: 8px;
+}
+.source-repository-editor summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.source-repository-fields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+}
+.source-repository-fields label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.source-repository-fields input,
+.source-repository-fields textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.source-repository-fields textarea {
+  resize: vertical;
+}
+.source-repository-fields button {
+  justify-self: start;
+}
+@media (max-width: 600px) {
+  .source-repository-add,
+  .source-repository-fields button {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

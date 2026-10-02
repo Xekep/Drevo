@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import type { PersonEvent } from "../domain/types";
 import { repositorySummary } from "../domain/person-sources.ts";
+import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
@@ -178,7 +179,9 @@ export function EventsEditor({
                       <strong>{source.title}</strong>
                       {source.reference && <small>{source.reference}</small>}
                     </> : <>
-                    {source.repository && <small>{repositorySummary(source)}</small>}
+                    <SourceRepositoryEditor source={source} onChange={(next) =>
+                      update(event.id, { sources: event.sources!.map((item, i) =>
+                        i === index ? next : item) })} />
                     <label>
                       Источник
                       <input

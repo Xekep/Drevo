@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import type { Source } from "../domain/types.ts";
 import { sourceCitation, type CatalogSource } from "../shared/source-catalog.ts";
+import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import "../styles/union-sources-editor.css";
 
 type CatalogEntry = CatalogSource & { version: number };
@@ -86,6 +87,8 @@ export function CitationSourcesEditor({ sources, onChange, isAdmin, canRemoveLas
             onClick={() => remove(index)}>Убрать источник</button>
         </div>
       : <div className="union-inline-citation" key={index}>
+          <SourceRepositoryEditor source={source} onChange={(next) =>
+            onChange(sources.map((item, i) => i === index ? next : item))} />
           {(["title", "type", "reference", "url"] as const).map((field) =>
             <label key={field}>{({ title: "Название", type: "Тип", reference: "Ссылка в источнике", url: "URL" })[field]}
               <input value={source[field] || ""} onChange={(event) => onChange(sources.map((item, i) =>
