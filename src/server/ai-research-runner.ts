@@ -37,7 +37,7 @@ import {
   CODE_INTERPRETER_TOOL,
   runCodeInterpreter,
 } from "./code-interpreter.ts";
-import type { generatedResearchFileStore } from "./generated-research-files.ts";
+import { GeneratedFileAccessError, type generatedResearchFileStore } from "./generated-research-files.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -1521,6 +1521,12 @@ export function createResearchRunner({
             result = { suggestion };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
+          if (error instanceof GeneratedFileAccessError) {
+            // The file store may reject a downgrade after the outer pre-save
+            // check. Reflect that denial through the HTTP access callback.
+            await assertAiAccessBeforeSave();
+            throw error;
+          }
           if (accessCheckFailed || signal.aborted) throw error;
           if (error instanceof WebSearchError) webSearchFailed = true;
           const detail =

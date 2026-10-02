@@ -3,13 +3,17 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, rename, rm, rmdir, statfs } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { aiChatStore } from "./ai-chats.ts";
+import { accountAiAccess } from "./account-ai-access.ts";
 import type { GeneratedResearchFile } from "./code-interpreter.ts";
 import { reservePlatformDisk } from "./platform-disk-reservation.ts";
 import type { StoreDatabase } from "./store-database.ts";
+import { ForbiddenError } from "./users.ts";
 
 const MAX_GENERATED_FILES_BYTES = 64 * 1024 * 1024;
 const FILE_RETENTION_MS = 60 * 60_000;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+export class GeneratedFileAccessError extends ForbiddenError {}
 
 export type GeneratedResearchFileMeta = {
   name: string;
@@ -48,6 +52,10 @@ export function generatedResearchFileStore(
   db: StoreDatabase,
   uploadsDirectory: string,
   chats: ReturnType<typeof aiChatStore>,
+  { beforeInstall, afterTierCheck }: {
+    beforeInstall?: () => Promise<void>;
+    afterTierCheck?: () => Promise<void>;
+  } = {},
 ) {
   const files = new Map<string, GeneratedResearchFile>();
   const shared = db.kind === "postgres";
@@ -165,8 +173,17 @@ export function generatedResearchFileStore(
               await handle.close();
             }
             await reservation?.assertValid();
-            await rename(staged, installed);
-            renamed = true;
+            await beforeInstall?.();
+            // Keep the tier row locked only for the final install. A downgrade
+            // either commits before this check or waits until rename finishes.
+            await db.transaction(async () => {
+              const trustedLocal = file.ownerId === "local" && !process.env.PUBLIC_ORIGIN;
+              if (!(await accountAiAccess(db, file.ownerId, trustedLocal, true)))
+                throw new GeneratedFileAccessError("Доступ к ИИ отозван");
+              await afterTierCheck?.();
+              await rename(staged, installed);
+              renamed = true;
+            });
           } catch (error) {
             files.delete(id);
             if (staged) await rm(staged, { force: true }).catch(() => {});
