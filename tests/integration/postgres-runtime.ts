@@ -1117,6 +1117,34 @@ try {
   assert.equal(fullBackup.status, 200);
   const backupBytes = await fullBackup.arrayBuffer();
   const restoreBytes = Buffer.from(backupBytes);
+  // A system copy contains the old membership snapshot. Applying it to this
+  // archive must restore tree content without rolling back current access or
+  // changing another archive with the same local person IDs.
+  const ownMemberships = () => app!.archive.db.prepare("", `SELECT user_id,role,approved,tree_access
+    FROM archive_memberships ORDER BY user_id`).all();
+  const ownOwner = () => app!.archive.db.prepare("", `SELECT user_id FROM archive_owners`).all();
+  const readerBefore = (await ownMemberships()).find((row) => row.user_id === "reader");
+  assert.ok(readerBefore, "restore rehearsal requires the existing reader membership");
+  const priorReaderRole = String(readerBefore.role);
+  const changedReaderRole = priorReaderRole === "reader" ? "editor" : "reader";
+  await app.archive.db.prepare("", "UPDATE archive_memberships SET role=? WHERE user_id='reader'")
+    .run(changedReaderRole);
+  const currentMemberships = await ownMemberships();
+  const currentOwner = await ownOwner();
+  const neighborState = async () => {
+    const neighbor = await openArchive(source, family, "other-archive");
+    try {
+      return {
+        snapshot: await neighbor.read(),
+        memberships: await neighbor.db.prepare("", `SELECT user_id,role,approved,tree_access
+          FROM archive_memberships ORDER BY user_id`).all(),
+        owner: await neighbor.db.prepare("", "SELECT user_id FROM archive_owners").all(),
+      };
+    } finally {
+      await neighbor.close();
+    }
+  };
+  const neighborBeforeRestore = await neighborState();
   const stagingRoot = join(dirname(source), "staging");
   const diskFree = async () => {
     const disk = await statfs(stagingRoot);
@@ -1246,6 +1274,14 @@ try {
     body: JSON.stringify({ token: previewData.token, confirm: true }),
   });
   assert.equal(restore.status, 200, await restore.text());
+  assert.deepEqual(await ownMemberships(), currentMemberships,
+    "restoring archive data must retain current membership roles, not old backup roles");
+  assert.deepEqual(await ownOwner(), currentOwner,
+    "restoring archive data must retain the current owner");
+  assert.deepEqual(await neighborState(), neighborBeforeRestore,
+    "restoring one archive must not change another archive or its rights");
+  await app.archive.db.prepare("", "UPDATE archive_memberships SET role=? WHERE user_id='reader'")
+    .run(priorReaderRole);
   assert.equal(
     (await (await aiSettingsStore(app.archive.db)).read()).roleProfiles
       .researcher?.pdfEnabled,
