@@ -1268,4 +1268,31 @@ export function initializeArchiveSchema(db: DatabaseSync) {
       throw error;
     }
   }
+  const revokeIneligiblePublication = "2026-10-revoke-ineligible-publication";
+  if (!db.prepare("SELECT 1 FROM migrations WHERE id=?").get(revokeIneligiblePublication)) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TRIGGER discovery_revoke_ineligible_publication
+        AFTER UPDATE OF data ON people
+        WHEN OLD.data IS NOT NEW.data AND (
+          NOT (json_extract(OLD.data,'$.deceased') = 1 OR
+            COALESCE(json_extract(OLD.data,'$.death'),'') <> '') OR
+          NOT (json_extract(NEW.data,'$.deceased') = 1 OR
+            COALESCE(json_extract(NEW.data,'$.death'),'') <> '')
+        )
+        BEGIN
+          DELETE FROM published_people WHERE person_id=NEW.id;
+        END`);
+      db.exec(`DELETE FROM published_people WHERE EXISTS (
+        SELECT 1 FROM people WHERE people.id=published_people.person_id
+          AND NOT (json_extract(people.data,'$.deceased') = 1 OR
+            COALESCE(json_extract(people.data,'$.death'),'') <> '')
+      )`);
+      db.prepare("INSERT INTO migrations(id) VALUES(?)").run(revokeIneligiblePublication);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

@@ -208,6 +208,20 @@ test("privacy eye opens with one tap on mobile", async ({ page, isMobile }) => {
   await expect(privacy).toHaveAttribute("data-publication-state", /hidden|published/);
 });
 
+test("publication admin refreshes an automatically revoked status on focus", async ({ page }) => {
+  let published = true;
+  await page.route((url) => url.pathname === "/api/admin/published-people/batch", (route) =>
+    route.fulfill({ json: { fields: published ? { "e2e-memorial-person": {} } : {} } }));
+  await page.goto("/admin");
+  await openAdminSection(page, "publications", "Можно найти");
+  await page.getByRole("searchbox", { name: "Найти человека" }).fill("Тестов Иван");
+  const row = page.locator(".publication-admin-row").filter({ hasText: "Тестов Иван" });
+  await expect(row.locator(".publication-admin-state")).toHaveText("Можно найти");
+  published = false;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(row.locator(".publication-admin-state")).toHaveText("Скрыт");
+});
+
 test("admin can review and revoke a selected discovery publication", async ({ page }) => {
   let published = false;
   const reviewToken = "a".repeat(64);
