@@ -57,6 +57,7 @@ import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
 import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { discoveryPeopleHttp } from "../../src/server/discovery-people-http.ts";
+import { discoveryMatchesHttp } from "../../src/server/discovery-matches-http.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
@@ -5003,6 +5004,76 @@ try {
   assert.ok(relativeHint?.reasons.includes("Совпадает опубликованный близкий родственник"));
   assert.doesNotMatch(JSON.stringify(relativeHint), /Пётр|Орлов|closed-relative/,
     "candidate evidence contains no relative names or private card identifiers");
+  const candidateDelivery = async (change: () => Promise<void>,
+    barrier: "delivery" | "relatives" = "delivery") => {
+    let reached!: () => void, resume!: () => void;
+    const ready = new Promise<void>((resolve) => { reached = resolve; });
+    const gate = new Promise<void>((resolve) => { resume = resolve; });
+    const pause = async () => { reached(); await gate; };
+    const endpoint = discoveryMatchesHttp({ archive: app!.archive, auth: discoveryAuth,
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      beforeCandidateRelatives: barrier === "relatives" ? pause : undefined,
+      beforeCandidateDelivery: barrier === "delivery" ? pause : undefined });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    const request = fetch(`http://127.0.0.1:${port}${candidatePath}`, {
+      headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.227" },
+    });
+    try {
+      await Promise.race([
+        ready,
+        request.then(() => { throw new Error("Candidates sent before the delivery barrier"); }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("Candidates did not reach delivery barrier")), 30_000);
+          timer.unref();
+        }),
+      ]);
+      await change();
+      resume();
+      return await request;
+    } finally {
+      resume();
+      await request.catch(() => {});
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  };
+  const unchangedCandidates = await candidateDelivery(async () => {});
+  assert.equal(unchangedCandidates.status, 200);
+  const unchangedPage = await unchangedCandidates.json();
+  assert.equal(unchangedPage.truncated, false);
+  assert.equal(unchangedPage.nextCursor, null);
+  assert.ok(unchangedPage.candidates.some((item: { id: string }) =>
+    item.id === "relative-only"), "unchanged published candidates remain available");
+  const revokedCandidateDelivery = await candidateDelivery(async () => {
+    await otherPublication.unpublish("relative-only");
+  });
+  assert.equal(revokedCandidateDelivery.status, 409,
+    "withdrawing a candidate after ranking prevents delivery of its old card");
+  assert.equal((await revokedCandidateDelivery.json()).candidates, undefined);
+  await otherPublication.publish("relative-only", "owner");
+  const revokedDuringLookup = await candidateDelivery(async () => {
+    await otherPublication.unpublish(parent.id);
+  }, "relatives");
+  assert.equal(revokedDuringLookup.status, 409,
+    "a relative withdrawn between indexed paging and evidence lookup invalidates the page");
+  const stalePage = await revokedDuringLookup.json();
+  assert.equal(stalePage.candidates, undefined);
+  assert.equal(stalePage.truncated, undefined,
+    "the stale indexed page cannot reveal even an outdated pagination count");
+  await otherPublication.publish(parent.id, "owner");
+  const revokedRelativeDelivery = await candidateDelivery(async () => {
+    await otherPublication.unpublish(parent.id);
+  });
+  assert.equal(revokedRelativeDelivery.status, 409,
+    "withdrawing a published relative after ranking prevents stale evidence delivery");
+  assert.equal((await revokedRelativeDelivery.json()).candidates, undefined);
+  await otherPublication.publish(parent.id, "owner");
+  assert.ok((await signalIds()).some((item) => item.id === "relative-only"),
+    "restoring the relative publication restores its candidate evidence");
   assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
     FROM discovery_relative_names WHERE relative_person_id='closed-relative'`).get())?.count, 0);
   const publicSearchHeaders = { ...headers, "X-Real-IP": "198.51.100.211" };
