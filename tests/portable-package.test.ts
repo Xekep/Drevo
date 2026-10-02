@@ -12,6 +12,8 @@ import sharp from "sharp";
 import { ZipFile } from "yazl";
 import type { Family } from "../src/domain/types.ts";
 import {
+  MAX_PORTABLE_ENTRIES,
+  MAX_PORTABLE_MANIFEST_BYTES,
   writePortablePackage,
   type PortableSnapshot,
   type PortableManifest,
@@ -298,6 +300,72 @@ test("Drevo package exports originals and verifies every entry with SHA-256", as
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("Drevo exports and imports a media manifest larger than the former 8 KiB cap", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-portable-manifest-"));
+  try {
+    const uploads = join(dir, "uploads");
+    const stage = join(dir, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const image = await sharp({
+      create: { width: 1, height: 1, channels: 4, background: "white" },
+    }).png().toBuffer();
+    const photos = Array.from({ length: 100 }, (_, index) => ({
+      id: `photo-${index}`,
+      url: `/media/photo-${index}.png`,
+      title: `Photo ${index}`,
+      tags: [],
+    }));
+    await Promise.all(photos.map((_, index) =>
+      writeFile(join(uploads, `photo-${index}.png`), image)));
+    const snapshot: PortableSnapshot = {
+      family: { title: "Tree", description: "", demo: false, people: [], photos },
+      documents: [],
+      comments: [],
+    };
+    const path = join(dir, "tree.drevo");
+    await writePortablePackage(createWriteStream(path), uploads, snapshot, async () => {});
+    const zip = await openPromise(path);
+    let manifestBytes = 0;
+    try {
+      for await (const entry of zip.eachEntry())
+        if (entry.fileName === "manifest.json") manifestBytes = entry.uncompressedSize;
+    } finally {
+      zip.close();
+    }
+    assert.ok(manifestBytes > 8 * 1024);
+    assert.ok(manifestBytes <= MAX_PORTABLE_MANIFEST_BYTES);
+    const imported = await readPortablePackage(path, stage);
+    assert.deepEqual(imported.snapshot.family.photos, photos);
+    assert.equal(imported.files.size, photos.length + 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Drevo rejects an export exceeding the importer's ZIP entry cap before sending it", async () => {
+  const snapshot: PortableSnapshot = {
+    family: {
+      title: "Tree", description: "", demo: false, people: [],
+      photos: Array.from({ length: MAX_PORTABLE_ENTRIES - 1 }, (_, index) => ({
+        id: `photo-${index}`, url: `/media/photo-${index}.png`, title: "", tags: [],
+      })),
+    },
+    documents: [], comments: [],
+  };
+  const output = new PassThrough();
+  let started = false;
+  let bytes = 0;
+  output.on("data", (chunk: Buffer) => { bytes += chunk.length; });
+  await assert.rejects(
+    writePortablePackage(output, "unused", snapshot, async () => { started = true; }),
+    /слишком много файлов/,
+  );
+  assert.equal(started, false);
+  assert.equal(bytes, 0);
+  output.destroy();
 });
 
 test("Drevo package rejects missing or unsafe originals before writing", async () => {

@@ -13,6 +13,10 @@ import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { validCommentFiles, type CommentAttachmentFile } from "../shared/person-discussion.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
+export const MAX_PORTABLE_ENTRIES = 50_000;
+// A manifest with 50,000 media paths (up to a filesystem component each) can
+// exceed 8 MiB. Keep a finite bound that can represent every allowed entry.
+export const MAX_PORTABLE_MANIFEST_BYTES = 24 * 1024 * 1024;
 const originalName = /^[a-zA-Z0-9-]+\.(?:jpg|png|webp|gif|tif|pdf)$/;
 
 export class PortablePackageError extends Error {}
@@ -128,6 +132,9 @@ export async function writePortablePackage(
       "Данные дерева слишком велики для одного пакета",
     );
   const names = fileNames(snapshot);
+  // The ZIP also contains manifest.json and archive.json.
+  if (names.length + 2 > MAX_PORTABLE_ENTRIES)
+    throw new PortablePackageError("В пакете Drevo слишком много файлов");
   const entries: PortableManifest["entries"] = [
     { path: "archive.json", size: data.length, sha256: sha256(data) },
   ];
@@ -142,6 +149,9 @@ export async function writePortablePackage(
     exportedAt: new Date().toISOString(),
     entries,
   };
+  const manifestData = Buffer.from(JSON.stringify(manifest));
+  if (manifestData.length > MAX_PORTABLE_MANIFEST_BYTES)
+    throw new PortablePackageError("Манифест пакета Drevo слишком велик");
   if (signal?.aborted) throw signal.reason;
   await beforeStart();
   const zip = new ZipFile();
@@ -149,7 +159,7 @@ export async function writePortablePackage(
   void output.catch(() => {});
   zip.on("error", (error) => (zip.outputStream as Readable).destroy(error));
   try {
-    zip.addBuffer(Buffer.from(JSON.stringify(manifest)), "manifest.json");
+    zip.addBuffer(manifestData, "manifest.json");
     zip.addBuffer(data, "archive.json");
     for (const name of names)
       zip.addFile(join(uploads, name), `media/${name}`, { compress: false });

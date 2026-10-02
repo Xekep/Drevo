@@ -19,6 +19,8 @@ import { prepareCommentFile } from "./discussion-attachments.ts";
 import { validCommentFiles } from "../shared/person-discussion.ts";
 import {
   PortablePackageError,
+  MAX_PORTABLE_ENTRIES,
+  MAX_PORTABLE_MANIFEST_BYTES,
   type PortableComment,
   type PortableDocument,
   type PortableManifest,
@@ -26,8 +28,6 @@ import {
 } from "./portable-package.ts";
 
 export const PORTABLE_IMPORT_LIMIT = 12 * 1024 ** 3;
-const MAX_ENTRIES = 50_000;
-const MAX_MANIFEST = 8 * 1024 ** 2;
 const MAX_ARCHIVE_JSON = 128 * 1024 ** 2;
 const MAX_ORIGINAL = 1024 ** 3;
 // Earlier Drevo archives can contain short document/annotation IDs. The ZIP
@@ -51,7 +51,7 @@ export async function portableUncompressedBytes(input: string) {
     for await (const entry of zip.eachEntry()) {
       entries++;
       if (
-        entries > MAX_ENTRIES ||
+        entries > MAX_PORTABLE_ENTRIES ||
         !Number.isSafeInteger(entry.uncompressedSize) ||
         entry.uncompressedSize < 0
       )
@@ -84,7 +84,7 @@ function manifestFrom(value: unknown): PortableManifest {
     typeof data.exportedAt !== "string" ||
     !Number.isFinite(Date.parse(data.exportedAt)) ||
     !Array.isArray(data.entries) ||
-    data.entries.length > MAX_ENTRIES
+    data.entries.length >= MAX_PORTABLE_ENTRIES
   )
     invalid("Неподдерживаемая версия пакета Drevo");
   const paths = new Set<string>();
@@ -248,14 +248,14 @@ export async function readPortablePackage(
   >();
   let total = 0;
   try {
-    if (zip.entryCount > MAX_ENTRIES)
+    if (zip.entryCount > MAX_PORTABLE_ENTRIES)
       invalid("В пакете Drevo слишком много файлов");
     for await (const entry of zip.eachEntry()) {
       if (signal?.aborted) throw signal.reason;
       const name = entry.fileName;
       const limit =
         name === "manifest.json"
-          ? MAX_MANIFEST
+          ? MAX_PORTABLE_MANIFEST_BYTES
           : name === "archive.json"
             ? MAX_ARCHIVE_JSON
             : name.startsWith("media/discussion-files/") ? 10 * 1024 * 1024 : MAX_ORIGINAL;
