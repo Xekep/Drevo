@@ -1019,6 +1019,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && !layoutBusy &&
     !activeFanAnchor && mode !== "timeline" && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
+  // A remounted canvas needs its own first frame and portrait handoff, even
+  // when cancelling a connection leaves the layout geometry unchanged.
+  if (!gpuEligible && gpuReadyScene) setGpuReadyScene(null);
   const gpuActive = gpuEligible && gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope;
   const gpuReady = useCallback(() => setGpuReadyScene({ geometry, scope: gpuScope }), [geometry, gpuScope]);
   const gpuFailure = useCallback((reason: string) => {

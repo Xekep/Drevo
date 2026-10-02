@@ -23,42 +23,55 @@ export const routeKey = (e: Relation) => JSON.stringify([e.type, e.from, e.to]);
 
 /** Пространственный индекс: стоимость короткой связи не зависит от размера архива. */
 export class Spatial<T extends Box> {
-  cells = new Map<string, T[]>();
+  private cells = new Map<number, Map<number, T[]>>();
   // Long segments occupy many cells; reuse query marks instead of allocating a Set per lookup.
   private seen = new Map<T, number>();
   private queryId = 0;
   add(item: T) {
-    this.visit(item, (key) => {
-      const list = this.cells.get(key) || [];
-      list.push(item);
-      this.cells.set(key, list);
-    });
+    const left = Math.floor(item.left / 300),
+      right = Math.floor(item.right / 300),
+      top = Math.floor(item.top / 300),
+      bottom = Math.floor(item.bottom / 300);
+    for (let x = left; x <= right; x++) {
+      let column = this.cells.get(x);
+      if (!column) {
+        column = new Map();
+        this.cells.set(x, column);
+      }
+      for (let y = top; y <= bottom; y++) {
+        let list = column.get(y);
+        if (!list) {
+          list = [];
+          column.set(y, list);
+        }
+        list.push(item);
+      }
+    }
   }
   query(box: Box) {
     const found: T[] = [];
     const queryId = ++this.queryId;
-    this.visit(box, (key) => {
-      for (const item of this.cells.get(key) || []) {
-        if (this.seen.get(item) === queryId) continue;
-        this.seen.set(item, queryId);
-        if (item.left <= box.right && item.right >= box.left &&
-            item.top <= box.bottom && item.bottom >= box.top) found.push(item);
+    const left = Math.floor(box.left / 300),
+      right = Math.floor(box.right / 300),
+      top = Math.floor(box.top / 300),
+      bottom = Math.floor(box.bottom / 300);
+    // Keep the original x/y traversal and insertion order: routing tie-breaks
+    // depend on which indexed segment is returned first.
+    for (let x = left; x <= right; x++) {
+      const column = this.cells.get(x);
+      if (!column) continue;
+      for (let y = top; y <= bottom; y++) {
+        const list = column.get(y);
+        if (!list) continue;
+        for (const item of list) {
+          if (this.seen.get(item) === queryId) continue;
+          this.seen.set(item, queryId);
+          if (item.left <= box.right && item.right >= box.left &&
+              item.top <= box.bottom && item.bottom >= box.top) found.push(item);
+        }
       }
-    });
+    }
     return found;
-  }
-  visit(box: Box, fn: (key: string) => void) {
-    for (
-      let x = Math.floor(box.left / 300);
-      x <= Math.floor(box.right / 300);
-      x++
-    )
-      for (
-        let y = Math.floor(box.top / 300);
-        y <= Math.floor(box.bottom / 300);
-        y++
-      )
-        fn(`${x}:${y}`);
   }
 }
 export const bounds = (a: Point, b: Point): Box => ({

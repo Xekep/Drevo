@@ -13,6 +13,7 @@ import {
   roundedRoute,
   relaxAdditionalRoute,
   Spatial,
+  type Box,
   type EdgeRoute,
 } from "../src/domain/edge-routing.ts";
 import { segmentsCross, type Point } from "../src/domain/layout-order.ts";
@@ -34,6 +35,95 @@ test("spatial queries return a long item once and see items added after earlier 
   index.add({ left: 400, right: 500, top: 6, bottom: 8, id: "new" });
   assert.deepEqual(index.query(area).map((item) => item.id), ["long", "new"]);
   assert.deepEqual(index.query({ left: 200, right: 900, top: 30, bottom: 40 }), []);
+});
+
+/** Previous string-key grid retained only as an independent order reference. */
+function legacySpatial<T extends Box>() {
+  const cells = new Map<string, T[]>();
+  const visit = (box: Box, callback: (key: string) => void) => {
+    for (let x = Math.floor(box.left / 300); x <= Math.floor(box.right / 300); x++)
+      for (let y = Math.floor(box.top / 300); y <= Math.floor(box.bottom / 300); y++)
+        callback(`${x}:${y}`);
+  };
+  return {
+    add(item: T) {
+      visit(item, (key) => {
+        const list = cells.get(key) || [];
+        list.push(item);
+        cells.set(key, list);
+      });
+    },
+    query(box: Box) {
+      const seen = new Set<T>(), found: T[] = [];
+      visit(box, (key) => {
+        for (const item of cells.get(key) || []) {
+          if (seen.has(item)) continue;
+          seen.add(item);
+          if (item.left <= box.right && item.right >= box.left &&
+              item.top <= box.bottom && item.bottom >= box.top) found.push(item);
+        }
+      });
+      return found;
+    },
+  };
+}
+
+test("spatial traversal preserves order and inclusive negative cell boundaries", () => {
+  const index = new Spatial<Box>(), reference = legacySpatial<Box>();
+  const boxes = [
+    { left: 300, right: 600, top: 0, bottom: 0 },
+    { left: -12000, right: 12000, top: -300, bottom: -300 },
+    { left: -300, right: 0, top: -600, bottom: 600 },
+    { left: 0, right: 0, top: 0, bottom: 0 },
+  ];
+  for (const box of [...boxes, boxes[1], boxes[0]]) {
+    index.add(box);
+    reference.add(box);
+  }
+  for (const box of [
+    { left: -300, right: -300, top: -300, bottom: -300 },
+    { left: 0, right: 300, top: -300, bottom: 0 },
+    { left: -12000, right: 12000, top: -600, bottom: 600 },
+    { left: -900, right: -601, top: 1, bottom: 299 },
+  ]) {
+    assert.deepEqual(index.query(box), reference.query(box));
+    assert.deepEqual(index.query(box), reference.query(box));
+    assert.equal(new Set(index.query(box)).size, index.query(box).length);
+  }
+  assert.deepEqual(index.query({ left: 0, right: 300, top: 0, bottom: 0 }),
+    [boxes[2], boxes[3], boxes[0]]);
+});
+
+test("spatial grid matches legacy order and brute-force intersections on seeded mixed queries", () => {
+  let state = 719;
+  const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const coordinate = () => Math.floor(random() * 81 - 40) * 300;
+  const area = (index: number): Box => {
+    const left = coordinate(), top = coordinate();
+    return { left, top,
+      right: left + (index % 5 === 0 ? 12000 : Math.floor(random() * 1200)),
+      bottom: top + (index % 7 === 0 ? 0 : Math.floor(random() * 900)) };
+  };
+  const index = new Spatial<Box>(), reference = legacySpatial<Box>();
+  const inserted: Box[] = [];
+  for (let iteration = 0; iteration < 400; iteration++) {
+    if (iteration % 3 === 0) {
+      const box = area(iteration);
+      inserted.push(box);
+      index.add(box);
+      reference.add(box);
+      if (iteration % 9 === 0) {
+        index.add(box);
+        reference.add(box);
+      }
+    }
+    const box = area(iteration + 1), found = index.query(box);
+    assert.deepEqual(found, reference.query(box), `query order ${iteration}`);
+    assert.equal(new Set(found).size, found.length, `duplicates ${iteration}`);
+    const expected = inserted.filter((item) => item.left <= box.right &&
+      item.right >= box.left && item.top <= box.bottom && item.bottom >= box.top);
+    assert.deepEqual(new Set(found), new Set(expected), `intersections ${iteration}`);
+  }
 });
 
 test("couples with unequal known ancestry stay one household without borrowing each other's parents", () => {

@@ -433,6 +433,8 @@ export function createGpuScene(
       ),
     );
     const index = new Spatial<IndexedNode>();
+    let currentNodes = nodes;
+    let currentNodesById = new Map(nodes.map((node) => [node.id, node]));
     for (const node of nodes)
       index.add({
         node,
@@ -470,6 +472,72 @@ export function createGpuScene(
     return {
       portraits,
       ready: () => portraits!.ready(),
+      // A selection changes the portrait ring only. Keep the programs, font
+      // atlas and routed geometry if all their inputs remain unchanged.
+      update(
+        nextNodes: readonly PersonNodeType[],
+        nextEdges: readonly RelationshipEdgeType[],
+        nextHouseholds: readonly HouseholdNodeType[],
+        nextRelationLabel: (node: PersonNodeType) => string,
+      ) {
+        if (
+          disposed ||
+          relationLabel !== nextRelationLabel ||
+          currentNodes.length !== nextNodes.length ||
+          edges.length !== nextEdges.length ||
+          households.length !== nextHouseholds.length
+        )
+          return false;
+        for (let i = 0; i < currentNodes.length; i++) {
+          const a = currentNodes[i], b = nextNodes[i];
+          if (
+            a.id !== b.id ||
+            a.position.x !== b.position.x ||
+            a.position.y !== b.position.y ||
+            a.width !== b.width ||
+            a.height !== b.height ||
+            a.data.person !== b.data.person ||
+            a.data.dimmed !== b.data.dimmed ||
+            a.data.outsideSpotlight !== b.data.outsideSpotlight
+          )
+            return false;
+        }
+        for (let i = 0; i < edges.length; i++) {
+          const a = edges[i], b = nextEdges[i];
+          if (
+            a.id !== b.id ||
+            a.source !== b.source ||
+            a.target !== b.target ||
+            a.selected !== b.selected ||
+            a.data?.path !== b.data?.path ||
+            a.data?.route !== b.data?.route ||
+            a.data?.junction?.x !== b.data?.junction?.x ||
+            a.data?.junction?.y !== b.data?.junction?.y ||
+            a.style?.stroke !== b.style?.stroke ||
+            a.style?.strokeWidth !== b.style?.strokeWidth ||
+            a.style?.strokeDasharray !== b.style?.strokeDasharray ||
+            a.style?.opacity !== b.style?.opacity
+          )
+            return false;
+        }
+        for (let i = 0; i < households.length; i++) {
+          const a = households[i], b = nextHouseholds[i];
+          if (
+            a.id !== b.id ||
+            a.position.x !== b.position.x ||
+            a.position.y !== b.position.y ||
+            a.width !== b.width ||
+            a.height !== b.height ||
+            a.data.label !== b.data.label ||
+            a.data.reverse !== b.data.reverse
+          )
+            return false;
+        }
+        currentNodes = nextNodes;
+        currentNodesById = new Map(nextNodes.map((node) => [node.id, node]));
+        portraitDirty = true;
+        return true;
+      },
       interaction(hover: string, focus: string) {
         if (hovered !== hover || focused !== focus) portraitDirty = true;
         hovered = hover;
@@ -538,7 +606,7 @@ export function createGpuScene(
           cachedBox = box;
           const visible =
             camera.zoom < 0.18
-              ? nodes
+              ? currentNodes
                   .filter(
                     (node) =>
                       node.position.x <= box.right &&
@@ -551,7 +619,10 @@ export function createGpuScene(
                     left: node.position.x,
                     top: node.position.y,
                   }))
-              : index.query(box);
+              : index.query(box).map((item) => ({
+                  ...item,
+                  node: currentNodesById.get(item.node.id)!,
+                }));
           const cx = (width / 2 - camera.x) / camera.zoom,
             cy = (height / 2 - camera.y) / camera.zoom;
           visible.sort(

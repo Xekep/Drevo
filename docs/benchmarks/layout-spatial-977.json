@@ -1,0 +1,430 @@
+{
+  "date": "2026-10-02",
+  "environment": {
+    "node": "v22.14.0",
+    "os": "Windows",
+    "execution": "Node.js, без браузера/Worker/FPS"
+  },
+  "fixture": {
+    "seed": 5,
+    "generations": 9,
+    "people": 977,
+    "positions": 977,
+    "branches": 1290,
+    "segments": 3218,
+    "cardSize": "production treeNodeSize()"
+  },
+  "before": {
+    "domainMs": 16293,
+    "elkMs": 12601,
+    "elkCalls": 2,
+    "profiler": false,
+    "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5"
+  },
+  "after": {
+    "stage": "after-clean",
+    "people": 977,
+    "positions": 977,
+    "branches": 1290,
+    "domainMs": 19797,
+    "elkMs": 16438,
+    "elkCalls": 2,
+    "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+    "sameBaseline": true,
+    "branchContacts": {
+      "distinct": 5252,
+      "segments": 11336
+    },
+    "length": 8417452,
+    "bends": 1842,
+    "contacts": 5252,
+    "crossings": 5252,
+    "profiler": true
+  },
+  "baselineProfile": {
+    "harness": "tests/layout-benchmark.mjs scale case6, полная production раскладка + quality()",
+    "elkCalls": 2,
+    "elkMs": 13218,
+    "totalMs": 17108,
+    "elapsedMs": 17474.711,
+    "samples": 11801,
+    "categoriesMs": {
+      "runtime": 318,
+      "elk": 12664,
+      "domain": 3492,
+      "gc": 939,
+      "benchmarkQuality": 62
+    },
+    "domainInclusiveMs": [
+      {
+        "functionName": "unionGeometry | domain/union-layout.ts:603",
+        "ms": 3305
+      },
+      {
+        "functionName": "branchContactCounts | domain/union-layout.ts:512",
+        "ms": 1526
+      },
+      {
+        "functionName": "visit | domain/edge-routing.ts:50",
+        "ms": 1154
+      },
+      {
+        "functionName": "routingQuality | domain/routing-quality.ts:12",
+        "ms": 1123
+      },
+      {
+        "functionName": "geometryRoutingQuality | domain/union-layout.ts:593",
+        "ms": 1115
+      },
+      {
+        "functionName": "query | domain/edge-routing.ts:37",
+        "ms": 965
+      },
+      {
+        "functionName": " | domain/edge-routing.ts:40",
+        "ms": 792
+      },
+      {
+        "functionName": "add | domain/edge-routing.ts:30",
+        "ms": 417
+      },
+      {
+        "functionName": " | domain/edge-routing.ts:31",
+        "ms": 333
+      },
+      {
+        "functionName": "geometryForSeed | domain/union-layout.ts:84",
+        "ms": 250
+      },
+      {
+        "functionName": "routeCardContacts | domain/union-layout.ts:561",
+        "ms": 201
+      },
+      {
+        "functionName": "segmentContact | domain/edge-routing.ts:83",
+        "ms": 134
+      }
+    ]
+  },
+  "afterProfile": {
+    "harness": "temporary unionGeometry runner, full production, без урезания quality gates",
+    "elapsedMs": 20242.42,
+    "samples": 14005,
+    "categoriesMs": {
+      "runtime": 346,
+      "gc": 1051,
+      "elk": 15794,
+      "domain": 3051
+    },
+    "domainInclusiveMs": [
+      {
+        "functionName": "unionGeometry | domain/union-layout.ts:603",
+        "ms": 2831
+      },
+      {
+        "functionName": "branchContactCounts | domain/union-layout.ts:512",
+        "ms": 1219
+      },
+      {
+        "functionName": "geometryRoutingQuality | domain/union-layout.ts:593",
+        "ms": 1035
+      },
+      {
+        "functionName": "routingQuality | domain/routing-quality.ts:12",
+        "ms": 1017
+      },
+      {
+        "functionName": "query | domain/edge-routing.ts:51",
+        "ms": 598
+      },
+      {
+        "functionName": "geometryForSeed | domain/union-layout.ts:84",
+        "ms": 256
+      },
+      {
+        "functionName": "segmentContact | domain/edge-routing.ts:96",
+        "ms": 125
+      },
+      {
+        "functionName": "add | domain/edge-routing.ts:30",
+        "ms": 102
+      },
+      {
+        "functionName": "optimizeBranches | domain/branch-routing.ts:26",
+        "ms": 100
+      },
+      {
+        "functionName": "routeCardContacts | domain/union-layout.ts:561",
+        "ms": 99
+      },
+      {
+        "functionName": "conflicts | domain/branch-routing.ts:54",
+        "ms": 69
+      },
+      {
+        "functionName": "alignGenerationBands | domain/generation-bands.ts:14",
+        "ms": 53
+      }
+    ]
+  },
+  "microbenchmark": {
+    "node": "v22.14.0",
+    "fixture": {
+      "people": 977,
+      "branches": 1290,
+      "segments": 3218
+    },
+    "description": "Те же границы сегментов индексируются целиком и запрашиваются в исходном порядке. Три прогрева и 12 чередующихся измерений каждого индекса. Включён обход результатов для контрольной суммы порядка.",
+    "same": true,
+    "summary": {
+      "legacy": {
+        "buildMs": 3.2301999999999964,
+        "queryMs": 9.518450000000001,
+        "totalMs": 12.896100000000004
+      },
+      "numeric": {
+        "buildMs": 1.420349999999985,
+        "queryMs": 7.689900000000023,
+        "totalMs": 9.121800000000022
+      }
+    },
+    "results": [
+      {
+        "repeat": 0,
+        "implementation": "legacy",
+        "buildMs": 3.905600000000021,
+        "queryMs": 9.153099999999995,
+        "totalMs": 13.058700000000016,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 0,
+        "implementation": "numeric",
+        "buildMs": 1.2882999999999925,
+        "queryMs": 7.061200000000014,
+        "totalMs": 8.349500000000006,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 1,
+        "implementation": "numeric",
+        "buildMs": 1.2911000000000001,
+        "queryMs": 7.901499999999999,
+        "totalMs": 9.192599999999999,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 1,
+        "implementation": "legacy",
+        "buildMs": 3.568099999999987,
+        "queryMs": 8.991600000000005,
+        "totalMs": 12.559699999999992,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 2,
+        "implementation": "legacy",
+        "buildMs": 3.213700000000017,
+        "queryMs": 9.006799999999998,
+        "totalMs": 12.220500000000015,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 2,
+        "implementation": "numeric",
+        "buildMs": 1.2964999999999804,
+        "queryMs": 8.301600000000008,
+        "totalMs": 9.598099999999988,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 3,
+        "implementation": "numeric",
+        "buildMs": 1.4948999999999728,
+        "queryMs": 7.204800000000034,
+        "totalMs": 8.699700000000007,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 3,
+        "implementation": "legacy",
+        "buildMs": 2.988800000000026,
+        "queryMs": 9.731899999999996,
+        "totalMs": 12.720700000000022,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 4,
+        "implementation": "legacy",
+        "buildMs": 3.1014999999999873,
+        "queryMs": 9.632000000000005,
+        "totalMs": 12.733499999999992,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 4,
+        "implementation": "numeric",
+        "buildMs": 1.6727999999999952,
+        "queryMs": 7.232899999999972,
+        "totalMs": 8.905699999999968,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 5,
+        "implementation": "numeric",
+        "buildMs": 1.345799999999997,
+        "queryMs": 7.563099999999963,
+        "totalMs": 8.90889999999996,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 5,
+        "implementation": "legacy",
+        "buildMs": 4.079499999999996,
+        "queryMs": 10.041399999999953,
+        "totalMs": 14.12089999999995,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 6,
+        "implementation": "legacy",
+        "buildMs": 3.1637000000000057,
+        "queryMs": 10.149000000000001,
+        "totalMs": 13.312700000000007,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 6,
+        "implementation": "numeric",
+        "buildMs": 2.3163000000000125,
+        "queryMs": 9.894200000000012,
+        "totalMs": 12.210500000000025,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 7,
+        "implementation": "numeric",
+        "buildMs": 3.0669000000000324,
+        "queryMs": 7.866399999999999,
+        "totalMs": 10.933300000000031,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 7,
+        "implementation": "legacy",
+        "buildMs": 4.121399999999994,
+        "queryMs": 9.404899999999998,
+        "totalMs": 13.526299999999992,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 8,
+        "implementation": "legacy",
+        "buildMs": 3.2466999999999757,
+        "queryMs": 12.402699999999982,
+        "totalMs": 15.649399999999957,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 8,
+        "implementation": "numeric",
+        "buildMs": 1.6304999999999836,
+        "queryMs": 7.661900000000003,
+        "totalMs": 9.292399999999986,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 9,
+        "implementation": "numeric",
+        "buildMs": 1.6809999999999832,
+        "queryMs": 7.802500000000009,
+        "totalMs": 9.483499999999992,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 9,
+        "implementation": "legacy",
+        "buildMs": 3.4342999999999506,
+        "queryMs": 10.590800000000002,
+        "totalMs": 14.025099999999952,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 10,
+        "implementation": "legacy",
+        "buildMs": 3.0668999999999755,
+        "queryMs": 9.404899999999998,
+        "totalMs": 12.471799999999973,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 10,
+        "implementation": "numeric",
+        "buildMs": 1.3104999999999905,
+        "queryMs": 7.379500000000007,
+        "totalMs": 8.689999999999998,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 11,
+        "implementation": "numeric",
+        "buildMs": 1.3331000000000017,
+        "queryMs": 7.717900000000043,
+        "totalMs": 9.051000000000045,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      },
+      {
+        "repeat": 11,
+        "implementation": "legacy",
+        "buildMs": 3.0815999999999804,
+        "queryMs": 9.141099999999994,
+        "totalMs": 12.222699999999975,
+        "foundCount": 40640,
+        "checksum": 3275249428
+      }
+    ]
+  },
+  "validation": {
+    "fullGeometryByteEqual": true,
+    "branchDistinctContacts": 5252,
+    "branchSegmentContacts": 11336,
+    "crossings": 5252,
+    "length": 8417452,
+    "bends": 1842,
+    "cardHits": 0,
+    "cardOverlaps": 0,
+    "missingPeople": 0,
+    "diagonalSegments": 0,
+    "targetedTestsPassed": 52
+  },
+  "limitations": [
+    "Полное время не улучшилось в одиночном before/after; время самого ELK выросло. Сравнение с разным наличием CPU profiler не доказывает изменение latency раскладки.",
+    "Снижение median затрат индекса относится к изолированному тесту Spatial на сохранённых маршрутах, не к FPS или всему layout.",
+    "Категории CPU — exclusive классификация samples по стекам; domainInclusiveMs пересекаются и не суммируются.",
+    "После профилирования runner отдельно валидирует маршруты; эти операции тоже встречаются в sampled domain, но не входят в domainMs.",
+    "Исходная проверка не выполнялась на реальном пользовательском архиве или на 3000+ людях."
+  ]
+}

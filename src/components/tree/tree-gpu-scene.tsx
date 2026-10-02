@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useStoreApi } from "@xyflow/react";
 import type { Person } from "../../domain";
 import type { PersonNodeType } from "./person-node";
@@ -36,16 +36,49 @@ export function TreeGpuScene({
   const store = useStoreApi();
   const scene = useRef<ReturnType<typeof createGpuScene> | null>(null);
   const portraits = useRef<GpuPortraitCache | undefined>(undefined);
-  const state = useRef({ width, height, hovered, focused });
+  const nodeRelationLabel = useCallback(
+    (node: PersonNodeType) => relationLabel(node.data.person),
+    [relationLabel],
+  );
+  const state = useRef({
+    width,
+    height,
+    hovered,
+    focused,
+    nodes,
+    edges,
+    households,
+    nodeRelationLabel,
+  });
   const schedule = useRef(() => {});
   useLayoutEffect(() => {
-    state.current = { width, height, hovered, focused };
-  }, [width, height, hovered, focused]);
+    state.current = {
+      width,
+      height,
+      hovered,
+      focused,
+      nodes,
+      edges,
+      households,
+      nodeRelationLabel,
+    };
+  }, [
+    width,
+    height,
+    hovered,
+    focused,
+    nodes,
+    edges,
+    households,
+    nodeRelationLabel,
+  ]);
   useEffect(() => {
     const element = canvas.current!;
     let active = true,
       frame = 0,
       ready = false;
+    let factory: typeof createGpuScene | undefined;
+    let applied: typeof state.current | undefined;
     const started = performance.now();
     const failed = (error?: unknown) => {
       if (active)
@@ -60,6 +93,37 @@ export function TreeGpuScene({
       if (!active || !scene.current) return;
       try {
         const current = state.current;
+        if (
+          applied &&
+          factory &&
+          (current.nodes !== applied.nodes ||
+            current.edges !== applied.edges ||
+            current.households !== applied.households ||
+            current.nodeRelationLabel !== applied.nodeRelationLabel)
+        ) {
+          if (
+            !scene.current.update(
+              current.nodes,
+              current.edges,
+              current.households,
+              current.nodeRelationLabel,
+            )
+          ) {
+            scene.current.destroy(true);
+            scene.current = factory(
+              element,
+              current.nodes,
+              current.edges,
+              current.households,
+              current.nodeRelationLabel,
+              requestDraw,
+              failed,
+              portraits.current,
+            );
+            portraits.current = scene.current.portraits;
+          }
+          applied = current;
+        }
         const [x, y, zoom] = store.getState().transform;
         scene.current.interaction(current.hovered, current.focused);
         scene.current.draw({ x, y, zoom }, current.width, current.height);
@@ -93,16 +157,19 @@ export function TreeGpuScene({
     void import("./gpu-scene")
       .then(({ createGpuScene }) => {
         if (!active) return;
+        factory = createGpuScene;
+        const current = state.current;
         scene.current = createGpuScene(
           element,
-          nodes,
-          edges,
-          households,
-          (node) => relationLabel(node.data.person),
+          current.nodes,
+          current.edges,
+          current.households,
+          current.nodeRelationLabel,
           requestDraw,
           failed,
           portraits.current,
         );
+        applied = current;
         portraits.current = scene.current.portraits;
         requestDraw();
       })
@@ -117,7 +184,7 @@ export function TreeGpuScene({
       scene.current = null;
       schedule.current = () => {};
     };
-  }, [nodes, edges, households, relationLabel, store, onReady, onFailure]);
+  }, [store, onReady, onFailure]);
   useEffect(
     () => () => {
       portraits.current?.destroy();
@@ -127,7 +194,16 @@ export function TreeGpuScene({
   );
   useEffect(() => {
     schedule.current();
-  }, [width, height, hovered, focused]);
+  }, [
+    width,
+    height,
+    hovered,
+    focused,
+    nodes,
+    edges,
+    households,
+    nodeRelationLabel,
+  ]);
   return (
     <canvas
       ref={canvas}

@@ -33,6 +33,32 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
         ? "Drevo GPU integration test"
         : get.call(this, parameter);
     };
+    const gpuResources = { programs: 0, glyphUploads: 0 };
+    Object.assign(window, { __gpuResources: gpuResources });
+    WebGL2RenderingContext.prototype.createProgram = new Proxy(
+      WebGL2RenderingContext.prototype.createProgram,
+      {
+        apply(target, thisArg, args) {
+          gpuResources.programs++;
+          return Reflect.apply(target, thisArg, args);
+        },
+      },
+    );
+    WebGL2RenderingContext.prototype.texImage2D = new Proxy(
+      WebGL2RenderingContext.prototype.texImage2D,
+      {
+        apply(target, thisArg, args) {
+          const source = args[5];
+          if (
+            source instanceof HTMLCanvasElement &&
+            source.width === 1024 &&
+            source.height === 1024
+          )
+            gpuResources.glyphUploads++;
+          return Reflect.apply(target, thisArg, args);
+        },
+      },
+    );
     const state = {
       requests: 0,
       positions: [] as [string, { x: number; y: number }][],
@@ -89,7 +115,9 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
   const portraits = process.env.DREVO_RENDER_PROFILE
     ? await renderPortraits(people.map((person) => person.id))
     : null;
-  await page.route("**/media/gpu-*.jpg?variant=*", (route) => {
+  let portraitGate: Promise<void> | null = null;
+  await page.route("**/media/gpu-*.jpg?variant=*", async (route) => {
+    await portraitGate;
     const url = new URL(route.request().url());
     const photo = portraits?.get(
       `${url.pathname.match(/gpu-(.+)\.jpg/)![1]}-${url.searchParams.get("variant")}`,
@@ -228,6 +256,110 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
   if (testInfo.project.name === "desktop") {
     await page.keyboard.press("Shift+Enter");
     await expect(card).toHaveClass(/is-selected/);
+    // Dragging a connection temporarily unmounts the GPU scene. Cancelling it
+    // keeps the geometry, but the new canvas still needs its own ready handoff.
+    // Hold portrait responses to make stale readiness observable on frame one.
+    let releasePortraits!: () => void;
+    portraitGate = new Promise<void>((resolve) => {
+      releasePortraits = resolve;
+    });
+    const root = page.locator(".tree-canvas");
+    const cameraBefore = await page
+      .locator(".react-flow__viewport")
+      .getAttribute("style");
+    try {
+      const handle = card.locator('.react-flow__handle[data-handleid="right"]');
+      const box = await handle.boundingBox();
+      expect(box).toBeTruthy();
+      const x = box!.x + box!.width / 2,
+        y = box!.y + box!.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      // React Flow starts a connection only after its drag threshold, not on
+      // mousedown. Cross that threshold before checking the native controls.
+      await page.mouse.move(x + 18, y + 18, { steps: 2 });
+      await expect(root).toHaveAttribute("data-renderer", "react-flow");
+      await expect(page.locator(".tree-gpu-scene")).toHaveCount(0);
+      await page.mouse.move(x, y, { steps: 2 });
+      await page.evaluate(() => {
+        const state = { rendererOnFirstFrame: "" };
+        Object.assign(window, { __gpuHandoff: state });
+        const observer = new MutationObserver(() => {
+          const next =
+            document.querySelector<HTMLCanvasElement>(".tree-gpu-scene");
+          if (!next?.dataset.gpuDraws) return;
+          state.rendererOnFirstFrame = document
+            .querySelector(".tree-canvas")!
+            .getAttribute("data-renderer")!;
+          observer.disconnect();
+        });
+        observer.observe(document, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+          attributeFilter: ["data-gpu-draws"],
+        });
+      });
+      await page.mouse.up();
+      await page.waitForFunction(
+        () =>
+          (
+            window as typeof window & {
+              __gpuHandoff: { rendererOnFirstFrame: string };
+            }
+          ).__gpuHandoff.rendererOnFirstFrame,
+      );
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuHandoff: { rendererOnFirstFrame: string };
+              }
+            ).__gpuHandoff.rendererOnFirstFrame,
+        ),
+      ).toBe("react-flow");
+      await expect(page.locator(".react-flow__viewport")).toHaveAttribute(
+        "style",
+        cameraBefore!,
+      );
+    } finally {
+      await page.mouse.up();
+      portraitGate = null;
+      releasePortraits();
+    }
+    await expect(tree).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
+    const resourcesBeforeSelection = await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __gpuResources: { programs: number; glyphUploads: number };
+          }
+        ).__gpuResources,
+    );
+    expect(resourcesBeforeSelection.programs).toBeGreaterThan(0);
+    expect(resourcesBeforeSelection.glyphUploads).toBeGreaterThan(0);
+    await card.locator(".flow-person-content").focus();
+    await page.keyboard.press("Shift+Enter");
+    await expect(card).not.toHaveClass(/is-selected/);
+    // Let the resulting scene update and two paints finish before comparing.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __gpuResources: { programs: number; glyphUploads: number };
+            }
+          ).__gpuResources,
+      ),
+    ).toEqual(resourcesBeforeSelection);
   } else {
     const bounds = await button.boundingBox();
     expect(bounds).toBeTruthy();
