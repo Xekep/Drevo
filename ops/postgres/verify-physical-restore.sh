@@ -66,6 +66,12 @@ done
   tail -n 20 "$work_dir/server.log" >&2
   exit 1
 }
+isolation="$(psql -XAtq -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 -d postgres \
+  -c "SELECT current_setting('listen_addresses') || '|' || current_setting('archive_mode') || '|' || current_setting('unix_socket_directories') || '|' || current_setting('data_directory')")"
+[[ "$isolation" == "|off|$socket_dir|$data_dir" ]] || {
+  echo 'Restored cluster is not fully isolated from production' >&2
+  exit 1
+}
 archive_state="$(psql -XAtq -v ON_ERROR_STOP=1 -h "$socket_dir" -p 55433 -d "$database" \
   -c 'SELECT count(*),coalesce(max(revision),0) FROM public.archives')"
 [[ "$archive_state" =~ ^[1-9][0-9]*\|[0-9]+$ ]] || {
