@@ -9,6 +9,7 @@ import {
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import type { ArchiveUser } from "../domain/access.ts";
 
 export function researchSuggestionsHttp({
   archive,
@@ -28,6 +29,34 @@ export function researchSuggestionsHttp({
     });
     res.end(JSON.stringify(value));
     return true;
+  };
+
+  /** Call only inside a short delivery/write transaction. */
+  const lockedCurrentAiActor = async (req: IncomingMessage, actor: ArchiveUser) => {
+    const current = await auth.currentUser(req);
+    if (!current?.approved || current.id !== actor.id ||
+        current.approved !== actor.approved || current.role !== actor.role ||
+        current.personId !== actor.personId ||
+        current.treeAccess !== actor.treeAccess ||
+        !(await auth.canEdit(req))) return null;
+    if (archive.db.kind === "postgres" && !auth.local) {
+      const session = await auth.accountSession(req);
+      if (!session || session.accountId !== current.id) return null;
+      const lockedSession = await archive.db.prepare("", `SELECT user_id,expires_at
+        FROM account_sessions WHERE token_hash=? FOR SHARE SKIP LOCKED`)
+        .get(session.tokenHash);
+      if (lockedSession?.user_id !== current.id ||
+          Number(lockedSession.expires_at) <= Date.now()) return null;
+      const membership = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+        FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+        .get(archive.db.archiveId || "", current.id);
+      if (!membership?.approved || membership.role !== current.role ||
+          (membership.person_id || "") !== (current.personId || "") ||
+          membership.tree_access !== (current.treeAccess || "all")) return null;
+    }
+    if (!(await accountAiAccess(archive.db, current.id, auth.local, true)))
+      return null;
+    return current;
   };
 
   return async (
@@ -76,16 +105,16 @@ export function researchSuggestionsHttp({
           : {}),
       }));
       // The list can wait on storage after the first tier check. Never
-      // deliver stored AI proposals after the account or owner is downgraded.
-      const current = await auth.currentUser(req);
-      if (
-        !current ||
-        current.id !== actor.id ||
-        !(await auth.canEdit(req)) ||
-        !(await accountAiAccess(archive.db, actor.id, auth.local))
-      )
+      // deliver stored AI proposals after a tier, role or scope change. Keep
+      // the locks only through the final response, not through the list read.
+      const delivered = await archive.db.transaction(async () => {
+        if (!(await lockedCurrentAiActor(req, actor))) return false;
+        json(res, 200, { suggestions: listed });
+        return true;
+      });
+      if (!delivered)
         return json(res, 403, { error: "Доступ к предложениям изменился" });
-      return json(res, 200, { suggestions: listed });
+      return true;
     }
 
     if (req.method !== "POST")
@@ -101,10 +130,18 @@ export function researchSuggestionsHttp({
 
     try {
       const id = decodeURIComponent(match[1]);
-      if (match[2] === "reject")
-        return json(res, 200, {
-          suggestion: await suggestions.mark(actor, id, "rejected"),
+      if (match[2] === "reject") {
+        const rejected = await archive.db.transaction(async () => {
+          const current = await lockedCurrentAiActor(req, actor);
+          if (!current) return false;
+          const suggestion = await suggestions.mark(current, id, "rejected");
+          json(res, 200, { suggestion });
+          return true;
         });
+        if (!rejected)
+          return json(res, 403, { error: "Доступ к предложениям изменился" });
+        return true;
+      }
 
       const suggestion = await suggestions.get(actor, id);
       if (!suggestion) throw new Error("Предложение не найдено");
