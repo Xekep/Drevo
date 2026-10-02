@@ -47,8 +47,12 @@ export function adminAiHttp({
     res.end(JSON.stringify(value));
     return true;
   };
-  const statusValue = async () => {
+  const statusValue = async (req: IncomingMessage, adminId: string) => {
     const runtime = await aiRuntimeConfig(settings);
+    // Loading settings can outlive a downgrade. Check again before querying
+    // the external catalogue, not only before delivering the status.
+    if (!(await auth.isAdmin(req)) ||
+      !(await accountAiAccess(db, adminId, auth.local))) return null;
     let models: AiStudioModel[] = [];
     let modelsError = "";
     if (runtime.apiKey && runtime.folderId)
@@ -94,8 +98,8 @@ export function adminAiHttp({
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (path === "/api/admin/ai" && req.method === "GET") {
-      const status = await statusValue();
-      if (!(await auth.isAdmin(req)) ||
+      const status = await statusValue(req, adminId);
+      if (!status || !(await auth.isAdmin(req)) ||
         !(await accountAiAccess(db, adminId, auth.local)))
         return json(res, 403, { error: "Доступ отозван" });
       return json(res, 200, status);
@@ -122,8 +126,8 @@ export function adminAiHttp({
         if (!written) return json(res, 403, { error: "Доступ отозван" });
         if (!(await accountAiAccess(db, adminId, auth.local)))
           return json(res, 403, { error: "Доступ отозван" });
-        const status = await statusValue();
-        if (!(await auth.isAdmin(req)) ||
+        const status = await statusValue(req, adminId);
+        if (!status || !(await auth.isAdmin(req)) ||
           !(await accountAiAccess(db, adminId, auth.local)))
           return json(res, 403, { error: "Доступ отозван" });
         return json(res, 200, status);
