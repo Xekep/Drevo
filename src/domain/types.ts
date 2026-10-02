@@ -50,6 +50,8 @@ export type PersonEvent = {
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
   place?: string;
+  /** Citations for this exact event-place wording, separate from event-wide evidence. */
+  placeClaim?: { value: string; sources: Source[] };
   location?: PlaceLocation;
   description?: string;
   sources?: Source[];

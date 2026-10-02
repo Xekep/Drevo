@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
-import type { PersonEvent } from "../domain/types";
+import type { PersonEvent, Source } from "../domain/types";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { EVENT_NAMES } from "../domain/person-events";
@@ -8,7 +8,7 @@ import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
-import { CatalogPicker } from "./union-sources-editor.tsx";
+import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
 import { sourceCitation } from "../shared/source-catalog.ts";
 export function EventsEditor({
   events,
@@ -117,6 +117,22 @@ export function EventsEditor({
                 }
               />
             </label>
+            <details className="event-place-claim">
+              <summary>Источники места события{event.placeClaim?.sources.length
+                ? ` · ${event.placeClaim.sources.length}` : ""}</summary>
+              {event.placeClaim && event.placeClaim.value !== event.place
+                ? <div>
+                    <p role="alert">Место изменилось. Источники относятся к прежнему месту {event.placeClaim.value}.</p>
+                    <button type="button" onClick={() => update(event.id, { placeClaim: undefined })}>
+                      Снять связи с прежним местом
+                    </button>
+                  </div>
+                : event.place?.trim()
+                  ? <CitationSourcesEditor sources={event.placeClaim?.sources || []}
+                      onChange={(sources) => update(event.id, { placeClaim: sources.length
+                        ? { value: event.place!, sources } : undefined })} isAdmin={isAdmin} />
+                  : <p>Укажите место, чтобы привязать к нему свидетельство.</p>}
+            </details>
             <details className="event-extra">
               <summary>
                 Подробности
@@ -316,6 +332,26 @@ export function EventsEditor({
     </details>
   );
 }
+function EventSourceList({ label, sources, canLoadDocuments }: {
+  label: string; sources: Source[]; canLoadDocuments: boolean;
+}) {
+  return <details className="event-sources">
+    <summary>{label} · {sources.length}</summary>
+    {sources.map((source, index) => <p key={index}>
+      {source.title}
+      {source.reference && ` · ${source.reference}`}
+      {source.repository && ` · ${repositorySummary(source)}`}
+      {source.note && ` · ${source.note}`}
+      {safeUrl(source.url) && <a href={archiveResourceUrl(safeUrl(source.url) || "")}
+        target="_blank" rel="noopener noreferrer"> Открыть источник</a>}
+      {canLoadDocuments && source.documentId && <a
+        href={scopedArchivePath(archiveDocumentPath(null, source.documentId, source.documentPage))}>
+        {" "}Открыть документ
+      </a>}
+    </p>)}
+  </details>;
+}
+
 export function PersonEvents({
   events,
   canLoadDocuments = false,
@@ -349,35 +385,11 @@ export function PersonEvents({
               {event.description && (
                 <p className="event-story">{event.description}</p>
               )}
-              {!!event.sources?.length && (
-                <details className="event-sources">
-                  <summary>Источники · {event.sources.length}</summary>
-                  {event.sources.map((s, i) => (
-                    <p key={i}>
-                      {s.title}
-                      {s.reference && ` · ${s.reference}`}
-                      {s.repository && ` · ${repositorySummary(s)}`}
-                      {s.note && ` · ${s.note}`}
-                      {safeUrl(s.url) && (
-                        <a
-                          href={archiveResourceUrl(safeUrl(s.url) || "")}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {" "}
-                          Открыть источник
-                        </a>
-                      )}
-                      {canLoadDocuments && s.documentId && (
-                        <a
-                          href={scopedArchivePath(archiveDocumentPath(null, s.documentId, s.documentPage))}
-                        >
-                          {" "}Открыть документ
-                        </a>
-                      )}
-                    </p>
-                  ))}
-                </details>
+              {!!event.sources?.length && <EventSourceList label="Источники"
+                sources={event.sources} canLoadDocuments={canLoadDocuments} />}
+              {!!event.placeClaim?.sources.length && event.placeClaim.value === event.place && (
+                <EventSourceList label="Источники места" sources={event.placeClaim.sources}
+                  canLoadDocuments={canLoadDocuments} />
               )}
             </div>
           </article>

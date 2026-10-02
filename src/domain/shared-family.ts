@@ -50,6 +50,8 @@ export function sharedFamily(
         events: p.events?.map((event) => ({
           ...event,
           sources: event.sources?.map(publicSource),
+          placeClaim: event.placeClaim && { value: event.placeClaim.value,
+            sources: event.placeClaim.sources.map(publicSource) },
         })),
         sources: p.sources.map(publicSource),
         photo: p.photo?.startsWith("/media/")
