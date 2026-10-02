@@ -12,6 +12,43 @@ import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "./import-sqlite.ts";
 import type { Family } from "../../src/domain/types.ts";
 
+type BackendMetrics = { pid: number; rssBytes: number;
+  cpu: { user: number; system: number } };
+type DatabaseStats = { connections: number; commits: number; rollbacks: number;
+  blocksRead: number; blocksHit: number; tempFiles: number; tempBytes: number;
+  deadlocks: number };
+
+function readBackendMetrics(child: ChildProcess): Promise<BackendMetrics> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.off("message", received);
+      reject(new Error(`Backend ${child.pid} metrics timed out`));
+    }, 10000);
+    const received = (message: unknown) => {
+      if (!message || typeof message !== "object" || !("metrics" in message)) return;
+      clearTimeout(timer);
+      child.off("message", received);
+      resolve(message.metrics as BackendMetrics);
+    };
+    child.on("message", received);
+    child.send("metrics");
+  });
+}
+
+async function readDatabaseStats(client: pg.Client): Promise<DatabaseStats> {
+  const { rows } = await client.query(`SELECT numbackends,xact_commit,xact_rollback,
+    blks_read,blks_hit,temp_files,temp_bytes,deadlocks
+    FROM pg_stat_database WHERE datname=current_database()`);
+  assert.equal(rows.length, 1, "Benchmark database statistics are unavailable");
+  const row = rows[0];
+  return {
+    connections: Number(row.numbackends), commits: Number(row.xact_commit),
+    rollbacks: Number(row.xact_rollback), blocksRead: Number(row.blks_read),
+    blocksHit: Number(row.blks_hit), tempFiles: Number(row.temp_files),
+    tempBytes: Number(row.temp_bytes), deadlocks: Number(row.deadlocks),
+  };
+}
+
 // This is a disposable test database, never an archive supplied by an operator.
 assert.match(process.env.PGDATABASE || "", /^drevo_migration_bench_[a-z0-9_]+$/);
 const count = Number(process.argv[2] || 1000);
@@ -186,9 +223,31 @@ try {
   results.set("backup_job", { durations: [], bytes: 0, errors: 0 });
   results.set("backup_lease_rejection", { durations: [], bytes: 0, errors: 0 });
   const concurrency = 12;
+  const databaseBefore = await readDatabaseStats(client);
   const until = performance.now() + seconds * 1000;
   let next = 0;
   const started = performance.now();
+  // The last RSS sample misses short-lived peaks. Sample both independent
+  // backends and the database connection count throughout the measured load.
+  const resourceSampling = (async () => {
+    const peakRssByPid = new Map<number, number>();
+    let peakDatabaseConnections = 0;
+    let samples = 0;
+    while (performance.now() < until) {
+      const [backends, database] = await Promise.all([
+        Promise.all(children.map(readBackendMetrics)), readDatabaseStats(client),
+      ]);
+      for (const backend of backends)
+        peakRssByPid.set(backend.pid,
+          Math.max(peakRssByPid.get(backend.pid) || 0, backend.rssBytes));
+      peakDatabaseConnections = Math.max(peakDatabaseConnections, database.connections);
+      samples++;
+      const remaining = until - performance.now();
+      if (remaining > 0)
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000, remaining)));
+    }
+    return { peakRssByPid, peakDatabaseConnections, samples };
+  })();
   const readers = Array.from({ length: concurrency }, async () => {
     while (performance.now() < until) {
       const index = next++;
@@ -329,21 +388,27 @@ try {
     if (results.get("backup_lease_rejection")!.durations.length === 0)
       results.get("backup_lease_rejection")!.durations.push(performance.now() - began);
   })();
-  const [, writes] = await Promise.all([Promise.all(readers), writer, aiTurns, backgroundBackup]);
+  const [, writes, , , resourceSamples] = await Promise.all([
+    Promise.all(readers), writer, aiTurns, backgroundBackup, resourceSampling,
+  ]);
   assert.ok(writes > 0, "No edits completed during mixed HTTP load");
   const final = await fetch(bases[1] + "/api/family").then(r => r.json());
   assert.equal(final.family.people.find((person: { id: string }) =>
     person.id === `person-${writes - 1}`)?.occupation, `Проверка ${writes - 1}`,
   "The other backend must observe the last edit");
   const elapsedMs = performance.now() - started;
-  const processMetrics = await Promise.all(children.map(child => new Promise<unknown>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Backend metrics timed out")), 5000);
-    child.once("message", (message) => {
-      clearTimeout(timeout);
-      resolve(message && typeof message === "object" && "metrics" in message ? message.metrics : null);
-    });
-    child.send("metrics");
-  })));
+  const processMetrics = await Promise.all(children.map(readBackendMetrics));
+  // PostgreSQL flushes cumulative statistics asynchronously. This is a
+  // coarse workload delta, not an exact per-request CPU or memory profile.
+  await new Promise(resolve => setTimeout(resolve, 1100));
+  const databaseAfter = await readDatabaseStats(client);
+  const databaseDelta = Object.fromEntries(
+    (Object.keys(databaseBefore) as Array<keyof DatabaseStats>)
+      .filter((key) => key !== "connections")
+      .map((key) => [key, databaseAfter[key] - databaseBefore[key]]),
+  );
+  assert.ok(Object.values(databaseDelta).every((value) => value >= 0),
+    "PostgreSQL statistics reset during the benchmark");
   const percentile = (values: number[], p: number) => {
     values.sort((a, b) => a - b);
     return Math.round((values[Math.ceil(values.length * p) - 1] || 0) * 10) / 10;
@@ -351,7 +416,10 @@ try {
   console.log(JSON.stringify({ environment: {
     node: process.version, postgres: identity.version, cpu: cpus()[0]?.model,
     cores: cpus().length, memoryBytes: totalmem(), people: count,
-    processes: processMetrics,
+    processes: processMetrics.map((metric) => ({ ...metric,
+      peakSampledRssBytes: resourceSamples.peakRssByPid.get(metric.pid) || metric.rssBytes })),
+    database: { peakSampledConnections: resourceSamples.peakDatabaseConnections,
+      samples: resourceSamples.samples, cumulativeDelta: databaseDelta },
     concurrency, durationSeconds: Math.round(elapsedMs / 1000),
     scope: "isolated local HTTP, synthetic archive and media; cold shared preview and two simultaneous background backup attempts for one lease during mixed traffic; two AI turns against an in-process fake with 150 ms provider delay; no external model or network",
   }}));

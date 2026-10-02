@@ -270,6 +270,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     "_DREVO_UNION_STAGE",
     "_DREVO_EVENT_ID",
     "_DREVO_DOCUMENT_PAGE",
+    "_DREVO_CATALOG_LINK_LOST",
     ...CLAIM_CONFIDENCE_TAGS,
     "_MAIDEN",
     "_UID",
@@ -350,6 +351,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "";
       if (s.pointer && record?.tag !== "SOUR")
         throw new Error(`Не найден источник ${s.value}`);
+      if (record && value(record, "_DREVO_CATALOG_LINK_LOST") === "Y")
+        warnings.add("Связь цитаты с каталогом источников Drevo не перенесена: GEDCOM сохраняет цитату и вложение, но не запись каталога. Для полного переноса между деревьями используйте .drevo.");
       const data = child(s, "DATA"),
         citationEvent = child(s, "EVEN"),
         eventRole = citationEvent && child(citationEvent, "ROLE"),
@@ -1433,6 +1436,7 @@ export function exportGedcom(
       "_DREVO_CLAIM",
       "_DREVO_ALTERNATIVE",
       "_DREVO_DOCUMENT_PAGE",
+      "_DREVO_CATALOG_LINK_LOST",
       ...CLAIM_CONFIDENCE_TAGS,
       "_DREVO_UNION_STAGE",
       "_DREVO_EVENT_ID",
@@ -1769,6 +1773,7 @@ export function exportGedcom(
   sourceRecords.forEach((s, i) => {
     emit(0, `@S${i + 1}@ SOUR`);
     emit(1, "TITL", s.title);
+    if (s.catalogId) emit(1, "_DREVO_CATALOG_LINK_LOST", "Y");
     if (s.type) emit(1, "_TYPE", s.type);
     if (s.url) {
       emit(1, "_URL", s.url);

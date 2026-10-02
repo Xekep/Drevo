@@ -2,6 +2,7 @@
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -17,6 +18,7 @@ import { openPromise } from "yauzl";
 import {
   newSessionToken,
   sessionTokenHash,
+  SESSION_MAX_AGE,
 } from "../../src/server/session-token.ts";
 import { openPostgresDatabase } from "../../src/server/store-database.ts";
 import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
@@ -4120,6 +4122,42 @@ try {
   assert.equal(selectedFullBackup.status, 200);
   assert.match(selectedFullBackup.headers.get("content-type") || "", /application\/gzip/);
   await selectedFullBackup.arrayBuffer();
+  assert.equal(process.env.ARCHIVE_ID, "runtime-test",
+    "the worker inherits a different root archive context");
+  const managedSelected = await fetch(securedBase + "/a/other-archive/api/backups/create", {
+    method: "POST",
+    headers: { ...ownerHeaders, "x-drevo-backup": "1" },
+  });
+  assert.equal(managedSelected.status, 202);
+  let managedStatus: { job?: { state: string; error?: string }; records?: Array<{ name: string }> } = {};
+  for (let attempt = 0; attempt < 300; attempt++) {
+    managedStatus = await fetch(securedBase + "/a/other-archive/api/backups", {
+      headers: ownerHeaders,
+    }).then((response) => response.json());
+    if (managedStatus.job?.state !== "running") break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error);
+  const managedName = managedStatus.records?.[0]?.name;
+  assert.ok(managedName, "selected archive has a managed backup record");
+  const managedFile = join(directory, "archives", "other-archive", "backups", managedName);
+  const managedSqlite = join(directory, "selected-managed-backup.sqlite");
+  writeFileSync(managedSqlite, execFileSync("tar", ["-xOf", managedFile, "drevo.sqlite"], {
+    maxBuffer: 64 * 1024 * 1024,
+  }));
+  const managedDb = new DatabaseSync(managedSqlite, { readOnly: true });
+  try {
+    const selectedPerson = managedDb.prepare("SELECT data FROM people WHERE id='person-a'").get();
+    assert.equal(JSON.parse(String(selectedPerson?.data)).name,
+      (await otherApp.archive.read()).family.people.find((person) => person.id === "person-a")?.name,
+      "managed backup worker uses the selected archive's PostgreSQL RLS context");
+    assert.notEqual(JSON.parse(String(selectedPerson?.data)).name,
+      (await app.archive.read()).family.people.find((person) => person.id === "person-a")?.name,
+      "managed backup of another archive cannot contain the root archive's person");
+  } finally {
+    managedDb.close();
+    rmSync(managedSqlite, { force: true });
+  }
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
     404,
@@ -4766,6 +4804,14 @@ try {
     0,
     "a living person cannot enter discovery even if a stale publication row exists",
   );
+  await otherApp.archive.db.prepare("", `DELETE FROM discovery_publication_reconciled_archives
+    WHERE archive_id='other-archive'`).run();
+  await initializePostgresRuntimeSchema(otherApp.archive.db);
+  assert.equal(await otherPublication.getFields("person-a"), null,
+    "an archive opened after the global trigger migration reconciles its own legacy opt-ins");
+  assert.equal((await otherApp.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_publication_reconciled_archives WHERE archive_id='other-archive'`).get())?.count,
+    1);
   await otherPublication.unpublish("person-a");
   const beforeDiscovery = await otherApp.archive.read();
   const deceasedFamily = structuredClone(beforeDiscovery.family);
@@ -4835,6 +4881,25 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  const beforeLivingEdit = await otherApp.archive.read();
+  const livingEdit = structuredClone(beforeLivingEdit.family);
+  livingEdit.people[0].deceased = false;
+  livingEdit.people[0].death = undefined;
+  await otherApp.archive.write(livingEdit, beforeLivingEdit.revision);
+  assert.equal((await otherPublication.getFields("person-a")), null,
+    "a living edit must revoke the publication consent, not just hide the projection");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json())).published, false);
+  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    404, "the living edit closes the cross-archive card in the same transaction");
+  const beforeDeceasedRestore = await otherApp.archive.read();
+  const deceasedRestore = structuredClone(beforeDeceasedRestore.family);
+  deceasedRestore.people[0].deceased = true;
+  await otherApp.archive.write(deceasedRestore, beforeDeceasedRestore.revision);
+  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    404, "a later deceased edit must not silently restore a revoked publication");
+  await otherPublication.publish("person-a", "owner", selectedDiscoveryFields);
   const specialId = "family:человек.1";
   const specialSegment = encodeURIComponent(specialId);
   const specialBefore = await otherApp.archive.read();
@@ -7588,6 +7653,34 @@ try {
       ).status,
       200,
     );
+    // Keep the session outside the normal HTTP renewal window; the blocker
+    // must be encountered by the archive mutation's lock-order guard.
+    await client.query("UPDATE account_sessions SET expires_at=$2 WHERE token_hash=$1",
+      [sessionTokenHash(newOwnerToken), Date.now() + SESSION_MAX_AGE * 1000]);
+    const deletingRecipient = new pg.Client();
+    await deletingRecipient.connect();
+    try {
+      await deletingRecipient.query("BEGIN");
+      assert.equal((await deletingRecipient.query(
+        "SELECT token_hash FROM account_sessions WHERE token_hash=$1 FOR UPDATE",
+        [sessionTokenHash(newOwnerToken)],
+      )).rowCount, 1);
+      const busyAcceptance = await fetch(oauthBase + ownerTransferPath + "/accept", {
+        method: "POST",
+        headers: transferTargetHeaders,
+      });
+      assert.equal(busyAcceptance.status, 409,
+        "a session held by account deletion must not deadlock with archive-locked acceptance");
+      assert.match(await busyAcceptance.text(), /Сеанс занят/);
+      await deletingRecipient.query("SELECT set_config('drevo.archive_id',$1,true)",
+        [personalArchiveId]);
+      assert.equal((await deletingRecipient.query(
+        "SELECT id FROM archives WHERE id=$1 FOR UPDATE NOWAIT", [personalArchiveId],
+      )).rowCount, 1, "the failed acceptance releases its archive lock");
+    } finally {
+      await deletingRecipient.query("ROLLBACK");
+      await deletingRecipient.end();
+    }
     const incomingTransfer = await fetch(oauthBase + ownerTransferPath, {
       headers: transferTargetHeaders,
     }).then((response) => response.json());

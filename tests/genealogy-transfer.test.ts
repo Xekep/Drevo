@@ -79,6 +79,75 @@ test("GEDZIP package budget covers the entire basic-account media quota", () => 
   assert.ok(TRANSFER_PACKAGE_LIMIT - TRANSFER_TEXT_LIMIT >= BASIC_MEDIA_BYTES);
 });
 
+test("GEDCOM preview discloses the lost catalog link while GEDZIP keeps the place, family, citation PDF and portrait", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-gedcom-catalog-warning-"));
+  try {
+    const uploads = join(directory, "uploads");
+    const stage = join(directory, "stage");
+    await Promise.all([mkdir(uploads), mkdir(stage)]);
+    const portrait = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "blue" },
+    }).png().toBuffer();
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF");
+    await writeFile(join(uploads, "portrait.png"), portrait);
+    await writeFile(join(uploads, "record.pdf"), pdf);
+    const documentId = "2771ab62-6eaf-4f45-871a-192d97598dd5";
+    const family = seed();
+    family.people[0].birth = "1900";
+    family.people[0].birthPlace = "Тверь";
+    family.people[0].birthLocation = { place: "Тверь", lat: 56.85, lon: 35.91 };
+    family.people[0].birthPlaceClaim = {
+      value: "Тверь",
+      sources: [{ catalogId: "archive-book", documentId, documentPage: 1,
+        title: "Метрическая книга", type: "архив", reference: "л. 7" }],
+    };
+    family.people[0].sources = [{ title: "Перепись", type: "архив", reference: "л. 3" }];
+    family.people[0].photo = "/media/portrait.png";
+    family.photos = [{ id: "portrait", url: "/media/portrait.png", title: "Портрет",
+      tags: [{ id: "tag", personId: "parent", x: 0, y: 0, width: 1, height: 1 }] }];
+    family.unions = [{ id: "marriage", participants: ["parent", "partner"],
+      type: "marriage", formation: { date: "1890", place: "Тверь" } }];
+    const media = [...familyMedia(family), {
+      id: documentId, file: "/media/record.pdf", title: "Запись",
+      personIds: ["parent"], portraitIds: [],
+      document: { documentType: "Метрическая книга", documentDate: "1900",
+        place: "Тверь", description: "Лист 7", provenance: "Архив" },
+    }];
+    const withoutCatalog = structuredClone(family);
+    delete withoutCatalog.people[0].birthPlaceClaim!.sources[0].catalogId;
+    for (const version of ["5.5.1", "7.0"] as const) {
+      const text = exportGedcom(family, { version, media });
+      assert.match(text, /1 _DREVO_CATALOG_LINK_LOST Y/);
+      assert.doesNotMatch(text, /archive-book/);
+      const plain = importGedcom(text, `plain-${version}`);
+      assert.ok(plain.warnings.some((warning) => warning.includes("Связь цитаты с каталогом источников Drevo не перенесена")));
+      assert.ok(!importGedcom(exportGedcom(withoutCatalog, { version, media }), `inline-${version}`)
+        .warnings.some((warning) => warning.includes("Связь цитаты с каталогом")));
+    }
+
+    const archive = join(directory, "family.gdz");
+    await writeGenealogyPackage(archive, uploads, family, media);
+    const restored = await prepareGenealogyImport(archive, stage, "roundtrip");
+    const parent = restored.family.people[0];
+    assert.deepEqual(parent.birthLocation, family.people[0].birthLocation);
+    assert.deepEqual(restored.family.people[2].parents, ["roundtrip-p1", "roundtrip-p2"]);
+    assert.equal(restored.family.unions?.[0].formation?.place, "Тверь");
+    assert.equal(parent.birthPlaceClaim?.sources[0].catalogId, undefined);
+    assert.equal(parent.birthPlaceClaim?.sources[0].title, "Метрическая книга");
+    assert.equal(parent.birthPlaceClaim?.sources[0].reference, "л. 7");
+    assert.equal(parent.birthPlaceClaim?.sources[0].documentPage, 1);
+    const importedDocument = restored.files.find((file) => file.documentId);
+    assert.equal(parent.birthPlaceClaim?.sources[0].documentId, importedDocument?.documentId);
+    assert.deepEqual(await readFile(join(stage, importedDocument!.name)), pdf);
+    assert.deepEqual(await readFile(join(stage, restored.files.find((file) => !file.documentId)!.name)), portrait);
+    assert.equal(restored.family.photos?.[0].tags[0].personId, parent.id);
+    assert.equal(parent.photo, restored.family.photos?.[0].url);
+    assert.ok(restored.warnings.some((warning) => warning.includes("Связь цитаты с каталогом источников Drevo не перенесена")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("GEDCOM media export reads document associations in two queries regardless of catalog size", async () => {
   const queries: string[] = [];
   const documents = Array.from({ length: 1000 }, (_, index) => ({

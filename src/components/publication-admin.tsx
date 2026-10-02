@@ -54,6 +54,18 @@ export function PublicationAdmin({ family }: { family: Family }) {
   const validReview = review?.family === family ? review.data : null;
 
   useEffect(() => {
+    const recheck = () => {
+      if (!document.hidden) setReload((value) => value + 1);
+    };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!pageKey) return;
     const controller = new AbortController();
     const params = new URLSearchParams();
