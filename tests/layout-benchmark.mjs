@@ -18,6 +18,7 @@
 // Example: {"elk.layered.considerModelOrder.strategy":"NONE"}.
 // DREVO_LAYOUT_GENERATION_MODE=partition|preset selects an explicit scale/prod comparison.
 // DREVO_LAYOUT_TRACE=1 includes each ELK input/result trace in scale output.
+// DREVO_LAYOUT_DECROSS_MODE=legacy disables the large-family decross portfolio.
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
@@ -53,6 +54,9 @@ const optionOverrides = (() => {
   return Object.fromEntries(Object.entries(value).map(([key, value]) => [key, String(value)]));
 })();
 const generationMode = process.env.DREVO_LAYOUT_GENERATION_MODE || "production";
+const decrossMode = process.env.DREVO_LAYOUT_DECROSS_MODE || "production";
+if (!["production", "legacy"].includes(decrossMode))
+  throw new Error("DREVO_LAYOUT_DECROSS_MODE must be production or legacy");
 if (!["production", "partition", "preset"].includes(generationMode))
   throw new Error("DREVO_LAYOUT_GENERATION_MODE must be production, partition or preset");
 if (generationMode === "partition" && !process.env.DREVO_LAYOUT_SCALE_SCAN && !process.env.DREVO_LAYOUT_PRODUCTION_SCAN)
@@ -460,7 +464,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
   const started = performance.now();
   let geometry, layoutCompleted;
   try {
-    geometry = await unionGeometry(people, layout, false, [], size, previousGeometry);
+    geometry = await unionGeometry(people, layout, false, [], size, previousGeometry, decrossMode !== "legacy");
     layoutCompleted = performance.now();
   } finally {
     // Bundled ELK uses an in-process FakeWorker without a terminate method.
@@ -484,6 +488,7 @@ async function measure(people, selectedSeed, influence, thoroughness, disableCom
     // Harness wall time includes quality checks and engine disposal. Constructor/module import is excluded.
     totalMs: Math.round(qualityCompleted - started),
     generationMode,
+    decrossMode,
     geometrySha256: createHash("sha256").update(JSON.stringify(geometry)).digest("hex"),
   };
   Object.defineProperty(result, "geometry", { value: geometry });
@@ -598,7 +603,8 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       missingPeople: result.missingPeople,
       missingParentRelations: result.missingParentRelations,
       missingSpouseRelations: result.missingSpouseRelations,
-      generationMode: result.generationMode, geometrySha256: result.geometrySha256,
+      generationMode: result.generationMode, decrossMode: result.decrossMode,
+      geometrySha256: result.geometrySha256,
       ...(process.env.DREVO_LAYOUT_TRACE ? { trace: result.trace } : {}) }));
   }
 } else if (process.env.DREVO_LAYOUT_PAIR_SCAN) {
@@ -660,6 +666,7 @@ if (process.env.DREVO_LAYOUT_PRODUCTION_SCAN) {
       layoutMs: result.layoutMs,
       qualityMs: result.qualityMs,
       generationMode: result.generationMode,
+      decrossMode: result.decrossMode,
       geometrySha256: result.geometrySha256,
       ...(process.env.DREVO_LAYOUT_TRACE ? { trace: result.trace } : {}),
     }));
