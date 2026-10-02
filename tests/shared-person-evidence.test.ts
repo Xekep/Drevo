@@ -20,6 +20,10 @@ const person = (id: string): Person => ({ id, name: "Анна", surname: "Тес
   birthPlace: "Москва", deathPlace: "Тула", maidenName: "Иванова",
   occupation: "Учитель", parents: [], spouses: [], generation: 1, column: 0,
   sources: [],
+  events: [{ id: "move", type: "move", date: "1901", place: "Москва",
+    dateClaim: { value: "1901", sources: [source("Дата переезда")] },
+    alternatives: [{ id: "other-event-date", field: "date", value: "1902",
+      sources: [source("Другая дата переезда", true)], confidence: "conflicting" }] }],
   birthDateClaim: { value: "1880", sources: [source("Дата рождения", true)], confidence: "confirmed" },
   deathDateClaim: { value: "1960", sources: [source("Дата смерти")] },
   birthPlaceClaim: { value: "Москва", sources: [source("Место рождения")] },
@@ -42,6 +46,8 @@ const family = (withDocuments = false): Family => {
     delete visible.birthDateClaim!.sources[0].documentPage;
     delete visible.factAlternatives![0].sources[0].documentId;
     delete visible.factAlternatives![0].sources[0].documentPage;
+    delete visible.events![0].alternatives![0].sources[0].documentId;
+    delete visible.events![0].alternatives![0].sources[0].documentPage;
   }
   return { title: "Архив", description: "Частное описание", demo: false,
     people: [visible, hidden] };
@@ -60,12 +66,18 @@ test("public projection retains exact person evidence while hiding documents and
   assert.equal(projected.people[0].birthDateClaim?.sources[0].title, "Дата рождения");
   assert.equal(projected.people[0].factAlternatives?.[0].value, "1881");
   assert.equal(projected.people[0].factAlternatives?.[0].sources[0].title, "Другая дата");
+  assert.equal(projected.people[0].events?.[0].dateClaim?.sources[0].title, "Дата переезда");
+  assert.equal(projected.people[0].events?.[0].alternatives?.[0].value, "1902");
+  assert.equal(projected.people[0].events?.[0].alternatives?.[0].confidence, "conflicting");
+  assert.equal(projected.people[0].events?.[0].alternatives?.[0].sources[0].title,
+    "Другая дата переезда");
   for (const key of ["deathDateClaim", "birthPlaceClaim", "deathPlaceClaim",
     "maidenNameClaim", "occupationClaim"] as const)
     assert.equal(projected.people[0][key]?.sources.length, 1);
   assert.ok(!JSON.stringify(projected).includes(documentId));
   assert.ok(!JSON.stringify(projected).includes("Скрыт"));
   assert.equal(original.people[0].factAlternatives?.[0].sources[0].documentId, documentId);
+  assert.equal(original.people[0].events?.[0].alternatives?.[0].sources[0].documentId, documentId);
   assert.doesNotThrow(() => validateFamily(projected));
 });
 
