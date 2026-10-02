@@ -298,6 +298,11 @@ export async function prepareGenealogyImport(
         name = `${id}.${extension}`;
       await copyFile(source, join(directory, name), constants.COPYFILE_EXCL);
       let document = item.document;
+      if (xml && extension !== "pdf" && extension !== "tif" && document) {
+        if (document.eventLinks?.length)
+          result.warnings.push(`Файл «${item.title}» оказался изображением: связь с событием не перенесена, портрет и фото сохранены.`);
+        document = undefined;
+      }
       if (xml && (extension === "pdf" || extension === "tif")) {
         const description = document?.description || item.photo?.description || "";
         if (description.length > 1000)

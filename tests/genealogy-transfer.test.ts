@@ -831,6 +831,33 @@ test("Agelong XML preserves a PDF document comment through ZIP staging", async (
   assert.match(image.media[0].photo?.description || "", /Handwritten note on the reverse/);
 });
 
+test("Agelong XML keeps a mislabeled event image as a portrait after checking its bytes", async () => {
+  const xml = `<agelongtree><persons><person id="p" fn="Anna" sn="Example">
+    <documents><document id="scan" ismain="1"/></documents></person></persons>
+    <events><event id="school" type="Education"><persons><person id="p" role="Student"/></persons>
+      <documents><document id="scan"/></documents></event></events>
+    <documents><document id="scan" path="archive.xml.files/scan.pdf" title="Mislabeled scan"/></documents>
+    </agelongtree>`;
+  const directory = await mkdtemp(join(tmpdir(), "drevo-xml-mislabeled-image-"));
+  try {
+    const archive = join(directory, "archive.zip");
+    const stage = join(directory, "stage");
+    await mkdir(stage);
+    const image = await sharp({ create: { width: 1, height: 1, channels: 3, background: "red" } }).png().toBuffer();
+    await zipFile(archive, [
+      ["family.xml", Buffer.from(xml)],
+      ["archive.xml.files/scan.pdf", image],
+    ]);
+    const prepared = await prepareGenealogyImport(archive, stage, "xml-mislabeled");
+    assert.equal(prepared.files[0].documentId, undefined);
+    assert.equal(prepared.family.photos?.length, 1);
+    assert.equal(prepared.family.people[0].photo, prepared.family.photos?.[0].url);
+    assert.ok(prepared.warnings.some((warning) => warning.includes("связь с событием не перенесена")));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 async function zipFile(path: string, entries: [string, Buffer][]) {
   const zip = new ZipFile(),
     writing = pipeline(zip.outputStream, createWriteStream(path));
