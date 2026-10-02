@@ -32,6 +32,7 @@ import {
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
+import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
@@ -1733,6 +1734,78 @@ try {
   process.env.YANDEX_AI_FOLDER_ID = "folder-1";
   process.env.YANDEX_AI_MODEL = "yandexgpt/rc";
   try {
+    let notifyAdminConversation!: () => void;
+    let releaseAdminConversation!: () => void;
+    const adminConversationStarted = new Promise<void>((resolve) => { notifyAdminConversation = resolve; });
+    const adminConversationGate = new Promise<void>((resolve) => { releaseAdminConversation = resolve; });
+    let notifyAdminResponse!: () => void;
+    let releaseAdminResponse!: () => void;
+    const adminResponseStarted = new Promise<void>((resolve) => { notifyAdminResponse = resolve; });
+    const adminResponseGate = new Promise<void>((resolve) => { releaseAdminResponse = resolve; });
+    let holdAdminResponse = false;
+    let adminResponseCalls = 0;
+    const guardedAdminAi = adminAiHttp({
+      auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      db: app.archive.db,
+      settings: await aiSettingsStore(app.archive.db),
+      usage: aiUsageStore(app.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      fetcher: async (url, init) => {
+        const path = String(url);
+        if (path.endsWith("/conversations") && init?.method === "POST") {
+          notifyAdminConversation();
+          await adminConversationGate;
+          return Response.json({ id: "admin-tier-test", object: "conversation" });
+        }
+        if (path.endsWith("/responses")) {
+          adminResponseCalls++;
+          if (holdAdminResponse) {
+            notifyAdminResponse();
+            await adminResponseGate;
+          }
+          return Response.json({ id: "admin-tier-response", status: "completed", output_text: "OK" });
+        }
+        return Response.json({ deleted: true });
+      },
+    });
+    const guardedAdminServer = createServer((req, res) => {
+      void guardedAdminAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => guardedAdminServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const adminPort = (guardedAdminServer.address() as { port: number }).port;
+      const checking = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/test`, {
+        method: "POST", headers: ownerHeaders,
+      });
+      await Promise.race([adminConversationStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI conversation did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseAdminConversation();
+      assert.equal((await checking).status, 403,
+        "an admin downgraded during conversation creation cannot run the model");
+      assert.equal(adminResponseCalls, 0, "the model is never called after the downgrade");
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdAdminResponse = true;
+      const answering = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai/test`, {
+        method: "POST", headers: ownerHeaders,
+      });
+      await Promise.race([adminResponseStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Admin AI response did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseAdminResponse();
+      const hidden = await answering;
+      assert.equal(hidden.status, 403,
+        "a downgraded admin cannot receive a completed connection-check answer");
+      assert.doesNotMatch(await hidden.text(), /OK/);
+    } finally {
+      releaseAdminConversation();
+      releaseAdminResponse();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
+    }
+
     const startedAnswer = await fetch(securedBase + "/api/ai/chat/stream", {
       method: "POST", headers: ownerHeaders,
       body: JSON.stringify({ message: "Расскажи о родословной" }),

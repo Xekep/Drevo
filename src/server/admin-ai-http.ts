@@ -89,7 +89,8 @@ export function adminAiHttp({
       return json(res, (await auth.currentUser(req)) ? 403 : 401, {
         error: "Только администратор может управлять AI Studio",
       });
-    if (!(await accountAiAccess(db, (await auth.currentUser(req))!.id, auth.local)))
+    const adminId = (await auth.currentUser(req))!.id;
+    if (!(await accountAiAccess(db, adminId, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
     if (path === "/api/admin/ai" && req.method === "GET")
@@ -159,12 +160,17 @@ export function adminAiHttp({
           error:
             "AI Studio не настроена: задайте API-ключ и Folder ID в админке или в окружении сервера",
         });
+      if (!(await accountAiAccess(db, adminId, auth.local)))
+        return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
       try {
         const client = yandexResponsesClient(fetcher);
         const conversationId = await client.createConversation(runtime);
         let answer = "";
         let compactionAvailable = false;
         try {
+          // Creating the remote conversation can outlive a tier downgrade.
+          if (!(await accountAiAccess(db, adminId, auth.local)))
+            return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
           const result = await client.respond({
             runtime,
             conversationId,
@@ -185,6 +191,8 @@ export function adminAiHttp({
           });
           answer = result.text;
           compactionAvailable = result.compactionAvailable;
+          if (!(await accountAiAccess(db, adminId, auth.local)))
+            return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
         } finally {
           void client
             .deleteConversation(runtime, conversationId)
