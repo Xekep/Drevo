@@ -3363,6 +3363,19 @@ try {
       },
       body: JSON.stringify(value),
     });
+  // An expired upload grant must not make a local original free when its only
+  // live reference is an inline source citation (also used by Drevo imports).
+  await quotaDb.prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES('/media/cited-record.pdf',2)").run();
+  const citedFamily = structuredClone(peopleBeforeQuota.family);
+  citedFamily.people[0].sources.push({
+    title: "Cited record", type: "archive", reference: "leaf 1",
+    url: "/media/cited-record.pdf#page=1",
+  });
+  const citedResponse = await saveQuotaFamily(citedFamily, peopleBeforeQuota.revision);
+  assert.equal(citedResponse.status, 507,
+    `a source-only original must count toward the basic 500 MB quota: ${await citedResponse.text()}`);
+  assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
+  await quotaDb.prepare("", "DELETE FROM media_originals WHERE url='/media/cited-record.pdf'").run();
   const rejectedPeople = await saveQuotaFamily(quotaFamily(151), peopleBeforeQuota.revision);
   assert.equal(rejectedPeople.status, 403, await rejectedPeople.text());
   await assert.rejects(
