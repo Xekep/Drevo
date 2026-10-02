@@ -277,6 +277,7 @@ export function generationReport(
             .join("; ") || "дата неизвестна",
         );
         sources("Источник события", event.sources);
+        sources("Источник места события", event.placeClaim?.sources);
       }
       for (const award of person.awards || []) {
         write("Награда", [award.name, award.year].filter(Boolean).join("; "));

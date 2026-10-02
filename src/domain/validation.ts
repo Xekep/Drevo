@@ -102,6 +102,10 @@ export function validateFamily(value: unknown): Family {
         throw new Error("Некорректные сведения о человеке");
     for (const s of p.sources)
       if (!validPersonSource(s)) throw new Error("Некорректный источник");
+    for (const event of p.events || [])
+      if (!validValueClaim(event.placeClaim, event.place) ||
+        event.placeClaim && "confidence" in event.placeClaim)
+        throw new Error("Источник места события относится к другому значению; снимите связь перед изменением места");
     if (!validValueClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.deathDateClaim, p.death))
