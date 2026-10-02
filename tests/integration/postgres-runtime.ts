@@ -3095,7 +3095,7 @@ try {
       "",
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'vk:42',?)",
     )
-    .run(sessionTokenHash(archiveAdminToken), Date.now() + 60_000);
+    .run(sessionTokenHash(archiveAdminToken), Date.now() + 10 * 60_000);
   await app.archive.db
     .prepare("", "UPDATE archive_memberships SET role='admin' WHERE user_id='vk:42'")
     .run();
