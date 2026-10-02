@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterResearchPeople } from "../src/domain/research-people-filter.ts";
+import {
+  filterResearchPeople,
+  queryResearchPeople,
+} from "../src/domain/research-people-filter.ts";
 import {
   executeResearchTool,
   RESEARCH_TOOL_DEFINITIONS,
@@ -314,6 +317,12 @@ test("event conditions must match the same event and never infer approximate dat
           },
         ],
       }),
+      person("yearsSplit", {
+        events: [
+          { id: "early", type: "military", date: "1930", place: "Москва" },
+          { id: "late", type: "military", date: "1950", place: "Москва" },
+        ],
+      }),
     ],
   } as Family;
   assert.deepEqual(
@@ -328,6 +337,74 @@ test("event conditions must match the same event and never infer approximate dat
       "include",
     ).personIds,
     ["match"],
+  );
+  const grouped = {
+    allOf: [
+      { eventType: "military" },
+      { eventPlaceContains: "Москва" },
+      { eventYearFrom: 1941 },
+      { eventYearTo: 1945 },
+    ],
+  };
+  assert.deepEqual(filterResearchPeople(family, grouped, "include").personIds, [
+    "match",
+  ]);
+  assert.deepEqual(
+    filterResearchPeople(
+      family,
+      {
+        eventType: "military",
+        allOf: [
+          { eventPlaceContains: "Москва" },
+          { eventYearFrom: 1941 },
+          { eventYearTo: 1945 },
+        ],
+      },
+      "include",
+    ).personIds,
+    ["match"],
+  );
+  assert.equal(
+    queryResearchPeople(family, { criteria: grouped, limit: 0 }).total,
+    1,
+  );
+  assert.equal(
+    queryResearchPeople(family, {
+      criteria: grouped,
+      mode: "exclude",
+      limit: 0,
+    }).total,
+    3,
+  );
+  assert.deepEqual(
+    filterResearchPeople(
+      family,
+      {
+        eventType: "military",
+        anyOf: [
+          { eventPlaceContains: "Москва" },
+          { eventPlaceContains: "Казань" },
+        ],
+      },
+      "include",
+    ).personIds,
+    ["match", "approximate", "yearsSplit"],
+  );
+  assert.deepEqual(
+    filterResearchPeople(
+      family,
+      { anyOf: [{ eventType: "military" }, { eventPlaceContains: "Москва" }] },
+      "include",
+    ).personIds,
+    ["match", "split", "approximate", "yearsSplit"],
+  );
+  assert.deepEqual(
+    filterResearchPeople(
+      family,
+      { eventType: "residence", noneOf: [{ eventType: "military" }] },
+      "include",
+    ).personIds,
+    [],
   );
 });
 

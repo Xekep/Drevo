@@ -2,7 +2,7 @@ import { dateBound, fullName, hasRecordedDeath, validDate } from "./dates.ts";
 import { archiveConnections } from "./connections.ts";
 import { collectPersonSources } from "./person-sources.ts";
 import { normalizeResearchText, surnameKeys } from "./research-names.ts";
-import type { Family, Person } from "./types.ts";
+import type { Family, Person, PersonEvent } from "./types.ts";
 
 const textSchema = { type: "string", minLength: 1, maxLength: 200 } as const;
 const yearSchema = { type: "integer", minimum: 1, maximum: 9999 } as const;
@@ -300,12 +300,12 @@ function compileCriteria(family: Family, value: unknown) {
   function compile(
     value: unknown,
     grouped = false,
-  ): (person: Person) => boolean {
+  ): (person: Person, event?: PersonEvent) => boolean {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new Error("Укажите условия отбора людей");
     const entries = Object.entries(value);
     if (!entries.length) throw new Error("Укажите хотя бы одно условие отбора");
-    const tests: Array<(person: Person) => boolean> = [];
+    const tests: Array<(person: Person, event?: PersonEvent) => boolean> = [];
     for (const [key, item] of entries) {
       if (["allOf", "anyOf", "noneOf"].includes(key)) {
         if (grouped || !Array.isArray(item) || !item.length || item.length > 10)
@@ -313,12 +313,18 @@ function compileCriteria(family: Family, value: unknown) {
             "Группа должна содержать от 1 до 10 простых условий без вложенных групп",
           );
         const children = item.map((child) => compile(child, true));
-        tests.push((person) =>
+        tests.push((person, event) =>
           key === "allOf"
-            ? children.every((test) => test(person))
+            ? children.every((test) => test(person, event))
             : key === "anyOf"
-              ? children.some((test) => test(person))
-              : !children.some((test) => test(person)),
+              ? children.some((test) => test(person, event))
+              : !children.some(
+                  (test) =>
+                    test(person) ||
+                    (person.events || []).some((candidate) =>
+                      test(person, candidate),
+                    ),
+                ),
         );
         continue;
       }
@@ -419,37 +425,37 @@ function compileCriteria(family: Family, value: unknown) {
         typeof fields.eventPlaceContains === "string"
           ? normalizeResearchText(fields.eventPlaceContains)
           : undefined;
-      tests.push((person) =>
-        (person.events || []).some((event) => {
-          if (fields.eventType !== undefined && event.type !== fields.eventType)
-            return false;
-          if (place !== undefined && !contains(event.place, place))
+      tests.push((_person, event) => {
+        if (!event) return false;
+        if (fields.eventType !== undefined && event.type !== fields.eventType)
+          return false;
+        if (place !== undefined && !contains(event.place, place)) return false;
+        if (
+          fields.eventYearFrom !== undefined ||
+          fields.eventYearTo !== undefined
+        ) {
+          if (!validDate(event.date)) return false;
+          const year = Number(event.date!.slice(0, 4));
+          if (
+            fields.eventYearFrom !== undefined &&
+            year < (fields.eventYearFrom as number)
+          )
             return false;
           if (
-            fields.eventYearFrom !== undefined ||
-            fields.eventYearTo !== undefined
-          ) {
-            if (!validDate(event.date)) return false;
-            const year = Number(event.date!.slice(0, 4));
-            if (
-              fields.eventYearFrom !== undefined &&
-              year < (fields.eventYearFrom as number)
-            )
-              return false;
-            if (
-              fields.eventYearTo !== undefined &&
-              year > (fields.eventYearTo as number)
-            )
-              return false;
-          }
-          return true;
-        }),
-      );
+            fields.eventYearTo !== undefined &&
+            year > (fields.eventYearTo as number)
+          )
+            return false;
+        }
+        return true;
+      });
     }
-    return (person) =>
-      matches(person, criteria) && tests.every((test) => test(person));
+    return (person, event) =>
+      matches(person, criteria) && tests.every((test) => test(person, event));
   }
-  return compile(value);
+  const test = compile(value);
+  return (person: Person) =>
+    test(person) || (person.events || []).some((event) => test(person, event));
 }
 
 function selectResearchPeople(family: Family, value: unknown, mode: unknown) {
