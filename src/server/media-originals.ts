@@ -43,6 +43,11 @@ export async function indexReferencedMediaOriginals(
     const url = citation.url?.split(/[?#]/, 1)[0];
     if (url?.startsWith("/media/")) urls.add(url);
   }
+  // A citation may also link a catalogued document's original directly.
+  // Its size is already tracked in documents.file_size, so do not count it
+  // again as a source-only original on restart.
+  for (const row of await db.prepare("SELECT file_name FROM documents").all())
+    urls.delete(`/media/${String(row.file_name)}`);
 
   const known = new Set(
     (
