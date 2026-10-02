@@ -5,6 +5,7 @@ import type { Family } from "../src/domain/types.ts";
 import type { createAuth } from "../src/server/auth.ts";
 import { openArchive } from "../src/server/database.ts";
 import { faceDescriptorsHttp } from "../src/server/face-descriptors-http.ts";
+import type { ArchiveUser } from "../src/domain/access.ts";
 
 const person = (id: string) => ({
   id,
@@ -265,6 +266,70 @@ test("face descriptors follow corrected tags and disappear with removed tags", a
       0,
     );
   } finally {
+    await archive.close();
+  }
+});
+
+test("face match is withheld when archive access changes during comparison", async () => {
+  const archive = await openArchive(":memory:", family);
+  const originalPrepare = archive.db.prepare.bind(archive.db);
+  let actor: ArchiveUser = {
+    id: "editor", name: "Editor", role: "admin", approved: true,
+    createdAt: "", treeAccess: "all",
+  };
+  let changeAfterRead: "none" | "revoke" | "scope" = "none";
+  archive.db.prepare = (sqlite, postgres) => {
+    const statement = originalPrepare(sqlite, postgres);
+    if (!sqlite.includes("SELECT person_id,data FROM face_descriptors WHERE model=?"))
+      return statement;
+    return {
+      ...statement,
+      all: async (...values) => {
+        const rows = await statement.all(...values);
+        if (changeAfterRead === "revoke") actor = { ...actor, approved: false };
+        if (changeAfterRead === "scope") actor = {
+          ...actor, role: "relative", treeAccess: "common_ancestors", personId: "second",
+        };
+        return rows;
+      },
+    };
+  };
+  await archive.db.prepare(
+    "INSERT INTO face_descriptors(id,person_id,data) VALUES(?,?,?)",
+  ).run("known", "first", JSON.stringify(Array(128).fill(0)));
+  const auth = {
+    local: true,
+    canEdit: () => actor.approved,
+    currentUser: () => actor,
+  } as unknown as Awaited<ReturnType<typeof createAuth>>;
+  const handler = faceDescriptorsHttp({ archive, auth });
+  const server = createServer((req, res) => {
+    void handler(req, res, new URL(req.url || "/", "http://localhost"));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  try {
+    const url = `http://127.0.0.1:${address.port}/api/faces/match`;
+    const body = JSON.stringify({ descriptor: Array(128).fill(0) });
+    const request = () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    assert.equal((await request()).status, 200);
+    changeAfterRead = "revoke";
+    const denied = await request();
+    assert.equal(denied.status, 403);
+    assert.doesNotMatch(await denied.text(), /"personId":"first"/);
+    actor = { ...actor, approved: true, role: "admin", treeAccess: "all" };
+    changeAfterRead = "scope";
+    const scoped = await request();
+    assert.equal(scoped.status, 403);
+    assert.doesNotMatch(await scoped.text(), /"personId":"first"/);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    archive.db.prepare = originalPrepare;
     await archive.close();
   }
 });
