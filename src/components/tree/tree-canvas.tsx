@@ -1019,6 +1019,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const gpuEligible = nodes.length >= 500 && !growing && !layoutSettling && !layoutBusy &&
     !activeFanAnchor && mode !== "timeline" && !connecting && gpuFailedScope !== gpuScope &&
     gpuOverlayEdges.length <= 64 && nodes.every((node) => GpuPortraitCache.supported(node.data.person.photo));
+  // A remounted canvas needs its own first frame and portrait handoff, even
+  // when cancelling a connection leaves the layout geometry unchanged.
+  if (!gpuEligible && gpuReadyScene) setGpuReadyScene(null);
   const gpuActive = gpuEligible && gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope;
   const gpuReady = useCallback(() => setGpuReadyScene({ geometry, scope: gpuScope }), [geometry, gpuScope]);
   const gpuFailure = useCallback((reason: string) => {
@@ -1300,6 +1303,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
+        data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
         data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
         role={gpuActive ? "application" : undefined}
         onPointerMoveCapture={(event) => {
