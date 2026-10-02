@@ -24,6 +24,7 @@ import { type researchSuggestionStore } from "./research-suggestions.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { YandexResponseError } from "./yandex-responses.ts";
 import { accountAiAccess } from "./account-ai-access.ts";
+import { researchPdf } from "./research-pdf.ts";
 
 import { createResearchRunner } from "./ai-research-runner.ts";
 import { yandexResponsesClient } from "./yandex-responses.ts";
@@ -59,6 +60,7 @@ export function aiResearchHttp({
   uploadsDirectory,
   beforeChatDelivery,
   beforeAnswerDelivery,
+  renderPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   auth: Awaited<ReturnType<typeof createAuth>>;
@@ -73,6 +75,7 @@ export function aiResearchHttp({
   uploadsDirectory?: string;
   beforeChatDelivery?: () => Promise<void>;
   beforeAnswerDelivery?: () => Promise<void>;
+  renderPdf?: typeof researchPdf;
 }) {
   const chats = aiChatStore(archive.db);
   const attachments = aiAttachmentStore(
@@ -188,6 +191,7 @@ export function aiResearchHttp({
     chats,
     generatedFiles,
     attachments,
+    renderPdf,
     webSearch: (runtime, metrics, assertAiAccess) =>
       runtime.webSearchEnabled && runtime.webSearchProvider === "yandex"
         ? createWebSearchService({

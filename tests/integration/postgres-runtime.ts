@@ -35,6 +35,7 @@ import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
+import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
@@ -1865,6 +1866,77 @@ try {
       await new Promise<void>((resolve) => toolBatchServer.close(() => resolve()));
       await toolBatchAi.close();
       rmSync(toolFilesRoot, { recursive: true, force: true });
+    }
+
+    let notifyPdfRender!: () => void;
+    let releasePdfRender!: () => void;
+    const pdfRenderStarted = new Promise<void>((resolve) => { notifyPdfRender = resolve; });
+    const pdfRenderGate = new Promise<void>((resolve) => { releasePdfRender = resolve; });
+    const pdfFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-pdf-tier-"));
+    const pdfUsageBefore = Number((await client.query(
+      "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner'",
+    )).rows[0].id);
+    const pdfAi = aiResearchHttp({
+      archive: app.archive,
+      auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      suggestions: researchSuggestionStore(app.archive.db),
+      aiSettings: await aiSettingsStore(app.archive.db),
+      usage: aiUsageStore(app.archive.db),
+      media: mediaStore(join(dirname(source), "uploads")),
+      previewImage: imagePreviews(join(dirname(source), "previews")),
+      researchCatalog: researchCatalogStore(app.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      uploadsDirectory: join(pdfFilesRoot, "uploads"),
+      renderPdf: async (...args) => {
+        notifyPdfRender();
+        await pdfRenderGate;
+        return researchPdf(...args);
+      },
+      fetcher: async (url, init) => {
+        if (String(url).endsWith("/conversations") && init?.method === "POST")
+          return Response.json({ id: "pdf-tier-conversation" });
+        if (String(url).endsWith("/responses"))
+          return Response.json({ id: "pdf-tier-response", status: "completed", output: [
+            { type: "function_call", call_id: "pdf", name: "create_pdf",
+              arguments: JSON.stringify({ title: "Семейный отчёт", content: "# Семейный отчёт\nТест" }) },
+          ] });
+        if (init?.method === "DELETE") return Response.json({ deleted: true });
+        throw new Error(`Unexpected provider call: ${url}`);
+      },
+    });
+    const pdfServer = createServer((req, res) => {
+      void pdfAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => pdfServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const pdfPort = (pdfServer.address() as { port: number }).port;
+      const runningPdf = fetch(`http://127.0.0.1:${pdfPort}/api/ai/chat`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ message: "Создай PDF отчёт о семье" }),
+      });
+      await Promise.race([pdfRenderStarted, runningPdf.then(async (response) => {
+        throw new Error(`AI PDF stopped before rendering: ${response.status} ${await response.clone().text()}`);
+      }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF rendering did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releasePdfRender();
+      const blockedPdf = await runningPdf;
+      assert.equal(blockedPdf.status, 403, await blockedPdf.clone().text());
+      const generatedRoot = join(pdfFilesRoot, "ai-generated-files");
+      assert.equal(existsSync(generatedRoot)
+        ? readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+          .filter((entry) => entry.isFile()).length : 0,
+        0, "downgrade during PDF rendering cannot persist a generated file");
+    } finally {
+      releasePdfRender();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await new Promise<void>((resolve) => pdfServer.close(() => resolve()));
+      await pdfAi.close();
+      rmSync(pdfFilesRoot, { recursive: true, force: true });
+      await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id='owner' AND id>$1",
+        [pdfUsageBefore]);
     }
 
     let notifyAdminConversation!: () => void;

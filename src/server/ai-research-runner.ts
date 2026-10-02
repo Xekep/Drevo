@@ -106,6 +106,7 @@ export function createResearchRunner({
   generatedFiles,
   attachments,
   webSearch,
+  renderPdf = researchPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
   suggestions: ReturnType<typeof researchSuggestionStore>;
@@ -121,6 +122,7 @@ export function createResearchRunner({
   chats: ReturnType<typeof aiChatStore>;
   generatedFiles: ReturnType<typeof generatedResearchFileStore>;
   attachments?: ReturnType<typeof aiAttachmentStore>;
+  renderPdf?: typeof researchPdf;
 }) {
   const responses = yandexResponsesClient(fetcher);
   const vision = aiVision(fetcher);
@@ -1151,6 +1153,7 @@ export function createResearchRunner({
         let attachmentInput: ResponseItem | undefined;
         let result: unknown,
           toolArgs: unknown = {};
+        let accessCheckFailed = false;
         try {
           toolArgs = JSON.parse(call.function.arguments || "{}");
           if (!allowedToolNames.has(call.function.name))
@@ -1310,12 +1313,18 @@ export function createResearchRunner({
               title = typeof raw.title === "string" ? raw.title.trim() : "",
               content =
                 typeof raw.content === "string" ? raw.content.trim() : "",
-              bytes = await researchPdf(
+              bytes = await renderPdf(
                 title,
                 content,
                 graphInPdfRequested ? archiveGraph(family) : undefined,
               ),
               name = researchPdfFilename(title);
+            try {
+              await assertAiAccess();
+            } catch (error) {
+              accessCheckFailed = true;
+              throw error;
+            }
             const saved = await generatedFiles.save({
               ownerId: user.id,
               chatId,
@@ -1507,7 +1516,7 @@ export function createResearchRunner({
             result = { suggestion };
           } else throw new Error("Модель запросила неизвестный инструмент");
         } catch (error) {
-          if (signal.aborted) throw error;
+          if (accessCheckFailed || signal.aborted) throw error;
           if (error instanceof WebSearchError) webSearchFailed = true;
           const detail =
             error instanceof Error ? error.message : "Ошибка инструмента";
