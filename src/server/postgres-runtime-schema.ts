@@ -222,6 +222,10 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='discovery_branch_members' AND column_name='via_person_id' AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('discovery_branch_members') AND conname='discovery_branch_members_via_fkey')",
       "073_discovery_branch_second_generation.sql",
     ],
+    [
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='discovery_revoke_ineligible_publication' AND NOT tgisinternal",
+      "074_revoke_ineligible_discovery_publication.sql",
+    ],
   ]) {
     if ((await db.prepare("", query).get())?.present) continue;
     await db.transaction(async () => {

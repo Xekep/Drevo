@@ -4835,6 +4835,25 @@ try {
     (await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
     200,
   );
+  const beforeLivingEdit = await otherApp.archive.read();
+  const livingEdit = structuredClone(beforeLivingEdit.family);
+  livingEdit.people[0].deceased = false;
+  livingEdit.people[0].death = undefined;
+  await otherApp.archive.write(livingEdit, beforeLivingEdit.revision);
+  assert.equal((await otherPublication.getFields("person-a")), null,
+    "a living edit must revoke the publication consent, not just hide the projection");
+  assert.equal((await fetch(otherBase + "/api/admin/published-people/person-a", {
+    headers: archiveAdminHeaders,
+  }).then((response) => response.json())).published, false);
+  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    404, "the living edit closes the cross-archive card in the same transaction");
+  const beforeDeceasedRestore = await otherApp.archive.read();
+  const deceasedRestore = structuredClone(beforeDeceasedRestore.family);
+  deceasedRestore.people[0].deceased = true;
+  await otherApp.archive.write(deceasedRestore, beforeDeceasedRestore.revision);
+  assert.equal((await fetch(securedBase + "/api/discovery/people/other-archive/person-a", { headers })).status,
+    404, "a later deceased edit must not silently restore a revoked publication");
+  await otherPublication.publish("person-a", "owner", selectedDiscoveryFields);
   const specialId = "family:человек.1";
   const specialSegment = encodeURIComponent(specialId);
   const specialBefore = await otherApp.archive.read();

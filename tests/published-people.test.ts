@@ -220,6 +220,11 @@ test("only explicitly published people are searchable without tree access, and u
       (await request("/api/published-people/published-person")).status,
       404,
     );
+    assert.equal(
+      (await (await request("/api/admin/published-people/published-person", admin)).json()).published,
+      false,
+      "changing an explicitly published card to living revokes the owner's publication consent",
+    );
     const beforeRestore = await app.archive.read();
     await app.archive.write(
       {
@@ -232,6 +237,9 @@ test("only explicitly published people are searchable without tree access, and u
       },
       beforeRestore.revision,
     );
+    assert.deepEqual((await (await request(query)).json()).results, [],
+      "marking the card deceased again must not silently restore discovery");
+    assert.equal((await request("/api/published-people/published-person")).status, 404);
     assert.equal(
       (
         await request(
