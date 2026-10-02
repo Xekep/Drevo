@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  adoptUserNodes,
+  getNodesInside,
+  Position,
+  type InternalNodeBase,
+} from "@xyflow/system";
 import type { Family, Person, TreeGeometry } from "../src/domain/index.ts";
 import { buildTreeNodeModel } from "../src/components/tree/tree-node-model.ts";
 
@@ -172,4 +178,76 @@ test("tree node model excludes hidden people and ignores geometry for another mo
   assert.equal(otherMode.nodes.length, 0);
   assert.equal(otherMode.displayNodes.length, 0);
   assert.equal(otherMode.positions.size, 0);
+});
+
+test("known public ports keep offscreen cards and surfaces culled before DOM measurement", () => {
+  const model = buildTreeNodeModel({
+    family,
+    geometry: { ...geometry, nodeSize: { width: 280, height: 320 } },
+    mode: "generations",
+    visible: new Set(["a", "b", "c"]),
+    selected: [],
+    collapsed: new Set(),
+    root: null,
+    hidden: new Map(),
+    expanded: new Set(),
+    query: "",
+    growthDelays,
+  });
+  const visibleId = model.nodes[0].id;
+  const nodes = model.displayNodes.map((node, index) => ({
+    ...node,
+    position: node.id === visibleId
+      ? { x: 20, y: 20 }
+      : { x: 5000 + index * 400, y: 5000 },
+  }));
+  type ModelNode = (typeof nodes)[number];
+  const lookup = new Map<string, InternalNodeBase<ModelNode>>();
+  const parents = new Map<string, Map<string, InternalNodeBase<ModelNode>>>();
+  const visible = () => getNodesInside(
+    lookup,
+    { x: 0, y: 0, width: 360, height: 400 },
+    [0, 0, 1],
+    true,
+  ).map((node) => node.id);
+
+  // No browser measurement has happened. Width/height alone did not prevent
+  // React Flow's forceInitialRender from mounting the entire offscreen archive.
+  adoptUserNodes(nodes, lookup, parents);
+  assert.deepEqual(visible(), [visibleId]);
+  for (const node of lookup.values()) {
+    assert.equal(node.measured.width, undefined);
+    assert.equal(node.measured.height, undefined);
+    assert.ok(node.internals.handleBounds);
+    if (node.type === "household")
+      assert.deepEqual(node.internals.handleBounds, { source: [], target: [] });
+  }
+
+  const ports = lookup.get(visibleId)!.internals.handleBounds!;
+  assert.deepEqual(ports.target, []);
+  assert.ok(ports.source);
+  assert.deepEqual(ports.source.map((handle) => ({
+    id: handle.id,
+    position: handle.position,
+    nodeId: handle.nodeId,
+    width: handle.width,
+    height: handle.height,
+    center: [handle.x + handle.width / 2, handle.y + handle.height / 2],
+  })), [
+    { id: "top", position: Position.Top, nodeId: visibleId, width: 12, height: 12, center: [140, 0] },
+    { id: "bottom", position: Position.Bottom, nodeId: visibleId, width: 12, height: 12, center: [140, 320] },
+    { id: "left", position: Position.Left, nodeId: visibleId, width: 12, height: 12, center: [0, 160] },
+    { id: "right", position: Position.Right, nodeId: visibleId, width: 12, height: 12, center: [280, 160] },
+  ]);
+
+  // GPU handoff creates fresh user-node objects with hidden flags. A subsequent
+  // native remount must preserve culling without requiring a measurement pass.
+  adoptUserNodes(nodes.map((node) => ({ ...node, hidden: true })), lookup, parents);
+  assert.deepEqual(visible(), []);
+  adoptUserNodes(nodes.map((node) => ({ ...node, hidden: false })), lookup, parents);
+  assert.deepEqual(visible(), [visibleId]);
+
+  // Historical input illustrates the regression through the actual library API.
+  adoptUserNodes(nodes.map((node) => ({ ...node, handles: undefined })), lookup, parents);
+  assert.equal(visible().length, nodes.length);
 });

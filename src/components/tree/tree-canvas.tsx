@@ -522,11 +522,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : focus,
     [focus, spotlightNodes],
   );
-  const progressiveIntroRequested = growing && renderVisible.size >= 2500 &&
-    distantZoom && !extraVisible && !activeFanAnchor && mode !== "timeline";
+  const progressiveIntroRequested = growing && renderVisible.size >= 500 &&
+    (distantZoom || !initialCameraReady) && !extraVisible && !activeFanAnchor && mode !== "timeline";
   const growthDelays = useMemo(
-    () => treeGrowthDelays(family.people, progressiveIntroRequested ? 2200 : 0),
-    [family.people, progressiveIntroRequested],
+    () => treeGrowthDelays(family.people, progressiveIntroRequested && renderVisible.size >= 2500 ? 2200 : 0),
+    [family.people, progressiveIntroRequested, renderVisible.size],
   );
   const growthCanvasStyle = useMemo(
     () => treeGrowthCanvasStyle(growthDelays),
@@ -1011,12 +1011,32 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [displayEdges, layoutTransition],
   );
   const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
+  const portraitPeople = useMemo(() => nodes.map((node) => node.data.person), [nodes]);
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
-  const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 2500;
-  const gpuScope = typeof window === "undefined" ? "server" :
-    archiveContextAt(window.location.pathname)?.id || window.location.pathname;
+  const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 500;
+  const gpuArchiveContext = typeof window === "undefined" ? null :
+    archiveContextAt(window.location.pathname);
+  const gpuSharedToken = typeof window === "undefined" ? null :
+    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
+      gpuArchiveContext?.innerPath || window.location.pathname,
+    )?.[1] || null;
+  // Opening a person changes the route within the same archive. Keep its GPU
+  // cache, while separating archives, share grants and account/access changes.
+  const gpuScope = JSON.stringify([
+    gpuArchiveContext?.id || "default",
+    gpuSharedToken,
+    user?.id || null,
+    user?.role || null,
+    user?.treeAccess || null,
+    user?.personId || null,
+    user?.fullAccess ?? null,
+    user?.platformAdmin ?? null,
+    user?.approved ?? null,
+    props.restricted ?? false,
+    props.canEdit,
+  ]);
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
   const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);
   const [gpuFallbackReason, setGpuFallbackReason] = useState("");
@@ -1040,7 +1060,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     const overlays = new Set(gpuOverlayEdges.map((edge) => edge.id));
     return renderedEdges.filter((edge) => !overlays.has(edge.id));
   }, [renderedEdges, gpuOverlayEdges]);
-  const gpuActions = useMemo(() => ({ ...actions, gpu: gpuActive }), [actions, gpuActive]);
+  const gpuActions = useMemo(() => ({
+    ...actions,
+    gpu: gpuActive,
+    // React Flow first mounts at zoom 1, before fitView. Fetching portraits
+    // there would request every thumb and delay hydration/the GPU handoff.
+    deferPortraits: !initialCameraReady || (renderedNodes.length >= 500 &&
+      (layoutSettling || layoutBusy || (gpuEligible && !gpuActive))),
+  }), [actions, gpuActive, initialCameraReady, renderedNodes.length, layoutSettling, layoutBusy, gpuEligible]);
   const gpuOverlayIds = useMemo(() => {
     const ids = new Set([gpuHovered, gpuFocused]);
     for (const node of nodes.filter((node) => node.selected).slice(0, 24)) ids.add(node.id);
@@ -1329,6 +1356,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     <TreeActions.Provider value={gpuActions}>
       <div
         ref={container}
+        data-layout-ready={ready}
+        data-layout-people={renderVisible.size}
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
@@ -1725,9 +1754,10 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
           minZoom={0.05}
           maxZoom={1.8}
           // Culling uses final coordinates, not the CSS-interpolated position.
-          // Keep nodes mounted while they move, even across the viewport edge.
+          // Small views keep moving nodes mounted across the viewport edge.
+          // Large transitions keep DOM work bounded to the current viewport.
           onlyRenderVisibleElements={
-            gpuActive || distantScene || (
+            gpuActive || distantScene || family.people.length >= 500 || renderedNodes.length >= 500 || (
               !layoutSettling && (!growing || displayNodes.length > 500) &&
               !(distantZoom && displayNodes.length <= 2000)
             )
@@ -1782,7 +1812,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         )}
         {!activeFanAnchor && !gpuActive && (
           <DistantPortraits
-            people={family.people}
+            people={portraitPeople}
             nodes={nodes}
             households={overviewHouseholds}
             edges={canvasEdges}

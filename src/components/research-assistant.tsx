@@ -537,18 +537,38 @@ export function ResearchAssistant({
   }, [open, chatId]);
 
   useEffect(() => {
-    if (view !== "tree") return;
+    if (view !== "tree" || !enabled) return;
     let frame = 0;
+    let measurementFrame = 0;
+    let active = true;
+    let observedCanvas: HTMLElement | null = null;
     let observedControls: HTMLElement | null = null;
-    const observer = new ResizeObserver(() => update()),
-      mutations = new MutationObserver(() => update()),
+    const controlsSelector = ".flow-camera-tools, .flow-fullscreen-tools";
+    const containsControls = (node: Node) =>
+      node instanceof Element &&
+      (node.matches(controlsSelector) || !!node.querySelector(controlsSelector));
+    const schedule = () => {
+      if (active && !measurementFrame)
+        measurementFrame = requestAnimationFrame(update);
+    };
+    const observer = new ResizeObserver(schedule),
+      mutations = new MutationObserver((records) => {
+        // Card and GPU layer churn does not change the launcher's anchor.
+        // Inspect added/removed containers too, since React Flow owns panels.
+        if (
+          records.some((record) =>
+            [...record.addedNodes, ...record.removedNodes].some(containsControls),
+          )
+        )
+          schedule();
+      }),
       update = () => {
+        measurementFrame = 0;
+        if (!active) return;
         const canvas = document.querySelector<HTMLElement>(".tree-canvas");
         if (!canvas) return;
         const controls = [
-          ...canvas.querySelectorAll<HTMLElement>(
-            ".flow-camera-tools, .flow-fullscreen-tools",
-          ),
+          ...canvas.querySelectorAll<HTMLElement>(controlsSelector),
         ].find((item) => item.getBoundingClientRect().width > 0);
         if (observedControls !== controls) {
           if (observedControls) observer.unobserve(observedControls);
@@ -573,24 +593,34 @@ export function ResearchAssistant({
         );
       },
       attach = () => {
+        if (!active) return;
         const canvas = document.querySelector<HTMLElement>(".tree-canvas");
-        if (canvas) {
+        if (canvas && canvas !== observedCanvas) {
+          if (observedCanvas) observer.unobserve(observedCanvas);
+          if (observedControls) observer.unobserve(observedControls);
+          observedControls = null;
+          mutations.disconnect();
+          observedCanvas = canvas;
           observer.observe(canvas);
-          mutations.observe(canvas, { childList: true });
+          mutations.observe(canvas, { childList: true, subtree: true });
         }
-        update();
+        schedule();
       };
     frame = requestAnimationFrame(attach);
     const retry = window.setTimeout(attach, 160);
-    window.addEventListener("resize", update);
+    window.addEventListener("resize", schedule);
+    document.addEventListener("fullscreenchange", schedule);
     return () => {
+      active = false;
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(measurementFrame);
       window.clearTimeout(retry);
-      window.removeEventListener("resize", update);
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("fullscreenchange", schedule);
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [view]);
+  }, [view, enabled]);
 
   useEffect(() => {
     if (open || !nudgeToken || nudgeToken === lastNudge.current) return;

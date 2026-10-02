@@ -29,7 +29,7 @@ export default defineConfig({
   webServer: {
     command: "node --experimental-strip-types tests/e2e-server.ts",
     url: `http://127.0.0.1:${port}/api/health`,
-    timeout: 30_000,
+    timeout: process.env.DREVO_TREE_ACCEPTANCE === "1" ? 180_000 : 30_000,
     reuseExistingServer: false,
   },
 });

@@ -422,6 +422,36 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
             ).__gpuResources,
         ),
       ).toEqual(resourcesBeforeSelection);
+      // Changing the profile route within this archive must retain its GPU
+      // context and glyph atlas, including the inspector width change.
+      await card.locator(".flow-person-content").click();
+      await expect(page).toHaveURL(new RegExp("/people/" + personId + "$"));
+      await expect(page.locator(".inspector-dock")).toBeVisible();
+      await expect(tree).toBeVisible();
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuResources: { programs: number; glyphUploads: number };
+              }
+            ).__gpuResources,
+        ),
+      ).toEqual(resourcesBeforeSelection);
+      await page
+        .getByRole("button", { name: "Закрыть панель", exact: true })
+        .click();
+      await expect(tree).toBeVisible();
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuResources: { programs: number; glyphUploads: number };
+              }
+            ).__gpuResources,
+        ),
+      ).toEqual(resourcesBeforeSelection);
       await verifyContextLoss();
     } catch (error) {
       const diagnostics = await root.evaluate((element) => ({

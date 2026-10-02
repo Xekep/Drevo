@@ -19,6 +19,8 @@ import {
 } from "../../domain/tree-layout-constants";
 export const TreeActions = createContext<{
   gpu?: boolean;
+  /** Initial camera placement and large scene handoff precede portrait loading. */
+  deferPortraits?: boolean;
   choose: (id: string, additive: boolean) => void;
   selectOnly: (id: string) => void;
   collapse: (id: string, occurrenceId?: string) => void;
@@ -67,6 +69,7 @@ export const PersonNode = memo(function PersonNode({
 }: NodeProps<PersonNodeType>) {
   const {
     gpu,
+    deferPortraits,
     choose,
     selectOnly,
     collapse,
@@ -143,6 +146,20 @@ export const PersonNode = memo(function PersonNode({
           ? "compact"
           : "full",
   );
+  // React Flow adopts new node props after the parent commit. A cached scope
+  // change can briefly leave old NodeWrappers mounted; only nearby portraits
+  // may start a request, regardless of that intermediate node list.
+  const portraitVisible = useStore((state) => {
+    const node = state.nodeLookup.get(id);
+    if (!node || !state.width || !state.height) return false;
+    const [tx, ty, zoom] = state.transform;
+    const x = tx + node.internals.positionAbsolute.x * zoom;
+    const y = ty + node.internals.positionAbsolute.y * zoom;
+    const right = x + (node.measured?.width || node.width || width) * zoom;
+    const bottom = y + (node.measured?.height || node.height || height) * zoom;
+    return right >= -128 && bottom >= -128 &&
+      x <= state.width + 128 && y <= state.height + 128;
+  });
   const compact = detail !== "full";
   const overview = detail === "overview" || detail === "distant";
   const relationLabel = useMemo(
@@ -212,7 +229,7 @@ export const PersonNode = memo(function PersonNode({
         aria-label={cardLabel}
         title={cardLabel}
       >
-        {detail === "distant" || gpu ? (
+        {detail === "distant" || gpu || deferPortraits || !portraitVisible ? (
           <span
             className={`person-avatar ${resolvedSex(data.person) === "f" ? "female" : resolvedSex(data.person) === "m" ? "male" : "unknown"}`}
             aria-hidden="true"

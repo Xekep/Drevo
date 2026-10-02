@@ -1,4 +1,4 @@
-import type { Node } from "@xyflow/react";
+import { Position, type Node, type NodeHandle } from "@xyflow/react";
 import {
   matchesPerson,
   TREE_NODE_HEIGHT,
@@ -15,6 +15,17 @@ type TreeHouseholdNode = Node<
   { label?: string; reverse?: boolean },
   "household"
 >;
+
+function personHandles(width: number, height: number): NodeHandle[] {
+  // CSS uses 12px border-box handles centered on the node's four sides.
+  // Public bounds let React Flow cull before mounting/measuring every card.
+  return [
+    { id: "top", position: Position.Top, x: width / 2 - 6, y: -6 },
+    { id: "bottom", position: Position.Bottom, x: width / 2 - 6, y: height - 6 },
+    { id: "left", position: Position.Left, x: -6, y: height / 2 - 6 },
+    { id: "right", position: Position.Right, x: width - 6, y: height / 2 - 6 },
+  ].map((handle) => ({ ...handle, type: "source" as const, width: 12, height: 12 }));
+}
 
 type TreeNodeModelInput = {
   family: Family;
@@ -87,6 +98,7 @@ export function buildTreeNodeModel({
     position: { x: group.x - 8, y: group.y - 8 },
     width: group.width + 16,
     height: group.height + 16,
+    handles: [],
     data: {},
     draggable: false,
     selectable: false,
@@ -119,6 +131,7 @@ export function buildTreeNodeModel({
             position: { x: group.x, y: group.y },
             width: group.width,
             height: group.height,
+            handles: [],
             data: {
               label: `Дети · ${group.members.length}`,
               reverse: geometry.reverse,
@@ -145,6 +158,8 @@ export function buildTreeNodeModel({
       : [];
 
   const peopleMap = new Map(family.people.map((person) => [person.id, person]));
+  const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH;
+  const nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
   const nodes: TreePersonNode[] = occurrences
     .filter(
       (occurrence) =>
@@ -158,8 +173,9 @@ export function buildTreeNodeModel({
         id: occurrence.id,
         type: "person",
         position: positions.get(occurrence.id)!,
-        width: geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
-        height: geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT,
+        width: nodeWidth,
+        height: nodeHeight,
+        handles: personHandles(nodeWidth, nodeHeight),
         selected: selected.includes(person.id),
         className: "tree-grow-node",
         style: treeNodeGrowthStyle(growthDelays.get(person.id) || 0),
