@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import pg from "pg";
 import sharp from "sharp";
+import { completeArchive } from "../../src/data/archive-pages.ts";
 import { openArchive } from "../../src/server/database.ts";
 import { userStore } from "../../src/server/users.ts";
 import { importSqliteSnapshot } from "./import-sqlite.ts";
@@ -81,6 +82,22 @@ try {
   const bases = await Promise.all([launch(), launch()]);
   const initial = await fetch(bases[0] + "/api/family?projection=overview").then(r => r.json());
   assert.equal(initial.totals.people, count);
+  // The browser starts with the overview and then reads details in pages. A
+  // full /api/family response is only its conflict fallback, not its usual
+  // initial path. Measure the actual page sequence before mixed traffic.
+  const hydrateStarted = performance.now();
+  let pageRequests = 0;
+  const hydrated = await completeArchive(initial, (path) => {
+    const base = bases[pageRequests++ % bases.length];
+    return fetch(base + path, { signal: AbortSignal.timeout(15000) });
+  }, () => {});
+  assert.equal(hydrated.partial, false);
+  assert.equal(hydrated.family.people.length, count);
+  assert.equal(hydrated.family.people[count - 1].biography,
+    family.people[count - 1].biography);
+  console.log(JSON.stringify({ operation: "initial_hydration", people: count,
+    pageRequests, durationMs: Math.round((performance.now() - hydrateStarted) * 10) / 10,
+    scope: "overview already received; page details across two local backend processes; no browser rendering or user network" }));
   // A flat-color PNG compresses to almost nothing and understates file traffic.
   const pixels = Buffer.alloc(256 * 256 * 3);
   let seed = 0x13579bdf;
