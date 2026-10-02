@@ -48,6 +48,7 @@ import { downloadVisibleGenealogy } from "./components/tree/visible-genealogy-do
 import { TreeImportDialog } from "./components/tree-import-dialog";
 import { AboutProject } from "./components/about-project";
 import { useDesktopEditing } from "./hooks/useDesktopEditing";
+import { useArchivePublicationOwner } from "./hooks/useArchivePublicationOwner";
 import { ConflictDialog } from "./components/conflict-dialog";
 import { ShareDialog } from "./components/share-dialog";
 import { PublishPersonDialog } from "./components/publish-person-dialog";
@@ -99,6 +100,12 @@ export default function App() {
     } = archive;
   const desktop = useDesktopEditing(),
     canEdit = allowedEdit;
+  const publicationOwnership = useArchivePublicationOwner(
+    user?.role === "admin" ? user.id : null,
+    archiveContextAt(window.location.pathname)?.id || "",
+    archive.local,
+    Boolean(family) && !archive.loadingDetails,
+  );
   const save = useCallback<typeof archive.save>(
     (data) => {
       if (!canEdit)
@@ -766,6 +773,7 @@ export default function App() {
                   family={family}
                   currentUserId={user.id}
                   platformAdmin={user.platformAdmin === true}
+                  publicationOwnership={publicationOwnership}
                   onClose={() => navigate("tree")}
                   onChanged={archive.reload}
                   onSettings={() => setSettings(true)}
@@ -833,7 +841,7 @@ export default function App() {
                           : undefined
                       }
                       onPublishPerson={
-                        user?.role === "admin" && canEdit
+                        user?.role === "admin" && canEdit && publicationOwnership === "owner"
                           ? openPersonPublication
                           : undefined
                       }
