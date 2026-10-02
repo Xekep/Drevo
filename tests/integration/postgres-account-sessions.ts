@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import type { IncomingMessage } from "node:http";
 import type { StoreDatabase } from "../../src/server/store-database.ts";
+import { createAuth } from "../../src/server/auth.ts";
+import { userStore } from "../../src/server/users.ts";
 import {
   newSessionToken,
   sessionTokenHash,
@@ -147,4 +150,141 @@ export async function verifyAccountSessionManagement(
     [false, true],
     "concurrent revocations delete one session only once",
   );
+
+  const delayedToken = newSessionToken();
+  const delayedHash = sessionTokenHash(delayedToken);
+  const survivingToken = newSessionToken();
+  const survivingHash = sessionTokenHash(survivingToken);
+  for (const tokenHash of [delayedHash, survivingHash])
+    await db
+      .prepare(
+        "",
+        "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)",
+      )
+      .run(tokenHash, Date.now() + 60_000);
+  let releaseBulk!: () => void;
+  let bulkReached!: () => void;
+  const heldBulk = new Promise<void>((resolve) => {
+    releaseBulk = resolve;
+  });
+  const reachedBulk = new Promise<void>((resolve) => {
+    bulkReached = resolve;
+  });
+  const delayedDb: StoreDatabase = {
+    ...db,
+    prepare(sqlite, postgres) {
+      const statement = db.prepare(sqlite, postgres);
+      if (!postgres?.includes("WITH current_session AS MATERIALIZED"))
+        return statement;
+      return {
+        ...statement,
+        get: async (...values) => {
+          bulkReached();
+          await heldBulk;
+          return statement.get(...values);
+        },
+      };
+    },
+  };
+  const delayedAuth = await createAuth(
+    await userStore(db),
+    delayedDb,
+    "https://mydrevo.org",
+  );
+  const delayedRequest = {
+    headers: { cookie: `drevo_session=${delayedToken}` },
+  } as IncomingMessage;
+  const lateBulk = delayedAuth.revokeOtherSessions(delayedRequest);
+  let bulkTimeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      reachedBulk,
+      new Promise<never>((_, reject) => {
+        bulkTimeout = setTimeout(
+          () =>
+            reject(new Error("Bulk revoke did not reach its SQL statement")),
+          10_000,
+        );
+      }),
+    ]);
+    await db
+      .prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
+      .run(delayedHash);
+  } finally {
+    if (bulkTimeout) clearTimeout(bulkTimeout);
+    releaseBulk();
+  }
+  assert.equal(
+    await lateBulk,
+    null,
+    "a session revoked after initial lookup cannot bulk-revoke the account",
+  );
+  assert.equal(
+    Number(
+      (
+        await db
+          .prepare(
+            "",
+            "SELECT count(*) AS count FROM account_sessions WHERE token_hash=?",
+          )
+          .get(survivingHash)
+      )?.count,
+    ),
+    1,
+  );
+  await db
+    .prepare("", "DELETE FROM account_sessions WHERE token_hash=?")
+    .run(survivingHash);
+
+  await db
+    .prepare(
+      "",
+      "INSERT INTO accounts(id,name,created_at) VALUES('bulk-revoke-case','Bulk revoke test',?)",
+    )
+    .run(new Date().toISOString());
+  const validToken = newSessionToken();
+  const extraToken = newSessionToken();
+  const validHash = sessionTokenHash(validToken);
+  const extraHash = sessionTokenHash(extraToken);
+  for (const tokenHash of [validHash, extraHash])
+    await db
+      .prepare(
+        "",
+        "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'bulk-revoke-case',?)",
+      )
+      .run(tokenHash, Date.now() + 60_000);
+  try {
+    const normalAuth = await createAuth(
+      await userStore(db),
+      db,
+      "https://mydrevo.org",
+    );
+    assert.equal(
+      await normalAuth.revokeOtherSessions({
+        headers: { cookie: `drevo_session=${validToken}` },
+      } as IncomingMessage),
+      1,
+    );
+    const sessions = await db
+      .prepare(
+        "",
+        "SELECT token_hash FROM account_sessions WHERE user_id='bulk-revoke-case'",
+      )
+      .all();
+    assert.deepEqual(
+      sessions.map((row) => row.token_hash),
+      [validHash],
+    );
+    assert.equal(
+      await normalAuth.revokeOtherSessions({
+        headers: { cookie: `drevo_session=${validToken}` },
+      } as IncomingMessage),
+      0,
+      "zero other sessions differs from a revoked caller",
+    );
+  } finally {
+    await db
+      .prepare("", "DELETE FROM accounts WHERE id='bulk-revoke-case'")
+      .run();
+  }
 }
