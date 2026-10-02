@@ -335,6 +335,19 @@ export function PersonEditor({
       input?.focus();
       return;
     }
+    const unnamedRepository = formRef.current?.querySelector<HTMLInputElement>(
+      '.source-repository-editor input[aria-invalid="true"]',
+    );
+    if (unnamedRepository) {
+      let parent = unnamedRepository.parentElement;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      setError("Укажите название хранилища перед сохранением.");
+      unnamedRepository.focus();
+      return;
+    }
     try {
       if (!draft.name.trim() || !draft.surname.trim())
         throw new Error("Укажите фамилию и имя. Отчество можно пропустить.");

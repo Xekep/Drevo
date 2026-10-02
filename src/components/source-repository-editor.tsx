@@ -49,7 +49,11 @@ export function SourceRepositoryEditor({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>
+      <summary
+        onClick={(event) => {
+          if (!repository.name.trim()) event.preventDefault();
+        }}
+      >
         Хранилище{repository.name ? ` · ${repository.name}` : ""}
       </summary>
       <div className="source-repository-fields">
@@ -57,11 +61,17 @@ export function SourceRepositoryEditor({
           Название хранилища (NAME)
           <input
             required
+            aria-invalid={!repository.name.trim()}
             maxLength={10000}
             value={repository.name}
             onChange={(event) => update("name", event.target.value)}
           />
         </label>
+        {!repository.name.trim() && (
+          <small role="alert">
+            Укажите название хранилища перед сохранением.
+          </small>
+        )}
         <label>
           Шифр хранилища (CALN)
           <input

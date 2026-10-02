@@ -197,3 +197,47 @@ test("inline хранилище сохраняется у союза и этап
     "https://archive.example/22",
   );
 });
+
+test("пустое NAME нельзя спрятать или сохранить незаметно", async ({
+  page,
+}) => {
+  const readFamily = await isolatedFamily(page);
+  await page.goto("/tree");
+  await page
+    .getByTestId("rf__node-e2e-child")
+    .locator(".flow-person-content")
+    .click();
+  await page.locator(".inspector-person-actions .person-edit-button").click();
+  await page
+    .locator(".form-details > summary")
+    .filter({ hasText: /^Источники$/ })
+    .click();
+  await page.getByRole("button", { name: "+ Источник", exact: true }).click();
+  const source = page.locator(".source-editor").last();
+  await source.getByLabel("Название").fill("Неоконченная запись");
+  await source
+    .getByRole("button", { name: "Добавить хранилище источника" })
+    .click();
+  const repository = source.locator(".source-repository-editor");
+  await repository.locator(":scope > summary").click();
+  await expect(repository).toHaveAttribute("open", "");
+  await expect(repository.getByRole("alert")).toHaveText(
+    "Укажите название хранилища перед сохранением.",
+  );
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.locator(".person-editor-form .form-error")).toHaveText(
+    "Укажите название хранилища перед сохранением.",
+  );
+  expect(
+    readFamily().people.find((person) => person.id === "e2e-child")?.sources,
+  ).toEqual([]);
+  await repository.getByLabel("Название хранилища (NAME)").fill("Архив");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        readFamily().people.find((person) => person.id === "e2e-child")
+          ?.sources[0]?.repository?.name,
+    )
+    .toBe("Архив");
+});

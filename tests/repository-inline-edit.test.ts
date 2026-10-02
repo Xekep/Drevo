@@ -45,6 +45,10 @@ test("an edited inline repository survives validation and GEDCOM 5.5.1/7 without
   catalog.people[0].sources[0].catalogId = "catalog-1";
   assert.throws(() => validateFamily(catalog), /источник/i);
 
+  const unnamed = structuredClone(family);
+  unnamed.people[0].sources[0].repository!.name = "";
+  assert.throws(() => validateFamily(unnamed), /источник/i);
+
   const removed = structuredClone(family);
   delete removed.people[0].sources[0].repository;
   assert.doesNotThrow(() => validateFamily(removed));
