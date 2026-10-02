@@ -2554,6 +2554,11 @@ try {
         let releaseCleanup!: () => void;
         const cleanupStarted = new Promise<void>((resolve) => { notifyCleanup = resolve; });
         const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+        let notifyInstall!: () => void;
+        let releaseFileInstall!: () => void;
+        const installStarted = new Promise<void>((resolve) => { notifyInstall = resolve; });
+        const installGate = new Promise<void>((resolve) => { releaseFileInstall = resolve; });
+        let pauseInstall = false;
         const calculationFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-calculation-tier-"));
         let fileTestUsageBefore = 0;
         const adapted = adaptLegacyAiFake(async (url, init) => {
@@ -2614,6 +2619,11 @@ try {
           researchCatalog: researchCatalogStore(app!.archive.db),
           publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
           uploadsDirectory: join(calculationFilesRoot, "uploads"),
+          beforeGeneratedFileInstall: async () => {
+            if (!pauseInstall) return;
+            notifyInstall();
+            await installGate;
+          },
         });
         const server = createServer((req, res) => {
           void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
@@ -2655,8 +2665,29 @@ try {
             ? readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
               .filter((entry) => entry.isFile()).length : 0,
             0, "downgrade during calculation cleanup cannot persist a generated file");
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          pauseInstall = true;
+          const waitingForInstall = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Сохрани CSV расчёта после подготовки файла" }),
+          });
+          await Promise.race([installStarted, waitingForInstall.then(async (early) => {
+            throw new Error(`Calculation stopped before file install: ${early.status} ${await early.clone().text()}`);
+          }), new Promise<never>((_, reject) => setTimeout(() =>
+            reject(new Error("Calculation file did not reach install barrier")), 15_000))]);
+          assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile()).length, 1,
+          "the HTTP calculation file is staged before downgrade");
+          await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+          releaseFileInstall();
+          const deniedInstall = await waitingForInstall;
+          assert.equal(deniedInstall.status, 403, await deniedInstall.clone().text());
+          assert.equal(readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile()).length, 0,
+          "downgrade during generated file staging cannot persist a file");
         } finally {
           releaseCleanup();
+          releaseFileInstall();
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
           const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))

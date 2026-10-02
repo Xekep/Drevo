@@ -60,6 +60,7 @@ export function aiResearchHttp({
   uploadsDirectory,
   beforeChatDelivery,
   beforeAnswerDelivery,
+  beforeGeneratedFileInstall,
   renderPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -75,6 +76,7 @@ export function aiResearchHttp({
   uploadsDirectory?: string;
   beforeChatDelivery?: () => Promise<void>;
   beforeAnswerDelivery?: () => Promise<void>;
+  beforeGeneratedFileInstall?: () => Promise<void>;
   renderPdf?: typeof researchPdf;
 }) {
   const chats = aiChatStore(archive.db);
@@ -163,6 +165,7 @@ export function aiResearchHttp({
     archive.db,
     uploadsDirectory || join(dirname(archive.db.file), "uploads"),
     chats,
+    { beforeInstall: beforeGeneratedFileInstall },
   );
   void generatedFiles.prune().catch(() =>
     console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" })));
