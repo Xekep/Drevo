@@ -1303,6 +1303,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         className={`tree-canvas mode-${mode} ${props.colorScheme === "white" ? "theme-white" : ""} has-portrait-cards ${activeFanAnchor ? "is-fan" : ""} ${fanRevealing ? "is-fan-revealing" : ""} ${growthPreparing ? "is-growth-preparing" : ""} ${growthActive ? "is-growing" : ""} ${layoutSettling ? "is-layout-settling" : ""} ${screen.fullscreen ? "is-fullscreen" : ""}`}
         style={growthCanvasStyle}
         data-renderer={gpuActive ? "webgl2" : "react-flow"}
+        data-gpu-scene-match={gpuReadyScene?.geometry === geometry && gpuReadyScene?.scope === gpuScope ? "true" : "false"}
         data-gpu-fallback={gpuFailedScope === gpuScope ? gpuFallbackReason || undefined : undefined}
         role={gpuActive ? "application" : undefined}
         onPointerMoveCapture={(event) => {
