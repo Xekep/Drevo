@@ -165,7 +165,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     const archiveId = db.archiveId;
     const isOwner = async (userId: string, lock = false) => !!await db.prepare("",
       `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=? ${lock ? "FOR SHARE" : ""}`,
-    ).get(archiveId,userId);
+    ).get(archiveId, userId);
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
     if (user.role !== "admin" || user.approved !== true || !await isOwner(user.id))
@@ -200,18 +200,22 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const approved = await auth.currentUser(req);
       if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
-      if (!ignored) {
-        await db.prepare("", `DELETE FROM discovery_ignored_archives
-          WHERE archive_id=? AND target_archive_id=?`).run(archiveId,targetArchiveId);
-        return json(res, 200, { ignored: false });
-      }
-      const visible = await db.prepare("", `SELECT 1 FROM discovery_people
-        WHERE archive_id=? LIMIT 1`).get(targetArchiveId);
-      if (!visible) return json(res, 409, { error: "В этом дереве больше нет опубликованных карточек" });
-      await db.prepare("", `INSERT INTO discovery_ignored_archives(
-        archive_id,target_archive_id,ignored_by) VALUES(?,?,?) ON CONFLICT DO NOTHING`)
-        .run(archiveId,targetArchiveId,approved.id);
-      return json(res, 200, { ignored: true });
+      const result = await db.transaction(async () => {
+        if (!await isOwner(approved.id, true)) return { code: 403, error: "Доступ владельца отозван" };
+        if (!ignored) {
+          await db.prepare("", `DELETE FROM discovery_ignored_archives
+            WHERE archive_id=? AND target_archive_id=?`).run(archiveId,targetArchiveId);
+          return { code: 200, ignored: false };
+        }
+        const visible = await db.prepare("", `SELECT 1 FROM discovery_people
+          WHERE archive_id=? LIMIT 1`).get(targetArchiveId);
+        if (!visible) return { code: 409, error: "В этом дереве больше нет опубликованных карточек" };
+        await db.prepare("", `INSERT INTO discovery_ignored_archives(
+          archive_id,target_archive_id,ignored_by) VALUES(?,?,?) ON CONFLICT DO NOTHING`)
+          .run(archiveId,targetArchiveId,approved.id);
+        return { code: 200, ignored: true };
+      });
+      return json(res, result.code, "error" in result ? { error: result.error } : { ignored: result.ignored });
     }
 
     if (ignoredCandidates) {
@@ -231,13 +235,14 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       const approved = await auth.currentUser(req);
       if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
-      if (!ignored) {
-        await db.prepare("", `DELETE FROM discovery_ignored_candidates WHERE archive_id=?
-          AND source_person_id=? AND target_archive_id=? AND target_person_id=?`)
-          .run(archiveId,sourceId,targetArchiveId,targetId);
-        return json(res, 200, { ignored: false });
-      }
       const result = await db.transaction(async () => {
+        if (!await isOwner(approved.id, true)) return undefined;
+        if (!ignored) {
+          await db.prepare("", `DELETE FROM discovery_ignored_candidates WHERE archive_id=?
+            AND source_person_id=? AND target_archive_id=? AND target_person_id=?`)
+            .run(archiveId,sourceId,targetArchiveId,targetId);
+          return true;
+        }
         const visible = await db.prepare("", `SELECT archive_id,person_id FROM discovery_people
           WHERE (archive_id=? AND person_id=?) OR (archive_id=? AND person_id=?)
           ORDER BY archive_id COLLATE "C",person_id COLLATE "C" FOR SHARE`)
@@ -249,7 +254,9 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           .run(archiveId,sourceId,targetArchiveId,targetId,approved.id);
         return true;
       });
-      return result ? json(res, 200, { ignored: true })
+      return result === undefined
+        ? json(res, 403, { error: "Доступ владельца отозван" })
+        : result ? json(res, 200, { ignored })
         : json(res, 409, { error: "Одна из карточек больше не опубликована" });
     }
 

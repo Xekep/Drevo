@@ -4564,6 +4564,17 @@ try {
     method: "PATCH", headers: archiveAdminHeaders,
     body: JSON.stringify({ decision: "revoke" }),
   })).status, 403, "an invited archive admin cannot revoke the owner's link");
+  for (const ignored of [true, false]) {
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "other-archive",
+        targetPersonId: "person-a", ignored }),
+    })).status, 403, "an invited archive admin cannot alter the owner's candidate filters");
+    assert.equal((await fetch(securedBase + "/api/discovery/matches/ignored-archives", {
+      method: "POST", headers: archiveAdminHeaders,
+      body: JSON.stringify({ targetArchiveId: "other-archive", ignored }),
+    })).status, 403, "an invited archive admin cannot alter the owner's archive filters");
+  }
   assert.equal((await fetch(securedBase + branchPath, { headers: archiveAdminHeaders })).status,
     403, "an invited admin cannot grant or inspect the owner's branch");
   assert.equal((await fetch(securedBase + branchPath, {
