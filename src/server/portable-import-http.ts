@@ -194,8 +194,8 @@ export function portableImportHttp(
     }
     const inserted = await db
       .prepare(
-        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2",
-        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2",
+        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2 ON CONFLICT(kind,actor_id) DO NOTHING",
+        "INSERT INTO workflow_stages(token,kind,actor_id,revision,expires_at,data) SELECT ?,'drevo',?,?,?,? WHERE (SELECT count(*) FROM workflow_stages WHERE kind='drevo')<2 ON CONFLICT(kind,actor_id) DO NOTHING",
       )
       .run(
         token,
@@ -204,8 +204,19 @@ export function portableImportHttp(
         Date.now() + STAGE_LIFETIME,
         JSON.stringify({ status: "pending" }),
       );
-    if (!inserted.changes)
-      throw new ConflictError("Уже проверяются другие архивы. Повторите позже");
+    if (!inserted.changes) {
+      const competing = await db
+        .prepare(
+          "SELECT token FROM workflow_stages WHERE kind='drevo' AND actor_id=?",
+          "SELECT token FROM workflow_stages WHERE kind='drevo' AND actor_id=?",
+        )
+        .get(actorId);
+      throw new ConflictError(
+        competing
+          ? "Импорт уже выполняется"
+          : "Уже проверяются другие архивы. Повторите позже",
+      );
+    }
     mkdirSync(directory, { recursive: true });
     const heartbeat = setInterval(() => {
       void db
