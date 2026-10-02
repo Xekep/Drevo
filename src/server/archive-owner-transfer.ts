@@ -1,5 +1,6 @@
 import type { ArchiveUser } from "../domain/access.ts";
 import { accountCapacity } from "./account-capacity.ts";
+import { assertActiveAccountSession } from "./account-session-guard.ts";
 import { auditStore } from "./audit.ts";
 import { ConflictError } from "./database.ts";
 import type { StoreDatabase } from "./store-database.ts";
@@ -173,10 +174,11 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
       }, true);
     },
 
-    async propose(actor: ArchiveUser, targetId: string) {
+    async propose(actor: ArchiveUser, targetId: string, sessionTokenHash: string) {
       await requirePostgres();
       return await db.transaction(async () => {
         const transaction = db;
+        await assertActiveAccountSession(transaction, actor.id, sessionTokenHash);
         await assertCurrentArchiveActor(transaction, actor);
         if ((await ownerId(transaction, true)) !== actor.id)
           throw new ForbiddenError(
@@ -216,10 +218,11 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
       });
     },
 
-    async accept(actor: ArchiveUser) {
+    async accept(actor: ArchiveUser, sessionTokenHash: string) {
       await requirePostgres();
       return await db.transaction(async () => {
         const transaction = db;
+        await assertActiveAccountSession(transaction, actor.id, sessionTokenHash);
         await assertCurrentArchiveActor(transaction, actor);
         const currentOwner = await ownerId(transaction, true);
         const transfer = await pending(transaction, true);
@@ -283,10 +286,11 @@ export function archiveOwnerTransfer(db: StoreDatabase) {
       });
     },
 
-    async cancel(actor: ArchiveUser) {
+    async cancel(actor: ArchiveUser, sessionTokenHash: string) {
       await requirePostgres();
       return await db.transaction(async () => {
         const transaction = db;
+        await assertActiveAccountSession(transaction, actor.id, sessionTokenHash);
         await assertCurrentArchiveActor(transaction, actor);
         const currentOwner = await ownerId(transaction, true);
         const transfer = await pending(transaction, true);

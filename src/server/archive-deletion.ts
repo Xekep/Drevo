@@ -1,6 +1,7 @@
 import type { ArchiveUser } from "../domain/access.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { ConflictError } from "./database.ts";
+import { assertActiveAccountSession } from "./account-session-guard.ts";
 import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
 import {
   archiveDeletionDirectory,
@@ -60,10 +61,12 @@ export function archiveDeletion(
     async remove(
       actor: ArchiveUser,
       confirmation: { title: string; removeCollaborators: boolean },
+      sessionTokenHash: string,
     ) {
       if (!available || !archiveId || !directory)
         throw new ForbiddenError("Удаление здесь недоступно");
       const summary = await db.transaction(async () => {
+        await assertActiveAccountSession(db, actor.id, sessionTokenHash);
         const current = await plan(actor, true);
         if (confirmation.title !== current.title)
           throw new ConflictError(

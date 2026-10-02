@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { archiveDeletion } from "./archive-deletion.ts";
+import { AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
@@ -58,6 +59,9 @@ export function archiveDeletionHttp(
       return respond(404, { error: "Удаление здесь недоступно" });
     const actor = await auth.currentUser(req);
     if (!actor) return respond(401, { error: "Требуется вход в дерево" });
+    const session = await auth.accountSession(req);
+    if (!session || session.accountId !== actor.id)
+      return respond(401, { error: "Сессия завершена. Войдите снова" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return respond(403, { error: "Недопустимый источник запроса" });
     if (
@@ -70,13 +74,15 @@ export function archiveDeletionHttp(
       if (req.method === "DELETE")
         return respond(
           200,
-          await deletion.remove(actor, await confirmation(req)),
+          await deletion.remove(actor, await confirmation(req), session.tokenHash),
         );
       return respond(405, { error: "Неподдерживаемый метод" });
     } catch (error) {
       const status =
         error instanceof SyntaxError
           ? 400
+          : error instanceof AccountSessionExpired
+            ? 401
           : error instanceof ForbiddenError
             ? 403
             : error instanceof ConflictError
