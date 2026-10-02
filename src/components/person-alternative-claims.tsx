@@ -9,11 +9,12 @@ const fieldName: Record<Fact, string> = {
   death: "дата смерти",
   birthPlace: "место рождения",
   deathPlace: "место смерти",
+  maidenName: "фамилия при рождении",
 };
 
 export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange,
   isAdmin, canAssess }: {
-  kind: "birth" | "death";
+  kind: "birth" | "death" | "maidenName";
   alternatives: PersonFactAlternative[];
   savedIds: ReadonlySet<string>;
   onChange: (alternatives: PersonFactAlternative[]) => void;
@@ -21,7 +22,7 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
   canAssess: boolean;
 }) {
   const visible = alternatives.filter((alternative) =>
-    alternative.field === kind || alternative.field === `${kind}Place`);
+    alternative.field === kind || (kind !== "maidenName" && alternative.field === `${kind}Place`));
   const update = (id: string, changes: Partial<PersonFactAlternative>) =>
     onChange(alternatives.map((alternative) => alternative.id === id
       ? { ...alternative, ...changes } : alternative));
@@ -29,10 +30,12 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
     id: crypto.randomUUID(), field, value: "", sources: [],
   }]);
   return <details className="form-details fact-alternatives">
-    <summary>Другие записи о {kind === "birth" ? "рождении" : "смерти"}
+    <summary>{kind === "maidenName" ? "Другие фамилии при рождении" :
+      `Другие записи о ${kind === "birth" ? "рождении" : "смерти"}`}
       {visible.length ? ` · ${visible.length}` : ""}</summary>
-    <p>Если документы называют другую дату или место, сохраните каждый вариант с его источником.
-      Основная дата и место останутся без изменений.</p>
+    <p>{kind === "maidenName"
+      ? "Если документы называют другую фамилию при рождении, сохраните каждый вариант с его источником. Текущая фамилия останется без изменений."
+      : "Если документы называют другую дату или место, сохраните каждый вариант с его источником. Основная дата и место останутся без изменений."}</p>
     {visible.map((alternative) => {
       const isDate = alternative.field === "birth" || alternative.field === "death";
       const locked = savedIds.has(alternative.id);
@@ -77,8 +80,10 @@ export function PersonAlternativeClaims({ kind, alternatives, savedIds, onChange
       </section>;
     })}
     <div className="fact-alternative-actions">
-      <button type="button" onClick={() => add(kind)}>Добавить другую дату</button>
-      <button type="button" onClick={() => add(`${kind}Place`)}>Добавить другое место</button>
+      <button type="button" onClick={() => add(kind)}>{kind === "maidenName"
+        ? "Добавить другую фамилию" : "Добавить другую дату"}</button>
+      {kind !== "maidenName" && <button type="button" onClick={() => add(`${kind}Place`)}>
+        Добавить другое место</button>}
     </div>
   </details>;
 }

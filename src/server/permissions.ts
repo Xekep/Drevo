@@ -273,8 +273,21 @@ export function authorizeArchive(
     const previousSources = previousSlots.get(path) || [];
     for (const source of nextSources) {
       const oldIndex = previousSources.findIndex((old) => old.catalogId === source.catalogId);
-      if (oldIndex < 0)
+      if (oldIndex < 0) {
+        const [kind, personId, slot, alternativeId] = JSON.parse(path) as string[];
+        const oldPerson = current.people.find((person) => person.id === personId);
+        const newPerson = next.people.find((person) => person.id === personId);
+        const alternative = newPerson?.factAlternatives?.find((item) =>
+          item.id === alternativeId && item.field === "maidenName");
+        const preservedBirthSurname = kind === "person" && slot === "factAlternative" &&
+          alternative && oldPerson?.maidenNameClaim?.value === alternative.value &&
+          newPerson?.maidenName !== alternative.value &&
+          !newPerson?.maidenNameClaim?.sources.some((item) => item.catalogId === source.catalogId) &&
+          !oldPerson.factAlternatives?.some((item) => item.id === alternativeId) &&
+          oldPerson.maidenNameClaim.sources.some((old) => isDeepStrictEqual(old, source));
+        if (preservedBirthSurname) continue;
         throw new ForbiddenError("Привязать каталожный источник может только администратор");
+      }
       const [old] = previousSources.splice(oldIndex, 1);
       if (!isDeepStrictEqual(source, old))
         throw new ForbiddenError("Изменить каталожную цитату может только администратор");
