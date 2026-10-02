@@ -25,6 +25,7 @@ import "../styles/account.css";
 import { LoginButtons } from "./login-buttons";
 import { AccountAiHistory } from "./account-ai-history";
 import { AccountEmailLink } from "./account-email-link";
+import { AccountPasswordChange } from "./account-password-change";
 import { PortableImport } from "./portable-import";
 import { AccountOwnerTransfer } from "./account-owner-transfer";
 import { AccountArchiveDeletion } from "./account-archive-deletion";
@@ -44,6 +45,7 @@ export type AccountSession = {
   local: boolean;
   yandex: boolean;
   vk?: boolean;
+  email?: boolean;
 };
 type SessionSummary = {
   currentExpiresAt: string | null;
@@ -605,6 +607,25 @@ export function AccountPage({
                         {sessionError}
                       </p>
                     )}
+                    {session?.email === true &&
+                      (session.account?.providers?.includes("email") === true ||
+                        session.account?.provider === "email") && (
+                        <AccountPasswordChange
+                          onChanged={() =>
+                            setSessions((previous) =>
+                              previous
+                                ? {
+                                    ...previous,
+                                    otherCount: 0,
+                                    items: previous.items?.filter(
+                                      (item) => item.isCurrent,
+                                    ),
+                                  }
+                                : previous,
+                            )
+                          }
+                        />
+                      )}
                     <AccountEmailLink
                       linked={
                         session?.account?.providers?.includes("email") ===
@@ -614,7 +635,10 @@ export function AccountPage({
                     {session?.account && (
                       <div className="account-export-actions">
                         <p className="account-card-copy">
-                          Скачайте сведения об аккаунте, способах входа, доступе к архивам, настройках и свои текущие комментарии в доступных частях деревьев. Тексты из закрытых ветвей и архивов без действующего доступа в файл не входят.
+                          Скачайте сведения об аккаунте, способах входа, доступе
+                          к архивам, настройках и свои текущие комментарии в
+                          доступных частях деревьев. Тексты из закрытых ветвей и
+                          архивов без действующего доступа в файл не входят.
                         </p>
                         <a
                           className="account-row-action"

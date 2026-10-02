@@ -345,6 +345,11 @@
 .account-email-link form p[role="alert"] {
   color: #a83838;
 }
+.account-password-change > p[role="status"] {
+  margin: 10px 0 0;
+  color: #315e41;
+  font-size: 13px;
+}
 .account-email-link label {
   display: grid;
   gap: 5px;

@@ -25,6 +25,7 @@ const DUMMY_HASH =
 
 export class InvalidEmailCredential extends Error {}
 export class StaleOAuthSession extends Error {}
+export class StaleEmailSession extends Error {}
 
 export function normalizeAccountEmail(value: unknown) {
   if (typeof value !== "string")
@@ -525,6 +526,77 @@ export function emailCredentials(
           "DELETE FROM pending_email_links WHERE account_id=$1",
           [accountId],
         );
+      });
+    },
+
+    async changePassword(
+      accountId: string,
+      sessionTokenHash: string,
+      currentValue: unknown,
+      nextValue: unknown,
+    ) {
+      const currentPassword =
+        typeof currentValue === "string" ? currentValue : "";
+      if (!currentPassword || Buffer.byteLength(currentPassword, "utf8") > 1024)
+        throw new InvalidEmailCredential("Неверный текущий пароль.");
+      const nextPassword = validateAccountPassword(nextValue);
+      if (nextPassword === currentPassword)
+        throw new InvalidEmailCredential("Укажите другой новый пароль.");
+
+      // Scrypt runs outside the transaction. The credential hash is checked
+      // again under a row lock, so reset/change cannot race this verification.
+      const credential = await transact(
+        async (client) =>
+          (
+            await client.query<{ email: string; password_hash: string }>(
+              "SELECT email,password_hash FROM account_email_credentials WHERE account_id=$1",
+              [accountId],
+            )
+          ).rows[0],
+      );
+      if (
+        !credential ||
+        !(await verifyAccountPassword(
+          currentPassword,
+          credential.password_hash,
+        ))
+      )
+        throw new InvalidEmailCredential("Неверный текущий пароль.");
+      const nextHash = await hashAccountPassword(nextPassword);
+      return transact(async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
+          credential.email,
+        ]);
+        // resetPassword locks a pending reset before updating the credential.
+        await client.query(
+          "SELECT 1 FROM email_password_resets WHERE email=$1 FOR UPDATE",
+          [credential.email],
+        );
+        const locked = await client.query<{ password_hash: string }>(
+          "SELECT password_hash FROM account_email_credentials WHERE account_id=$1 FOR UPDATE",
+          [accountId],
+        );
+        if (locked.rows[0]?.password_hash !== credential.password_hash)
+          throw new InvalidEmailCredential("Неверный текущий пароль.");
+        const session = await client.query<{ expires_at: string }>(
+          `SELECT expires_at FROM account_sessions
+            WHERE token_hash=$1 AND user_id=$2 FOR SHARE`,
+          [sessionTokenHash, accountId],
+        );
+        if (!session.rows[0] || Number(session.rows[0].expires_at) <= now())
+          throw new StaleEmailSession("Сеанс завершён. Войдите снова.");
+        await client.query(
+          "UPDATE account_email_credentials SET password_hash=$2 WHERE account_id=$1",
+          [accountId, nextHash],
+        );
+        await client.query("DELETE FROM email_password_resets WHERE email=$1", [
+          credential.email,
+        ]);
+        const revoked = await client.query(
+          "DELETE FROM account_sessions WHERE user_id=$1 AND token_hash<>$2",
+          [accountId, sessionTokenHash],
+        );
+        return revoked.rowCount || 0;
       });
     },
 
