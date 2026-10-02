@@ -6525,8 +6525,10 @@ try {
   assert.equal((await app.archive.read()).family.people[0].maidenName, "Иванова");
   const unionBefore = await app.archive.read();
   const unionWithEvidence = structuredClone(unionBefore.family);
+  const unionPeople = unionBefore.family.people.slice(0, 3).map((person) => person.id);
+  assert.equal(unionPeople.length, 3, "the PG fixture has three current participants");
   unionWithEvidence.unions = [...(unionWithEvidence.unions || []), {
-    id: "pg-union-source-identity", participants: ["person-a", "former-union-peer"],
+    id: "pg-union-source-identity", participants: [unionPeople[0], unionPeople[1]],
     type: "marriage" as const, createdBy: "owner", note: "Keep this note",
     sources: [{ title: "Семейная запись", type: "архив", reference: "л. 2" }],
     formation: { date: "1900", sources: [sourceCitation(placeSource)] },
@@ -6540,7 +6542,7 @@ try {
   shiftedUnionType.unions![unionIndex].type = "partnership";
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedUnionType, unionSaved.revision)).status, 403);
   const shiftedParticipants = structuredClone(unionSaved.family);
-  shiftedParticipants.unions![unionIndex].participants = ["person-a", "own"];
+  shiftedParticipants.unions![unionIndex].participants = [unionPeople[0], unionPeople[2]];
   assert.equal((await postPlaceChanges(unionSaved.family, shiftedParticipants, unionSaved.revision)).status, 403);
   assert.equal((await app.archive.read()).revision, unionSaved.revision);
   const unlinkedUnion = structuredClone(shiftedUnionType);
