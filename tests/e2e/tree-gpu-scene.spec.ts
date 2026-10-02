@@ -11,7 +11,9 @@ test.use({
       "--enable-unsafe-swiftshader",
       ...(process.env.DREVO_GPU_SOFTWARE === "1"
         ? ["--use-angle=swiftshader"]
-        : []),
+        : ["gl", "d3d11", "vulkan"].includes(process.env.DREVO_E2E_ANGLE || "")
+          ? [`--use-angle=${process.env.DREVO_E2E_ANGLE}`]
+          : []),
     ],
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
       ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
@@ -228,7 +230,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     expect(await page.locator(".react-flow__edge").count()).toBe(0);
   }
   if (testInfo.project.name === "mobile") {
-    const point = await page.evaluate(() => {
+    const target = await page.evaluate(() => {
       const state = (
         window as typeof window & {
           __gpuLayout: {
@@ -242,43 +244,106 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
         getComputedStyle(document.querySelector(".react-flow__viewport")!)
           .transform,
       );
+      const root = document
+        .querySelector(".tree-canvas")!
+        .getBoundingClientRect();
       const box = document
         .querySelector(".react-flow")!
         .getBoundingClientRect();
-      return state.positions
-        .map(([id, position]) => ({
-          id: state.occurrences.find((occurrence) => occurrence.id === id)!
-            .personId,
-          x: box.x + matrix.e + (position.x + state.width / 2) * matrix.a,
-          y: box.y + matrix.f + (position.y + 70) * matrix.a,
-        }))
-        .find(
-          (point) =>
-            point.x > 60 &&
-            point.x < innerWidth - 60 &&
-            point.y > 160 &&
-            point.y < innerHeight - 140,
-        );
+      const clip = {
+        left: Math.max(0, root.left, box.left),
+        right: Math.min(innerWidth, root.right, box.right),
+        top: Math.max(0, root.top, box.top),
+        bottom: Math.min(innerHeight, root.bottom, box.bottom),
+      };
+      const people = new Map(
+        state.occurrences.map((occurrence) => [
+          occurrence.id,
+          occurrence.personId,
+        ]),
+      );
+      const centers = state.positions.map(([id, position]) => ({
+        id: people.get(id),
+        x: box.x + matrix.e + (position.x + state.width / 2) * matrix.a,
+        y: box.y + matrix.f + (position.y + 70) * matrix.a,
+      }));
+      // Toolbar and camera controls occupy different areas on each screen.
+      // Require an actual uncovered portrait rather than fixed page margins.
+      const candidates = centers.filter(
+        (point) =>
+          point.id &&
+          point.x > clip.left + 8 &&
+          point.x < clip.right - 8 &&
+          point.y > clip.top + 8 &&
+          point.y < clip.bottom - 8 &&
+          document
+            .elementFromPoint(point.x, point.y)
+            ?.closest(".react-flow__pane") &&
+          !document
+            .elementFromPoint(point.x, point.y)
+            ?.closest("button, a, input, select, textarea"),
+      );
+      const cx = (clip.left + clip.right) / 2,
+        cy = (clip.top + clip.bottom) / 2;
+      candidates.sort(
+        (a, b) =>
+          Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy),
+      );
+      return {
+        point: candidates[0] || null,
+        diagnostics: {
+          positions: state.positions.length,
+          occurrences: state.occurrences.length,
+          width: state.width,
+          viewport: { x: matrix.e, y: matrix.f, zoom: matrix.a },
+          root: root.toJSON(),
+          flow: box.toJSON(),
+          clip,
+          inside: centers.filter(
+            (point) =>
+              point.x > clip.left &&
+              point.x < clip.right &&
+              point.y > clip.top &&
+              point.y < clip.bottom,
+          ).length,
+          uncovered: candidates.length,
+          centerBounds: centers.length
+            ? {
+                left: Math.min(...centers.map((point) => point.x)),
+                right: Math.max(...centers.map((point) => point.x)),
+                top: Math.min(...centers.map((point) => point.y)),
+                bottom: Math.max(...centers.map((point) => point.y)),
+              }
+            : null,
+          centers: centers.slice(0, 8),
+        },
+      };
     });
-    expect(point).toBeTruthy();
+    if (!target.point)
+      await testInfo.attach("gpu-mobile-target", {
+        body: JSON.stringify(target.diagnostics, null, 2),
+        contentType: "application/json",
+      });
+    expect(target.point, JSON.stringify(target.diagnostics)).toBeTruthy();
+    const point = target.point!;
     const pane = page.locator(".react-flow__pane");
     const pointer = {
       pointerId: 99,
       pointerType: "touch",
       isPrimary: true,
       button: 0,
-      clientX: point!.x,
-      clientY: point!.y,
+      clientX: point.x,
+      clientY: point.y,
       bubbles: true,
     };
     await pane.dispatchEvent("pointerdown", pointer);
     await expect(
-      page.locator(`.flow-person[data-person-id="${point!.id}"].is-selected`),
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
     ).toBeVisible();
     await pane.dispatchEvent("pointerup", pointer);
-    await pane.dispatchEvent("click", { clientX: point!.x, clientY: point!.y });
+    await pane.dispatchEvent("click", { clientX: point.x, clientY: point.y });
     await expect(
-      page.locator(`.flow-person[data-person-id="${point!.id}"].is-selected`),
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
     ).toBeVisible();
   }
   await tree.focus();
@@ -449,6 +514,13 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
             ).__gpuResources,
         ),
       ).toEqual(resourcesBeforeSelection);
+      // Additive selection keeps comparison mode active even after its last
+      // person is removed. Exit through the UI before testing an ordinary click.
+      await page
+        .getByRole("button", { name: "Закрыть панель", exact: true })
+        .click();
+      await expect(page.locator(".inspector-dock")).toHaveCount(0);
+      await expect(tree).toBeVisible();
       // Changing the profile route within this archive must retain its GPU
       // context and glyph atlas, including the inspector width change.
       await card.locator(".flow-person-content").click();

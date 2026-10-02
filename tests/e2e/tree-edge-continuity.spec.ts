@@ -62,9 +62,15 @@ test("new relative asks for an explicit twin type", async ({
   await page.getByRole("button", { name: "Новый человек" }).click();
   await expect(page.getByLabel("Тип близнецов")).toHaveCount(0);
   const relation = page.getByLabel(/Кем новый человек приходится/);
-  await expect(relation.locator('option[value="adoptive_parent"]')).toHaveText("Усыновитель");
-  await expect(relation.locator('option[value="foster_parent"]')).toHaveText("Приёмный родитель");
-  await expect(relation.locator('option[value="presumed_parent"]')).toHaveText("Предполагаемый родитель");
+  await expect(relation.locator('option[value="adoptive_parent"]')).toHaveText(
+    "Усыновитель",
+  );
+  await expect(relation.locator('option[value="foster_parent"]')).toHaveText(
+    "Приёмный родитель",
+  );
+  await expect(relation.locator('option[value="presumed_parent"]')).toHaveText(
+    "Предполагаемый родитель",
+  );
   await page.getByLabel(/Кем новый человек приходится/).selectOption("twin");
   await page.getByLabel("Тип близнецов").selectOption("fraternal");
   await expect(page.getByLabel("Тип близнецов")).toHaveValue("fraternal");
@@ -127,6 +133,12 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         blocked: 0,
         unblocked: 0,
         details: [] as unknown[],
+        canvasSamples: [] as {
+          visible: boolean;
+          edges: number;
+          partial: number;
+          sceneEdges: number;
+        }[],
       };
       Object.assign(window, { __edgeContinuity: state });
       let started = false;
@@ -138,6 +150,26 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         ) {
           started = true;
           state.frames++;
+          const distant = canvas.querySelector<HTMLCanvasElement>(
+            ".tree-distant-portraits",
+          );
+          if (distant?.dataset.introVisibleEdges !== undefined)
+            state.canvasSamples.push({
+              visible:
+                getComputedStyle(distant).visibility === "visible" &&
+                getComputedStyle(distant.parentElement!).visibility ===
+                  "visible",
+              edges: Number(distant.dataset.introVisibleEdges),
+              partial: Number(distant.dataset.introPartialEdges || 0),
+              sceneEdges: Number(distant.dataset.sceneEdges || 0),
+            });
+          else if (state.canvasSamples.length)
+            state.canvasSamples.push({
+              visible: false,
+              edges: 0,
+              partial: 0,
+              sceneEdges: 0,
+            });
           // Keep probes inside the animation frame: a slow CI runner can
           // finish the intro between separate Playwright mouse commands.
           // Large archives now have a shorter intro; probe its first frame
@@ -246,6 +278,12 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
             blocked: number;
             unblocked: number;
             details: unknown[];
+            canvasSamples: {
+              visible: boolean;
+              edges: number;
+              partial: number;
+              sceneEdges: number;
+            }[];
           };
         }
       ).__edgeContinuity;
@@ -257,32 +295,89 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         blocked: state.blocked,
         unblocked: state.unblocked,
         details: state.details,
+        canvasSamples: state.canvasSamples,
       };
     });
-    // The SVG intro and GPU handoff are two renderers. A busy browser may
-    // show many SVG arrows in one sampled frame, then hand them to GPU before
-    // a second frame. Verify that handoff instead of treating it as a loss.
-    if (scenario === "large") {
-      await expect.poll(async () => {
-        const renderer = await canvas.getAttribute("data-renderer");
-        const fallback = await canvas.getAttribute("data-gpu-fallback");
-        return renderer === "webgl2" ? "webgl2" : fallback ? "fallback" : "pending";
-      }, { timeout: 5000 }).not.toBe("pending");
+    // Large introductions use Canvas; small ones retain the SVG observations.
+    // Check actual drawing progress before checking the renderer after handoff.
+    const canvasIntro =
+      scenario === "large" &&
+      result.canvasSamples.some((sample) => sample.visible);
+    if (canvasIntro) {
+      const firstDrawn = result.canvasSamples.findIndex(
+        (sample) => sample.visible && sample.edges > 0,
+      );
+      expect(
+        firstDrawn,
+        JSON.stringify(result.canvasSamples),
+      ).toBeGreaterThanOrEqual(0);
+      const samples = result.canvasSamples.slice(firstDrawn);
+      expect(
+        samples.length,
+        JSON.stringify(result.canvasSamples),
+      ).toBeGreaterThan(1);
+      expect(samples.every((sample) => sample.visible)).toBe(true);
+      expect(
+        Math.max(...samples.map((sample) => sample.edges)),
+      ).toBeGreaterThanOrEqual(10);
+      expect(
+        Math.max(...samples.map((sample) => sample.sceneEdges)),
+      ).toBeGreaterThanOrEqual(550);
+      expect(samples.some((sample) => sample.partial > 0)).toBe(true);
+      expect(
+        new Set(samples.map((sample) => sample.edges)).size,
+      ).toBeGreaterThan(1);
+      // The input lock holds the viewport steady, so already drawn lines must
+      // not disappear while subsequent generations start drawing.
+      for (let i = 1; i < samples.length; i++)
+        expect(samples[i].edges).toBeGreaterThanOrEqual(samples[i - 1].edges);
     }
-    if (scenario === "large" && await canvas.getAttribute("data-renderer") === "webgl2") {
+    if (scenario === "large") {
+      await expect
+        .poll(
+          async () => {
+            const renderer = await canvas.getAttribute("data-renderer");
+            const fallback = await canvas.getAttribute("data-gpu-fallback");
+            return renderer === "webgl2"
+              ? "webgl2"
+              : fallback
+                ? "fallback"
+                : "pending";
+          },
+          { timeout: 5000 },
+        )
+        .not.toBe("pending");
+    }
+    const gpuHandoff =
+      scenario === "large" &&
+      (await canvas.getAttribute("data-renderer")) === "webgl2";
+    if (gpuHandoff) {
       const gpu = page.locator(".tree-gpu-scene");
       await expect(gpu).toBeVisible();
       await expect(gpu).toHaveAttribute("data-gpu-draws", /[1-9][0-9]*/);
       const sceneEdges = Number(await gpu.getAttribute("data-scene-edges"));
       expect(sceneEdges).toBeGreaterThanOrEqual(result.seen);
-      expect(sceneEdges).toBeGreaterThanOrEqual(10);
-    } else {
-      // React Flow still renders the arrows: retain repeated SVG observations.
-      expect(result.frames).toBeGreaterThan(1);
-      expect(result.rechecked).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
+      expect(sceneEdges).toBeGreaterThanOrEqual(canvasIntro ? 550 : 10);
+    } else if (canvasIntro) {
+      const distant = page.locator(".tree-distant-portraits");
+      await expect(distant).toBeVisible();
+      await expect
+        .poll(async () =>
+          Number(await distant.getAttribute("data-scene-edges")),
+        )
+        .toBeGreaterThanOrEqual(550);
     }
-    // The sixth small-fixture edge is an additional relation, hidden by default.
-    expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
+    if (!canvasIntro) {
+      // React Flow still renders the arrows: retain repeated SVG observations.
+      if (!gpuHandoff) {
+        expect(result.frames).toBeGreaterThan(1);
+        expect(result.rechecked).toBeGreaterThanOrEqual(
+          scenario === "large" ? 10 : 5,
+        );
+      }
+      // The sixth small-fixture edge is an additional relation, hidden by default.
+      expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
+    }
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
     if (scenario !== "idle") {
       expect(result.blocked).toBeGreaterThan(0);

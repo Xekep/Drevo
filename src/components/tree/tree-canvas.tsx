@@ -79,6 +79,7 @@ import { relativeAtHandle } from "../../domain/tree-interactions";
 import { buildTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
 import { TreeCameraTools } from "./tree-camera-tools";
+import { fitTreeNodes, type TreeFitOptions } from "./tree-camera-fit";
 import { TreeEdgeChoices } from "./tree-edge-choices";
 import {
   TREE_LAYOUT_TRANSITION_MS,
@@ -592,6 +593,14 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     displayNodes,
     maxGrowthDelay,
   } = nodeModel;
+  const cameraModel = useRef({ nodes: displayNodes, personOccurrences });
+  useLayoutEffect(() => {
+    cameraModel.current = { nodes: displayNodes, personOccurrences };
+  }, [displayNodes, personOccurrences]);
+  const fitTree = useCallback((options?: TreeFitOptions) => fitTreeNodes(
+    flow, cameraModel.current.nodes, { width: canvasWidth, height: canvasHeight },
+    options, cameraModel.current.personOccurrences,
+  ), [flow, canvasWidth, canvasHeight]);
   useEffect(() => {
     const previous = previousGenerationLimits.current;
     if (previous.key === generationLimitsKey) return;
@@ -788,6 +797,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const { rememberContext, resetContext, rememberViewport } =
     useTreeCameraState({
       flow,
+      fitTree,
       geometry,
       nodeCount: nodes.length,
       mode: layoutMode,
@@ -886,9 +896,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         const ids = personOccurrences.get(personId) || [];
         const next = ids[(ids.indexOf(occurrenceId) + 1) % ids.length];
         if (next)
-          void flow.fitView({
-            nodes: [{ id: next }],
-            includeHiddenNodes: true,
+          void fitTree({
+            ids: [next],
             maxZoom: 1,
             padding: 0.6,
           });
@@ -900,6 +909,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       toggleBranch,
       personOccurrences,
       flow,
+      fitTree,
       introCameraFinished,
       relationLabel,
       props.onPublishPerson,
@@ -1817,7 +1827,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
               </button>
             </Panel>
           ) : (
-            <TreeCameraTools selected={selected} disabled={cameraLocked} />
+            <TreeCameraTools selected={selected} disabled={cameraLocked} fitTree={fitTree} />
           )}
         </ReactFlow>
         )}

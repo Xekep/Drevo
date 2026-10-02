@@ -150,7 +150,7 @@ for (const mode of ["shared", "public"] as const) {
   });
 }
 
-test("middle click hits a person in the Canvas overview of a 600-person tree", async ({
+test("middle click hits a person in the Canvas fallback overview of a 600-person tree", async ({
   page,
   isMobile,
 }) => {
@@ -183,6 +183,16 @@ test("middle click hits a person in the Canvas overview of a 600-person tree", a
     await route.fulfill({ json: preferences });
   });
   await page.addInitScript(() => {
+    // This case exercises the production Canvas fallback specifically. A
+    // capable GPU otherwise replaces the overview before its locator is read.
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      ...args
+    ) {
+      if (args[0] === "webgl2") return null;
+      return Reflect.apply(getContext, this, args);
+    } as typeof getContext;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(...args: ConstructorParameters<typeof Worker>) {
@@ -203,6 +213,11 @@ test("middle click hits a person in the Canvas overview of a 600-person tree", a
   await expect(page.locator(".tree-canvas")).not.toHaveClass(
     /is-growing|is-layout-settling/,
   );
+  await expect(page.locator(".tree-canvas")).toHaveAttribute(
+    "data-gpu-fallback",
+    "WebGL2 unavailable",
+  );
+  await expect(page.locator(".tree-distant-portraits")).toBeVisible();
   const point = await page.evaluate(() => {
     const geometry = (
       window as typeof window & {
@@ -213,31 +228,44 @@ test("middle click hits a person in the Canvas overview of a 600-person tree", a
         };
       }
     ).__middleGeometry;
-    const bounds = document
+    const root = document
       .querySelector(".tree-canvas")!
       .getBoundingClientRect();
+    const bounds = document
+      .querySelector(".react-flow")!
+      .getBoundingClientRect();
+    const clip = {
+      left: Math.max(0, root.left, bounds.left),
+      right: Math.min(innerWidth, root.right, bounds.right),
+      top: Math.max(0, root.top, bounds.top),
+      bottom: Math.min(innerHeight, root.bottom, bounds.bottom),
+    };
     const matrix = new DOMMatrix(
       getComputedStyle(document.querySelector(".react-flow__viewport")!)
         .transform,
     );
+    const people = new Map(
+      geometry.occurrences.map((node) => [node.id, node.personId]),
+    );
     for (const [id, pos] of geometry.positions) {
       const x =
         bounds.x + matrix.e + (pos.x + geometry.nodeSize.width / 2) * matrix.a;
-      const y =
-        bounds.y + matrix.f + (pos.y + geometry.nodeSize.height / 2) * matrix.a;
+      const y = bounds.y + matrix.f + (pos.y + 70) * matrix.a;
       if (
-        x < bounds.left + 100 ||
-        x > bounds.right - 100 ||
-        y < bounds.top + 120 ||
-        y > bounds.bottom - 100
+        x < clip.left + 8 ||
+        x > clip.right - 8 ||
+        y < clip.top + 8 ||
+        y > clip.bottom - 8
       )
         continue;
-      const occurrence = geometry.occurrences.find((node) => node.id === id);
+      const personId = people.get(id);
+      const target = document.elementFromPoint(x, y);
       if (
-        occurrence &&
-        document.elementFromPoint(x, y)?.closest(".react-flow__pane")
+        personId &&
+        target?.closest(".react-flow__pane") &&
+        !target.closest("button, a, input, select, textarea")
       )
-        return { x, y, id: occurrence.personId };
+        return { x, y, id: personId };
     }
     return null;
   });

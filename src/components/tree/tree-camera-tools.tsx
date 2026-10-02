@@ -1,13 +1,16 @@
 import { Focus, Maximize2, Minus, Plus } from "lucide-react";
 import { Panel, useReactFlow, useViewport } from "@xyflow/react";
 import { PERSON_FOCUS_ZOOM } from "./use-tree-camera-state";
+import type { FitTree } from "./tree-camera-fit.ts";
 
 export function TreeCameraTools({
   selected,
   disabled,
+  fitTree,
 }: {
   selected: string[];
   disabled: boolean;
+  fitTree: FitTree;
 }) {
   const flow = useReactFlow(),
     { zoom } = useViewport();
@@ -33,7 +36,7 @@ export function TreeCameraTools({
         disabled={disabled}
         title="Вписать видимую часть дерева"
         aria-label="Вписать видимую часть дерева"
-        onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1, includeHiddenNodes: true })}
+        onClick={() => void fitTree({ padding: 0.2, maxZoom: 1 })}
       >
         <Maximize2 size={18} />
       </button>
@@ -43,9 +46,8 @@ export function TreeCameraTools({
           title="К выбранному человеку"
           aria-label="К выбранному человеку"
           onClick={() => {
-            void flow.fitView({
-              nodes: selected.map((id) => ({ id })),
-              includeHiddenNodes: true,
+            void fitTree({
+              ids: selected,
               minZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 0.05,
               maxZoom: selected.length === 1 ? PERSON_FOCUS_ZOOM : 1,
               padding: 0.4,

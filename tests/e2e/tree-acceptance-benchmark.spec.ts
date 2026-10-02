@@ -58,6 +58,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     [...pending].map(([request, state]) => ({
       url: request.url(),
       document: state.document,
+      startedAt: state.startedAt,
       ageMs: Date.now() - state.startedAt,
       status: state.status,
       failure: request.failure()?.errorText || null,
@@ -524,6 +525,9 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     sourceHashes: Object.fromEntries(
       [
         "src/components/tree/tree-canvas.tsx",
+        "src/components/tree/tree-camera-fit.ts",
+        "src/components/tree/use-tree-camera-state.ts",
+        "src/components/tree/tree-camera-tools.tsx",
         "src/components/tree/person-node.tsx",
         "src/components/tree/tree-node-model.ts",
         "src/components/tree/tree-growth.ts",

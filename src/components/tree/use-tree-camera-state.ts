@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useStore, type Viewport } from "@xyflow/react";
+import type { FitTree } from "./tree-camera-fit.ts";
 import type { Person } from "../../domain/types.ts";
 import {
   TREE_NODE_HEIGHT,
@@ -11,6 +12,7 @@ import {
 export const PERSON_FOCUS_ZOOM = 0.55;
 
 type CameraFlow = {
+  viewportInitialized: boolean;
   getViewport: () => Viewport;
   setCenter: (
     x: number,
@@ -25,19 +27,11 @@ type CameraFlow = {
     viewport: Viewport,
     options?: { duration?: number; ease?: (progress: number) => number },
   ) => unknown;
-  fitView: (options: {
-    nodes?: { id: string }[];
-    includeHiddenNodes?: boolean;
-    minZoom?: number;
-    maxZoom?: number;
-    padding?: number;
-    duration?: number;
-    ease?: (progress: number) => number;
-  }) => unknown;
 };
 
 type TreeCameraStateInput = {
   flow: CameraFlow;
+  fitTree: FitTree;
   geometry: TreeGeometry | null;
   nodeCount: number;
   mode: TreeMode;
@@ -90,6 +84,7 @@ function initialTreePadding(width: number, height: number, narrow: boolean) {
 /** Сохраняет и восстанавливает viewport дерева, не вмешиваясь в расчёт геометрии. */
 export function useTreeCameraState({
   flow,
+  fitTree,
   geometry,
   nodeCount,
   mode,
@@ -153,6 +148,7 @@ export function useTreeCameraState({
       geometry.mode !== mode ||
       geometry.reverse !== reverse ||
       !ready ||
+      !flow.viewportInitialized ||
       !canvasWidth ||
       !canvasHeight
     )
@@ -269,9 +265,8 @@ export function useTreeCameraState({
                   ease: (progress) => 1 - (1 - progress) ** 3,
                 },
               )
-            : flow.fitView({
-                nodes: focus.ids.map((id) => ({ id })),
-                includeHiddenNodes: true,
+            : fitTree({
+                ids: focus.ids,
                 maxZoom: focus.purpose === "family" ? 0.95 : 1,
                 minZoom:
                   focus.purpose === "family" ? 0.05 : narrow ? 0.55 : 0.15,
@@ -292,18 +287,16 @@ export function useTreeCameraState({
           // Draw the whole archive at a steady overview scale before the
           // separate introduction flight brings the account person closer.
           if (initialPosition)
-            viewportUpdate = flow.fitView({
-              nodes: [...positions.keys()].map((id) => ({ id })),
-              includeHiddenNodes: true,
+            viewportUpdate = fitTree({
+              ids: [...positions.keys()],
               minZoom: 0.05,
               maxZoom: narrow ? 0.32 : 0.38,
               padding: initialTreePadding(canvasWidth, canvasHeight, narrow),
               duration: 0,
             });
           else if (changedContext && context.includes(":research:"))
-            viewportUpdate = flow.fitView({
-              nodes: [...positions.keys()].map((id) => ({ id })),
-              includeHiddenNodes: true,
+            viewportUpdate = fitTree({
+              ids: [...positions.keys()],
               minZoom: 0.05,
               maxZoom: narrow ? 0.9 : 1,
               padding: 0.2,
@@ -311,9 +304,8 @@ export function useTreeCameraState({
               ease: contextEase,
             });
           else if ((switchedMode || reverseChanged) && selected.length)
-            viewportUpdate = flow.fitView({
-              nodes: selected.map((id) => ({ id })),
-              includeHiddenNodes: true,
+            viewportUpdate = fitTree({
+              ids: selected,
               maxZoom: 1,
               minZoom: narrow ? 0.55 : 0.15,
               padding: 0.4,
@@ -321,13 +313,11 @@ export function useTreeCameraState({
               ease: contextEase,
             });
           else if (root)
-            viewportUpdate = flow.fitView({
-              nodes: narrow
+            viewportUpdate = fitTree({
+              ids: narrow
                 ? [root, ...(peopleMap.get(root)?.spouses || [])]
                     .filter((id) => positions.has(id))
-                    .map((id) => ({ id }))
-                : [...positions.keys()].map((id) => ({ id })),
-              includeHiddenNodes: true,
+                : [...positions.keys()],
               maxZoom: 0.95,
               minZoom: narrow ? 0.55 : 0.25,
               padding: 0.28,
@@ -346,9 +336,8 @@ export function useTreeCameraState({
               narrow,
             );
             // На входе помещаем всё дерево, затем отдельно ведём камеру к человеку.
-            viewportUpdate = flow.fitView({
-              nodes: [...positions.keys()].map((id) => ({ id })),
-              includeHiddenNodes: true,
+            viewportUpdate = fitTree({
+              ids: [...positions.keys()],
               maxZoom: narrow ? 0.9 : 1,
               minZoom: 0.05,
               padding,
@@ -385,6 +374,7 @@ export function useTreeCameraState({
     positions,
     selected,
     flow,
+    fitTree,
     narrow,
     canvasWidth,
     canvasHeight,
