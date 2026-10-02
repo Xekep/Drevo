@@ -184,6 +184,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         mountedCards: document.querySelectorAll(".react-flow__node-person")
           .length,
         mountedEdges: document.querySelectorAll(".react-flow__edge").length,
+        detailsLoading: !!document.querySelector(".archive-loading-details"),
         zoom: viewport
           ? new DOMMatrix(getComputedStyle(viewport).transform).a
           : 0,
@@ -310,6 +311,54 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   // Explicit GC checkpoints measure retained JS heap, not natural peak memory.
   await session.send("HeapProfiler.collectGarbage");
   const retainedHeapBefore = (await metrics()).JSHeapUsedSize;
+  const panMode = process.env.DREVO_TREE_ACCEPTANCE_PAN;
+  if (panMode) {
+    const profilePan = panMode === "profile";
+    const diagnosticPhases = [];
+    for (const settled of [false, true]) {
+      if (settled) {
+        await expect(page.locator(".archive-loading-details")).toBeHidden({ timeout: 60_000 });
+        await waitForMediaIdle();
+        await page.waitForTimeout(1500);
+      }
+      const before = await snapshot(settled ? "settled-before" : "early-before");
+      await readTreeAcceptanceProbe(page, true);
+      if (profilePan) {
+        await session.send("Profiler.enable");
+        await session.send("Profiler.start");
+      }
+      await moveCamera(page, session, isMobile, "pan");
+      // Include image completions caused by moving, as in the ordinary benchmark.
+      await waitForMediaIdle();
+      const after = await snapshot(settled ? "settled-pan" : "early-pan");
+      expect(after.programCreations).toBe(before.programCreations);
+      expect(after.requests).toHaveLength(before.requests.length);
+      if (profilePan) {
+        const { profile } = await session.send("Profiler.stop");
+        await writeFile(testInfo.outputPath(settled ? "settled-pan.cpuprofile" : "early-pan.cpuprofile"), JSON.stringify(profile));
+        await session.send("Profiler.disable");
+      }
+      diagnosticPhases.push({ before, after });
+    }
+    await writeFile(testInfo.outputPath("pan-diagnostic.json"), JSON.stringify({
+      commit: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+      people: count, personalReference, throttle, isMobile, profilePan,
+      sourceHashes: Object.fromEntries([
+        "src/components/tree/tree-canvas.tsx",
+        "src/components/tree/tree-render-family.ts",
+        "src/components/tree/person-node.tsx",
+        "src/components/tree/tree-node-model.ts",
+        "src/components/tree/tree-edge-adapter.ts",
+        "src/domain/archive-projection.ts",
+      ].map((file) => [file, createHash("sha256").update(readFileSync(file)).digest("hex")])),
+      gpu, phases: diagnosticPhases,
+      method: "Separate pan diagnostic with real backend/media; only user.personId injected. Early interval follows persistent reload, settled waits for archive-loading-details hidden and media idle. Profiled intervals are not speed benchmarks.",
+    }, null, 2));
+    expect(errors).toEqual([]);
+    expect(mediaFailures).toBe(0);
+    await session.detach();
+    return;
+  }
   for (const gesture of ["pan", "zoom"] as const) {
     await readTreeAcceptanceProbe(page, true);
     const before = await workerCount();
@@ -542,6 +591,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     sourceHashes: Object.fromEntries(
       [
         "src/components/tree/tree-canvas.tsx",
+        "src/components/tree/tree-render-family.ts",
+        "src/domain/archive-projection.ts",
         "src/components/tree/tree-camera-fit.ts",
         "src/components/tree/use-tree-camera-state.ts",
         "src/components/tree/tree-camera-tools.tsx",
