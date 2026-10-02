@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { statfs, symlink, unlink } from "node:fs/promises";
+import { statfs, symlink, unlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -32,6 +32,7 @@ import {
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
+import { aiAttachmentStore } from "../../src/server/ai-attachments.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
@@ -7179,10 +7180,33 @@ try {
     assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
+    for (let attempt = 0; attempt < 100 && accountChatFiles.some((path) => existsSync(path)); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
     assert.deepEqual(accountChatFiles.map((path) => existsSync(path)), [false, false],
-      "account deletion removes both attachment and generated AI bytes before HTTP success");
+      "post-commit cleanup removes both attachment and generated AI bytes");
     assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
       "deleting one account preserves another member's AI files");
+    for (const path of accountChatFiles) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "orphan after crash", { mode: 0o600 });
+    }
+    const expired = new Date(Date.now() - 25 * 60 * 60_000);
+    await utimes(dirname(accountChatFiles[0]), expired, expired);
+    const recreatedDb = await openPostgresDatabase(recreatedId, join(recreatedFiles, "source.sqlite"));
+    try {
+      const recreatedChats = aiChatStore(recreatedDb);
+      await aiAttachmentStore(join(recreatedFiles, "uploads"), recreatedChats).prune();
+      const generated = generatedResearchFileStore(recreatedDb,
+        join(recreatedFiles, "uploads"), recreatedChats);
+      await generated.prune();
+      generated.close();
+    } finally {
+      await recreatedDb.close();
+    }
+    assert.deepEqual(accountChatFiles.map((path) => existsSync(path)), [false, false],
+      "startup/periodic orphan pruning removes files after a missed post-commit cleanup");
+    assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
+      "orphan pruning preserves another member's live chat files");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
     assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0],

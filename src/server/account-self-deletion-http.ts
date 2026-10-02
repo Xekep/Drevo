@@ -6,6 +6,7 @@ import {
   AccountDeletionConflict,
   AccountDeletionSessionExpired,
 } from "./account-self-deletion.ts";
+import { removeDeletedAccountAiFiles } from "./account-deletion-files.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 
 async function readConfirmation(req: IncomingMessage) {
@@ -87,9 +88,19 @@ export function accountSelfDeletionHttp(
             level: "info",
             event: "account_deleted",
             sharedArchives: result.sharedArchives,
+            aiChatsToClean: result.aiChats.length,
           }),
         );
-        return send(200, result);
+        const sent = send(200, {
+          deleted: result.deleted,
+          sharedArchives: result.sharedArchives,
+        });
+        // The account is gone; do not hold the response for a potentially
+        // large recursive unlink. Startup/periodic orphan pruning retries if
+        // this process exits or a filesystem operation fails.
+        void removeDeletedAccountAiFiles(db, result.aiChats).catch((error) =>
+          console.error("account_ai_file_cleanup_pending", error));
+        return sent;
       }
       return send(405, { error: "Неподдерживаемый метод" });
     } catch (error) {

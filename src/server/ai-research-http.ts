@@ -86,11 +86,11 @@ export function aiResearchHttp({
     uploadsDirectory || join(dirname(archive.db.file), "uploads"),
     chats,
   );
-  void attachments
-    .prune()
-    .catch(() =>
-      console.warn(JSON.stringify({ event: "ai.attachment_cleanup_failed" })),
-    );
+  const pruneAttachments = () => void attachments.prune().catch(() =>
+    console.warn(JSON.stringify({ event: "ai.attachment_cleanup_failed" })));
+  pruneAttachments();
+  const attachmentFileCleanup = setInterval(pruneAttachments, 60 * 60_000);
+  attachmentFileCleanup.unref();
   const activeRuns = new Map<
     string,
     { controller: AbortController; done: Promise<void> }
@@ -1015,6 +1015,7 @@ export function aiResearchHttp({
   return Object.assign(handle, {
     async close() {
       closing = true;
+      clearInterval(attachmentFileCleanup);
       clearInterval(generatedFileCleanup);
       const runs = [...activeRuns.values()];
       for (const run of runs) run.controller.abort();
