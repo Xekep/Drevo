@@ -202,6 +202,9 @@ test("пустое NAME нельзя спрятать или сохранить 
   page,
 }) => {
   const readFamily = await isolatedFamily(page);
+  const beforeSources = structuredClone(
+    readFamily().people.find((person) => person.id === "e2e-child")!.sources,
+  );
   await page.goto("/tree");
   await page
     .getByTestId("rf__node-e2e-child")
@@ -230,14 +233,16 @@ test("пустое NAME нельзя спрятать или сохранить 
   );
   expect(
     readFamily().people.find((person) => person.id === "e2e-child")?.sources,
-  ).toEqual([]);
+  ).toEqual(beforeSources);
   await repository.getByLabel("Название хранилища (NAME)").fill("Архив");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect
     .poll(
       () =>
-        readFamily().people.find((person) => person.id === "e2e-child")
-          ?.sources[0]?.repository?.name,
+        readFamily()
+          .people.find((person) => person.id === "e2e-child")
+          ?.sources.find((source) => source.title === "Неоконченная запись")
+          ?.repository?.name,
     )
     .toBe("Архив");
 });
