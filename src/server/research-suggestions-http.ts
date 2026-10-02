@@ -134,13 +134,14 @@ export function researchSuggestionsHttp({
         const rejected = await archive.db.transaction(async () => {
           const current = await lockedCurrentAiActor(req, actor);
           if (!current) return false;
-          const suggestion = await suggestions.mark(current, id, "rejected");
-          json(res, 200, { suggestion });
+          await suggestions.mark(current, id, "rejected");
           return true;
         });
         if (!rejected)
           return json(res, 403, { error: "Доступ к предложениям изменился" });
-        return true;
+        // Confirm only the committed status; the proposal payload is private
+        // and may no longer be deliverable after the transaction releases locks.
+        return json(res, 200, { suggestion: { id, status: "rejected" } });
       }
 
       const suggestion = await suggestions.get(actor, id);
