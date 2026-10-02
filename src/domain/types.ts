@@ -61,6 +61,11 @@ export type PersonEvent = {
 export type ClaimConfidence = "confirmed" | "probable" | "tentative" | "conflicting" | "unknown";
 /** Citations and an explicit researcher's assessment of one recorded value. */
 export type PersonValueClaim = { value: string; sources: Source[]; confidence?: ClaimConfidence };
+/** A cited competing record; it never silently replaces the displayed value. */
+export type PersonFactAlternative = PersonValueClaim & {
+  id: string;
+  field: "birth" | "death" | "birthPlace" | "deathPlace";
+};
 export type Person = {
   createdBy?: string;
   id: string;
@@ -83,6 +88,8 @@ export type Person = {
   birthPlaceClaim?: PersonValueClaim;
   deathPlace?: string;
   deathPlaceClaim?: PersonValueClaim;
+  /** Source-backed alternatives to the four displayed life facts. */
+  factAlternatives?: PersonFactAlternative[];
   /** Уточнённая точка не заменяет историческое название в birthPlace/deathPlace. */
   birthLocation?: PlaceLocation;
   deathLocation?: PlaceLocation;

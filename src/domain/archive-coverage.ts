@@ -18,6 +18,7 @@ const contradictoryCodes = new Set([
   "parent-and-spouse",
   "blood-and-step-parent",
   "conflicting-life-facts",
+  "competing-life-evidence",
 ]);
 
 export function qualityCategory(warning: ArchiveWarning): QualityCategory {
@@ -78,10 +79,34 @@ export function analyzeArchiveCoverage(family: Family): ArchiveWarning[] {
         code: "conflicting-life-facts",
         title: "Факты с ручной оценкой «Противоречиво»",
         detail: `${fullName(person)}: ${factDetails(conflicting)}.`,
-        rule: "Исследователь отметил противоречие для текущего значения. Drevo пока не хранит здесь альтернативные варианты и не выбирает правильный факт автоматически.",
+        rule: "Исследователь отметил противоречие для текущего значения. Сравните источники и при необходимости добавьте альтернативную запись; Drevo не выбирает правильный факт автоматически.",
         level: "check",
         personIds: [person.id],
         sourceTitles: factSourceTitles(conflicting),
+      });
+    const competing = ([
+      ["birth", "дата рождения", person.birth, person.birthDateClaim],
+      ["death", "дата смерти", person.death || "", person.deathDateClaim],
+      ["birthPlace", "место рождения", person.birthPlace, person.birthPlaceClaim],
+      ["deathPlace", "место смерти", person.deathPlace || "", person.deathPlaceClaim],
+    ] as const).flatMap(([field, label, value, claim]) => {
+      const cited = (person.factAlternatives || []).filter((item) => item.field === field)
+        .map((item) => ({ value: item.value, sources: item.sources }));
+      if (hasExactSources({ label, value, claim }))
+        cited.unshift({ value, sources: claim!.sources });
+      return cited.length > 1 ? [{ label, cited }] : [];
+    });
+    if (competing.length)
+      warnings.push({
+        code: "competing-life-evidence",
+        title: "Источники указывают разные жизненные данные",
+        detail: `${fullName(person)}: ${competing.map(({ label, cited }) =>
+          `${label} — ${cited.map((item) => item.value).join(" и ")}`).join("; ")}.`,
+        rule: "Для разных значений сохранены отдельные источники. Drevo не выбирает правильный вариант автоматически; проверьте документы и явно оцените свидетельства.",
+        level: "check",
+        personIds: [person.id],
+        sourceTitles: [...new Set(competing.flatMap(({ cited }) => cited.flatMap((item) =>
+          item.sources)).map((source) => source.title.trim()).filter(Boolean))],
       });
 
     for (const event of person.events || [])

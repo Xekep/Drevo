@@ -690,6 +690,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           stripArchiveSourceIds(item.dateClaim?.sources);
           stripArchiveSourceIds(item.placeClaim?.sources);
         }
+        for (const item of extra.factAlternatives || [])
+          stripArchiveSourceIds(item.sources);
         for (const key of [
           "name",
           "surname",
@@ -705,6 +707,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "occupation",
           "sources",
           "events",
+          "factAlternatives",
           "awards",
           "parentageComplete",
           "deceased",
@@ -1623,6 +1626,12 @@ export function exportGedcom(
         delete source.documentPage;
       }
     }
+    for (const alternative of portableExtra.factAlternatives || [])
+      for (const source of alternative.sources || []) {
+        delete source.catalogId;
+        delete source.documentId;
+        delete source.documentPage;
+      }
     emit(1, "_DREVO", JSON.stringify(portableExtra));
   }
   for (const g of groups.values()) {

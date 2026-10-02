@@ -28,6 +28,31 @@ function validValueClaim(claim: unknown, value: string | undefined): boolean {
     candidate.sources.length <= 50 && candidate.sources.every((source: Source) =>
       validPersonSource(source) && !!(source.catalogId || source.title.trim()));
 }
+function validFactAlternatives(person: Family["people"][number]): boolean {
+  if (person.factAlternatives === undefined) return true;
+  if (!Array.isArray(person.factAlternatives) || person.factAlternatives.length > 40)
+    return false;
+  const ids = new Set<string>(), values = new Set<string>();
+  for (const alternative of person.factAlternatives) {
+    if (!alternative || typeof alternative !== "object" ||
+      typeof alternative.id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(alternative.id) ||
+      ids.has(alternative.id) ||
+      !["birth", "death", "birthPlace", "deathPlace"].includes(alternative.field) ||
+      typeof alternative.value !== "string" ||
+      !alternative.value.trim() || alternative.value.length > 1000 ||
+      alternative.value !== alternative.value.trim() ||
+      !validValueClaim(alternative, alternative.value) ||
+      ((alternative.field === "birth" || alternative.field === "death") &&
+        !validDate(alternative.value)) ||
+      alternative.value === (person[alternative.field] || "") ||
+      values.has(`${alternative.field}:${alternative.value.toLocaleLowerCase("ru")}`))
+      return false;
+    ids.add(alternative.id);
+    values.add(`${alternative.field}:${alternative.value.toLocaleLowerCase("ru")}`);
+  }
+  return true;
+}
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -122,6 +147,8 @@ export function validateFamily(value: unknown): Family {
       throw new Error("Источник занятия относится к другому значению; снимите связь перед изменением занятия");
     if (!validValueClaim(p.maidenNameClaim, p.maidenName))
       throw new Error("Источник фамилии при рождении относится к другому значению; снимите связь перед изменением фамилии");
+    if (!validFactAlternatives(p))
+      throw new Error("Проверьте альтернативные даты и места: каждому варианту нужен отдельный источник");
     if (p.awards !== undefined) {
       if (!Array.isArray(p.awards) || p.awards.length > 100)
         throw new Error("Допустимо не более 100 наград у человека");

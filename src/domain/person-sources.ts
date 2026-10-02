@@ -36,7 +36,7 @@ function sourceKey(source: Source) {
  */
 export function collectPersonSources(person: Person): PersonSourceEntry[] {
   const result: PersonSourceEntry[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
 
   const add = (source: Source, origin?: string) => {
     const clean: PersonSourceEntry = {
@@ -50,8 +50,13 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
       origin,
     };
     const key = sourceKey(clean);
-    if (seen.has(key)) return;
-    seen.add(key);
+    const existing = seen.get(key);
+    if (existing !== undefined) {
+      if (origin && !result[existing].origin?.split("; ").includes(origin))
+        result[existing].origin = [result[existing].origin, origin].filter(Boolean).join("; ");
+      return;
+    }
+    seen.set(key, result.length);
     result.push(clean);
   };
 
@@ -61,6 +66,20 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
     add(source, "Занятие");
   for (const source of person.maidenNameClaim?.sources || [])
     add(source, "Фамилия при рождении");
+  for (const [label, claim] of [
+    ["Дата рождения", person.birthDateClaim],
+    ["Дата смерти", person.deathDateClaim],
+    ["Место рождения", person.birthPlaceClaim],
+    ["Место смерти", person.deathPlaceClaim],
+  ] as const)
+    for (const source of claim?.sources || []) add(source, label);
+  const alternativeName = {
+    birth: "Другая дата рождения", death: "Другая дата смерти",
+    birthPlace: "Другое место рождения", deathPlace: "Другое место смерти",
+  } as const;
+  for (const alternative of person.factAlternatives || [])
+    for (const source of alternative.sources)
+      add(source, `${alternativeName[alternative.field]}: ${alternative.value}`);
 
   for (const award of person.awards || []) {
     const source = award.source;

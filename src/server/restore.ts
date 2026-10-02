@@ -792,6 +792,8 @@ export function restoreStore(
           person.sources = remapCitations(person.sources);
           for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
             if (person[key]) person[key]!.sources = remapCitations(person[key]!.sources);
+          for (const alternative of person.factAlternatives || [])
+            alternative.sources = remapCitations(alternative.sources);
           for (const event of person.events || []) {
             if (event.sources) event.sources = remapCitations(event.sources);
             if (event.dateClaim)

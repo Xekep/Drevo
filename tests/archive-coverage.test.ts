@@ -101,7 +101,7 @@ test("exact life-fact citations separate unassessed, manual uncertainty, conflic
   assert.deepEqual(warnings[0].sourceTitles, ["Место рождения", "Смерть"]);
   assert.deepEqual(warnings[1].sourceTitles, ["Место смерти"]);
   assert.match(warnings[0].detail, /Вероятно.*Неизвестно/);
-  assert.match(warnings[1].rule, /альтернативные варианты/);
+  assert.match(warnings[1].rule, /добавьте альтернативную запись/);
   assert.match(warnings[2].detail, /место рождения Калуга/);
   assert.doesNotMatch(warnings[2].detail, /дата рождения/);
   assert.match(warnings[3].detail, /оценка не задана/);

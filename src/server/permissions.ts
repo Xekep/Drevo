@@ -16,6 +16,8 @@ function catalogCitationSlots(family: Family) {
     add(["person", person.id], person.sources);
     for (const claim of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const)
       add(["person", person.id, claim], person[claim]?.sources);
+    for (const alternative of person.factAlternatives || [])
+      add(["person", person.id, "factAlternative", alternative.id], alternative.sources);
     for (const event of person.events || []) {
       add(["person", person.id, "event", event.id], event.sources);
       add(["person", person.id, "event", event.id, "dateClaim"], event.dateClaim?.sources);
@@ -98,6 +100,27 @@ export function authorizeArchive(
         if (claim?.confidence !== earlier?.confidence)
           throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       }
+    for (const person of next.people) {
+      const earlier = new Map((previous.get(person.id)?.factAlternatives || [])
+        .map((alternative) => [alternative.id, alternative]));
+      const present = new Set((person.factAlternatives || []).map((alternative) => alternative.id));
+      for (const alternative of earlier.values())
+        if (alternative.confidence && !present.has(alternative.id))
+          throw new ForbiddenError("Оценённый вариант может удалить только исследователь или администратор");
+      for (const alternative of person.factAlternatives || [])
+        if (alternative.confidence !== earlier.get(alternative.id)?.confidence)
+          throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+    }
+  }
+  for (const person of next.people) {
+    const previous = current.people.find((item) => item.id === person.id);
+    const old = new Map((previous?.factAlternatives || [])
+      .map((alternative) => [alternative.id, alternative]));
+    for (const alternative of person.factAlternatives || []) {
+      const before = old.get(alternative.id);
+      if (before && (before.field !== alternative.field || before.value !== alternative.value))
+        throw new ForbiddenError("Для другого значения удалите прежний вариант и добавьте новый источник");
+    }
   }
   if (admin) return next;
   if (isScopedUser(user)) {
