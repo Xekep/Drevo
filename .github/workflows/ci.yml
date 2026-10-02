@@ -151,6 +151,7 @@ jobs:
       - run: bash -n ops/fetch-award-images.sh
       - run: bash -n ops/postgres/verify-restore.sh
       - run: bash -n ops/postgres/verify-physical-restore.sh
+      - run: bash -n ops/postgres/restore-pgbackrest-physical.sh
       - run: bash -n ops/postgres/run-restore-rehearsal.sh
       - run: bash -n ops/postgres/setup-restore-rehearsal.sh
       - run: python3 -B -m unittest discover -s tests -p 'test_restore_preflight.py'
