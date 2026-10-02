@@ -92,14 +92,26 @@ export function sharesStore(db: StoreDatabase) {
         lastVisitedAt: null,
       };
       await db.transaction(async () => {
-        if (db.kind === "postgres" && !(actor.id === "local" && !process.env.PUBLIC_ORIGIN)) {
+        if (
+          db.kind === "postgres" &&
+          !(actor.id === "local" && !process.env.PUBLIC_ORIGIN)
+        ) {
           // db.transaction locked the archive first. Hold this membership row
           // through both INSERTs, in the same order as archive deletion.
-          const membership = await db.prepare("", `SELECT role,approved
+          const membership = await db
+            .prepare(
+              "",
+              `SELECT role,approved
             FROM archive_memberships
             WHERE archive_id=current_setting('drevo.archive_id',true)
-              AND user_id=? FOR SHARE`).get(actor.id);
-          if (!membership?.approved || membership.role !== "admin" || !actor.approved)
+              AND user_id=? FOR SHARE`,
+            )
+            .get(actor.id);
+          if (
+            !membership?.approved ||
+            membership.role !== "admin" ||
+            !actor.approved
+          )
             throw new ForbiddenError("Доступ к выдаче ссылок отозван");
           await assertCurrentArchiveActor(db, actor);
         }
@@ -169,33 +181,61 @@ export function sharesStore(db: StoreDatabase) {
       if (!result.changes) await cleanup(now);
       return result.changes > 0;
     },
-    async list(before = "", now = Date.now()) {
+    async list(before = "", now = Date.now(), actor?: ArchiveUser) {
       await cleanup(now);
       const cursor = Number(before || 0);
-      const rows = await db
-        .prepare(
-          "SELECT s.rowid AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.rowid<?) ORDER BY s.rowid DESC LIMIT 101",
-          "SELECT s.ordinal AS cursor,s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.ordinal<?) ORDER BY s.ordinal DESC LIMIT 101",
-        )
-        .all(cursor, cursor);
-      return {
-        items: rows.slice(0, 100).map(convert),
-        next: rows.length > 100 ? String(rows[99].cursor) : null,
-      };
+      return await db.transaction(async () => {
+        if (db.kind === "postgres") {
+          if (!actor?.approved || actor.role !== "admin")
+            throw new ForbiddenError("Доступ к ссылкам отозван");
+          await assertCurrentArchiveActor(db, actor);
+        }
+        const rows = await db
+          .prepare(
+            "SELECT s.rowid AS cursor,s.*,a.last_visited_at FROM share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.rowid<?) ORDER BY s.rowid DESC LIMIT 101",
+            "SELECT s.ordinal AS cursor,s.*,a.last_visited_at FROM runtime_visible_share_links s LEFT JOIN share_link_activity a ON a.share_id=s.id WHERE (?=0 OR s.ordinal<?) ORDER BY s.ordinal DESC LIMIT 101",
+          )
+          .all(cursor, cursor);
+        return {
+          items: rows.slice(0, 100).map(convert),
+          next: rows.length > 100 ? String(rows[99].cursor) : null,
+        };
+      }, true);
     },
     async revoke(id: string, actor: ArchiveUser, now = Date.now()) {
       if (actor.role !== "admin")
         throw new Error("Ссылки отзывает администратор");
-      const row = await db
-        .prepare(
-          "SELECT * FROM share_links WHERE id=?",
-          "SELECT * FROM share_links WHERE id=?",
-        )
-        .get(id);
-      if (!row) throw new Error("Ссылка не найдена");
-      if (row.revoked_at) return;
-      const share = convert(row);
       return await db.transaction(async () => {
+        if (
+          db.kind === "postgres" &&
+          !(actor.id === "local" && !process.env.PUBLIC_ORIGIN)
+        ) {
+          const membership = await db
+            .prepare(
+              "",
+              `SELECT role,approved
+            FROM archive_memberships
+            WHERE archive_id=current_setting('drevo.archive_id',true)
+              AND user_id=? FOR SHARE`,
+            )
+            .get(actor.id);
+          if (
+            !membership?.approved ||
+            membership.role !== "admin" ||
+            !actor.approved
+          )
+            throw new ForbiddenError("Доступ к отзыву ссылок отозван");
+          await assertCurrentArchiveActor(db, actor);
+        }
+        const row = await db
+          .prepare(
+            "SELECT * FROM share_links WHERE id=?",
+            "SELECT * FROM share_links WHERE id=?",
+          )
+          .get(id);
+        if (!row) throw new Error("Ссылка не найдена");
+        if (row.revoked_at) return;
+        const share = convert(row);
         await db
           .prepare(
             "UPDATE share_links SET revoked_at=? WHERE id=?",

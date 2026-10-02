@@ -70,7 +70,13 @@ export function adminSharingHttp({
       const before = url.searchParams.get("before") || "";
       if (!Number.isSafeInteger(Number(before)) || Number(before) < 0)
         return json(res, 400, { error: "Некорректная страница ссылок" });
-      return json(res, 200, await shares.list(before));
+      try {
+        return json(res, 200, await shares.list(before, Date.now(), actor));
+      } catch (error) {
+        if (error instanceof ForbiddenError)
+          return json(res, 403, { error: error.message });
+        throw error;
+      }
     }
 
     if (!isSameOriginRequest(req, publicOrigin))
@@ -120,8 +126,9 @@ export function adminSharingHttp({
 
       return json(res, 405, { error: "Метод не поддерживается" });
     } catch (error) {
-      return json(res, error instanceof ForbiddenError ? 403 : 400,
-        { error: (error as Error).message });
+      return json(res, error instanceof ForbiddenError ? 403 : 400, {
+        error: (error as Error).message,
+      });
     }
   };
 }

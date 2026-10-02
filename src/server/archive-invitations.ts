@@ -59,14 +59,17 @@ export function archiveInvitations(db: StoreDatabase) {
       requireAdmin(actor);
       if (!list)
         throw new InvalidInvitationError("Приглашения доступны с PostgreSQL.");
-      return (await list.all(new Date().toISOString())).map((row) => ({
-        id: String(row.id),
-        role: String(row.role),
-        createdAt: String(row.created_at),
-        expiresAt: String(row.expires_at),
-        usedAt: row.used_at ? String(row.used_at) : null,
-        revokedAt: row.revoked_at ? String(row.revoked_at) : null,
-      }));
+      return await db.transaction(async () => {
+        await assertCurrentArchiveActor(db, actor);
+        return (await list.all(new Date().toISOString())).map((row) => ({
+          id: String(row.id),
+          role: String(row.role),
+          createdAt: String(row.created_at),
+          expiresAt: String(row.expires_at),
+          usedAt: row.used_at ? String(row.used_at) : null,
+          revokedAt: row.revoked_at ? String(row.revoked_at) : null,
+        }));
+      }, true);
     },
     async create(actor: ArchiveUser, role: unknown, durationHours: unknown) {
       requireAdmin(actor);
