@@ -1748,13 +1748,41 @@ try {
     let releaseAdminModels!: () => void;
     const adminModelsStarted = new Promise<void>((resolve) => { notifyAdminModels = resolve; });
     const adminModelsGate = new Promise<void>((resolve) => { releaseAdminModels = resolve; });
+    let notifySettingsModels!: () => void;
+    let releaseSettingsModels!: () => void;
+    const settingsModelsStarted = new Promise<void>((resolve) => { notifySettingsModels = resolve; });
+    const settingsModelsGate = new Promise<void>((resolve) => { releaseSettingsModels = resolve; });
+    let notifyWriteStatusModels!: () => void;
+    let releaseWriteStatusModels!: () => void;
+    const writeStatusModelsStarted = new Promise<void>((resolve) => { notifyWriteStatusModels = resolve; });
+    const writeStatusModelsGate = new Promise<void>((resolve) => { releaseWriteStatusModels = resolve; });
+    let notifySettingsWrite!: () => void;
+    let releaseSettingsWrite!: () => void;
+    const settingsWriteStarted = new Promise<void>((resolve) => { notifySettingsWrite = resolve; });
+    const settingsWriteGate = new Promise<void>((resolve) => { releaseSettingsWrite = resolve; });
     let holdAdminResponse = false;
+    let holdSettingsModels = false;
+    let holdWriteStatusModels = false;
+    let holdSettingsWrite = false;
+    let settingsWriteCompleted = false;
     let adminResponseCalls = 0;
+    const actualAiSettings = await aiSettingsStore(app.archive.db);
     const guardedAdminAi = adminAiHttp({
       auth: await createAuth(await userStore(app.archive.db), app.archive.db,
         process.env.PUBLIC_ORIGIN),
       db: app.archive.db,
-      settings: await aiSettingsStore(app.archive.db),
+      settings: {
+        ...actualAiSettings,
+        write: async (...args: Parameters<typeof actualAiSettings.write>) => {
+          if (holdSettingsWrite) {
+            notifySettingsWrite();
+            await settingsWriteGate;
+          }
+          const result = await actualAiSettings.write(...args);
+          settingsWriteCompleted = true;
+          return result;
+        },
+      },
       usage: aiUsageStore(app.archive.db),
       publicOrigin: process.env.PUBLIC_ORIGIN,
       fetcher: async (url, init) => {
@@ -1773,6 +1801,14 @@ try {
           return Response.json({ id: "admin-tier-response", status: "completed", output_text: "OK" });
         }
         if (path.endsWith("/models")) {
+          if (holdSettingsModels) {
+            notifySettingsModels();
+            await settingsModelsGate;
+          }
+          if (holdWriteStatusModels) {
+            notifyWriteStatusModels();
+            await writeStatusModelsGate;
+          }
           notifyAdminModels();
           await adminModelsGate;
           return Response.json({ data: [{ id: "gpt://test/hidden-after-downgrade" }] });
@@ -1823,10 +1859,62 @@ try {
       assert.equal(modelResponse.status, 403,
         "a downgraded admin cannot receive models fetched before the downgrade");
       assert.doesNotMatch(await modelResponse.text(), /hidden-after-downgrade/);
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdSettingsModels = true;
+      const loadingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
+        headers: ownerHeaders,
+      });
+      await Promise.race([settingsModelsStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings model lookup did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseSettingsModels();
+      const hiddenSettings = await loadingSettings;
+      assert.equal(hiddenSettings.status, 403,
+        "a downgraded admin cannot receive AI settings after a model lookup");
+      assert.doesNotMatch(await hiddenSettings.text(), /hidden-after-downgrade/);
+      holdSettingsModels = false;
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdSettingsWrite = true;
+      const savingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
+        method: "PUT", headers: ownerHeaders,
+        body: JSON.stringify({ ...await actualAiSettings.read(), apiKey: "" }),
+      });
+      await Promise.race([settingsWriteStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings write did not start")), 15_000))]);
+      const downgrade = client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      const downgradedBeforeWrite = await Promise.race([downgrade.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200))]);
+      assert.equal(downgradedBeforeWrite, false,
+        "tier downgrade waits until the authorized settings write commits");
+      releaseSettingsWrite();
+      const savedResponse = await savingSettings;
+      assert.ok([200, 403].includes(savedResponse.status),
+        `settings write failed: ${await savedResponse.text()}`);
+      assert.equal(settingsWriteCompleted, true,
+        "settings persist before a concurrent downgrade can commit");
+      await downgrade;
+      holdSettingsWrite = false;
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdWriteStatusModels = true;
+      const waitingForStatus = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
+        method: "PUT", headers: ownerHeaders,
+        body: JSON.stringify({ ...await actualAiSettings.read(), apiKey: "" }),
+      });
+      await Promise.race([writeStatusModelsStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings status lookup did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseWriteStatusModels();
+      const hiddenWriteStatus = await waitingForStatus;
+      assert.equal(hiddenWriteStatus.status, 403,
+        "a downgraded admin cannot receive the written settings response");
+      assert.doesNotMatch(await hiddenWriteStatus.text(), /hidden-after-downgrade/);
     } finally {
       releaseAdminConversation();
       releaseAdminResponse();
       releaseAdminModels();
+      releaseSettingsModels();
+      releaseSettingsWrite();
+      releaseWriteStatusModels();
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       await new Promise<void>((resolve) => guardedAdminServer.close(() => resolve()));
     }
