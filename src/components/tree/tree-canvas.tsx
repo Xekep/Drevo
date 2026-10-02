@@ -243,6 +243,11 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   );
   const renderFamily = useMemo(() => JSON.parse(renderFamilyKey) as Family, [renderFamilyKey]);
   const currentPeople = useMemo(() => new Map(family.people.map((person) => [person.id, person])), [family.people]);
+  // Comparing two people can return fresh arrays for an unchanged kinship path.
+  const highlightedKey = JSON.stringify(props.highlighted);
+  const highlighted = useMemo(() => JSON.parse(highlightedKey) as string[], [highlightedKey]);
+  const spotlightKey = JSON.stringify(props.spotlight || []);
+  const spotlight = useMemo(() => JSON.parse(spotlightKey) as string[], [spotlightKey]);
   const [mode, setMode] = useState<TreeMode>("generations");
   const layoutMode: TreeMode = mode === "timeline" ? "generations" : mode;
   const [fanAnchor, setFanAnchor] = useState<string | null>(null);
@@ -405,7 +410,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   const familyView = useFamilyView(
     renderFamily,
     selected,
-    props.highlighted,
+    highlighted,
     focus,
     props.preview,
   );
@@ -568,7 +573,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         hidden: familyView.hidden,
         expanded: familyView.expanded,
         query: props.query,
-        spotlight: new Set(props.spotlight || []),
+        spotlight: new Set(spotlight),
         spotlightOccurrences: spotlightNodes
           ? new Set(spotlightNodes)
           : undefined,
@@ -587,7 +592,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       familyView.hidden,
       familyView.expanded,
       props.query,
-      props.spotlight,
+      spotlight,
       spotlightNodes,
       growthDelays,
     ],
@@ -949,7 +954,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         positions,
         occurrencePeople,
         peopleMap,
-        highlighted: props.highlighted,
+        highlighted,
         selectedEdge: props.selectedEdge,
         canEdit: props.canEdit,
         busy: props.busy,
@@ -969,7 +974,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       positions,
       occurrencePeople,
       peopleMap,
-      props.highlighted,
+      highlighted,
       props.selectedEdge,
       props.canEdit,
       props.busy,
