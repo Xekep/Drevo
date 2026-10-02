@@ -4,6 +4,7 @@ import type { createAuth } from "./auth.ts";
 import type { sharesStore } from "./shares.ts";
 import type { auditStore } from "./audit.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
+import { ForbiddenError } from "./users.ts";
 
 export function adminSharingHttp({
   archive,
@@ -45,7 +46,7 @@ export function adminSharingHttp({
       return false;
 
     const actor = await auth.currentUser(req);
-    if (!actor || actor.role !== "admin")
+    if (!actor || actor.role !== "admin" || !actor.approved)
       return json(res, actor ? 403 : 401, {
         error: "Доступно администратору",
       });
@@ -96,7 +97,7 @@ export function adminSharingHttp({
           chunks.push(Buffer.from(chunk));
         }
         const currentActor = await auth.currentUser(req);
-        if (currentActor?.role !== "admin")
+        if (currentActor?.role !== "admin" || !currentActor.approved)
           return json(res, 403, { error: "Доступ отозван" });
         const current = await archive.read();
         if (
@@ -119,7 +120,8 @@ export function adminSharingHttp({
 
       return json(res, 405, { error: "Метод не поддерживается" });
     } catch (error) {
-      return json(res, 400, { error: (error as Error).message });
+      return json(res, error instanceof ForbiddenError ? 403 : 400,
+        { error: (error as Error).message });
     }
   };
 }

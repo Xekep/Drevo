@@ -4,6 +4,7 @@ import type { ArchiveUser } from "../domain/access.ts";
 import type { Family } from "../domain/types.ts";
 import type { ShareLink } from "../domain/shared-family.ts";
 import { auditStore } from "./audit.ts";
+import { assertCurrentArchiveActor, ForbiddenError } from "./users.ts";
 const shareTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const hash = (token: string) =>
@@ -91,6 +92,19 @@ export function sharesStore(db: StoreDatabase) {
         lastVisitedAt: null,
       };
       await db.transaction(async () => {
+        if (db.kind === "postgres" && !(actor.id === "local" && !process.env.PUBLIC_ORIGIN)) {
+          // Archive deletion and writes lock archives before touching membership.
+          // Follow that order to avoid a delete/share deadlock. These short
+          // SHARE locks serialize link creation with role revocation.
+          const archive = await db.prepare("", `SELECT id FROM archives
+            WHERE id=current_setting('drevo.archive_id',true) FOR SHARE`).get();
+          if (!archive) throw new ForbiddenError("Архив больше не доступен");
+          const membership = await db.prepare("", `SELECT role,approved
+            FROM archive_memberships WHERE user_id=? FOR SHARE`).get(actor.id);
+          if (!membership?.approved || membership.role !== "admin" || !actor.approved)
+            throw new ForbiddenError("Доступ к выдаче ссылок отозван");
+          await assertCurrentArchiveActor(db, actor);
+        }
         await db
           .prepare(
             "INSERT INTO share_links VALUES(?,?,?,?,?,?,?,?,?,NULL)",
