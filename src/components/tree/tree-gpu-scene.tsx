@@ -135,6 +135,7 @@ export function TreeGpuScene({
         ) {
           ready = true;
           clearTimeout(handoffTimer);
+          element.dataset.gpuReadyCalled = "true";
           onReady();
         }
       } catch (error) {

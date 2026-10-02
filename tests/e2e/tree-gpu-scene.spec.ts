@@ -278,6 +278,8 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
       // React Flow starts a connection only after its drag threshold, not on
       // mousedown. Cross that threshold before checking the native controls.
       await page.mouse.move(x + 18, y + 18, { steps: 2 });
+      if (await root.getAttribute("data-renderer") !== "react-flow")
+        await page.mouse.move(x + 54, y + 54, { steps: 3 });
       await expect(root).toHaveAttribute("data-renderer", "react-flow");
       await expect(page.locator(".tree-gpu-scene")).toHaveCount(0);
       await page.mouse.move(x, y, { steps: 2 });
@@ -332,10 +334,14 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
       renderer: await root.getAttribute("data-renderer"),
       fallback: await root.getAttribute("data-gpu-fallback"),
       canvasCount: await page.locator(".tree-gpu-scene").count(),
+      readyCalled: await page.locator(".tree-gpu-scene").getAttribute("data-gpu-ready-called"),
+      sceneMatch: await root.getAttribute("data-gpu-scene-match"),
     }), { timeout: 15_000 }).toEqual({
       renderer: "webgl2",
       fallback: null,
       canvasCount: 1,
+      readyCalled: "true",
+      sceneMatch: "true",
     });
     await expect(tree).toBeVisible();
     await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
