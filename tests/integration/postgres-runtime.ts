@@ -1928,6 +1928,62 @@ try {
     await delivering.catch(() => {});
     await revokingClient.end().catch(() => {});
   }
+  const scopeLockToken = newSessionToken();
+  const scopeLockHash = sessionTokenHash(scopeLockToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [scopeLockHash, Date.now() + 60_000],
+  );
+  let reachScopeDelivery!: () => void;
+  let releaseScopeDelivery!: () => void;
+  const scopeDeliveryReached = new Promise<void>((resolve) => { reachScopeDelivery = resolve; });
+  const scopeDeliveryGate = new Promise<void>((resolve) => { releaseScopeDelivery = resolve; });
+  const scopeDelivery = accountDataExport(app.archive.db).deliverWithCurrentSession(
+    "reader", scopeLockHash, deliverySnapshot.commentScopes,
+    async () => { reachScopeDelivery(); await scopeDeliveryGate; },
+  );
+  const membershipWriter = new pg.Client();
+  const revisionWriter = new pg.Client();
+  try {
+    await scopeDeliveryReached;
+    await membershipWriter.connect();
+    await revisionWriter.connect();
+    const membershipPid = (await membershipWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const revisionPid = (await revisionWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    await membershipWriter.query("BEGIN");
+    await revisionWriter.query("BEGIN");
+    const changeMembership = membershipWriter.query(
+      "UPDATE archive_memberships SET role='relative' WHERE archive_id='runtime-test' AND user_id='reader'",
+    );
+    const changeRevision = revisionWriter.query(
+      "UPDATE archives SET revision=revision+1 WHERE id='runtime-test'",
+    );
+    let bothBlocked = false;
+    for (let attempt = 0; attempt < 100 && !bothBlocked; attempt++) {
+      const locks = await client.query(
+        `SELECT cardinality(pg_blocking_pids($1)) > 0 AS membership_blocked,
+                cardinality(pg_blocking_pids($2)) > 0 AS revision_blocked`,
+        [membershipPid, revisionPid],
+      );
+      bothBlocked = locks.rows[0].membership_blocked === true &&
+        locks.rows[0].revision_blocked === true;
+      if (!bothBlocked) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(bothBlocked, true,
+      "membership revocation and graph changes wait for the final export handoff");
+    releaseScopeDelivery();
+    assert.equal(await scopeDelivery, "sent");
+    assert.equal((await changeMembership).rowCount, 1);
+    assert.equal((await changeRevision).rowCount, 1);
+  } finally {
+    releaseScopeDelivery();
+    await scopeDelivery.catch(() => {});
+    await membershipWriter.query("ROLLBACK").catch(() => {});
+    await revisionWriter.query("ROLLBACK").catch(() => {});
+    await membershipWriter.end().catch(() => {});
+    await revisionWriter.end().catch(() => {});
+  }
+  await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [scopeLockHash]);
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);

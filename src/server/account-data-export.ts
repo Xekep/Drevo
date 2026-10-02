@@ -201,9 +201,11 @@ export function accountDataExport(db: StoreDatabase) {
         return scopesStillVisible(scopes, rows);
       }, true);
     },
-    /** Keep the caller's session locked through the final permission check and
-     * response handoff. A completed logout blocks delivery; a later logout
-     * waits until the response is handed to the HTTP server. */
+    /** Lock every scope represented in the prepared download, then the
+     * session and membership rows through the response handoff. Archive
+     * mutations take the archive lock first, so revocation and graph edits
+     * either finish before this check or wait until the response is handed
+     * to the HTTP server. The caller prepares JSON before entering here. */
     async deliverWithCurrentSession(
       accountId: string,
       tokenHash: string,
@@ -214,6 +216,13 @@ export function accountDataExport(db: StoreDatabase) {
         return "access-changed";
       return await db.postgresTransaction(async (client) => {
         await client.query("SELECT set_config('drevo.account_id',$1,true)", [accountId]);
+        const archiveIds = [...new Set(scopes.map((scope) => scope.archiveId))].sort();
+        for (const archiveId of archiveIds) {
+          const archive = await client.query(
+            "SELECT id FROM archives WHERE id=$1 FOR SHARE", [archiveId],
+          );
+          if (!archive.rowCount) return "access-changed";
+        }
         const session = await client.query(
           `SELECT expires_at FROM account_sessions
            WHERE token_hash=$1 AND user_id=$2 FOR SHARE`,
@@ -226,8 +235,9 @@ export function accountDataExport(db: StoreDatabase) {
         const memberships = await client.query(
           `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
            FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
-           WHERE m.user_id=$1`,
-          [accountId],
+           WHERE m.user_id=$1 AND m.archive_id=ANY($2::text[])
+           ORDER BY m.archive_id FOR SHARE OF m,a`,
+          [accountId, archiveIds],
         );
         if (!scopesStillVisible(scopes, memberships.rows))
           return "access-changed";
