@@ -41,7 +41,6 @@ import {
   type Family,
   type ArchiveUser,
   type GraphConnection,
-  type Person,
   type LayoutPerson,
   type TreeMode,
   type TreeColorScheme,
@@ -57,7 +56,7 @@ import { Spatial } from "../../domain/edge-routing";
 import { useLongPress } from "./use-long-press";
 import { hitDistantScene } from "./distant-scene-hit";
 import { useMiddlePersonAnchor } from "./use-middle-person-anchor";
-import { personRelationLabel } from "./person-relation-label";
+import { createPersonRelationLabels, kinshipLabelKey } from "./person-relation-label";
 import { useTouchZoom } from "../../hooks/useTouchZoom";
 import { useCtrlWheelZoom } from "../../hooks/useCtrlWheelZoom";
 import { HouseholdNode, type HouseholdNodeType } from "./household-node";
@@ -855,18 +854,30 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     },
     [flow, layoutKey, personOccurrences, positions, toggleView],
   );
+  const gpuArchiveContext = typeof window === "undefined" ? null :
+    archiveContextAt(window.location.pathname);
+  const gpuSharedToken = typeof window === "undefined" ? null :
+    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
+      gpuArchiveContext?.innerPath || window.location.pathname,
+    )?.[1] || null;
+  // Person routes share the archive snapshot; account, share grant and read policy isolate caches.
+  const gpuScope = JSON.stringify([
+    gpuArchiveContext?.id || "default", gpuSharedToken,
+    user?.id || null, user?.role || null, user?.treeAccess || null,
+    user?.personId || null, user?.fullAccess ?? null,
+    user?.platformAdmin ?? null, user?.approved ?? null,
+    props.restricted ?? false,
+  ]);
+  const kinshipDay = new Date().toISOString().slice(0, 10);
+  const labelKey = useMemo(() => user?.personId ? kinshipLabelKey(
+    family.people, family.links || [], family.unions || [], kinshipDay, gpuScope,
+  ) : "", [family.people, family.links, family.unions, kinshipDay, gpuScope, user?.personId]);
   const relationLabel = useMemo(() => {
-    const reference = family.people.find((person) => person.id === user?.personId) || null;
-    const labels = new Map<string, string>();
-    return (person: Person) => {
-      if (!user?.id) return "";
-      const cached = labels.get(person.id);
-      if (cached !== undefined) return cached;
-      const label = personRelationLabel(person, reference, family.people, family.links || [], family.unions);
-      labels.set(person.id, label);
-      return label;
-    };
-  }, [family.people, family.links, family.unions, user?.id, user?.personId]);
+    if (!user?.id) return () => "";
+    if (!user.personId) return () => "Нет привязки к древу";
+    return createPersonRelationLabels(labelKey, user?.personId || undefined);
+    // Archive, share grant and read policy isolate the retained snapshot/cache.
+  }, [labelKey, user?.id, user?.personId]);
   const actions = useMemo(
     () => ({
       relationLabel,
@@ -1039,26 +1050,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
   // Use the existing distant canvas scene for large introductions instead of
   // mounting hundreds of SVG edge wrappers during the short growth sequence.
   const progressiveCanvasIntro = progressiveIntroRequested && nodes.length >= 500;
-  const gpuArchiveContext = typeof window === "undefined" ? null :
-    archiveContextAt(window.location.pathname);
-  const gpuSharedToken = typeof window === "undefined" ? null :
-    /^\/s\/([A-Za-z0-9_-]{43})$/.exec(
-      gpuArchiveContext?.innerPath || window.location.pathname,
-    )?.[1] || null;
-  // Opening a person changes the route within the same archive. Keep its GPU
-  // cache, while separating archives, share grants and account/access changes.
-  const gpuScope = JSON.stringify([
-    gpuArchiveContext?.id || "default",
-    gpuSharedToken,
-    user?.id || null,
-    user?.role || null,
-    user?.treeAccess || null,
-    user?.personId || null,
-    user?.fullAccess ?? null,
-    user?.platformAdmin ?? null,
-    user?.approved ?? null,
-    props.restricted ?? false,
-  ]);
   const [gpuReadyScene, setGpuReadyScene] = useState<{ geometry: typeof geometry; scope: string } | null>(null);
   const [gpuFailedScope, setGpuFailedScope] = useState<string | null>(null);
   const [gpuFallbackReason, setGpuFallbackReason] = useState("");

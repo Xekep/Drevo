@@ -6,7 +6,7 @@ export * from "./dates.ts";
 export * from "./layout.ts";
 export * from "./validation.ts";
 export { edgeLabel } from "./kinship.ts";
-export { analyzeKinship } from "./kinship-analysis.ts";
+export { analyzeKinship, createKinshipAnalyzer } from "./kinship-analysis.ts";
 export * from "./mutations.ts";
 export * from "./connection-labels.ts";
 export * from "./access.ts";
