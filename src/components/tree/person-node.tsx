@@ -19,6 +19,8 @@ import {
 } from "../../domain/tree-layout-constants";
 export const TreeActions = createContext<{
   gpu?: boolean;
+  /** Live card details stay independent of the stable layout projection. */
+  currentPeople?: ReadonlyMap<string, Person>;
   /** Initial camera placement and large scene handoff precede portrait loading. */
   deferPortraits?: boolean;
   choose: (id: string, additive: boolean) => void;
@@ -60,7 +62,7 @@ function samePersonNodeProps(
 }
 
 export const PersonNode = memo(function PersonNode({
-  data,
+  data: nodeData,
   id,
   selected,
   width = TREE_NODE_WIDTH,
@@ -69,6 +71,7 @@ export const PersonNode = memo(function PersonNode({
 }: NodeProps<PersonNodeType>) {
   const {
     gpu,
+    currentPeople,
     deferPortraits,
     choose,
     selectOnly,
@@ -79,6 +82,8 @@ export const PersonNode = memo(function PersonNode({
     publicationUpdate,
     relationLabel: getRelationLabel,
   } = useContext(TreeActions);
+  const person = currentPeople?.get(nodeData.person.id) || nodeData.person;
+  const data = person === nodeData.person ? nodeData : { ...nodeData, person };
   const archiveId = archiveContextAt(window.location.pathname)?.id || null;
   const publicationEndpoint = archiveResourceUrl(
     `/api/admin/published-people/${encodeURIComponent(data.person.id)}`,
