@@ -8,6 +8,21 @@ concurrency:
   group: drevo-ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  pgbackrest_restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Restore a PostgreSQL 18 backup with pgBackRest
+        run: |
+          docker run --rm -v "$PWD:/work:ro" postgres:18-trixie bash -ec '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pgbackrest
+            pgbackrest version
+            exec gosu postgres bash /work/tests/pgbackrest-restore-smoke.sh
+          '
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -136,6 +151,7 @@ jobs:
       - run: bash -n ops/fetch-award-images.sh
       - run: bash -n ops/postgres/verify-restore.sh
       - run: bash -n ops/postgres/verify-physical-restore.sh
+      - run: bash -n ops/postgres/restore-pgbackrest-physical.sh
       - run: bash -n ops/postgres/run-restore-rehearsal.sh
       - run: bash -n ops/postgres/setup-restore-rehearsal.sh
       - run: python3 -B -m unittest discover -s tests -p 'test_restore_preflight.py'
