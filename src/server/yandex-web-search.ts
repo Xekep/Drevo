@@ -18,6 +18,7 @@ export type WebSearchUsage = {
 export function yandexWebSearchProvider({
   client,
   runtime,
+  assertAiAccess,
   onCall = () => {},
   onUsage = () => {},
 }: {
@@ -28,6 +29,7 @@ export function yandexWebSearchProvider({
     folderId: string;
     modelUri: string;
   };
+  assertAiAccess?: () => Promise<void>;
   onCall?: () => void;
   onUsage?: (usage: WebSearchUsage) => void;
 }): WebSearchProvider {
@@ -43,6 +45,7 @@ export function yandexWebSearchProvider({
       )
         throw new WebSearchError("WEB_SEARCH_INVALID_INPUT");
       try {
+        await assertAiAccess?.();
         onCall();
         const data = await client.webSearch({
           runtime,
