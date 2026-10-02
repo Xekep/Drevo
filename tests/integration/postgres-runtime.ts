@@ -1934,6 +1934,41 @@ try {
       else process.env[key] = value;
     });
   }
+  const pendingSnapshot = await app.archive.read();
+  const pendingActor = await (await userStore(app.archive.db)).get("owner");
+  assert.ok(pendingActor);
+  const pendingSuggestion = await researchSuggestionStore(app.archive.db).createPersonUpdate(
+    pendingActor, pendingSnapshot.family, pendingSnapshot.revision,
+    { personId: "person-a", changes: { biography: "Tier race must roll back" },
+      reason: "tier-race-accept-test" },
+  );
+  const originalSuggestionRead = app.archive.read;
+  let downgradedBeforeSuggestionWrite = false;
+  app.archive.read = async () => {
+    const snapshot = await originalSuggestionRead();
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    downgradedBeforeSuggestionWrite = true;
+    return snapshot;
+  };
+  try {
+    const accepted = await fetch(
+      securedBase + `/api/research/suggestions/${pendingSuggestion.id}/accept`,
+      { method: "POST", headers: ownerHeaders },
+    );
+    assert.equal(downgradedBeforeSuggestionWrite, true);
+    assert.equal(accepted.status, 403, await accepted.clone().text());
+    const after = await originalSuggestionRead();
+    assert.equal(after.revision, pendingSnapshot.revision,
+      "a downgrade before the write transaction must roll back the suggestion");
+    assert.equal(after.family.people.find((person) => person.id === "person-a")?.biography,
+      pendingSnapshot.family.people.find((person) => person.id === "person-a")?.biography);
+    assert.equal((await researchSuggestionStore(app.archive.db).get(pendingActor, pendingSuggestion.id))?.status,
+      "pending", "a failed accept leaves the suggestion available after access is restored");
+  } finally {
+    app.archive.read = originalSuggestionRead;
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    await client.query("DELETE FROM research_suggestions WHERE id=$1", [pendingSuggestion.id]);
+  }
   assert.equal(await accountAiAccess(app.archive.db, "vk:42"), true);
   const aiAccessDb = app.archive.db;
   await assert.rejects(accountAiAccess(aiAccessDb, "vk:42", false, true),

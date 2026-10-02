@@ -109,6 +109,14 @@ export function researchSuggestionsHttp({
           actor,
           "research_suggestion_accept",
           current.family,
+          undefined,
+          async (db) => {
+            // The initial HTTP check may predate an administrator's downgrade.
+            // Hold both tier rows through the same transaction that applies
+            // the suggestion, so it cannot commit after access was revoked.
+            if (!(await accountAiAccess(db, actor.id, auth.local, true)))
+              throw new ForbiddenError("ИИ-функции больше недоступны этому аккаунту");
+          },
         );
       await suggestions.mark(actor, id, "accepted");
       return json(res, 200, {
