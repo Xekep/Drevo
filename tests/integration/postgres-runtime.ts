@@ -207,6 +207,10 @@ try {
     WHERE table_schema=current_schema() AND table_name='discovery_branch_grants'
       AND column_name='expires_at'`)).rows[0].count, 1,
   "a clean database applies finite branch consent schema 062 after 055");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_constraint
+    WHERE conrelid=to_regclass('discovery_branch_members')
+      AND conname='discovery_branch_members_via_fkey'`)).rows[0].count, 1,
+  "a clean database ties a second-generation grant to its selected intermediary");
   await client.query("DROP TABLE discovery_branch_members");
   await client.query("DROP TABLE discovery_branch_grants");
   await initializePostgresRuntimeSchema(live.db);
@@ -221,6 +225,10 @@ try {
     AND tablename='discovery_branch_grants' AND policyname='discovery_branch_grants_read'`))
     .rows[0]?.qual || "", /expires_at/,
   "reinstalling 055 also closes expired grant metadata to recipients as 064");
+  assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_constraint
+    WHERE conrelid=to_regclass('discovery_branch_members')
+      AND conname='discovery_branch_members_via_fkey'`)).rows[0].count, 1,
+  "reinstalling the branch tables reapplies the dependent-member constraint");
   await client.query(readFileSync(new URL("../../ops/postgres/055_discovery_branch_grants.sql", import.meta.url), "utf8"));
   assert.equal((await client.query(`SELECT count(*)::int AS count FROM pg_policies
     WHERE schemaname=current_schema() AND tablename IN
@@ -4997,19 +5005,57 @@ try {
         id, name, birth: "1950", deceased: true, parents: [], spouses: [],
         biography: "Закрытая биография ветки", generation: 2 });
     }
+    const grandparentId = `branch-grandparent-${runtime === app ? "a" : "b"}`;
+    const hiddenGrandparentId = `branch-hidden-grandparent-${runtime === app ? "a" : "b"}`;
+    branchFamily.people.find((person) => person.id === visibleId)!.parents = [grandparentId];
+    branchFamily.people.find((person) => person.id === hiddenId)!.parents = [hiddenGrandparentId];
+    for (const [id, name] of [[grandparentId, `${label} дедушка`],
+      [hiddenGrandparentId, `${label} закрытый дедушка`]]) {
+      branchFamily.people.push({ ...structuredClone(branchFamily.people[0]),
+        id, name, birth: "1920", deceased: true, parents: [], spouses: [],
+        biography: "Закрытая биография ветки", generation: 3 });
+    }
     await runtime.archive.write(branchFamily, beforeBranch.revision);
     await publishedPeopleStore(runtime.archive.db).publish(visibleId, "owner");
+    await publishedPeopleStore(runtime.archive.db).publish(grandparentId, "owner");
+    await publishedPeopleStore(runtime.archive.db).publish(hiddenGrandparentId, "owner");
   }
+  const beforeFullPreview = await app.archive.read();
+  const fullPreviewFamily = structuredClone(beforeFullPreview.family);
+  for (let index = 0; index < 49; index++) {
+    const id = `branch-extra-child-${index}`;
+    fullPreviewFamily.people.push({ ...structuredClone(fullPreviewFamily.people[0]), id,
+      name: `Дополнительный ребёнок ${index}`, birth: "2010", deceased: true,
+      parents: ["person-a"], spouses: [], generation: 2 });
+  }
+  await app.archive.write(fullPreviewFamily, beforeFullPreview.revision);
+  for (let index = 0; index < 49; index++)
+    await publishedPeopleStore(app.archive.db).publish(`branch-extra-child-${index}`, "owner");
+  const fullPreview = await fetch(securedBase + branchPath, {
+    headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.230" },
+  }).then((response) => response.json());
+  assert.equal(fullPreview.available.length, 50);
+  assert.equal(fullPreview.truncated, true,
+    "a published ancestor beyond fifty direct members is reported as truncated");
+  await app.archive.write(beforeFullPreview.family, (await app.archive.read()).revision);
   const firstBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json());
   const secondBranch = await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
     .then((response) => response.json());
-  assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id), ["branch-parent-a"]);
-  assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id), ["branch-parent-b"]);
+  assert.deepEqual(firstBranch.available.map((person: { id: string }) => person.id),
+    ["branch-grandparent-a", "branch-parent-a"]);
+  assert.deepEqual(secondBranch.available.map((person: { id: string }) => person.id),
+    ["branch-grandparent-b", "branch-parent-b"]);
+  assert.deepEqual(firstBranch.available[0].viaIds, ["branch-parent-a"]);
   assert.equal(firstBranch.recipientArchiveId, "other-archive");
   assert.equal(secondBranch.recipientArchiveId, "runtime-test");
   assert.equal(firstBranch.ownExpiresAt, null);
-  assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|Закрытая биография ветки/);
+  assert.doesNotMatch(JSON.stringify(firstBranch), /branch-hidden-a|branch-hidden-grandparent-a|Закрытая биография ветки/);
+  assert.equal((await fetch(securedBase + branchPath, {
+    method: "PUT", headers: { ...ownerHeaders, "X-Real-IP": "198.51.100.231" },
+    body: JSON.stringify({ personIds: ["branch-grandparent-a"], previewToken: firstBranch.previewToken,
+      recipientArchiveId: "other-archive", durationDays: 7 }),
+  })).status, 409, "a second-generation person requires the explicitly selected published intermediary");
   assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
     404, "a confirmed match without mutual branch grants cannot open a member URL");
   assert.equal((await fetch(securedBase + branchPath, {
@@ -5034,7 +5080,7 @@ try {
   })).status, 400, "a new grant must have one of the bounded durations");
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"], previewToken: firstBranch.previewToken,
+    body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"], previewToken: firstBranch.previewToken,
       recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
   assert.deepEqual((await fetch(otherBase + branchPath, { headers: archiveAdminHeaders })
@@ -5062,6 +5108,19 @@ try {
   const bilateralBranch = await fetch(securedBase + branchPath, { headers: ownerHeaders })
     .then((response) => response.json());
   assert.deepEqual(bilateralBranch.incoming.map((person: { id: string }) => person.id), ["branch-parent-b"]);
+  const secondGeneration = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.232" },
+  })
+    .then((response) => response.json());
+  assert.deepEqual(secondGeneration.incoming.map((person: { id: string }) => person.id),
+    ["branch-grandparent-a", "branch-parent-a"]);
+  assert.equal(secondGeneration.incoming[0].relation, "grandparent");
+  assert.equal(secondGeneration.incoming[0].viaId, "branch-parent-a");
+  const ancestorCard = await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.233" },
+  });
+  assert.equal(ancestorCard.status, 200, "the explicitly selected ancestor can open through its scoped URL");
+  assert.deepEqual((await ancestorCard.json()).person.viaId, "branch-parent-a");
   assert.ok(bilateralBranch.ownExpiresAt,
     "new branch consent has a finite owner-visible expiry");
   const branchLifetimes = await matchDb.prepare("", `SELECT grantor_archive_id,
@@ -5491,7 +5550,7 @@ try {
     .then((response) => response.json());
   assert.equal((await fetch(securedBase + branchPath, {
     method: "PUT", headers: ownerHeaders,
-    body: JSON.stringify({ personIds: ["branch-parent-a"],
+    body: JSON.stringify({ personIds: ["branch-parent-a", "branch-grandparent-a"],
       previewToken: renewedBranch.previewToken,
       recipientArchiveId: "other-archive", durationDays: 7 }),
   })).status, 200);
@@ -5515,6 +5574,20 @@ try {
   }, true);
   assert.equal((await fetch(securedBase + branchPersonPath, { headers: navigationHeaders })).status,
     404, "unpublishing immediately closes its direct linked member URL");
+  await publishedPeopleStore(app.archive.db).unpublish("branch-parent-a");
+  const dependentBranch = await fetch(otherBase + branchPath, {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.234" },
+  })
+    .then((response) => response.json());
+  assert.deepEqual(dependentBranch.incoming, [],
+    "unpublishing the intermediary also removes the selected grandparent");
+  assert.equal((await fetch(otherBase + branchPath + "/people/branch-grandparent-a", {
+    headers: { ...archiveAdminHeaders, "X-Real-IP": "198.51.100.235" },
+  })).status, 404, "the dependent direct URL closes when its intermediary is unpublished");
+  assert.equal((await app.archive.db.prepare("", `SELECT count(*)::int AS count
+    FROM discovery_branch_members WHERE grantor_archive_id='runtime-test'
+      AND person_id='branch-grandparent-a'`).get())?.count, 0,
+  "the database cascades the selected grandparent when its intermediary disappears");
   const sharePreview = await fetch(securedBase + cardSharePath, { headers: ownerHeaders })
     .then((response) => response.json());
   const copyPreviewPath = cardSharePath + "/copy-preview";

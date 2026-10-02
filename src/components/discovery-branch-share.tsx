@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
+import { discoveryBranchRelationLabels as relationLabels,
+  type DiscoveryBranchRelation } from "../shared/discovery-branch.ts";
 
-type Member = { id: string; relation: "parent" | "child" | "spouse"; name: string;
-  birthYear?: string; deathYear?: string; birthPlace?: string; deathPlace?: string };
+type Member = { id: string; relation: DiscoveryBranchRelation; name: string;
+  birthYear?: string; deathYear?: string; birthPlace?: string; deathPlace?: string;
+  viaIds?: string[]; viaId?: string };
 type Detail = { available: Member[]; truncated: boolean; previewToken: string;
   ownReady: boolean; otherReady: boolean; outgoingIds: string[]; incoming: Member[];
   recipientArchiveId: string; recipientPersonName: string; ownExpiresAt: string | null };
-const relationLabels = { parent: "Родитель", child: "Ребёнок", spouse: "Супруг(а)" };
-
 function MemberCard({ person, matchId, archiveId }: { person: Member; matchId: string;
   archiveId: string }) {
   return <li><strong>{relationLabels[person.relation]}: {person.name}</strong>
@@ -31,6 +32,9 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const endpoint = `/api/discovery/matches/${matchId}/branch-share`;
+  const available = detail?.available || [];
+  const chosenViaName = (person: Member) => available.find((item) =>
+    person.viaIds?.includes(item.id) && selected.includes(item.id))?.name;
   const cancelRead = useCallback(() => {
     requestVersion.current++;
     request.current?.abort();
@@ -93,20 +97,28 @@ export function DiscoveryBranchShare({ matchId, archiveId }: { matchId: string; 
     }
   }}>
     <summary>Поделиться разрешённой веткой</summary>
-    <p>Каждый владелец выбирает своих опубликованных прямых родственников. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации сразу убирает карточку из ветки.</p>
+    <p>Каждый владелец явно выбирает опубликованных родственников до второго поколения. Для второго шага сначала выберите опубликованного родителя или ребёнка. Ветви видны только после разрешения обеих сторон; частные карточки, фото и документы не открываются. Любая правка своего дерева отзывает выданное разрешение: после неё выбор нужно подтвердить заново. Отзыв публикации промежуточного человека убирает и зависимую карточку.</p>
     {busy && !detail && <p role="status">Проверяем…</p>}
     {detail && <>
       <p>Адресат: опубликованная карточка «{detail.recipientPersonName}», архив <code
         style={{ overflowWrap: "anywhere" }}>{detail.recipientArchiveId}</code>. Доступ только для владельца этого архива и только в данной подтверждённой связи.</p>
       <h4>Ваши опубликованные родственники</h4>
       {detail.truncated && <p>Показаны первые 50 родственников. Этот просмотр ограничен ими.</p>}
-      {!detail.available.length && <p>Опубликованных прямых родственников нет. Можно разрешить просмотр без добавления людей.</p>}
+      {!detail.available.length && <p>Опубликованных родственников в этой ветке нет. Можно разрешить просмотр без добавления людей.</p>}
       {detail.available.map((person) => <label className="match-share-option" key={person.id}>
         <input type="checkbox" checked={selected.includes(person.id)} disabled={busy ||
-          (!selected.includes(person.id) && selected.length >= 20)}
-          onChange={(event) => setSelected((current) => event.target.checked
-            ? [...current, person.id] : current.filter((id) => id !== person.id))} />
-        <span>{relationLabels[person.relation]}: {person.name}</span>
+          (!selected.includes(person.id) && (selected.length >= 20 ||
+            (Boolean(person.viaIds?.length) && !person.viaIds?.some((id) => selected.includes(id)))))}
+          onChange={(event) => setSelected((current) => {
+            if (event.target.checked) return [...current, person.id];
+            const remaining = current.filter((id) => id !== person.id);
+            return remaining.filter((id) => {
+              const choice = available.find((item) => item.id === id);
+              return !choice?.viaIds?.length || choice.viaIds.some((viaId) => remaining.includes(viaId));
+            });
+          })} />
+        <span>{relationLabels[person.relation]}: {person.name}
+          {chosenViaName(person) && <small> · через {chosenViaName(person)}</small>}</span>
       </label>)}
       <p>Можно выбрать до 20 человек. Согласие без выбранных людей позволяет видеть разрешённую ветку другой стороны.</p>
       <label>Срок нового разрешения <select value={durationDays} disabled={busy}

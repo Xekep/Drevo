@@ -6,11 +6,13 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { requestClientKey } from "./request-rate-limit.ts";
 import { createSharedRequestLimiter } from "./shared-request-rate-limit.ts";
 import type { Family } from "../domain/types.ts";
+import type { DiscoveryBranchRelation } from "../shared/discovery-branch.ts";
 
 type Row = Record<string, unknown>;
-type Relation = "parent" | "child" | "spouse";
+type Relation = DiscoveryBranchRelation;
 type Member = { id: string; relation: Relation; name: string; birthYear?: string;
-  deathYear?: string; birthPlace?: string; deathPlace?: string; publicationVersion: string };
+  deathYear?: string; birthPlace?: string; deathPlace?: string; publicationVersion: string;
+  viaIds?: string[]; viaId?: string };
 const route = /^\/api\/discovery\/matches\/([a-f0-9-]{36})\/branch-share(?:\/people\/([^/]{1,1200}))?$/;
 const maxMembers = 20;
 
@@ -46,7 +48,37 @@ function directRelations(family: Family, rootId: string): Map<string, Relation> 
   return result;
 }
 
-function listed(row: Row, relation: Relation): Member {
+function secondGeneration(family: Family, rootId: string,
+  direct: Map<string, Relation>, publishedDirect: Set<string>) {
+  const people = new Map(family.people.map((person) => [person.id,person]));
+  const children = new Map<string,string[]>();
+  for (const person of family.people) for (const parentId of person.parents) {
+    const familyChildren = children.get(parentId) || [];
+    familyChildren.push(person.id);
+    children.set(parentId, familyChildren);
+  }
+  const result = new Map<string,{ relation: Relation; viaIds: string[] }>();
+  const add = (id: string, relation: Relation, viaId: string) => {
+    if (id === rootId || direct.has(id) || !people.has(id)) return;
+    const existing = result.get(id);
+    if (existing) {
+      if (existing.relation === relation && !existing.viaIds.includes(viaId))
+        existing.viaIds.push(viaId);
+    } else result.set(id, { relation, viaIds: [viaId] });
+  };
+  for (const [viaId, relation] of [...direct].sort(([a],[b]) => a.localeCompare(b))) {
+    if (!publishedDirect.has(viaId)) continue;
+    if (relation === "parent") {
+      for (const id of people.get(viaId)?.parents || []) add(id, "grandparent", viaId);
+      for (const id of children.get(viaId) || []) add(id, "sibling", viaId);
+    } else if (relation === "child") {
+      for (const id of children.get(viaId) || []) add(id, "grandchild", viaId);
+    }
+  }
+  return result;
+}
+
+function listed(row: Row, relation: Relation, viaIds?: string[]): Member {
   return {
     id: String(row.person_id), relation, name: String(row.name),
     ...(row.birth_year ? { birthYear: String(row.birth_year) } : {}),
@@ -54,6 +86,8 @@ function listed(row: Row, relation: Relation): Member {
     ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
     ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
     publicationVersion: String(row.publication_version),
+    ...(viaIds?.length ? { viaIds } : {}),
+    ...(row.via_person_id ? { viaId: String(row.via_person_id) } : {}),
   };
 }
 
@@ -96,15 +130,30 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     const snapshot = await archive.read();
     const relations = directRelations(snapshot.family, ownRoot(pair, archiveId));
     const ids = [...relations.keys()].sort();
-    const rows = ids.length ? await db.prepare("", `SELECT person_id,name,birth_year,death_year,
+    const directRows = ids.length ? await db.prepare("", `SELECT person_id,name,birth_year,death_year,
       birth_place,death_place,publication_version FROM discovery_people
       WHERE archive_id=? AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
       ORDER BY person_id LIMIT 51`).all(archiveId, JSON.stringify(ids)) : [];
-    const available = rows.slice(0, 50).map((row) => listed(row, relations.get(String(row.person_id))!));
+    const publishedDirect = directRows.slice(0,50);
+    const second = secondGeneration(snapshot.family, ownRoot(pair, archiveId),
+      relations, new Set(publishedDirect.map((row) => String(row.person_id))));
+    const remaining = Math.max(0, 50 - publishedDirect.length);
+    const secondRows = second.size ? await db.prepare("", `SELECT person_id,name,
+      birth_year,death_year,birth_place,death_place,publication_version FROM discovery_people
+      WHERE archive_id=? AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
+      ORDER BY person_id LIMIT ?`).all(archiveId, JSON.stringify([...second.keys()]), remaining + 1) : [];
+    const available = [
+      ...publishedDirect.map((row) => listed(row, relations.get(String(row.person_id))!)),
+      ...secondRows.slice(0,remaining).map((row) => {
+        const candidate = second.get(String(row.person_id))!;
+        return listed(row, candidate.relation, candidate.viaIds);
+      }),
+    ].sort((a,b) => a.id.localeCompare(b.id));
     const previewToken = createHash("sha256").update(JSON.stringify({
       archiveId, pair: pairArgs(pair), revision: snapshot.revision, available,
     })).digest("hex");
-    return { available, truncated: rows.length > 50, previewToken };
+    return { available, truncated: directRows.length > 50 || secondRows.length > remaining,
+      previewToken };
   };
   const grantsFor = (pair: Row) => db.prepare("", `SELECT grantor_archive_id,expires_at
     FROM discovery_branch_grants
@@ -152,7 +201,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
         if (!grants.some((row) => row.grantor_archive_id === archiveId) ||
             !grants.some((row) => row.grantor_archive_id !== archiveId)) return null;
         const row = await db.prepare("", `SELECT p.archive_id,p.person_id,p.name,p.birth_year,
-          p.death_year,p.birth_place,p.death_place,b.relation
+          p.death_year,p.birth_place,p.death_place,b.relation,b.via_person_id
           FROM discovery_branch_members b JOIN discovery_people p
             ON p.archive_id=b.grantor_archive_id AND p.person_id=b.person_id
           WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
@@ -165,6 +214,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           ...(row.death_year ? { deathYear: String(row.death_year) } : {}),
           ...(row.birth_place ? { birthPlace: String(row.birth_place) } : {}),
           ...(row.death_place ? { deathPlace: String(row.death_place) } : {}),
+          ...(row.via_person_id ? { viaId: String(row.via_person_id) } : {}),
         } : null;
       }, true);
       return person ? json(res, 200, { person })
@@ -189,7 +239,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
         const outgoingIds = ownRows.map((row) => String(row.person_id));
         const incoming = ownReady && otherReady ? await db.prepare("", `SELECT
           p.person_id,p.name,p.birth_year,p.death_year,p.birth_place,p.death_place,
-          p.publication_version,b.relation FROM discovery_branch_members b
+          p.publication_version,b.relation,b.via_person_id FROM discovery_branch_members b
           JOIN discovery_people p ON p.archive_id=b.grantor_archive_id AND p.person_id=b.person_id
           WHERE b.left_archive_id=? AND b.left_person_id=? AND b.right_archive_id=?
             AND b.right_person_id=? AND b.grantor_archive_id<>?
@@ -224,7 +274,11 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           AND id IN (${lockIds.map(() => "?").join(",")}) FOR SHARE`).all(archiveId, ...lockIds);
         const preview = await availableFor(pair, archiveId);
         if (preview.previewToken !== body.previewToken ||
-            selectedIds.some((id) => !preview.available.some((person) => person.id === id)))
+            selectedIds.some((id) => {
+              const person = preview.available.find((item) => item.id === id);
+              return !person || (person.viaIds?.length &&
+                !person.viaIds.some((viaId) => selectedIds.includes(viaId)));
+            }))
           return { code: 409, error: "Ветка изменилась. Проверьте выбранных людей ещё раз" };
         const locked = await linkedPair(detail[1], archiveId, true);
         if (!locked || pairArgs(locked).some((value, index) => value !== pairArgs(pair)[index]))
@@ -241,11 +295,16 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
           right_archive_id,right_person_id,grantor_archive_id,granted_by,expires_at)
           VALUES(?,?,?,?,?,?,now() + (?::int * interval '1 day'))`)
           .run(...pairArgs(pair), archiveId, approved.id, durationDays);
-        for (const id of selectedIds) {
+        for (const id of [...selectedIds].sort((a,b) => {
+          const first = preview.available.find((item) => item.id === a)!;
+          const second = preview.available.find((item) => item.id === b)!;
+          return Number(Boolean(first.viaIds)) - Number(Boolean(second.viaIds));
+        })) {
           const person = preview.available.find((item) => item.id === id)!;
           await db.prepare("", `INSERT INTO discovery_branch_members(left_archive_id,left_person_id,
-            right_archive_id,right_person_id,grantor_archive_id,person_id,relation)
-            VALUES(?,?,?,?,?,?,?)`).run(...pairArgs(pair), archiveId, id, person.relation);
+            right_archive_id,right_person_id,grantor_archive_id,person_id,relation,via_person_id)
+            VALUES(?,?,?,?,?,?,?,?)`).run(...pairArgs(pair), archiveId, id, person.relation,
+            person.viaIds?.find((viaId) => selectedIds.includes(viaId)) || null);
         }
         return { code: 200 };
       });
