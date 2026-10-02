@@ -744,6 +744,51 @@ test("Agelong XML retains cited sources and custom values while disclosing lost 
   assert.ok(result.warnings.some((warning) => warning.includes("отдельного признака избранного")));
 });
 
+test("Agelong XML retains an event's PDF attachment as a linked document", async () => {
+  const input = `<agelongtree><persons><person id="p" fn="Anna" sn="Example" /></persons>
+    <events><event id="school" type="Education" date="1920"><persons><person id="p" role="Student"/></persons>
+      <documents><document id="certificate"/></documents></event></events>
+    <documents><document id="certificate" path="archive.xml.files/certificate.pdf" title="School certificate"/></documents>
+    </agelongtree>`;
+  const result = importAgelongXml(input, "xml-document-event");
+  const eventId = result.family.people[0].events?.find((event) => event.title === "Education")?.id;
+  assert.ok(eventId);
+  assert.deepEqual(result.media[0].personIds, ["xml-document-event-p1"]);
+  assert.deepEqual(result.media[0].document?.eventLinks, [
+    { personId: "xml-document-event-p1", eventId },
+  ]);
+  assert.ok(!result.warnings.some((warning) => warning.includes("не переносит связи документов")));
+  const directory = await mkdtemp(join(tmpdir(), "drevo-xml-event-document-"));
+  try {
+    const archive = join(directory, "archive.zip");
+    const stage = join(directory, "stage");
+    await mkdir(stage);
+    await zipFile(archive, [
+      ["family.xml", Buffer.from(input)],
+      ["archive.xml.files/certificate.pdf", Buffer.from("%PDF-1.4\nattached-original")],
+    ]);
+    const prepared = await prepareGenealogyImport(archive, stage, "xml-staged");
+    const stagedEventId = prepared.family.people[0].events?.find((event) => event.title === "Education")?.id;
+    assert.equal(prepared.files.length, 1);
+    assert.ok(prepared.files[0].documentId);
+    assert.deepEqual(prepared.files[0].personIds, ["xml-staged-p1"]);
+    assert.deepEqual(prepared.files[0].document?.eventLinks, [
+      { personId: "xml-staged-p1", eventId: stagedEventId },
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  const portrait = importAgelongXml(
+    input.replace('path="archive.xml.files/certificate.pdf"', 'path="archive.xml.files/portrait.png"')
+      .replace('<person id="p" fn="Anna" sn="Example" />',
+        '<person id="p" fn="Anna" sn="Example"><documents><document id="certificate" ismain="1"/></documents></person>'),
+    "xml-image-event",
+  );
+  assert.equal(portrait.media[0].document, undefined);
+  assert.deepEqual(portrait.media[0].portraitIds, ["xml-image-event-p1"]);
+  assert.ok(portrait.warnings.some((warning) => warning.includes("не переносит связи некоторых документов")));
+});
+
 async function zipFile(path: string, entries: [string, Buffer][]) {
   const zip = new ZipFile(),
     writing = pipeline(zip.outputStream, createWriteStream(path));
