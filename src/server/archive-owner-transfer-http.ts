@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { archiveOwnerTransfer } from "./archive-owner-transfer.ts";
-import { AccountSessionExpired } from "./account-session-guard.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { StoreDatabase } from "./store-database.ts";
@@ -93,6 +93,8 @@ export function archiveOwnerTransferHttp(
           ? 400
           : error instanceof AccountSessionExpired
             ? 401
+          : error instanceof AccountSessionBusy
+            ? 409
           : error instanceof ForbiddenError
             ? 403
             : error instanceof ConflictError ||

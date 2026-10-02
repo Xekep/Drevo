@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import type { StoreDatabase } from "./store-database.ts";
 import { archiveDeletion } from "./archive-deletion.ts";
-import { AccountSessionExpired } from "./account-session-guard.ts";
+import { AccountSessionBusy, AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
@@ -83,6 +83,8 @@ export function archiveDeletionHttp(
           ? 400
           : error instanceof AccountSessionExpired
             ? 401
+          : error instanceof AccountSessionBusy
+            ? 409
           : error instanceof ForbiddenError
             ? 403
             : error instanceof ConflictError
