@@ -3375,6 +3375,27 @@ try {
   assert.equal(citedResponse.status, 507,
     `a source-only original must count toward the basic 500 MB quota: ${await citedResponse.text()}`);
   assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
+  const citedDelta = await fetch(securedBase + "/api/family/changes", {
+    method: "POST",
+    headers: { Cookie: `drevo_session=${ownerToken}`, Origin: process.env.PUBLIC_ORIGIN!,
+      "Content-Type": "application/json", "If-Match": String(peopleBeforeQuota.revision) },
+    body: JSON.stringify({ changes: archiveChanges(peopleBeforeQuota.family, citedFamily) }),
+  });
+  assert.equal(citedDelta.status, 507, await citedDelta.text());
+  assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
+  await assert.rejects(quotaDb.transaction(async () => {
+    await quotaDb.prepare("", "UPDATE people SET data=jsonb_set(data,'{sources}',?::jsonb) WHERE id='person-a'")
+      .run(JSON.stringify([...citedFamily.people[0].sources,
+        { title: "Second citation", type: "archive", reference: "leaf 2",
+          url: "/media/cited-record.jpg?page=2" }]));
+    assert.equal((await accountCapacity(quotaDb, "owner")).mediaBytes, BASIC_MEDIA_BYTES + 1,
+      "two citations to one physical original must count it once");
+    await quotaDb.prepare("", "UPDATE people SET data=jsonb_set(data,'{sources}',?::jsonb) WHERE id='person-a'")
+      .run(JSON.stringify(peopleBeforeQuota.family.people[0].sources));
+    assert.equal((await accountCapacity(quotaDb, "owner")).mediaBytes, BASIC_MEDIA_BYTES - 1,
+      "deleting the last citation frees only that original's bytes");
+    throw new Error("rollback citation quota fixture");
+  }), /rollback citation quota fixture/);
   await quotaDb.prepare("", "DELETE FROM media_originals WHERE url='/media/cited-record.jpg'").run();
   const rejectedPeople = await saveQuotaFamily(quotaFamily(151), peopleBeforeQuota.revision);
   assert.equal(rejectedPeople.status, 403, await rejectedPeople.text());

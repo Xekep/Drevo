@@ -3,24 +3,32 @@ import { UploadQuotaError } from "./upload-quota.ts";
 
 export const BASIC_MEDIA_BYTES = 500_000_000;
 
+/** Local originals can also be referenced only by a citation. Strip page
+ * fragments/query strings before comparing with the stored original URL.
+ * The EXISTS below counts an original once even when several facts cite it.
+ */
+export const postgresMediaReferencesSql = `
+  SELECT data->>'photo' AS url FROM people
+  UNION ALL SELECT data->>'url' FROM photos
+  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM people p CROSS JOIN LATERAL jsonb_path_query(p.data, '$.**.sources[*].url') cited(value)
+  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM family_unions u CROSS JOIN LATERAL jsonb_path_query(u.data, '$.**.sources[*].url') cited(value)
+  UNION ALL SELECT split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM relations r CROSS JOIN LATERAL jsonb_path_query(r.sources, '$[*].url') cited(value)`;
+
 /** Referenced originals and live temporary grants are counted once per URL. */
 export async function postgresMediaBytes(db: StoreDatabase, now = Date.now()) {
   if (db.kind !== "postgres") return 0;
   const used = await db
     .prepare(
       "",
-      `SELECT
+      `WITH referenced AS (${postgresMediaReferencesSql}) SELECT
         COALESCE((SELECT sum(file_size) FROM documents),0)
         + COALESCE((
           SELECT sum(m.size_bytes) FROM media_originals m
           WHERE EXISTS (
-            SELECT 1 FROM people p
-            WHERE p.archive_id=m.archive_id
-              AND p.data->>'photo'=m.url
-          ) OR EXISTS (
-            SELECT 1 FROM photos p
-            WHERE p.archive_id=m.archive_id
-              AND p.data->>'url'=m.url
+            SELECT 1 FROM referenced r WHERE r.url=m.url
           ) OR EXISTS (
             SELECT 1 FROM media_upload_grants g
             WHERE g.archive_id=m.archive_id
@@ -83,10 +91,7 @@ export async function enforcePostgresMediaQuota(
   const unaccounted = await db
     .prepare(
       "",
-      `WITH referenced AS (
-         SELECT data->>'photo' AS url FROM people
-         UNION SELECT data->>'url' AS url FROM photos
-       )
+      `WITH referenced AS (${postgresMediaReferencesSql})
        SELECT 1 FROM referenced r
        WHERE r.url LIKE '/media/%'
          AND NOT EXISTS (SELECT 1 FROM media_originals m WHERE m.url=r.url)

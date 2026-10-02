@@ -10,6 +10,7 @@ import { isSameOriginRequest } from "./same-origin.ts";
 import { ForbiddenError } from "./users.ts";
 import { isInfrastructureError } from "./infrastructure-error.ts";
 import { isScopedUser, projectFamilyForUser } from "../domain/tree-access.ts";
+import { UploadQuotaError } from "./upload-quota-error.ts";
 
 const MAX_CHANGES = 10_000;
 const MAX_BODY = 8 * 1024 * 1024;
@@ -183,7 +184,9 @@ export function familyChangesHttp({
           ? 409
           : error instanceof ForbiddenError
             ? 403
-            : 400,
+            : error instanceof UploadQuotaError
+              ? error.status
+              : 400,
         {
           error:
             error instanceof Error

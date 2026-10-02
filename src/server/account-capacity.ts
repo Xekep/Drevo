@@ -1,5 +1,5 @@
 import type { StoreDatabase } from "./store-database.ts";
-import { BASIC_MEDIA_BYTES } from "./postgres-media-quota.ts";
+import { BASIC_MEDIA_BYTES, postgresMediaReferencesSql } from "./postgres-media-quota.ts";
 import { BASIC_PEOPLE_LIMIT } from "./postgres-people-quota.ts";
 
 /** Usage is archive-local; only the owner of this active tree receives it. */
@@ -13,10 +13,7 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
          JOIN account_tiers t ON t.account_id=o.user_id
          WHERE o.archive_id=current_setting('drevo.archive_id', true)
            AND o.user_id=?
-       ), referenced AS (
-         SELECT data->>'photo' AS url FROM people
-         UNION SELECT data->>'url' AS url FROM photos
-       )
+       ), referenced AS (${postgresMediaReferencesSql})
        SELECT
          owner.full_access,
          (SELECT count(*) FROM people) AS people,
@@ -24,11 +21,7 @@ export async function accountCapacity(db: StoreDatabase, accountId: string) {
          + COALESCE((
            SELECT sum(m.size_bytes) FROM media_originals m
            WHERE EXISTS (
-             SELECT 1 FROM people p
-             WHERE p.archive_id=m.archive_id AND p.data->>'photo'=m.url
-           ) OR EXISTS (
-             SELECT 1 FROM photos p
-             WHERE p.archive_id=m.archive_id AND p.data->>'url'=m.url
+             SELECT 1 FROM referenced r WHERE r.url=m.url
            ) OR EXISTS (
              SELECT 1 FROM media_upload_grants g
              WHERE g.archive_id=m.archive_id AND g.url=m.url AND g.expires_ms>?
