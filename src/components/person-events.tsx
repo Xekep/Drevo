@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
-import type { PersonEvent, Source } from "../domain/types";
+import type { ClaimConfidence, PersonEvent, Source } from "../domain/types";
+import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, EVENT_NAMES } from "../domain/person-events";
@@ -15,11 +16,13 @@ export function EventsEditor({
   onChange,
   personId,
   isAdmin,
+  canAssess,
 }: {
   events: PersonEvent[];
   onChange: (events: PersonEvent[]) => void;
   personId?: string;
   isAdmin: boolean;
+  canAssess: boolean;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const update = (id: string, patch: Partial<PersonEvent>) =>
@@ -67,6 +70,7 @@ export function EventsEditor({
               Событие
               <select
                 value={event.type}
+                disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
                 onChange={(e) =>
                   update(event.id, {
                     type: e.target.value as PersonEvent["type"],
@@ -87,6 +91,7 @@ export function EventsEditor({
                   maxLength={1000}
                   placeholder="Название события"
                   value={event.title || ""}
+                  disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
                   onChange={(e) =>
                     update(event.id, { title: e.target.value || undefined })
                   }
@@ -109,14 +114,28 @@ export function EventsEditor({
               {event.dateClaim && event.dateClaim.value !== claimableEventDate(event)
                 ? <div>
                     <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(event.dateClaim.value)}.</p>
-                    <button type="button" onClick={() => update(event.id, { dateClaim: undefined })}>
-                      Снять связи с прежней датой
-                    </button>
+                    {event.dateClaim.confidence && !canAssess
+                      ? <p>Оценку и связь с прежней датой может снять только исследователь или администратор.</p>
+                      : <button type="button" onClick={() => update(event.id, { dateClaim: undefined })}>
+                          Снять связи с прежней датой
+                        </button>}
                   </div>
                 : claimableEventDate(event)
-                  ? <CitationSourcesEditor sources={event.dateClaim?.sources || []}
+                  ? <><CitationSourcesEditor sources={event.dateClaim?.sources || []}
                       onChange={(sources) => update(event.id, { dateClaim: sources.length
-                        ? { value: claimableEventDate(event)!, sources } : undefined })} isAdmin={isAdmin} />
+                        ? { ...event.dateClaim, value: claimableEventDate(event)!, sources } : undefined })}
+                      isAdmin={isAdmin} canRemoveLast={!event.dateClaim?.confidence || canAssess} />
+                    {event.dateClaim && <label>Достоверность
+                      <select value={event.dateClaim.confidence || ""} disabled={!canAssess}
+                        onChange={(change) => update(event.id, { dateClaim: {
+                          ...event.dateClaim!, confidence: change.target.value
+                            ? change.target.value as ClaimConfidence : undefined,
+                        } })}>
+                        <option value="">Не оценено</option>
+                        {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                          <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+                      </select>
+                    </label>}</>
                   : <p>Укажите одну дату без периода или приблизительной формулировки, чтобы привязать свидетельство.</p>}
             </details>
             <label>
@@ -139,14 +158,28 @@ export function EventsEditor({
               {event.placeClaim && event.placeClaim.value !== event.place
                 ? <div>
                     <p role="alert">Место изменилось. Источники относятся к прежнему месту {event.placeClaim.value}.</p>
-                    <button type="button" onClick={() => update(event.id, { placeClaim: undefined })}>
-                      Снять связи с прежним местом
-                    </button>
+                    {event.placeClaim.confidence && !canAssess
+                      ? <p>Оценку и связь с прежним местом может снять только исследователь или администратор.</p>
+                      : <button type="button" onClick={() => update(event.id, { placeClaim: undefined })}>
+                          Снять связи с прежним местом
+                        </button>}
                   </div>
                 : event.place?.trim()
-                  ? <CitationSourcesEditor sources={event.placeClaim?.sources || []}
+                  ? <><CitationSourcesEditor sources={event.placeClaim?.sources || []}
                       onChange={(sources) => update(event.id, { placeClaim: sources.length
-                        ? { value: event.place!, sources } : undefined })} isAdmin={isAdmin} />
+                        ? { ...event.placeClaim, value: event.place!, sources } : undefined })}
+                      isAdmin={isAdmin} canRemoveLast={!event.placeClaim?.confidence || canAssess} />
+                    {event.placeClaim && <label>Достоверность
+                      <select value={event.placeClaim.confidence || ""} disabled={!canAssess}
+                        onChange={(change) => update(event.id, { placeClaim: {
+                          ...event.placeClaim!, confidence: change.target.value
+                            ? change.target.value as ClaimConfidence : undefined,
+                        } })}>
+                        <option value="">Не оценено</option>
+                        {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+                          <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+                      </select>
+                    </label>}</>
                   : <p>Укажите место, чтобы привязать к нему свидетельство.</p>}
             </details>
             <details className="event-extra">
@@ -160,9 +193,10 @@ export function EventsEditor({
                 {event.type !== "other" && (
                   <label>
                     Уточнение названия
-                    <input
-                      maxLength={1000}
-                      value={event.title || ""}
+                  <input
+                    maxLength={1000}
+                    value={event.title || ""}
+                    disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
                       onChange={(e) =>
                         update(event.id, { title: e.target.value || undefined })
                       }
@@ -327,10 +361,13 @@ export function EventsEditor({
             <button
               className="event-remove"
               type="button"
+              disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
               onClick={() => onChange(events.filter((e) => e.id !== event.id))}
             >
               <Trash2 size={14} /> Убрать событие
             </button>
+            {!canAssess && (event.dateClaim?.confidence || event.placeClaim?.confidence) &&
+              <small>Оценённое событие может удалить исследователь или администратор.</small>}
           </div>
         </details>
       ))}
@@ -404,11 +441,15 @@ export function PersonEvents({
               {!!event.sources?.length && <EventSourceList label="Источники"
                 sources={event.sources} canLoadDocuments={canLoadDocuments} />}
               {!!event.dateClaim?.sources.length && event.dateClaim.value === claimableEventDate(event) && (
-                <EventSourceList label="Источники даты" sources={event.dateClaim.sources}
+                <EventSourceList label={`Источники даты${event.dateClaim.confidence
+                  ? ` · ${CLAIM_CONFIDENCE_LABELS[event.dateClaim.confidence]}` : ""}`}
+                  sources={event.dateClaim.sources}
                   canLoadDocuments={canLoadDocuments} />
               )}
               {!!event.placeClaim?.sources.length && event.placeClaim.value === event.place && (
-                <EventSourceList label="Источники места" sources={event.placeClaim.sources}
+                <EventSourceList label={`Источники места${event.placeClaim.confidence
+                  ? ` · ${CLAIM_CONFIDENCE_LABELS[event.placeClaim.confidence]}` : ""}`}
+                  sources={event.placeClaim.sources}
                   canLoadDocuments={canLoadDocuments} />
               )}
             </div>

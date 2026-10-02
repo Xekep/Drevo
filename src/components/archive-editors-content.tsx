@@ -882,6 +882,7 @@ export function PersonEditor({
           onChange={(events) => field("events", events)}
           personId={person?.id}
           isAdmin={isAdmin}
+          canAssess={user?.role === "admin" || user?.role === "researcher"}
         />
         <details className="form-details">
           <summary>

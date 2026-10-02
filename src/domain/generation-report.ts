@@ -277,7 +277,11 @@ export function generationReport(
             .join("; ") || "дата неизвестна",
         );
         sources("Источник события", event.sources);
+        if (event.dateClaim?.confidence)
+          write("Оценка даты события", CLAIM_CONFIDENCE_LABELS[event.dateClaim.confidence]);
         sources("Источник даты события", event.dateClaim?.sources);
+        if (event.placeClaim?.confidence)
+          write("Оценка места события", CLAIM_CONFIDENCE_LABELS[event.placeClaim.confidence]);
         sources("Источник места события", event.placeClaim?.sources);
       }
       for (const award of person.awards || []) {

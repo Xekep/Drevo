@@ -128,12 +128,10 @@ export function validateFamily(value: unknown): Family {
     for (const s of p.sources)
       if (!validPersonSource(s)) throw new Error("Некорректный источник");
     for (const event of p.events || [])
-      if (!validValueClaim(event.placeClaim, event.place) ||
-        event.placeClaim && "confidence" in event.placeClaim)
+      if (!validValueClaim(event.placeClaim, event.place))
         throw new Error("Источник места события относится к другому значению; снимите связь перед изменением места");
     for (const event of p.events || [])
-      if (!validValueClaim(event.dateClaim, claimableEventDate(event)) ||
-        event.dateClaim && "confidence" in event.dateClaim)
+      if (!validValueClaim(event.dateClaim, claimableEventDate(event)))
         throw new Error("Источник даты события относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
