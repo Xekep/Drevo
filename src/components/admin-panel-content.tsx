@@ -38,6 +38,8 @@ import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
 import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
+import { adminMatchesPath, archivePaths } from "../domain/archive-routes";
+import { archiveContextAt, scopedArchivePath } from "../domain/archive-context";
 type Settings = {
   publicTree: boolean;
   publicAlbums: boolean;
@@ -332,7 +334,10 @@ export function AdminPanel({
   save: (family: Family) => Promise<Family>;
   canEdit: boolean;
 }) {
-  const [section, setSection] = useState("users"),
+  const [section, setSection] = useState(() =>
+    typeof window !== "undefined" &&
+    (archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath
+      ? "matches" : "users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
     [usersTotal, setUsersTotal] = useState(0),
     [usersNext, setUsersNext] = useState<string | null>(null),
@@ -345,6 +350,12 @@ export function AdminPanel({
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
   const [auditActor, setAuditActor] = useState("");
+  const selectSection = (next: string) => {
+    setSection(next);
+    setNotice("");
+    const path = scopedArchivePath(next === "matches" ? adminMatchesPath : archivePaths.admin);
+    if (window.location.pathname !== path) window.history.replaceState(window.history.state, "", path);
+  };
   useEffect(() => {
     const controller = new AbortController();
     void archiveFetch("/api/settings", { signal: controller.signal })
@@ -426,8 +437,7 @@ export function AdminPanel({
             id="admin-section-select"
             value={section}
             onChange={(event) => {
-              setSection(event.target.value);
-              setNotice("");
+              selectSection(event.target.value);
             }}
           >
             {ADMIN_SECTIONS.map((group) => (
@@ -455,8 +465,7 @@ export function AdminPanel({
                     type="button"
                     aria-current={section === id ? "page" : undefined}
                     onClick={() => {
-                      setSection(id);
-                      setNotice("");
+                      selectSection(id);
                     }}
                   >
                     <Icon size={17} aria-hidden="true" />

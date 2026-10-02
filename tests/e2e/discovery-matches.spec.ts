@@ -657,4 +657,10 @@ test("a selected linked member opens through its own permission-checked URL", as
   await expect(page.getByRole("heading", { name: "Мария Петрова" })).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("alert")).toContainText("Карточка недоступна");
+  await page.getByRole("link", { name: "К сопоставлениям" }).click();
+  await expect(page).toHaveURL(/\/a\/tree-a\/admin\/matches$/);
+  // This fixture has a local SQLite archive, so tree-a is a mocked remote archive.
+  await page.goto("/admin/matches");
+  await expect(page.getByRole("heading", { name: "Запросы между деревьями" })).toBeVisible();
+  await expect(page.locator("#admin-section-select")).toHaveValue("matches");
 });

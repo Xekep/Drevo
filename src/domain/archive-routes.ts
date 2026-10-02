@@ -14,6 +14,7 @@ export const archivePaths = {
   admin: "/admin",
 } as const;
 export type ArchiveView = keyof typeof archivePaths;
+export const adminMatchesPath = "/admin/matches";
 
 export type ArchiveEntity =
   { kind: "person"; id: string } | { kind: "photo"; id: string };
@@ -107,6 +108,7 @@ export function archiveViewAt(pathname: string): ArchiveView | null {
   const innerPath = archiveContextAt(pathname)?.innerPath || pathname;
   const path = innerPath.length > 1 ? innerPath.replace(/\/$/, "") : innerPath;
   if (path === "/") return "tree";
+  if (path === adminMatchesPath) return "admin";
   return (
     (Object.keys(archivePaths) as ArchiveView[]).find(
       (view) => archivePaths[view] === path,
