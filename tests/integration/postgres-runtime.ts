@@ -2,6 +2,7 @@
 import { DEFAULT_STORAGE_LIMITS } from "../../src/shared/storage-limits.ts";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -4120,6 +4121,42 @@ try {
   assert.equal(selectedFullBackup.status, 200);
   assert.match(selectedFullBackup.headers.get("content-type") || "", /application\/gzip/);
   await selectedFullBackup.arrayBuffer();
+  assert.equal(process.env.ARCHIVE_ID, "runtime-test",
+    "the worker inherits a different root archive context");
+  const managedSelected = await fetch(securedBase + "/a/other-archive/api/backups/create", {
+    method: "POST",
+    headers: { ...ownerHeaders, "x-drevo-backup": "1" },
+  });
+  assert.equal(managedSelected.status, 202);
+  let managedStatus: { job?: { state: string; error?: string }; records?: Array<{ name: string }> } = {};
+  for (let attempt = 0; attempt < 300; attempt++) {
+    managedStatus = await fetch(securedBase + "/a/other-archive/api/backups", {
+      headers: ownerHeaders,
+    }).then((response) => response.json());
+    if (managedStatus.job?.state !== "running") break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(managedStatus.job?.state, "succeeded", managedStatus.job?.error);
+  const managedName = managedStatus.records?.[0]?.name;
+  assert.ok(managedName, "selected archive has a managed backup record");
+  const managedFile = join(directory, "archives", "other-archive", "backups", managedName);
+  const managedSqlite = join(directory, "selected-managed-backup.sqlite");
+  writeFileSync(managedSqlite, execFileSync("tar", ["-xOf", managedFile, "drevo.sqlite"], {
+    maxBuffer: 64 * 1024 * 1024,
+  }));
+  const managedDb = new DatabaseSync(managedSqlite, { readOnly: true });
+  try {
+    const selectedPerson = managedDb.prepare("SELECT data FROM people WHERE id='person-a'").get();
+    assert.equal(JSON.parse(String(selectedPerson?.data)).name,
+      (await otherApp.archive.read()).family.people.find((person) => person.id === "person-a")?.name,
+      "managed backup worker uses the selected archive's PostgreSQL RLS context");
+    assert.notEqual(JSON.parse(String(selectedPerson?.data)).name,
+      (await app.archive.read()).family.people.find((person) => person.id === "person-a")?.name,
+      "managed backup of another archive cannot contain the root archive's person");
+  } finally {
+    managedDb.close();
+    rmSync(managedSqlite, { force: true });
+  }
   assert.equal(
     (await fetch(securedBase + "/a/other-archive/api/session", { headers })).status,
     404,

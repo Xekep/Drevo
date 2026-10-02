@@ -43,6 +43,7 @@ export function backupFiles(
   suppliedRemote?: BackupRemote,
   now = Date.now,
   databaseBytes = async () => (await stat(databasePath)).size,
+  archiveId?: string,
 ) {
   const root = dirname(databasePath),
     directory = join(root, "backups");
@@ -121,6 +122,7 @@ export function backupFiles(
           fileURLToPath(new URL("./backup-worker.mjs", import.meta.url)),
           databasePath,
           join(stage, "drevo.sqlite"),
+          ...(archiveId ? [archiveId] : []),
         ],
         signal,
       );

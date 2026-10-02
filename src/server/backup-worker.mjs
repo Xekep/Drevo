@@ -6,11 +6,11 @@ import {
   openPostgresDatabase,
   configuredDatabaseBackend,
 } from "./store-database.ts";
-const [source, destination] = process.argv.slice(2);
+const [source, destination, archiveId] = process.argv.slice(2);
 if (!source || !destination) throw new Error("Missing backup paths");
 const db =
   configuredDatabaseBackend(source) === "postgres"
-    ? await openPostgresDatabase(process.env.ARCHIVE_ID || "", source)
+    ? await openPostgresDatabase(archiveId || "", source)
     : storeDatabase(new DatabaseSync(source, { readOnly: true }));
 try {
   await writeDatabaseBackup(db, destination);
