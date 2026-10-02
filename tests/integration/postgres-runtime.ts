@@ -41,6 +41,7 @@ import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
+import { verifyPlatformAiOrphanSweep } from "./platform-ai-orphan-sweep.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -7862,6 +7863,7 @@ try {
     guardedApp.archive.write = originalRestoreWrite;
     await client.query("INSERT INTO platform_admins(account_id) VALUES('owner') ON CONFLICT DO NOTHING");
   }
+  await verifyPlatformAiOrphanSweep(app!.archive.db, client, source);
   console.log("runtime_http_and_backup_ok");
 } finally {
   await restoreGuardApp?.close();
