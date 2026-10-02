@@ -74,6 +74,8 @@ export function DiscoveryMatchesAdmin() {
   const [target, setTarget] = useState<Candidate | null>(null);
   const [reason, setReason] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(true);
+  const [matchesReload, setMatchesReload] = useState(0);
   const [deferredMatches, setDeferredMatches] = useState<Set<string>>(() => new Set());
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -82,6 +84,25 @@ export function DiscoveryMatchesAdmin() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState !== "visible") return;
+      // A publication or link may have been revoked in another tab while this list was open.
+      setMatches([]);
+      setMatchesLoading(true);
+      setMatchesReload((value) => value + 1);
+    };
+    const onPageShow = (event: PageTransitionEvent) => { if (event.persisted) recheck(); };
+    window.addEventListener("focus", recheck);
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("focus", recheck);
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -170,12 +191,14 @@ export function DiscoveryMatchesAdmin() {
     }).then(async (response) => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Не удалось загрузить сопоставления");
+      if (controller.signal.aborted) return;
       setArchiveId(body.archiveId);
       setMatches(body.matches);
       setNextCursor(body.nextCursor);
-    }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); });
+    }).catch((reason) => { if (!controller.signal.aborted) setError(reason.message); })
+      .finally(() => { if (!controller.signal.aborted) setMatchesLoading(false); });
     return () => controller.abort();
-  }, [cursor, reload]);
+  }, [cursor, reload, matchesReload]);
 
   async function send() {
     if (!source || !target) return;
@@ -377,7 +400,8 @@ export function DiscoveryMatchesAdmin() {
       <h2>Запросы между деревьями</h2>
       {deferredCount > 0 && <p>Отложено до следующего открытия раздела: {deferredCount}. <button type="button"
         onClick={() => { setDeferredMatches(new Set()); setNotice("Отложенные запросы снова показаны."); }}>Показать сейчас</button></p>}
-      {!visibleMatches.length && <p>{deferredCount ? "Сейчас нет запросов для рассмотрения." : "Пока нет запросов на сопоставление."}</p>}
+      {matchesLoading && <p role="status">Проверяем доступность связей…</p>}
+      {!matchesLoading && !visibleMatches.length && <p>{deferredCount ? "Сейчас нет запросов для рассмотрения." : "Пока нет запросов на сопоставление."}</p>}
       {visibleMatches.map((item) => <article key={item.id} className="match-request">
         <div className="match-request-heading"><strong>{statusLabel[item.status]}</strong><time dateTime={item.requestedAt}>{new Date(item.requestedAt).toLocaleDateString("ru-RU")}</time></div>
         <div className="match-pair"><CandidateCard candidate={item.left} ownArchiveId={archiveId} />

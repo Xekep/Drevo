@@ -272,6 +272,34 @@ test("linked cards keep their archive of origin visible with identical names", a
   await expect(origins).toHaveText(["Исходный архив: tree-a", "Ваш архив"]);
 });
 
+test("an open matches list drops a revoked link when the tab becomes visible", async ({ page }) => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
+  let revoked = false;
+  let reads = 0;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [left] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) => {
+    reads++;
+    return route.fulfill({ json: { archiveId: "tree-a", nextCursor: null, matches: [{
+      id, left, right, initiatedByArchiveId: "tree-a",
+      status: revoked ? "revoked" : "linked", requestedAt: "2026-09-30T00:00:00Z",
+    }] } });
+  });
+
+  await page.goto("/admin/matches");
+  await expect(page.getByText("Сопоставлено", { exact: true })).toBeVisible();
+  await expect(page.getByText("Поделиться разрешённой веткой")).toBeVisible();
+  revoked = true;
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(() => reads).toBeGreaterThan(1);
+  await expect(page.getByText("Связь отозвана", { exact: true })).toBeVisible();
+  await expect(page.getByText("Поделиться разрешённой веткой")).toHaveCount(0);
+});
+
 test("candidate suggestions can continue past the first indexed page", async ({ page }) => {
   const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const first = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
