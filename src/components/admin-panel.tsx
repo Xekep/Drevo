@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import type { Family } from "../domain";
+import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { LazyChunkBoundary } from "./lazy-chunk-boundary";
 import { loadLazyModule } from "./lazy-section-recovery";
 
@@ -7,6 +8,7 @@ type AdminPanelProps = {
   family: Family;
   currentUserId: string;
   platformAdmin: boolean;
+  publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;

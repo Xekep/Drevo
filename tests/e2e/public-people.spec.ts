@@ -289,3 +289,48 @@ test("publication status is not reported as hidden before the server answers", a
     releaseStatus();
   }
 });
+
+test("invited admin sees owner-only publication explanation without forbidden controls", async ({ page }) => {
+  let forbiddenCalls = 0;
+  await page.route((url) => url.pathname === "/api/family" && url.searchParams.get("projection") === "overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    return route.fulfill({ response, json: { ...data, local: false } });
+  });
+  await page.route((url) => url.pathname === "/api/account/archives", (route) =>
+    route.fulfill({ json: { archives: [{ id: "invited-tree", title: "Чужое дерево",
+      role: "admin", approved: true, owned: false, current: true }] } }));
+  await page.route((url) => url.pathname.startsWith("/api/admin/published-people/"), (route) => {
+    forbiddenCalls += 1;
+    return route.fulfill({ status: 403, json: { error: "Публикация доступна владельцу дерева" } });
+  });
+
+  await page.goto("/admin");
+  await openAdminSection(page, "publications", "Можно найти");
+  await expect(page.getByText("Публикацией людей управляет владелец дерева.")).toBeVisible();
+  await expect(page.locator(".publication-admin-list")).toHaveCount(0);
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await expect(page.getByText("Связями с другими деревьями управляет владелец дерева.")).toBeVisible();
+
+  await page.goto("/tree");
+  await expect(page.getByTestId("rf__node-e2e-memorial-person")).toBeAttached();
+  await expect(page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy")).toHaveCount(0);
+  expect(forbiddenCalls).toBe(0);
+});
+
+test("archive owner retains publication controls in a multi-archive account view", async ({ page }) => {
+  await page.route((url) => url.pathname === "/api/family" && url.searchParams.get("projection") === "overview", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    return route.fulfill({ response, json: { ...data, local: false } });
+  });
+  await page.route((url) => url.pathname === "/api/account/archives", (route) =>
+    route.fulfill({ json: { archives: [{ id: "owned-tree", title: "Моё дерево",
+      role: "admin", approved: true, owned: true, current: true }] } }));
+
+  await page.goto("/admin");
+  await openAdminSection(page, "publications", "Можно найти");
+  await expect(page.getByRole("searchbox", { name: "Найти человека" })).toBeVisible();
+  await page.goto("/tree");
+  await expect(page.getByTestId("rf__node-e2e-memorial-person").locator(".flow-privacy")).toBeVisible();
+});

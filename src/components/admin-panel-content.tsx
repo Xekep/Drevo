@@ -36,6 +36,7 @@ import { VkAuthAdmin } from "./vk-auth-admin";
 import { ResearchResourcesAdmin } from "./research-resources-admin";
 import { SourceCatalogAdmin } from "./source-catalog-admin";
 import { PublicationAdmin } from "./publication-admin";
+import type { PublicationOwnership } from "../hooks/useArchivePublicationOwner";
 import { DiscoveryMatchesAdmin } from "./discovery-matches-admin";
 type Settings = {
   publicTree: boolean;
@@ -314,6 +315,7 @@ export function AdminPanel({
   family,
   currentUserId,
   platformAdmin,
+  publicationOwnership,
   onClose,
   onChanged,
   onSettings,
@@ -323,6 +325,7 @@ export function AdminPanel({
   family: Family;
   currentUserId: string;
   platformAdmin: boolean;
+  publicationOwnership: PublicationOwnership;
   onClose: () => void;
   onChanged: () => void;
   onSettings: () => void;
@@ -480,7 +483,8 @@ export function AdminPanel({
             <p>
               Новые пользователи ожидают одобрения. Читатель видит закрытый
               архив после допуска, родственник редактирует свои объекты,
-              администратор управляет всем архивом.
+              администратор управляет участниками и содержимым архива.
+              Публикацией людей и связями деревьев управляет владелец.
             </p>
             {(settings.publicTree || settings.publicAlbums) && (
               <p role="note" className="form-error">
@@ -665,8 +669,20 @@ export function AdminPanel({
         {section === "sources" && <SourceCatalogAdmin family={family} onChanged={onChanged} />}
         {section === "mcp" && <McpTokenAdmin />}
         {section === "shares" && <ShareCatalog />}
-        {section === "publications" && <PublicationAdmin family={family} />}
-        {section === "matches" && <DiscoveryMatchesAdmin />}
+        {section === "publications" && (publicationOwnership === "owner"
+          ? <PublicationAdmin family={family} />
+          : <section className="admin-card archive-form"><p role="status">{
+            publicationOwnership === "checking" ? "Проверяем право на публикацию…"
+              : publicationOwnership === "unavailable" ? "Не удалось проверить право на публикацию. Обновите страницу и повторите попытку."
+                : "Публикацией людей управляет владелец дерева."
+          }</p></section>)}
+        {section === "matches" && (publicationOwnership === "owner"
+          ? <DiscoveryMatchesAdmin />
+          : <section className="admin-card archive-form"><p role="status">{
+            publicationOwnership === "checking" ? "Проверяем право на сопоставление…"
+              : publicationOwnership === "unavailable" ? "Не удалось проверить право на сопоставление. Обновите страницу и повторите попытку."
+                : "Связями с другими деревьями управляет владелец дерева."
+          }</p></section>)}
         {section === "invitations" && <InvitationsAdmin />}
         {section === "audit" && (
           <section className="admin-card archive-form">
