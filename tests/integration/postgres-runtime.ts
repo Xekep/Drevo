@@ -4554,6 +4554,16 @@ try {
   await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   await app.archive.db.prepare("", `UPDATE archive_memberships SET role='admin'
     WHERE archive_id='runtime-test' AND user_id='vk:42'`).run();
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    headers: archiveAdminHeaders,
+  })).status, 403, "an invited archive admin cannot read owners' match reasons");
+  assert.equal((await fetch(securedBase + "/api/discovery/matches", {
+    method: "POST", headers: archiveAdminHeaders, body: proposedPair,
+  })).status, 403, "an invited archive admin cannot propose a link for the owner");
+  assert.equal((await fetch(securedBase + matchPath, {
+    method: "PATCH", headers: archiveAdminHeaders,
+    body: JSON.stringify({ decision: "revoke" }),
+  })).status, 403, "an invited archive admin cannot revoke the owner's link");
   assert.equal((await fetch(securedBase + branchPath, { headers: archiveAdminHeaders })).status,
     403, "an invited admin cannot grant or inspect the owner's branch");
   assert.equal((await fetch(securedBase + branchPath, {
