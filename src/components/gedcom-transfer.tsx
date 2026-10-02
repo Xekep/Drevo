@@ -126,6 +126,11 @@ export function GedcomTransfer({
           </label>
         ))}
       </fieldset>
+      <p>
+        GEDCOM и GEDZIP сохраняют текст цитат, а GEDZIP также оригиналы файлов.
+        Связи цитат с каталогом источников Drevo не переносятся. Для полного
+        переноса между деревьями Drevo используйте формат .drevo.
+      </p>
       <a
         className="primary-action"
         href={archiveResourceUrl(`/api/gedcom/export?format=${format}`)}
