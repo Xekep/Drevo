@@ -1955,6 +1955,10 @@ try {
     let releaseSettingsModels!: () => void;
     const settingsModelsStarted = new Promise<void>((resolve) => { notifySettingsModels = resolve; });
     const settingsModelsGate = new Promise<void>((resolve) => { releaseSettingsModels = resolve; });
+    let notifySettingsRead!: () => void;
+    let releaseSettingsRead!: () => void;
+    const settingsReadStarted = new Promise<void>((resolve) => { notifySettingsRead = resolve; });
+    const settingsReadGate = new Promise<void>((resolve) => { releaseSettingsRead = resolve; });
     let notifyWriteStatusModels!: () => void;
     let releaseWriteStatusModels!: () => void;
     const writeStatusModelsStarted = new Promise<void>((resolve) => { notifyWriteStatusModels = resolve; });
@@ -1965,10 +1969,12 @@ try {
     const settingsWriteGate = new Promise<void>((resolve) => { releaseSettingsWrite = resolve; });
     let holdAdminResponse = false;
     let holdSettingsModels = false;
+    let holdSettingsRead = false;
     let holdWriteStatusModels = false;
     let holdSettingsWrite = false;
     let settingsWriteCompleted = false;
     let adminResponseCalls = 0;
+    let adminModelCalls = 0;
     const actualAiSettings = await aiSettingsStore(app.archive.db);
     const guardedAdminAi = adminAiHttp({
       auth: await createAuth(await userStore(app.archive.db), app.archive.db,
@@ -1976,6 +1982,14 @@ try {
       db: app.archive.db,
       settings: {
         ...actualAiSettings,
+        read: async () => {
+          const value = await actualAiSettings.read();
+          if (holdSettingsRead) {
+            notifySettingsRead();
+            await settingsReadGate;
+          }
+          return value;
+        },
         write: async (...args: Parameters<typeof actualAiSettings.write>) => {
           if (holdSettingsWrite) {
             notifySettingsWrite();
@@ -2004,6 +2018,7 @@ try {
           return Response.json({ id: "admin-tier-response", status: "completed", output_text: "OK" });
         }
         if (path.endsWith("/models")) {
+          adminModelCalls++;
           if (holdSettingsModels) {
             notifySettingsModels();
             await settingsModelsGate;
@@ -2077,6 +2092,24 @@ try {
       assert.doesNotMatch(await hiddenSettings.text(), /hidden-after-downgrade/);
       holdSettingsModels = false;
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      holdSettingsRead = true;
+      const modelsBeforeSettingsRead = adminModelCalls;
+      const readingBeforeCatalog = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
+        headers: ownerHeaders,
+      });
+      await Promise.race([settingsReadStarted, readingBeforeCatalog.then(async (response) => {
+        throw new Error(`AI settings stopped before reading configuration: ${response.status} ${await response.clone().text()}`);
+      }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI settings read did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseSettingsRead();
+      const blockedBeforeCatalog = await readingBeforeCatalog;
+      assert.equal(blockedBeforeCatalog.status, 403,
+        "a downgraded admin cannot receive AI settings after configuration loads");
+      assert.equal(adminModelCalls, modelsBeforeSettingsRead,
+        "a basic account cannot start model discovery after waiting for AI settings");
+      holdSettingsRead = false;
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
       holdSettingsWrite = true;
       const savingSettings = fetch(`http://127.0.0.1:${adminPort}/api/admin/ai`, {
         method: "PUT", headers: ownerHeaders,
@@ -2116,6 +2149,7 @@ try {
       releaseAdminResponse();
       releaseAdminModels();
       releaseSettingsModels();
+      releaseSettingsRead();
       releaseSettingsWrite();
       releaseWriteStatusModels();
       await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
