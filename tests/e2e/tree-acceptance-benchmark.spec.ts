@@ -180,6 +180,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
             ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
             : null,
         labelLod: Number(canvas?.dataset.gpuLabelLod ?? -1),
+        visiblePhotos: Number(canvas?.dataset.gpuVisiblePhotos || 0),
+        texturedPhotos: Number(canvas?.dataset.gpuTexturedPhotos || 0),
         dom: document.querySelectorAll("*").length,
         mountedCards: document.querySelectorAll(".react-flow__node-person")
           .length,
@@ -533,6 +535,21 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       await session.detach();
       return;
     }
+  }
+  // Exercise the old 1521-tile limit with the actual renderer/backend. The
+  // overview must retain a photo texture for every photographed visible card.
+  if (!isMobile) {
+    await page.getByRole("button", { name: "Вписать видимую часть дерева" }).click();
+    await waitForMediaIdle();
+    await expect.poll(async () => page.locator(".tree-gpu-scene").evaluate((canvas, minimumPhotos) => {
+      const node = canvas as HTMLCanvasElement;
+      const visible = Number(node.dataset.gpuVisiblePhotos);
+      return visible > minimumPhotos && Number(node.dataset.gpuTexturedPhotos) === visible;
+    }, count === 3313 ? 1521 : 0), { timeout: 60_000 }).toBe(true);
+    const overview = await snapshot("full-portrait-overview");
+    if (count === 3313) expect(overview.visiblePhotos).toBeGreaterThan(1521);
+    expect(overview.texturedPhotos).toBe(overview.visiblePhotos);
+    expect(overview.resources.textures).toBe(stableResources.textures);
   }
   await session.send("HeapProfiler.collectGarbage");
   const retainedHeapAfter = (await metrics()).JSHeapUsedSize;

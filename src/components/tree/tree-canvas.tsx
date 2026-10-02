@@ -1064,7 +1064,8 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         : displayEdges,
     [displayEdges, layoutTransition],
   );
-  const overviewAvailable = nodes.length >= 600 && !growing && !layoutSettling;
+  const overviewAvailable = mode !== "timeline" && !activeFanAnchor &&
+    nodes.length >= 600 && !growing && !layoutSettling;
   const portraitPeople = useMemo(() => nodes.map((node) => node.data.person), [nodes]);
   const distantScene = overviewAvailable && distantZoom;
   // Use the existing distant canvas scene for large introductions instead of
@@ -1857,7 +1858,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             hovered={gpuHovered} focused={gpuFocused} relationLabel={actions.relationLabel}
             onReady={gpuReady} onFailure={gpuFailure} />
         )}
-        {!activeFanAnchor && !gpuActive && (
+        {!activeFanAnchor && mode !== "timeline" && !gpuActive && (
           <DistantPortraits
             people={portraitPeople}
             nodes={nodes}

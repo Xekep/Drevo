@@ -1,5 +1,7 @@
 .mode-timeline .react-flow,
 .mode-timeline .tree-distant-portrait-clip {
+  /* Node wrappers and the canvas set their own visibility while measuring. */
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }

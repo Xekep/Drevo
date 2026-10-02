@@ -174,6 +174,14 @@ export function DistantPortraits({
       frame = 0;
       window.clearTimeout(settleTimer);
       const transform = store.getState().transform;
+      // Keep the canvas mounted and previews loading for the shared intro
+      // start, but do not paint a completed scene while that start is pending.
+      if (growing && !growthStarted) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        canvas.style.visibility = "hidden";
+        canvas.dataset.portraitCount = "0";
+        return;
+      }
       if (transform[2] >= 0.18 && handingOff) {
         if (!normalPortraitsReady()) {
           settleTimer = window.setTimeout(schedule, 60);
@@ -330,6 +338,7 @@ export function DistantPortraits({
     requestDraw.current = schedule;
     const unsubscribe = store.subscribe((state, previous) => {
       if (state.transform === previous.transform) return;
+      if (growing && !growthStarted) return;
       if (growthStartedAt.current !== null) {
         schedule();
         return;
@@ -367,7 +376,8 @@ export function DistantPortraits({
     };
   }, [store, nodes, households, edges, fullScene, width, height, growing, growthStarted, growthDelays]);
 
-  return <div className="tree-distant-portrait-clip" aria-hidden="true">
+  return <div className="tree-distant-portrait-clip" aria-hidden="true"
+    style={{ opacity: growing && !growthStarted ? 0 : undefined }}>
     <canvas
       ref={canvasRef}
       className="tree-distant-portraits"

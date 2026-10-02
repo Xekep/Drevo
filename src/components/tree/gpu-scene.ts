@@ -674,10 +674,15 @@ export function createGpuScene(
             camera.zoom,
           );
           const batches = new Map<WebGLTexture, number[]>();
+          let visiblePhotos = 0, texturedPhotos = 0;
           for (const { node } of visible) {
             const tile = node.data.person.photo
               ? portraits!.get(node.data.person.photo)
               : undefined;
+            if (node.data.person.photo) {
+              visiblePhotos++;
+              if (tile) texturedPhotos++;
+            }
             const texture = tile?.texture || fontTexture;
             let data = batches.get(texture);
             if (!data) batches.set(texture, (data = []));
@@ -712,6 +717,8 @@ export function createGpuScene(
                 (node.id === hovered || node.id === focused ? 8 : 0),
             );
           }
+          canvas.dataset.gpuVisiblePhotos = String(visiblePhotos);
+          canvas.dataset.gpuTexturedPhotos = String(texturedPhotos);
           for (const batch of portraitBatches.values()) batch.count = 0;
           for (const [texture, data] of batches) {
             let batch = portraitBatches.get(texture);
