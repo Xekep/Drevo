@@ -121,9 +121,17 @@ test("legacy inline sources never synthesize REPO; excess repositories stay text
     { title: "Register", type: "", reference: "leaf 3", repository },
     { title: "Register", type: "", reference: "leaf 3",
       repository: { ...repository, name: "Other archive" } },
+    { title: "Register", type: "", reference: "leaf 3", repository,
+      documentId: "11111111-1111-4111-8111-111111111111" },
+    { title: "Register", type: "", reference: "leaf 3", repository,
+      documentId: "22222222-2222-4222-8222-222222222222" },
+    { title: "Register", type: "", reference: "leaf 3", repository,
+      url: "https://one.example" },
+    { title: "Register", type: "", reference: "leaf 3", repository,
+      url: "https://two.example" },
   ];
   assert.equal(collectPersonSources(separate)
-    .filter((source) => source.title === "Register").length, 2);
+    .filter((source) => source.title === "Register").length, 6);
 
   const repeated = importGedcom(external("7.0")
     .replace("2 CALN F.6/13/104", "2 CALN F.6/13/104\n2 CALN F.7/1")

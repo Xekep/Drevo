@@ -21,12 +21,12 @@ function normalized(value?: string) {
 }
 
 function sourceKey(source: Source) {
-  if (source.repository)
-    return `repository:${JSON.stringify(source.repository)}|${normalized(source.title)}|${normalized(source.reference)}`;
-  if (source.documentId) return `document:${source.documentId}:${source.documentPage || 1}`;
+  const repository = source.repository ? `|repository:${JSON.stringify(source.repository)}` : "";
+  if (source.documentId)
+    return `document:${source.documentId}:${source.documentPage || 1}${repository}`;
   const url = normalized(source.url);
-  if (url) return `url:${url}`;
-  return `text:${normalized(source.title)}|${normalized(source.reference)}`;
+  if (url) return `url:${url}${repository}`;
+  return `text:${normalized(source.title)}|${normalized(source.reference)}${repository}`;
 }
 
 /**
