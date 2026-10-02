@@ -293,6 +293,8 @@ export function aiResearchHttp({
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
         });
+      if (!(await canDeliverAiData(req, chat.accessScope)))
+        return json(res, 403, { error: "Доступ к данным изменился" });
       const meta = shared && (await chats.messages(chat.id, fileUser.id))
         ?.flatMap((message) => Array.isArray(message.generatedFileMeta)
           ? message.generatedFileMeta : [])

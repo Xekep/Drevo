@@ -65,6 +65,10 @@ export function aiChatStore(db: StoreDatabase) {
         )
         .get(id));
     },
+    async allIds() {
+      const rows = await db.prepare("SELECT id FROM ai_chats", "SELECT id FROM ai_chats").all();
+      return new Set(rows.map((row) => String(row.id)));
+    },
     async create(userId: string, accessScope: string) {
       return await db.transaction(async () => {
         // Serialize concurrent new chats for this account, including other server processes.

@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import pg from "pg";
+import { setTimeout as delay } from "node:timers/promises";
 import { initializePostgresRuntimeSchema } from "./postgres-runtime-schema.ts";
 
 type Row = Record<string, unknown>;
@@ -48,6 +49,8 @@ export type StoreDatabase = {
     task: string,
     work: () => Promise<T>,
   ): Promise<{ acquired: false } | { acquired: true; value: T }>;
+  /** One host-wide session lock for filesystem tasks shared by all archives. */
+  withExclusivePlatformTask?<T>(task: string, work: () => Promise<T>): Promise<T>;
   inTransaction(): boolean;
   close(): Promise<void>;
 };
@@ -205,6 +208,43 @@ export async function openPostgresDatabase(
       throw new Error("Контекст транзакции БД уже завершён");
     return (owner?.client || pool).query<Row>(sql, values);
   };
+  async function withSessionTaskLock<T>(
+    key: string, work: () => Promise<T>,
+  ): Promise<{ acquired: false } | { acquired: true; value: T }> {
+    const client = await pool.connect();
+    let acquired = false;
+    let discard = false;
+    let failed = false;
+    let failure: unknown;
+    let value: T | undefined;
+    try {
+      const result = await client.query<{ acquired: boolean }>(
+        "SELECT pg_try_advisory_lock($1::bigint) AS acquired", [key],
+      );
+      acquired = !!result.rows[0]?.acquired;
+      if (acquired) value = await work();
+    } catch (error) {
+      if (!acquired) discard = true;
+      failed = true;
+      failure = error;
+    }
+    try {
+      if (acquired) {
+        const result = await client.query<{ released: boolean }>(
+          "SELECT pg_advisory_unlock($1::bigint) AS released", [key],
+        );
+        if (!result.rows[0]?.released) throw new Error("Task lock was lost");
+      }
+    } catch (error) {
+      discard = true;
+      failed = true;
+      failure = error;
+    } finally {
+      client.release(discard);
+    }
+    if (failed) throw failure;
+    return acquired ? { acquired: true, value: value as T } : { acquired: false };
+  }
   const database: StoreDatabase = {
     kind: "postgres",
     archiveId,
@@ -287,39 +327,26 @@ export async function openPostgresDatabase(
         .digest()
         .readBigInt64BE(0)
         .toString();
-      const client = await pool.connect();
-      let acquired = false;
-      let discard = false;
-      const release = async () => {
-        try {
-          if (acquired) {
-            const result = await client.query<{ released: boolean }>(
-              "SELECT pg_advisory_unlock($1::bigint) AS released",
-              [lockKey],
-            );
-            if (!result.rows[0]?.released)
-              throw new Error("Archive task lock was lost");
-          }
-        } catch (error) {
-          discard = true;
-          throw error;
-        } finally {
-          client.release(discard);
-        }
-      };
-      try {
-        const result = await client.query<{ acquired: boolean }>(
-          "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
-          [lockKey],
-        );
-        if (!result.rows[0]?.acquired) return { acquired: false };
-        acquired = true;
-        return { acquired: true, value: await work() };
-      } catch (error) {
-        if (!acquired) discard = true;
-        throw error;
-      } finally {
-        await release();
+      return withSessionTaskLock(lockKey, work);
+    },
+    async withExclusivePlatformTask(task, work) {
+      if (!/^[a-z0-9-]{1,64}$/.test(task))
+        throw new Error("Invalid platform task name");
+      if (context.getStore())
+        throw new Error("Platform file task cannot run inside a transaction");
+      const lockKey = createHash("sha256")
+        .update(`platform:${task}`)
+        .digest()
+        .readBigInt64BE(0)
+        .toString();
+      const deadline = Date.now() + 15_000;
+      while (true) {
+        // Waiters release their pool connections between attempts: the lock
+        // holder still needs a connection for the short disk reservation query.
+        const result = await withSessionTaskLock(lockKey, work);
+        if (result.acquired) return result.value;
+        if (Date.now() >= deadline) throw new Error("Platform task lock is busy");
+        await delay(50);
       }
     },
     close: () => pool.end(),

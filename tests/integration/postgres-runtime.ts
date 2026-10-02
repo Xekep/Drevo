@@ -36,6 +36,7 @@ import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
+import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -1577,6 +1578,7 @@ try {
     "startup cleanup removes files whose chat was deleted by another process");
   restartedStore.close();
   generatedStore.close();
+  await verifyGeneratedFileGlobalCap(app.archive.db, source);
   await client.query(
     "INSERT INTO account_email_credentials(account_id,email,password_hash) VALUES('reader','reader-export@example.invalid','secret-hash-sentinel')",
   );
