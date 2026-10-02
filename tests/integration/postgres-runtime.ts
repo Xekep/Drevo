@@ -1890,6 +1890,141 @@ try {
   } finally {
     await new Promise<void>((resolve) => revokedExportServer.close(() => resolve()));
   }
+  const deliveryToken = newSessionToken();
+  const deliveryHash = sessionTokenHash(deliveryToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [deliveryHash, Date.now() + 60_000],
+  );
+  const deliverySnapshot = await accountDataExport(app.archive.db).read("reader");
+  assert.ok(deliverySnapshot);
+  assert.ok(deliverySnapshot.accessScopes.some((scope) => scope.archiveId === "runtime-test"),
+    "even an unapproved archive represented in the account JSON has a delivery scope");
+  let reachDelivery!: () => void;
+  let releaseDelivery!: () => void;
+  const deliveryReached = new Promise<void>((resolve) => { reachDelivery = resolve; });
+  const deliveryGate = new Promise<void>((resolve) => { releaseDelivery = resolve; });
+  const delivering = accountDataExport(app.archive.db).deliverWithCurrentSession(
+    "reader", deliveryHash, deliverySnapshot.accessScopes,
+    async () => { reachDelivery(); await deliveryGate; },
+  );
+  const revokingClient = new pg.Client();
+  try {
+    await deliveryReached;
+    await revokingClient.connect();
+    const revokerPid = (await revokingClient.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const revocation = revokingClient.query(
+      "DELETE FROM account_sessions WHERE token_hash=$1", [deliveryHash],
+    );
+    let blocked = false;
+    for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+      const lock = await client.query(
+        "SELECT cardinality(pg_blocking_pids($1)) > 0 AS blocked", [revokerPid],
+      );
+      blocked = lock.rows[0].blocked === true;
+      if (!blocked) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(blocked, true, "logout waits while the account export is handed off");
+    releaseDelivery();
+    assert.equal(await delivering, "sent");
+    assert.equal((await revocation).rowCount, 1);
+    assert.equal(await accountDataExport(app.archive.db).deliverWithCurrentSession(
+      "reader", deliveryHash, deliverySnapshot.accessScopes, () => {
+        throw new Error("a revoked session must not reach delivery");
+      },
+    ), "session-expired");
+  } finally {
+    releaseDelivery();
+    await delivering.catch(() => {});
+    await revokingClient.end().catch(() => {});
+  }
+  const scopeLockToken = newSessionToken();
+  const scopeLockHash = sessionTokenHash(scopeLockToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [scopeLockHash, Date.now() + 60_000],
+  );
+  let reachScopeDelivery!: () => void;
+  let releaseScopeDelivery!: () => void;
+  const scopeDeliveryReached = new Promise<void>((resolve) => { reachScopeDelivery = resolve; });
+  const scopeDeliveryGate = new Promise<void>((resolve) => { releaseScopeDelivery = resolve; });
+  const scopeDelivery = accountDataExport(app.archive.db).deliverWithCurrentSession(
+    "reader", scopeLockHash, deliverySnapshot.accessScopes,
+    async () => { reachScopeDelivery(); await scopeDeliveryGate; },
+  );
+  const membershipWriter = new pg.Client();
+  const revisionWriter = new pg.Client();
+  try {
+    await scopeDeliveryReached;
+    await membershipWriter.connect();
+    await revisionWriter.connect();
+    const membershipPid = (await membershipWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const revisionPid = (await revisionWriter.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    await membershipWriter.query("BEGIN");
+    await revisionWriter.query("BEGIN");
+    await membershipWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await revisionWriter.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    const changeMembership = membershipWriter.query(
+      "UPDATE archive_memberships SET role=role WHERE archive_id='runtime-test' AND user_id='reader'",
+    );
+    const changeRevision = revisionWriter.query(
+      "UPDATE archives SET revision=revision+1 WHERE id='runtime-test'",
+    );
+    let bothBlocked = false;
+    for (let attempt = 0; attempt < 100 && !bothBlocked; attempt++) {
+      const locks = await client.query(
+        `SELECT cardinality(pg_blocking_pids($1)) > 0 AS membership_blocked,
+                cardinality(pg_blocking_pids($2)) > 0 AS revision_blocked`,
+        [membershipPid, revisionPid],
+      );
+      bothBlocked = locks.rows[0].membership_blocked === true &&
+        locks.rows[0].revision_blocked === true;
+      if (!bothBlocked) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(bothBlocked, true,
+      "membership revocation and graph changes wait for the final export handoff");
+    releaseScopeDelivery();
+    assert.equal(await scopeDelivery, "sent");
+    assert.equal((await changeMembership).rowCount, 1);
+    assert.equal((await changeRevision).rowCount, 1);
+  } finally {
+    releaseScopeDelivery();
+    await scopeDelivery.catch(() => {});
+    await membershipWriter.query("ROLLBACK").catch(() => {});
+    await revisionWriter.query("ROLLBACK").catch(() => {});
+    await membershipWriter.end().catch(() => {});
+    await revisionWriter.end().catch(() => {});
+  }
+  await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [scopeLockHash]);
+  const deletionOrderToken = newSessionToken();
+  const deletionOrderHash = sessionTokenHash(deletionOrderToken);
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'reader',$2)",
+    [deletionOrderHash, Date.now() + 60_000],
+  );
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT set_config('drevo.account_id','reader',true)");
+    await client.query("SELECT set_config('drevo.archive_id','runtime-test',true)");
+    await client.query(
+      "SELECT token_hash FROM account_sessions WHERE token_hash=$1 FOR UPDATE",
+      [deletionOrderHash],
+    );
+    assert.equal(await accountDataExport(app.archive.db).deliverWithCurrentSession(
+      "reader", deletionOrderHash, deliverySnapshot.accessScopes, () => {
+        throw new Error("a deletion-held session must not reach delivery");
+      },
+    ), "access-busy", "export releases archive locks while account deletion holds the session");
+    assert.equal((await client.query(
+      "SELECT id FROM archives WHERE id='runtime-test' FOR UPDATE NOWAIT",
+    )).rowCount, 1, "account deletion can acquire the archive after the export backs off");
+  } finally {
+    await client.query("ROLLBACK");
+  }
+  assert.equal(await accountDataExport(app.archive.db).deliverWithCurrentSession(
+    "reader", deletionOrderHash, deliverySnapshot.accessScopes, () => {},
+  ), "sent", "the same export can be retried after the other transaction releases its locks");
+  await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [deletionOrderHash]);
   const chatToDeleteAfterDowngrade = await aiChatStore(app.archive.db).create("owner", "[]");
   const aiOwner = await (await userStore(app.archive.db)).get("owner");
   assert.ok(aiOwner);
@@ -4461,7 +4596,7 @@ try {
   assert.ok(preparedCommentExport);
   await client.query("UPDATE archive_memberships SET approved=false WHERE user_id='reader'");
   assert.equal(await accountDataExport(app.archive.db).canDeliver(
-    "reader", preparedCommentExport.commentScopes), false,
+    "reader", preparedCommentExport.accessScopes), false,
   "a membership revoked during snapshot preparation cannot receive its old comments");
   const revokedCommentExport = await fetch(accountExportUrl, { headers })
     .then((response) => response.json());
