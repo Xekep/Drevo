@@ -29,6 +29,23 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
   await writeFile(join(sourceRoot, "uploads", "record.pdf"), pdf);
   const family = JSON.parse(await readFile(join("tests", "fixtures", "family.json"), "utf8")) as Family;
   const documentId = "36db38fd-f709-44dc-b481-52ef56bf0656";
+  const eventId = "residence-record";
+  family.people[0].events = [{
+    id: eventId, type: "residence", date: "1900", place: "Tver",
+    sources: [{ title: "Census", type: "archive", reference: "folio 7",
+      url: "https://example.test/census" }],
+  }];
+  family.unions = [{
+    id: "union-1", participants: [family.people[0].id, family.people[1].id],
+    type: "marriage", formation: { date: "1865", place: "Tver",
+      sources: [{ title: "Marriage register", type: "archive", reference: "folio 2" }] },
+    note: "Original register checked",
+  }];
+  family.links = [{
+    id: "link-1", from: family.people[0].id, to: family.people[2].id,
+    type: "guardian", note: "Named guardian in register",
+    sources: [{ title: "Guardian register", type: "archive", reference: "folio 8" }],
+  }];
   family.people[0].photo = "/media/portrait.png";
   family.people[0].sources.push({
     title: "Семейная фотография", type: "фотография", reference: "оборот",
@@ -55,10 +72,13 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
       id: "eb4edbfa-940f-48f4-a329-cbdff3df7b8d", authorId: "old-owner",
       authorName: "Историк", createdAt: "2026-09-30T00:00:00Z", page: 1,
       x: 0.1, y: 0.2, width: 0.3, height: 0.2, text: "Строка о рождении",
-    }]), "[]", JSON.stringify([{ number: 1, description: "Лист 7: о семье" }]),
+    }]), JSON.stringify([{ personId: family.people[0].id, eventId, page: 1 }]),
+    JSON.stringify([{ number: 1, description: "Лист 7: о семье" }]),
   );
   await source.db.prepare("INSERT INTO document_people(document_id,person_id) VALUES(?,?)")
     .run(documentId, family.people[0].id);
+  await source.db.prepare("INSERT INTO document_people(document_id,person_id) VALUES(?,?)")
+    .run(documentId, family.people[1].id);
   await source.db.prepare("INSERT INTO source_catalog(id,data,version) VALUES(?,?,1)")
     .run("catalog-record", JSON.stringify({ id: "catalog-record", title: "Метрическая книга",
       type: "архив", author: "", institution: "", archive: "Государственный архив",
@@ -132,6 +152,17 @@ test("representative family fixture survives Drevo to .drevo to Drevo with evide
     assert.deepEqual(await readFile(join(targetRoot, "uploads", String(doc?.file_name))), pdf);
     assert.equal((JSON.parse(String(doc?.annotations)) as Array<{ text: string }>)[0].text, "Строка о рождении");
     assert.equal((JSON.parse(String(doc?.pages)) as Array<{ description: string }>)[0].description, "Лист 7: о семье");
+    const documentLinks = await target.db.prepare(
+      "SELECT document_id,person_id FROM document_people ORDER BY person_id",
+    ).all();
+    assert.deepEqual(documentLinks.map((row) => ({
+      document_id: row.document_id, person_id: row.person_id,
+    })), [family.people[1].id, family.people[0].id].map((person_id) => ({
+      document_id: documentId, person_id,
+    })));
+    const eventLinks = await target.db.prepare("SELECT event_links FROM documents WHERE id=?").get(documentId);
+    assert.deepEqual(JSON.parse(String(eventLinks?.event_links)),
+      [{ personId: family.people[0].id, eventId, page: 1 }]);
     const comment = await target.db.prepare("SELECT text,updated_ms,attachments FROM person_comments").get();
     assert.equal(comment?.text, "Проверено по книге");
     assert.equal(comment?.updated_ms, 2000);
