@@ -105,6 +105,42 @@ try {
       await result.arrayBuffer();
     }
   }
+  // The two child processes have independent memory. A generated PDF must be
+  // downloaded through the other process and disappear after chat deletion.
+  const pdfResponse = await fetch(bases[0] + "/api/ai/chat", {
+    method: "POST", headers: { Origin: bases[0], "Content-Type": "application/json" },
+    body: JSON.stringify({ message: "Сделай PDF-проверка между процессами" }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const pdfRaw = await pdfResponse.text();
+  assert.equal(pdfResponse.status, 200, pdfRaw);
+  const pdfTurn = JSON.parse(pdfRaw) as {
+    chatId: string; files: Array<{ name: string; url: string }>;
+  };
+  assert.equal(pdfTurn.files.length, 1, "The fake provider must create one PDF");
+  assert.match(pdfTurn.files[0].url, /^\/api\/ai\/files\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/i);
+  const remotePdf = await fetch(bases[1] + pdfTurn.files[0].url);
+  assert.equal(remotePdf.status, 200,
+    remotePdf.status === 200 ? "" : await remotePdf.clone().text());
+  assert.equal(Buffer.from(await remotePdf.arrayBuffer()).subarray(0, 5).toString(), "%PDF-");
+  const firstBackend = children[0];
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Backend restart timed out")), 15000);
+    firstBackend.once("exit", () => { clearTimeout(timeout); resolve(); });
+    firstBackend.kill("SIGTERM");
+  });
+  children.splice(children.indexOf(firstBackend), 1);
+  bases[0] = await launch();
+  const restartedPdf = await fetch(bases[0] + pdfTurn.files[0].url);
+  assert.equal(restartedPdf.status, 200,
+    "A restarted backend must read the PDF from shared temporary storage");
+  await restartedPdf.arrayBuffer();
+  const deletedPdfChat = await fetch(bases[1] + `/api/ai/chats/${pdfTurn.chatId}`, {
+    method: "DELETE", headers: { Origin: bases[1] },
+  });
+  assert.equal(deletedPdfChat.status, 200, await deletedPdfChat.clone().text());
+  assert.equal((await fetch(bases[0] + pdfTurn.files[0].url)).status, 404,
+    "Chat deletion on another process must revoke the generated file");
   const routes = [
     ["overview", "/api/family?projection=overview"],
     ["full_archive", "/api/family"],

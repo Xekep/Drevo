@@ -13,9 +13,23 @@ const aiFetch: typeof fetch = async (input, init) => {
   if (url.pathname === "/v1/conversations")
     return Response.json({ id: `benchmark-conversation-${process.pid}-${++nextResponse}` });
   if (url.pathname === "/v1/responses") {
-    const request = JSON.parse(String(init.body)) as { stream?: boolean };
+    const request = JSON.parse(String(init.body)) as { stream?: boolean; input?: unknown };
     if (request.stream) throw new Error("HTTP benchmark expects a non-stream AI turn");
     await new Promise((resolve) => setTimeout(resolve, 150));
+    const input = JSON.stringify(request.input || "");
+    if (input.includes("PDF-проверка между процессами") || input.includes("function_call_output")) {
+      const completed = input.includes("function_call_output");
+      return Response.json({
+        id: `benchmark-response-${process.pid}-${++nextResponse}`,
+        status: "completed",
+        output_text: completed ? "Синтетический PDF создан." : "",
+        output: completed ? [] : [{ type: "function_call", call_id: "benchmark-pdf",
+          name: "create_pdf", arguments: JSON.stringify({
+            title: "Проверка двух процессов", content: "Только синтетические данные архива.",
+          }) }],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+    }
     return Response.json({
       id: `benchmark-response-${process.pid}-${++nextResponse}`,
       status: "completed",

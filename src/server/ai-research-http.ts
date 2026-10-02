@@ -2,8 +2,7 @@ import { createWebSearchService } from "./web-search.ts";
 import { dirname, join } from "node:path";
 import { aiAttachmentStore, validateAttachments } from "./ai-attachments.ts";
 import type { ResearchAttachment } from "../shared/research-attachments.ts";
-import type { GeneratedResearchFile } from "./code-interpreter.ts";
-import { pruneGeneratedResearchFiles } from "./generated-research-files.ts";
+import { generatedResearchFileStore } from "./generated-research-files.ts";
 import { yandexWebSearchProvider } from "./yandex-web-search.ts";
 import { recordModelCall, recordModelTokens } from "./ai-research-support.ts";
 import { createHash } from "node:crypto";
@@ -157,9 +156,16 @@ export function aiResearchHttp({
       (await accountAiAccess(archive.db, current.id, auth.local, lockAccess)) &&
       (await accessScope(current)) === expectedScope;
   };
-  const generatedFiles = new Map<string, GeneratedResearchFile>();
+  const generatedFiles = generatedResearchFileStore(
+    archive.db,
+    uploadsDirectory || join(dirname(archive.db.file), "uploads"),
+    chats,
+  );
+  void generatedFiles.prune().catch(() =>
+    console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" })));
   const generatedFileCleanup = setInterval(
-    () => pruneGeneratedResearchFiles(generatedFiles),
+    () => void generatedFiles.prune().catch(() =>
+      console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" }))),
     60_000,
   );
   generatedFileCleanup.unref();
@@ -279,33 +285,44 @@ export function aiResearchHttp({
         return json(res, 403, {
           error: "ИИ-функции недоступны этому аккаунту",
         });
-      const id = path.slice("/api/ai/files/".length),
-        file = generatedFiles.get(id);
-      const chat = file && await chats.read(file.chatId, fileUser.id);
-      if (
-        !file ||
-        file.expires < Date.now() ||
-        file.ownerId !== fileUser.id ||
-        !chat || chat.accessScope !== (await accessScope(fileUser))
-      )
+      const shared = /^\/api\/ai\/files\/([a-f0-9-]{36})\/([a-f0-9-]{36})$/i.exec(path);
+      const legacy = shared ? undefined : generatedFiles.local(path.slice("/api/ai/files/".length));
+      const chatId = shared?.[1] || legacy?.chatId;
+      const chat = chatId && await chats.read(chatId, fileUser.id);
+      if (!chat || chat.accessScope !== (await accessScope(fileUser)))
         return json(res, 404, {
           error: "Файл не найден или срок ссылки истёк",
         });
+      const meta = shared && (await chats.messages(chat.id, fileUser.id))
+        ?.flatMap((message) => Array.isArray(message.generatedFileMeta)
+          ? message.generatedFileMeta : [])
+        .find((item) => item && typeof item === "object" && item.url === path);
+      const bytes = shared && meta
+        ? await generatedFiles.read(shared[1], shared[2], meta)
+        : legacy && legacy.expires >= Date.now() && legacy.ownerId === fileUser.id
+          ? legacy.bytes : null;
+      if (!bytes)
+        return json(res, 404, { error: "Файл не найден или срок ссылки истёк" });
+      const name = meta?.name || legacy?.name || "result.bin";
+      const contentType = meta?.contentType || legacy?.contentType || "application/octet-stream";
       if (!(await canDeliverAiData(req, chat.accessScope)))
         return json(res, 403, { error: "Доступ к данным изменился" });
+      const currentChat = await chats.read(chat.id, fileUser.id);
+      if (!currentChat || currentChat.accessScope !== chat.accessScope)
+        return json(res, 404, { error: "Файл не найден или срок ссылки истёк" });
       res.writeHead(200, {
-        "Content-Type": file.contentType,
-        "Content-Length": file.bytes.length,
+        "Content-Type": contentType,
+        "Content-Length": bytes.length,
         "Content-Disposition": `attachment; filename="drevo-result.${
-          file.name
+          name
             .split(".")
             .at(-1)
             ?.replace(/[^a-z0-9]/gi, "") || "bin"
-        }"; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        }"; filename*=UTF-8''${encodeURIComponent(name)}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
       });
-      res.end(file.bytes);
+      res.end(bytes);
       return true;
     }
     if (
@@ -456,6 +473,8 @@ export function aiResearchHttp({
               JSON.stringify({ event: "ai.attachment_cleanup_failed" }),
             ),
           );
+        await generatedFiles.deleteChat(id).catch(() =>
+          console.warn(JSON.stringify({ event: "ai.generated_file_cleanup_failed" })));
         const remoteId =
           chat.yandexConversationId || existing.yandexConversationId;
         if (remoteId) {
@@ -788,6 +807,7 @@ export function aiResearchHttp({
           references: result.references,
           suggestionIds: result.suggestionIds,
           files: result.files,
+          generatedFileMeta: generatedFiles.metadata(result.files),
         });
         const latestFamily = (await archive.read()).family;
         const accessiblePeople = new Set(
@@ -964,7 +984,7 @@ export function aiResearchHttp({
       const runs = [...activeRuns.values()];
       for (const run of runs) run.controller.abort();
       await Promise.all(runs.map((run) => run.done));
-      generatedFiles.clear();
+      generatedFiles.close();
     },
   });
 }
