@@ -44,7 +44,13 @@ type TreeCameraStateInput = {
   reverse: boolean;
   ready: boolean;
   focusReady: boolean;
-  focus: { ids: string[]; token: number; purpose?: "family" } | null;
+  focus: {
+    ids: string[];
+    token: number;
+    purpose?: "family";
+    /** Одноразовый переход не возобновляется из-за изменения ширины панели. */
+    recenterOnResize?: boolean;
+  } | null;
   returnPersonId: string | null;
   returnToken: number;
   restoreViewport: { viewport: Viewport; token: number } | null;
@@ -238,9 +244,10 @@ export function useTreeCameraState({
           focusReady &&
           focus &&
           (focus.token !== lastFocus.current ||
-            !lastFocusCanvas.current ||
-            Math.abs(lastFocusCanvas.current.width - canvasWidth) > 2 ||
-            Math.abs(lastFocusCanvas.current.height - canvasHeight) > 2) &&
+            (focus.recenterOnResize !== false &&
+              (!lastFocusCanvas.current ||
+                Math.abs(lastFocusCanvas.current.width - canvasWidth) > 2 ||
+                Math.abs(lastFocusCanvas.current.height - canvasHeight) > 2))) &&
           focus.ids.every((id) => positions.has(id))
         ) {
           lastFocus.current = focus.token;

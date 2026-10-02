@@ -140,6 +140,116 @@ test("scope and anchor changes center the current anchor, even with unchanged ge
   }
 });
 
+test("opening a card after scope focus preserves the camera through inspector resizes", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Desktop inspector changes the width of the tree canvas");
+  await preferencesFixture(page);
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  const viewport = page.locator(".react-flow__viewport");
+  await expect(page.locator(".flow-person")).toHaveCount(6);
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  let dialog = await settings(page);
+  await dialog
+    .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
+    .check();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expect(page.locator(".flow-person")).toHaveCount(4);
+  await expectCentered(page, "e2e-child");
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  await pan(page);
+  const before = await viewport.getAttribute("style");
+  const spouse = page
+    .locator('.react-flow__node:has(.flow-person[data-person-id="e2e-spouse"])')
+    .first();
+
+  // Do not search or navigate first: that would clear the remembered scope focus.
+  for (let opening = 0; opening < 2; opening++) {
+    await spouse.locator(".flow-person-content").click();
+    await expect(page).toHaveURL(/\/people\/e2e-spouse$/);
+    await expect(spouse).toHaveClass(/selected/);
+    const close = page.getByRole("button", {
+      name: "Закрыть панель",
+      exact: true,
+    });
+    await expect(close).toBeVisible();
+    await page.waitForTimeout(900);
+    expect(await viewport.getAttribute("style")).toBe(before);
+    await close.click();
+    await expect(page).toHaveURL(/\/tree$/);
+    await expect(close).not.toBeVisible();
+    await page.waitForTimeout(900);
+    expect(await viewport.getAttribute("style")).toBe(before);
+  }
+
+  // Cancelling an old scope request must not disable future explicit scope changes.
+  dialog = await settings(page);
+  await dialog.getByRole("radio", { name: "Вверх: 4", exact: true }).check();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expectCentered(page, "e2e-child");
+  await pan(page);
+  const afterScopePan = await viewport.getAttribute("style");
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width - 80, height: size.height });
+  await page.waitForTimeout(900);
+  expect(await viewport.getAttribute("style")).toBe(afterScopePan);
+});
+
+test("opening a card cancels scope focus while its Worker layout is pending", async ({
+  page,
+}) => {
+  await preferencesFixture(page);
+  await page.addInitScript(() => {
+    let held = false;
+    Worker.prototype.postMessage = new Proxy(Worker.prototype.postMessage, {
+      apply(target, thisArg, args) {
+        if (!held && args[0]?.people?.length === 4) {
+          held = true;
+          Object.assign(window, {
+            releaseCardScopeLayout: () => Reflect.apply(target, thisArg, args),
+          });
+          return;
+        }
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+  });
+  await page.goto("/tree");
+  const canvas = page.locator(".tree-canvas");
+  const viewport = page.locator(".react-flow__viewport");
+  await expect(page.locator(".flow-person")).toHaveCount(6);
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  await pan(page);
+  const before = await viewport.getAttribute("style");
+  const dialog = await settings(page);
+  await dialog
+    .getByRole("radio", { name: "Боковые ветви: 0", exact: true })
+    .check();
+  await expect
+    .poll(() => page.evaluate(() => "releaseCardScopeLayout" in window))
+    .toBe(true);
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await page
+    .locator('.flow-person[data-person-id="e2e-spouse"] .flow-person-content')
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/people\/e2e-spouse$/);
+  await expect(
+    page.getByRole("button", { name: "Закрыть панель", exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as Window & { releaseCardScopeLayout?: () => void }
+    ).releaseCardScopeLayout!(),
+  );
+  await expect(page.locator(".flow-person")).toHaveCount(4);
+  await expect(canvas).not.toHaveClass(/is-growing|is-layout-settling/);
+  await page.waitForTimeout(900);
+  expect(await viewport.getAttribute("style")).toBe(before);
+});
+
 test("a pending layout cannot replace the camera target from a newer scope", async ({
   page,
 }) => {

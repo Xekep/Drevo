@@ -615,7 +615,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     ? personOccurrences.get(activeScopeFocus.id)?.find((id) => positions.has(id))
     : undefined;
   const effectiveCameraFocus = useMemo(() => activeScopeFocus
-    ? scopeOccurrence ? { ids: [scopeOccurrence], token: activeScopeFocus.token } : null
+    ? scopeOccurrence ? {
+      ids: [scopeOccurrence], token: activeScopeFocus.token, recenterOnResize: false,
+    } : null
     : cameraFocus, [scopeOccurrence, activeScopeFocus, cameraFocus]);
   const effectiveTimelineFocus = useMemo(() => activeScopeFocus
     ? { ids: [activeScopeFocus.id], token: activeScopeFocus.token }
@@ -847,8 +849,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       relationLabel,
       publishPerson: props.onPublishPerson,
       publicationUpdate: props.publicationUpdate,
-      choose: (id: string, additive: boolean) => {
+      choose: (id: string, additive = false) => {
         setEdgeChoices([]);
+        setScopeFocus(null);
         setManualCameraOverride(true);
         introHandled.current = true;
         void flow.setViewport(flow.getViewport(), { duration: 0 });
@@ -857,6 +860,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       },
       selectOnly: (id: string) => {
         setEdgeChoices([]);
+        setScopeFocus(null);
         setManualCameraOverride(true);
         introHandled.current = true;
         void flow.setViewport(flow.getViewport(), { duration: 0 });
@@ -1278,6 +1282,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     [onConnect, occurrencePeople],
   );
   function switchMode(next: TreeMode) {
+    setScopeFocus(null);
     setManualCameraOverride(true);
     void flow.setViewport(flow.getViewport(), { duration: 0 });
     if (!introCameraFinished) setIntroCameraFinished(true);
@@ -1603,7 +1608,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             family={family}
             anchorId={activeFanAnchor}
             selected={selected}
-            onChoose={(id) => onChoose(id, false)}
+            onChoose={actions.choose}
           />
         ) : (
           <ReactFlow<PersonNodeType | HouseholdNodeType, RelationshipEdgeType>
@@ -1813,7 +1818,7 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             people={timelinePeople}
             selected={selected}
             focus={effectiveTimelineFocus}
-            onChoose={onChoose}
+            onChoose={actions.choose}
           />
         )}
         {anchorNotice && !problem && (
