@@ -130,12 +130,18 @@ export function adminAiHttp({
           return json(res, 400, { error: "Укажите корректный Folder ID" });
         if (!apiKey)
           return json(res, 400, { error: "Сначала укажите API-ключ" });
+        if (!(await accountAiAccess(db, adminId, auth.local)))
+          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
         const models = await fetchAiStudioModels({
           baseUrl: runtime.baseUrl,
           apiKey,
           folderId,
           fetcher,
         });
+        // Model discovery may finish after the account or archive owner is
+        // downgraded. Do not deliver the completed list in that case.
+        if (!(await accountAiAccess(db, adminId, auth.local)))
+          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
         return json(res, 200, { models });
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 502, {
