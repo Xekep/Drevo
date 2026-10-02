@@ -18,6 +18,8 @@ test("media inventory separates current, historical, pending and unreferenced fi
     await client.query(`
       CREATE TABLE archives(id text NOT NULL);
       CREATE TABLE people(archive_id text NOT NULL, data jsonb NOT NULL);
+      CREATE TABLE family_unions(archive_id text NOT NULL, data jsonb NOT NULL);
+      CREATE TABLE relations(archive_id text NOT NULL, sources jsonb NOT NULL);
       CREATE TABLE photos(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE history(archive_id text NOT NULL, data jsonb NOT NULL);
       CREATE TABLE media_upload_grants(archive_id text NOT NULL, url text NOT NULL, expires_ms bigint NOT NULL);
@@ -33,6 +35,15 @@ test("media inventory separates current, historical, pending and unreferenced fi
       JSON.stringify({ photo: "/media/current.jpg" }),
     ]);
     await client.query("INSERT INTO photos VALUES('tree-a',$1)", [JSON.stringify({ url: "/media/photo.png" })]);
+    await client.query("INSERT INTO people VALUES('tree-a',$1)", [JSON.stringify({
+      sources: [{ url: "/media/citation.pdf#page=2" }, { url: "/media/missing-citation.pdf" }],
+    })]);
+    await client.query("INSERT INTO family_unions VALUES('tree-a',$1)", [JSON.stringify({
+      formation: { sources: [{ url: "/media/citation.tif?page=2" }] },
+    })]);
+    await client.query("INSERT INTO relations VALUES('tree-a',$1)", [JSON.stringify([
+      { url: "/media/link-source.jpg" },
+    ])]);
     await client.query("INSERT INTO history VALUES('tree-a',$1)", [JSON.stringify({ people: [{ photo: "/media/old.webp" }] })]);
     await client.query("INSERT INTO media_upload_grants VALUES('tree-a','/media/pending.gif',$1)", [Date.now() + 60_000]);
     await client.query(`INSERT INTO media_originals VALUES
@@ -40,7 +51,9 @@ test("media inventory separates current, historical, pending and unreferenced fi
       ('tree-a','/media/old.webp',30),('tree-a','/media/pending.gif',40),
       ('tree-a','/media/stale.jpg',50),('tree-b','/media/current.jpg',70),
       ('tree-a','/media/stage-only.jpg',80),('tree-a','/media/staged.jpg',90),
-      ('tree-a','/media/expired.jpg',100),('tree-b','/media/stage-only.jpg',110)`);
+      ('tree-a','/media/expired.jpg',100),('tree-b','/media/stage-only.jpg',110),
+      ('tree-a','/media/citation.pdf',13),('tree-a','/media/citation.tif',14),
+      ('tree-a','/media/link-source.jpg',15)`);
     await client.query("INSERT INTO documents VALUES('tree-a','document.pdf',60)");
     const restoreData = (url: string, files: unknown[] = [],
       documentPath = "/shared/uploads/old.pdf", extraPhoto?: string,
@@ -75,6 +88,8 @@ test("media inventory separates current, historical, pending and unreferenced fi
       .find((result) => result.fields.some((field) => field.name === "known_bytes"))?.rows || [];
     const byStatus = new Map(rows.map((row) => [`${row.archive_id}:${row.status}`, [Number(row.files), Number(row.known_bytes)]]));
     assert.deepEqual(byStatus.get("tree-a:current_image"), [2, 30]);
+    assert.deepEqual(byStatus.get("tree-a:current_citation"), [3, 42]);
+    assert.deepEqual(byStatus.get("tree-a:citation_missing_metadata"), [1, 0]);
     assert.deepEqual(byStatus.get("tree-a:history_only_image"), [1, 30]);
     assert.deepEqual(byStatus.get("tree-a:pending_image"), [1, 40]);
     assert.deepEqual(byStatus.get("tree-a:unreferenced_in_db"), [3, 240]);
@@ -97,6 +112,9 @@ test("media inventory separates current, historical, pending and unreferenced fi
       JSON.parse(String(row.json_build_object)) as Record<string, unknown>) || [];
     assert.equal(manifest.filter((row) => row.kind === "archive").length, 2);
     assert.ok(manifest.some((row) => row.source === "document" && row.name === "document.pdf"));
+    for (const name of ["citation.pdf", "citation.tif", "link-source.jpg", "missing-citation.pdf"])
+      assert.ok(manifest.some((row) => row.source === "citation" && row.name === name),
+        `direct citation retains ${name} even without original metadata`);
     assert.ok(manifest.some((row) => row.source === "history" && row.name === "old.webp"));
     assert.ok(manifest.some((row) => row.source === "image_metadata" && row.known_bytes === 10));
     assert.ok(manifest.some((row) => row.source === "restore_stage_image" &&

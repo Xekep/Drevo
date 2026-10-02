@@ -16,12 +16,25 @@ WITH current_images AS (
   SELECT archive_id, data->>'url' AS url FROM photos
   WHERE data->>'url' LIKE '/media/%'
 ),
+current_citations AS (
+  SELECT DISTINCT archive_id, url FROM (
+    SELECT p.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1) AS url
+    FROM people p CROSS JOIN LATERAL jsonb_path_query(p.data, '$.**.sources[*].url') cited(value)
+    UNION ALL
+    SELECT u.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM family_unions u CROSS JOIN LATERAL jsonb_path_query(u.data, '$.**.sources[*].url') cited(value)
+    UNION ALL
+    SELECT r.archive_id, split_part(split_part(cited.value #>> '{}', '#', 1), '?', 1)
+    FROM relations r CROSS JOIN LATERAL jsonb_path_query(r.sources, '$[*].url') cited(value)
+  ) citations
+  WHERE url ~ '^/media/[A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf)$'
+),
 historical_images AS (
   SELECT DISTINCT h.archive_id, '/media/' || (match.parts)[1] AS url
   FROM history h
   CROSS JOIN LATERAL regexp_matches(
     h.data::text,
-    '/media/([A-Za-z0-9-]+\.(jpg|png|webp|gif))',
+    '/media/([A-Za-z0-9-]+\.(jpg|png|webp|gif|tif|pdf))',
     'g'
   ) AS match(parts)
   WHERE h.data::text LIKE '%/media/%'
@@ -68,6 +81,7 @@ classified AS (
   SELECT m.archive_id, m.size_bytes,
     CASE
       WHEN c.url IS NOT NULL THEN 'current_image'
+      WHEN cited.url IS NOT NULL THEN 'current_citation'
       WHEN h.url IS NOT NULL THEN 'history_only_image'
       WHEN g.url IS NOT NULL THEN 'pending_image'
       WHEN r.url IS NOT NULL THEN 'restore_stage_image'
@@ -75,6 +89,7 @@ classified AS (
     END AS status
   FROM media_originals m
   LEFT JOIN current_images c ON c.archive_id=m.archive_id AND c.url=m.url
+  LEFT JOIN current_citations cited ON cited.archive_id=m.archive_id AND cited.url=m.url
   LEFT JOIN historical_images h ON h.archive_id=m.archive_id AND h.url=m.url
   LEFT JOIN pending_images g ON g.archive_id=m.archive_id AND g.url=m.url
   LEFT JOIN restore_current_images r ON r.archive_id=m.archive_id AND r.url=m.url
@@ -94,6 +109,19 @@ classified AS (
   WHERE NOT EXISTS (
     SELECT 1 FROM media_originals m
     WHERE m.archive_id=c.archive_id AND m.url=c.url
+  )
+  UNION ALL
+  SELECT c.archive_id, 0::bigint, 'citation_missing_metadata' AS status
+  FROM current_citations c
+  WHERE NOT EXISTS (
+    SELECT 1 FROM media_originals m
+    WHERE m.archive_id=c.archive_id AND m.url=c.url
+  ) AND NOT EXISTS (
+    SELECT 1 FROM documents d
+    WHERE d.archive_id=c.archive_id AND '/media/'||d.file_name=c.url
+  ) AND NOT EXISTS (
+    SELECT 1 FROM current_images i
+    WHERE i.archive_id=c.archive_id AND i.url=c.url
   )
   UNION ALL
   SELECT r.archive_id, 0::bigint, 'restore_stage_image_missing_metadata' AS status
