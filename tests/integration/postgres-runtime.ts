@@ -4443,6 +4443,10 @@ try {
   const withoutSpecial = structuredClone(specialAfter.family);
   withoutSpecial.people = withoutSpecial.people.filter((person) => person.id !== specialId);
   await otherApp.archive.write(withoutSpecial, specialAfter.revision);
+  await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
+  await client.query(`INSERT INTO archive_owners(archive_id,user_id)
+    VALUES('other-archive','owner') ON CONFLICT (archive_id) DO UPDATE SET user_id='owner'`);
+  await client.query("SELECT set_config('drevo.archive_id','runtime-test',false)");
   const rootBeforeMatch = await app.archive.read();
   const rootWithPublishedPerson = structuredClone(rootBeforeMatch.family);
   rootWithPublishedPerson.people[0].deceased = true;
@@ -4494,10 +4498,10 @@ try {
     "Тестов Исправленный сосед");
   assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
   assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
-    headers: archiveAdminHeaders,
+    headers: ownerHeaders,
   })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
   const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: archiveAdminHeaders,
+    method: "POST", headers: ownerHeaders,
     body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
   });
   assert.equal(duplicateFromOtherSide.status, 200);
@@ -4515,11 +4519,11 @@ try {
   changedBeforeReview.people[0].name = "Исправленный кандидат";
   await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
   assert.equal((await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
+    method: "PATCH", headers: ownerHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken }),
   })).status, 409, "a changed published identity cannot be accepted using a stale review token");
   const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
-    headers: archiveAdminHeaders,
+    headers: ownerHeaders,
   })).json()).matches[0];
   assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
   assert.equal(freshReview.changedSinceRequest, true,
@@ -4529,7 +4533,7 @@ try {
     body: JSON.stringify({ decision: "accept" }),
   })).status, 403, "an initiating archive cannot confirm its own request");
   const acceptedMatch = await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: archiveAdminHeaders,
+    method: "PATCH", headers: ownerHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
   });
   assert.equal(acceptedMatch.status, 200);
@@ -4539,7 +4543,7 @@ try {
     .get(matchBody.match.id);
   assert.equal(acceptedAudit?.requested_by, "owner");
   assert.equal(acceptedAudit?.request_review_token, matchBody.match.reviewToken);
-  assert.equal(acceptedAudit?.responded_by, "vk:42");
+  assert.equal(acceptedAudit?.responded_by, "owner");
   assert.ok(acceptedAudit?.responded_at);
   assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
   const branchPath = matchPath + "/branch-share";
@@ -5582,7 +5586,7 @@ try {
       const participantView = await matchDb.prepare("", `SELECT reason,requested_by,responded_by
         FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id);
       assert.deepEqual(participantView, {
-        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "vk:42",
+        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "owner",
       }, "both participating archives retain their private review details");
     }, true);
   }
