@@ -48,6 +48,7 @@ export function generatedResearchFileStore(
   db: StoreDatabase,
   uploadsDirectory: string,
   chats: ReturnType<typeof aiChatStore>,
+  beforeInstall?: () => Promise<void>,
 ) {
   const files = new Map<string, GeneratedResearchFile>();
   const shared = db.kind === "postgres";
@@ -165,6 +166,7 @@ export function generatedResearchFileStore(
               await handle.close();
             }
             await reservation?.assertValid();
+            await beforeInstall?.();
             await rename(staged, installed);
             renamed = true;
           } catch (error) {

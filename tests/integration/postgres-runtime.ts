@@ -1594,6 +1594,49 @@ try {
   const generatedStore = generatedResearchFileStore(
     app.archive.db, join(dirname(source), "uploads"), generatedChats,
   );
+  // A downgrade can commit while a generated file is staged but not installed.
+  // The tier decision must be made under a lock at the install boundary.
+  const stagedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
+  let reachedInstall!: () => void;
+  let releaseInstall!: () => void;
+  const atInstall = new Promise<void>((resolve) => { reachedInstall = resolve; });
+  const continueInstall = new Promise<void>((resolve) => { releaseInstall = resolve; });
+  const stagedStore = generatedResearchFileStore(app.archive.db,
+    join(dirname(source), "uploads"), generatedChats,
+    async () => { reachedInstall(); await continueInstall; });
+  const stagedPath = join(dirname(source), "ai-generated-files", stagedChat.id);
+  const stagedSave = stagedStore.save({ ownerId: "owner", chatId: stagedChat.id,
+    name: "staged.pdf", contentType: "application/pdf",
+    bytes: Buffer.from("%PDF- staged before tier downgrade"),
+    expires: Date.now() + 30 * 60_000 });
+  try {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([atInstall, new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Generated file did not reach install barrier")), 10_000);
+      })]);
+    } finally { clearTimeout(timeout); }
+    assert.equal(readdirSync(stagedPath).length, 1,
+      "the file must be staged before access is downgraded");
+    await runtimeHttpUsers.setFullAccess((await runtimeHttpUsers.get("owner"))!, "owner", false);
+    assert.equal(await accountAiAccess(app.archive.db, "owner"), false);
+    releaseInstall();
+    const admitted = await stagedSave.catch((error) => {
+      if (error instanceof ForbiddenError) return null;
+      throw error;
+    });
+    assert.equal(admitted, null,
+      "downgrade during staging cannot install a generated file");
+    assert.deepEqual(readdirSync(stagedPath), [],
+      "rejected installation must also remove its staged bytes");
+  } finally {
+    releaseInstall();
+    await stagedSave.catch(() => {});
+    await runtimeHttpUsers.setFullAccess((await runtimeHttpUsers.get("owner"))!, "owner", true);
+    await stagedStore.deleteChat(stagedChat.id);
+    stagedStore.close();
+    await generatedChats.delete(stagedChat.id, "owner");
+  }
   const generatedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
   const generatedBytes = Buffer.from("%PDF- synthetic private report");
   const generatedLink = await generatedStore.save({
