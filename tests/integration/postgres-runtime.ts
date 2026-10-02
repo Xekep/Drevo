@@ -1930,6 +1930,79 @@ try {
       await visionAi.close();
     }
 
+    let reachedAttachmentCommit!: () => void;
+    let releaseAttachmentCommit!: () => void;
+    const attachmentStaged = new Promise<void>((resolve) => { reachedAttachmentCommit = resolve; });
+    const attachmentGate = new Promise<void>((resolve) => { releaseAttachmentCommit = resolve; });
+    const attachmentRoot = mkdtempSync(join(tmpdir(), "drevo-ai-attachment-tier-"));
+    let attachmentProviderCalls = 0;
+    const attachmentAi = aiResearchHttp({
+      archive: app.archive,
+      auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      suggestions: researchSuggestionStore(app.archive.db),
+      aiSettings: await aiSettingsStore(app.archive.db),
+      usage: aiUsageStore(app.archive.db),
+      media: mediaStore(join(dirname(source), "uploads")),
+      previewImage: imagePreviews(join(dirname(source), "previews")),
+      researchCatalog: researchCatalogStore(app.archive.db),
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      uploadsDirectory: join(attachmentRoot, "uploads"),
+      beforeAttachmentCommit: async () => {
+        reachedAttachmentCommit();
+        await attachmentGate;
+      },
+      fetcher: async () => { attachmentProviderCalls++; throw new Error("AI provider must not run after downgrade"); },
+    });
+    const attachmentServer = createServer((req, res) => {
+      void attachmentAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => attachmentServer.listen(0, "127.0.0.1", resolve));
+    const attachmentMessage = "attachment tier race sentinel";
+    const attachmentChatsBefore = new Set((await client.query(
+      "SELECT id FROM ai_chats WHERE user_id='owner'",
+    )).rows.map((row) => row.id as string));
+    try {
+      const port = (attachmentServer.address() as { port: number }).port;
+      const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ message: attachmentMessage, attachments: [{
+          name: "evidence.txt", data: Buffer.from("private attachment before tier downgrade").toString("base64"),
+        }] }),
+      });
+      await Promise.race([attachmentStaged, request.then(async (early) => {
+        throw new Error(`Attachment stopped before save barrier: ${early.status} ${await early.clone().text()}`);
+      }), new Promise<never>((_, reject) => setTimeout(() =>
+        reject(new Error("AI attachment did not reach save barrier")), 15_000))]);
+      const filesRoot = join(attachmentRoot, "uploads", "ai-chat-files");
+      assert.equal(readdirSync(filesRoot, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile()).length, 1,
+      "the attachment is physically staged before tier downgrade");
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      assert.equal(await accountAiAccess(app.archive.db, "owner"), false);
+      releaseAttachmentCommit();
+      const denied = await request;
+      assert.equal(denied.status, 403, await denied.clone().text());
+      assert.equal(attachmentProviderCalls, 0);
+      assert.equal(readdirSync(filesRoot, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile()).length, 0,
+      "downgrade during attachment save cannot retain private bytes");
+      assert.equal(Number((await client.query(
+        "SELECT count(*) AS n FROM ai_chat_messages WHERE content=$1", [attachmentMessage],
+      )).rows[0].n), 0,
+      "downgrade during attachment save cannot append the user message");
+    } finally {
+      releaseAttachmentCommit();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id='owner'"))
+        .rows.map((row) => row.id as string).filter((id) => !attachmentChatsBefore.has(id));
+      for (const chatId of newChats) await aiChatStore(app.archive.db).delete(chatId, "owner");
+      await new Promise<void>((resolve) => attachmentServer.close(() => resolve()));
+      await attachmentAi.close();
+      rmSync(attachmentRoot, { recursive: true, force: true });
+    }
+
     let notifyToolCatalog!: () => void;
     let releaseToolCatalog!: () => void;
     const toolCatalogStarted = new Promise<void>((resolve) => { notifyToolCatalog = resolve; });

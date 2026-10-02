@@ -61,6 +61,7 @@ export function aiResearchHttp({
   beforeChatDelivery,
   beforeAnswerDelivery,
   beforeGeneratedFileInstall,
+  beforeAttachmentCommit,
   renderPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -77,6 +78,7 @@ export function aiResearchHttp({
   beforeChatDelivery?: () => Promise<void>;
   beforeAnswerDelivery?: () => Promise<void>;
   beforeGeneratedFileInstall?: () => Promise<void>;
+  beforeAttachmentCommit?: () => Promise<void>;
   renderPdf?: typeof researchPdf;
 }) {
   const chats = aiChatStore(archive.db);
@@ -668,18 +670,33 @@ export function aiResearchHttp({
             "Не удалось сохранить вложения. Попробуйте позже или обратитесь к администратору.",
         });
       }
-      await chats.append(
-        chat.id,
-        "user",
-        message,
-        selectedPerson
-          ? { hidden: true }
-          : {
-              ...(savedAttachments.length
-                ? { attachments: savedAttachments }
-                : {}),
-            },
-      );
+      if (savedAttachments.length) await beforeAttachmentCommit?.();
+      // File writes can outlive the tier check above. Admit the input message
+      // only while the current access rows are locked; a failed admission
+      // removes the staged attachments below.
+      const accepted = await archive.db.transaction(async () => {
+        if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+          return false;
+        await chats.append(
+          chat.id,
+          "user",
+          message,
+          selectedPerson
+            ? { hidden: true }
+            : {
+                ...(savedAttachments.length
+                  ? { attachments: savedAttachments }
+                  : {}),
+              },
+        );
+        return true;
+      });
+      if (!accepted) {
+        await attachments.removeFiles(savedAttachments);
+        savedAttachments = [];
+        await chats.release(chat.id, lockToken);
+        return json(res, 403, { error: "Доступ к ИИ отключён" });
+      }
       appended = true;
       usageRun = await usage.begin(user.id, runtime.model);
       if (closing) throw new Error("Сервер перезапускается");
