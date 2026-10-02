@@ -1,5 +1,5 @@
--- Platform-wide admission for staged .drevo previews. The table contains only
--- opaque stage tokens and expiry; it intentionally has no archive RLS scope.
+-- Platform-wide admission for staged .drevo previews. Only opaque stage tokens,
+-- archive IDs and expiry are stored; the table has no archive RLS scope.
 CREATE TABLE IF NOT EXISTS platform_portable_preview_slots (
   token text PRIMARY KEY,
   archive_id text NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS platform_portable_preview_slots (
 );
 CREATE INDEX IF NOT EXISTS platform_portable_preview_slots_expiry
   ON platform_portable_preview_slots(expires_at);
+REVOKE ALL ON TABLE platform_portable_preview_slots FROM PUBLIC;
 
 CREATE OR REPLACE FUNCTION runtime_portable_preview_slot_sync()
 RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
@@ -45,16 +46,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+REVOKE ALL ON FUNCTION runtime_portable_preview_slot_sync() FROM PUBLIC;
 
 DROP TRIGGER IF EXISTS portable_preview_slots_sync ON workflow_stages;
 CREATE TRIGGER portable_preview_slots_sync
 AFTER INSERT OR UPDATE OR DELETE ON workflow_stages
 FOR EACH ROW EXECUTE FUNCTION runtime_portable_preview_slot_sync();
 
--- Existing stages in the current archive may predate this additive migration.
--- Other archives join as their runtime schema initializes; all new stages are
--- gated immediately, and old stages expire under their existing lease.
-INSERT INTO platform_portable_preview_slots(token,archive_id,expires_at)
-  SELECT token,archive_id,expires_at FROM workflow_stages
-  WHERE kind='drevo' AND expires_at>floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint
-  ON CONFLICT(token) DO NOTHING;
+-- Archive startup registers any live stages created before this migration.

@@ -6,6 +6,7 @@ import pg from "pg";
 import { openArchive } from "../../src/server/database.ts";
 import { portableImportHttp } from "../../src/server/portable-import-http.ts";
 import { writePortablePackage } from "../../src/server/portable-package.ts";
+import { initializePostgresRuntimeSchema } from "../../src/server/postgres-runtime-schema.ts";
 import type { createAuth } from "../../src/server/auth.ts";
 
 /** Three archive-local owners reach admission together; only two may be staged platform-wide. */
@@ -61,6 +62,20 @@ export async function verifyPortablePreviewGlobalCap(client: pg.Client, director
     assert.equal(arrived, ids.length, "all archive owners reached the admission barrier");
     assert.deepEqual(responses.map((response) => response.status).sort(), [200, 200, 409],
       "three archive-local previews must share a two-slot platform cap");
+    const slotPolicy = (await client.query(`SELECT pg_get_userbyid(c.relowner) AS owner,
+      EXISTS(SELECT 1 FROM aclexplode(coalesce(c.relacl,acldefault('r',c.relowner)))
+        WHERE grantee=0) AS public_access
+      FROM pg_class c WHERE c.oid=to_regclass('platform_portable_preview_slots')`)).rows[0];
+    assert.equal(slotPolicy.owner, (await client.query("SELECT current_user AS name")).rows[0].name,
+      "the non-superuser runtime owns the invoker trigger's platform table");
+    assert.equal(slotPolicy.public_access, false);
+    for (let index = 0; index < routes.length; index++) {
+      const visible = await routes[index].archive.db.prepare("",
+        "SELECT actor_id FROM workflow_stages WHERE kind='drevo'").all();
+      assert.deepEqual(visible.map((row) => row.actor_id),
+        responses[index].status === 200 ? [`${ids[index]}-owner`] : [],
+        "global admission must not widen archive-scoped stage visibility");
+    }
     assert.equal((await client.query(
       "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
     )).rows[0].n, 2);
@@ -72,6 +87,12 @@ export async function verifyPortablePreviewGlobalCap(client: pg.Client, director
       "SELECT expires_at FROM platform_portable_preview_slots WHERE token=$1", [token],
     )).rows[0]?.expires_at), stageExpiry,
     "the ready stage and its platform slot must expire together");
+    await routes[released].archive.db.prepare("",
+      "DELETE FROM platform_portable_preview_slots WHERE token=?").run(token);
+    await initializePostgresRuntimeSchema(routes[released].archive.db);
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+    )).rows[0].n, 2, "archive startup registers a live pre-migration stage");
     await routes[released].archive.db.prepare("", "DELETE FROM workflow_stages WHERE token=?")
       .run(token);
     assert.equal((await client.query(
@@ -86,6 +107,23 @@ export async function verifyPortablePreviewGlobalCap(client: pg.Client, director
     assert.equal((await client.query(
       "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
     )).rows[0].n, 2);
+    const expiring = responses.findIndex((response, index) =>
+      index !== released && response.status === 200);
+    const expiringToken = (await responses[expiring].json() as { token: string }).token;
+    await routes[expiring].archive.db.prepare("",
+      "UPDATE workflow_stages SET expires_at=? WHERE token=?")
+      .run(Date.now() - 1, expiringToken);
+    const replacementBase = routes[released].base;
+    const replacement = await fetch(`${replacementBase}/api/drevo/preview`, {
+      method: "POST", headers: { Origin: replacementBase, "X-Drevo-Import": "1" }, body: bytes,
+    });
+    assert.equal(replacement.status, 200, "an expired slot frees capacity for another archive");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM platform_portable_preview_slots",
+    )).rows[0].n, 2);
+    assert.equal((await client.query(
+      "SELECT 1 FROM platform_portable_preview_slots WHERE token=$1", [expiringToken],
+    )).rowCount, 0);
   } finally {
     clearTimeout(timeout);
     release();

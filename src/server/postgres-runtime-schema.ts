@@ -229,4 +229,14 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       );
     });
   }
+  // A preview staged before the additive migration still occupies capacity
+  // when its archive starts. RLS keeps this backfill within the active archive.
+  if ((await db.prepare("", "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1")
+    .get(Date.now()))?.present)
+    await db.transaction(async () => {
+      await db.exec("", "SELECT pg_advisory_xact_lock(186743294)");
+      await db.prepare("", `INSERT INTO platform_portable_preview_slots(token,archive_id,expires_at)
+        SELECT token,archive_id,expires_at FROM workflow_stages
+        WHERE kind='drevo' AND expires_at>? ON CONFLICT(token) DO NOTHING`).run(Date.now());
+    });
 }
