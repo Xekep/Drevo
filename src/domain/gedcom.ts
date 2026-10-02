@@ -560,9 +560,11 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       date: date || start || undefined,
       endDate: start && end ? end : undefined,
       dateText,
-      ...(dateSources.length ? { dateClaim: { value: eventDate!, sources: dateSources } } : {}),
+      ...(dateSources.length ? { dateClaim: valueClaim(eventDate!, dateSources, n,
+        "_DREVO_EVENT_DATE_CONFIDENCE") } : {}),
       place,
-      ...(placeSources.length ? { placeClaim: { value: place!, sources: placeSources } } : {}),
+      ...(placeSources.length ? { placeClaim: valueClaim(place!, placeSources, n,
+        "_DREVO_EVENT_PLACE_CONFIDENCE") } : {}),
       location: placeLocation(n),
       description: notes(n) || undefined,
       sources: parsedSources.filter((source) =>
@@ -1612,6 +1614,10 @@ export function exportGedcom(
       for (const source of e.sources || []) citation(2, source);
       for (const source of e.dateClaim?.sources || []) citation(2, source, "EVENT_DATE");
       for (const source of e.placeClaim?.sources || []) citation(2, source, "EVENT_PLACE");
+      if (e.dateClaim?.confidence)
+        emit(2, "_DREVO_EVENT_DATE_CONFIDENCE", e.dateClaim.confidence);
+      if (e.placeClaim?.confidence)
+        emit(2, "_DREVO_EVENT_PLACE_CONFIDENCE", e.placeClaim.confidence);
       if (original === matchingOccupationEvent) emitOccupationClaim();
       if (kind && !eventClaimsEmitted[kind]) emitEventClaims(kind);
       emit(2, "_DREVO_EVENT_ID", e.id);

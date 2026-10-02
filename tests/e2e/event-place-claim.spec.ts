@@ -39,6 +39,7 @@ test("источник точного места события сохраняе
   await claim.getByRole("button", { name: "Добавить источник вручную" }).click();
   await claim.getByLabel("Название").fill(title);
   await claim.getByLabel("Ссылка в источнике").fill("л. 7");
+  await claim.getByLabel("Достоверность").selectOption("conflicting");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
@@ -48,6 +49,7 @@ test("источник точного места события сохраняе
     .events!.find((item) => item.placeClaim?.sources[0].title === title)!;
   expect(savedEvent.sources).toBeUndefined();
   expect(savedEvent.placeClaim?.sources[0].reference).toBe("л. 7");
+  expect(savedEvent.placeClaim?.confidence).toBe("conflicting");
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
   const section = page.locator(".event-editor");

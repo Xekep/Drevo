@@ -93,14 +93,46 @@ export function authorizeArchive(
   }
   if (user.role !== "admin" && user.role !== "researcher") {
     const previous = new Map(current.people.map((person) => [person.id, person]));
+    const retained = new Set(next.people.map((person) => person.id));
+    for (const person of current.people) {
+      if (retained.has(person.id)) continue;
+      const assessedValue = ["birthDateClaim", "deathDateClaim", "birthPlaceClaim",
+        "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const;
+      if (assessedValue.some((key) => person[key]?.confidence) ||
+        person.factAlternatives?.some((alternative) => alternative.confidence) ||
+        person.events?.some((event) => event.dateClaim?.confidence || event.placeClaim?.confidence))
+        throw new ForbiddenError("Оценённую карточку может удалить только исследователь или администратор");
+    }
     for (const person of next.people)
       for (const key of ["birthDateClaim", "deathDateClaim", "birthPlaceClaim", "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const) {
         const claim = person[key];
         const earlier = previous.get(person.id)?.[key];
-        if (claim?.confidence !== earlier?.confidence)
+        if (claim?.confidence !== earlier?.confidence ||
+          (earlier?.confidence && claim?.value !== earlier.value))
           throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       }
     for (const person of next.people) {
+      const earlierEvents = new Map((previous.get(person.id)?.events || [])
+        .map((event) => [event.id, event]));
+      const currentEvents = new Map((person.events || [])
+        .map((event) => [event.id, event]));
+      for (const oldEvent of earlierEvents.values())
+        for (const key of ["dateClaim", "placeClaim"] as const) {
+          const oldClaim = oldEvent[key];
+          const currentEvent = currentEvents.get(oldEvent.id);
+          const claim = currentEvent?.[key];
+          if (oldClaim?.confidence && (claim?.value !== oldClaim.value ||
+            currentEvent?.type !== oldEvent.type ||
+            currentEvent?.title !== oldEvent.title ||
+            currentEvent?.gedcomTag !== oldEvent.gedcomTag))
+            throw new ForbiddenError("Оценённое утверждение может менять только исследователь или администратор");
+        }
+      for (const event of person.events || []) {
+        const oldEvent = earlierEvents.get(event.id);
+        for (const key of ["dateClaim", "placeClaim"] as const)
+          if (event[key]?.confidence !== oldEvent?.[key]?.confidence)
+            throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+      }
       const earlier = new Map((previous.get(person.id)?.factAlternatives || [])
         .map((alternative) => [alternative.id, alternative]));
       const present = new Set((person.factAlternatives || []).map((alternative) => alternative.id));

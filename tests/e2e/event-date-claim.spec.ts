@@ -38,6 +38,7 @@ test("источник точной даты события не перенос�
   await claim.getByRole("button", { name: "Добавить источник вручную" }).click();
   await claim.getByLabel("Название").fill(title);
   await claim.getByLabel("Ссылка в источнике").fill("л. 8");
+  await claim.getByLabel("Достоверность").selectOption("probable");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect.poll(() => readFamily().people.find((person) => person.id === "e2e-child")
@@ -48,6 +49,7 @@ test("источник точной даты события не перенос�
   expect(savedEvent.date).toBe("1909-01-01");
   expect(savedEvent.sources).toBeUndefined();
   expect(savedEvent.dateClaim?.sources[0].reference).toBe("л. 8");
+  expect(savedEvent.dateClaim?.confidence).toBe("probable");
 
   await page.locator(".inspector-person-actions .person-edit-button").click();
   const section = page.locator(".event-editor");

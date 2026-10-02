@@ -109,6 +109,27 @@ test("exact life-fact citations separate unassessed, manual uncertainty, conflic
     warning.personIds[0] === "legacy").length, 1);
 });
 
+test("event-specific citations are evidence, while their assessments remain separate", () => {
+  const citation = (title: string) => ({ title, type: "архив", reference: "л. 1" });
+  const warnings = analyzeArchiveCoverage(family([person("anna", {
+    events: [{ id: "move", type: "move", date: "1901", place: "Москва",
+      dateClaim: { value: "1901", sources: [citation("Дата переезда")], confidence: "probable" },
+      placeClaim: { value: "Москва", sources: [citation("Место переезда")], confidence: "conflicting" } },
+    { id: "birth", type: "baptism", date: "1902",
+      dateClaim: { value: "1902", sources: [citation("Книга крещений")], confidence: "confirmed" } },
+    { id: "work", type: "work", date: "1910" }],
+  })]));
+  assert.deepEqual(warnings.map(({ code, eventId }) => [code, eventId]), [
+    ["unconfirmed-event-facts", "move"],
+    ["conflicting-event-facts", "move"],
+    ["unsourced-event", "work"],
+  ]);
+  assert.equal(qualityCategory(warnings[0]), "unverified");
+  assert.equal(qualityCategory(warnings[1]), "contradiction");
+  assert.deepEqual(warnings[0].sourceTitles, ["Дата переезда"]);
+  assert.deepEqual(warnings[1].sourceTitles, ["Место переезда"]);
+});
+
 test("quality filters keep errors, contradictions, possible errors and duplicates separate", () => {
   const warning = (code: string, level: "error" | "check") => ({
     code,
