@@ -1129,6 +1129,11 @@ try {
   const changedReaderRole = priorReaderRole === "reader" ? "researcher" : "reader";
   await app.archive.db.prepare("", "UPDATE archive_memberships SET role=? WHERE user_id='reader'")
     .run(changedReaderRole);
+  const changedAfterBackup = await app.archive.read();
+  await app.archive.write(
+    { ...changedAfterBackup.family, title: "Изменено после системной копии" },
+    changedAfterBackup.revision,
+  );
   const currentMemberships = await ownMemberships();
   const currentOwner = await ownOwner();
   const neighborState = async () => {
@@ -1274,6 +1279,8 @@ try {
     body: JSON.stringify({ token: previewData.token, confirm: true }),
   });
   assert.equal(restore.status, 200, await restore.text());
+  assert.equal((await app.archive.read()).family.title, backupClaimFamily.title,
+    "restore must recover the selected archive's saved family data");
   assert.deepEqual(await ownMemberships(), currentMemberships,
     "restoring archive data must retain current membership roles, not old backup roles");
   assert.deepEqual(await ownOwner(), currentOwner,
