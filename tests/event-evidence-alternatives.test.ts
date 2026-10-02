@@ -1,11 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createWriteStream } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { exportGedcom, importGedcom } from "../src/domain/gedcom.ts";
 import { analyzeArchiveCoverage, qualityCategory } from "../src/domain/archive-coverage.ts";
 import { generationReport } from "../src/domain/generation-report.ts";
 import { sharedFamily } from "../src/domain/shared-family.ts";
 import { validateFamily } from "../src/domain/validation.ts";
 import { authorizeArchive } from "../src/server/permissions.ts";
+import { writePortablePackage } from "../src/server/portable-package.ts";
+import { readPortablePackage } from "../src/server/portable-import.ts";
+import { prepareGenealogyImport, writeGenealogyPackage } from "../src/server/genealogy-package.ts";
+import { sourceCitation, type CatalogSource } from "../src/shared/source-catalog.ts";
 import type { ArchiveUser, Family } from "../src/domain/index.ts";
 
 const citation = (title: string) => ({ title, type: "книга", reference: "л. 7" });
@@ -43,6 +51,9 @@ test("event alternatives require distinct cited values and protect researcher as
   removed.people[0].events![0].alternatives = [];
   assert.throws(() => authorizeArchive(removed, current, user("relative")), /Оценённый вариант/);
   assert.doesNotThrow(() => authorizeArchive(removed, current, user("researcher")));
+  const retitled = structuredClone(current);
+  retitled.people[0].events![0].title = "Другой переезд";
+  assert.throws(() => authorizeArchive(retitled, current, user("relative")), /Оценённое утверждение/);
 });
 
 test("competing event records stay separate in card, quality view, GEDCOM and shared projection", () => {
@@ -53,11 +64,15 @@ test("competing event records stay separate in card, quality view, GEDCOM and sh
   assert.equal(qualityCategory(warning!), "contradiction");
   assert.deepEqual(warning?.sourceTitles, ["Перепись", "Адресная книга", "Письмо"]);
   assert.match(generationReport(original, new Set(["p1"])), /Другая дата события.*1902/);
-  const share = sharedFamily(original, { id: "s", title: "Фрагмент", anchorId: "p1",
+  const shareInput = structuredClone(original);
+  shareInput.people[0].events![0].alternatives![0].sources[0].documentId =
+    "11111111-1111-4111-8111-111111111111";
+  const share = sharedFamily(shareInput, { id: "s", title: "Фрагмент", anchorId: "p1",
     personIds: ["p1"], createdAt: "2026-01-01", expiresAt: "2027-01-01",
     createdBy: "owner", createdName: "Владелец", revokedAt: null,
     lastVisitedAt: null }, "token");
   assert.equal(share.people[0].events?.[0].alternatives?.[1].value, "Тула");
+  assert.equal(share.people[0].events?.[0].alternatives?.[0].sources[0].documentId, undefined);
   for (const version of ["5.5.1", "7.0"] as const) {
     const gedcom = exportGedcom(original, { version });
     assert.match(gedcom, /_DREVO_EVENT_ALTERNATIVE/);
@@ -82,4 +97,53 @@ test("competing event records stay separate in card, quality view, GEDCOM and sh
     })));
     assert.ok(!standalone.sources?.length);
   }
+});
+
+test("portable archive retains each event alternative and its catalog citation", async () => {
+  const original = family();
+  const catalog: CatalogSource = { id: "catalog-1", title: "Адресная книга", type: "книга",
+    author: "", institution: "", archive: "", fond: "", opis: "", delo: "",
+    sheet: "", reference: "л. 7", url: "", accessedAt: "", description: "",
+    documentIds: [] };
+  original.people[0].events![0].alternatives![0].sources[0] = sourceCitation(catalog);
+  const directory = await mkdtemp(join(tmpdir(), "drevo-event-alternatives-"));
+  try {
+    const path = join(directory, "family.drevo"), stage = join(directory, "stage");
+    await mkdir(stage);
+    await writePortablePackage(createWriteStream(path), join(directory, "uploads"), {
+      family: original, documents: [], comments: [], sources: [catalog],
+    }, async () => {});
+    const imported = await readPortablePackage(path, stage);
+    assert.deepEqual(imported.snapshot.family.people[0].events?.[0].alternatives,
+      original.people[0].events?.[0].alternatives);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("GEDZIP remaps the document cited by a competing event value", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "drevo-event-alternative-gedzip-"));
+  try {
+    const uploads = join(directory, "uploads"), stage = join(directory, "stage");
+    await mkdir(uploads);
+    await mkdir(stage);
+    const documentId = "11111111-1111-4111-8111-111111111111";
+    const bytes = Buffer.from("%PDF-1.4\ncompeting-date\n%%EOF");
+    await writeFile(join(uploads, "record.pdf"), bytes);
+    const original = family();
+    original.people[0].events![0].alternatives![0].sources[0] = {
+      ...citation("Адресная книга"), documentId, documentPage: 3,
+    };
+    const path = join(directory, "family.gdz");
+    await writeGenealogyPackage(path, uploads, original, [{
+      id: documentId, file: "documents/record.pdf", title: "Адресная книга",
+      mime: "application/pdf", personIds: [], portraitIds: [],
+      document: { documentType: "", documentDate: "", place: "",
+        description: "", provenance: "" },
+    }]);
+    const imported = await prepareGenealogyImport(path, stage, "imported");
+    const source = imported.family.people[0].events![0].alternatives![0].sources[0];
+    assert.equal(source.documentPage, 3);
+    assert.equal(source.documentId, imported.files[0].documentId);
+    assert.notEqual(source.documentId, documentId);
+    assert.deepEqual(await readFile(join(stage, imported.files[0].name)), bytes);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

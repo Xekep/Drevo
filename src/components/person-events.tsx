@@ -11,6 +11,8 @@ import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
 import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
 import { sourceCitation } from "../shared/source-catalog.ts";
+const hasAssessment = (event: PersonEvent) => !!(event.dateClaim?.confidence ||
+  event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence));
 function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
   event: PersonEvent;
   onChange: (alternatives: EventFactAlternative[]) => void;
@@ -124,7 +126,7 @@ export function EventsEditor({
               Событие
               <select
                 value={event.type}
-                disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                disabled={!canAssess && hasAssessment(event)}
                 onChange={(e) =>
                   update(event.id, {
                     type: e.target.value as PersonEvent["type"],
@@ -145,7 +147,7 @@ export function EventsEditor({
                   maxLength={1000}
                   placeholder="Название события"
                   value={event.title || ""}
-                  disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                  disabled={!canAssess && hasAssessment(event)}
                   onChange={(e) =>
                     update(event.id, { title: e.target.value || undefined })
                   }
@@ -254,7 +256,7 @@ export function EventsEditor({
                   <input
                     maxLength={1000}
                     value={event.title || ""}
-                    disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                    disabled={!canAssess && hasAssessment(event)}
                       onChange={(e) =>
                         update(event.id, { title: e.target.value || undefined })
                       }
@@ -419,12 +421,12 @@ export function EventsEditor({
             <button
               className="event-remove"
               type="button"
-              disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+              disabled={!canAssess && hasAssessment(event)}
               onClick={() => onChange(events.filter((e) => e.id !== event.id))}
             >
               <Trash2 size={14} /> Убрать событие
             </button>
-            {!canAssess && (event.dateClaim?.confidence || event.placeClaim?.confidence) &&
+            {!canAssess && hasAssessment(event) &&
               <small>Оценённое событие может удалить исследователь или администратор.</small>}
           </div>
         </details>

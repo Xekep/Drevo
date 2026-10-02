@@ -552,9 +552,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         const data = JSON.parse(node.value) as { id?: unknown; field?: unknown;
           value?: unknown; confidence?: unknown };
         if (typeof data.id !== "string" || !["date", "place"].includes(String(data.field)) ||
-          typeof data.value !== "string") throw new Error("invalid event alternative");
+          typeof data.value !== "string" ||
+          (data.confidence !== undefined && !isClaimConfidence(data.confidence)))
+          throw new Error("invalid event alternative");
         const citations = parsedSources.filter((_source, index) =>
           value(sourceNodes[index], "_DREVO_ALTERNATIVE") === data.id);
+        if (!citations.length) throw new Error("uncited event alternative");
         return [{ id: data.id, field: data.field as "date" | "place",
           value: data.value, sources: citations,
           ...(data.confidence ? { confidence: data.confidence as ClaimConfidence } : {}) }];

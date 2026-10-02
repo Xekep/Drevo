@@ -134,6 +134,11 @@ export function authorizeArchive(
       for (const oldEvent of earlierEvents.values()) {
         const currentEvent = currentEvents.get(oldEvent.id);
         const present = new Set((currentEvent?.alternatives || []).map((item) => item.id));
+        if (oldEvent.alternatives?.some((item) => item.confidence) &&
+          (!currentEvent || currentEvent.type !== oldEvent.type ||
+            currentEvent.title !== oldEvent.title ||
+            currentEvent.gedcomTag !== oldEvent.gedcomTag))
+          throw new ForbiddenError("Оценённое утверждение может менять только исследователь или администратор");
         for (const alternative of oldEvent.alternatives || [])
           if (alternative.confidence && !present.has(alternative.id))
             throw new ForbiddenError("Оценённый вариант может удалить только исследователь или администратор");

@@ -67,7 +67,8 @@ function validEventAlternatives(event: NonNullable<Family["people"][number]["eve
       !alternative.value.trim() || alternative.value.length > 1000 ||
       alternative.value !== alternative.value.trim() ||
       !validValueClaim(alternative, alternative.value) ||
-      (alternative.field === "date" && !validDate(alternative.value)) ||
+      (alternative.field === "date" && (!validDate(alternative.value) ||
+        alternative.value > new Date().toISOString().slice(0, 10))) ||
       alternative.value === (alternative.field === "date"
         ? claimableEventDate(event) : event.place) ||
       values.has(`${alternative.field}:${alternative.value.toLocaleLowerCase("ru")}`))
