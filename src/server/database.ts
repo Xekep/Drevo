@@ -32,7 +32,7 @@ import { ConflictError } from "./archive-errors.ts";
 import { patchPeople } from "./person-patches.ts";
 import { archiveSnapshotReader } from "./archive-read-cache.ts";
 import { hydrateArchive, hydrateRelations } from "./archive-hydration.ts";
-import { assertCatalogLinks, hydrateCatalogCitations } from "./source-catalog-store.ts";
+import { allCitations, assertCatalogLinks, hydrateCatalogCitations } from "./source-catalog-store.ts";
 import { applyArchiveChanges } from "../domain/changes.ts";
 import {
   validateFamily,
@@ -53,14 +53,19 @@ export type StoredFaceDescriptor = {
 };
 
 function addsMediaReference(before: Family, after: Family) {
+  const citationUrls = (family: Family) => allCitations(family)
+    .map((citation) => citation.url?.split(/[?#]/, 1)[0])
+    .filter((url): url is string => !!url?.startsWith("/media/"));
   const existing = new Set([
     ...before.people.map((person) => person.photo),
     ...(before.photos || []).map((photo) => photo.url),
+    ...citationUrls(before),
   ]);
   return (
     after.people.some(
       (person) => person.photo && !existing.has(person.photo),
-    ) || (after.photos || []).some((photo) => !existing.has(photo.url))
+    ) || (after.photos || []).some((photo) => !existing.has(photo.url)) ||
+    citationUrls(after).some((url) => !existing.has(url))
   );
 }
 
