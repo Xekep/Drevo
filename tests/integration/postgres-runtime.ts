@@ -3821,6 +3821,17 @@ try {
   });
   assert.equal(citedDelta.status, 507, await citedDelta.text());
   assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
+  const portraitFamily = structuredClone(peopleBeforeQuota.family);
+  portraitFamily.people[0].photo = "/media/cited-record.jpg";
+  const portraitDelta = await fetch(securedBase + "/api/family/changes", {
+    method: "POST",
+    headers: { Cookie: `drevo_session=${ownerToken}`, Origin: process.env.PUBLIC_ORIGIN!,
+      "Content-Type": "application/json", "If-Match": String(peopleBeforeQuota.revision) },
+    body: JSON.stringify({ changes: archiveChanges(peopleBeforeQuota.family, portraitFamily) }),
+  });
+  assert.equal(portraitDelta.status, 507,
+    `a portrait field patch must count an existing original beyond 500 MB: ${await portraitDelta.text()}`);
+  assert.equal((await app.archive.read()).revision, peopleBeforeQuota.revision);
   await assert.rejects(quotaDb.transaction(async () => {
     await quotaDb.prepare("", "UPDATE people SET data=jsonb_set(data,'{sources}',?::jsonb) WHERE id='person-a'")
       .run(JSON.stringify([...citedFamily.people[0].sources,
@@ -3861,6 +3872,33 @@ try {
   assert.equal((await app.archive.read()).family.people.length,
     peopleBeforeQuota.family.people.length,
     "shrinking an archive remains possible for a basic owner");
+  const beforePortraitFixture = await app.archive.read();
+  await app.archive.write(quotaFamily(2), beforePortraitFixture.revision, owner);
+  for (const suffix of ["a", "b"])
+    await quotaDb.prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,1)")
+      .run(`/media/portrait-quota-${suffix}.jpg`);
+  const beforeCompetingPortraits = await app.archive.read();
+  const patchPortrait = (index: number, suffix: string) => {
+    const changed = structuredClone(beforeCompetingPortraits.family);
+    changed.people[index].photo = `/media/portrait-quota-${suffix}.jpg`;
+    return fetch(securedBase + "/api/family/changes", {
+      method: "POST",
+      headers: { Cookie: `drevo_session=${ownerToken}`, Origin: process.env.PUBLIC_ORIGIN!,
+        "Content-Type": "application/json", "If-Match": String(beforeCompetingPortraits.revision) },
+      body: JSON.stringify({ changes: archiveChanges(beforeCompetingPortraits.family, changed) }),
+    });
+  };
+  const competingPortraits = await Promise.all([
+    patchPortrait(0, "a"), patchPortrait(1, "b"),
+  ]);
+  assert.deepEqual(competingPortraits.map((response) => response.status).sort(), [200, 507],
+    "concurrent portrait patches must share the owner's final byte of quota");
+  assert.equal((await accountCapacity(quotaDb, "owner")).mediaBytes, BASIC_MEDIA_BYTES);
+  const afterCompetingPortraits = await app.archive.read();
+  await app.archive.write(peopleBeforeQuota.family, afterCompetingPortraits.revision, owner);
+  for (const suffix of ["a", "b"])
+    await quotaDb.prepare("", "DELETE FROM media_originals WHERE url=?")
+      .run(`/media/portrait-quota-${suffix}.jpg`);
   assert.equal(
     (await fetch(securedBase + "/api/backups", {
       headers: { Cookie: `drevo_session=${ownerToken}` },

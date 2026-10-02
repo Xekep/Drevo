@@ -11,7 +11,12 @@ import { validateFamily } from "../domain/validation.ts";
 import { ConflictError } from "./archive-errors.ts";
 import { ForbiddenError, assertCurrentArchiveActor } from "./users.ts";
 import { auditStore } from "./audit.ts";
-import { enforcePostgresMediaQuota, postgresMediaBytes } from "./postgres-media-quota.ts";
+import { authorizeMediaReferences } from "./media-access.ts";
+import {
+  enforcePostgresMediaQuota,
+  postgresMediaBytes,
+  releaseAttachedMediaGrants,
+} from "./postgres-media-quota.ts";
 
 const fields = new Set([
   "name",
@@ -140,11 +145,21 @@ export async function patchPeople(
     const after = validateFamily(merged.family);
     const appliedChanges = archiveChanges(before, after);
     if (appliedChanges.length) {
-      const citedMediaChanged = changes.some((change) =>
-        change.field === "sources" || change.field === "events");
+      const photoChanged = appliedChanges.some(
+        (change) => change.field === "photo",
+      );
+      const mediaChanged = appliedChanges.some(
+        (change) =>
+          change.field === "photo" ||
+          change.field === "sources" ||
+          change.field === "events",
+      );
+      if (photoChanged)
+        await authorizeMediaReferences(db, before, after, actor);
       const measuredAt = Date.now();
-      const mediaBytesBefore = citedMediaChanged
-        ? await postgresMediaBytes(db, measuredAt) : 0;
+      const mediaBytesBefore = mediaChanged
+        ? await postgresMediaBytes(db, measuredAt)
+        : 0;
       const update = db.prepare(
         "UPDATE people SET data=? WHERE id=?",
         "UPDATE people SET data=? WHERE id=?",
@@ -156,7 +171,8 @@ export async function patchPeople(
           person.id,
         );
       }
-      if (citedMediaChanged)
+      if (photoChanged) await releaseAttachedMediaGrants(db);
+      if (mediaChanged)
         await enforcePostgresMediaQuota(db, mediaBytesBefore, measuredAt);
       await db
         .prepare(
