@@ -24,7 +24,7 @@ import { backupCoordinator } from "../../src/server/backup-coordinator.ts";
 import { databaseBackupHttp } from "../../src/server/database-backup-http.ts";
 import { createAuth } from "../../src/server/auth.ts";
 import { openArchive } from "../../src/server/database.ts";
-import { userStore } from "../../src/server/users.ts";
+import { assertCurrentArchiveActor, ForbiddenError, userStore } from "../../src/server/users.ts";
 import { settingsStore } from "../../src/server/settings.ts";
 import {
   aiSettingsStore,
@@ -2609,6 +2609,25 @@ try {
     }).then((response) => response.json());
     assert.equal(selectedAdmin.user.role, "admin");
     assert.equal(selectedAdmin.user.platformAdmin, false);
+    const crossArchiveAdmin = (await (await userStore(app.archive.db)).get("vk:42"))!;
+    await client.query(`UPDATE archive_memberships SET role='reader'
+      WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+    try {
+      await app.archive.db.transaction(async () => {
+        await app!.archive.db.prepare("", `SELECT set_config('drevo.account_id',?,true)`)
+          .get("vk:42");
+        const memberships = await app!.archive.db.prepare("", `SELECT archive_id,role
+          FROM archive_memberships WHERE user_id=? ORDER BY archive_id`).all("vk:42");
+        assert.deepEqual(memberships.map((row) => [row.archive_id,row.role]),
+          [["other-archive","admin"],["runtime-test","reader"]],
+          "account-level RLS can expose both memberships in the same transaction");
+        await assert.rejects(assertCurrentArchiveActor(app!.archive.db, crossArchiveAdmin),
+          ForbiddenError, "another archive's admin row cannot authorize this archive");
+      });
+    } finally {
+      await client.query(`UPDATE archive_memberships SET role='admin'
+        WHERE archive_id='runtime-test' AND user_id='vk:42'`);
+    }
     for (const path of ["/api/backups", "/api/backup", "/api/backup/full",
       "/api/backups/settings"])
       assert.equal((await fetch(securedBase + "/a/other-archive" + path, {

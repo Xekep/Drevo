@@ -19,7 +19,7 @@ export async function assertCurrentArchiveActor(
   const row = await db
     .prepare(
       "",
-      "SELECT role,approved,person_id,tree_access FROM archive_memberships WHERE user_id=?",
+      "SELECT role,approved,person_id,tree_access FROM archive_memberships WHERE archive_id=current_setting('drevo.archive_id',true) AND user_id=?",
     )
     .get(actor.id);
   if (

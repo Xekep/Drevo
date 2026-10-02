@@ -93,14 +93,12 @@ export function sharesStore(db: StoreDatabase) {
       };
       await db.transaction(async () => {
         if (db.kind === "postgres" && !(actor.id === "local" && !process.env.PUBLIC_ORIGIN)) {
-          // Archive deletion and writes lock archives before touching membership.
-          // Follow that order to avoid a delete/share deadlock. These short
-          // SHARE locks serialize link creation with role revocation.
-          const archive = await db.prepare("", `SELECT id FROM archives
-            WHERE id=current_setting('drevo.archive_id',true) FOR SHARE`).get();
-          if (!archive) throw new ForbiddenError("Архив больше не доступен");
+          // db.transaction locked the archive first. Hold this membership row
+          // through both INSERTs, in the same order as archive deletion.
           const membership = await db.prepare("", `SELECT role,approved
-            FROM archive_memberships WHERE user_id=? FOR SHARE`).get(actor.id);
+            FROM archive_memberships
+            WHERE archive_id=current_setting('drevo.archive_id',true)
+              AND user_id=? FOR SHARE`).get(actor.id);
           if (!membership?.approved || membership.role !== "admin" || !actor.approved)
             throw new ForbiddenError("Доступ к выдаче ссылок отозван");
           await assertCurrentArchiveActor(db, actor);
