@@ -778,6 +778,17 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
       }
     }
+    const nicknames = names.flatMap((name) =>
+      children(name, "NICK")
+        .map((nickname) => nickname.value.trim())
+        .filter(Boolean),
+    );
+    if (nicknames.length) {
+      p.biography = [p.biography, `Прозвища из GEDCOM: ${nicknames.join("; ")}`]
+        .filter(Boolean)
+        .join("\n\n");
+      warnings.add("NAME.NICK сохранено текстом в биографии; структура прозвища в имени не перенесена.");
+    }
     for (const c of n.children)
       if (
         ![
