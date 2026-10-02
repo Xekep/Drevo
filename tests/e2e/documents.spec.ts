@@ -861,6 +861,69 @@ test("clicking a document mark opens comments, selects its entry and scrolls pas
   await expect(mark).toBeFocused();
 });
 
+test("document comment clicks keep the panel open and text selection does not navigate", async ({ page }, info) => {
+  const title = `Comment reading ${info.project.name} ${info.retry}`;
+  const upload = await page.request.post("/api/documents", {
+    headers: { "Content-Type": "application/pdf", "X-Document-Metadata": encodeURIComponent(JSON.stringify({ title, personIds: [] })) },
+    data: await samplePdf(3),
+  });
+  expect(upload.status()).toBe(201);
+  const { id } = await upload.json();
+  for (const [number, text] of [
+    [1, "Первый комментарий"],
+    [3, "Текст комментария можно выделить и скопировать. Подробности архивной записи."],
+  ] as const) {
+    const response = await page.request.post(`/api/documents/${id}/annotations`, {
+      data: { page: number, x: 0.1, y: 0.2, width: 0.3, height: 0.1, text },
+    });
+    expect(response.status()).toBe(201);
+  }
+  await page.goto(`/documents/${id}`);
+  const reader = page.getByRole("dialog", { name: `Документ: ${title}` });
+  const book = reader.frameLocator("iframe.pdf-book-frame");
+  const toggle = book.getByRole("button", { name: "Комментарии" });
+  await toggle.click();
+  const sidebar = reader.locator(".pdf-book-sidebar");
+  const cards = reader.locator(".pdf-book-comments-list article");
+  const first = cards.first().locator("button").first();
+  const last = cards.last().locator("button").first();
+  await first.click();
+  await expect(sidebar).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(first).toHaveAttribute("aria-pressed", "true");
+  const text = last.locator("span");
+  await expect(text).toHaveCSS("user-select", "text");
+  const bounds = await text.evaluate((node) => {
+    const range = node.ownerDocument.createRange();
+    range.setStart(node.firstChild!, 0);
+    range.setEnd(node.firstChild!, "Текст комментария".length);
+    const box = range.getBoundingClientRect();
+    return { left: box.left, right: box.right, y: box.top + box.height / 2 };
+  });
+  await page.mouse.move(bounds.left + 0.5, bounds.y);
+  await page.mouse.down();
+  await page.mouse.move(bounds.right - 0.1, bounds.y, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("Текст комментария");
+  await expect(sidebar).toBeVisible();
+  await expect(last).toHaveAttribute("aria-pressed", "false");
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+  await reader.screenshot({ path: info.outputPath("comment-text-selection.png") });
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await last.click();
+  await expect(sidebar).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await expect(book.locator('.BRpage-visible[data-index="2"] .drevo-page-mark.is-active')).toHaveCount(1);
+  await first.focus();
+  await first.press("Enter");
+  await expect(first).toHaveAttribute("aria-pressed", "true");
+  await expect(sidebar).toBeVisible();
+  await expect(book.locator('.BRpage-visible[data-index="0"]')).toBeVisible();
+  await toggle.click();
+  await expect(sidebar).toBeHidden();
+});
+
 test("document comments can be edited, canceled and recover from a conflicting tab", async ({ page }, info) => {
   const title = `Comment editing ${info.project.name} ${info.retry}`;
   const upload = await page.request.post("/api/documents", {
