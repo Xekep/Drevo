@@ -122,7 +122,9 @@ export async function verifyAtomicSuggestionAcceptance(
       const result =
         await client.query(`SELECT count(*)::int AS n FROM pg_stat_activity
         WHERE datname=current_database() AND pid<>pg_backend_pid()
-          AND wait_event_type='Lock' AND query LIKE 'UPDATE research_suggestions%'`);
+          AND wait_event_type='Lock'
+          AND (query LIKE 'UPDATE research_suggestions%'
+            OR query LIKE 'SELECT id FROM archives WHERE id=%')`);
       if (result.rows[0].n > 0) {
         sawLock = true;
         break;
@@ -132,7 +134,7 @@ export async function verifyAtomicSuggestionAcceptance(
     assert.equal(
       sawLock,
       true,
-      "reject must wait for the uncommitted accept status update",
+      "reject must wait for the uncommitted acceptance",
     );
     releaseMarked();
     const acceptedResponse = await accepting;
