@@ -93,8 +93,13 @@ export function adminAiHttp({
     if (!(await accountAiAccess(db, adminId, auth.local)))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
 
-    if (path === "/api/admin/ai" && req.method === "GET")
-      return json(res, 200, await statusValue());
+    if (path === "/api/admin/ai" && req.method === "GET") {
+      const status = await statusValue();
+      if (!(await auth.isAdmin(req)) ||
+        !(await accountAiAccess(db, adminId, auth.local)))
+        return json(res, 403, { error: "Доступ отозван" });
+      return json(res, 200, status);
+    }
 
     if (!isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Invalid origin" });
@@ -106,8 +111,22 @@ export function adminAiHttp({
         const body = await readJson(req);
         if (!(await auth.isAdmin(req)))
           return json(res, 403, { error: "Доступ отозван" });
-        await settings.write(body, (await auth.currentUser(req))!);
-        return json(res, 200, await statusValue());
+        const written = await db.transaction(async () => {
+          const current = await auth.currentUser(req);
+          if (!current || current.id !== adminId ||
+            !(await auth.isAdmin(req)) ||
+            !(await accountAiAccess(db, adminId, auth.local, true))) return false;
+          await settings.write(body, current);
+          return true;
+        });
+        if (!written) return json(res, 403, { error: "Доступ отозван" });
+        if (!(await accountAiAccess(db, adminId, auth.local)))
+          return json(res, 403, { error: "Доступ отозван" });
+        const status = await statusValue();
+        if (!(await auth.isAdmin(req)) ||
+          !(await accountAiAccess(db, adminId, auth.local)))
+          return json(res, 403, { error: "Доступ отозван" });
+        return json(res, 200, status);
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
