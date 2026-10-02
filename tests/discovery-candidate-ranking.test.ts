@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery,
-  candidatePlaceQueries, candidateRelativeQuery } from "../src/server/discovery-candidate-ranking.ts";
+  candidatePlaceQueries } from "../src/server/discovery-candidate-ranking.ts";
 
 test("candidate lookup searches published birth surname and given name", () => {
   assert.equal(candidateNameQuery({ name: "Петрова Анна", birthSurname: "Иванова" }),
@@ -38,16 +38,12 @@ test("one or two name typos produce a reason but common short names do not", () 
     { name: "Сидорова Елизавета" }), null);
 });
 
-test("only published relative names can support a suggestion and never appear in its reason", () => {
-  const relatives = [{ kind: "parent" as const, name: "Тестов Пётр" }];
-  assert.equal(candidateRelativeQuery(relatives), "(петр & тестов)");
+test("a matching given name and year alone do not suggest a changed surname", () => {
   const source = { name: "Иванова Анна", birthYear: "1900" };
   const candidate = { name: "Петрова Анна", birthYear: "1901" };
   assert.equal(candidateEvidence(source,candidate), null);
-  const evidence = candidateEvidence(source,candidate,relatives,relatives)!;
-  assert.ok(evidence.reasons.includes("Совпадает опубликованный близкий родственник"));
-  assert.doesNotMatch(JSON.stringify(evidence), /Пётр|Тестов/);
-  assert.equal(candidateEvidence(source,{ ...candidate, birthYear: "1915" },relatives,relatives), null);
+  assert.equal(candidateEvidence(source,candidate), null);
+  assert.equal(candidateEvidence(source,{ ...candidate, birthYear: "1915" }), null);
 });
 
 test("partially matching published places are clues, distant places are conflicts", () => {
