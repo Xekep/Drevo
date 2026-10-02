@@ -1,0 +1,2621 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-02",
+  "baselineCommit": "9253de0f8dc741aa0b8395e5e8ecbe52b62a28b6",
+  "environment": {
+    "node": "v22.14.0",
+    "platform": "win32",
+    "cpu": "AMD Ryzen 9 5950X",
+    "physicalCores": 16,
+    "logicalProcessors": 32
+  },
+  "method": "Последовательные свежие процессы Node, без профайлера, параллельных тестов/сборки/браузера. Baseline — файлы git HEAD9253de0 в отдельном snapshot; current — те же production defaults с объединённым score. На обеих сторонах full unionGeometry без caps/scalar overrides/seed selection; scale fixtures используют production portrait size220x264. layoutMs исключает импорт/конструкторELK/финальнуюQA. 977: три чистые пары AB/BA/AB. Остальные — одиночные пары. domainResidualMs=layoutMs−elkMs, диагностическая разность, не изолированный microbenchmark. Проценты одиночных пар не являются устойчивой оценкой ускорения. No browser FPS/memory claims.",
+  "excluded": [
+    {
+      "file": "quick-comparisons.json",
+      "reason": "Warmup only; root reported possible overlap with short unit test. No quick timings included."
+    }
+  ],
+  "labelCorrection": "В первых rawreports runner label scale503 фактически использовал seed1/gen7=782, label scale782 — seed1/gen8=1205. Здесь labels/case/generator исправлены поactualpeople; originalRunnerLabel сохранён. Недостающий503(seed1/gen6) измерен отдельнойчистойsinglepair. Нагрузку782/1205повторно не запускали.",
+  "reproduction": {
+    "scaleCommand": "node --experimental-strip-types tests/layout-benchmark.mjs",
+    "scaleEnvironment": {
+      "DREVO_LAYOUT_SCALE_SCAN": "1",
+      "DREVO_LAYOUT_TRACE": "1",
+      "DREVO_LAYOUT_DECROSS_MODE": "production",
+      "DREVO_LAYOUT_CASE": "4|5|6|7|13|14"
+    },
+    "instructions": "Использовать два checkout: baseline9253de0 и current source hashes ниже. Убрать всепрочие DREVO_LAYOUT_* и DREVO_ELK_BUNDLE. Для977 сравнить3чередующихсяAB/BA/ABпар, layoutMs иgeometrySha256.",
+    "fullGeometryRunner": "contact-score-full-run.mjs SOURCE FIXTURE OUTPUT_PREFIX; запускаетсяnode --experimental-strip-types",
+    "pairDriver": "node contact-score-pairs.mjs clean; node contact-score-pairs.mjs complete503",
+    "fixtureScope": "Дополнительныеsyntheticfixtures: half/remarriage/singleparent +adoptive/foster/godparent/twin/sworn_sibling (normal/reverse/timeline), pedigreecycle/reference, pedigreecollapse, previous-familyedit, previous-ancestoraddition."
+  },
+  "sources": {
+    "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533": {
+      "head": "9253de0f8dc741aa0b8395e5e8ecbe52b62a28b6",
+      "role": "baseline",
+      "hashes": {
+        "src/domain/access.ts": "d51003f6936d0d9e8dabc92c08b64bb9bd10e7973b78f4a70bfb1f5439c71658",
+        "src/domain/additions-import.ts": "5ed491aec3309d5171cf14f03bc47fa7ecc6535676a29e6917cfd7ad334a2c6e",
+        "src/domain/additions-undo.ts": "1664cf6455083272137734da32fdb4989e2caa6fcb9b586cfd6a6141791d0a0f",
+        "src/domain/agelong-xml.ts": "6515f89ae81b1aa10296054bd5a68a3db74f947dbe621edb937e80c7fef0659a",
+        "src/domain/analysis-export.ts": "216ba709e68732feae31d9575de87ab4fbb19b75772344e94eff4fc1050ad4c8",
+        "src/domain/ansel.ts": "7fceb359ed7b94558257f79d71ead744fba0065a09893c6a84581926125892a6",
+        "src/domain/archive-context.ts": "f90274d747bcad640e7c03ac11bdb9c2a3b9c126cc555b79842e645c0444da13",
+        "src/domain/archive-coverage.ts": "ca207a8d6b796f17f53533f5acfbc00f8214c0fe016a226d9a7eea27b57ec080",
+        "src/domain/archive-links.ts": "697baef4c5ce7eba82dba454fe7e56f79ae3ae03e1ba08e01b6933841c8737d5",
+        "src/domain/archive-projection.ts": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+        "src/domain/archive-quality.ts": "56970b2a3b4213ec228d312c8287d690c75b11a382ffc13d71c6335c5a1e1a09",
+        "src/domain/archive-report.ts": "ffaaeadf33eebaf93a555023ab5ebd3c9c95ac62832710d9b905d60aaae045ff",
+        "src/domain/archive-routes.ts": "756c24783d70b4c18fe3d63e30729861579118ee6fe5da97c9e46835539fc23e",
+        "src/domain/archive-summary.ts": "1af1993c6555135a5205cfd358a5c39b3a9e0c1b332aa0772624eadc19064253",
+        "src/domain/audit.ts": "d6beb81c54ff57a1da0556bd29a76e82a720b791e3057df28c7ea34e3b8edd71",
+        "src/domain/branch-routing.ts": "e99d53e56e9666b4253e54d107e5f2a742cc9844448387a5dfe4925cd5e0a9a5",
+        "src/domain/calculation-data.ts": "3ae14750c691fdebf10e70b1568a979aab0c0685d1a9eae7d735c9f7cccf2da2",
+        "src/domain/changes.ts": "74a720f485f43cbb207127b614637251d5cc2218ae308a4728c5863c096595b1",
+        "src/domain/claim-confidence.ts": "a259673c33837dc0412b399a61ab92af80fbf810ae6e8f23910061597ff77eda",
+        "src/domain/connection-labels.ts": "be75094fc85c9574e0b117189ec08b0c0dc41a51c1b0d90f72b9e232e12cea7e",
+        "src/domain/connection-suggestions.ts": "435863efac65e2b1845ff8594132b725e3862a632e7da228df848b8470464caa",
+        "src/domain/connections.ts": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+        "src/domain/dates.ts": "7081700045b5eedd7e8d69d6c42168e50c9a20ea052afc5ee7c3a71516306827",
+        "src/domain/distribution-statistics.ts": "5c7b5e7bc6618836a824eab37bf6866c956b115383b3ea3f104cad953b8f1fa5",
+        "src/domain/duplicate-analysis.ts": "2cae81e33f2ca2b3564286264cc31db535302d3ece520110b275279a21ba0a9c",
+        "src/domain/edge-routing.ts": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+        "src/domain/families.ts": "e8602fccb4ca58c6d740dd526425a23bdd42548638954f9f9ba084c297ce530c",
+        "src/domain/family-arrangement.ts": "7b94e451b8cdb6321f594f4aae245e7c8e0a8e02b7d59330226c7e51a895d8fb",
+        "src/domain/family-insights.ts": "cfae83f439532c09ad87949134886641c15c1daea73ea1c1152d560a897f2231",
+        "src/domain/family-layout.ts": "88241b0e11816ea82b220e904a75479e0cd0c24c48e320c663bdf99cd7eb1ded",
+        "src/domain/family-neighborhood.ts": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+        "src/domain/family-unions.ts": "7f421686ab5e8b2c196ff22a386376ab6ff5863fb6da832121968a28454b031b",
+        "src/domain/fan-chart.ts": "956afe04323585a0840dc55b4fea7fe39f27d06f3804898e9199dac9e358e370",
+        "src/domain/gedcom.ts": "72a636b70c955efb3563cf07ab99cfd6f302035da5f1481f63bbc830482e1c42",
+        "src/domain/genealogy-transfer.ts": "c888d8a4c8cc0dc1ad69862bfb924bf58bb8b4cdd3cce6a498cdc63c41e4ab4d",
+        "src/domain/generation-bands.ts": "351b9abc73bae8206a78fc9f1ab7464d54755b2ab6cac054441fc038e958307e",
+        "src/domain/generation-report.ts": "70f4848b6c3d7bedda0b9fa36247427f32f73c61d89016a8afad3b2b210d8b01",
+        "src/domain/horizontal-timeline.ts": "bcd9f538cc9fca190fd27082d94b976ef8a95843d8b6fa7b66ed36cc85e358df",
+        "src/domain/household-bands.ts": "81c0605fb59aa104f94134ec6478aa81ce8c2e986fc4471f3ff13e73d851e066",
+        "src/domain/household-levels.ts": "e4008724d13262359aa404f62a7194eda22ddb66ce2669da8d2d25f1c1bf748e",
+        "src/domain/index.ts": "fd73a0d1413d534704705ac0dd5cdad4ebd8179eada0faa711aa48cb2a0279bf",
+        "src/domain/kinship-analysis.ts": "2068fbf9c167631778e148c27e3c024f53ba4f39215c23959961d59a79924907",
+        "src/domain/kinship.ts": "0b754589b81bc5d5de3c9c1aa75285eecb459354e95b8bcc69b31e23e68b935e",
+        "src/domain/layout-order.ts": "5789844f12c5cd16f4c7de73b5833f6f2b2b795341f0183f6a7d25581e732c9b",
+        "src/domain/layout.ts": "171481df9283b1ad26adf9c283a77337fd80242bd7d9639ff77d49c72eb2cdc1",
+        "src/domain/lifespan-statistics.ts": "513f0269f9890b9e0e8454013c645bbddeaff1de1ff0bf25bdcb1ba97abbfd6e",
+        "src/domain/lineage-report.ts": "eb620b2fdddc11f7b2ddd174bf5165a52e3aa2397414c48a4147b1bd4ad75960",
+        "src/domain/local-couple-order.ts": "08b0620f0cb4f65770fb1ab379c4b6310728eba33fc03a5885f95415575dc402",
+        "src/domain/local-family-order.ts": "f0c36b5569e7ca3a81111745e4781c10a6952df495de6c8243f6c795459e5b0e",
+        "src/domain/media-preview.ts": "97f23c53b2a795ef9edefc9a8fe0cb0abc6f4d4690ee92f5604e2f422f6439e8",
+        "src/domain/mutations.ts": "69f9f280e39d97250af1e2f974354c365705cfdb6d16fdd74dfd2c75e4d5866a",
+        "src/domain/name-hints.ts": "6cd2ff98bd6aba0f294ca0e1bde0aa9ce22933355b04d40c9fee353dfc8e7baa",
+        "src/domain/people-directory.ts": "dacdd956878c04eea1316475a1a2ae85da92109d927ffa38b225929177406f74",
+        "src/domain/people-search.ts": "7e0f74ea647443c3bdb2fb4dc577473018befd594917b98834be3263c5376fcc",
+        "src/domain/person-draft.ts": "14f6657872f7485ccaa23d72dc9fff6c254883727fd4d3dfe727fdb474dd6c99",
+        "src/domain/person-events.ts": "790e9dd98bb4db888ed45544ee5e4b9da2be13c7111b7fbf2fd3e49984b649b0",
+        "src/domain/person-sources.ts": "200dfc474b1e5ac0de7f789d59ddd7a8b55552643183061fb003d4eb7c828d28",
+        "src/domain/photo-albums.ts": "c796618b43437c28bf1c501ed503defc6c032a493d28bd683ca95047e0ba4009",
+        "src/domain/photo-metadata.ts": "bffd0c40d389535851375a784eebe84285f2f1eb8e115c403186592d7835ee28",
+        "src/domain/photo-upload.ts": "07a107f82804e542407737d7dee2427dc622df385bda9c53f53875dd006fc146",
+        "src/domain/places.ts": "fee46b7eb7c58cfd0fcefef88abf6c92839021bb82028ab765023ea1236ad35f",
+        "src/domain/portrait-crop.ts": "ad754ee4eec09e499a56e12f6bb85ad7bdabf2406c459bee1995109d61bf21cf",
+        "src/domain/research-answer.ts": "2b219813b0ca82e58a4b43bb2cc46baf8ed1857c94d2b3d616d220917255d531",
+        "src/domain/research-export.ts": "cb68cb44eff8b718cef5f1a2ca75988591f6004849e3f81e7f9dd9be74c8491a",
+        "src/domain/research-math.ts": "3a02e029a9aeda3dac1f482c66ea99e7a04c8276185fe4d35ec851fa95754de1",
+        "src/domain/research-relationship.ts": "d60009c577fe112e3bc683a93fc81427e56acc0eed2295c5b09638f9fb4ed08d",
+        "src/domain/research-tools.ts": "9b888186cf41cdd8e3c4ae3a1f819e0ed9b01d6f2cf5fd3d604b26a40188a1e5",
+        "src/domain/research-visual.ts": "c6f8fe590ed1c31b8e602b8ab3361fe7054868cbb42f368baee4033863a7d8ff",
+        "src/domain/route-crossings.ts": "c6e90424706224aa53af156cb548b85bfb34b5bef7f5c5e85ccb6c3aff460ad0",
+        "src/domain/routing-quality.ts": "ee15ed19921f8c53aa7403f080d7f9ff9036f4976fae50a87b30595d2a95d9a0",
+        "src/domain/shared-family.ts": "7f7db88a61ac440936d292ad2e41170f782db97636f1137edf1fa60e4645c5d9",
+        "src/domain/source-repository.ts": "bebf21a0f7123dcf35ed8214b58c6ee3bed451f11410db9c6f21e3ec5bdf0716",
+        "src/domain/timeline-positions.ts": "d7af3db0e2a29b048a85e2dc7d484bcdf0e3548bdc46fa9cacfe587d65d93623",
+        "src/domain/timeline-routing.ts": "335d3b3739f33929c0f29a72d7df4d16feaeb83822c01a910cb63916d8c93f24",
+        "src/domain/timeline-scale.ts": "987ade0f9dff111de4c806827a70573a0d085aff7dd0f60b6df7218e55dc8ac8",
+        "src/domain/tree-access.ts": "ce331c81df0d4bd8e99b8a2b12b47ab75f426897e112a4d319a487a316c623f8",
+        "src/domain/tree-export-selection.ts": "cd70e1bc2b170ac0926e3693dc7ab6483c7274eea3d802df6d501d6dfedb40b2",
+        "src/domain/tree-generation-scope.ts": "984c24a5fbd8124a6b781d33b3f10cf3b73d58e268eaba0e814f8a91a0bc61a4",
+        "src/domain/tree-interactions.ts": "f834994d90f8a52b9526df33e77275a8ffe09d48f3ab534ed3a92d00d315511e",
+        "src/domain/tree-layout-constants.ts": "73756e438cde2455b711817bc64c49326f071da1b7556fbe4aa30afeff5232cd",
+        "src/domain/tree-layout.ts": "77488587ad36453bdbf7be6e40717d6d918b258ed3dbc1d8bd6be1b297a0f6f7",
+        "src/domain/tree-preferences.ts": "d36d87041754be9951299ecfb72f9babb036882bb5f0f21817d2f741dcc36cdd",
+        "src/domain/types.ts": "663016982f732c654a98ef2b3271ef3c7d159d316c2ba3e979fe61360076ad38",
+        "src/domain/union-groups.ts": "f3c5cc8e0d0184b563e5e05e7403a350d8d280aad392b85b0d187e4d8faa7afe",
+        "src/domain/union-layers.ts": "c0ce43fc19f9623e2a64cc3b38bd4aca0d20dfe59dbef3532b60318adcc1368d",
+        "src/domain/union-layout.ts": "4398eb38db38b0cb277901821a1f31acf1a56be45628c72862826db9b133a37e",
+        "src/domain/union-order.ts": "1fb2ed5c0aac4eb65a8936e8332e64233901f546149c9fcb18dd73c339ff2d54",
+        "src/domain/union-timeline.ts": "8ea4ab7ae3066902a7a464270462bac0bce779ba81af5084d995b279862b1096",
+        "src/domain/validation.ts": "0a14da0a273f12f3b883866a8013a9eefca1dcf2b8432c56c15b39b6033ddeb0"
+      }
+    },
+    "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797": {
+      "head": "9253de0f8dc741aa0b8395e5e8ecbe52b62a28b6",
+      "role": "current",
+      "hashes": {
+        "src/domain/access.ts": "d51003f6936d0d9e8dabc92c08b64bb9bd10e7973b78f4a70bfb1f5439c71658",
+        "src/domain/additions-import.ts": "5ed491aec3309d5171cf14f03bc47fa7ecc6535676a29e6917cfd7ad334a2c6e",
+        "src/domain/additions-undo.ts": "1664cf6455083272137734da32fdb4989e2caa6fcb9b586cfd6a6141791d0a0f",
+        "src/domain/agelong-xml.ts": "6515f89ae81b1aa10296054bd5a68a3db74f947dbe621edb937e80c7fef0659a",
+        "src/domain/analysis-export.ts": "216ba709e68732feae31d9575de87ab4fbb19b75772344e94eff4fc1050ad4c8",
+        "src/domain/ansel.ts": "7fceb359ed7b94558257f79d71ead744fba0065a09893c6a84581926125892a6",
+        "src/domain/archive-context.ts": "f90274d747bcad640e7c03ac11bdb9c2a3b9c126cc555b79842e645c0444da13",
+        "src/domain/archive-coverage.ts": "ca207a8d6b796f17f53533f5acfbc00f8214c0fe016a226d9a7eea27b57ec080",
+        "src/domain/archive-links.ts": "697baef4c5ce7eba82dba454fe7e56f79ae3ae03e1ba08e01b6933841c8737d5",
+        "src/domain/archive-projection.ts": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+        "src/domain/archive-quality.ts": "56970b2a3b4213ec228d312c8287d690c75b11a382ffc13d71c6335c5a1e1a09",
+        "src/domain/archive-report.ts": "ffaaeadf33eebaf93a555023ab5ebd3c9c95ac62832710d9b905d60aaae045ff",
+        "src/domain/archive-routes.ts": "756c24783d70b4c18fe3d63e30729861579118ee6fe5da97c9e46835539fc23e",
+        "src/domain/archive-summary.ts": "1af1993c6555135a5205cfd358a5c39b3a9e0c1b332aa0772624eadc19064253",
+        "src/domain/audit.ts": "d6beb81c54ff57a1da0556bd29a76e82a720b791e3057df28c7ea34e3b8edd71",
+        "src/domain/branch-routing.ts": "e99d53e56e9666b4253e54d107e5f2a742cc9844448387a5dfe4925cd5e0a9a5",
+        "src/domain/calculation-data.ts": "3ae14750c691fdebf10e70b1568a979aab0c0685d1a9eae7d735c9f7cccf2da2",
+        "src/domain/changes.ts": "74a720f485f43cbb207127b614637251d5cc2218ae308a4728c5863c096595b1",
+        "src/domain/claim-confidence.ts": "a259673c33837dc0412b399a61ab92af80fbf810ae6e8f23910061597ff77eda",
+        "src/domain/connection-labels.ts": "be75094fc85c9574e0b117189ec08b0c0dc41a51c1b0d90f72b9e232e12cea7e",
+        "src/domain/connection-suggestions.ts": "435863efac65e2b1845ff8594132b725e3862a632e7da228df848b8470464caa",
+        "src/domain/connections.ts": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+        "src/domain/dates.ts": "7081700045b5eedd7e8d69d6c42168e50c9a20ea052afc5ee7c3a71516306827",
+        "src/domain/distribution-statistics.ts": "5c7b5e7bc6618836a824eab37bf6866c956b115383b3ea3f104cad953b8f1fa5",
+        "src/domain/duplicate-analysis.ts": "2cae81e33f2ca2b3564286264cc31db535302d3ece520110b275279a21ba0a9c",
+        "src/domain/edge-routing.ts": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+        "src/domain/families.ts": "e8602fccb4ca58c6d740dd526425a23bdd42548638954f9f9ba084c297ce530c",
+        "src/domain/family-arrangement.ts": "7b94e451b8cdb6321f594f4aae245e7c8e0a8e02b7d59330226c7e51a895d8fb",
+        "src/domain/family-insights.ts": "cfae83f439532c09ad87949134886641c15c1daea73ea1c1152d560a897f2231",
+        "src/domain/family-layout.ts": "88241b0e11816ea82b220e904a75479e0cd0c24c48e320c663bdf99cd7eb1ded",
+        "src/domain/family-neighborhood.ts": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+        "src/domain/family-unions.ts": "7f421686ab5e8b2c196ff22a386376ab6ff5863fb6da832121968a28454b031b",
+        "src/domain/fan-chart.ts": "956afe04323585a0840dc55b4fea7fe39f27d06f3804898e9199dac9e358e370",
+        "src/domain/gedcom.ts": "72a636b70c955efb3563cf07ab99cfd6f302035da5f1481f63bbc830482e1c42",
+        "src/domain/genealogy-transfer.ts": "c888d8a4c8cc0dc1ad69862bfb924bf58bb8b4cdd3cce6a498cdc63c41e4ab4d",
+        "src/domain/generation-bands.ts": "351b9abc73bae8206a78fc9f1ab7464d54755b2ab6cac054441fc038e958307e",
+        "src/domain/generation-report.ts": "70f4848b6c3d7bedda0b9fa36247427f32f73c61d89016a8afad3b2b210d8b01",
+        "src/domain/horizontal-timeline.ts": "bcd9f538cc9fca190fd27082d94b976ef8a95843d8b6fa7b66ed36cc85e358df",
+        "src/domain/household-bands.ts": "81c0605fb59aa104f94134ec6478aa81ce8c2e986fc4471f3ff13e73d851e066",
+        "src/domain/household-levels.ts": "e4008724d13262359aa404f62a7194eda22ddb66ce2669da8d2d25f1c1bf748e",
+        "src/domain/index.ts": "fd73a0d1413d534704705ac0dd5cdad4ebd8179eada0faa711aa48cb2a0279bf",
+        "src/domain/kinship-analysis.ts": "2068fbf9c167631778e148c27e3c024f53ba4f39215c23959961d59a79924907",
+        "src/domain/kinship.ts": "0b754589b81bc5d5de3c9c1aa75285eecb459354e95b8bcc69b31e23e68b935e",
+        "src/domain/layout-order.ts": "5789844f12c5cd16f4c7de73b5833f6f2b2b795341f0183f6a7d25581e732c9b",
+        "src/domain/layout.ts": "171481df9283b1ad26adf9c283a77337fd80242bd7d9639ff77d49c72eb2cdc1",
+        "src/domain/lifespan-statistics.ts": "513f0269f9890b9e0e8454013c645bbddeaff1de1ff0bf25bdcb1ba97abbfd6e",
+        "src/domain/lineage-report.ts": "eb620b2fdddc11f7b2ddd174bf5165a52e3aa2397414c48a4147b1bd4ad75960",
+        "src/domain/local-couple-order.ts": "08b0620f0cb4f65770fb1ab379c4b6310728eba33fc03a5885f95415575dc402",
+        "src/domain/local-family-order.ts": "f0c36b5569e7ca3a81111745e4781c10a6952df495de6c8243f6c795459e5b0e",
+        "src/domain/media-preview.ts": "97f23c53b2a795ef9edefc9a8fe0cb0abc6f4d4690ee92f5604e2f422f6439e8",
+        "src/domain/mutations.ts": "69f9f280e39d97250af1e2f974354c365705cfdb6d16fdd74dfd2c75e4d5866a",
+        "src/domain/name-hints.ts": "6cd2ff98bd6aba0f294ca0e1bde0aa9ce22933355b04d40c9fee353dfc8e7baa",
+        "src/domain/people-directory.ts": "dacdd956878c04eea1316475a1a2ae85da92109d927ffa38b225929177406f74",
+        "src/domain/people-search.ts": "7e0f74ea647443c3bdb2fb4dc577473018befd594917b98834be3263c5376fcc",
+        "src/domain/person-draft.ts": "14f6657872f7485ccaa23d72dc9fff6c254883727fd4d3dfe727fdb474dd6c99",
+        "src/domain/person-events.ts": "790e9dd98bb4db888ed45544ee5e4b9da2be13c7111b7fbf2fd3e49984b649b0",
+        "src/domain/person-sources.ts": "200dfc474b1e5ac0de7f789d59ddd7a8b55552643183061fb003d4eb7c828d28",
+        "src/domain/photo-albums.ts": "c796618b43437c28bf1c501ed503defc6c032a493d28bd683ca95047e0ba4009",
+        "src/domain/photo-metadata.ts": "bffd0c40d389535851375a784eebe84285f2f1eb8e115c403186592d7835ee28",
+        "src/domain/photo-upload.ts": "07a107f82804e542407737d7dee2427dc622df385bda9c53f53875dd006fc146",
+        "src/domain/places.ts": "fee46b7eb7c58cfd0fcefef88abf6c92839021bb82028ab765023ea1236ad35f",
+        "src/domain/portrait-crop.ts": "ad754ee4eec09e499a56e12f6bb85ad7bdabf2406c459bee1995109d61bf21cf",
+        "src/domain/research-answer.ts": "2b219813b0ca82e58a4b43bb2cc46baf8ed1857c94d2b3d616d220917255d531",
+        "src/domain/research-export.ts": "cb68cb44eff8b718cef5f1a2ca75988591f6004849e3f81e7f9dd9be74c8491a",
+        "src/domain/research-math.ts": "3a02e029a9aeda3dac1f482c66ea99e7a04c8276185fe4d35ec851fa95754de1",
+        "src/domain/research-relationship.ts": "d60009c577fe112e3bc683a93fc81427e56acc0eed2295c5b09638f9fb4ed08d",
+        "src/domain/research-tools.ts": "9b888186cf41cdd8e3c4ae3a1f819e0ed9b01d6f2cf5fd3d604b26a40188a1e5",
+        "src/domain/research-visual.ts": "c6f8fe590ed1c31b8e602b8ab3361fe7054868cbb42f368baee4033863a7d8ff",
+        "src/domain/route-crossings.ts": "c6e90424706224aa53af156cb548b85bfb34b5bef7f5c5e85ccb6c3aff460ad0",
+        "src/domain/routing-quality.ts": "e89b13a415f5a7eb35164af7ac836b8504b7fc337f882bb022abfc5fab1c3a23",
+        "src/domain/shared-family.ts": "7f7db88a61ac440936d292ad2e41170f782db97636f1137edf1fa60e4645c5d9",
+        "src/domain/source-repository.ts": "bebf21a0f7123dcf35ed8214b58c6ee3bed451f11410db9c6f21e3ec5bdf0716",
+        "src/domain/timeline-positions.ts": "d7af3db0e2a29b048a85e2dc7d484bcdf0e3548bdc46fa9cacfe587d65d93623",
+        "src/domain/timeline-routing.ts": "335d3b3739f33929c0f29a72d7df4d16feaeb83822c01a910cb63916d8c93f24",
+        "src/domain/timeline-scale.ts": "987ade0f9dff111de4c806827a70573a0d085aff7dd0f60b6df7218e55dc8ac8",
+        "src/domain/tree-access.ts": "ce331c81df0d4bd8e99b8a2b12b47ab75f426897e112a4d319a487a316c623f8",
+        "src/domain/tree-export-selection.ts": "cd70e1bc2b170ac0926e3693dc7ab6483c7274eea3d802df6d501d6dfedb40b2",
+        "src/domain/tree-generation-scope.ts": "984c24a5fbd8124a6b781d33b3f10cf3b73d58e268eaba0e814f8a91a0bc61a4",
+        "src/domain/tree-interactions.ts": "f834994d90f8a52b9526df33e77275a8ffe09d48f3ab534ed3a92d00d315511e",
+        "src/domain/tree-layout-constants.ts": "73756e438cde2455b711817bc64c49326f071da1b7556fbe4aa30afeff5232cd",
+        "src/domain/tree-layout.ts": "77488587ad36453bdbf7be6e40717d6d918b258ed3dbc1d8bd6be1b297a0f6f7",
+        "src/domain/tree-preferences.ts": "d36d87041754be9951299ecfb72f9babb036882bb5f0f21817d2f741dcc36cdd",
+        "src/domain/types.ts": "663016982f732c654a98ef2b3271ef3c7d159d316c2ba3e979fe61360076ad38",
+        "src/domain/union-groups.ts": "f3c5cc8e0d0184b563e5e05e7403a350d8d280aad392b85b0d187e4d8faa7afe",
+        "src/domain/union-layers.ts": "c0ce43fc19f9623e2a64cc3b38bd4aca0d20dfe59dbef3532b60318adcc1368d",
+        "src/domain/union-layout.ts": "119a89c1b2f9f2cd17edaf62da3e5e2806c00f7d37ac1ff84d53020c5bb4eacd",
+        "src/domain/union-order.ts": "1fb2ed5c0aac4eb65a8936e8332e64233901f546149c9fcb18dd73c339ff2d54",
+        "src/domain/union-timeline.ts": "8ea4ab7ae3066902a7a464270462bac0bce779ba81af5084d995b279862b1096",
+        "src/domain/validation.ts": "0a14da0a273f12f3b883866a8013a9eefca1dcf2b8432c56c15b39b6033ddeb0"
+      }
+    }
+  },
+  "configurations": {
+    "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "false",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NONE",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "1",
+      "elk.separateConnectedComponents": "true",
+      "elk.layered.crossingMinimization.greedySwitch.activationThreshold": "0",
+      "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
+      "elk.layered.layering.strategy": "INTERACTIVE"
+    },
+    "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "false",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NONE",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "true",
+      "elk.layered.crossingMinimization.greedySwitch.activationThreshold": "40",
+      "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
+      "elk.layered.layering.strategy": "INTERACTIVE"
+    },
+    "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "false",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "true",
+      "elk.layered.layering.strategy": "INTERACTIVE"
+    },
+    "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "true",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "true"
+    },
+    "25ae8f763a23c2c91a316405b995946babe3c55aebbd6006e1fd739a6021b158": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "true",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "false",
+      "elk.layered.cycleBreaking.strategy": "INTERACTIVE",
+      "elk.layered.layering.strategy": "INTERACTIVE",
+      "elk.layered.crossingMinimization.semiInteractive": "true"
+    },
+    "18b47b4eb806095175f58e498a5c670c369a058405fc8184c3a7e349062e54a3": {
+      "elk.algorithm": "layered",
+      "elk.direction": "DOWN",
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "64",
+      "elk.spacing.componentComponent": "100",
+      "elk.partitioning.activate": "true",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "36",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      "elk.layered.thoroughness": "12",
+      "elk.separateConnectedComponents": "true",
+      "elk.layered.considerModelOrder.crossingCounterNodeInfluence": "1",
+      "elk.layered.crossingMinimization.forceNodeModelOrder": "true"
+    }
+  },
+  "records": [
+    {
+      "id": 0,
+      "pair": 0,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 6494.5502,
+      "elkMs": 3115.1808,
+      "domainResidualMs": 3379.3693999999996,
+      "qaMs": 49.36039999999957,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1078.2877
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 584.7143000000001
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 731.5595999999996
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 720.6192000000001
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "pair": 0,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 5545.6536,
+      "elkMs": 3194.6563999999994,
+      "domainResidualMs": 2350.9972000000002,
+      "qaMs": 62.20600000000013,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1080.5817
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 597.0298000000003
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 815.1949999999997
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 701.8498999999997
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "pair": 1,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 5456.0838,
+      "elkMs": 3266.7886,
+      "domainResidualMs": 2189.2952000000005,
+      "qaMs": 60.40380000000005,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1161.7242
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 577.6253000000002
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 765.7783999999997
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 761.6606999999999
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "pair": 1,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 6053.660900000001,
+      "elkMs": 3021.6163,
+      "domainResidualMs": 3032.0446000000006,
+      "qaMs": 44.700299999999515,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1032.3271
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 574.8969
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 740.2638999999999
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 674.1284
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "pair": 2,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 6047.1152,
+      "elkMs": 2963.2156999999997,
+      "domainResidualMs": 3083.8995000000004,
+      "qaMs": 61.09810000000016,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 974.8485999999999
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 583.3514
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 704.4418000000001
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 700.5738999999999
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "pair": 2,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale977",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 977,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "099e5a062832fc013f981a268640a9b650b34d48ef0a1835eafa1a02d09a348d",
+      "geometrySha256": "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a",
+      "geometryBytes": 682853,
+      "layoutMs": 5489.4827000000005,
+      "elkMs": 3201.5494,
+      "domainResidualMs": 2287.9333000000006,
+      "qaMs": 77.65279999999984,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 4985,
+        "crossings": 4985,
+        "length": 8076656,
+        "bends": 1838,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1077.5366000000001
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 610.895
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 812.5344
+        },
+        {
+          "nodes": 652,
+          "edges": 965,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 700.5833999999995
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "pair": 3,
+      "fixture": "scale782",
+      "generator": {
+        "case": 5,
+        "seed": 1,
+        "generations": 7
+      },
+      "originalRunnerLabel": "scale503",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 782,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "36853f1f8030a246a94df5957317c4d07a88dbb4c0ff3213c398bb2bfaa20b55",
+      "geometrySha256": "eee65a191bb3f47ecc481693a72aff31e34d2b3621528b710652ed085ae27fcc",
+      "geometryBytes": 531896,
+      "layoutMs": 15457.6512,
+      "elkMs": 7723.742700000001,
+      "domainResidualMs": 7733.9085,
+      "qaMs": 40.51980000000003,
+      "elkCalls": 3,
+      "metrics": {
+        "contacts": 3774,
+        "crossings": 3774,
+        "length": 5994170,
+        "bends": 1462,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "1",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2882.7284
+        },
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "15",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2498.1340000000005
+        },
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "20",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2342.8803000000007
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "pair": 3,
+      "fixture": "scale782",
+      "generator": {
+        "case": 5,
+        "seed": 1,
+        "generations": 7
+      },
+      "originalRunnerLabel": "scale503",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 782,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "36853f1f8030a246a94df5957317c4d07a88dbb4c0ff3213c398bb2bfaa20b55",
+      "geometrySha256": "eee65a191bb3f47ecc481693a72aff31e34d2b3621528b710652ed085ae27fcc",
+      "geometryBytes": 531896,
+      "layoutMs": 15388.6044,
+      "elkMs": 9122.418000000001,
+      "domainResidualMs": 6266.186399999999,
+      "qaMs": 59.554700000000594,
+      "elkCalls": 3,
+      "metrics": {
+        "contacts": 3774,
+        "crossings": 3774,
+        "length": 5994170,
+        "bends": 1462,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "1",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 3487.7564
+        },
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "15",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 3048.342600000001
+        },
+        {
+          "nodes": 532,
+          "edges": 770,
+          "seed": "20",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2586.3190000000004
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "pair": 4,
+      "fixture": "scale1205",
+      "generator": {
+        "case": 7,
+        "seed": 1,
+        "generations": 8
+      },
+      "originalRunnerLabel": "scale782",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 1205,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "24920717877686b57fb92dedaab0b5d5e0e3a8e6d00852cd473c3011666d08c8",
+      "geometrySha256": "18a646e7a617c851b7def78c27971e09c38fe78dda1cbeb0e04d5b74eb1a2df1",
+      "geometryBytes": 838393,
+      "layoutMs": 4950.160199999999,
+      "elkMs": 4115.224899999999,
+      "domainResidualMs": 834.9353000000001,
+      "qaMs": 72.24549999999999,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 8637,
+        "crossings": 8637,
+        "length": 13245185,
+        "bends": 2318,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1302.7453999999998
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 760.6664999999998
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1005.1327999999999
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1046.6801999999998
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "pair": 4,
+      "fixture": "scale1205",
+      "generator": {
+        "case": 7,
+        "seed": 1,
+        "generations": 8
+      },
+      "originalRunnerLabel": "scale782",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 1205,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "24920717877686b57fb92dedaab0b5d5e0e3a8e6d00852cd473c3011666d08c8",
+      "geometrySha256": "18a646e7a617c851b7def78c27971e09c38fe78dda1cbeb0e04d5b74eb1a2df1",
+      "geometryBytes": 838393,
+      "layoutMs": 4785.6093,
+      "elkMs": 3983.2126,
+      "domainResidualMs": 802.3967000000002,
+      "qaMs": 89.8185999999996,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 8637,
+        "crossings": 8637,
+        "length": 13245185,
+        "bends": 2318,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1203.5542
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 731.4286000000002
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1063.7975999999999
+        },
+        {
+          "nodes": 816,
+          "edges": 1193,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 984.4321999999997
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "pair": 5,
+      "fixture": "scale1820",
+      "generator": {
+        "case": 13,
+        "seed": 1,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale1820",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 1820,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "eebde5f89603d854fd597fa121a789a436e96b1c27b611eaaafaeb5348aca9d4",
+      "geometrySha256": "37dffb7755924a0f1744314cfad30aa88dbfba8945d0899ef76b6e4bf39b45df",
+      "geometryBytes": 1293179,
+      "layoutMs": 9552.8603,
+      "elkMs": 7261.1005000000005,
+      "domainResidualMs": 2291.7598,
+      "qaMs": 136.70280000000093,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 20659,
+        "crossings": 20659,
+        "length": 28024152,
+        "bends": 3488,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1770.2947
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1965.4063
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1948.3841999999995
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1577.015300000001
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "pair": 5,
+      "fixture": "scale1820",
+      "generator": {
+        "case": 13,
+        "seed": 1,
+        "generations": 9
+      },
+      "originalRunnerLabel": "scale1820",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 1820,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "eebde5f89603d854fd597fa121a789a436e96b1c27b611eaaafaeb5348aca9d4",
+      "geometrySha256": "37dffb7755924a0f1744314cfad30aa88dbfba8945d0899ef76b6e4bf39b45df",
+      "geometryBytes": 1293179,
+      "layoutMs": 7672.5205,
+      "elkMs": 6189.9289,
+      "domainResidualMs": 1482.5915999999997,
+      "qaMs": 133.57580000000053,
+      "elkCalls": 4,
+      "metrics": {
+        "contacts": 20659,
+        "crossings": 20659,
+        "length": 28024152,
+        "bends": 3488,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 2015.3446000000001
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "15",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 1301.7860999999998
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1635.3373000000001
+        },
+        {
+          "nodes": 1220,
+          "edges": 1808,
+          "seed": "15",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 1237.4609
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "pair": 6,
+      "fixture": "scale2750",
+      "generator": {
+        "case": 14,
+        "seed": 1,
+        "generations": 10
+      },
+      "originalRunnerLabel": "scale2750",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 2750,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "6da6d1fa0bc1b43318406bf17b86482b823b62e39e5816f4131cf62798b3e8ad",
+      "geometrySha256": "7d5cc3dd7d02c671486456c976d6f32f246f83f27cc45bc3cdc9bdaaf2251435",
+      "geometryBytes": 1980408,
+      "layoutMs": 7022.9755000000005,
+      "elkMs": 5391.4845000000005,
+      "domainResidualMs": 1631.491,
+      "qaMs": 271.9222,
+      "elkCalls": 2,
+      "metrics": {
+        "contacts": 46825,
+        "crossings": 46825,
+        "length": 61875136,
+        "bends": 5258,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 1843,
+          "edges": 2738,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 2499.5975000000003
+        },
+        {
+          "nodes": 1843,
+          "edges": 2738,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 2891.887
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "pair": 6,
+      "fixture": "scale2750",
+      "generator": {
+        "case": 14,
+        "seed": 1,
+        "generations": 10
+      },
+      "originalRunnerLabel": "scale2750",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 2750,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "6da6d1fa0bc1b43318406bf17b86482b823b62e39e5816f4131cf62798b3e8ad",
+      "geometrySha256": "7d5cc3dd7d02c671486456c976d6f32f246f83f27cc45bc3cdc9bdaaf2251435",
+      "geometryBytes": 1980408,
+      "layoutMs": 6635.2911,
+      "elkMs": 5195.638,
+      "domainResidualMs": 1439.6531000000004,
+      "qaMs": 271.8639999999996,
+      "elkCalls": 2,
+      "metrics": {
+        "contacts": 46825,
+        "crossings": 46825,
+        "length": 61875136,
+        "bends": 5258,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 1843,
+          "edges": 2738,
+          "seed": "1",
+          "config": "a984c641b7cd4fc8d50196a7ae5a2a493fb38673544b72c387ee0ff61440de9b",
+          "ms": 2525.4303
+        },
+        {
+          "nodes": 1843,
+          "edges": 2738,
+          "seed": "1",
+          "config": "1aa67cd330a8f0e77b85433842a1d2d8fc4fd87a4e74e245acad0fb897420d09",
+          "ms": 2670.2077
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "pair": 7,
+      "fixture": "complex-small",
+      "originalRunnerLabel": "complex-small",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "73d64650f7ccab0c5f72b2fc7ec50633998800e53643d585676b809da624708d",
+      "geometrySha256": "084f269222fd1ae2e5c428ec1b8bd571f193b673bafc3a58396c1d3b7c72a5fa",
+      "geometryBytes": 4891,
+      "layoutMs": 209.89599999999996,
+      "elkMs": 161.36479999999995,
+      "domainResidualMs": 48.53120000000001,
+      "qaMs": 11.453400000000101,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 13,
+        "crossings": 3,
+        "length": 9504,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 161.36479999999995
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "pair": 7,
+      "fixture": "complex-small",
+      "originalRunnerLabel": "complex-small",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "73d64650f7ccab0c5f72b2fc7ec50633998800e53643d585676b809da624708d",
+      "geometrySha256": "084f269222fd1ae2e5c428ec1b8bd571f193b673bafc3a58396c1d3b7c72a5fa",
+      "geometryBytes": 4891,
+      "layoutMs": 218.96880000000004,
+      "elkMs": 172.56689999999998,
+      "domainResidualMs": 46.40190000000007,
+      "qaMs": 12.409700000000043,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 13,
+        "crossings": 3,
+        "length": 9504,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 172.56689999999998
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "pair": 8,
+      "fixture": "complex-reverse",
+      "originalRunnerLabel": "complex-reverse",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "generations",
+      "reverse": true,
+      "inputSha256": "a29ab9904d5e09ac3ca4002807558cddeeafed4db1a647d5dc8b1338e1fb3cd0",
+      "geometrySha256": "71f7c1b5584d5312e0a59ccf895a483ba95c7edee2f7abf1776addd5db069cf8",
+      "geometryBytes": 4884,
+      "layoutMs": 197.79700000000003,
+      "elkMs": 150.35840000000002,
+      "domainResidualMs": 47.43860000000001,
+      "qaMs": 11.49369999999999,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 13,
+        "crossings": 3,
+        "length": 9504,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 150.35840000000002
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "pair": 8,
+      "fixture": "complex-reverse",
+      "originalRunnerLabel": "complex-reverse",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "generations",
+      "reverse": true,
+      "inputSha256": "a29ab9904d5e09ac3ca4002807558cddeeafed4db1a647d5dc8b1338e1fb3cd0",
+      "geometrySha256": "71f7c1b5584d5312e0a59ccf895a483ba95c7edee2f7abf1776addd5db069cf8",
+      "geometryBytes": 4884,
+      "layoutMs": 198.86610000000002,
+      "elkMs": 155.35930000000002,
+      "domainResidualMs": 43.5068,
+      "qaMs": 12.857899999999972,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 13,
+        "crossings": 3,
+        "length": 9504,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 155.35930000000002
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "pair": 9,
+      "fixture": "complex-timeline",
+      "originalRunnerLabel": "complex-timeline",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "timeline",
+      "reverse": false,
+      "inputSha256": "320618884bc2def0a1f2cd5a380b041708d2cfd4f3f523f9a7a011cdbd1d6940",
+      "geometrySha256": "1d7aaabac15b74b88bea528724ed5853f2f3d0a67649e529747fefaf76b3fbda",
+      "geometryBytes": 5043,
+      "layoutMs": 272.63710000000003,
+      "elkMs": 158.03380000000004,
+      "domainResidualMs": 114.60329999999999,
+      "qaMs": 11.458700000000022,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 5,
+        "crossings": 3,
+        "length": 8424,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 158.03380000000004
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "pair": 9,
+      "fixture": "complex-timeline",
+      "originalRunnerLabel": "complex-timeline",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 11,
+      "mode": "timeline",
+      "reverse": false,
+      "inputSha256": "320618884bc2def0a1f2cd5a380b041708d2cfd4f3f523f9a7a011cdbd1d6940",
+      "geometrySha256": "1d7aaabac15b74b88bea528724ed5853f2f3d0a67649e529747fefaf76b3fbda",
+      "geometryBytes": 5043,
+      "layoutMs": 270.6398,
+      "elkMs": 155.07710000000003,
+      "domainResidualMs": 115.56269999999995,
+      "qaMs": 11.740599999999972,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 5,
+        "crossings": 3,
+        "length": 8424,
+        "bends": 32,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 9,
+          "edges": 7,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 155.07710000000003
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "pair": 10,
+      "fixture": "pedigree-cycle",
+      "originalRunnerLabel": "pedigree-cycle",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 5,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "1afdb7e3880c3d514a680af31156408dbdd3be66ea7f1784e4fdf2c43a59bf60",
+      "geometrySha256": "bbeea6c70243d41194001b18d550bce12213611e055b53067ca87df1bddd9a19",
+      "geometryBytes": 2549,
+      "layoutMs": 180.03060000000005,
+      "elkMs": 160.3875,
+      "domainResidualMs": 19.64310000000006,
+      "qaMs": 10.008799999999951,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 0,
+        "crossings": 0,
+        "length": 928,
+        "bends": 4,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 5,
+          "edges": 4,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 160.3875
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "pair": 10,
+      "fixture": "pedigree-cycle",
+      "originalRunnerLabel": "pedigree-cycle",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 5,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "1afdb7e3880c3d514a680af31156408dbdd3be66ea7f1784e4fdf2c43a59bf60",
+      "geometrySha256": "bbeea6c70243d41194001b18d550bce12213611e055b53067ca87df1bddd9a19",
+      "geometryBytes": 2549,
+      "layoutMs": 141.09250000000003,
+      "elkMs": 121.27310000000006,
+      "domainResidualMs": 19.819399999999973,
+      "qaMs": 10.56110000000001,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 0,
+        "crossings": 0,
+        "length": 928,
+        "bends": 4,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 5,
+          "edges": 4,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 121.27310000000006
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "pair": 11,
+      "fixture": "collapse-small",
+      "originalRunnerLabel": "collapse-small",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 7,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "376061025d1e0e7ad1ef8dfc0f86ec3cd87272ca1fe49c62d58e3e025713689c",
+      "geometrySha256": "679c36c88877e73a48db2fe8e5834016caf6265adde7a94d8643ee8d04f644b5",
+      "geometryBytes": 3199,
+      "layoutMs": 154.8442,
+      "elkMs": 135.502,
+      "domainResidualMs": 19.34219999999999,
+      "qaMs": 10.354599999999948,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 0,
+        "crossings": 0,
+        "length": 1960,
+        "bends": 8,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 5,
+          "edges": 5,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 135.502
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "pair": 11,
+      "fixture": "collapse-small",
+      "originalRunnerLabel": "collapse-small",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 7,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "376061025d1e0e7ad1ef8dfc0f86ec3cd87272ca1fe49c62d58e3e025713689c",
+      "geometrySha256": "679c36c88877e73a48db2fe8e5834016caf6265adde7a94d8643ee8d04f644b5",
+      "geometryBytes": 3199,
+      "layoutMs": 154.26349999999996,
+      "elkMs": 134.8761,
+      "domainResidualMs": 19.387399999999957,
+      "qaMs": 10.034400000000005,
+      "elkCalls": 1,
+      "metrics": {
+        "contacts": 0,
+        "crossings": 0,
+        "length": 1960,
+        "bends": 8,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 5,
+          "edges": 5,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 134.8761
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "pair": 12,
+      "fixture": "previous-edit",
+      "originalRunnerLabel": "previous-edit",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 65,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "47452d8693b441825246bae22a354546120cf9f9241bf720b4d52d3d6e88da1c",
+      "geometrySha256": "15442f1e1eea9e98660fe38850bef050d48e638827cb2e13bdebf4314445f1c9",
+      "geometryBytes": 31425,
+      "initialGeometryHash": "57e04831d598b94f871ef0daf77c202fba82699631b757ff068f435b328a96ec",
+      "layoutMs": 620.1221,
+      "elkMs": 580.1817000000001,
+      "domainResidualMs": 39.940399999999954,
+      "qaMs": 12.710099999999784,
+      "elkCalls": 7,
+      "metrics": {
+        "contacts": 14,
+        "crossings": 14,
+        "length": 42714,
+        "bends": 98,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 87.31909999999993
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "15",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 86.66290000000004
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "20",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 78.60770000000002
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "12",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 68.24109999999996
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "4",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 85.64720000000011
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "8",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 87.22510000000011
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "1",
+          "config": "25ae8f763a23c2c91a316405b995946babe3c55aebbd6006e1fd739a6021b158",
+          "ms": 86.47859999999991
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "pair": 12,
+      "fixture": "previous-edit",
+      "originalRunnerLabel": "previous-edit",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 65,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "47452d8693b441825246bae22a354546120cf9f9241bf720b4d52d3d6e88da1c",
+      "geometrySha256": "15442f1e1eea9e98660fe38850bef050d48e638827cb2e13bdebf4314445f1c9",
+      "geometryBytes": 31425,
+      "initialGeometryHash": "57e04831d598b94f871ef0daf77c202fba82699631b757ff068f435b328a96ec",
+      "layoutMs": 613.9908,
+      "elkMs": 573.3511000000001,
+      "domainResidualMs": 40.63969999999995,
+      "qaMs": 12.720700000000079,
+      "elkCalls": 7,
+      "metrics": {
+        "contacts": 14,
+        "crossings": 14,
+        "length": 42714,
+        "bends": 98,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 78.9393
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "15",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 88.19990000000007
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "20",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 86.46329999999989
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "12",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 73.78359999999998
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "4",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 87.80910000000017
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "8",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 76.64959999999996
+        },
+        {
+          "nodes": 48,
+          "edges": 52,
+          "seed": "1",
+          "config": "25ae8f763a23c2c91a316405b995946babe3c55aebbd6006e1fd739a6021b158",
+          "ms": 81.50630000000001
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "pair": 13,
+      "fixture": "previous-ancestor",
+      "originalRunnerLabel": "previous-ancestor",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 63,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "89e907817223b54279f6f5b32ad4f38224cd1348b29f2ec01685c055ba110b76",
+      "geometrySha256": "23d264e9c9313000916cc7669fc3fd192dc12c0ade34987f5798c196b1810e8f",
+      "geometryBytes": 30281,
+      "initialGeometryHash": "57e04831d598b94f871ef0daf77c202fba82699631b757ff068f435b328a96ec",
+      "layoutMs": 853.6917000000001,
+      "elkMs": 760.1608999999999,
+      "domainResidualMs": 93.53080000000023,
+      "qaMs": 12.373299999999745,
+      "elkCalls": 7,
+      "metrics": {
+        "contacts": 14,
+        "crossings": 14,
+        "length": 40581.5,
+        "bends": 100,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 79.37560000000008
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "15",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 87.37220000000002
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "20",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 85.61429999999996
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "12",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 88.48299999999995
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "4",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 86.72509999999988
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "8",
+          "config": "18b47b4eb806095175f58e498a5c670c369a058405fc8184c3a7e349062e54a3",
+          "ms": 245.8741
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "1",
+          "config": "25ae8f763a23c2c91a316405b995946babe3c55aebbd6006e1fd739a6021b158",
+          "ms": 86.71659999999997
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "pair": 13,
+      "fixture": "previous-ancestor",
+      "originalRunnerLabel": "previous-ancestor",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 63,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "89e907817223b54279f6f5b32ad4f38224cd1348b29f2ec01685c055ba110b76",
+      "geometrySha256": "23d264e9c9313000916cc7669fc3fd192dc12c0ade34987f5798c196b1810e8f",
+      "geometryBytes": 30281,
+      "initialGeometryHash": "57e04831d598b94f871ef0daf77c202fba82699631b757ff068f435b328a96ec",
+      "layoutMs": 857.3645000000001,
+      "elkMs": 769.2103,
+      "domainResidualMs": 88.15420000000017,
+      "qaMs": 18.792399999999816,
+      "elkCalls": 7,
+      "metrics": {
+        "contacts": 14,
+        "crossings": 14,
+        "length": 40581.5,
+        "bends": 100,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "1",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 94.21989999999983
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "15",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 100.88130000000001
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "20",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 72.12069999999994
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "12",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 85.66390000000001
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "4",
+          "config": "28f7d9d0831b60059523892dad46b9a8b26894cf804ce713e9f9201de2a111a3",
+          "ms": 71.7163999999998
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "8",
+          "config": "18b47b4eb806095175f58e498a5c670c369a058405fc8184c3a7e349062e54a3",
+          "ms": 264.7755000000002
+        },
+        {
+          "nodes": 47,
+          "edges": 51,
+          "seed": "1",
+          "config": "25ae8f763a23c2c91a316405b995946babe3c55aebbd6006e1fd739a6021b158",
+          "ms": 79.83260000000018
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "pair": 14,
+      "fixture": "scale503",
+      "generator": {
+        "case": 4,
+        "seed": 1,
+        "generations": 6
+      },
+      "originalRunnerLabel": "scale503",
+      "role": "baseline",
+      "source": "0bd17157e37f480c3d6692fe60d2c782d67694d7fedafb88300ab4d642675533",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 503,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "bee262c58cb691e9d4bd2577c6230224f56bbfc459f8bcc28051da5cac4a1cb5",
+      "geometrySha256": "2dc870b9aae65441bd1e8797c7686464c2a471fe1acfe7a31cfc2caf3960931a",
+      "geometryBytes": 330192,
+      "layoutMs": 6870.4421,
+      "elkMs": 3625.4800000000005,
+      "domainResidualMs": 3244.9620999999997,
+      "qaMs": 35.8135999999995,
+      "elkCalls": 2,
+      "metrics": {
+        "contacts": 1122,
+        "crossings": 1122,
+        "length": 2535237,
+        "bends": 948,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 348,
+          "edges": 491,
+          "seed": "1",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2043.3800999999999
+        },
+        {
+          "nodes": 348,
+          "edges": 491,
+          "seed": "15",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 1582.0999000000006
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "pair": 14,
+      "fixture": "scale503",
+      "generator": {
+        "case": 4,
+        "seed": 1,
+        "generations": 6
+      },
+      "originalRunnerLabel": "scale503",
+      "role": "current",
+      "source": "8eec9d6b4d7a76314bd0e25df1184dc332145889a501e01ae653e18f5a47a797",
+      "node": "v22.14.0",
+      "platform": "win32",
+      "people": 503,
+      "mode": "generations",
+      "reverse": false,
+      "inputSha256": "bee262c58cb691e9d4bd2577c6230224f56bbfc459f8bcc28051da5cac4a1cb5",
+      "geometrySha256": "2dc870b9aae65441bd1e8797c7686464c2a471fe1acfe7a31cfc2caf3960931a",
+      "geometryBytes": 330192,
+      "layoutMs": 6933.133900000001,
+      "elkMs": 4482.7495,
+      "domainResidualMs": 2450.384400000001,
+      "qaMs": 55.77399999999943,
+      "elkCalls": 2,
+      "metrics": {
+        "contacts": 1122,
+        "crossings": 1122,
+        "length": 2535237,
+        "bends": 948,
+        "cardOverlaps": 0,
+        "cardHits": 0,
+        "nonFinitePositions": 0,
+        "nonFiniteRoutePoints": 0,
+        "diagonalSegments": 0,
+        "inputMutated": false,
+        "missingPeople": 0,
+        "missingRelations": 0,
+        "extraUnexpectedRelations": 0,
+        "missingExtraRoutes": 0
+      },
+      "elkPasses": [
+        {
+          "nodes": 348,
+          "edges": 491,
+          "seed": "1",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 2763.0014
+        },
+        {
+          "nodes": 348,
+          "edges": 491,
+          "seed": "15",
+          "config": "9f96acd96670c42548b32b3f70a38931e768951d4909cd44c1e9305b634b93a8",
+          "ms": 1719.7481000000002
+        }
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "pair": 0,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "people": 977,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        0,
+        1
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 6494.5502,
+      "layoutMsAfter": 5545.6536,
+      "fullChangePercent": -14.610659257049086
+    },
+    {
+      "pair": 1,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "people": 977,
+      "order": [
+        "current",
+        "baseline"
+      ],
+      "records": [
+        2,
+        3
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 6053.660900000001,
+      "layoutMsAfter": 5456.0838,
+      "fullChangePercent": -9.871334220256712
+    },
+    {
+      "pair": 2,
+      "fixture": "scale977",
+      "generator": {
+        "case": 6,
+        "seed": 5,
+        "generations": 9
+      },
+      "people": 977,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        4,
+        5
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 6047.1152,
+      "layoutMsAfter": 5489.4827000000005,
+      "fullChangePercent": -9.221463153207331
+    },
+    {
+      "pair": 3,
+      "fixture": "scale782",
+      "generator": {
+        "case": 5,
+        "seed": 1,
+        "generations": 7
+      },
+      "people": 782,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        6,
+        7
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 15457.6512,
+      "layoutMsAfter": 15388.6044,
+      "fullChangePercent": -0.44668364621915924
+    },
+    {
+      "pair": 4,
+      "fixture": "scale1205",
+      "generator": {
+        "case": 7,
+        "seed": 1,
+        "generations": 8
+      },
+      "people": 1205,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        8,
+        9
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 4950.160199999999,
+      "layoutMsAfter": 4785.6093,
+      "fullChangePercent": -3.3241530243808937
+    },
+    {
+      "pair": 5,
+      "fixture": "scale1820",
+      "generator": {
+        "case": 13,
+        "seed": 1,
+        "generations": 9
+      },
+      "people": 1820,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        10,
+        11
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 9552.8603,
+      "layoutMsAfter": 7672.5205,
+      "fullChangePercent": -19.683526618723825
+    },
+    {
+      "pair": 6,
+      "fixture": "scale2750",
+      "generator": {
+        "case": 14,
+        "seed": 1,
+        "generations": 10
+      },
+      "people": 2750,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        12,
+        13
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 7022.9755000000005,
+      "layoutMsAfter": 6635.2911,
+      "fullChangePercent": -5.520229993682879
+    },
+    {
+      "pair": 7,
+      "fixture": "complex-small",
+      "people": 11,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        14,
+        15
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 209.89599999999996,
+      "layoutMsAfter": 218.96880000000004,
+      "fullChangePercent": 4.322521629759546
+    },
+    {
+      "pair": 8,
+      "fixture": "complex-reverse",
+      "people": 11,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        16,
+        17
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 197.79700000000003,
+      "layoutMsAfter": 198.86610000000002,
+      "fullChangePercent": 0.5405036476791913
+    },
+    {
+      "pair": 9,
+      "fixture": "complex-timeline",
+      "people": 11,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        18,
+        19
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 272.63710000000003,
+      "layoutMsAfter": 270.6398,
+      "fullChangePercent": -0.7325855505358803
+    },
+    {
+      "pair": 10,
+      "fixture": "pedigree-cycle",
+      "people": 5,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        20,
+        21
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 180.03060000000005,
+      "layoutMsAfter": 141.09250000000003,
+      "fullChangePercent": -21.62860091562213
+    },
+    {
+      "pair": 11,
+      "fixture": "collapse-small",
+      "people": 7,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        22,
+        23
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 154.8442,
+      "layoutMsAfter": 154.26349999999996,
+      "fullChangePercent": -0.37502211900738436
+    },
+    {
+      "pair": 12,
+      "fixture": "previous-edit",
+      "people": 65,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        24,
+        25
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 620.1221,
+      "layoutMsAfter": 613.9908,
+      "fullChangePercent": -0.9887246398733396
+    },
+    {
+      "pair": 13,
+      "fixture": "previous-ancestor",
+      "people": 63,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        26,
+        27
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 853.6917000000001,
+      "layoutMsAfter": 857.3645000000001,
+      "fullChangePercent": 0.43022557206542356
+    },
+    {
+      "pair": 14,
+      "fixture": "scale503",
+      "generator": {
+        "case": 4,
+        "seed": 1,
+        "generations": 6
+      },
+      "people": 503,
+      "order": [
+        "baseline",
+        "current"
+      ],
+      "records": [
+        28,
+        29
+      ],
+      "inputEqual": true,
+      "bytesEqual": true,
+      "geometryHashEqual": true,
+      "sameElkCallSequence": true,
+      "qaPassed": true,
+      "layoutMsBefore": 6870.4421,
+      "layoutMsAfter": 6933.133900000001,
+      "fullChangePercent": 0.9124856754123556
+    }
+  ],
+  "median977": {
+    "baseline": {
+      "count": 3,
+      "layoutMs": 6053.660900000001,
+      "elkMs": 3021.6163,
+      "domainResidualMs": 3083.8995000000004,
+      "geometryHashes": [
+        "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a"
+      ]
+    },
+    "current": {
+      "count": 3,
+      "layoutMs": 5489.4827000000005,
+      "elkMs": 3201.5494,
+      "domainResidualMs": 2287.9333000000006,
+      "geometryHashes": [
+        "1026d591cba21d38edc0a4cfbff3170edbfe2f3809366f80ec9875ddd8637e0a"
+      ]
+    }
+  },
+  "qualityGate": {
+    "cleanComparisons": 15,
+    "cleanRuns": 30,
+    "byteIdenticalPairs": 15,
+    "failures": 0,
+    "allInputFactsUnmutated": true,
+    "allInputHashesEqual": true,
+    "sameElkCallSequences": true
+  }
+}

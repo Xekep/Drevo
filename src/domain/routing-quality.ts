@@ -9,7 +9,7 @@ import { segmentsCross, type Point } from "./layout-order.ts";
 
 export type RoutedGroup = { group: string; route: EdgeRoute };
 /** Общая семейная шина считается один раз, Т-касания чужой линии — конфликтом. */
-export function routingQuality(edges: RoutedGroup[]) {
+export function routingContactScore(edges: RoutedGroup[]) {
   const lines = new Spatial<Box & { a: Point; b: Point; group: number }>();
   const contacts = new Set<string>(),
     crossings = new Set<string>(),
@@ -17,7 +17,8 @@ export function routingQuality(edges: RoutedGroup[]) {
   const groupIds = new Map<string, number>();
   const groupNames: string[] = [];
   let length = 0,
-    bends = 0;
+    bends = 0,
+    segments = 0;
   for (const edge of edges) {
     let group = groupIds.get(edge.group);
     if (group === undefined) {
@@ -40,6 +41,8 @@ export function routingQuality(edges: RoutedGroup[]) {
         if (line.group === group) continue;
         const contact = segmentContact(a, b, line.a, line.b);
         if (!contact) continue;
+        // Для выбора seed сохраняем также число всех пар сегментов, до дедупликации.
+        segments++;
         const first = Math.min(group, line.group);
         const second = Math.max(group, line.group);
         const key = `${first}:${second}:${contact}`;
@@ -55,12 +58,19 @@ export function routingQuality(edges: RoutedGroup[]) {
     }
   }
   return {
-    length,
-    bends,
-    contacts: contacts.size,
-    crossings: crossings.size,
-    groups,
+    contacts: { distinct: contacts.size, segments },
+    quality: {
+      length,
+      bends,
+      contacts: contacts.size,
+      crossings: crossings.size,
+      groups,
+    },
   };
+}
+
+export function routingQuality(edges: RoutedGroup[]) {
+  return routingContactScore(edges).quality;
 }
 
 export function routingCost(q: ReturnType<typeof routingQuality>) {
