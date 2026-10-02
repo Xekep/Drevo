@@ -920,6 +920,19 @@ export function aiResearchHttp({
       }
       return json(res, 200, { ...result, chatId: chat.id });
     } catch (error) {
+      // A provider can fail immediately after a tier downgrade, before the
+      // periodic lease check runs. Error handling is still part of this turn.
+      const canReportError = async () => {
+        try {
+          return await canDeliverAiData(req, chat.accessScope, user.id);
+        } catch {
+          return false;
+        }
+      };
+      if (!(await canReportError())) {
+        accessRevoked = true;
+        controller.abort();
+      }
       await chats.setRemote(chat.id, null);
       const errorMessage = accessRevoked
         ? "Доступ к ИИ отключён. Ответ не сохранён."
@@ -979,6 +992,7 @@ export function aiResearchHttp({
         models: modelUsage(metrics),
       });
       if (
+        !accessRevoked &&
         !leaseLost &&
         !controller.signal.aborted &&
         (error instanceof YandexResponseError ||
@@ -986,20 +1000,30 @@ export function aiResearchHttp({
       ) {
         // Keep a safe operational fact for the next turn, never upstream text.
         // The visible error is delivered separately through HTTP/SSE.
-        await chats.append(
-          chat.id,
-          "assistant",
-          `Служебный статус предыдущего ответа: ${errorMessage}`,
-          { hidden: true },
-        );
+        const recorded = await archive.db.transaction(async () => {
+          if (!(await canDeliverAiData(req, chat.accessScope, user.id, true)))
+            return false;
+          await chats.append(
+            chat.id,
+            "assistant",
+            `Служебный статус предыдущего ответа: ${errorMessage}`,
+            { hidden: true },
+          );
+          return true;
+        });
+        if (!recorded) accessRevoked = true;
       }
+      if (!(await canReportError())) accessRevoked = true;
+      const deliveredError = accessRevoked
+        ? "Доступ к ИИ отключён. Ответ не сохранён."
+        : errorMessage;
       if (stream) {
-        sse(res, "error", { error: errorMessage });
+        sse(res, "error", { error: deliveredError });
         res.end();
         return true;
       }
       return json(res, accessRevoked ? 403 : error instanceof RangeError ? 400 : 502, {
-        error: errorMessage,
+        error: deliveredError,
       });
     } finally {
       clearInterval(lockRenewal);

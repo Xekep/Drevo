@@ -2670,6 +2670,68 @@ try {
     };
     try {
       await runDeferredAnswer("allowed", async () => {}, async () => {}, true);
+      {
+        let notify!: () => void;
+        let release!: () => void;
+        const entered = new Promise<void>((resolve) => { notify = resolve; });
+        const gate = new Promise<void>((resolve) => { release = resolve; });
+        const fake = adaptLegacyAiFake(async () => {
+          notify();
+          await gate;
+          return Response.json({ error: { message: "Provider rate limited" } }, { status: 429 });
+        });
+        const handler = aiResearchHttp({
+          archive: app!.archive,
+          auth: await createAuth(await userStore(app!.archive.db), app!.archive.db,
+            process.env.PUBLIC_ORIGIN),
+          suggestions: researchSuggestionStore(app!.archive.db),
+          aiSettings: await aiSettingsStore(app!.archive.db),
+          usage: aiUsageStore(app!.archive.db),
+          media: mediaStore(join(dirname(source), "uploads")),
+          previewImage: imagePreviews(join(dirname(source), "previews")),
+          researchCatalog: researchCatalogStore(app!.archive.db),
+          publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
+        });
+        const server = createServer((req, res) => {
+          void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+            .catch((error) => { res.destroy(error); });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const oldChats = new Set((await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+          .rows.map((row) => row.id as string));
+        try {
+          const port = (server.address() as { port: number }).port;
+          const request = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Check provider failure after downgrade" }),
+          });
+          await Promise.race([entered,
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI provider did not start")), 15_000))]);
+          await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+          release();
+          const response = await request;
+          const body = await response.text();
+          assert.equal(response.status, 403,
+            `a failed queued provider response must observe the tier downgrade: ${body}`);
+          const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+            .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
+          assert.equal(newChats.length, 1);
+          const assistantCount = await client.query(
+            "SELECT count(*)::int AS n FROM ai_chat_messages WHERE chat_id=$1 AND role='assistant'",
+            [newChats[0]],
+          );
+          assert.equal(assistantCount.rows[0].n, 0,
+            "provider failure after downgrade must not persist a hidden assistant message");
+        } finally {
+          release();
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
+            .rows.map((row) => row.id as string).filter((id) => !oldChats.has(id));
+          for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await handler.close();
+        }
+      }
       await runDeferredAnswer("membership-revoked", async () => {
         await client.query("UPDATE archive_memberships SET approved=false WHERE archive_id='runtime-test' AND user_id=$1",
           [proposalMember]);
