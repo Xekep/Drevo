@@ -138,7 +138,7 @@ export function discoveryBranchShareHttp({ archive, auth, publicOrigin }: {
     const second = secondGeneration(snapshot.family, ownRoot(pair, archiveId),
       relations, new Set(publishedDirect.map((row) => String(row.person_id))));
     const remaining = Math.max(0, 50 - publishedDirect.length);
-    const secondRows = remaining && second.size ? await db.prepare("", `SELECT person_id,name,
+    const secondRows = second.size ? await db.prepare("", `SELECT person_id,name,
       birth_year,death_year,birth_place,death_place,publication_version FROM discovery_people
       WHERE archive_id=? AND person_id IN (SELECT jsonb_array_elements_text(?::jsonb))
       ORDER BY person_id LIMIT ?`).all(archiveId, JSON.stringify([...second.keys()]), remaining + 1) : [];
