@@ -1437,10 +1437,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
             { zoom: Math.min(1, Math.max(PERSON_FOCUS_ZOOM, camera.zoom)), duration: 0 });
         }}
         onPointerDownCapture={(event) => {
-          if (gpuActive && (event.target as Element).closest(".react-flow__pane")) {
-            gpuPressPerson.current = gpuPersonAt(event.clientX, event.clientY)?.data.person.id || "";
+          if (gpuActive) {
+            gpuPressPerson.current = (event.target as Element).closest(".react-flow__pane")
+              ? gpuPersonAt(event.clientX, event.clientY)?.data.person.id || "" : "";
             if (gpuPressPerson.current) gpuLongPress.handlers.onPointerDown(event);
-          }
+            else gpuLongPress.cancel();
+          } else gpuLongPress.cancel();
           edgePan.onPointerDownCapture(event);
           middleAnchor.onPointerDownCapture(event);
         }}
@@ -1449,7 +1451,12 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         onClickCapture={(event) => {
           edgePan.onClickCapture(event);
           if (gpuLongPress.suppressClick.current) {
-            gpuLongPress.suppressClick.current = false; event.preventDefault(); event.stopPropagation();
+            gpuLongPress.suppressClick.current = false;
+            // Only the long press's canvas click is suppressed. Toolbar actions
+            // also remain reachable through keyboard activation after a hold.
+            if ((event.target as Element).closest(".react-flow__pane")) {
+              event.preventDefault(); event.stopPropagation();
+            }
           }
         }}
         tabIndex={gpuActive ? 0 : -1}

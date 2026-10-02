@@ -17,6 +17,10 @@ export function useLongPress<T extends HTMLElement = HTMLButtonElement>(onLongPr
     if (press.current.timer) clearTimeout(press.current.timer);
     press.current = null;
   }
+  function cancelPress() {
+    clearPress();
+    suppressClick.current = false;
+  }
 
   useEffect(
     () => () => {
@@ -27,9 +31,13 @@ export function useLongPress<T extends HTMLElement = HTMLButtonElement>(onLongPr
 
   return {
     suppressClick,
+    cancel: cancelPress,
     active: () => !!press.current,
     handlers: {
       onPointerDown(event: PointerEvent<T>) {
+        // A new pointer sequence cannot inherit the previous gesture's click.
+        // A second touch also cancels a pending single-finger long press.
+        cancelPress();
         if (
           event.pointerType !== "touch" ||
           !event.isPrimary ||
@@ -37,8 +45,6 @@ export function useLongPress<T extends HTMLElement = HTMLButtonElement>(onLongPr
           !window.matchMedia("(max-width: 899px)").matches
         )
           return;
-        clearPress();
-        suppressClick.current = false;
         const current: Press = {
           pointerId: event.pointerId,
           x: event.clientX,
@@ -69,7 +75,7 @@ export function useLongPress<T extends HTMLElement = HTMLButtonElement>(onLongPr
         // The synthetic click comes after pointerup. Keep it suppressed until
         // the button consumes it (or until the next independent press).
       },
-      onPointerCancel: clearPress,
+      onPointerCancel: cancelPress,
       onLostPointerCapture: clearPress,
     },
   };

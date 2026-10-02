@@ -10,7 +10,7 @@ import {
 import { randomFamily } from "../layout-fixtures";
 
 // Explicitly opt in: real temporary backend, production build, no HTTP routing.
-test.use({ trace: "off" });
+test.use({ trace: "off", actionTimeout: 15_000 });
 test("cold tree, persistent reload and scope cycles retain a bounded GPU scene", async ({
   page,
   isMobile,
@@ -269,6 +269,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   const workerCount = async () =>
     (await readTreeAcceptanceProbe(page)).requests.length;
   const settings = async () => {
+    console.log("tree-acceptance action open-settings");
     await page.getByRole("button", { name: "Настройки древа" }).click();
     return page.getByRole("dialog", { name: "Вид древа" });
   };
@@ -375,10 +376,12 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     programs: stableResources.programs,
   });
   expect(await workerCount()).toBe(0);
+  console.log("tree-acceptance action close-card");
   await page
     .getByRole("button", { name: "Закрыть панель", exact: true })
     .click();
   await expect(page.locator(".inspector-dock")).not.toBeVisible();
+  console.log("tree-acceptance action card-closed");
   // Repeated large -> small -> large transitions should reuse geometry and release GL.
   const profileScope = process.env.DREVO_TREE_ACCEPTANCE_PROFILE === "1";
   if (profileScope) {
@@ -528,6 +531,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         "src/components/tree/tree-camera-fit.ts",
         "src/components/tree/use-tree-camera-state.ts",
         "src/components/tree/tree-camera-tools.tsx",
+        "src/components/tree/use-long-press.ts",
         "src/components/tree/person-node.tsx",
         "src/components/tree/tree-node-model.ts",
         "src/components/tree/tree-growth.ts",

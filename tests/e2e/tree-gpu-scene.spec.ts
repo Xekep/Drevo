@@ -291,6 +291,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
       );
       return {
         point: candidates[0] || null,
+        nextPoint: candidates.find((point) => point.id !== candidates[0]?.id) || null,
         diagnostics: {
           positions: state.positions.length,
           occurrences: state.occurrences.length,
@@ -345,6 +346,36 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     await expect(
       page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
     ).toBeVisible();
+    // A pinch can cancel the compatibility click after the long press fires.
+    // Its stale suppression must not eat the first subsequent toolbar click.
+    expect(target.nextPoint, JSON.stringify(target.diagnostics)).toBeTruthy();
+    const next = target.nextPoint!;
+    const held = { ...pointer, pointerId: 100, clientX: next.x, clientY: next.y };
+    await pane.dispatchEvent("pointerdown", held);
+    await expect(
+      page.locator(`.flow-person[data-person-id="${next.id}"].is-selected`),
+    ).toBeVisible();
+    const second = { ...held, pointerId: 101, isPrimary: false };
+    await pane.dispatchEvent("pointerdown", second);
+    await pane.dispatchEvent("pointermove", { ...held, clientX: next.x + 24 });
+    await pane.dispatchEvent("pointercancel", held);
+    await pane.dispatchEvent("pointercancel", second);
+    await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
+    const preferences = page.getByRole("dialog", { name: "Вид древа" });
+    await expect(preferences).toBeVisible();
+    await preferences.getByRole("button", { name: "Закрыть", exact: true }).click();
+    // A second finger before the deadline cancels the pending selection too.
+    const pending = { ...pointer, pointerId: 102 };
+    await pane.dispatchEvent("pointerdown", pending);
+    await pane.dispatchEvent("pointerdown", { ...pending, pointerId: 103, isPrimary: false });
+    await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 650)));
+    await expect(
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(`.flow-person[data-person-id="${next.id}"].is-selected`),
+    ).toBeVisible();
+    await pane.dispatchEvent("pointercancel", pending);
   }
   await tree.focus();
   await page.keyboard.press("ArrowRight");
