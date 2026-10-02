@@ -1,0 +1,2083 @@
+{
+  "date": "2026-10-02T21:25:14.643Z",
+  "commit": "a9991994c72304933b887afe5ad98210f854d779",
+  "fixture": {
+    "seed": 5,
+    "generations": 12,
+    "people": 3313,
+    "synthetic": true,
+    "personalReference": "level-11-363-3"
+  },
+  "sourceHashes": {
+    "src/components/tree/tree-canvas.tsx": "ceacb88143dd6e774acf808560b0dd4a7ae3deeb1bbb5b7066b158354bb94674",
+    "src/components/tree/tree-render-family.ts": "fd7f199437f88aa940a1c713acdfef70979cea0cd6e5670796d133872f5b304c",
+    "src/domain/archive-projection.ts": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+    "src/components/tree/tree-camera-fit.ts": "07ff4c243b3eb7af6dd90b66cd11c443b3de4f735ed5dbbead74d76be4fdb47c",
+    "src/components/tree/use-tree-camera-state.ts": "01d360e3215633abf183949e2586c0e18355f3f91183316f856893987e99b8fb",
+    "src/components/tree/tree-camera-tools.tsx": "706d390098a734bdf388e0e6b391c166750cba569fa6b041b78b0a6e64a94107",
+    "src/components/tree/use-long-press.ts": "c8e97d5037cf5eda3a177e1559793c785adfb29e58163a075ef5333481ec0f72",
+    "src/components/tree/person-node.tsx": "468504c2b84edbeb12df4ffeeb330f4cad329a07680ee27bd270091230dfc308",
+    "src/components/tree/tree-node-model.ts": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+    "src/components/tree/tree-growth.ts": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+    "src/components/research-assistant.tsx": "d692b52f7aa221b60812032d122fc554ab5cb313e517d394f3935df66ddb83ad",
+    "src/components/tree/gpu-scene.ts": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+    "src/components/tree/tree-gpu-scene.tsx": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c",
+    "src/components/tree/distant-portraits.tsx": "838dd23d477476c61da395028a06db502f8ff867038cd9bbff57958ffd8d54e3",
+    "src/components/tree/use-tree-layout.ts": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636",
+    "src/components/tree/layout-cache.ts": "5ad80c8ed9af2c87dbd13a3a166bc5a23fc9fe63fd7f50de08b0c7fae5e91e57",
+    "src/components/tree/layout-storage.ts": "8780a5eb05b91d50eeb03bed7d2695fbdad9444681f9cb90d5e8e3065981ff81",
+    "src/domain/union-layout.ts": "119a89c1b2f9f2cd17edaf62da3e5e2806c00f7d37ac1ff84d53020c5bb4eacd",
+    "src/domain/index.ts": "a17bc7165b24a4ad8237bff88cdf727d503a5f17fdc49039483e70b696370458",
+    "src/components/tree/person-relation-label.ts": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+    "src/domain/kinship-analysis.ts": "96ef3ba83adda7f8f0dd4f52d0256da9016dbc7f05973a675d30e4c91e3984f2",
+    "src/domain/kinship-index.ts": "033fb3441bce6737a1c6f410759614c19e169fbdac7eac9f7d9d7ab20ba219f0",
+    "src/domain/kinship.ts": "931613daf32723d0b0737888802cc256d533a04af6bd4cb2ed8ce1c38d9bd77d",
+    "package-lock.json": "d9761c619236fcc67fa7375bd01974fb262e3867d8e9c9e75314f0bd6137cf34"
+  },
+  "device": {
+    "browser": "155.0.8059.26",
+    "gpu": [
+      {
+        "vendorId": 4318,
+        "deviceId": 7041,
+        "subSysId": 2241335363,
+        "revision": 161,
+        "vendorString": "",
+        "deviceString": "NVIDIA GeForce GTX 1070",
+        "driverVendor": "NVIDIA",
+        "driverVersion": "32.0.15.7247"
+      },
+      {
+        "vendorId": 5140,
+        "deviceId": 140,
+        "subSysId": 0,
+        "revision": 0,
+        "vendorString": "",
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVendor": "",
+        "driverVersion": "10.0.19041.4355"
+      }
+    ],
+    "features": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "unavailable_off",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "project": "mobile",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "cpuThrottle": 4,
+    "angle": "vulkan"
+  },
+  "method": "Production application, disposable SQLite/backend JPEG/previews. Only user.personId in overview is injected for a linked account; family data and media are not mocked. Navigation timestamps are performance.now; resource counts are explicit allocations, not total VRAM. Mobile is Chrome touch emulation, not a physical phone. No GPU eligibility override. One run.",
+  "phases": [
+    {
+      "phase": "cold-ready",
+      "requests": [
+        {
+          "people": 3313,
+          "requestedAt": 1396.7999999523163,
+          "completedAt": 6850.5
+        }
+      ],
+      "firstGpuAt": 17505.700000047684,
+      "firstPortraitUploadAt": 17555.899999976158,
+      "portraitUploads": 18,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 421,
+        "p95Ms": 66.7,
+        "maxMs": 4653.700000000001,
+        "over50Ms": 35
+      },
+      "longTasks": [
+        {
+          "startTime": 105.29999995231628,
+          "duration": 84
+        },
+        {
+          "startTime": 193.70000004768372,
+          "duration": 56
+        },
+        {
+          "startTime": 682.3999999761581,
+          "duration": 75
+        },
+        {
+          "startTime": 767.2999999523163,
+          "duration": 516
+        },
+        {
+          "startTime": 6789,
+          "duration": 176
+        },
+        {
+          "startTime": 6965.899999976158,
+          "duration": 819
+        },
+        {
+          "startTime": 7789.799999952316,
+          "duration": 454
+        },
+        {
+          "startTime": 8297.600000023842,
+          "duration": 154
+        },
+        {
+          "startTime": 11075.600000023842,
+          "duration": 290
+        },
+        {
+          "startTime": 11427.399999976158,
+          "duration": 123
+        },
+        {
+          "startTime": 11620.100000023842,
+          "duration": 175
+        },
+        {
+          "startTime": 11820.399999976158,
+          "duration": 62
+        },
+        {
+          "startTime": 11914.200000047684,
+          "duration": 532
+        },
+        {
+          "startTime": 12482.200000047684,
+          "duration": 113
+        },
+        {
+          "startTime": 12680.600000023842,
+          "duration": 4560
+        },
+        {
+          "startTime": 17267.5,
+          "duration": 53
+        },
+        {
+          "startTime": 17337,
+          "duration": 168
+        }
+      ],
+      "now": 17746.299999952316,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982468,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 496,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 15,
+          "bytes": 396858,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 481,
+          "bytes": 77622,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 116776152,
+      "scriptMs": 5446.786999999999
+    },
+    {
+      "phase": "persistent-reload",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 18,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 82,
+        "p95Ms": 333.60000000000036,
+        "maxMs": 4220.099999999999,
+        "over50Ms": 48
+      },
+      "longTasks": [
+        {
+          "startTime": 632.6000000238419,
+          "duration": 52
+        },
+        {
+          "startTime": 688.6999999284744,
+          "duration": 327
+        },
+        {
+          "startTime": 1113.1000000238419,
+          "duration": 113
+        },
+        {
+          "startTime": 1230,
+          "duration": 732
+        },
+        {
+          "startTime": 1973.5,
+          "duration": 448
+        },
+        {
+          "startTime": 2472.100000023842,
+          "duration": 52
+        },
+        {
+          "startTime": 5128.5,
+          "duration": 258
+        },
+        {
+          "startTime": 5455.899999976158,
+          "duration": 117
+        },
+        {
+          "startTime": 5641.399999976158,
+          "duration": 112
+        },
+        {
+          "startTime": 5793.899999976158,
+          "duration": 59
+        },
+        {
+          "startTime": 5886.199999928474,
+          "duration": 400
+        },
+        {
+          "startTime": 6317.899999976158,
+          "duration": 60
+        },
+        {
+          "startTime": 6470.399999976158,
+          "duration": 4135
+        },
+        {
+          "startTime": 10670.600000023842,
+          "duration": 176
+        }
+      ],
+      "now": 11149.199999928474,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982648,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 245,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": true,
+      "zoom": 0.55,
+      "mediaRequests": 1032,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 30,
+          "bytes": 793716,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1002,
+          "bytes": 161688,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 171275620,
+      "scriptMs": 3872.8959999999997
+    },
+    {
+      "phase": "pan",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 18,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 199,
+        "p95Ms": 16.80000000000109,
+        "maxMs": 183.39999999999964,
+        "over50Ms": 3
+      },
+      "longTasks": [
+        {
+          "startTime": 11602.799999952316,
+          "duration": 178
+        },
+        {
+          "startTime": 11792.799999952316,
+          "duration": 60
+        }
+      ],
+      "now": 15151.699999928474,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982648,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1032,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 30,
+          "bytes": 793716,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1002,
+          "bytes": 161688,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 56956816,
+      "scriptMs": 4387.851000000001
+    },
+    {
+      "phase": "zoom",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 18,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 181,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 16.80000000000291,
+        "over50Ms": 0
+      },
+      "longTasks": [],
+      "now": 18202.399999976158,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982648,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1032,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 30,
+          "bytes": 793716,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1002,
+          "bytes": 161688,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 52436944,
+      "scriptMs": 4523.309
+    },
+    {
+      "phase": "label-lod-1",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 24,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 7,
+        "programs": 2
+      },
+      "frames": {
+        "count": 278,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 16.80000000000291,
+        "over50Ms": 0
+      },
+      "longTasks": [],
+      "now": 19826.799999952316,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14479908,
+      "labelBytes": 7183740,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 1,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.3,
+      "mediaRequests": 1038,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 33,
+          "bytes": 872782,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1005,
+          "bytes": 162150,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 58236244,
+      "scriptMs": 4653.1269999999995
+    },
+    {
+      "phase": "label-lod-2",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 24,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 7,
+        "programs": 2
+      },
+      "frames": {
+        "count": 379,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 16.80000000000291,
+        "over50Ms": 0
+      },
+      "longTasks": [],
+      "now": 21512.100000023842,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982708,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.6,
+      "mediaRequests": 1038,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 33,
+          "bytes": 872782,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1005,
+          "bytes": 162150,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 51488656,
+      "scriptMs": 4742.854
+    },
+    {
+      "phase": "label-lod-0",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 37,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 7,
+        "programs": 2
+      },
+      "frames": {
+        "count": 479,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 116.90000000000146,
+        "over50Ms": 2
+      },
+      "longTasks": [
+        {
+          "startTime": 22983.5,
+          "duration": 64
+        }
+      ],
+      "now": 23312.199999928474,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 11024028,
+      "labelBytes": 3726360,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 0,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.1,
+      "mediaRequests": 1051,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 33,
+          "bytes": 872782,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1018,
+          "bytes": 164160,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 56250508,
+      "scriptMs": 4908.657
+    },
+    {
+      "phase": "card-open",
+      "requests": [],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 38,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 7,
+        "programs": 2
+      },
+      "frames": {
+        "count": 486,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 617.7999999999993,
+        "over50Ms": 5
+      },
+      "longTasks": [
+        {
+          "startTime": 22983.5,
+          "duration": 64
+        },
+        {
+          "startTime": 23341,
+          "duration": 86
+        },
+        {
+          "startTime": 23474.5,
+          "duration": 580
+        },
+        {
+          "startTime": 24055.600000023842,
+          "duration": 66
+        }
+      ],
+      "now": 24189.799999952316,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982648,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 416,
+      "mountedCards": 1,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1062,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 44,
+          "bytes": 1163244,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1018,
+          "bytes": 164160,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 72936980,
+      "scriptMs": 5577.855
+    },
+    {
+      "phase": "scope-small-0",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 38,
+      "programCreations": 2,
+      "resources": {
+        "textures": 0,
+        "buffers": 0,
+        "programs": 0
+      },
+      "frames": {
+        "count": 57,
+        "p95Ms": 567.0999999999985,
+        "maxMs": 817.4000000000015,
+        "over50Ms": 24
+      },
+      "longTasks": [
+        {
+          "startTime": 24809.5,
+          "duration": 88
+        },
+        {
+          "startTime": 24959.100000023842,
+          "duration": 404
+        },
+        {
+          "startTime": 25433.299999952316,
+          "duration": 95
+        },
+        {
+          "startTime": 25530.699999928474,
+          "duration": 118
+        },
+        {
+          "startTime": 25675.699999928474,
+          "duration": 76
+        },
+        {
+          "startTime": 25752.100000023842,
+          "duration": 170
+        },
+        {
+          "startTime": 26020.199999928474,
+          "duration": 115
+        },
+        {
+          "startTime": 26141.199999928474,
+          "duration": 358
+        },
+        {
+          "startTime": 26499.799999952316,
+          "duration": 216
+        },
+        {
+          "startTime": 26731.299999952316,
+          "duration": 97
+        },
+        {
+          "startTime": 26828.799999952316,
+          "duration": 140
+        },
+        {
+          "startTime": 27003.799999952316,
+          "duration": 81
+        },
+        {
+          "startTime": 27284.600000023842,
+          "duration": 126
+        },
+        {
+          "startTime": 27614.699999928474,
+          "duration": 86
+        },
+        {
+          "startTime": 27704.399999976158,
+          "duration": 164
+        },
+        {
+          "startTime": 27904.699999928474,
+          "duration": 84
+        },
+        {
+          "startTime": 28280.199999928474,
+          "duration": 129
+        },
+        {
+          "startTime": 28488.299999952316,
+          "duration": 301
+        },
+        {
+          "startTime": 28790.100000023842,
+          "duration": 236
+        },
+        {
+          "startTime": 29104.699999928474,
+          "duration": 91
+        },
+        {
+          "startTime": 29195.899999976158,
+          "duration": 644
+        },
+        {
+          "startTime": 29968.5,
+          "duration": 160
+        },
+        {
+          "startTime": 30150.699999928474,
+          "duration": 162
+        },
+        {
+          "startTime": 30329.899999976158,
+          "duration": 134
+        },
+        {
+          "startTime": 30464.100000023842,
+          "duration": 105
+        },
+        {
+          "startTime": 30604,
+          "duration": 57
+        },
+        {
+          "startTime": 30667.600000023842,
+          "duration": 54
+        },
+        {
+          "startTime": 30728.600000023842,
+          "duration": 121
+        },
+        {
+          "startTime": 31011.299999952316,
+          "duration": 75
+        },
+        {
+          "startTime": 31099.799999952316,
+          "duration": 71
+        }
+      ],
+      "now": 31249.399999976158,
+      "renderer": "react-flow",
+      "nodes": 0,
+      "textureBytes": 0,
+      "bufferBytes": 0,
+      "labelBytes": 0,
+      "labelCpuBytes": 0,
+      "gpuRenderer": null,
+      "labelLod": -1,
+      "dom": 595,
+      "mountedCards": 12,
+      "mountedEdges": 13,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1343,
+      "pendingMedia": 7,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 55,
+          "bytes": 1457488,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1281,
+          "bytes": 206982,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 125450860,
+      "scriptMs": 8313.952000000001
+    },
+    {
+      "phase": "scope-full-0",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 56,
+      "programCreations": 4,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 89,
+        "p95Ms": 567.0999999999985,
+        "maxMs": 2852.300000000003,
+        "over50Ms": 37
+      },
+      "longTasks": [
+        {
+          "startTime": 24809.5,
+          "duration": 88
+        },
+        {
+          "startTime": 24959.100000023842,
+          "duration": 404
+        },
+        {
+          "startTime": 25433.299999952316,
+          "duration": 95
+        },
+        {
+          "startTime": 25530.699999928474,
+          "duration": 118
+        },
+        {
+          "startTime": 25675.699999928474,
+          "duration": 76
+        },
+        {
+          "startTime": 25752.100000023842,
+          "duration": 170
+        },
+        {
+          "startTime": 26020.199999928474,
+          "duration": 115
+        },
+        {
+          "startTime": 26141.199999928474,
+          "duration": 358
+        },
+        {
+          "startTime": 26499.799999952316,
+          "duration": 216
+        },
+        {
+          "startTime": 26731.299999952316,
+          "duration": 97
+        },
+        {
+          "startTime": 26828.799999952316,
+          "duration": 140
+        },
+        {
+          "startTime": 27003.799999952316,
+          "duration": 81
+        },
+        {
+          "startTime": 27284.600000023842,
+          "duration": 126
+        },
+        {
+          "startTime": 27614.699999928474,
+          "duration": 86
+        },
+        {
+          "startTime": 27704.399999976158,
+          "duration": 164
+        },
+        {
+          "startTime": 27904.699999928474,
+          "duration": 84
+        },
+        {
+          "startTime": 28280.199999928474,
+          "duration": 129
+        },
+        {
+          "startTime": 28488.299999952316,
+          "duration": 301
+        },
+        {
+          "startTime": 28790.100000023842,
+          "duration": 236
+        },
+        {
+          "startTime": 29104.699999928474,
+          "duration": 91
+        },
+        {
+          "startTime": 29195.899999976158,
+          "duration": 644
+        },
+        {
+          "startTime": 29968.5,
+          "duration": 160
+        },
+        {
+          "startTime": 30150.699999928474,
+          "duration": 162
+        },
+        {
+          "startTime": 30329.899999976158,
+          "duration": 134
+        },
+        {
+          "startTime": 30464.100000023842,
+          "duration": 105
+        },
+        {
+          "startTime": 30604,
+          "duration": 57
+        },
+        {
+          "startTime": 30667.600000023842,
+          "duration": 54
+        },
+        {
+          "startTime": 30728.600000023842,
+          "duration": 121
+        },
+        {
+          "startTime": 31011.299999952316,
+          "duration": 75
+        },
+        {
+          "startTime": 31099.799999952316,
+          "duration": 71
+        },
+        {
+          "startTime": 31348.399999976158,
+          "duration": 427
+        },
+        {
+          "startTime": 32030.899999976158,
+          "duration": 51
+        },
+        {
+          "startTime": 32166.899999976158,
+          "duration": 1377
+        },
+        {
+          "startTime": 33613.799999952316,
+          "duration": 86
+        },
+        {
+          "startTime": 33755.60000002384,
+          "duration": 212
+        },
+        {
+          "startTime": 34005.799999952316,
+          "duration": 355
+        },
+        {
+          "startTime": 34514.10000002384,
+          "duration": 92
+        },
+        {
+          "startTime": 34644.199999928474,
+          "duration": 2757
+        },
+        {
+          "startTime": 37405.89999997616,
+          "duration": 70
+        }
+      ],
+      "now": 37837.89999997616,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982528,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1467,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 71,
+          "bytes": 1883212,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1396,
+          "bytes": 225380,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 230132028,
+      "scriptMs": 10807.218
+    },
+    {
+      "phase": "scope-small-1",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        },
+        {
+          "people": 44,
+          "requestedAt": 38725.60000002384,
+          "completedAt": 38987
+        },
+        {
+          "people": 61,
+          "requestedAt": 40527.5,
+          "terminatedAt": 41024
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 56,
+      "programCreations": 4,
+      "resources": {
+        "textures": 0,
+        "buffers": 0,
+        "programs": 0
+      },
+      "frames": {
+        "count": 57,
+        "p95Ms": 350.3000000000029,
+        "maxMs": 750.6999999999971,
+        "over50Ms": 23
+      },
+      "longTasks": [
+        {
+          "startTime": 38140.5,
+          "duration": 314
+        },
+        {
+          "startTime": 38473.699999928474,
+          "duration": 68
+        },
+        {
+          "startTime": 38726.799999952316,
+          "duration": 60
+        },
+        {
+          "startTime": 38787.39999997616,
+          "duration": 155
+        },
+        {
+          "startTime": 38989.799999952316,
+          "duration": 176
+        },
+        {
+          "startTime": 39166.89999997616,
+          "duration": 164
+        },
+        {
+          "startTime": 39408.199999928474,
+          "duration": 73
+        },
+        {
+          "startTime": 39489.60000002384,
+          "duration": 651
+        },
+        {
+          "startTime": 40355.60000002384,
+          "duration": 171
+        },
+        {
+          "startTime": 40553.799999952316,
+          "duration": 134
+        },
+        {
+          "startTime": 40702.199999928474,
+          "duration": 97
+        },
+        {
+          "startTime": 41012.10000002384,
+          "duration": 342
+        },
+        {
+          "startTime": 41354.89999997616,
+          "duration": 401
+        },
+        {
+          "startTime": 41835.60000002384,
+          "duration": 327
+        },
+        {
+          "startTime": 42185.39999997616,
+          "duration": 186
+        },
+        {
+          "startTime": 42449.199999928474,
+          "duration": 113
+        },
+        {
+          "startTime": 42574.60000002384,
+          "duration": 69
+        },
+        {
+          "startTime": 42822.39999997616,
+          "duration": 75
+        },
+        {
+          "startTime": 42900.5,
+          "duration": 160
+        },
+        {
+          "startTime": 43118.199999928474,
+          "duration": 119
+        }
+      ],
+      "now": 43537.89999997616,
+      "renderer": "react-flow",
+      "nodes": 0,
+      "textureBytes": 0,
+      "bufferBytes": 0,
+      "labelBytes": 0,
+      "labelCpuBytes": 0,
+      "gpuRenderer": null,
+      "labelLod": -1,
+      "dom": 599,
+      "mountedCards": 12,
+      "mountedEdges": 13,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1551,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 85,
+          "bytes": 2256748,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1466,
+          "bytes": 236734,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 90591556,
+      "scriptMs": 12692.182
+    },
+    {
+      "phase": "scope-full-1",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        },
+        {
+          "people": 44,
+          "requestedAt": 38725.60000002384,
+          "completedAt": 38987
+        },
+        {
+          "people": 61,
+          "requestedAt": 40527.5,
+          "terminatedAt": 41024
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 74,
+      "programCreations": 6,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 87,
+        "p95Ms": 350.3000000000029,
+        "maxMs": 3185.800000000003,
+        "over50Ms": 35
+      },
+      "longTasks": [
+        {
+          "startTime": 38140.5,
+          "duration": 314
+        },
+        {
+          "startTime": 38473.699999928474,
+          "duration": 68
+        },
+        {
+          "startTime": 38726.799999952316,
+          "duration": 60
+        },
+        {
+          "startTime": 38787.39999997616,
+          "duration": 155
+        },
+        {
+          "startTime": 38989.799999952316,
+          "duration": 176
+        },
+        {
+          "startTime": 39166.89999997616,
+          "duration": 164
+        },
+        {
+          "startTime": 39408.199999928474,
+          "duration": 73
+        },
+        {
+          "startTime": 39489.60000002384,
+          "duration": 651
+        },
+        {
+          "startTime": 40355.60000002384,
+          "duration": 171
+        },
+        {
+          "startTime": 40553.799999952316,
+          "duration": 134
+        },
+        {
+          "startTime": 40702.199999928474,
+          "duration": 97
+        },
+        {
+          "startTime": 41012.10000002384,
+          "duration": 342
+        },
+        {
+          "startTime": 41354.89999997616,
+          "duration": 401
+        },
+        {
+          "startTime": 41835.60000002384,
+          "duration": 327
+        },
+        {
+          "startTime": 42185.39999997616,
+          "duration": 186
+        },
+        {
+          "startTime": 42449.199999928474,
+          "duration": 113
+        },
+        {
+          "startTime": 42574.60000002384,
+          "duration": 69
+        },
+        {
+          "startTime": 42822.39999997616,
+          "duration": 75
+        },
+        {
+          "startTime": 42900.5,
+          "duration": 160
+        },
+        {
+          "startTime": 43118.199999928474,
+          "duration": 119
+        },
+        {
+          "startTime": 43590.699999928474,
+          "duration": 357
+        },
+        {
+          "startTime": 44187.799999952316,
+          "duration": 1364
+        },
+        {
+          "startTime": 45624.199999928474,
+          "duration": 66
+        },
+        {
+          "startTime": 45746.799999952316,
+          "duration": 193
+        },
+        {
+          "startTime": 45973.299999952316,
+          "duration": 302
+        },
+        {
+          "startTime": 46421.39999997616,
+          "duration": 91
+        },
+        {
+          "startTime": 46549.89999997616,
+          "duration": 3072
+        },
+        {
+          "startTime": 49629.799999952316,
+          "duration": 71
+        }
+      ],
+      "now": 50061.60000002384,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982648,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1675,
+      "pendingMedia": 0,
+      "peakPendingMedia": 18,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 94,
+          "bytes": 2496404,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1581,
+          "bytes": 255588,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 208928016,
+      "scriptMs": 15038.73
+    },
+    {
+      "phase": "scope-small-2",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        },
+        {
+          "people": 44,
+          "requestedAt": 38725.60000002384,
+          "completedAt": 38987
+        },
+        {
+          "people": 61,
+          "requestedAt": 40527.5,
+          "terminatedAt": 41024
+        },
+        {
+          "people": 61,
+          "requestedAt": 56740,
+          "terminatedAt": 57063.799999952316
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 74,
+      "programCreations": 6,
+      "resources": {
+        "textures": 0,
+        "buffers": 0,
+        "programs": 0
+      },
+      "frames": {
+        "count": 51,
+        "p95Ms": 433.59999999999854,
+        "maxMs": 3936.5,
+        "over50Ms": 21
+      },
+      "longTasks": [
+        {
+          "startTime": 50228.10000002384,
+          "duration": 312
+        },
+        {
+          "startTime": 50559.5,
+          "duration": 64
+        },
+        {
+          "startTime": 50780.199999928474,
+          "duration": 173
+        },
+        {
+          "startTime": 50954.39999997616,
+          "duration": 157
+        },
+        {
+          "startTime": 51206.10000002384,
+          "duration": 3897
+        },
+        {
+          "startTime": 55146.299999952316,
+          "duration": 63
+        },
+        {
+          "startTime": 55213.699999928474,
+          "duration": 793
+        },
+        {
+          "startTime": 56163,
+          "duration": 146
+        },
+        {
+          "startTime": 56357.799999952316,
+          "duration": 122
+        },
+        {
+          "startTime": 56480.89999997616,
+          "duration": 73
+        },
+        {
+          "startTime": 56561.89999997616,
+          "duration": 136
+        },
+        {
+          "startTime": 56767.199999928474,
+          "duration": 131
+        },
+        {
+          "startTime": 56981.60000002384,
+          "duration": 188
+        },
+        {
+          "startTime": 57169.60000002384,
+          "duration": 194
+        },
+        {
+          "startTime": 57386.199999928474,
+          "duration": 151
+        },
+        {
+          "startTime": 57573.89999997616,
+          "duration": 267
+        },
+        {
+          "startTime": 57871.60000002384,
+          "duration": 170
+        },
+        {
+          "startTime": 58090.39999997616,
+          "duration": 130
+        },
+        {
+          "startTime": 58240.299999952316,
+          "duration": 77
+        },
+        {
+          "startTime": 58492.89999997616,
+          "duration": 74
+        },
+        {
+          "startTime": 58569,
+          "duration": 164
+        },
+        {
+          "startTime": 58789.89999997616,
+          "duration": 111
+        }
+      ],
+      "now": 59218.699999928474,
+      "renderer": "react-flow",
+      "nodes": 0,
+      "textureBytes": 0,
+      "bufferBytes": 0,
+      "labelBytes": 0,
+      "labelCpuBytes": 0,
+      "gpuRenderer": null,
+      "labelLod": -1,
+      "dom": 599,
+      "mountedCards": 12,
+      "mountedEdges": 13,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1779,
+      "pendingMedia": 0,
+      "peakPendingMedia": 24,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 130,
+          "bytes": 3453156,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1649,
+          "bytes": 266612,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 92302496,
+      "scriptMs": 17832.036
+    },
+    {
+      "phase": "scope-full-2",
+      "requests": [
+        {
+          "people": 44,
+          "requestedAt": 26140.5,
+          "terminatedAt": 27040
+        },
+        {
+          "people": 61,
+          "requestedAt": 27217,
+          "terminatedAt": 27938.299999952316
+        },
+        {
+          "people": 26,
+          "requestedAt": 28138.100000023842,
+          "completedAt": 28452.899999976158
+        },
+        {
+          "people": 14,
+          "requestedAt": 30134.199999928474,
+          "completedAt": 30327.899999976158
+        },
+        {
+          "people": 44,
+          "requestedAt": 38725.60000002384,
+          "completedAt": 38987
+        },
+        {
+          "people": 61,
+          "requestedAt": 40527.5,
+          "terminatedAt": 41024
+        },
+        {
+          "people": 61,
+          "requestedAt": 56740,
+          "terminatedAt": 57063.799999952316
+        }
+      ],
+      "firstGpuAt": 10846.399999976158,
+      "firstPortraitUploadAt": 10911,
+      "portraitUploads": 92,
+      "programCreations": 8,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 82,
+        "p95Ms": 817.4000000000015,
+        "maxMs": 3936.5,
+        "over50Ms": 31
+      },
+      "longTasks": [
+        {
+          "startTime": 50228.10000002384,
+          "duration": 312
+        },
+        {
+          "startTime": 50559.5,
+          "duration": 64
+        },
+        {
+          "startTime": 50780.199999928474,
+          "duration": 173
+        },
+        {
+          "startTime": 50954.39999997616,
+          "duration": 157
+        },
+        {
+          "startTime": 51206.10000002384,
+          "duration": 3897
+        },
+        {
+          "startTime": 55146.299999952316,
+          "duration": 63
+        },
+        {
+          "startTime": 55213.699999928474,
+          "duration": 793
+        },
+        {
+          "startTime": 56163,
+          "duration": 146
+        },
+        {
+          "startTime": 56357.799999952316,
+          "duration": 122
+        },
+        {
+          "startTime": 56480.89999997616,
+          "duration": 73
+        },
+        {
+          "startTime": 56561.89999997616,
+          "duration": 136
+        },
+        {
+          "startTime": 56767.199999928474,
+          "duration": 131
+        },
+        {
+          "startTime": 56981.60000002384,
+          "duration": 188
+        },
+        {
+          "startTime": 57169.60000002384,
+          "duration": 194
+        },
+        {
+          "startTime": 57386.199999928474,
+          "duration": 151
+        },
+        {
+          "startTime": 57573.89999997616,
+          "duration": 267
+        },
+        {
+          "startTime": 57871.60000002384,
+          "duration": 170
+        },
+        {
+          "startTime": 58090.39999997616,
+          "duration": 130
+        },
+        {
+          "startTime": 58240.299999952316,
+          "duration": 77
+        },
+        {
+          "startTime": 58492.89999997616,
+          "duration": 74
+        },
+        {
+          "startTime": 58569,
+          "duration": 164
+        },
+        {
+          "startTime": 58789.89999997616,
+          "duration": 111
+        },
+        {
+          "startTime": 59296.5,
+          "duration": 417
+        },
+        {
+          "startTime": 59979.60000002384,
+          "duration": 1329
+        },
+        {
+          "startTime": 61597.299999952316,
+          "duration": 800
+        },
+        {
+          "startTime": 62438.39999997616,
+          "duration": 234
+        },
+        {
+          "startTime": 62777,
+          "duration": 83
+        },
+        {
+          "startTime": 62894.5,
+          "duration": 2943
+        },
+        {
+          "startTime": 65843.29999995232,
+          "duration": 52
+        }
+      ],
+      "now": 66264.69999992847,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14982708,
+      "labelBytes": 7686540,
+      "labelCpuBytes": 18596640,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 1967,
+      "pendingMedia": 0,
+      "peakPendingMedia": 24,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 139,
+          "bytes": 3692812,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 1828,
+          "bytes": 295436,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 209792868,
+      "scriptMs": 20646.240999999998
+    },
+    {
+      "phase": "name-edit-reload",
+      "requests": [],
+      "firstGpuAt": 11341.400000095367,
+      "firstPortraitUploadAt": 11402.400000095367,
+      "portraitUploads": 18,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 87,
+        "p95Ms": 500.3000000000002,
+        "maxMs": 4119.9,
+        "over50Ms": 48
+      },
+      "longTasks": [
+        {
+          "startTime": 86.30000007152557,
+          "duration": 87
+        },
+        {
+          "startTime": 177.10000002384186,
+          "duration": 55
+        },
+        {
+          "startTime": 719.4000000953674,
+          "duration": 77
+        },
+        {
+          "startTime": 802.9000000953674,
+          "duration": 493
+        },
+        {
+          "startTime": 1434.8000000715256,
+          "duration": 112
+        },
+        {
+          "startTime": 1551.6000000238419,
+          "duration": 891
+        },
+        {
+          "startTime": 2458,
+          "duration": 487
+        },
+        {
+          "startTime": 3017.7000000476837,
+          "duration": 57
+        },
+        {
+          "startTime": 3294.4000000953674,
+          "duration": 50
+        },
+        {
+          "startTime": 5618.700000047684,
+          "duration": 285
+        },
+        {
+          "startTime": 5972.800000071526,
+          "duration": 120
+        },
+        {
+          "startTime": 6176.700000047684,
+          "duration": 75
+        },
+        {
+          "startTime": 6290.100000023842,
+          "duration": 53
+        },
+        {
+          "startTime": 6383.300000071526,
+          "duration": 461
+        },
+        {
+          "startTime": 6884.800000071526,
+          "duration": 54
+        },
+        {
+          "startTime": 7035.200000047684,
+          "duration": 4047
+        },
+        {
+          "startTime": 11157.300000071526,
+          "duration": 184
+        }
+      ],
+      "now": 11644.600000023842,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 14983428,
+      "labelBytes": 7687320,
+      "labelCpuBytes": 18598860,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 245,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": true,
+      "zoom": 0.55,
+      "mediaRequests": 2525,
+      "pendingMedia": 0,
+      "peakPendingMedia": 24,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 154,
+          "bytes": 4089670,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 2371,
+          "bytes": 382968,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 226684284,
+      "scriptMs": 4491.092
+    },
+    {
+      "phase": "birth-edit-reload",
+      "requests": [
+        {
+          "people": 3313,
+          "requestedAt": 1264.4000000953674,
+          "completedAt": 6810.100000023842
+        }
+      ],
+      "firstGpuAt": 17134.400000095367,
+      "firstPortraitUploadAt": 17170.200000047684,
+      "portraitUploads": 22,
+      "programCreations": 2,
+      "resources": {
+        "textures": 3,
+        "buffers": 6,
+        "programs": 2
+      },
+      "frames": {
+        "count": 417,
+        "p95Ms": 66.89999999999964,
+        "maxMs": 4503.5999999999985,
+        "over50Ms": 50
+      },
+      "longTasks": [
+        {
+          "startTime": 880,
+          "duration": 311
+        },
+        {
+          "startTime": 6746,
+          "duration": 183
+        },
+        {
+          "startTime": 6930.400000095367,
+          "duration": 768
+        },
+        {
+          "startTime": 7703.900000095367,
+          "duration": 420
+        },
+        {
+          "startTime": 8175.800000071526,
+          "duration": 74
+        },
+        {
+          "startTime": 10957.200000047684,
+          "duration": 277
+        },
+        {
+          "startTime": 11307.800000071526,
+          "duration": 106
+        },
+        {
+          "startTime": 11514.800000071526,
+          "duration": 72
+        },
+        {
+          "startTime": 11616.400000095367,
+          "duration": 77
+        },
+        {
+          "startTime": 11723.900000095367,
+          "duration": 553
+        },
+        {
+          "startTime": 12320.100000023842,
+          "duration": 66
+        },
+        {
+          "startTime": 12475.800000071526,
+          "duration": 4432
+        },
+        {
+          "startTime": 16985.600000023842,
+          "duration": 149
+        }
+      ],
+      "now": 17366,
+      "renderer": "webgl2",
+      "nodes": 3313,
+      "textureBytes": 33554433,
+      "bufferBytes": 15154200,
+      "labelBytes": 7688040,
+      "labelCpuBytes": 18600300,
+      "buildReason": "mount",
+      "gpuRenderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA)",
+      "labelLod": 2,
+      "dom": 248,
+      "mountedCards": 0,
+      "mountedEdges": 0,
+      "detailsLoading": false,
+      "zoom": 0.55,
+      "mediaRequests": 3135,
+      "pendingMedia": 0,
+      "peakPendingMedia": 24,
+      "mediaFailures": 0,
+      "previews": {
+        "thumb": {
+          "responses": 172,
+          "bytes": 4565902,
+          "jpeg": 0
+        },
+        "tiny": {
+          "responses": 2963,
+          "bytes": 478500,
+          "jpeg": 0
+        }
+      },
+      "heapBytes": 132789136,
+      "scriptMs": 4745.264999999999
+    }
+  ],
+  "retainedHeap": {
+    "beforeScopeCycles": 46993600,
+    "afterScopeCycles": 45731984,
+    "method": "CDP forced GC checkpoints, main-thread JS heap only; excludes GPU/Worker/browser memory"
+  }
+}

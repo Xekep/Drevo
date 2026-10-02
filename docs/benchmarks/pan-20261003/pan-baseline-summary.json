@@ -1,0 +1,2227 @@
+{
+  "purpose": "Read-only analysis of saved early/settled pan CPU diagnostics; no new browser/test/build",
+  "baselineCommit": "d170214efed25b2da478afc75c54d700f66be020",
+  "fixture": {
+    "people": 3313,
+    "personalReference": "level-11-363-3",
+    "cpuThrottle": 4,
+    "isMobile": false
+  },
+  "method": "Separate pan diagnostic with real backend/media; only user.personId injected. Early interval follows persistent reload, settled waits for archive-loading-details hidden and media idle. Profiled intervals are not speed benchmarks.",
+  "device": {
+    "devices": [
+      {
+        "vendorId": 4318,
+        "deviceId": 7041,
+        "subSysId": 2241335363,
+        "revision": 161,
+        "vendorString": "",
+        "deviceString": "NVIDIA GeForce GTX 1070",
+        "driverVendor": "NVIDIA",
+        "driverVersion": "32.0.15.7247"
+      },
+      {
+        "vendorId": 5140,
+        "deviceId": 140,
+        "subSysId": 0,
+        "revision": 0,
+        "vendorString": "",
+        "deviceString": "Microsoft Basic Render Driver",
+        "driverVendor": "",
+        "driverVersion": "10.0.19041.4355"
+      }
+    ],
+    "renderer": "ANGLE (NVIDIA, Vulkan 1.4.303 (NVIDIA NVIDIA GeForce GTX 1070 (0x00001B81)), NVIDIA-572.47.0.0)"
+  },
+  "sourceProof": [
+    {
+      "path": "src/components/tree/tree-edge-adapter.ts",
+      "currentSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "baselineCommitSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/connections.ts",
+      "currentSha256": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+      "baselineCommitSha256": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/tree-node-model.ts",
+      "currentSha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "baselineCommitSha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/family-neighborhood.ts",
+      "currentSha256": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+      "baselineCommitSha256": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/person-relation-label.ts",
+      "currentSha256": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+      "baselineCommitSha256": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/route-crossings.ts",
+      "currentSha256": "c6e90424706224aa53af156cb548b85bfb34b5bef7f5c5e85ccb6c3aff460ad0",
+      "baselineCommitSha256": "c6e90424706224aa53af156cb548b85bfb34b5bef7f5c5e85ccb6c3aff460ad0",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/tree-growth.ts",
+      "currentSha256": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+      "baselineCommitSha256": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/dates.ts",
+      "currentSha256": "7081700045b5eedd7e8d69d6c42168e50c9a20ea052afc5ee7c3a71516306827",
+      "baselineCommitSha256": "7081700045b5eedd7e8d69d6c42168e50c9a20ea052afc5ee7c3a71516306827",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/gpu-scene.ts",
+      "currentSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "baselineCommitSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/edge-routing.ts",
+      "currentSha256": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+      "baselineCommitSha256": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/archive-coverage.ts",
+      "currentSha256": "240432cec90314339a78b043dd75bff18443741a0f4eb205b0a1f0fb46d1cba6",
+      "baselineCommitSha256": "240432cec90314339a78b043dd75bff18443741a0f4eb205b0a1f0fb46d1cba6",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/tree-canvas.tsx",
+      "currentSha256": "f028c53edf8caac90df5e2a7235d9a0b33a2ed2247abab603dad1c2ca145187e",
+      "baselineCommitSha256": "f028c53edf8caac90df5e2a7235d9a0b33a2ed2247abab603dad1c2ca145187e",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/tree-gpu-scene.tsx",
+      "currentSha256": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c",
+      "baselineCommitSha256": "101d4028e47b1ba37f5150d438f452c47ef6f50ac6cc06373dfd8148296c559c",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/use-tree-layout.ts",
+      "currentSha256": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636",
+      "baselineCommitSha256": "e09962f2e7b06f69bf85b5513f9e857f7a84e7b2bbdfe46754783fc2b9695636",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/components/tree/use-family-view.ts",
+      "currentSha256": "0b371210c45a7b17cff443e7f28ee0fff2188a0dd688068844c2a4da6af5baf8",
+      "baselineCommitSha256": "0b371210c45a7b17cff443e7f28ee0fff2188a0dd688068844c2a4da6af5baf8",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/hooks/useArchive.ts",
+      "currentSha256": "6f7064a3353cb1cc8f1c0b86c2c328ab4aac0be1cf86a7b02c1fd4ae266a21ab",
+      "baselineCommitSha256": "6f7064a3353cb1cc8f1c0b86c2c328ab4aac0be1cf86a7b02c1fd4ae266a21ab",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/data/archive-pages.ts",
+      "currentSha256": "652c9c5a80b5cbffe7616caaf6167dc6dfde148310dcc6a94c4bd9b5a970b171",
+      "baselineCommitSha256": "652c9c5a80b5cbffe7616caaf6167dc6dfde148310dcc6a94c4bd9b5a970b171",
+      "matchesCommittedRuntime": true
+    },
+    {
+      "path": "src/domain/archive-projection.ts",
+      "currentSha256": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "baselineCommitSha256": "649f5fcc9e81cc97d8468feded0746e9ce0128ac381d2ba8f82d6dd2fab86a4f",
+      "matchesCommittedRuntime": true
+    }
+  ],
+  "distChunks": [
+    {
+      "name": "tree-export-dialog-BDSrvure.js",
+      "bytes": 252017,
+      "sha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a"
+    },
+    {
+      "name": "dates-H3myDfrx.js",
+      "bytes": 3108,
+      "sha256": "faa38dd05b266aece13853f7aa204bf96b0a3109e88044662b66feb23b299c29"
+    },
+    {
+      "name": "gpu-scene-Nh-pPsId.js",
+      "bytes": 14018,
+      "sha256": "ee931c38a4b6d879deacefd5fe4c63edef23195dba4ab1de8d100d780751d9a3"
+    },
+    {
+      "name": "esm-Cb3lGruy.js",
+      "bytes": 47390,
+      "sha256": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24"
+    },
+    {
+      "name": "archive-summary-K-TzhHyd.js",
+      "bytes": 770,
+      "sha256": "0d8ffc65102e585fcca75a355920829f32fdb97d724ee3a2404e92c7c24ee6f6"
+    }
+  ],
+  "mappingMethod": "Exact sampled URL bundle filename + line/column function-start matched to baseline committed source; source snapshots and matching chunks retained externally",
+  "early": {
+    "file": "C:/Users/Xekep/Documents/Codex/drevo-render-tests/pan-baseline-early-pan.cpuprofile",
+    "sha256": "e857517d53a59a057f9470ff7fd0394de7c6ee21b37d3181165c03706b937f5a",
+    "samples": 3208,
+    "durationMs": 5834.859,
+    "weightedDurationMs": 5834.322,
+    "idleAndGc": [
+      {
+        "name": "(program)",
+        "selfMs": 1304.3989999999983
+      },
+      {
+        "name": "(idle)",
+        "selfMs": 1104.5480000000005
+      },
+      {
+        "name": "(garbage collector)",
+        "selfMs": 102.43000000000004
+      }
+    ],
+    "selectedPreparationRootUnionMs": 2173.3540000000007,
+    "topSelfFrames": [
+      {
+        "functionName": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1304.3989999999983,
+        "inclusiveMs": 1304.3989999999983,
+        "nodeIds": [
+          2
+        ]
+      },
+      {
+        "functionName": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1104.5480000000005,
+        "inclusiveMs": 1104.5480000000005,
+        "nodeIds": [
+          3
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 7104,
+        "selfMs": 202.27499999999995,
+        "inclusiveMs": 722.3289999999998,
+        "nodeIds": [
+          174,
+          552
+        ]
+      },
+      {
+        "functionName": "bn",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 8197,
+        "selfMs": 198.48,
+        "inclusiveMs": 198.48,
+        "nodeIds": [
+          170,
+          547
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 7168,
+        "selfMs": 154.502,
+        "inclusiveMs": 206.35100000000006,
+        "nodeIds": [
+          175,
+          554
+        ]
+      },
+      {
+        "functionName": "a",
+        "url": "http://127.0.0.1:4194/assets/dates-H3myDfrx.js",
+        "line": 1,
+        "column": 1048,
+        "selfMs": 121.69300000000004,
+        "inclusiveMs": 176.57399999999998,
+        "nodeIds": [
+          490,
+          178,
+          86,
+          542,
+          557
+        ]
+      },
+      {
+        "functionName": "pt",
+        "url": "http://127.0.0.1:4194/assets/esm-Cb3lGruy.js",
+        "line": 1,
+        "column": 21386,
+        "selfMs": 108.07500000000002,
+        "inclusiveMs": 124.74499999999999,
+        "nodeIds": [
+          61,
+          657,
+          437
+        ]
+      },
+      {
+        "functionName": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 102.43000000000004,
+        "inclusiveMs": 102.43000000000004,
+        "nodeIds": [
+          74
+        ]
+      },
+      {
+        "functionName": "Hc",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 8658,
+        "selfMs": 102.20599999999999,
+        "inclusiveMs": 316.7669999999999,
+        "nodeIds": [
+          164,
+          536
+        ]
+      },
+      {
+        "functionName": "Bc",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 5118,
+        "selfMs": 100.61399999999999,
+        "inclusiveMs": 975.5120000000003,
+        "nodeIds": [
+          172,
+          549
+        ]
+      },
+      {
+        "functionName": "js",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 14202,
+        "selfMs": 99.679,
+        "inclusiveMs": 99.679,
+        "nodeIds": [
+          176,
+          553
+        ]
+      },
+      {
+        "functionName": "setNodes",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 7,
+        "column": 51808,
+        "selfMs": 93.86199999999997,
+        "inclusiveMs": 228.693,
+        "nodeIds": [
+          60,
+          656,
+          436
+        ]
+      },
+      {
+        "functionName": "n",
+        "url": "http://127.0.0.1:4194/assets/archive-summary-K-TzhHyd.js",
+        "line": 1,
+        "column": 58,
+        "selfMs": 84.945,
+        "inclusiveMs": 84.945,
+        "nodeIds": [
+          197,
+          571
+        ]
+      },
+      {
+        "functionName": "update",
+        "url": "http://127.0.0.1:4194/assets/gpu-scene-Nh-pPsId.js",
+        "line": 57,
+        "column": 4444,
+        "selfMs": 83.16199999999996,
+        "inclusiveMs": 168.27100000000004,
+        "nodeIds": [
+          85
+        ]
+      },
+      {
+        "functionName": "ss",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 2401,
+        "selfMs": 77.30000000000001,
+        "inclusiveMs": 77.30000000000001,
+        "nodeIds": [
+          144,
+          517
+        ]
+      },
+      {
+        "functionName": "l",
+        "url": "http://127.0.0.1:4194/assets/dates-H3myDfrx.js",
+        "line": 1,
+        "column": 1403,
+        "selfMs": 73.70600000000002,
+        "inclusiveMs": 153.11400000000003,
+        "nodeIds": [
+          165,
+          488,
+          538
+        ]
+      },
+      {
+        "functionName": "Dn",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 11137,
+        "selfMs": 70.334,
+        "inclusiveMs": 75.40899999999999,
+        "nodeIds": [
+          471,
+          87
+        ]
+      },
+      {
+        "functionName": "n",
+        "url": "http://127.0.0.1:4194/assets/dates-H3myDfrx.js",
+        "line": 1,
+        "column": 1415,
+        "selfMs": 67.156,
+        "inclusiveMs": 67.156,
+        "nodeIds": [
+          489,
+          539
+        ]
+      },
+      {
+        "functionName": "Fc",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 3373,
+        "selfMs": 66.386,
+        "inclusiveMs": 79.081,
+        "nodeIds": [
+          182,
+          560
+        ]
+      },
+      {
+        "functionName": "cs",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 2797,
+        "selfMs": 65.972,
+        "inclusiveMs": 65.972,
+        "nodeIds": [
+          151,
+          524
+        ]
+      },
+      {
+        "functionName": "Js",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 30060,
+        "selfMs": 57.413999999999994,
+        "inclusiveMs": 57.413999999999994,
+        "nodeIds": [
+          168,
+          545
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/dates-H3myDfrx.js",
+        "line": 1,
+        "column": 1087,
+        "selfMs": 54.88099999999999,
+        "inclusiveMs": 54.88099999999999,
+        "nodeIds": [
+          491,
+          287,
+          470,
+          543,
+          559
+        ]
+      },
+      {
+        "functionName": "d",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 22532,
+        "selfMs": 52.92499999999999,
+        "inclusiveMs": 306.339,
+        "nodeIds": [
+          84
+        ]
+      },
+      {
+        "functionName": "yn",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 8053,
+        "selfMs": 51.849000000000004,
+        "inclusiveMs": 51.849000000000004,
+        "nodeIds": [
+          492,
+          555
+        ]
+      },
+      {
+        "functionName": "kr",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 26485,
+        "selfMs": 50.853,
+        "inclusiveMs": 50.853,
+        "nodeIds": [
+          270,
+          73,
+          79,
+          367,
+          833,
+          665,
+          443,
+          448
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 40482,
+        "selfMs": 40.72,
+        "inclusiveMs": 40.72,
+        "nodeIds": [
+          186,
+          466
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 10221,
+        "selfMs": 39.519999999999996,
+        "inclusiveMs": 134.299,
+        "nodeIds": [
+          487,
+          537
+        ]
+      },
+      {
+        "functionName": "r",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 23561,
+        "selfMs": 37.18499999999999,
+        "inclusiveMs": 188.04500000000002,
+        "nodeIds": [
+          62,
+          69,
+          75,
+          347,
+          363,
+          660,
+          661,
+          439,
+          444,
+          748
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 8,
+        "column": 49632,
+        "selfMs": 34.871,
+        "inclusiveMs": 34.871,
+        "nodeIds": [
+          147,
+          520
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 7133,
+        "selfMs": 33.989,
+        "inclusiveMs": 33.989,
+        "nodeIds": [
+          179,
+          558
+        ]
+      }
+    ],
+    "topInclusiveFrames": [
+      {
+        "functionName": "kl",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 106679,
+        "selfMs": 1.288,
+        "inclusiveMs": 7311.227999999988,
+        "nodeIds": [
+          7,
+          9,
+          11,
+          13,
+          15,
+          17,
+          19,
+          21,
+          23,
+          25,
+          27,
+          29,
+          31,
+          33,
+          35,
+          37,
+          39,
+          41,
+          43,
+          45,
+          47,
+          49,
+          51,
+          53,
+          55,
+          57,
+          273,
+          275,
+          603,
+          605,
+          607,
+          609,
+          611,
+          613,
+          615,
+          617,
+          619,
+          621,
+          623,
+          625,
+          627,
+          629,
+          631,
+          633,
+          635,
+          637,
+          639,
+          641,
+          643,
+          645,
+          647,
+          649,
+          651,
+          653,
+          820,
+          383,
+          385,
+          387,
+          389,
+          391,
+          393,
+          395,
+          397,
+          399,
+          401,
+          403,
+          405,
+          407,
+          409,
+          411,
+          413,
+          415,
+          417,
+          419,
+          421,
+          423,
+          425,
+          427,
+          429,
+          431,
+          433,
+          450,
+          452
+        ]
+      },
+      {
+        "functionName": "Ol",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 106586,
+        "selfMs": 0,
+        "inclusiveMs": 7029.506999999989,
+        "nodeIds": [
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          22,
+          24,
+          26,
+          28,
+          30,
+          32,
+          34,
+          36,
+          38,
+          40,
+          42,
+          44,
+          46,
+          48,
+          50,
+          52,
+          54,
+          56,
+          272,
+          274,
+          604,
+          606,
+          608,
+          610,
+          612,
+          614,
+          616,
+          618,
+          620,
+          622,
+          624,
+          626,
+          628,
+          630,
+          632,
+          634,
+          636,
+          638,
+          640,
+          642,
+          644,
+          646,
+          648,
+          650,
+          652,
+          819,
+          384,
+          386,
+          388,
+          390,
+          392,
+          394,
+          396,
+          398,
+          400,
+          402,
+          404,
+          406,
+          408,
+          410,
+          412,
+          414,
+          416,
+          418,
+          420,
+          422,
+          424,
+          426,
+          428,
+          430,
+          432,
+          449,
+          451
+        ]
+      },
+      {
+        "functionName": "(root)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 0,
+        "inclusiveMs": 5834.321999999992,
+        "nodeIds": [
+          1
+        ]
+      },
+      {
+        "functionName": "_u",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 110849,
+        "selfMs": 4.001,
+        "inclusiveMs": 2392.803000000001,
+        "nodeIds": [
+          311,
+          118,
+          352
+        ]
+      },
+      {
+        "functionName": "ku",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 114108,
+        "selfMs": 1.535,
+        "inclusiveMs": 2306.8000000000006,
+        "nodeIds": [
+          312,
+          119,
+          459
+        ]
+      },
+      {
+        "functionName": "Au",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 114564,
+        "selfMs": 9.658999999999999,
+        "inclusiveMs": 2302.9670000000006,
+        "nodeIds": [
+          313,
+          120,
+          460
+        ]
+      },
+      {
+        "functionName": "Lc",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 79647,
+        "selfMs": 6.046,
+        "inclusiveMs": 2276.6050000000005,
+        "nodeIds": [
+          121,
+          461
+        ]
+      },
+      {
+        "functionName": "ko",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 47389,
+        "selfMs": 14.64,
+        "inclusiveMs": 2229.221,
+        "nodeIds": [
+          123,
+          131,
+          293,
+          463,
+          475
+        ]
+      },
+      {
+        "functionName": "uc",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 66559,
+        "selfMs": 2.078,
+        "inclusiveMs": 2092.4260000000004,
+        "nodeIds": [
+          130,
+          462
+        ]
+      },
+      {
+        "functionName": "e.useMemo",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 2,
+        "column": 7183,
+        "selfMs": 3.533,
+        "inclusiveMs": 2054.871000000001,
+        "nodeIds": [
+          125,
+          194,
+          141,
+          153,
+          159,
+          525,
+          514,
+          531,
+          805,
+          568
+        ]
+      },
+      {
+        "functionName": "Ts",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 56175,
+        "selfMs": 10.646999999999998,
+        "inclusiveMs": 2051.338000000001,
+        "nodeIds": [
+          126,
+          195,
+          142,
+          154,
+          160,
+          526,
+          515,
+          532,
+          865,
+          569
+        ]
+      },
+      {
+        "functionName": "re",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 2,
+        "column": 8903,
+        "selfMs": 11.818999999999999,
+        "inclusiveMs": 2035.2250000000004,
+        "nodeIds": [
+          4
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 27755,
+        "selfMs": 12.219000000000001,
+        "inclusiveMs": 2017.6240000000003,
+        "nodeIds": [
+          139,
+          464
+        ]
+      },
+      {
+        "functionName": "ld",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 122547,
+        "selfMs": 0,
+        "inclusiveMs": 1889.487000000001,
+        "nodeIds": [
+          117
+        ]
+      },
+      {
+        "functionName": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1304.3989999999983,
+        "inclusiveMs": 1304.3989999999983,
+        "nodeIds": [
+          2
+        ]
+      },
+      {
+        "functionName": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1104.5480000000005,
+        "inclusiveMs": 1104.5480000000005,
+        "nodeIds": [
+          3
+        ]
+      },
+      {
+        "functionName": "Bc",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 5118,
+        "selfMs": 100.61399999999999,
+        "inclusiveMs": 975.5120000000003,
+        "nodeIds": [
+          172,
+          549
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 38603,
+        "selfMs": 0,
+        "inclusiveMs": 975.5120000000003,
+        "nodeIds": [
+          171,
+          548
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 14,
+        "column": 7104,
+        "selfMs": 202.27499999999995,
+        "inclusiveMs": 722.3289999999998,
+        "nodeIds": [
+          174,
+          552
+        ]
+      },
+      {
+        "functionName": "ad",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 121114,
+        "selfMs": 1.992,
+        "inclusiveMs": 634.6929999999993,
+        "nodeIds": [
+          309,
+          298,
+          350
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 122936,
+        "selfMs": 0,
+        "inclusiveMs": 633.6829999999993,
+        "nodeIds": [
+          348
+        ]
+      },
+      {
+        "functionName": "sd",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 121528,
+        "selfMs": 0,
+        "inclusiveMs": 633.6829999999993,
+        "nodeIds": [
+          349
+        ]
+      }
+    ]
+  },
+  "settled": {
+    "file": "C:/Users/Xekep/Documents/Codex/drevo-render-tests/pan-baseline-settled-pan.cpuprofile",
+    "sha256": "aab9cc811f97022d6a5c36d8055f9495a336d3c7820aa0884973109e346024bd",
+    "samples": 1298,
+    "durationMs": 3157.756,
+    "weightedDurationMs": 3157.375,
+    "idleAndGc": [
+      {
+        "name": "(program)",
+        "selfMs": 1435.9820000000013
+      },
+      {
+        "name": "(idle)",
+        "selfMs": 1242.9639999999997
+      },
+      {
+        "name": "(garbage collector)",
+        "selfMs": 38.865
+      }
+    ],
+    "selectedPreparationRootUnionMs": 0,
+    "topSelfFrames": [
+      {
+        "functionName": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1435.9820000000013,
+        "inclusiveMs": 1435.9820000000013,
+        "nodeIds": [
+          2
+        ]
+      },
+      {
+        "functionName": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1242.9639999999997,
+        "inclusiveMs": 1242.9639999999997,
+        "nodeIds": [
+          31
+        ]
+      },
+      {
+        "functionName": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 38.865,
+        "inclusiveMs": 38.865,
+        "nodeIds": [
+          250
+        ]
+      },
+      {
+        "functionName": "draw",
+        "url": "http://127.0.0.1:4194/assets/gpu-scene-Nh-pPsId.js",
+        "line": 57,
+        "column": 5873,
+        "selfMs": 26.905000000000005,
+        "inclusiveMs": 59.949,
+        "nodeIds": [
+          62
+        ]
+      },
+      {
+        "functionName": "r",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 23561,
+        "selfMs": 23.866,
+        "inclusiveMs": 111.91000000000001,
+        "nodeIds": [
+          60
+        ]
+      },
+      {
+        "functionName": "kr",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 26485,
+        "selfMs": 22.694999999999997,
+        "inclusiveMs": 22.694999999999997,
+        "nodeIds": [
+          124
+        ]
+      },
+      {
+        "functionName": "t",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 16454,
+        "selfMs": 21.748,
+        "inclusiveMs": 23.271,
+        "nodeIds": [
+          181
+        ]
+      },
+      {
+        "functionName": "e",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 23116,
+        "selfMs": 19.399,
+        "inclusiveMs": 59.96300000000001,
+        "nodeIds": [
+          70
+        ]
+      },
+      {
+        "functionName": "ee",
+        "url": "http://127.0.0.1:4194/assets/esm-Cb3lGruy.js",
+        "line": 1,
+        "column": 7522,
+        "selfMs": 13.721,
+        "inclusiveMs": 13.721,
+        "nodeIds": [
+          122
+        ]
+      },
+      {
+        "functionName": "u",
+        "url": "http://127.0.0.1:4194/assets/link-2-DdZmSgw2.js",
+        "line": 1,
+        "column": 854,
+        "selfMs": 11.701999999999998,
+        "inclusiveMs": 19.63,
+        "nodeIds": [
+          98,
+          290
+        ]
+      },
+      {
+        "functionName": "vertexAttribPointer",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 10.315999999999999,
+        "inclusiveMs": 10.315999999999999,
+        "nodeIds": [
+          107
+        ]
+      },
+      {
+        "functionName": "r",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 7,
+        "column": 43886,
+        "selfMs": 8.564,
+        "inclusiveMs": 10.556000000000001,
+        "nodeIds": [
+          131
+        ]
+      },
+      {
+        "functionName": "d",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 43781,
+        "selfMs": 7.5760000000000005,
+        "inclusiveMs": 151.471,
+        "nodeIds": [
+          54
+        ]
+      },
+      {
+        "functionName": "bi",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 28096,
+        "selfMs": 7.509,
+        "inclusiveMs": 7.509,
+        "nodeIds": [
+          126,
+          269,
+          113
+        ]
+      },
+      {
+        "functionName": "D",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 13678,
+        "selfMs": 7.093,
+        "inclusiveMs": 12.157,
+        "nodeIds": [
+          178
+        ]
+      },
+      {
+        "functionName": "Lc",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 79647,
+        "selfMs": 6.102,
+        "inclusiveMs": 86.886,
+        "nodeIds": [
+          63,
+          285
+        ]
+      },
+      {
+        "functionName": "vn",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 15212,
+        "selfMs": 6.024,
+        "inclusiveMs": 6.024,
+        "nodeIds": [
+          278
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 127111,
+        "selfMs": 6.021,
+        "inclusiveMs": 45.44,
+        "nodeIds": [
+          37,
+          112
+        ]
+      },
+      {
+        "functionName": "clear",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 5.678999999999999,
+        "inclusiveMs": 5.678999999999999,
+        "nodeIds": [
+          130
+        ]
+      },
+      {
+        "functionName": "Yo",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 52088,
+        "selfMs": 5.5040000000000004,
+        "inclusiveMs": 68.98700000000001,
+        "nodeIds": [
+          68
+        ]
+      },
+      {
+        "functionName": "emit",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 42876,
+        "selfMs": 5.4239999999999995,
+        "inclusiveMs": 120.37400000000001,
+        "nodeIds": [
+          56
+        ]
+      },
+      {
+        "functionName": "s",
+        "url": "http://127.0.0.1:4194/assets/link-2-DdZmSgw2.js",
+        "line": 1,
+        "column": 554,
+        "selfMs": 5.338,
+        "inclusiveMs": 8.371,
+        "nodeIds": [
+          99,
+          280,
+          291
+        ]
+      },
+      {
+        "functionName": "ko",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 47389,
+        "selfMs": 5.098000000000001,
+        "inclusiveMs": 50.81399999999999,
+        "nodeIds": [
+          95,
+          258,
+          287,
+          293
+        ]
+      },
+      {
+        "functionName": "getBoundingClientRect",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 5.064,
+        "inclusiveMs": 5.064,
+        "nodeIds": [
+          310
+        ]
+      },
+      {
+        "functionName": "z",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 84137,
+        "selfMs": 5.056,
+        "inclusiveMs": 5.056,
+        "nodeIds": [
+          256,
+          320
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 25802,
+        "selfMs": 4.652,
+        "inclusiveMs": 4.652,
+        "nodeIds": [
+          180,
+          315
+        ]
+      },
+      {
+        "functionName": "queueMicrotask",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 4.568,
+        "inclusiveMs": 4.568,
+        "nodeIds": [
+          274,
+          93
+        ]
+      },
+      {
+        "functionName": "stopImmediatePropagation",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 4.06,
+        "inclusiveMs": 4.06,
+        "nodeIds": [
+          115
+        ]
+      },
+      {
+        "functionName": "postMessage",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 4.0120000000000005,
+        "inclusiveMs": 4.0120000000000005,
+        "nodeIds": [
+          332
+        ]
+      },
+      {
+        "functionName": "e.createElement",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 2,
+        "column": 5566,
+        "selfMs": 4.006,
+        "inclusiveMs": 4.006,
+        "nodeIds": [
+          299,
+          345
+        ]
+      }
+    ],
+    "topInclusiveFrames": [
+      {
+        "functionName": "(root)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 0,
+        "inclusiveMs": 3157.3750000000027,
+        "nodeIds": [
+          1
+        ]
+      },
+      {
+        "functionName": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1435.9820000000013,
+        "inclusiveMs": 1435.9820000000013,
+        "nodeIds": [
+          2
+        ]
+      },
+      {
+        "functionName": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "selfMs": 1242.9639999999997,
+        "inclusiveMs": 1242.9639999999997,
+        "nodeIds": [
+          31
+        ]
+      },
+      {
+        "functionName": "bl",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 99761,
+        "selfMs": 1.519,
+        "inclusiveMs": 393.37499999999994,
+        "nodeIds": [
+          186,
+          188,
+          190,
+          192,
+          194,
+          196,
+          198,
+          200,
+          202,
+          204,
+          206,
+          208,
+          210,
+          212,
+          214,
+          216,
+          218,
+          220,
+          222,
+          224,
+          226,
+          228,
+          230,
+          232,
+          234,
+          236,
+          238,
+          240,
+          242,
+          244,
+          301,
+          303,
+          305
+        ]
+      },
+      {
+        "functionName": "vl",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 99283,
+        "selfMs": 0,
+        "inclusiveMs": 379.62499999999994,
+        "nodeIds": [
+          187,
+          189,
+          191,
+          193,
+          195,
+          197,
+          199,
+          201,
+          203,
+          205,
+          207,
+          209,
+          211,
+          213,
+          215,
+          217,
+          219,
+          221,
+          223,
+          225,
+          227,
+          229,
+          231,
+          233,
+          235,
+          237,
+          239,
+          241,
+          243,
+          300,
+          302,
+          304
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 11321,
+        "selfMs": 2.003,
+        "inclusiveMs": 156.987,
+        "nodeIds": [
+          43
+        ]
+      },
+      {
+        "functionName": "d",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 43781,
+        "selfMs": 7.5760000000000005,
+        "inclusiveMs": 151.471,
+        "nodeIds": [
+          54
+        ]
+      },
+      {
+        "functionName": "sd",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 121528,
+        "selfMs": 2.641,
+        "inclusiveMs": 148.764,
+        "nodeIds": [
+          46
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 122936,
+        "selfMs": 0,
+        "inclusiveMs": 148.764,
+        "nodeIds": [
+          45
+        ]
+      },
+      {
+        "functionName": "ud",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 122874,
+        "selfMs": 1.094,
+        "inclusiveMs": 146.123,
+        "nodeIds": [
+          48
+        ]
+      },
+      {
+        "functionName": "ad",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 121114,
+        "selfMs": 0,
+        "inclusiveMs": 146.123,
+        "nodeIds": [
+          47
+        ]
+      },
+      {
+        "functionName": "_u",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 110849,
+        "selfMs": 0,
+        "inclusiveMs": 143.52299999999997,
+        "nodeIds": [
+          49
+        ]
+      },
+      {
+        "functionName": "zoom",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 42514,
+        "selfMs": 3.034,
+        "inclusiveMs": 123.408,
+        "nodeIds": [
+          55
+        ]
+      },
+      {
+        "functionName": "emit",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 42876,
+        "selfMs": 5.4239999999999995,
+        "inclusiveMs": 120.37400000000001,
+        "nodeIds": [
+          56
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/esm-Cb3lGruy.js",
+        "line": 1,
+        "column": 37477,
+        "selfMs": 1.527,
+        "inclusiveMs": 113.43700000000001,
+        "nodeIds": [
+          58
+        ]
+      },
+      {
+        "functionName": "call",
+        "url": "http://127.0.0.1:4194/assets/src-B-DeWB10.js",
+        "line": 1,
+        "column": 895,
+        "selfMs": 0,
+        "inclusiveMs": 113.43700000000001,
+        "nodeIds": [
+          57
+        ]
+      },
+      {
+        "functionName": "r",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 23561,
+        "selfMs": 23.866,
+        "inclusiveMs": 111.91000000000001,
+        "nodeIds": [
+          60
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 7,
+        "column": 10073,
+        "selfMs": 0,
+        "inclusiveMs": 111.91000000000001,
+        "nodeIds": [
+          59
+        ]
+      },
+      {
+        "functionName": "ku",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 114108,
+        "selfMs": 1.506,
+        "inclusiveMs": 106.079,
+        "nodeIds": [
+          50,
+          325
+        ]
+      },
+      {
+        "functionName": "Au",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 114564,
+        "selfMs": 2.575,
+        "inclusiveMs": 101.05499999999999,
+        "nodeIds": [
+          51
+        ]
+      },
+      {
+        "functionName": "(anonymous)",
+        "url": "http://127.0.0.1:4194/assets/tree-export-dialog-BDSrvure.js",
+        "line": 2,
+        "column": 23695,
+        "selfMs": 0,
+        "inclusiveMs": 88.04400000000003,
+        "nodeIds": [
+          66
+        ]
+      },
+      {
+        "functionName": "Lc",
+        "url": "http://127.0.0.1:4194/assets/main-CJQU9ZJ7.js",
+        "line": 9,
+        "column": 79647,
+        "selfMs": 6.102,
+        "inclusiveMs": 86.886,
+        "nodeIds": [
+          63,
+          285
+        ]
+      }
+    ]
+  },
+  "mappedFunctions": [
+    {
+      "meaning": "buildTreeEdges",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 5118,
+      "functionStart": "({family:e,user:t,mode:n,geometry:r,connections:i,visible:a,positions:o,occurrencePeople:s,peopleMap:c,highlighted:l,selectedEdge:u,canEdit:d,busy:f,extraVisible:p,preview:m,onEdge:h,onChoices:g,growthDelays:_}){let v=new Map(r?.routes||[]),y=r?.nodeSize?.width??220,b=r?.nodeSize?.height??84,x=p?[...o].filter(([e])=>s.has(e)).map(([,e])=>({left:e.x,",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 95,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "early": {
+        "selfMs": 100.61399999999999,
+        "inclusiveMs": 975.5120000000003,
+        "nodeIds": [
+          172,
+          549
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "family branch edge construction",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 7104,
+      "functionStart": "e=>{let t=e.relations.filter(e=>a.has(e.from)&&a.has(e.to)).map(e=>w.get(yn(e))).filter(e=>!!e);if(!t.length)return[];let n=t[0],r=t.some(e=>e.key===u),i=t.some(e=>Rc(l,e)),o=()=>t.length===1?h(n):g(t);return[{id:e.id,source:e.source,target:e.target,type:`relationship`,sourceHandle:e.route.sourceHandle,targetHandle:e.route.targetHandle,selected:r,cl",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 249,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "early": {
+        "selfMs": 202.27499999999995,
+        "inclusiveMs": 722.3289999999998,
+        "nodeIds": [
+          174,
+          552
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "branch connection key mapping",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 7168,
+      "functionStart": "e=>w.get(yn(e))).filter(e=>!!e);if(!t.length)return[];let n=t[0],r=t.some(e=>e.key===u),i=t.some(e=>Rc(l,e)),o=()=>t.length===1?h(n):g(t);return[{id:e.id,source:e.source,target:e.target,type:`relationship`,sourceHandle:e.route.sourceHandle,targetHandle:e.route.targetHandle,selected:r,className:`tree-grow-edge relationship-${n.type}`,data:{connection",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 255,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "early": {
+        "selfMs": 154.502,
+        "inclusiveMs": 206.35100000000006,
+        "nodeIds": [
+          175,
+          554
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "coveredRelations.includes filter",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 5661,
+      "functionStart": "e=>a.has(e.from)&&a.has(e.to)&&o.has(e.from)&&o.has(e.to)&&(!r?.branches||(r.coveredRelations?!r.coveredRelations.includes(Tn(e)):![`parent`,`spouse`].includes(e.type)))&&(p||[`parent`,`spouse`].includes(e.type))).map(n=>{let r=o.get(n.from),i=o.get(n.to),a=[`spouse`,`sworn_sibling`,`twin`].includes(n.type),s=v.get(Tn(n)),p=s&&![`parent`,`spouse`].i",
+      "source": "src/components/tree/tree-edge-adapter.ts",
+      "sourceLine": 140,
+      "sourceSha256": "9e7eb9815b59bf403a35613989cafec85b7216a6db507507b4e97468410eb357",
+      "early": {
+        "selfMs": 24.223,
+        "inclusiveMs": 24.223,
+        "nodeIds": [
+          286,
+          550
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "archiveConnections",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 2,
+      "column": 8197,
+      "functionStart": "(e){let t=new Map;function n(e){let n=yn(e);t.set(n,{...e,key:n})}for(let t of e.people){for(let e of t.parents)n({from:e,to:t.id,type:`parent`});for(let e of t.spouses){let[r,i]=[t.id,e].sort();n({from:r,to:i,type:`spouse`})}}for(let t of e.links||[])n(t);return[...t.values()]}function xn(e,t,n,r){let i=r?r.get(n.from):e.people.find(e=>e.id===n.fro",
+      "source": "src/domain/connections.ts",
+      "sourceLine": 28,
+      "sourceSha256": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+      "early": {
+        "selfMs": 198.48,
+        "inclusiveMs": 198.48,
+        "nodeIds": [
+          170,
+          547
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "buildTreeNodeModel",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 8658,
+      "functionStart": "({family:e,geometry:t,mode:n,visible:r,selected:i,collapsed:a,root:o,hidden:s,expanded:c,query:l,spotlight:u,spotlightOccurrences:d,growthDelays:f}){let p=new Map;for(let t of e.people)for(let e of t.parents)p.set(e,(p.get(e)||0)+1);let m=new Map(t?.mode===n?t.positions:[]),h=t?.mode===n?t.occurrences||e.people.map(e=>({id:e.id,personId:e.id,block:`",
+      "source": "src/components/tree/tree-node-model.ts",
+      "sourceLine": 46,
+      "sourceSha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "early": {
+        "selfMs": 102.20599999999999,
+        "inclusiveMs": 316.7669999999999,
+        "nodeIds": [
+          164,
+          536
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "node occurrence materialization",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 10221,
+      "functionStart": "e=>{let t=S.get(e.personId);return{id:e.id,type:`person`,position:m.get(e.id),width:C,height:w,handles:Vc(C,w),selected:i.includes(t.id),className:`tree-grow-node`,style:Os(f.get(t.id)||0),data:{person:t,household:y.has(e.id),occurrences:_.get(t.id)?.length||1,collapsed:a.has(t.id),familyFocus:!!o,anchor:t.id===o,hiddenRelatives:s.get(t.id)||0,expan",
+      "source": "src/components/tree/tree-node-model.ts",
+      "sourceLine": 178,
+      "sourceSha256": "27a86167ce59e0e601ecf9109ab5a2a9f13bd247295c1d84afcacc5813f1d400",
+      "early": {
+        "selfMs": 39.519999999999996,
+        "inclusiveMs": 134.299,
+        "nodeIds": [
+          487,
+          537
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "familyNeighbors",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 8,
+      "column": 2401,
+      "functionStart": "(e){let t=new Map(e.people.map(e=>[e.id,e])),n=new Map(e.people.map(e=>[e.id,new Set])),r=new Map,i=(e,r)=>{e!==r&&t.has(e)&&t.has(r)&&(n.get(e).add(r),n.get(r).add(e))};for(let t of e.people){for(let e of t.parents)i(e,t.id),r.has(e)||r.set(e,new Set),r.get(e).add(t.id);for(let e of t.spouses)i(t.id,e)}for(let t of e.links||[])i(t.from,t.to);return",
+      "source": "src/domain/family-neighborhood.ts",
+      "sourceLine": 6,
+      "sourceSha256": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+      "early": {
+        "selfMs": 77.30000000000001,
+        "inclusiveMs": 77.30000000000001,
+        "nodeIds": [
+          144,
+          517
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "parent visibility visit",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 8,
+      "column": 2797,
+      "functionStart": "(e,t,n,r){let i=e.people.get(t).parents;if(i.some(e=>n.has(e)))for(let e of i)r(e);for(let i of e.children.get(t)||[])if(n.has(i))for(let t of e.people.get(i).parents)r(t)}function ls(e,t){let n=new Set([...t].filter(t=>e.people.has(t))),r=[...n],i=t=>{e.people.has(t)&&!n.has(t)&&(n.add(t),r.push(t))};for(let t=0;t<r.length;t++)cs(e,r[t],n,i);return",
+      "source": "src/domain/family-neighborhood.ts",
+      "sourceLine": 28,
+      "sourceSha256": "f766c27a1afbbca3c6eb88f0a01043fec12defb3a735293ffcb476290cb94713",
+      "early": {
+        "selfMs": 65.972,
+        "inclusiveMs": 65.972,
+        "nodeIds": [
+          151,
+          524
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "kinshipLabelKey",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 8,
+      "column": 30060,
+      "functionStart": "(e,t,n,r,i=``){return JSON.stringify({day:r,readScope:i,people:e.map(({id:e,surname:t,name:n,patronymic:r,sex:i,parents:a,spouses:o,parentageComplete:s})=>({id:e,surname:t,name:n,patronymic:r,sex:i,parents:a,spouses:o,parentageComplete:s})),links:t.map(({id:e,from:t,to:n,type:r,note:i,twinKind:a})=>({id:e,from:t,to:n,type:r,note:i,twinKind:a})),unio",
+      "source": "src/components/tree/person-relation-label.ts",
+      "sourceLine": 25,
+      "sourceSha256": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+      "early": {
+        "selfMs": 57.413999999999994,
+        "inclusiveMs": 57.413999999999994,
+        "nodeIds": [
+          168,
+          545
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "crossingPaths",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 14,
+      "column": 3373,
+      "functionStart": "(e){let t=Pc(e);if(t===Mc)return Nc;let n=[],r=[];for(let t of e){let e=t.route?.points||[];for(let i=1;i<e.length;i++){let a=e[i-1],o=e[i];if(a.x===o.x&&a.y===o.y)continue;let s={edge:t.id,group:t.group,index:i,a,b:o};a.y===o.y?n.push(s):a.x===o.x&&r.push(s)}}r.sort((e,t)=>e.a.x-t.a.x);let i=new Map;for(let e of n){let t=Math.min(e.a.x,e.b.x)+9,n=M",
+      "source": "src/domain/route-crossings.ts",
+      "sourceLine": 31,
+      "sourceSha256": "c6e90424706224aa53af156cb548b85bfb34b5bef7f5c5e85ccb6c3aff460ad0",
+      "early": {
+        "selfMs": 66.386,
+        "inclusiveMs": 79.081,
+        "nodeIds": [
+          182,
+          560
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "treeConnectionGrowthStyle",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 8,
+      "column": 14202,
+      "functionStart": "(e,t){let n=t.get(e.from)||0,r=t.get(e.to)||0,{revealMs:i,edgeMs:a}=Ts(t);if(e.type===`parent`){let o=t.parentEdgeStarts?.get(e.to),s=Math.max(n+i,o??r-a),c=Math.max(a,r-s);return As(s,s+c,c)}if(e.type===`spouse`){let e=Math.min(n,r)+i,t=Math.max(a,Math.max(n,r)-e);return As(e,e+t,t)}let o=Math.max(n,r)+i;return As(o,o+a)}function Ms(e,t){let{nodeMs",
+      "source": "src/components/tree/tree-growth.ts",
+      "sourceLine": 232,
+      "sourceSha256": "eaab547e7884b5af76a965de0211edda459ec889c9a00ac86d6bba6d6e8b8c95",
+      "early": {
+        "selfMs": 99.679,
+        "inclusiveMs": 99.679,
+        "nodeIds": [
+          176,
+          553
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "connectionKey",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 2,
+      "column": 8053,
+      "functionStart": "(e){return e.id?`extra:${e.id}`:encodeURIComponent(JSON.stringify([e.type,...e.type===`spouse`?[e.from,e.to].sort():[e.from,e.to]]))}function bn(e){let t=new Map;function n(e){let n=yn(e);t.set(n,{...e,key:n})}for(let t of e.people){for(let e of t.parents)n({from:e,to:t.id,type:`parent`});for(let e of t.spouses){let[r,i]=[t.id,e].sort();n({from:r,to",
+      "source": "src/domain/connections.ts",
+      "sourceLine": 16,
+      "sourceSha256": "9481de3d28bdab47c3c30a0be89cda25139a31cc872cbc56e88462894e99dc31",
+      "early": {
+        "selfMs": 51.849000000000004,
+        "inclusiveMs": 51.849000000000004,
+        "nodeIds": [
+          492,
+          555
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "fullName",
+      "bundle": "dates-H3myDfrx.js",
+      "bundleSha256": "faa38dd05b266aece13853f7aa204bf96b0a3109e88044662b66feb23b299c29",
+      "line": 1,
+      "column": 1048,
+      "functionStart": "e=>[e.surname,e.name,e.patronymic].map(e=>e.trim()).filter(Boolean).join(` `);function o(e){let[t=``,n=``,...r]=e.trim().split(/\\s+/);return{surname:t,name:n,patronymic:r.join(` `)}}var s=e=>!!(e.deceased||e.death||e.deathPlace?.trim()),c=e=>e.birth?`${i(e.birth)} — ${e.death?i(e.death):s(e)?`?`:`н. в.`}`:e.death?`† ${i(e.death)}`:s(e)?`†`:``;functi",
+      "source": "src/domain/dates.ts",
+      "sourceLine": 58,
+      "sourceSha256": "7081700045b5eedd7e8d69d6c42168e50c9a20ea052afc5ee7c3a71516306827",
+      "early": {
+        "selfMs": 121.69300000000004,
+        "inclusiveMs": 176.57399999999998,
+        "nodeIds": [
+          490,
+          178,
+          86,
+          542,
+          557
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "GPU semantic update",
+      "bundle": "gpu-scene-Nh-pPsId.js",
+      "bundleSha256": "ee931c38a4b6d879deacefd5fe4c63edef23195dba4ab1de8d100d780751d9a3",
+      "line": 57,
+      "column": 4444,
+      "functionStart": "(e,n,r,o){let s=e=>(u.dataset.gpuUpdateReason=e,!1);if(w||J.length!==e.length||f.length!==n.length||p.length!==r.length)return s(`membership`);for(let t=0;t<J.length;t++){let n=J[t],r=e[t],c=V.get(n.id);if(n.id!==r.id||n.position.x!==r.position.x||n.position.y!==r.position.y||n.width!==r.width||n.height!==r.height||c[0]!==a(r.data.person)||c[1]!==i(",
+      "source": "src/components/tree/gpu-scene.ts",
+      "sourceLine": 501,
+      "sourceSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "early": {
+        "selfMs": 83.16199999999996,
+        "inclusiveMs": 168.27100000000004,
+        "nodeIds": [
+          85
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "GPU draw",
+      "bundle": "gpu-scene-Nh-pPsId.js",
+      "bundleSha256": "ee931c38a4b6d879deacefd5fe4c63edef23195dba4ab1de8d100d780751d9a3",
+      "line": 57,
+      "column": 5873,
+      "functionStart": "(e,t,n){if(w||t<=0||n<=0)return;let r=Math.min(window.devicePixelRatio||1,2,Math.sqrt(25e5/(t*n)),te/Math.max(t,n)),i=Math.max(1,Math.round(t*r)),a=Math.max(1,Math.round(n*r));(u.width!==i||u.height!==a)&&(u.width=i,u.height=a),_.viewport(0,0,i,a),_.clearColor(0,0,0,0),_.clear(_.COLOR_BUFFER_BIT),[D,O].forEach((r,i)=>{_.useProgram(r),_.uniform3f(re[",
+      "source": "src/components/tree/gpu-scene.ts",
+      "sourceLine": 587,
+      "sourceSha256": "37a1da6e1aed192d10d3fd24ce22bbacb017b067bf90229399376ca81935a957",
+      "early": {
+        "selfMs": 21.967000000000002,
+        "inclusiveMs": 58.64499999999999,
+        "nodeIds": [
+          88
+        ]
+      },
+      "settled": {
+        "selfMs": 26.905000000000005,
+        "inclusiveMs": 59.949,
+        "nodeIds": [
+          62
+        ]
+      }
+    },
+    {
+      "meaning": "React Flow setNodes",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 7,
+      "column": 51808,
+      "functionStart": "e=>{let{nodeLookup:t,parentLookup:n,nodeOrigin:r,nodeExtent:i,elevateNodesOnSelect:a,fitViewQueued:o,zIndexMode:s,nodesSelectionActive:c}=h(),{nodesInitialized:l,hasSelectedNodes:u}=fe(e,t,n,{nodeOrigin:r,nodeExtent:i,elevateNodesOnSelect:a,checkEquality:!0,zIndexMode:s}),d=c&&u;o&&l?(g(),m({nodes:e,nodesInitialized:l,fitViewQueued:!1,fitViewOptions",
+      "source": "node_modules/@xyflow/react/dist/esm/index.mjs",
+      "sourceLine": 3428,
+      "sourceSha256": "f3dbde0ca152903c841ca95fe40360fea3f4cee9589adcfd01d3a9bc08b4c955",
+      "early": {
+        "selfMs": 93.86199999999997,
+        "inclusiveMs": 228.693,
+        "nodeIds": [
+          60,
+          656,
+          436
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "React Flow adoptUserNodes",
+      "bundle": "esm-Cb3lGruy.js",
+      "bundleSha256": "162fd0025fd67ada8948cbf70cb52cfc0532f55df1324b1857f5e08eb5617a24",
+      "line": 1,
+      "column": 21386,
+      "functionStart": "(e,t,n,r={}){let i=lt(ct,r),a={i:0},o=new Map(t),s=i?.elevateNodesOnSelect&&!ft(i.zIndexMode)?at:0,c=e.length>0,l=!1;t.clear(),n.clear();for(let u of e){let e=o.get(u.id);if(i.checkEquality&&u===e?.internals.userNode)t.set(u.id,e);else{let n=U(L(u,i.nodeOrigin),q(u.extent)?u.extent:i.nodeExtent,J(u));e={...i.defaults,...u,measured:{width:u.measured?",
+      "source": "node_modules/@xyflow/system/dist/esm/index.mjs",
+      "sourceLine": 1671,
+      "sourceSha256": "564b53001cc042fbeec586de724df62d218105bd350a70e206d0c6b232ed76f8",
+      "early": {
+        "selfMs": 108.07500000000002,
+        "inclusiveMs": 124.74499999999999,
+        "nodeIds": [
+          61,
+          657,
+          437
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "roundedRoute",
+      "bundle": "tree-export-dialog-BDSrvure.js",
+      "bundleSha256": "6357b40f0dab5938d21d2c17762243ff91fb5ffae23de41cc136c6fc65844f5a",
+      "line": 2,
+      "column": 11137,
+      "functionStart": "(e,t=7){if(e.length<2)return{path:``,x:0,y:0};let n=`M ${e[0].x} ${e[0].y}`,r=0,i=e.slice(1).map((t,n)=>Math.hypot(t.x-e[n].x,t.y-e[n].y)),a=i.reduce((e,t)=>e+t,0)/2,o=e[0];for(let s=1;s<e.length;s++){let c=e[s-1],l=e[s],u=e[s+1],d=i[s-1];if(r<=a&&r+d>=a&&d){let e=(a-r)/d;o={x:c.x+(l.x-c.x)*e,y:c.y+(l.y-c.y)*e}}if(r+=d,!u){n+=` L ${l.x} ${l.y}`;cont",
+      "source": "src/domain/edge-routing.ts",
+      "sourceLine": 36,
+      "sourceSha256": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+      "early": {
+        "selfMs": 70.334,
+        "inclusiveMs": 75.40899999999999,
+        "nodeIds": [
+          471,
+          87
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    },
+    {
+      "meaning": "archiveCoverage",
+      "bundle": "archive-summary-K-TzhHyd.js",
+      "bundleSha256": "0d8ffc65102e585fcca75a355920829f32fdb97d724ee3a2404e92c7c24ee6f6",
+      "line": 1,
+      "column": 58,
+      "functionStart": "(t){let n=new Set(t.map(e=>e.id)),r=new Map,i=new Map,a=new Map,o=[],s,c,l=0;for(let l of t){let t=[...new Set(l.parents.filter(e=>n.has(e)))];r.set(l.id,t.length),a.set(l.id,1),t.length||o.push(l.id);for(let e of t){let t=i.get(e)||[];t.push(l.id),i.set(e,t)}for(let t of[l.birth,l.death])if(e(t)){let e=Number(t.slice(0,4));s=Math.min(s??e,e),c=Math",
+      "source": "src/domain/archive-coverage.ts",
+      "sourceLine": 5,
+      "sourceSha256": "240432cec90314339a78b043dd75bff18443741a0f4eb205b0a1f0fb46d1cba6",
+      "early": {
+        "selfMs": 84.945,
+        "inclusiveMs": 84.945,
+        "nodeIds": [
+          197,
+          571
+        ]
+      },
+      "settled": {
+        "selfMs": 0,
+        "inclusiveMs": 0,
+        "nodeIds": []
+      }
+    }
+  ],
+  "observations": [
+    {
+      "phase": "early-pan",
+      "frames": {
+        "count": 132,
+        "p95Ms": 350.2999999999993,
+        "maxMs": 817.2000000000007,
+        "over50Ms": 13
+      },
+      "longTasks": 14,
+      "maxLongTaskMs": 420,
+      "programCreationsBefore": 2,
+      "programCreationsAfter": 2,
+      "portraitUploadsBefore": 26,
+      "portraitUploadsAfter": 26,
+      "mediaRequestsBefore": 721,
+      "mediaRequestsAfter": 721,
+      "zoom": 0.55
+    },
+    {
+      "phase": "settled-pan",
+      "frames": {
+        "count": 124,
+        "p95Ms": 16.799999999999272,
+        "maxMs": 1050.7999999999993,
+        "over50Ms": 1
+      },
+      "longTasks": 0,
+      "maxLongTaskMs": 0,
+      "programCreationsBefore": 2,
+      "programCreationsAfter": 2,
+      "portraitUploadsBefore": 26,
+      "portraitUploadsAfter": 26,
+      "mediaRequestsBefore": 721,
+      "mediaRequestsAfter": 721,
+      "zoom": 0.55
+    }
+  ],
+  "conclusion": {
+    "principal": "Hydration causes full React model reconstruction during early pan. buildTreeEdges975.512ms is the largest mapped application preparation stage; branch materialization722.329ms is nested. Node model316.767ms, archiveConnections198.480ms and GPU.update168.271ms add independent preparation work.",
+    "coveredRelations": "The exact callback containing coveredRelations.includes accounts24.223ms inclusive/self, only2.48% of buildTreeEdges and0.42% of profiled early interval. Not dominant in this run. V8 may inline helper work into parent but this callback is separately sampled.",
+    "reactFlow": "setNodes228.693ms inclusive contains adoptUserNodes124.745ms; smaller than edge reconstruction. Hydration replaces all node objects, causing adoption work even with stable programs.",
+    "settled": "Corresponding model build/update frames absent after archive-details settle. GPU.draw59.949ms inclusive;14early long tasks ->0settled. Profile windows differ in duration and include idle/program samples; use independent unprofiled measurement for latency claims.",
+    "nextFix": "First preserve model/edge computation for metadata-only hydration using a precise scene semantic key scoped to archive/access. Keep fresh family/person records for inspector/edit/export. Alternatively factor geometry-only positions/occurrence maps/households/hit-index from person binding, then retain edge templates/path strings by ordered relation semantics. Do not use layoutCacheKey alone for labels/permissions/source ownership or cache stale closures.",
+    "caveats": "Nested inclusive timings must not be added. Native driver/GPU asynchronous work absent; these samples do not prove zero GL cost. Profiles not FPS benchmarks. No scope/mount profile attribution to pan."
+  }
+}

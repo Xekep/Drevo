@@ -110,8 +110,10 @@ test("догруженные сведения доступны в открыто
     const search = page.getByRole("combobox", { name: /Найти человека/ });
     await search.fill("Пётр Москва");
     const results = page.getByRole("listbox", { name: /Найденные люди/ });
-    await expect(results.getByRole("option")).toHaveCount(1);
-    await results.getByRole("option").click();
+    // Name matching also finds patronymics such as Петрович/Петровна.
+    const result = results.getByRole("option", { name: /^Тестов Пётр Иванович / });
+    await expect(result).toBeVisible();
+    await result.click();
     await dock.getByRole("tab", { name: "О человеке", exact: true }).click();
     await expect(dock.getByText(biography, { exact: true })).toBeVisible();
     await expect(
