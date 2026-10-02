@@ -350,6 +350,143 @@ export async function verifyEmailAccounts(
     ["email", "yandex"],
   );
 
+  // A second link request must not send a confirmation that can never work
+  // after another address has just been attached to this account.
+  await client.query(
+    "INSERT INTO accounts(id,name,created_at) VALUES('email-link-race','Email link race',$1)",
+    [new Date().toISOString()],
+  );
+  const linkRaceSession = sessionTokenHash(newSessionToken());
+  await client.query(
+    "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'email-link-race',$2)",
+    [linkRaceSession, Date.now() + 60 * 60 * 1000],
+  );
+  await client.query(
+    "INSERT INTO account_oauth_session_proofs(token_hash,provider,authenticated_at) VALUES($1,'yandex',$2)",
+    [linkRaceSession, Date.now()],
+  );
+  const linkRaceSent: string[] = [];
+  const raceBase = emailCredentials(
+    db,
+    async (_to, _subject, text) => {
+      linkRaceSent.push(text);
+    },
+    "https://mydrevo.org",
+  );
+  await raceBase.requestLink(
+    "email-link-race",
+    { email: "first-link@example.org", password: "first strong password" },
+    linkRaceSession,
+  );
+  const firstLinkToken = linkRaceSent[0]?.match(
+    /#email-link=([A-Za-z0-9_-]{43})/,
+  )?.[1];
+  assert.ok(firstLinkToken);
+  let releaseVerifiedRow!: () => void;
+  let verifiedRowLocked!: () => void;
+  const holdVerifiedRow = new Promise<void>((resolve) => {
+    releaseVerifiedRow = resolve;
+  });
+  const verifiedRow = new Promise<void>((resolve) => {
+    verifiedRowLocked = resolve;
+  });
+  const heldDb: StoreDatabase = {
+    ...db,
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
+      db.postgresTransaction!(async (transaction) => {
+        const guarded = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
+            return (async (sql: string, params?: unknown[]) => {
+              const result = await target.query(sql, params);
+              if (
+                sql.includes(
+                  "FROM pending_email_links WHERE account_id=$1 AND token_hash=$2 FOR UPDATE",
+                )
+              ) {
+                verifiedRowLocked();
+                await holdVerifiedRow;
+              }
+              return result;
+            }) as pg.PoolClient["query"];
+          },
+        });
+        return work(guarded);
+      }),
+  };
+  const completingFirstLink = emailCredentials(
+    heldDb,
+    async () => {},
+    "https://mydrevo.org",
+  ).verifyLink("email-link-race", firstLinkToken, linkRaceSession);
+  await verifiedRow;
+  let secondCheckedCredential!: () => void;
+  const secondCredentialCheck = new Promise<void>((resolve) => {
+    secondCheckedCredential = resolve;
+  });
+  const observingDb: StoreDatabase = {
+    ...db,
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
+      db.postgresTransaction!(async (transaction) => {
+        const guarded = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
+            return (async (sql: string, params?: unknown[]) => {
+              const result = await target.query(sql, params);
+              if (
+                sql.includes(
+                  "SELECT 1 FROM account_email_credentials WHERE account_id=$1",
+                )
+              )
+                secondCheckedCredential();
+              return result;
+            }) as pg.PoolClient["query"];
+          },
+        });
+        return work(guarded);
+      }),
+  };
+  const secondLink = emailCredentials(
+    observingDb,
+    async (_to, _subject, text) => {
+      linkRaceSent.push(text);
+    },
+    "https://mydrevo.org",
+  ).requestLink(
+    "email-link-race",
+    { email: "second-link@example.org", password: "second strong password" },
+    linkRaceSession,
+  );
+  try {
+    await Promise.race([
+      secondCredentialCheck,
+      new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  } finally {
+    releaseVerifiedRow();
+  }
+  await completingFirstLink;
+  await assert.rejects(secondLink, InvalidEmailCredential);
+  assert.equal(
+    linkRaceSent.length,
+    1,
+    "a stale second email link must not be sent",
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT count(*)::int AS n FROM pending_email_links WHERE account_id='email-link-race'",
+      )
+    ).rows[0].n,
+    0,
+  );
+
   let raceClock = Date.now();
   const raceAccounts = emailCredentials(
     db,
