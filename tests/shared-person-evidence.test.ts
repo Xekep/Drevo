@@ -59,11 +59,23 @@ const share: ShareLink = { id: "share", title: "Фрагмент", anchorId: "vi
 
 test("public projection retains exact person evidence while hiding documents and other people", () => {
   const original = family(true);
+  Object.assign(original.people[0].birthDateClaim!, { archiveOnly: "private-claim" });
+  Object.assign(original.people[0].factAlternatives![0], { archiveOnly: "private-person-alternative" });
+  Object.assign(original.people[0].events![0].alternatives![0],
+    { archiveOnly: "private-event-alternative" });
+  Object.assign(original.people[0].birthDateClaim!.sources[0],
+    { archiveOnly: "private-source", url: "https://example.org/record", note: "page 3",
+      repository: { name: "Archive", callNumber: "A-1", website: "https://example.org",
+        note: "catalogue", linkNote: "record", archiveOnly: "private-repository" } });
   const projected = sharedFamily(original, share, "token");
   assert.deepEqual(projected.people.map((item) => item.id), ["visible"]);
   assert.equal(projected.description, "");
   assert.equal(projected.people[0].birthDateClaim?.confidence, "confirmed");
   assert.equal(projected.people[0].birthDateClaim?.sources[0].title, "Дата рождения");
+  assert.equal(projected.people[0].birthDateClaim?.sources[0].url, "https://example.org/record");
+  assert.equal(projected.people[0].birthDateClaim?.sources[0].note, "page 3");
+  assert.equal(projected.people[0].birthDateClaim?.sources[0].repository?.name, "Archive");
+  assert.equal(projected.people[0].birthDateClaim?.sources[0].repository?.linkNote, "record");
   assert.equal(projected.people[0].factAlternatives?.[0].value, "1881");
   assert.equal(projected.people[0].factAlternatives?.[0].sources[0].title, "Другая дата");
   assert.equal(projected.people[0].events?.[0].dateClaim?.sources[0].title, "Дата переезда");
@@ -75,6 +87,9 @@ test("public projection retains exact person evidence while hiding documents and
     "maidenNameClaim", "occupationClaim"] as const)
     assert.equal(projected.people[0][key]?.sources.length, 1);
   assert.ok(!JSON.stringify(projected).includes(documentId));
+  for (const marker of ["private-claim", "private-person-alternative",
+    "private-event-alternative", "private-source", "private-repository"])
+    assert.ok(!JSON.stringify(projected).includes(marker), marker);
   assert.ok(!JSON.stringify(projected).includes("Скрыт"));
   assert.equal(original.people[0].factAlternatives?.[0].sources[0].documentId, documentId);
   assert.equal(original.people[0].events?.[0].alternatives?.[0].sources[0].documentId, documentId);

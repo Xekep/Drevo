@@ -1,12 +1,22 @@
 import type { Family, PersonValueClaim, Source } from "./types.ts";
-const publicSource = (source: Source): Source => {
-  const copy = { ...source };
-  delete copy.documentId;
-  delete copy.documentPage;
-  return copy;
-};
+const publicSource = (source: Source): Source => ({
+  title: source.title,
+  type: source.type,
+  reference: source.reference,
+  ...(source.catalogId !== undefined ? { catalogId: source.catalogId } : {}),
+  ...(source.url !== undefined ? { url: source.url } : {}),
+  ...(source.note !== undefined ? { note: source.note } : {}),
+  ...(source.repository ? { repository: {
+    name: source.repository.name,
+    callNumber: source.repository.callNumber,
+    website: source.repository.website,
+    note: source.repository.note,
+    linkNote: source.repository.linkNote,
+  } } : {}),
+});
 const publicClaim = (claim?: PersonValueClaim): PersonValueClaim | undefined =>
-  claim && { ...claim, sources: claim.sources.map(publicSource) };
+  claim && { value: claim.value, sources: claim.sources.map(publicSource),
+    ...(claim.confidence !== undefined ? { confidence: claim.confidence } : {}) };
 export type ShareLink = {
   id: string;
   title: string;
@@ -54,7 +64,9 @@ export function sharedFamily(
         occupation: p.occupation,
         occupationClaim: publicClaim(p.occupationClaim),
         factAlternatives: p.factAlternatives?.map((alternative) => ({
-          ...alternative, sources: alternative.sources.map(publicSource),
+          id: alternative.id, field: alternative.field, value: alternative.value,
+          sources: alternative.sources.map(publicSource),
+          ...(alternative.confidence !== undefined ? { confidence: alternative.confidence } : {}),
         })),
         biography: p.biography,
         awards: p.awards,
@@ -67,8 +79,11 @@ export function sharedFamily(
           placeClaim: event.placeClaim && { value: event.placeClaim.value,
             ...(event.placeClaim.confidence ? { confidence: event.placeClaim.confidence } : {}),
             sources: event.placeClaim.sources.map(publicSource) },
-          alternatives: event.alternatives?.map((alternative) => ({ ...alternative,
-            sources: alternative.sources.map(publicSource) })),
+          alternatives: event.alternatives?.map((alternative) => ({
+            id: alternative.id, field: alternative.field, value: alternative.value,
+            sources: alternative.sources.map(publicSource),
+            ...(alternative.confidence !== undefined ? { confidence: alternative.confidence } : {}),
+          })),
         })),
         sources: p.sources.map(publicSource),
         photo: p.photo?.startsWith("/media/")
