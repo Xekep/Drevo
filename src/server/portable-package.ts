@@ -11,6 +11,7 @@ import type { DocumentAnnotation } from "../shared/document-annotations.ts";
 import type { DocumentEventLink, DocumentPage } from "../shared/document-links.ts";
 import { documentFileTypeFromName } from "../shared/document-file.ts";
 import { validCommentFiles, type CommentAttachmentFile } from "../shared/person-discussion.ts";
+import { allCitations } from "./source-catalog-store.ts";
 
 const MAX_ARCHIVE_JSON_BYTES = 128 * 1024 * 1024;
 export const MAX_PORTABLE_ENTRIES = 50_000;
@@ -63,6 +64,20 @@ export type PortableManifest = {
   entries: Array<{ path: string; size: number; sha256: string }>;
 };
 
+/** Inline citations may point at a local original without a photo or
+ * document record. Keep the URL suffix while moving its original to a new
+ * archive's media directory. External URLs remain ordinary links.
+ */
+export function portableCitationMedia(url: string) {
+  if (!url.startsWith("/media/")) return null;
+  const path = url.slice(7);
+  const suffixAt = path.search(/[?#]/);
+  const name = suffixAt < 0 ? path : path.slice(0, suffixAt);
+  if (!originalName.test(name))
+    throw new PortablePackageError("Некорректный путь оригинала источника");
+  return { name, suffix: suffixAt < 0 ? "" : path.slice(suffixAt) };
+}
+
 function fileNames(snapshot: PortableSnapshot) {
   const names = new Set<string>();
   for (const person of snapshot.family.people) {
@@ -92,6 +107,10 @@ function fileNames(snapshot: PortableSnapshot) {
     if (comment.attachments && !validCommentFiles(comment.attachments))
       throw new PortablePackageError("Некорректные вложения обсуждения");
     for (const file of comment.attachments || []) names.add(`discussion-files/${file.id}`);
+  }
+  for (const citation of allCitations(snapshot.family)) {
+    const local = citation.url && portableCitationMedia(citation.url);
+    if (local) names.add(local.name);
   }
   return [...names].sort();
 }
