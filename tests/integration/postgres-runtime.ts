@@ -2692,8 +2692,11 @@ try {
           previewImage: imagePreviews(join(dirname(source), "previews")),
           researchCatalog: researchCatalogStore(app!.archive.db),
           publicOrigin: process.env.PUBLIC_ORIGIN,
-          fetcher: adaptLegacyAiFake(async () =>
-            Response.json({ choices: [{ message: { role: "assistant", content: answer } }] })),
+          fetcher: adaptLegacyAiFake(async (url) => {
+            if (String(url).endsWith("/models"))
+              return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
+            return Response.json({ choices: [{ message: { role: "assistant", content: answer } }] });
+          }),
           beforeAnswerDelivery: async () => { notify(); await deliveryGate; },
         });
         const server = createServer((req, res) => {
@@ -2710,6 +2713,9 @@ try {
           assert.equal(stream.status, 200);
           await Promise.race([waitingToDeliver,
             new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI answer did not reach delivery gate")), 15_000))]);
+          const committed = await aiChatStore(app!.archive.db).messages(chat.id, proposalMember);
+          assert.equal(committed?.filter((message) => message.role === "assistant" && message.content === answer).length,
+            1, "the fake answer was committed before cancellation");
           const stopped = await fetch(`http://127.0.0.1:${port}/api/ai/chats/${chat.id}/stop`, {
             method: "POST", headers: proposalHeaders,
           });
