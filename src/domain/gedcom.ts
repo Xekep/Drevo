@@ -834,6 +834,17 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         .join("\n\n");
       warnings.add("NAME.NICK сохранено текстом в биографии; структура прозвища в имени не перенесена.");
     }
+    const nameSuffixes = names.flatMap((name) =>
+      children(name, "NSFX")
+        .map((suffix) => suffix.value.trim())
+        .filter(Boolean),
+    );
+    if (nameSuffixes.length) {
+      p.biography = [p.biography, `Суффиксы имени из GEDCOM: ${nameSuffixes.join("; ")}`]
+        .filter(Boolean)
+        .join("\n\n");
+      warnings.add("NAME.NSFX сохранено текстом в биографии; структура суффикса имени не перенесена.");
+    }
     for (const c of n.children)
       if (
         ![
