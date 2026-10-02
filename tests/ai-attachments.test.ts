@@ -12,7 +12,7 @@ import {
 } from "../src/shared/research-attachments.ts";
 import { startServer } from "../src/server/index.ts";
 import { aiChatStore, AiChatLimitError } from "../src/server/ai-chats.ts";
-import { selectChatAttachments } from "../src/server/ai-attachment-context.ts";
+import { researchAttachmentContext, selectChatAttachments } from "../src/server/ai-attachment-context.ts";
 import {
   aiSettingsStore,
   defaultAiRoleProfile,
@@ -397,4 +397,39 @@ test("library selection accepts only files from this conversation", () => {
   );
   assert.throws(() => selectChatAttachments(files, { fileIds: "file-one" }));
   assert.throws(() => selectChatAttachments(files, { path: "/etc/passwd" }));
+});
+
+test("revoked AI access during vision model lookup prevents image submission", async () => {
+  const image = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: "white" },
+  }).png().toBuffer();
+  let releaseModel!: () => void;
+  let modelStarted!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseModel = resolve; });
+  const started = new Promise<void>((resolve) => { modelStarted = resolve; });
+  let allowed = true;
+  let submissions = 0;
+  const options = {
+    files: [{ name: "photo.png", type: "image/png", size: image.length, url: "/file" }],
+    chatId: "chat",
+    store: { read: async () => image },
+    runtime: { capabilities: { photoAnalysis: true } },
+    vision: {
+      modelUri: async () => { modelStarted(); await gate; return "gpt://folder/vision"; },
+      analyze: async () => {
+        submissions++;
+        return { content: "image content", inputTokens: 1, outputTokens: 1 };
+      },
+    },
+    metrics: { models: new Map() },
+    signal: new AbortController().signal,
+    question: "What is in the image?",
+    assertAiAccess: async () => { if (!allowed) throw new Error("AI access revoked"); },
+  } as unknown as Parameters<typeof researchAttachmentContext>[0];
+  const reading = researchAttachmentContext(options);
+  await started;
+  allowed = false;
+  releaseModel();
+  await assert.rejects(reading, /AI access revoked/);
+  assert.equal(submissions, 0);
 });
