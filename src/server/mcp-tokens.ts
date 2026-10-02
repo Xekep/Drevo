@@ -74,6 +74,23 @@ export function mcpTokenStore(db: StoreDatabase) {
          AND (t.expires_at IS NULL OR t.expires_at>?)
          AND (t.bound_user_id IS NULL OR u.approved=1)`,
   );
+  const lockedLookup = db.prepare(
+    `SELECT ${tokenColumns}
+       FROM mcp_tokens t
+       LEFT JOIN users u ON u.id=t.bound_user_id
+       WHERE t.token_hash=? AND t.revoked_at IS NULL
+         AND (t.expires_at IS NULL OR t.expires_at>?)
+         AND (t.bound_user_id IS NULL OR u.approved=1)`,
+    `SELECT ${tokenColumns}
+       FROM mcp_tokens t
+       LEFT JOIN runtime_users u ON u.id=t.bound_user_id
+       LEFT JOIN deleted_account_tombstones d ON d.id=t.created_by
+       WHERE t.token_hash=? AND t.revoked_at IS NULL
+         AND d.id IS NULL
+         AND (t.expires_at IS NULL OR t.expires_at>?)
+         AND (t.bound_user_id IS NULL OR u.approved=1)
+       FOR SHARE OF t`,
+  );
 
   const boundUser = (row: Record<string, unknown>): ArchiveUser | undefined =>
     row.bound_user_id
@@ -202,13 +219,20 @@ export function mcpTokenStore(db: StoreDatabase) {
       if (!result.changes)
         throw new Error("MCP-токен не найден или уже отозван");
     },
-    async authenticate(authorization?: string): Promise<McpTokenGrant | null> {
+    async authenticate(
+      authorization?: string,
+      lockRow = false,
+    ): Promise<McpTokenGrant | null> {
       const match = /^Bearer\s+(.+)$/i.exec(authorization || "");
       if (!match || !match[1].startsWith("drevo_mcp_")) return null;
-      const row = await lookup.get(hash(match[1]), Date.now());
+      if (lockRow && db.kind === "postgres" && !db.inTransaction())
+        throw new Error("Locked MCP authentication requires a transaction");
+      const row = await (lockRow ? lockedLookup : lookup).get(
+        hash(match[1]), Date.now());
       if (!row) return null;
       const now = Date.now();
-      await touch.run(now, String(row.id), now - 60 * 60 * 1000);
+      if (!lockRow)
+        await touch.run(now, String(row.id), now - 60 * 60 * 1000);
       return {
         id: String(row.id),
         createdBy: String(row.created_by),
