@@ -557,6 +557,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         "src/components/tree/layout-cache.ts",
         "src/components/tree/layout-storage.ts",
         "src/domain/union-layout.ts",
+        "src/domain/index.ts",
         "src/components/tree/person-relation-label.ts",
         ...readdirSync("src/domain").filter((file) => /^kinship.*\.ts$/.test(file))
           .map((file) => `src/domain/${file}`),
