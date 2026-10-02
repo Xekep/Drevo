@@ -113,12 +113,17 @@ export function archiveQueryHttp({
     const visitor = await auth.currentUser(req),
       access = await visibility.read();
     const memberCanRead = visitor?.approved === true;
-    const startRevision = Number((await revisionQuery.get())?.revision);
+    const scoped = isScopedUser(visitor);
+    const startRevision = scoped
+      ? Number((await revisionQuery.get())?.revision)
+      : null;
     const canDeliver = async () => await archive.db.transaction(async () => {
       const current = await auth.currentUser(req);
       const settings = await visibility.read();
-      const latestRevision = Number((await revisionQuery.get())?.revision);
-      return Number.isSafeInteger(startRevision) && latestRevision === startRevision &&
+      const revisionCurrent = !scoped ||
+        (Number.isSafeInteger(startRevision) &&
+          Number((await revisionQuery.get())?.revision) === startRevision);
+      return revisionCurrent &&
         current?.id === visitor?.id &&
         current?.role === visitor?.role &&
         current?.approved === visitor?.approved &&

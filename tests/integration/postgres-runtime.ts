@@ -979,8 +979,8 @@ try {
     "reader",
     false,
   );
-  // A concurrent commit can leave the page internally consistent but stale.
-  // The delivery guard must withhold it and require a new page token.
+  // A page must retain the revision from its REPEATABLE READ snapshot even
+  // when another connection commits between checking the token and reading rows.
   const concurrent = await openArchive(source, family);
   const pageBefore = await app.archive.read();
   const overview = await fetch(base + "/api/family?projection=overview").then(
@@ -1003,19 +1003,14 @@ try {
       "/api/family?projection=page&collection=people&offset=0&token=" +
       encodeURIComponent(overview.pageToken);
     const response = await fetch(path);
-    assert.equal(response.status, 409);
-    assert.equal((await response.json()).items, undefined,
-      "the stale page must not contain prepared people");
+    assert.equal(response.status, 200);
+    const page = await response.json();
+    assert.equal(
+      page.items[0].biography,
+      pageBefore.family.people[0].biography,
+    );
+    assert.equal(page.pageToken, overview.pageToken);
     assert.equal((await fetch(path)).status, 409);
-    const freshOverview = await fetch(base + "/api/family?projection=overview")
-      .then((result) => result.json());
-    assert.notEqual(freshOverview.pageToken, overview.pageToken);
-    const freshPath = base + "/api/family?projection=page&collection=people&offset=0&token=" +
-      encodeURIComponent(freshOverview.pageToken);
-    const freshPage = await fetch(freshPath);
-    assert.equal(freshPage.status, 200);
-    assert.equal((await freshPage.json()).items[0].biography,
-      "Committed while the page was loading");
     assert.equal(
       (await app.archive.read()).family.people[0].biography,
       "Committed while the page was loading",
