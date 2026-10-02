@@ -52,6 +52,8 @@ import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
+import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
+import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
 import { publicShareAccess } from "../../src/server/public-share-access.ts";
 import { treePreferencesStore } from "../../src/server/tree-preferences.ts";
@@ -2090,6 +2092,50 @@ try {
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
     .run("vk:42");
+  const guardedTokens = adminMcpHttp({
+    auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+      process.env.PUBLIC_ORIGIN),
+    db: app.archive.db,
+    tokens: mcpTokenStore(app.archive.db),
+    usage: mcpUsageStore(app.archive.db),
+    publicOrigin: process.env.PUBLIC_ORIGIN,
+  });
+  let notifyTokenBody!: () => void;
+  let releaseTokenBody!: () => void;
+  const tokenBodyStarted = new Promise<void>((resolve) => { notifyTokenBody = resolve; });
+  const tokenBodyGate = new Promise<void>((resolve) => { releaseTokenBody = resolve; });
+  const tokenServer = createServer((req, res) => {
+    const originalIterator = req[Symbol.asyncIterator].bind(req);
+    req[Symbol.asyncIterator] = async function* () {
+      notifyTokenBody();
+      await tokenBodyGate;
+      yield* originalIterator();
+    };
+    void guardedTokens(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+      .catch((error) => { res.destroy(error); });
+  });
+  await new Promise<void>((resolve) => tokenServer.listen(0, "127.0.0.1", resolve));
+  try {
+    const tokenCount = Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
+      .get())!.n);
+    const tokenPort = (tokenServer.address() as { port: number }).port;
+    const issuing = fetch(`http://127.0.0.1:${tokenPort}/api/mcp/tokens`, {
+      method: "POST", headers: ownerHeaders,
+      body: JSON.stringify({ name: "downgraded-request", scopes: ["tree:read"] }),
+    });
+    await Promise.race([tokenBodyStarted,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP token body was not read")), 15_000))]);
+    await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+    releaseTokenBody();
+    assert.equal((await issuing).status, 403,
+      "a downgraded admin cannot issue an MCP token after the request body was received");
+    assert.equal(Number((await app.archive.db.prepare("", "SELECT count(*) AS n FROM mcp_tokens")
+      .get())!.n), tokenCount, "the rejected request creates no credential");
+  } finally {
+    releaseTokenBody();
+    await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+    await new Promise<void>((resolve) => tokenServer.close(() => resolve()));
+  }
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=false WHERE account_id=?")
     .run("owner");
