@@ -61,6 +61,7 @@ export function aiResearchHttp({
   beforeChatDelivery,
   beforeAnswerDelivery,
   beforeGeneratedFileInstall,
+  beforeAttachmentCommit,
   renderPdf,
 }: {
   archive: Awaited<ReturnType<typeof openArchive>>;
@@ -77,6 +78,7 @@ export function aiResearchHttp({
   beforeChatDelivery?: () => Promise<void>;
   beforeAnswerDelivery?: () => Promise<void>;
   beforeGeneratedFileInstall?: () => Promise<void>;
+  beforeAttachmentCommit?: () => Promise<void>;
   renderPdf?: typeof researchPdf;
 }) {
   const chats = aiChatStore(archive.db);
@@ -668,6 +670,7 @@ export function aiResearchHttp({
             "Не удалось сохранить вложения. Попробуйте позже или обратитесь к администратору.",
         });
       }
+      if (savedAttachments.length) await beforeAttachmentCommit?.();
       await chats.append(
         chat.id,
         "user",
