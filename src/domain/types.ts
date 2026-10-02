@@ -49,6 +49,8 @@ export type PersonEvent = {
   endDate?: string;
   /** Исходная приблизительная дата; не превращается в точный год. */
   dateText?: string;
+  /** Citations for one normalized event date, not a range or approximate phrase. */
+  dateClaim?: { value: string; sources: Source[] };
   place?: string;
   /** Citations for this exact event-place wording, separate from event-wide evidence. */
   placeClaim?: { value: string; sources: Source[] };

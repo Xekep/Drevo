@@ -6340,6 +6340,7 @@ try {
   placePerson.occupationClaim = { value: "Столяр", sources: [sourceCitation(placeSource)] };
   placePerson.maidenNameClaim = { value: "Иванова", sources: [sourceCitation(placeSource)] };
   placePerson.events = [...(placePerson.events || []), { id: "pg-event-place", type: "move",
+    date: "1901", dateClaim: { value: "1901", sources: [sourceCitation(placeSource)] },
     place: "Москва", placeClaim: { value: "Москва", sources: [sourceCitation(placeSource)] } }];
   const placeToken = newSessionToken();
   await app.archive.db.prepare("", "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES(?,'owner',?)")
@@ -6359,6 +6360,8 @@ try {
   assert.equal(placeStored.family.people[0].maidenNameClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].events?.find((event) => event.id === "pg-event-place")
     ?.placeClaim?.sources[0].catalogId, placeSource.id);
+  assert.equal(placeStored.family.people[0].events?.find((event) => event.id === "pg-event-place")
+    ?.dateClaim?.sources[0].catalogId, placeSource.id);
   assert.equal(placeStored.family.people[0].birthPlaceClaim?.confidence, "confirmed");
   assert.equal(placeStored.family.people[0].deathPlaceClaim?.confidence, "conflicting");
   assert.equal((await app.archive.db.prepare("", "SELECT data->'birthPlaceClaim'->>'value' AS place FROM people WHERE id=?")
@@ -6369,6 +6372,8 @@ try {
     .get(placePerson.id))?.surname, "Иванова", "PostgreSQL stores the exact linked birth surname");
   assert.equal((await app.archive.db.prepare("", "SELECT event.value->'placeClaim'->>'value' AS place FROM people, jsonb_array_elements(data->'events') AS event(value) WHERE id=? AND event.value->>'id'='pg-event-place'")
     .get(placePerson.id))?.place, "Москва", "PostgreSQL stores the exact linked event place");
+  assert.equal((await app.archive.db.prepare("", "SELECT event.value->'dateClaim'->>'value' AS date FROM people, jsonb_array_elements(data->'events') AS event(value) WHERE id=? AND event.value->>'id'='pg-event-place'")
+    .get(placePerson.id))?.date, "1901", "PostgreSQL stores the exact linked event date");
   assert.equal(await sourceCatalogStore(otherApp.archive.db).get(placeSource.id), null,
     "another PostgreSQL archive cannot read the source");
   const foreignBefore = await otherApp.archive.read();
@@ -6388,6 +6393,10 @@ try {
   foreignEvent.people[0].events = [{ id: "foreign-event", type: "move", place: "Москва",
     placeClaim: { value: "Москва", sources: [sourceCitation(placeSource)] } }];
   await assert.rejects(otherApp.archive.write(foreignEvent, foreignBefore.revision), /Источник отсутствует/);
+  const foreignEventDate = structuredClone(foreignBefore.family);
+  foreignEventDate.people[0].events = [{ id: "foreign-event-date", type: "move", date: "1901",
+    dateClaim: { value: "1901", sources: [sourceCitation(placeSource)] } }];
+  await assert.rejects(otherApp.archive.write(foreignEventDate, foreignBefore.revision), /Источник отсутствует/);
   const changedPlace = structuredClone(placeStored.family);
   changedPlace.people[0].birthPlace = "Другая Тула";
   assert.equal((await postPlaceChanges(placeStored.family, changedPlace, placeStored.revision)).status, 400);
@@ -6396,6 +6405,10 @@ try {
   changedEventPlace.people[0].events!.find((event) => event.id === "pg-event-place")!.place = "Другая Москва";
   assert.equal((await postPlaceChanges(placeStored.family, changedEventPlace, placeStored.revision)).status, 400);
   assert.equal((await app.archive.read()).family.people[0].events?.find((event) => event.id === "pg-event-place")?.place, "Москва");
+  const changedEventDate = structuredClone(placeStored.family);
+  changedEventDate.people[0].events!.find((event) => event.id === "pg-event-place")!.date = "1902";
+  assert.equal((await postPlaceChanges(placeStored.family, changedEventDate, placeStored.revision)).status, 400);
+  assert.equal((await app.archive.read()).family.people[0].events?.find((event) => event.id === "pg-event-place")?.date, "1901");
   const changedOccupation = structuredClone(placeStored.family);
   changedOccupation.people[0].occupation = "Учитель";
   assert.equal((await postPlaceChanges(placeStored.family, changedOccupation, placeStored.revision)).status, 400);

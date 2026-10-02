@@ -76,7 +76,8 @@ export function personCitations(person: Person): Source[] {
     ...(person.occupationClaim?.sources || []),
     ...(person.maidenNameClaim?.sources || []),
     ...(person.events || []).flatMap((event) => [
-      ...(event.sources || []), ...(event.placeClaim?.sources || []),
+      ...(event.sources || []), ...(event.dateClaim?.sources || []),
+      ...(event.placeClaim?.sources || []),
     ]),
   ];
 }
@@ -144,6 +145,7 @@ export async function hydrateCatalogCitations(db: StoreDatabase, family: Family)
       person.maidenNameClaim.sources = person.maidenNameClaim.sources.map(resolve);
     for (const event of person.events || []) {
       if (event.sources) event.sources = event.sources.map(resolve);
+      if (event.dateClaim) event.dateClaim.sources = event.dateClaim.sources.map(resolve);
       if (event.placeClaim) event.placeClaim.sources = event.placeClaim.sources.map(resolve);
     }
   }

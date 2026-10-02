@@ -1,5 +1,5 @@
 import type { PersonEvent } from "./types.ts";
-import { validDate, dateBound, safeUrl } from "./dates.ts";
+import { validDate, dateBound, safeUrl, normalizeDateInput } from "./dates.ts";
 import { validSourceRepository } from "./source-repository.ts";
 export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   residence: "Проживание",
@@ -13,6 +13,11 @@ export const EVENT_NAMES: Record<PersonEvent["type"], string> = {
   burial: "Захоронение",
   other: "Другое событие",
 };
+/** Only one parsed date can carry evidence for its precise current wording. */
+export function claimableEventDate(event: Pick<PersonEvent, "date" | "endDate" | "dateText">): string | undefined {
+  if (!event.date || event.endDate || event.dateText) return undefined;
+  try { return normalizeDateInput(event.date); } catch { return undefined; }
+}
 export function validateEvents(events: unknown): void {
   if (events === undefined) return;
   if (!Array.isArray(events) || events.length > 200)

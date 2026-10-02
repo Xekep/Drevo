@@ -83,6 +83,11 @@ test("private package preview and one-time import preserve people, media, docume
           generation: 1,
           column: 0,
           sources: [],
+          events: [{ id: "import-date", type: "move", date: "1901",
+            dateClaim: { value: "1901", sources: [{ title: "Record",
+              type: "архив", reference: "л. 1", catalogId: "imported-date-source",
+              documentId: "12d254eb-5c3f-4b56-95e9-9c2788b17a64", documentPage: 1,
+            }] } }],
           photo: "/media/portrait.png",
           createdBy: "remote",
         },
@@ -118,6 +123,10 @@ test("private package preview and one-time import preserve people, media, docume
         personIds: ["p1"],
       },
     ],
+    sources: [{ id: "imported-date-source", title: "Record", type: "архив",
+      author: "", institution: "", archive: "", fond: "", opis: "", delo: "",
+      sheet: "", reference: "л. 1", url: "", accessedAt: "", description: "",
+      documentIds: ["12d254eb-5c3f-4b56-95e9-9c2788b17a64"] }],
     comments: [
       {
         id: 1,
@@ -313,9 +322,17 @@ test("private package preview and one-time import preserve people, media, docume
       image,
     );
     const document = await archive.db
-      .prepare("SELECT file_name AS name,annotations FROM documents")
+      .prepare("SELECT id,file_name AS name,annotations FROM documents")
       .get();
     assert.ok(document);
+    const importedCitation = result.family.people[0].events?.[0].dateClaim?.sources[0];
+    assert.equal(result.family.people[0].events?.[0].dateClaim?.value, "1901");
+    assert.equal(importedCitation?.documentId, document.id);
+    assert.equal(importedCitation?.documentId,
+      "12d254eb-5c3f-4b56-95e9-9c2788b17a64",
+      "portable import keeps stable IDs in an empty archive");
+    assert.equal(importedCitation?.documentPage, 1);
+    assert.equal(importedCitation?.catalogId, "imported-date-source");
     assert.equal(JSON.parse(String(document.annotations))[0].authorId, "");
     assert.equal(JSON.parse(String(document.annotations))[0].authorName, "Historian");
     assert.deepEqual(

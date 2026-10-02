@@ -262,6 +262,10 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     ] as const)
       citedPerson[field] = { value, sources: [{ catalogId: catalog.source.id,
         title: catalog.source.title, type: "", reference: "", documentId: id, documentPage: 2 }] };
+    citedPerson.events![0].dateClaim = { value: "1887", sources: [{
+      catalogId: catalog.source.id, title: catalog.source.title, type: "",
+      reference: "", documentId: id, documentPage: 2,
+    }] };
     citedSnapshot.family.unions = [{ id: "anna-boris", participants: ["anna", "boris"],
       type: "marriage", sources: [{ title: "Семейная запись", type: "archive", reference: "", documentId: id }],
       formation: { date: "1970", sources: [{ title: "Запись о браке", type: "archive", reference: "", documentId: id }] },
@@ -271,7 +275,8 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
     const sourced = (await (await fetch(`${base}/api/documents/${id}`)).json()) as {
       sources: Array<{ title: string; page: number }>;
     };
-    assert.deepEqual(sourced.sources.map((source) => [source.title, source.page]), [["Дело 104", 2]]);
+    assert.deepEqual(sourced.sources.map((source) => [source.title, source.page]),
+      [["Дело 104", 2], ["Метрическая книга", 2]]);
     const file = await withoutFullRead(() => fetch(`${base}/api/documents/${id}/file`));
     assert.equal(file.status, 200);
     assert.equal(file.headers.get("content-type"), "application/pdf");
@@ -427,6 +432,11 @@ test("uploaded PDFs are listed by person, served privately and survive a full ba
       assert.equal(claim?.sources[0].documentId, after.items[0].id);
       assert.equal(claim?.sources[0].documentPage, 2);
     }
+    const restoredEventDate = restoredPerson.events?.find((event) => event.id === "anna-move")?.dateClaim;
+    assert.equal(restoredEventDate?.value, "1887");
+    assert.equal(restoredEventDate?.sources[0].catalogId, catalog.source.id);
+    assert.equal(restoredEventDate?.sources[0].documentId, after.items[0].id);
+    assert.equal(restoredEventDate?.sources[0].documentPage, 2);
     for (const sources of [restoredFamily.unions?.[0].sources,
       restoredFamily.unions?.[0].formation?.sources,
       restoredFamily.unions?.[0].divorce?.sources])

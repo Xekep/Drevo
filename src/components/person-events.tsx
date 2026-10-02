@@ -3,7 +3,7 @@ import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import type { PersonEvent, Source } from "../domain/types";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
-import { EVENT_NAMES } from "../domain/person-events";
+import { claimableEventDate, EVENT_NAMES } from "../domain/person-events";
 import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
@@ -103,6 +103,22 @@ export function EventsEditor({
                 }
               />
             </label>
+            <details className="event-date-claim">
+              <summary>Источники даты события{event.dateClaim?.sources.length
+                ? ` · ${event.dateClaim.sources.length}` : ""}</summary>
+              {event.dateClaim && event.dateClaim.value !== claimableEventDate(event)
+                ? <div>
+                    <p role="alert">Дата изменилась. Источники относятся к прежней дате {dateInputLabel(event.dateClaim.value)}.</p>
+                    <button type="button" onClick={() => update(event.id, { dateClaim: undefined })}>
+                      Снять связи с прежней датой
+                    </button>
+                  </div>
+                : claimableEventDate(event)
+                  ? <CitationSourcesEditor sources={event.dateClaim?.sources || []}
+                      onChange={(sources) => update(event.id, { dateClaim: sources.length
+                        ? { value: claimableEventDate(event)!, sources } : undefined })} isAdmin={isAdmin} />
+                  : <p>Укажите одну дату без периода или приблизительной формулировки, чтобы привязать свидетельство.</p>}
+            </details>
             <label>
               Место
               <input
@@ -387,6 +403,10 @@ export function PersonEvents({
               )}
               {!!event.sources?.length && <EventSourceList label="Источники"
                 sources={event.sources} canLoadDocuments={canLoadDocuments} />}
+              {!!event.dateClaim?.sources.length && event.dateClaim.value === claimableEventDate(event) && (
+                <EventSourceList label="Источники даты" sources={event.dateClaim.sources}
+                  canLoadDocuments={canLoadDocuments} />
+              )}
               {!!event.placeClaim?.sources.length && event.placeClaim.value === event.place && (
                 <EventSourceList label="Источники места" sources={event.placeClaim.sources}
                   canLoadDocuments={canLoadDocuments} />
