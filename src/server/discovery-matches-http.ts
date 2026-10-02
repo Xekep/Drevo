@@ -315,7 +315,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
               AND i.source_person_id=? AND i.target_archive_id=d.archive_id
               AND i.target_person_id=d.person_id)
           AND NOT EXISTS (
-            SELECT 1 FROM discovery_match_requests m WHERE m.status='linked' AND (
+            SELECT 1 FROM discovery_match_requests m WHERE m.status IN ('pending','linked') AND (
               (m.left_archive_id=? AND m.left_person_id=?
                 AND m.right_archive_id=d.archive_id AND m.right_person_id=d.person_id)
               OR (m.right_archive_id=? AND m.right_person_id=?

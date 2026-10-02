@@ -6351,6 +6351,13 @@ try {
   assert.equal(rejectedRequest.status, 200);
   const rejectedId = (await rejectedRequest.json()).match.id as string;
   const rejectedPath = `/api/discovery/matches/${rejectedId}`;
+  assert.ok(!(await fetch(securedBase +
+    "/api/discovery/matches/candidates?sourcePersonId=person-a", { headers: manualHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-b"),
+  "the initiator must not see an already pending request as a new suggestion");
+  assert.ok(!(await fetch(otherBase + recipientCandidates, { headers: recipientHeaders })
+    .then((response) => response.json())).candidates.some((person: { id: string }) => person.id === "person-a"),
+  "the recipient must not see an already pending request as a new suggestion");
   assert.equal((await fetch(otherBase + rejectedPath, {
     method: "PATCH", headers: recipientHeaders, body: JSON.stringify({ decision: "reject" }),
   })).status, 200);
