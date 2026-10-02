@@ -631,12 +631,18 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
     const nameNode = names[0],
       nameText = nameNode?.value || "",
       slash = /^(.*?)\/(.*?)\/(.*)$/.exec(nameText);
+    const surnameParts = nameNode
+      ? children(nameNode, "SURN").map((part) => part.value.trim()).filter(Boolean)
+      : [];
+    const slashSurname = slash?.[2].trim() || "";
     const given =
       (nameNode && value(nameNode, "GIVN")) ||
       slash?.[1].trim() ||
       nameText.trim();
     const surname =
-      (nameNode && value(nameNode, "SURN")) || slash?.[2].trim() || "";
+      surnameParts.length > 1 && slashSurname
+        ? slashSurname
+        : surnameParts[0] || slashSurname;
     if (!given || !surname)
       warnings.add(
         "Для людей без имени или фамилии показаны явные подписи «Имя неизвестно» / «Фамилия неизвестна». Уточните их после импорта.",
@@ -822,6 +828,19 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       } catch {
         throw new Error("Повреждены дополнительные сведения Drevo в GEDCOM");
       }
+    }
+    if (surnameParts.length > 1) {
+      p.surname = slashSurname || surnameParts[0];
+      p.biography = [
+        p.biography,
+        [
+          `Исходная строка NAME: ${nameText}`,
+          ...surnameParts.map((part, index) => `NAME.SURN ${index + 1}: ${part}`),
+        ].join("\n"),
+      ].filter(Boolean).join("\n\n");
+      warnings.add(`NAME.SURN содержит несколько значений: отображаемая фамилия взята из ${
+        slashSurname ? "строки NAME" : "первого SURN"
+      }; значения сохранены текстом в биографии, структура отдельных частей фамилии не перенесена.`);
     }
     const nicknames = names.flatMap((name) =>
       children(name, "NICK")
