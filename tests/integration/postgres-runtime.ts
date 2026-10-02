@@ -4256,6 +4256,12 @@ try {
     410,
     "a selected archive token cannot open the original archive",
   );
+  assert.equal(
+    (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`, {
+      method: "POST",
+    })).status,
+    405,
+  );
   let releaseShareDelivery!: () => void;
   let shareDeliveryLocked!: () => void;
   let releaseAbortedDelivery!: () => void;
@@ -4330,12 +4336,6 @@ try {
     releaseShareDelivery();
     await new Promise<void>((resolve) => lockedShareServer.close(() => resolve()));
   }
-  assert.equal(
-    (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`, {
-      method: "POST",
-    })).status,
-    405,
-  );
   assert.equal(
     (await fetch(securedBase + `/a/other-archive/api/shared/${selectedShareToken}`)).status,
     410,
