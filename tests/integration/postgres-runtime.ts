@@ -2607,13 +2607,19 @@ try {
     const selectedAdmin = await fetch(securedBase + "/a/other-archive/api/session", {
       headers: archiveAdminHeaders,
     }).then((response) => response.json());
+    assert.equal(selectedAdmin.user.id, "vk:42");
     assert.equal(selectedAdmin.user.role, "admin");
+    assert.equal(selectedAdmin.user.approved, true);
     assert.equal(selectedAdmin.user.platformAdmin, false);
-    const crossArchiveAdmin = (await (await userStore(app.archive.db)).get("vk:42"))!;
+    const crossArchiveAdmin = selectedAdmin.user;
     await client.query(`UPDATE archive_memberships SET role='reader'
       WHERE archive_id='runtime-test' AND user_id='vk:42'`);
     try {
       await app.archive.db.transaction(async () => {
+        const scope = await app!.archive.db.prepare("", `SELECT
+          current_setting('drevo.archive_id',true) AS archive_id`).get();
+        assert.equal(scope?.archive_id, "runtime-test",
+          "the actor from other-archive is checked in runtime-test's own connection");
         await app!.archive.db.prepare("", `SELECT set_config('drevo.account_id',?,true)`)
           .get("vk:42");
         const memberships = await app!.archive.db.prepare("", `SELECT archive_id,role
