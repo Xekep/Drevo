@@ -259,13 +259,29 @@ for (const scenario of ["idle", "mouse", "large"] as const) {
         details: state.details,
       };
     });
-    // Correctness must not depend on the CI machine's FPS. Require repeated
-    // observations of distinct already-drawn edges, not an arbitrary frame rate.
-    expect(result.frames).toBeGreaterThan(1);
-    // The sixth fixture edge is an additional relation, hidden by default.
-    expect(result.rechecked).toBeGreaterThanOrEqual(
-      scenario === "large" ? 10 : 5,
-    );
+    // The SVG intro and GPU handoff are two renderers. A busy browser may
+    // show many SVG arrows in one sampled frame, then hand them to GPU before
+    // a second frame. Verify that handoff instead of treating it as a loss.
+    if (scenario === "large") {
+      await expect.poll(async () => {
+        const renderer = await canvas.getAttribute("data-renderer");
+        const fallback = await canvas.getAttribute("data-gpu-fallback");
+        return renderer === "webgl2" ? "webgl2" : fallback ? "fallback" : "pending";
+      }, { timeout: 5000 }).not.toBe("pending");
+    }
+    if (scenario === "large" && await canvas.getAttribute("data-renderer") === "webgl2") {
+      const gpu = page.locator(".tree-gpu-scene");
+      await expect(gpu).toBeVisible();
+      await expect(gpu).toHaveAttribute("data-gpu-draws", /[1-9][0-9]*/);
+      const sceneEdges = Number(await gpu.getAttribute("data-scene-edges"));
+      expect(sceneEdges).toBeGreaterThanOrEqual(result.seen);
+      expect(sceneEdges).toBeGreaterThanOrEqual(10);
+    } else {
+      // React Flow still renders the arrows: retain repeated SVG observations.
+      expect(result.frames).toBeGreaterThan(1);
+      expect(result.rechecked).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
+    }
+    // The sixth small-fixture edge is an additional relation, hidden by default.
     expect(result.seen).toBeGreaterThanOrEqual(scenario === "large" ? 10 : 5);
     expect(result.lost, JSON.stringify(result.details)).toEqual([]);
     if (scenario !== "idle") {
