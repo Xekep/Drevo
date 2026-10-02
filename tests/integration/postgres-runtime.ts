@@ -54,6 +54,8 @@ import { accountCapacity } from "../../src/server/account-capacity.ts";
 import { accountDataExport } from "../../src/server/account-data-export.ts";
 import { accountSelfDeletion } from "../../src/server/account-self-deletion.ts";
 import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-http.ts";
+import { archiveOwnerTransferHttp } from "../../src/server/archive-owner-transfer-http.ts";
+import { archiveDeletionHttp } from "../../src/server/archive-deletion-http.ts";
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
@@ -7196,6 +7198,68 @@ try {
       ...transferOwnerHeaders,
       Cookie: `drevo_session=${newOwnerToken}`,
     };
+    // Simulate a completed logout after both HTTP auth lookups but before the
+    // archive mutation starts. The transaction must reject the stale snapshot.
+    const requestAfterLifecycleLogout = async (
+      kind: "transfer" | "archive",
+      accountId: string,
+      path: string,
+      method: "POST" | "DELETE",
+      body: string | undefined,
+    ) => {
+      const token = newSessionToken();
+      const hash = sessionTokenHash(token);
+      await client.query(
+        "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,$2,$3)",
+        [hash, accountId, Date.now() + 600_000],
+      );
+      const lifecycleDb = await openPostgresDatabase(personalArchiveId, source);
+      const lifecycleAuth = await createAuth(
+        await userStore(lifecycleDb), lifecycleDb, process.env.PUBLIC_ORIGIN,
+      );
+      let revoked = false;
+      const authAfterLogout = {
+        ...lifecycleAuth,
+        accountSession: async (req: Parameters<typeof lifecycleAuth.accountSession>[0]) => {
+          const session = await lifecycleAuth.accountSession(req);
+          if (session?.tokenHash === hash) {
+            await client.query("DELETE FROM account_sessions WHERE token_hash=$1", [hash]);
+            revoked = true;
+          }
+          return session;
+        },
+      };
+      const handler = kind === "transfer"
+        ? archiveOwnerTransferHttp(lifecycleDb, authAfterLogout, process.env.PUBLIC_ORIGIN)
+        : archiveDeletionHttp(lifecycleDb, authAfterLogout, selectedDbPath,
+            personalArchiveId, process.env.PUBLIC_ORIGIN);
+      const lifecycleServer = createServer((req, res) => {
+        void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+          .catch((error) => { res.destroy(error); });
+      });
+      await new Promise<void>((resolve) => lifecycleServer.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (lifecycleServer.address() as { port: number }).port;
+        const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+          method,
+          headers: {
+            Cookie: `drevo_session=${token}`,
+            Origin: process.env.PUBLIC_ORIGIN!,
+            "Content-Type": "application/json",
+            ...(kind === "transfer"
+              ? { "X-Drevo-Owner-Transfer": "1" }
+              : { "X-Drevo-Archive-Deletion": "1" }),
+          },
+          body,
+        });
+        assert.equal(revoked, true, "the session was revoked after HTTP auth");
+        return response.status;
+      } finally {
+        lifecycleServer.closeAllConnections();
+        await new Promise<void>((resolve) => lifecycleServer.close(() => resolve()));
+        await lifecycleDb.close();
+      }
+    };
     const candidates = await fetch(
       oauthBase + ownerTransferPath + "/candidates",
       {
@@ -7268,6 +7332,14 @@ try {
       "DELETE FROM documents WHERE archive_id=$1 AND id='transfer-quota-check'",
       [personalArchiveId],
     );
+    assert.equal(await requestAfterLifecycleLogout(
+      "transfer", newAccountSession.user.id, "/api/account/owner-transfer", "POST",
+      JSON.stringify({ targetId: "transfer-target" }),
+    ), 401, "a revoked owner cannot propose transfer");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM archive_owner_transfers WHERE archive_id=$1",
+      [personalArchiveId],
+    )).rows[0].n, 0);
     const proposedOwner = await fetch(oauthBase + ownerTransferPath, {
       method: "POST",
       headers: transferOwnerHeaders,
@@ -7312,6 +7384,21 @@ try {
       headers: transferTargetHeaders,
     }).then((response) => response.json());
     assert.ok(incomingTransfer.incoming?.fromName);
+    assert.equal(await requestAfterLifecycleLogout(
+      "transfer", "transfer-target", "/api/account/owner-transfer/accept", "POST",
+      undefined,
+    ), 401, "a revoked recipient cannot accept transfer");
+    assert.equal(await requestAfterLifecycleLogout(
+      "transfer", newAccountSession.user.id, "/api/account/owner-transfer", "DELETE",
+      undefined,
+    ), 401, "a revoked owner cannot cancel transfer");
+    assert.equal((await client.query(
+      "SELECT user_id FROM archive_owners WHERE archive_id=$1", [personalArchiveId],
+    )).rows[0]?.user_id, newAccountSession.user.id);
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM archive_owner_transfers WHERE archive_id=$1",
+      [personalArchiveId],
+    )).rows[0].n, 1, "the pending consent survives both revoked requests");
     const acceptedOwner = await fetch(
       oauthBase + ownerTransferPath + "/accept",
       {
@@ -7387,6 +7474,14 @@ try {
       headers: deletionHeaders,
       body: JSON.stringify({ title: deletionPlan.title, removeCollaborators: false }),
     })).status, 409);
+    assert.equal(await requestAfterLifecycleLogout(
+      "archive", "transfer-target", "/api/account/archive-deletion", "DELETE",
+      JSON.stringify({ title: deletionPlan.title, removeCollaborators: true }),
+    ), 401, "a revoked owner cannot delete the archive");
+    assert.equal((await client.query(
+      "SELECT count(*)::int AS n FROM archives WHERE id=$1", [personalArchiveId],
+    )).rows[0].n, 1);
+    assert.equal(existsSync(join(dirname(source), "archives", personalArchiveId)), true);
     const deletedArchive = await fetch(oauthBase + deletionPath, {
       method: "DELETE",
       headers: deletionHeaders,
