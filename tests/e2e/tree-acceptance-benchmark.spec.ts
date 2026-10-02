@@ -61,12 +61,18 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
       ageMs: Date.now() - state.startedAt,
       status: state.status,
       failure: request.failure()?.errorText || null,
+      timing: request.timing(),
     }));
   const precedingDocumentRequests: ReturnType<typeof describePending>[] = [];
-  const reloadDocument = async () => {
-    // Navigation retires this document. A late/missing cancellation event from
-    // it must not participate in the new document's network-idle assertion.
-    // Keep the retired requests as evidence rather than silently losing them.
+  await session.send("Page.enable");
+  let loader = (await session.send("Page.getFrameTree")).frameTree.frame
+    .loaderId;
+  session.on("Page.frameNavigated", ({ frame }) => {
+    if (frame.parentId || frame.loaderId === loader) return;
+    loader = frame.loaderId;
+    // Retire at the actual document commit. Clearing before page.reload leaves
+    // a window in which the old image queue is incorrectly stamped as new.
+    // Page.frameNavigated excludes same-document history/profile navigation.
     const retiring = describePending();
     precedingDocumentRequests.push(retiring);
     if (retiring.length)
@@ -76,8 +82,8 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     pending.clear();
     pendingMedia = 0;
     mediaDocument++;
-    await page.reload();
-  };
+  });
+  const reloadDocument = () => page.reload();
   page.on("request", (request) => {
     if (!new URL(request.url()).pathname.startsWith("/media/")) return;
     mediaRequests++;
@@ -113,6 +119,7 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         pendingMedia,
         pending: describePending(),
         precedingDocumentRequests,
+        timeOrigin: await page.evaluate(() => performance.timeOrigin),
       };
       console.log(
         "tree-acceptance media idle failure " + JSON.stringify(diagnostics),
@@ -154,7 +161,10 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
         labelBytes: Number(canvas?.dataset.gpuLabelBytes || 0),
         labelCpuBytes: Number(canvas?.dataset.gpuLabelCpuBytes || 0),
         buildReason: canvas?.dataset.gpuBuildReason,
-        gpuRenderer: debug && gl ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
+        gpuRenderer:
+          debug && gl
+            ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL))
+            : null,
         labelLod: Number(canvas?.dataset.gpuLabelLod ?? -1),
         dom: document.querySelectorAll("*").length,
         mountedCards: document.querySelectorAll(".react-flow__node-person")
@@ -190,17 +200,24 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   const fullReady = async () => {
     try {
       await expect(page.locator(".tree-canvas")).toHaveAttribute(
-      "data-layout-ready",
-      "true",
-      { timeout: 180_000 },
-    );
+        "data-layout-ready",
+        "true",
+        { timeout: 180_000 },
+      );
     } catch (error) {
-      console.log("tree-acceptance startup-diagnostic " + JSON.stringify({
-        errors,
-        probe: await readTreeAcceptanceProbe(page),
-        html: await page.locator("main").evaluate((element) => element.outerHTML.slice(0, 3000)),
-      }));
-      await page.screenshot({ path: testInfo.outputPath("startup-failure.png") });
+      console.log(
+        "tree-acceptance startup-diagnostic " +
+          JSON.stringify({
+            errors,
+            probe: await readTreeAcceptanceProbe(page),
+            html: await page
+              .locator("main")
+              .evaluate((element) => element.outerHTML.slice(0, 3000)),
+          }),
+      );
+      await page.screenshot({
+        path: testInfo.outputPath("startup-failure.png"),
+      });
       throw error;
     }
     await expect
@@ -310,16 +327,20 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
     [0.6, 2],
     [0.1, 0],
   ] as const) {
-    const increasing = (await zoom()) < target;
-    for (let step = 0; step < 24; step++) {
-      const current = await zoom();
-      if (increasing ? current >= target : current <= target) break;
-      await page
-        .getByRole("button", {
-          name: increasing ? "Увеличить" : "Уменьшить",
-          exact: true,
-        })
-        .click();
+    if (isMobile) {
+      await pinchTo(page, session, target, await zoom());
+    } else {
+      const increasing = (await zoom()) < target;
+      for (let step = 0; step < 24; step++) {
+        const current = await zoom();
+        if (increasing ? current >= target : current <= target) break;
+        await page
+          .getByRole("button", {
+            name: increasing ? "Увеличить" : "Уменьшить",
+            exact: true,
+          })
+          .click({ timeout: 10_000 });
+      }
     }
     await expect(page.locator(".tree-gpu-scene")).toHaveAttribute(
       "data-gpu-label-lod",
@@ -548,6 +569,38 @@ test("cold tree, persistent reload and scope cycles retain a bounded GPU scene",
   await page.screenshot({ path: testInfo.outputPath("tree-acceptance.png") });
   await session.detach();
 });
+
+async function pinchTo(
+  page: Page,
+  session: CDPSession,
+  target: number,
+  current: number,
+) {
+  const box = (await page.locator(".react-flow__pane").boundingBox())!;
+  const x = Math.round(box.x + box.width / 2),
+    y = Math.round(box.y + box.height * 0.55);
+  const ratio = target / current;
+  const start = ratio > 1 ? 16 : 100;
+  const touches = (distance: number) => [
+    { x: x - distance, y, id: 1 },
+    { x: x + distance, y, id: 2 },
+  ];
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: touches(start),
+  });
+  for (let step = 1; step <= 30; step++) {
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: touches(start * (1 + ((ratio - 1) * step) / 30)),
+    });
+    await page.waitForTimeout(16);
+  }
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+}
 
 async function moveCamera(
   page: Page,

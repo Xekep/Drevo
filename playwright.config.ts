@@ -15,7 +15,7 @@ export default defineConfig({
       ? {
           launchOptions: {
             executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
-            ...(["gl", "d3d11"].includes(process.env.DREVO_E2E_ANGLE || "")
+            ...(["gl", "d3d11", "vulkan"].includes(process.env.DREVO_E2E_ANGLE || "")
               ? { args: [`--use-angle=${process.env.DREVO_E2E_ANGLE}`] }
               : {}),
           },
