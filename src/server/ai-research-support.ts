@@ -2,6 +2,7 @@ import type { ResearchAnswerReference as AnswerReference } from "../domain/resea
 import type { IncomingMessage } from "node:http";
 import type { ArchiveUser } from "../domain/access.ts";
 import { fullName } from "../domain/dates.ts";
+import { PEOPLE_FILTER_SCHEMA } from "../domain/research-people-filter.ts";
 import type { Family } from "../domain/types.ts";
 import { type ResearchGraph } from "./research-pdf.ts";
 
@@ -185,7 +186,7 @@ export function resourceMarkdown(resource: {
 export const CONTROL_VIEW_TOOL = {
   name: "control_archive_view",
   description:
-    "Управлять интерфейсом только по явной просьбе пользователя. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из проверенных personIds; hide_review_people временно скрывает на древе карточки с ручным признаком needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
+    "Управлять интерфейсом только по явной просьбе пользователя. filter_by_criteria применяет условия ко всему доступному древу на сервере, включая выбор или исключение по возрасту смерти; не перечисляй ID и не запрашивай страницы list_people. mode=exclude сохраняет всех, кроме совпавших: живых и людей с неизвестным возрастом смерти тоже. Команда фильтра завершается готовым подтверждением приложения; выполняй её после нужного анализа. focus_people перемещает камеру; filter_surname показывает фамильную группу после get_surname_group; filter_people строит временное древо из отдельных проверенных personIds; hide_review_people скрывает карточки needsReview. open_person и open_photo открывают карточки; zoom_in и zoom_out меняют масштаб.",
   inputSchema: {
     type: "object",
     properties: {
@@ -195,6 +196,7 @@ export const CONTROL_VIEW_TOOL = {
           "focus_people",
           "filter_surname",
           "filter_people",
+          "filter_by_criteria",
           "hide_review_people",
           "open_person",
           "open_photo",
@@ -212,6 +214,8 @@ export const CONTROL_VIEW_TOOL = {
       photoId: { type: "string", minLength: 1, maxLength: 200 },
       surname: { type: "string", minLength: 2, maxLength: 100 },
       label: { type: "string", minLength: 1, maxLength: 100 },
+      mode: { type: "string", enum: ["include", "exclude"], description: "Для filter_by_criteria: оставить совпавших или исключить совпавших из всего доступного древа." },
+      criteria: PEOPLE_FILTER_SCHEMA,
     },
     required: ["action"],
     additionalProperties: false,
@@ -248,7 +252,8 @@ export function explicitViewControlRequest(message: string, view = "") {
       /(?:перемест|перенес|проведи|перейди|навед|центрир).{0,40}(?:меня|к|на|до)/iu.test(
         message,
       );
-  return directInterfaceRequest || treeMovementRequest;
+  const treeFilterRequest = view === "tree" && /(?:^|[\s,.!?])(?:скрой|скрыть|убери|убрать|исключи|исключить|оставь|оставить|отфильтруй)(?:\s|[,.!?]|$)/iu.test(message);
+  return directInterfaceRequest || treeMovementRequest || treeFilterRequest;
 }
 
 export function shortTreeZoomRequest(message: string, view: string) {

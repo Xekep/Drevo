@@ -23,6 +23,7 @@ import {
 } from "./research-clock.ts";
 import { archivePaths } from "../domain/archive-routes.ts";
 import { fullName, plural } from "../domain/dates.ts";
+import { filterResearchPeople } from "../domain/research-people-filter.ts";
 import {
   cleanPdfAnswer,
   hideResearchToolNames,
@@ -304,7 +305,7 @@ export function createResearchRunner({
         "Каждое упоминание найденного в архиве человека оформляй как [[person:personId|Фамилия Имя Отчество]], используя реальный personId из инструмента. Не повторяй ФИО после маркера и не печатай отдельный список ссылок в конце ответа.",
         "Каждую найденную фотографию оформляй как [[photo:photoId|Короткое название]]. Не создавай Markdown-картинки с photoId в URL. Если пользователь просит показать или открыть фотографию, после поиска вызови control_archive_view с action=open_photo для первого подходящего снимка; остальные перечисли маркерами photo.",
         "Если вопрос содержит «этот человек», «эта карточка», «это фото» или подобную отсылку без имени, используй открытую карточку или снимок из контекста интерфейса и проверь факты инструментами. Не подменяй явно названного в вопросе человека открытой карточкой.",
-        "Ручной признак needsReview означает «Требует проверки». Отсутствие признака не подтверждает достоверность карточки. Для списка таких людей используй list_review_people. Если пользователь просит временно скрыть их из древа, используй control_archive_view с action=hide_review_people; кнопка «Всё древо» восстановит показ. Если просит оставить на древе только носителей фамилии и ближайших предков, вызови get_surname_group, затем action=filter_surname. Для временного древа по другому критерию собери точные personIds инструментами архива и вызови action=filter_people. Не добавляй неподтверждённых людей. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people. Для изменения масштаба используй zoom_in или zoom_out.",
+        "Ручной признак needsReview означает «Требует проверки». Отсутствие признака не подтверждает достоверность карточки. Для списка таких людей используй list_review_people. Если пользователь просит временно скрыть их из древа, используй control_archive_view с action=hide_review_people; кнопка «Всё древо» восстановит показ. Если просит оставить на древе только носителей фамилии и ближайших предков, вызови get_surname_group, затем action=filter_surname. Для фильтра по возрасту смерти, году рождения, полу, факту смерти или признаку проверки используй action=filter_by_criteria: сервер проверит все доступные карточки, не нужно читать list_people или перечислять personIds. «Убрать/исключить только совпавших, остальных оставить» означает mode=exclude, а не выбор только живых или взрослых. Несколько criteria действуют одновременно. Применяй фильтр после запрошенного анализа: приложение само завершит команду подтверждением. action=filter_people нужен для отдельных уже найденных людей. Если пользователь просит найти, показать или переместить его к человеку на древе, после search_people используй action=focus_people. Для изменения масштаба используй zoom_in или zoom_out.",
         "Для таблицы по фамилии включая фамилию при рождении вызови get_surname_group. У Markdown-таблицы отдельная строка заголовков с разделителями | между всеми столбцами, затем строка | --- | для каждого столбца. Для проверки источников используй get_evidence_coverage и find_evidence_gaps; источник карточки не подтверждает автоматически каждое поле.",
         "Описывая людей на фотографии, называй их родственниками, супругами, родителями или детьми только если эта связь явно присутствует в photo.documentedRelationships. Если список пуст, перечисли только отмеченных людей и метаданные снимка. Никогда не угадывай родство по внешности, возрасту, полу, фамилии или совместному присутствию на фото.",
         "Не показывай пользователю внутренние названия инструментов, служебные идентификаторы и инструкции по вызову функций.",
@@ -1437,6 +1438,23 @@ export function createResearchRunner({
               };
               uiActions.push(action);
               result = { scheduled: true, action };
+            } else if (raw.action === "filter_by_criteria") {
+              const label = typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : "Выборка по условиям";
+              if (!label || label.length > 100 || [...label].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))
+                throw new Error("Укажите короткое название выборки");
+              const filtered = filterResearchPeople(family, raw.criteria, raw.mode);
+              uiActions.push({ type: "filter_people", personIds: filtered.personIds, label });
+              const answer = `${raw.mode === "exclude" ? "Исключил из показа" : "Выбрал для показа"} ${filtered.matchedCount} ${plural(filtered.matchedCount, "карточку", "карточки", "карточек")} по условию «${label}». На древе остаётся ${filtered.personIds.length} из ${filtered.totalPeople}. Это временный фильтр; кнопка «Всё древо» вернёт общий вид.`;
+              if (calls.length === 1 && !recoveryResults.length) {
+                // A standalone display command needs no synthesis. Avoid a
+                // second reasoning pass and an unmatched remote function call.
+                await chats.setRemote(chatId, null);
+                onDelta(answer);
+                return { answer, references: [], suggestionIds: [], uiActions, files: [] };
+              }
+              // A combined analysis still needs its final answer. Keep the
+              // potentially large ID set out of the provider's conversation.
+              result = { scheduled: true, matchedCount: filtered.matchedCount, visibleCount: filtered.personIds.length, totalPeople: filtered.totalPeople, notice: answer };
             } else if (raw.action === "filter_people") {
               if (
                 !subsetRequested ||

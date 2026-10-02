@@ -1154,7 +1154,6 @@ export default function App() {
             reveal(ids);
           }}
           onFilter={(ids, label) => {
-            if (!ids.length) return;
             setView("tree");
             setAssistantFilter({ ids, label, token: Date.now() });
           }}
