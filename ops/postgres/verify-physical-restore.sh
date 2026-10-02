@@ -37,8 +37,8 @@ mkdir -m 700 "$socket_dir"
 # An external tablespace could otherwise be restored to its original path.
 extra_tablespaces="$(psql -XAtq -v ON_ERROR_STOP=1 -h /var/run/postgresql -d postgres -c "SELECT count(*) FROM pg_tablespace WHERE spcname NOT IN ('pg_default', 'pg_global')")"
 [[ "$extra_tablespaces" == 0 ]] || { echo 'External tablespaces need explicit safe mapping' >&2; exit 2; }
-pgbackrest --stanza=drevo --pg1-path="$data_dir" \
-  --tablespace-map-all="$work_dir/tablespaces" --type=default restore
+bash "$script_dir/restore-pgbackrest-physical.sh" \
+  drevo "$data_dir" "$work_dir/tablespaces"
 restored_at="$(date +%s)"
 
 cat > "$work_dir/postgresql.conf" <<EOF

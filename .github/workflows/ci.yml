@@ -8,6 +8,21 @@ concurrency:
   group: drevo-ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  pgbackrest_restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Restore a PostgreSQL 18 backup with pgBackRest
+        run: |
+          docker run --rm -v "$PWD:/work:ro" postgres:18-trixie bash -ec '
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pgbackrest
+            pgbackrest version
+            exec gosu postgres bash /work/tests/pgbackrest-restore-smoke.sh
+          '
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 15
