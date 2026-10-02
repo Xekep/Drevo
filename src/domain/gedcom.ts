@@ -15,7 +15,7 @@ import { validDate, fullName, safeUrl } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import { claimableEventDate, EVENT_NAMES } from "./person-events.ts";
 import { parseDocumentDetails } from "../shared/document-details.ts";
-import { parseDocumentPages } from "../shared/document-links.ts";
+import { parseDocumentEventLinks, parseDocumentPages } from "../shared/document-links.ts";
 import {
   familyMedia,
   TRANSFER_TEXT_LIMIT,
@@ -1120,7 +1120,22 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
               ? undefined : parseDocumentPages(extra.document.pages);
             if (pages === null)
               throw new Error("Повреждены страницы документа Drevo");
-            item.document = { ...document, ...(pages === undefined ? {} : { pages }) };
+            const eventLinks = extra.document.eventLinks === undefined
+              ? undefined : parseDocumentEventLinks(extra.document.eventLinks);
+            if (eventLinks === null)
+              throw new Error("Повреждены связи документа с событиями Drevo");
+            item.document = {
+              ...document,
+              ...(pages === undefined ? {} : { pages }),
+              ...(eventLinks === undefined ? {} : {
+                eventLinks: eventLinks.flatMap((link) => {
+                  const personId = ids.get(link.personId);
+                  if (personId) return [{ ...link, personId }];
+                  warnings.add("Связь с событием документа указывает на отсутствующего человека и не перенесена.");
+                  return [];
+                }),
+              }),
+            };
           }
         } catch {
           throw new Error("Повреждены сведения о медиа Drevo");
@@ -1199,6 +1214,16 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
         .filter((n) => n.value !== "@VOID@")
         .map((n) => personRef(n.value).id),
     );
+  for (const item of media) {
+    if (!item.document?.eventLinks) continue;
+    item.document.eventLinks = item.document.eventLinks.filter((link) => {
+      const person = map.get(link.personId);
+      if (item.personIds.includes(link.personId) &&
+        person?.events?.some((event) => event.id === link.eventId)) return true;
+      warnings.add("Связь с событием документа не соответствует человеку или событию и не перенесена.");
+      return false;
+    });
+  }
   if (media.some((item) => citedImages.has(item.id) &&
     (item.personIds.length || item.portraitIds.length || item.photo?.tags.length)))
     warnings.add("Файл, указанный одновременно как фото и как документ цитаты, перенесён как документ; проверьте портрет и галерею после импорта.");
@@ -1789,7 +1814,17 @@ export function exportGedcom(
           personId: ids.get(tag.personId),
         })),
         portraitIds: item.portraitIds.map((id) => ids.get(id)),
-        document: item.document,
+        document: item.document && {
+          ...item.document,
+          ...(item.document.eventLinks ? {
+            eventLinks: item.document.eventLinks.map((link) => {
+              const personId = ids.get(link.personId);
+              if (!personId)
+                throw new Error("Связь документа с событием указывает на отсутствующего человека");
+              return { ...link, personId };
+            }),
+          } : {}),
+        },
       }),
     );
   });
