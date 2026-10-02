@@ -4494,10 +4494,10 @@ try {
     "Тестов Исправленный сосед");
   assert.doesNotMatch(JSON.stringify(matchBody), /biography|sources|parents/);
   assert.deepEqual((await (await fetch(otherBase + "/api/discovery/matches/own-people?q=Исправленный", {
-    headers: ownerHeaders,
+    headers: archiveAdminHeaders,
   })).json()).people.map((person: { id: string }) => person.id), ["person-a"]);
   const duplicateFromOtherSide = await fetch(otherBase + "/api/discovery/matches", {
-    method: "POST", headers: ownerHeaders,
+    method: "POST", headers: archiveAdminHeaders,
     body: JSON.stringify({ sourcePersonId: "person-a", targetArchiveId: "runtime-test", targetPersonId: "person-a" }),
   });
   assert.equal(duplicateFromOtherSide.status, 200);
@@ -4515,11 +4515,11 @@ try {
   changedBeforeReview.people[0].name = "Исправленный кандидат";
   await otherApp.archive.write(changedBeforeReview, beforeReviewChange.revision);
   assert.equal((await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: ownerHeaders,
+    method: "PATCH", headers: archiveAdminHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: matchBody.match.reviewToken }),
   })).status, 409, "a changed published identity cannot be accepted using a stale review token");
   const freshReview = (await (await fetch(otherBase + "/api/discovery/matches", {
-    headers: ownerHeaders,
+    headers: archiveAdminHeaders,
   })).json()).matches[0];
   assert.notEqual(freshReview.reviewToken, matchBody.match.reviewToken);
   assert.equal(freshReview.changedSinceRequest, true,
@@ -4529,7 +4529,7 @@ try {
     body: JSON.stringify({ decision: "accept" }),
   })).status, 403, "an initiating archive cannot confirm its own request");
   const acceptedMatch = await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: ownerHeaders,
+    method: "PATCH", headers: archiveAdminHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
   });
   assert.equal(acceptedMatch.status, 200);
@@ -4539,7 +4539,7 @@ try {
     .get(matchBody.match.id);
   assert.equal(acceptedAudit?.requested_by, "owner");
   assert.equal(acceptedAudit?.request_review_token, matchBody.match.reviewToken);
-  assert.equal(acceptedAudit?.responded_by, "owner");
+  assert.equal(acceptedAudit?.responded_by, "vk:42");
   assert.ok(acceptedAudit?.responded_at);
   assert.equal(acceptedAudit?.decision_review_token, freshReview.reviewToken);
   const branchPath = matchPath + "/branch-share";
@@ -4928,7 +4928,7 @@ try {
     "the recipient cannot revoke the other archive's grant through SQL");
   });
   assert.equal((await fetch(otherBase + matchPath, {
-    method: "PATCH", headers: ownerHeaders,
+    method: "PATCH", headers: archiveAdminHeaders,
     body: JSON.stringify({ decision: "accept", reviewToken: freshReview.reviewToken }),
   })).status, 200, "repeating the accepted decision is idempotent");
   assert.equal((await matchDb.prepare("", `SELECT decision_review_token FROM discovery_match_requests
@@ -5582,7 +5582,7 @@ try {
       const participantView = await matchDb.prepare("", `SELECT reason,requested_by,responded_by
         FROM discovery_match_requests WHERE id=?`).get(matchBody.match.id);
       assert.deepEqual(participantView, {
-        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "owner",
+        reason: "Совпадают семейные записи", requested_by: "owner", responded_by: "vk:42",
       }, "both participating archives retain their private review details");
     }, true);
   }
@@ -5599,7 +5599,7 @@ try {
   await client.query("SELECT set_config('drevo.archive_id','other-archive',false)");
   assert.equal((await client.query("DELETE FROM discovery_match_requests WHERE id=$1", [secondPairId])).rowCount,
     1, "B removes its direct B-C test request before deleting C");
-  await client.query("DELETE FROM archive_owners WHERE archive_id='other-archive' AND user_id='vk:42'");
+  await client.query("UPDATE archive_owners SET user_id='owner' WHERE archive_id='other-archive' AND user_id='vk:42'");
   await client.query("DELETE FROM archive_memberships WHERE archive_id='other-archive' AND user_id='vk:42'");
   await client.query("SELECT set_config('drevo.archive_id','third-archive',false)");
   assert.equal((await client.query("DELETE FROM archives WHERE id='third-archive'")).rowCount,
