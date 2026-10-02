@@ -335,6 +335,7 @@ export function AdminPanel({
   canEdit: boolean;
 }) {
   const [section, setSection] = useState(() =>
+    typeof window !== "undefined" &&
     (archiveContextAt(window.location.pathname)?.innerPath || window.location.pathname) === adminMatchesPath
       ? "matches" : "users"),
     [users, setUsers] = useState<ArchiveUser[]>([]),
