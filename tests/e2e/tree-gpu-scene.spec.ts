@@ -24,6 +24,9 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
   page,
 }, testInfo) => {
   test.setTimeout(240_000);
+  const started = Date.now();
+  const stage = (name: string) =>
+    console.log("GPU functional stage", name, Date.now() - started);
   const people =
     process.env.DREVO_GPU_PEOPLE === "977"
       ? randomFamily(5, 9)
@@ -50,6 +53,18 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     };
     const gpuResources = { programs: 0, glyphUploads: 0 };
     Object.assign(window, { __gpuResources: gpuResources });
+    const portraitUploads = { count: 0 };
+    Object.assign(window, { __gpuPortraitUploads: portraitUploads });
+    WebGL2RenderingContext.prototype.texSubImage2D = new Proxy(
+      WebGL2RenderingContext.prototype.texSubImage2D,
+      {
+        apply(target, thisArg, args) {
+          const result = Reflect.apply(target, thisArg, args);
+          portraitUploads.count++;
+          return result;
+        },
+      },
+    );
     WebGL2RenderingContext.prototype.createProgram = new Proxy(
       WebGL2RenderingContext.prototype.createProgram,
       {
@@ -130,14 +145,23 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
   const portraits = process.env.DREVO_RENDER_PROFILE
     ? await renderPortraits(people.map((person) => person.id))
     : null;
-  let portraitGate: Promise<void> | null = null;
+  // The functional CI test forces SwiftShader past production's fallback.
+  // Keep overview downloads pending while checking the three label levels;
+  // software mipmap generation for an entire overview is not a GPU benchmark.
+  // The real-backend acceptance test measures unrestricted portrait loading.
+  let releaseOverviewPortraits: (() => void) | undefined;
+  let portraitGate: Promise<void> | null =
+    testInfo.project.name === "desktop" && !process.env.DREVO_RENDER_PROFILE
+      ? new Promise<void>((resolve) => { releaseOverviewPortraits = resolve; })
+      : null;
+  let portraitResponses = 0;
   await page.route("**/media/gpu-*.jpg?variant=*", async (route) => {
     await portraitGate;
     const url = new URL(route.request().url());
     const photo = portraits?.get(
       `${url.pathname.match(/gpu-(.+)\.jpg/)![1]}-${url.searchParams.get("variant")}`,
     );
-    return route.fulfill(
+    await route.fulfill(
       photo
         ? {
             contentType: "image/jpeg",
@@ -149,6 +173,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
             body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#688a70"/></svg>',
           },
     );
+    portraitResponses++;
   });
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).toBeVisible({ timeout: 15_000 });
@@ -176,6 +201,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     await expect(page.locator(".flow-person-content").first()).toBeVisible();
   };
   await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
+  stage("overview ready");
   expect(
     Number(await canvas.getAttribute("data-gpu-texture-bytes")),
   ).toBeLessThanOrEqual(38 * 1024 * 1024);
@@ -223,6 +249,7 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
     expect(await zoom()).toBeGreaterThan(0.18);
     expect(await zoom()).toBeLessThan(0.52);
     await verifyLabelBudget(1);
+    stage("labels LOD 1");
     await expect(tree).toBeVisible();
     expect(await page.locator(".react-flow__node-person").count()).toBeLessThan(
       25,
@@ -384,6 +411,25 @@ test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and co
   ).toHaveCount(1);
   await expect.poll(zoom).toBeGreaterThanOrEqual(0.52);
   await verifyLabelBudget(2);
+  stage("focused labels LOD 2");
+  if (releaseOverviewPortraits) {
+    expect(portraitResponses).toBe(0);
+    const draws = Number(await canvas.getAttribute("data-gpu-draws"));
+    releaseOverviewPortraits();
+    portraitGate = null;
+    await expect.poll(() => portraitResponses).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() =>
+      (window as typeof window & { __gpuPortraitUploads: { count: number } })
+        .__gpuPortraitUploads.count,
+    )).toBeGreaterThan(0);
+    await page.evaluate(() => new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    ));
+    // Loaded tiles must cause another real draw before inspecting the picture.
+    await expect.poll(async () => Number(await canvas.getAttribute("data-gpu-draws")))
+      .toBeGreaterThan(draws);
+    stage("portrait uploaded and drawn");
+  }
   const button = page.locator(
     ".tree-gpu-node-overlay .flow-person-content:focus",
   );
