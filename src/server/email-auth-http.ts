@@ -5,6 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import {
   emailCredentials,
   InvalidEmailCredential,
+  StaleEmailSession,
   StaleOAuthSession,
 } from "./email-credentials.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
@@ -169,6 +170,21 @@ export function emailAuthHttp(
           await credentials.resetPassword(body.token, body.password);
           return json(res, 200, { message: "Пароль изменён. Войдите заново." });
         }
+        if (url.pathname === "/api/auth/email/password/change") {
+          const session = await auth.accountSession(req);
+          if (!session)
+            return json(res, 401, { error: "Сначала войдите в аккаунт." });
+          const revoked = await credentials.changePassword(
+            session.accountId,
+            session.tokenHash,
+            body.currentPassword,
+            body.newPassword,
+          );
+          return json(res, 200, {
+            changed: true,
+            revokedSessions: revoked,
+          });
+        }
         if (url.pathname === "/api/auth/email/link/request") {
           const session = await auth.accountSession(req);
           if (!session)
@@ -209,6 +225,8 @@ export function emailAuthHttp(
         }
         return json(res, 404, { error: "Неизвестный запрос." });
       } catch (error) {
+        if (error instanceof StaleEmailSession)
+          return json(res, 401, { error: error.message });
         if (error instanceof StaleOAuthSession)
           return json(res, 403, { error: error.message });
         if (error instanceof InvalidEmailCredential)
