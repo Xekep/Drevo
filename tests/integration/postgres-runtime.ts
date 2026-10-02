@@ -39,6 +39,7 @@ import { researchPdf } from "../../src/server/research-pdf.ts";
 import { accountAiAccess } from "../../src/server/account-ai-access.ts";
 import { generatedResearchFileStore } from "../../src/server/generated-research-files.ts";
 import { verifyGeneratedFileGlobalCap } from "./generated-file-cap-test.ts";
+import { verifyPortablePreviewGlobalCap } from "./portable-preview-cap.ts";
 import { researchSuggestionStore } from "../../src/server/research-suggestions.ts";
 import { researchCatalogStore } from "../../src/server/research-catalog.ts";
 import { mediaStore } from "../../src/server/media.ts";
@@ -518,6 +519,7 @@ try {
   ]);
   const other = await openPostgresDatabase("other-archive", source);
   try {
+    await verifyPortablePreviewGlobalCap(client, directory);
     const diskOptions = {
       bytes: 1_000,
       freeReserve: 10,

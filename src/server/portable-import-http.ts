@@ -203,7 +203,12 @@ export function portableImportHttp(
         current.revision,
         Date.now() + STAGE_LIFETIME,
         JSON.stringify({ status: "pending" }),
-      );
+      )
+      .catch((error: unknown) => {
+        if (db.kind === "postgres" && (error as { code?: string }).code === "P5502")
+          throw new ConflictError("Уже проверяются другие архивы. Повторите позже");
+        throw error;
+      });
     if (!inserted.changes) {
       const competing = await db
         .prepare(

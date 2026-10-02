@@ -5,6 +5,10 @@ import type { StoreDatabase } from "./store-database.ts";
 export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
   for (const [query, file] of [
     [
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('workflow_stages') AND tgname='portable_preview_slots_sync' AND NOT tgisinternal",
+      "071_platform_portable_preview_slots.sql",
+    ],
+    [
       "SELECT 1 AS present FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='account_sessions' AND column_name='public_id'",
       "070_account_session_list.sql",
     ],
@@ -225,4 +229,14 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       );
     });
   }
+  // A preview staged before the additive migration still occupies capacity
+  // when its archive starts. RLS keeps this backfill within the active archive.
+  if ((await db.prepare("", "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1")
+    .get(Date.now()))?.present)
+    await db.transaction(async () => {
+      await db.exec("", "SELECT pg_advisory_xact_lock(186743294)");
+      await db.prepare("", `INSERT INTO platform_portable_preview_slots(token,archive_id,expires_at)
+        SELECT token,archive_id,expires_at FROM workflow_stages
+        WHERE kind='drevo' AND expires_at>? ON CONFLICT(token) DO NOTHING`).run(Date.now());
+    });
 }
