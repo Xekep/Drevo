@@ -75,14 +75,20 @@ export function adminMcpHttp({
       if (!req.headers["content-type"]?.startsWith("application/json"))
         return json(res, 415, { error: "JSON required" });
       try {
-        return json(
-          res,
-          201,
-          await tokens.issue(
-            (await auth.currentUser(req))!,
-            await readJson(req),
-          ),
-        );
+        const body = await readJson(req);
+        const actor = await auth.currentUser(req);
+        if (!actor || !(await auth.isAdmin(req)))
+          return json(res, 403, { error: "Доступ отозван" });
+        const issued = await db.transaction(async () => {
+          // Hold the tier rows through token insertion. A downgrade after the
+          // initial HTTP check must not create a credential for basic access.
+          if (!(await accountAiAccess(db, actor.id, auth.local, true)))
+            return null;
+          return tokens.issue(actor, body);
+        });
+        if (!issued)
+          return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
+        return json(res, 201, issued);
       } catch (error) {
         return json(res, error instanceof RangeError ? 413 : 400, {
           error: (error as Error).message,
