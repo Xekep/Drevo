@@ -11,21 +11,28 @@ test.use({
       "--enable-unsafe-swiftshader",
       ...(process.env.DREVO_GPU_SOFTWARE === "1"
         ? ["--use-angle=swiftshader"]
-        : []),
+        : ["gl", "d3d11", "vulkan"].includes(process.env.DREVO_E2E_ANGLE || "")
+          ? [`--use-angle=${process.env.DREVO_E2E_ANGLE}`]
+          : []),
     ],
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
       ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
       : {}),
   },
 });
-test("large GPU tree keeps one camera, sparse controls and a working context-loss fallback", async ({
+test("3313 desktop / 503 mobile GPU tree keeps bounded labels, one camera and context-loss fallback", async ({
   page,
 }, testInfo) => {
   test.setTimeout(240_000);
+  const started = Date.now();
+  const stage = (name: string) =>
+    console.log("GPU functional stage", name, Date.now() - started);
   const people =
     process.env.DREVO_GPU_PEOPLE === "977"
       ? randomFamily(5, 9)
-      : randomFamily(1, 6);
+      : testInfo.project.name === "desktop"
+        ? randomFamily(5, 12)
+        : randomFamily(1, 6);
   if (process.env.DREVO_GPU_CPU_THROTTLE) {
     const session = await page.context().newCDPSession(page);
     await session.send("Emulation.setCPUThrottlingRate", {
@@ -46,6 +53,18 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     };
     const gpuResources = { programs: 0, glyphUploads: 0 };
     Object.assign(window, { __gpuResources: gpuResources });
+    const portraitUploads = { count: 0 };
+    Object.assign(window, { __gpuPortraitUploads: portraitUploads });
+    WebGL2RenderingContext.prototype.texSubImage2D = new Proxy(
+      WebGL2RenderingContext.prototype.texSubImage2D,
+      {
+        apply(target, thisArg, args) {
+          const result = Reflect.apply(target, thisArg, args);
+          portraitUploads.count++;
+          return result;
+        },
+      },
+    );
     WebGL2RenderingContext.prototype.createProgram = new Proxy(
       WebGL2RenderingContext.prototype.createProgram,
       {
@@ -126,14 +145,23 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
   const portraits = process.env.DREVO_RENDER_PROFILE
     ? await renderPortraits(people.map((person) => person.id))
     : null;
-  let portraitGate: Promise<void> | null = null;
+  // The functional CI test forces SwiftShader past production's fallback.
+  // Keep overview downloads pending while checking the three label levels;
+  // software mipmap generation for an entire overview is not a GPU benchmark.
+  // The real-backend acceptance test measures unrestricted portrait loading.
+  let releaseOverviewPortraits: (() => void) | undefined;
+  let portraitGate: Promise<void> | null =
+    testInfo.project.name === "desktop" && !process.env.DREVO_RENDER_PROFILE
+      ? new Promise<void>((resolve) => { releaseOverviewPortraits = resolve; })
+      : null;
+  let portraitResponses = 0;
   await page.route("**/media/gpu-*.jpg?variant=*", async (route) => {
     await portraitGate;
     const url = new URL(route.request().url());
     const photo = portraits?.get(
       `${url.pathname.match(/gpu-(.+)\.jpg/)![1]}-${url.searchParams.get("variant")}`,
     );
-    return route.fulfill(
+    await route.fulfill(
       photo
         ? {
             contentType: "image/jpeg",
@@ -145,6 +173,7 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
             body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="#688a70"/></svg>',
           },
     );
+    portraitResponses++;
   });
   await page.goto("/tree");
   await expect(page.locator(".tree-canvas")).toBeVisible({ timeout: 15_000 });
@@ -172,12 +201,27 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     await expect(page.locator(".flow-person-content").first()).toBeVisible();
   };
   await expect(canvas).toHaveAttribute("data-gpu-draws", /\d+/);
+  stage("overview ready");
   expect(
     Number(await canvas.getAttribute("data-gpu-texture-bytes")),
   ).toBeLessThanOrEqual(38 * 1024 * 1024);
   expect(
     Number(await canvas.getAttribute("data-gpu-buffer-bytes")),
   ).toBeLessThan(24 * 1024 * 1024);
+  expect(
+    Number(await canvas.getAttribute("data-gpu-label-cpu-bytes")),
+  ).toBeGreaterThan(Number(await canvas.getAttribute("data-gpu-label-bytes")));
+  const verifyLabelBudget = async (lod: number) => {
+    await expect(canvas).toHaveAttribute("data-gpu-label-lod", String(lod));
+    const labels = Number(await canvas.getAttribute("data-gpu-label-bytes"));
+    expect(labels).toBeGreaterThan(0);
+    expect(
+      Number(await canvas.getAttribute("data-gpu-label-cpu-bytes")),
+    ).toBeGreaterThan(labels);
+    expect(
+      Number(await canvas.getAttribute("data-gpu-buffer-bytes")),
+    ).toBeLessThan(24 * 1024 * 1024);
+  };
   const requests = await page.evaluate(
     () =>
       (window as typeof window & { __gpuLayout: { requests: number } })
@@ -192,11 +236,20 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
         (element) => new DOMMatrix(getComputedStyle(element).transform).a,
       );
   if (testInfo.project.name === "desktop") {
+    // Optional profiling finishes at a close zoom; return to the name-only
+    // level before checking that LOD uploads fit the same geometry budget.
+    for (let i = 0; i < 16 && (await zoom()) > 0.4; i++)
+      await page
+        .getByRole("button", { name: "Уменьшить", exact: true })
+        .click();
     for (let i = 0; i < 16 && (await zoom()) < 0.3; i++)
       await page
         .getByRole("button", { name: "Увеличить", exact: true })
         .click();
     expect(await zoom()).toBeGreaterThan(0.18);
+    expect(await zoom()).toBeLessThan(0.52);
+    await verifyLabelBudget(1);
+    stage("labels LOD 1");
     await expect(tree).toBeVisible();
     expect(await page.locator(".react-flow__node-person").count()).toBeLessThan(
       25,
@@ -204,7 +257,7 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     expect(await page.locator(".react-flow__edge").count()).toBe(0);
   }
   if (testInfo.project.name === "mobile") {
-    const point = await page.evaluate(() => {
+    const target = await page.evaluate(() => {
       const state = (
         window as typeof window & {
           __gpuLayout: {
@@ -218,44 +271,138 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
         getComputedStyle(document.querySelector(".react-flow__viewport")!)
           .transform,
       );
+      const root = document
+        .querySelector(".tree-canvas")!
+        .getBoundingClientRect();
       const box = document
         .querySelector(".react-flow")!
         .getBoundingClientRect();
-      return state.positions
-        .map(([id, position]) => ({
-          id: state.occurrences.find((occurrence) => occurrence.id === id)!
-            .personId,
-          x: box.x + matrix.e + (position.x + state.width / 2) * matrix.a,
-          y: box.y + matrix.f + (position.y + 70) * matrix.a,
-        }))
-        .find(
-          (point) =>
-            point.x > 60 &&
-            point.x < innerWidth - 60 &&
-            point.y > 160 &&
-            point.y < innerHeight - 140,
-        );
+      const clip = {
+        left: Math.max(0, root.left, box.left),
+        right: Math.min(innerWidth, root.right, box.right),
+        top: Math.max(0, root.top, box.top),
+        bottom: Math.min(innerHeight, root.bottom, box.bottom),
+      };
+      const people = new Map(
+        state.occurrences.map((occurrence) => [
+          occurrence.id,
+          occurrence.personId,
+        ]),
+      );
+      const centers = state.positions.map(([id, position]) => ({
+        id: people.get(id),
+        x: box.x + matrix.e + (position.x + state.width / 2) * matrix.a,
+        y: box.y + matrix.f + (position.y + 70) * matrix.a,
+      }));
+      // Toolbar and camera controls occupy different areas on each screen.
+      // Require an actual uncovered portrait rather than fixed page margins.
+      const candidates = centers.filter(
+        (point) =>
+          point.id &&
+          point.x > clip.left + 8 &&
+          point.x < clip.right - 8 &&
+          point.y > clip.top + 8 &&
+          point.y < clip.bottom - 8 &&
+          document
+            .elementFromPoint(point.x, point.y)
+            ?.closest(".react-flow__pane") &&
+          !document
+            .elementFromPoint(point.x, point.y)
+            ?.closest("button, a, input, select, textarea"),
+      );
+      const cx = (clip.left + clip.right) / 2,
+        cy = (clip.top + clip.bottom) / 2;
+      candidates.sort(
+        (a, b) =>
+          Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy),
+      );
+      return {
+        point: candidates[0] || null,
+        nextPoint: candidates.find((point) => point.id !== candidates[0]?.id) || null,
+        diagnostics: {
+          positions: state.positions.length,
+          occurrences: state.occurrences.length,
+          width: state.width,
+          viewport: { x: matrix.e, y: matrix.f, zoom: matrix.a },
+          root: root.toJSON(),
+          flow: box.toJSON(),
+          clip,
+          inside: centers.filter(
+            (point) =>
+              point.x > clip.left &&
+              point.x < clip.right &&
+              point.y > clip.top &&
+              point.y < clip.bottom,
+          ).length,
+          uncovered: candidates.length,
+          centerBounds: centers.length
+            ? {
+                left: Math.min(...centers.map((point) => point.x)),
+                right: Math.max(...centers.map((point) => point.x)),
+                top: Math.min(...centers.map((point) => point.y)),
+                bottom: Math.max(...centers.map((point) => point.y)),
+              }
+            : null,
+          centers: centers.slice(0, 8),
+        },
+      };
     });
-    expect(point).toBeTruthy();
+    if (!target.point)
+      await testInfo.attach("gpu-mobile-target", {
+        body: JSON.stringify(target.diagnostics, null, 2),
+        contentType: "application/json",
+      });
+    expect(target.point, JSON.stringify(target.diagnostics)).toBeTruthy();
+    const point = target.point!;
     const pane = page.locator(".react-flow__pane");
     const pointer = {
       pointerId: 99,
       pointerType: "touch",
       isPrimary: true,
       button: 0,
-      clientX: point!.x,
-      clientY: point!.y,
+      clientX: point.x,
+      clientY: point.y,
       bubbles: true,
     };
     await pane.dispatchEvent("pointerdown", pointer);
     await expect(
-      page.locator(`.flow-person[data-person-id="${point!.id}"].is-selected`),
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
     ).toBeVisible();
     await pane.dispatchEvent("pointerup", pointer);
-    await pane.dispatchEvent("click", { clientX: point!.x, clientY: point!.y });
+    await pane.dispatchEvent("click", { clientX: point.x, clientY: point.y });
     await expect(
-      page.locator(`.flow-person[data-person-id="${point!.id}"].is-selected`),
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
     ).toBeVisible();
+    // A pinch can cancel the compatibility click after the long press fires.
+    // Its stale suppression must not eat the first subsequent toolbar click.
+    expect(target.nextPoint, JSON.stringify(target.diagnostics)).toBeTruthy();
+    const next = target.nextPoint!;
+    const held = { ...pointer, pointerId: 100, clientX: next.x, clientY: next.y };
+    await pane.dispatchEvent("pointerdown", held);
+    await expect(
+      page.locator(`.flow-person[data-person-id="${next.id}"].is-selected`),
+    ).toBeVisible();
+    const second = { ...held, pointerId: 101, isPrimary: false };
+    await pane.dispatchEvent("pointerdown", second);
+    await pane.dispatchEvent("pointermove", { ...held, clientX: next.x + 24 });
+    await pane.dispatchEvent("pointercancel", held);
+    await pane.dispatchEvent("pointercancel", second);
+    await page.getByRole("button", { name: "Настройки древа", exact: true }).click();
+    const preferences = page.getByRole("dialog", { name: "Вид древа" });
+    await expect(preferences).toBeVisible();
+    await preferences.getByRole("button", { name: "Закрыть", exact: true }).click();
+    // A second finger before the deadline cancels the pending selection too.
+    const pending = { ...pointer, pointerId: 102 };
+    await pane.dispatchEvent("pointerdown", pending);
+    await pane.dispatchEvent("pointerdown", { ...pending, pointerId: 103, isPrimary: false });
+    await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 650)));
+    await expect(
+      page.locator(`.flow-person[data-person-id="${point.id}"].is-selected`),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(`.flow-person[data-person-id="${next.id}"].is-selected`),
+    ).toBeVisible();
+    await pane.dispatchEvent("pointercancel", pending);
   }
   await tree.focus();
   await page.keyboard.press("ArrowRight");
@@ -263,6 +410,29 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
     page.locator(".tree-gpu-node-overlay .flow-person-content:focus"),
   ).toHaveCount(1);
   await expect.poll(zoom).toBeGreaterThanOrEqual(0.52);
+  await verifyLabelBudget(2);
+  stage("focused labels LOD 2");
+  if (releaseOverviewPortraits) {
+    expect(portraitResponses).toBe(0);
+    const draws = Number(await canvas.getAttribute("data-gpu-draws"));
+    releaseOverviewPortraits();
+    portraitGate = null;
+    await expect.poll(() => portraitResponses).toBeGreaterThan(0);
+    // Software GL may take longer than the default 5s to process the released
+    // image uploads. Keep the real upload assertion within the same 30s media
+    // deadline used by the unrestricted backend acceptance, not the test's 240s.
+    await expect.poll(() => page.evaluate(() =>
+      (window as typeof window & { __gpuPortraitUploads: { count: number } })
+        .__gpuPortraitUploads.count,
+    ), { timeout: 30_000 }).toBeGreaterThan(0);
+    await page.evaluate(() => new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    ));
+    // Loaded tiles must cause another real draw before inspecting the picture.
+    await expect.poll(async () => Number(await canvas.getAttribute("data-gpu-draws")))
+      .toBeGreaterThan(draws);
+    stage("portrait uploaded and drawn");
+  }
   const button = page.locator(
     ".tree-gpu-node-overlay .flow-person-content:focus",
   );
@@ -414,6 +584,43 @@ test("large GPU tree keeps one camera, sparse controls and a working context-los
             requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
           ),
       );
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuResources: { programs: number; glyphUploads: number };
+              }
+            ).__gpuResources,
+        ),
+      ).toEqual(resourcesBeforeSelection);
+      // Additive selection keeps comparison mode active even after its last
+      // person is removed. Exit through the UI before testing an ordinary click.
+      await page
+        .getByRole("button", { name: "Закрыть панель", exact: true })
+        .click();
+      await expect(page.locator(".inspector-dock")).toHaveCount(0);
+      await expect(tree).toBeVisible();
+      // Changing the profile route within this archive must retain its GPU
+      // context and glyph atlas, including the inspector width change.
+      await card.locator(".flow-person-content").click();
+      await expect(page).toHaveURL(new RegExp("/people/" + personId + "$"));
+      await expect(page.locator(".inspector-dock")).toBeVisible();
+      await expect(tree).toBeVisible();
+      expect(
+        await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __gpuResources: { programs: number; glyphUploads: number };
+              }
+            ).__gpuResources,
+        ),
+      ).toEqual(resourcesBeforeSelection);
+      await page
+        .getByRole("button", { name: "Закрыть панель", exact: true })
+        .click();
+      await expect(tree).toBeVisible();
       expect(
         await page.evaluate(
           () =>

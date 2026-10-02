@@ -15,6 +15,9 @@ export default defineConfig({
       ? {
           launchOptions: {
             executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+            ...(["gl", "d3d11", "vulkan"].includes(process.env.DREVO_E2E_ANGLE || "")
+              ? { args: [`--use-angle=${process.env.DREVO_E2E_ANGLE}`] }
+              : {}),
           },
         }
       : {}),
@@ -29,7 +32,7 @@ export default defineConfig({
   webServer: {
     command: "node --experimental-strip-types tests/e2e-server.ts",
     url: `http://127.0.0.1:${port}/api/health`,
-    timeout: 30_000,
+    timeout: process.env.DREVO_TREE_ACCEPTANCE === "1" ? 180_000 : 30_000,
     reuseExistingServer: false,
   },
 });
