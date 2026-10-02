@@ -5,6 +5,7 @@ import type { StoreDatabase } from "./store-database.ts";
 import {
   emailCredentials,
   InvalidEmailCredential,
+  StaleOAuthSession,
 } from "./email-credentials.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import {
@@ -153,7 +154,10 @@ export function emailAuthHttp(
             account.accountId,
             account.passwordHash,
           );
-          return json(res, 200, { archiveId: account.archiveId, account: true });
+          return json(res, 200, {
+            archiveId: account.archiveId,
+            account: true,
+          });
         }
         if (url.pathname === "/api/auth/email/reset/request") {
           await credentials.requestReset(body.email);
@@ -166,24 +170,28 @@ export function emailAuthHttp(
           return json(res, 200, { message: "Пароль изменён. Войдите заново." });
         }
         if (url.pathname === "/api/auth/email/link/request") {
-          const accountId = await auth.accountId(req);
-          if (!accountId)
+          const session = await auth.accountSession(req);
+          if (!session)
             return json(res, 401, { error: "Сначала войдите в аккаунт." });
           if (!(await auth.recentOAuthSession(req)))
             return json(res, 403, {
               error: "Для подключения почты снова войдите через Яндекс или VK.",
             });
-          await credentials.requestLink(accountId, {
-            email: body.email,
-            password: body.password,
-          });
+          await credentials.requestLink(
+            session.accountId,
+            {
+              email: body.email,
+              password: body.password,
+            },
+            session.tokenHash,
+          );
           return json(res, 202, {
             message: "Если адрес доступен, письмо с подтверждением отправлено.",
           });
         }
         if (url.pathname === "/api/auth/email/link/verify") {
-          const accountId = await auth.accountId(req);
-          if (!accountId)
+          const session = await auth.accountSession(req);
+          if (!session)
             return json(res, 401, {
               error: "Войдите в исходный аккаунт и снова откройте ссылку.",
             });
@@ -192,11 +200,17 @@ export function emailAuthHttp(
               error:
                 "Снова войдите через Яндекс или VK и откройте ссылку из письма.",
             });
-          await credentials.verifyLink(accountId, body.token);
+          await credentials.verifyLink(
+            session.accountId,
+            body.token,
+            session.tokenHash,
+          );
           return json(res, 200, { linked: true });
         }
         return json(res, 404, { error: "Неизвестный запрос." });
       } catch (error) {
+        if (error instanceof StaleOAuthSession)
+          return json(res, 403, { error: error.message });
         if (error instanceof InvalidEmailCredential)
           return json(res, url.pathname.endsWith("/login") ? 401 : 400, {
             error: error.message,

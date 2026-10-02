@@ -24,6 +24,7 @@ const DUMMY_HASH =
   "scrypt$16384$8$5$2d14a31d02ff2175bd89d20f1a7081df$167103d9acb595920576aac1782847df92ab983d0590747beea356a52dcb8779";
 
 export class InvalidEmailCredential extends Error {}
+export class StaleOAuthSession extends Error {}
 
 export function normalizeAccountEmail(value: unknown) {
   if (typeof value !== "string")
@@ -89,6 +90,35 @@ export function emailCredentials(
   if (!db.postgresTransaction)
     throw new Error("Регистрация по почте требует PostgreSQL.");
   const transact = db.postgresTransaction;
+
+  async function requireRecentOAuthSession(
+    client: pg.PoolClient,
+    accountId: string,
+    sessionTokenHash: string,
+  ) {
+    // Keep revocation behind this transaction until the link change commits.
+    const session = await client.query<{
+      authenticated_at: string;
+      expires_at: string;
+    }>(
+      `SELECT p.authenticated_at,s.expires_at FROM account_sessions s
+         JOIN account_oauth_session_proofs p ON p.token_hash=s.token_hash
+        WHERE s.token_hash=$1 AND s.user_id=$2
+        FOR SHARE OF s,p`,
+      [sessionTokenHash, accountId],
+    );
+    const time = now();
+    const authenticatedAt = Number(session.rows[0]?.authenticated_at);
+    if (
+      Number(session.rows[0]?.expires_at) <= time ||
+      !Number.isFinite(authenticatedAt) ||
+      authenticatedAt > time ||
+      authenticatedAt <= time - 10 * 60 * 1000
+    )
+      throw new StaleOAuthSession(
+        "Для подключения почты заново войдите через Яндекс или VK.",
+      );
+  }
 
   async function cleanup(client: pg.PoolClient, time: number) {
     await client.query(
@@ -352,6 +382,7 @@ export function emailCredentials(
     async requestLink(
       accountId: string,
       input: { email: unknown; password: unknown },
+      sessionTokenHash: string,
     ) {
       const email = normalizeAccountEmail(input.email);
       const password = validateAccountPassword(input.password);
@@ -360,6 +391,7 @@ export function emailCredentials(
       const time = now();
       await transact((client) => cleanup(client, time));
       const queued = await transact(async (client) => {
+        await requireRecentOAuthSession(client, accountId, sessionTokenHash);
         await client.query("SELECT pg_advisory_xact_lock(2407,hashtext($1))", [
           email,
         ]);
@@ -439,13 +471,17 @@ export function emailCredentials(
       }
     },
 
-    async verifyLink(accountId: string, token: unknown) {
+    async verifyLink(
+      accountId: string,
+      token: unknown,
+      sessionTokenHash: string,
+    ) {
       if (!validToken(token))
         throw new InvalidEmailCredential(
           "Ссылка подтверждения недействительна.",
         );
-      const time = now();
       await transact(async (client) => {
+        await requireRecentOAuthSession(client, accountId, sessionTokenHash);
         const found = await client.query<{ email: string; account_id: string }>(
           "SELECT email,account_id FROM pending_email_links WHERE token_hash=$1",
           [tokenHash(token)],
@@ -466,7 +502,7 @@ export function emailCredentials(
           [accountId, tokenHash(token)],
         );
         const row = pending.rows[0];
-        if (!row || Number(row.expires_at) <= time)
+        if (!row || Number(row.expires_at) <= now())
           throw new InvalidEmailCredential("Ссылка подтверждения устарела.");
         if (
           (
