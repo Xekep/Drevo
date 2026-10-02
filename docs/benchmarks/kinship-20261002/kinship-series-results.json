@@ -1,0 +1,114 @@
+{
+  "baselineCommit": "a0ec7bf5d41b2994e5220ee3d3cfb54a739566b2",
+  "sourceHashes": {
+    "src/domain/kinship.ts": "931613daf32723d0b0737888802cc256d533a04af6bd4cb2ed8ce1c38d9bd77d",
+    "src/domain/kinship-analysis.ts": "96ef3ba83adda7f8f0dd4f52d0256da9016dbc7f05973a675d30e4c91e3984f2",
+    "src/domain/kinship-index.ts": "033fb3441bce6737a1c6f410759614c19e169fbdac7eac9f7d9d7ab20ba219f0",
+    "src/domain/index.ts": "42050adafae29343ac4bf34c4b9b398ead0939a5721d3813841eb35c4a474218",
+    "src/components/tree/person-relation-label.ts": "95bb364dfe8ae94350c7a1e65f0e239ba58f7a38841f64c8d4a980e05d36dcfa",
+    "src/components/tree/tree-canvas.tsx": "f028c53edf8caac90df5e2a7235d9a0b33a2ed2247abab603dad1c2ca145187e",
+    "tests/layout-fixtures.ts": "2e43e3e072aca50dcde2816a5ccda49aaa00ebb9986cd4f537fd21281a4f8715"
+  },
+  "node": "v22.14.0",
+  "platform": "win32",
+  "cpu": "AMD Ryzen 9 5950X 16-Core Processor            ",
+  "method": "Full domain Relation series for each graph person against last person; index preparation included. Hashing excluded. AB/BA/AB sequential fresh closures. No browser/ELK/photo generation/CPU throttling.",
+  "command": "node --experimental-strip-types C:/Users/Xekep/Documents/Codex/drevo-render-tests/kinship-series.mjs",
+  "fixtures": [
+    {
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "referenceId": "level-8-105-3",
+      "inputSha256": "a99db408cae91d2982a7e503e2a6c57048fedfd6e8f453c112c44850af72419a",
+      "rows": [
+        {
+          "mode": "baseline",
+          "elapsedMs": 208.66940000000002,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 44.421299999999974,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 40.117200000000025,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        },
+        {
+          "mode": "baseline",
+          "elapsedMs": 197.96440000000007,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        },
+        {
+          "mode": "baseline",
+          "elapsedMs": 183.69650000000001,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 31.75369999999998,
+          "relationSha256": "b19b5e0fc4579b742019905adf24bbf5bbda4549efa4fd4d66180648d12ff89a"
+        }
+      ],
+      "baselineMedianMs": 197.96440000000007,
+      "preparedMedianMs": 40.117200000000025,
+      "deltaPercent": -79.73514429867188
+    },
+    {
+      "seed": 5,
+      "generations": 12,
+      "people": 3313,
+      "referenceId": "level-11-363-3",
+      "inputSha256": "fc6ac85cdb21382792206564e323d9e3c2664d622552ff2cc03eb37c3f4f49e8",
+      "rows": [
+        {
+          "mode": "baseline",
+          "elapsedMs": 2385.9570000000003,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 243.20949999999993,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 230.72130000000016,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        },
+        {
+          "mode": "baseline",
+          "elapsedMs": 2266.1822,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        },
+        {
+          "mode": "baseline",
+          "elapsedMs": 2077.2880999999998,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        },
+        {
+          "mode": "prepared",
+          "elapsedMs": 196.7017999999989,
+          "relationSha256": "d4105dd22569bc1563ec9e7e83ee593d0b15a95e554634c9bdafd98b8986bede"
+        }
+      ],
+      "baselineMedianMs": 2266.1822,
+      "preparedMedianMs": 230.72130000000016,
+      "deltaPercent": -89.81894306644892
+    }
+  ],
+  "optimizedCommit": "7550de9abae0baddd961cadf840378768df621c1",
+  "gates": {
+    "typecheck": "PASS",
+    "lint": "PASS",
+    "unitTests": 918,
+    "unitFailures": 0,
+    "build": "PASS",
+    "builtWorkerTests": 3,
+    "builtWorkerFailures": 0,
+    "tempRoot": "F:/Codex/Drevo-test-temp/tree-acceptance-20261002"
+  }
+}
