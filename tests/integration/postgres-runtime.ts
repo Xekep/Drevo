@@ -1796,6 +1796,73 @@ try {
       await visionAi.close();
     }
 
+    let notifyToolCatalog!: () => void;
+    let releaseToolCatalog!: () => void;
+    const toolCatalogStarted = new Promise<void>((resolve) => { notifyToolCatalog = resolve; });
+    const toolCatalogGate = new Promise<void>((resolve) => { releaseToolCatalog = resolve; });
+    const toolFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-tool-tier-"));
+    const catalog = researchCatalogStore(app.archive.db);
+    const toolBatchAi = aiResearchHttp({
+      archive: app.archive,
+      auth: await createAuth(await userStore(app.archive.db), app.archive.db,
+        process.env.PUBLIC_ORIGIN),
+      suggestions: researchSuggestionStore(app.archive.db),
+      aiSettings: await aiSettingsStore(app.archive.db),
+      usage: aiUsageStore(app.archive.db),
+      media: mediaStore(join(dirname(source), "uploads")),
+      previewImage: imagePreviews(join(dirname(source), "previews")),
+      researchCatalog: {
+        ...catalog,
+        searchAny: async (...args: Parameters<typeof catalog.searchAny>) => {
+          notifyToolCatalog();
+          await toolCatalogGate;
+          return catalog.searchAny(...args);
+        },
+      },
+      publicOrigin: process.env.PUBLIC_ORIGIN,
+      uploadsDirectory: join(toolFilesRoot, "uploads"),
+      fetcher: async (url, init) => {
+        if (String(url).endsWith("/conversations") && init?.method === "POST")
+          return Response.json({ id: "tool-tier-conversation" });
+        if (String(url).endsWith("/responses"))
+          return Response.json({ id: "tool-tier-response", status: "completed", output: [
+            { type: "function_call", call_id: "resources", name: "research_resources",
+              arguments: JSON.stringify({ query: "семейная история" }) },
+            { type: "function_call", call_id: "pdf", name: "create_pdf",
+              arguments: JSON.stringify({ title: "Семейный отчёт", content: "# Семейный отчёт\nТест" }) },
+          ] });
+        if (init?.method === "DELETE") return Response.json({ deleted: true });
+        throw new Error(`Unexpected provider call: ${url}`);
+      },
+    });
+    const toolBatchServer = createServer((req, res) => {
+      void toolBatchAi(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => toolBatchServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const toolBatchPort = (toolBatchServer.address() as { port: number }).port;
+      const runningTools = fetch(`http://127.0.0.1:${toolBatchPort}/api/ai/chat`, {
+        method: "POST", headers: ownerHeaders,
+        body: JSON.stringify({ message: "Создай PDF отчёт о семье" }),
+      });
+      await Promise.race([toolCatalogStarted,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("First AI tool did not start")), 15_000))]);
+      await client.query("UPDATE account_tiers SET full_access=false WHERE account_id='owner'");
+      releaseToolCatalog();
+      const blockedTools = await runningTools;
+      assert.equal(blockedTools.status, 403, await blockedTools.clone().text());
+      const generatedRoot = join(toolFilesRoot, "ai-generated-files");
+      assert.equal(existsSync(generatedRoot) ? readdirSync(generatedRoot, { recursive: true }).length : 0,
+        0, "downgrade between AI tools cannot create a PDF for a basic account");
+    } finally {
+      releaseToolCatalog();
+      await client.query("UPDATE account_tiers SET full_access=true WHERE account_id='owner'");
+      await new Promise<void>((resolve) => toolBatchServer.close(() => resolve()));
+      await toolBatchAi.close();
+      rmSync(toolFilesRoot, { recursive: true, force: true });
+    }
+
     let notifyAdminConversation!: () => void;
     let releaseAdminConversation!: () => void;
     const adminConversationStarted = new Promise<void>((resolve) => { notifyAdminConversation = resolve; });
