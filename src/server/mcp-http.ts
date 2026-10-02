@@ -122,10 +122,10 @@ export function mcpHttp({
       return json(res, 401, { error: "Недействительный MCP-токен" });
     }
     let grant = initialGrant;
-    const hasAiAccess = async () =>
-      (await accountAiAccess(archive.db, grant.createdBy, !publicOrigin)) &&
+    const hasAiAccess = async (lockTier = false) =>
+      (await accountAiAccess(archive.db, grant.createdBy, !publicOrigin, lockTier)) &&
       (!grant.boundUser ||
-        (await accountAiAccess(archive.db, grant.boundUser.id, !publicOrigin)));
+        (await accountAiAccess(archive.db, grant.boundUser.id, !publicOrigin, lockTier)));
     if (!(await hasAiAccess()))
       return json(res, 403, { error: "ИИ-функции недоступны этому аккаунту" });
     if (req.method !== "POST") {
@@ -362,22 +362,47 @@ export function mcpHttp({
             definition.name,
             params.arguments,
           );
-        return json(
-          res,
-          200,
-          result(
-            id,
-            modern
-              ? modernResult({
-                  content: [{ type: "text", text: JSON.stringify(value) }],
-                  structuredContent: value,
-                })
-              : {
-                  content: [{ type: "text", text: JSON.stringify(value) }],
-                  structuredContent: value,
-                },
-          ),
-        );
+        // The tool can take time after its earlier checks. Serialize delivery
+        // with token revocation, membership changes and tier downgrade.
+        const delivery = await archive.db.transaction(async () => {
+          if (grant.boundUser && archive.db.kind === "postgres") {
+            const current = await archive.db.prepare("", `SELECT role,approved,person_id,tree_access
+              FROM archive_memberships WHERE archive_id=? AND user_id=? FOR SHARE`)
+              .get(archive.db.archiveId || "", grant.boundUser.id);
+            if (!current?.approved || current.role !== grant.boundUser.role ||
+              (current.person_id || "") !== (grant.boundUser.personId || "") ||
+              current.tree_access !== (grant.boundUser.treeAccess || "all"))
+              return { status: 403, body: { error: "Доступ к участникам архива изменился" } };
+          }
+          if (!(await hasAiAccess(true)))
+            return { status: 403, body: { error: "ИИ-функции недоступны этому аккаунту" } };
+          const finalGrant = await tokens.authenticate(req.headers.authorization, true);
+          if (!finalGrant)
+            return { status: 401, body: { error: "Недействительный MCP-токен" } };
+          if (finalGrant.id !== grant.id ||
+            !finalGrant.scopes.includes(definition.scope) ||
+            finalGrant.boundUser?.id !== grant.boundUser?.id ||
+            finalGrant.boundUser?.role !== grant.boundUser?.role ||
+            finalGrant.boundUser?.personId !== grant.boundUser?.personId ||
+            finalGrant.boundUser?.treeAccess !== grant.boundUser?.treeAccess)
+            return { status: 403, body: { error: "Доступ MCP-токена изменился" } };
+          return {
+            status: 200,
+            body: result(
+              id,
+              modern
+                ? modernResult({
+                    content: [{ type: "text", text: JSON.stringify(value) }],
+                    structuredContent: value,
+                  })
+                : {
+                    content: [{ type: "text", text: JSON.stringify(value) }],
+                    structuredContent: value,
+                  },
+            ),
+          };
+        });
+        return json(res, delivery.status, delivery.body);
       } catch (reason) {
         auditError = true;
         return json(

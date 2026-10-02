@@ -3132,8 +3132,8 @@ try {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const gatedTokens = {
       ...tokenStore,
-      authenticate: async (authorization?: string) => {
-        const grant = await tokenStore.authenticate(authorization);
+      authenticate: async (authorization?: string, lockRow = false) => {
+        const grant = await tokenStore.authenticate(authorization, lockRow);
         if (++authenticationCount === 3) {
           notify();
           await gate;
