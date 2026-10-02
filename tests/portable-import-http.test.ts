@@ -50,6 +50,75 @@ test("existing SQLite workflow stages survive the portable-kind migration", () =
   }
 });
 
+test("concurrent portable previews for one owner return a conflict without leaking reservations", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "drevo-concurrent-preview-"));
+  const source = join(dir, "source");
+  const target = join(dir, "target");
+  await mkdir(source);
+  await mkdir(target);
+  const packagePath = join(dir, "archive.drevo");
+  await writePortablePackage(createWriteStream(packagePath), source, {
+    family: { title: "Archive", description: "", demo: false, people: [], photos: [] },
+    documents: [], comments: [],
+  }, async () => {});
+  const bytes = await readFile(packagePath);
+  const archivePath = join(target, "archive.sqlite");
+  const archive = await openArchive(archivePath, {
+    title: "Empty", description: "", demo: false, people: [], photos: [],
+  });
+  const owner = await (await userStore(archive.db, { requireInitialAdmin: false }))
+    .register("owner", "Owner");
+  const auth = { local: true, currentUser: async () => owner } as unknown as
+    Awaited<ReturnType<typeof createAuth>>;
+  let readers = 0;
+  let releaseReaders!: () => void;
+  const bothRead = new Promise<void>((resolve) => { releaseReaders = resolve; });
+  const timeout = setTimeout(releaseReaders, 5000);
+  const originalPrepare = archive.db.prepare.bind(archive.db);
+  archive.db.prepare = (sqlite, postgres) => {
+    const statement = originalPrepare(sqlite, postgres);
+    if (!sqlite.startsWith("SELECT token,data FROM workflow_stages WHERE kind='drevo' AND actor_id=?"))
+      return statement;
+    return { ...statement, all: async (...values) => {
+      const rows = await statement.all(...values);
+      if (++readers === 2) releaseReaders();
+      await bothRead;
+      return rows;
+    } };
+  };
+  const route = portableImportHttp(archive, auth, archivePath);
+  const server = createServer((req, res) => {
+    void route.handle(req, res, new URL(req.url!, `http://${req.headers.host}`));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    const preview = () => fetch(`${base}/api/drevo/preview`, {
+      method: "POST", headers: { Origin: base, "X-Drevo-Import": "1" }, body: bytes,
+    });
+    const responses = await Promise.all([preview(), preview()]);
+    assert.equal(readers, 2, "both requests observed the empty stage table");
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 409]);
+    const conflict = responses.find((response) => response.status === 409)!;
+    assert.equal((await conflict.json() as { error: string }).error, "Импорт уже выполняется");
+    assert.equal((await archive.db.prepare(
+      "SELECT count(*) AS n FROM workflow_stages WHERE kind='drevo'",
+    ).get())?.n, 1);
+    assert.equal((await archive.db.prepare(
+      "SELECT coalesce(sum(reserved_bytes),0) AS bytes FROM document_upload_requests",
+    ).get())?.bytes, 0);
+    assert.equal((await readdir(join(target, "staging", "portable"))).length, 1);
+  } finally {
+    clearTimeout(timeout);
+    archive.db.prepare = originalPrepare;
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await route.close();
+    await archive.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("private package preview and one-time import preserve people, media, documents and comments", async () => {
   const dir = await mkdtemp(join(tmpdir(), "drevo-import-http-"));
   const source = join(dir, "source");
