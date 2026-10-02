@@ -18,6 +18,7 @@ import {
 import type { FamilyLink } from "./types.ts";
 import { optimizeBranches } from "./branch-routing.ts";
 import { fromSketchUnionGraph, siftUnionOrder } from "./union-order.ts";
+import { presetGenerationLayers } from "./union-layers.ts";
 import { routingQuality } from "./routing-quality.ts";
 import { coupleBlocksWithContactedAncestry, invertedCoupleBlocks, locallyReverseCouples } from "./local-couple-order.ts";
 import {
@@ -359,7 +360,11 @@ async function geometryForSeed(
   };
   const hinted = sketch && fromSketchUnionGraph(baseGraph, sketch, reverse);
   if (sketch && !hinted) throw new Error("insufficient prior layout overlap");
-  const input = hinted || (sift ? siftUnionOrder(baseGraph) : baseGraph);
+  const ordered = hinted || (sift ? siftUnionOrder(baseGraph) : baseGraph);
+  // Поколения уже вычислены выше. На больших проекциях передаём их напрямую:
+  // partitioning создаёт полный двудольный граф между соседними поколениями.
+  // Порядок блоков, минимизация пересечений и фиксированные порты остаются ELK.
+  const input = people.length > 300 ? presetGenerationLayers(ordered) : ordered;
   const laidOut = await layout(structuredClone(input));
   const { graph, bands, offsets } = alignGenerationBands(laidOut, size);
   const placed = new Map(

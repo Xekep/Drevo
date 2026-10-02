@@ -8,6 +8,52 @@ const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const bundle = readdirSync(join(dist, "assets")).find(
   (p) => p.startsWith("layout.worker-") && p.endsWith(".js"),
 );
+
+test("production worker retains large prescribed generations and every relation in both directions", { timeout: 40000 }, async () => {
+  const data = [{ id: "founder", birth: "1900", parents: [], spouses: [] }];
+  for (let index = 0; index < 60; index++) {
+    const child = `child-${index}`, spouse = `spouse-${index}`;
+    data.push(
+      { id: child, birth: "1930", parents: ["founder"], spouses: [spouse] },
+      { id: spouse, birth: "1930", parents: [], spouses: [child] },
+    );
+    for (let offset = 0; offset < 4; offset++)
+      data.push({ id: `grandchild-${index}-${offset}`, birth: "1960", parents: [child, spouse], spouses: [] });
+  }
+  assert.equal(data.length, 361);
+  const original = structuredClone(data), worker = productionWorker();
+  try {
+    for (const reverse of [false, true]) {
+      const geometry = await calculate(worker, "generations", reverse, data, "portrait");
+      assert.equal(geometry.error, undefined);
+      assert.equal(geometry.reverse, reverse);
+      assert.equal(geometry.positions.length, data.length);
+      assert.deepEqual(new Set(geometry.occurrences.map((entry) => entry.personId)), new Set(data.map((entry) => entry.id)));
+      assert.equal(geometry.branches.filter((branch) => branch.id.startsWith("child:")).length, 300);
+      const relations = new Set(geometry.branches.flatMap((branch) => branch.relations.map(({ type, from, to }) =>
+        JSON.stringify(type === "spouse" ? [type, ...[from, to].sort()] : [type, from, to]))));
+      const expected = new Set(data.flatMap((person) => [
+        ...person.parents.map((from) => JSON.stringify(["parent", from, person.id])),
+        ...person.spouses.map((to) => JSON.stringify(["spouse", ...[person.id, to].sort()])),
+      ]));
+      assert.deepEqual(relations, expected);
+      assert.deepEqual(geometry.generationBands.map((band) => band.level), [0, 1, 2]);
+      const bands = new Map(geometry.generationBands.flatMap((band) => band.members.map((id) => [id, band])));
+      for (const [id, point] of geometry.positions) {
+        assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y));
+        assert.ok(point.y >= bands.get(id).minY && point.y <= bands.get(id).maxY);
+      }
+      for (const branch of geometry.branches)
+        for (let index = 1; index < branch.route.points.length; index++) {
+          const a = branch.route.points[index - 1], b = branch.route.points[index];
+          assert.ok(a.x === b.x || a.y === b.y);
+        }
+    }
+    assert.deepEqual(data, original);
+  } finally {
+    await worker.terminate();
+  }
+});
 assert.ok(bundle, "Сначала выполните npm run build");
 const people = [
   { id: "a", birth: "1900", parents: [], spouses: ["b", "c"] },
@@ -37,19 +83,19 @@ function calculate(
     worker.postMessage({ people: data, links: [], mode, reverse, cardVariant });
   });
 }
+function productionWorker() {
+  return new Worker(new URL("./helpers/worker-runtime.mjs", import.meta.url), {
+    workerData: {
+      url: pathToFileURL(join(dist, "assets", bundle)).href,
+      dist,
+    },
+  });
+}
 test(
   "production worker executes nested ELK and switches back to timeline",
   { timeout: 20000 },
   async () => {
-    const worker = new Worker(
-      new URL("./helpers/worker-runtime.mjs", import.meta.url),
-      {
-        workerData: {
-          url: pathToFileURL(join(dist, "assets", bundle)).href,
-          dist,
-        },
-      },
-    );
+    const worker = productionWorker();
     try {
       const g = await calculate(worker, "generations");
       assert.equal(g.error, undefined);

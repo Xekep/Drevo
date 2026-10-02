@@ -1,0 +1,1870 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-02",
+  "source": {
+    "baseCommit": "12c18bf26fa05124adfca22901e7e4649f6bab32",
+    "worktreeBranch": "codex/elk-scale-profile",
+    "productionSourceHashes": {
+      "src/domain/union-layout.ts": "e813f41c710b9d225cfca167c578a94f74f0a09ee0347ae2e7fbcc31c65b5514",
+      "src/domain/union-layers.ts": "c0ce43fc19f9623e2a64cc3b38bd4aca0d20dfe59dbef3532b60318adcc1368d",
+      "src/domain/union-order.ts": "1fb2ed5c0aac4eb65a8936e8332e64233901f546149c9fcb18dd73c339ff2d54",
+      "src/domain/edge-routing.ts": "72bf4a8b7f9a0563dfc14446e3c302a621dda65481a08a71fb0bcc192e4bc0a6",
+      "src/domain/routing-quality.ts": "ee15ed19921f8c53aa7403f080d7f9ff9036f4976fae50a87b30595d2a95d9a0",
+      "src/domain/generation-bands.ts": "351b9abc73bae8206a78fc9f1ab7464d54755b2ab6cac054441fc038e958307e"
+    },
+    "description": "Baseline восстанавливается в callback ELK; preset использует production presetGenerationLayers. Source helpers ещё не закоммичены в baseCommit."
+  },
+  "environment": {
+    "node": "v22.14.0",
+    "os": "Windows",
+    "cpu": "AMD Ryzen 9 5950X",
+    "physicalCores": 16,
+    "logicalCores": 32
+  },
+  "method": {
+    "execution": "Последовательные Node.js измерения основного потока без concurrent тестов, браузера, CPU profiler и ELK logging в парных прогонах.",
+    "domainMs": "Время unionGeometry, включая подготовку, ELK, postprocessing и запись canonical hash каждого завершённого вызова. Финальный QA и запись геометрии в файлы происходят после этого таймера.",
+    "elkMs": "performance.now() вокруг engine.layout; snapshot входной конфигурации записывается до вызова, canonical hash — после таймера.",
+    "repeat977Order": [
+      [
+        "baseline",
+        "preset"
+      ],
+      [
+        "preset",
+        "baseline"
+      ],
+      [
+        "baseline",
+        "preset"
+      ]
+    ],
+    "singleRunPeople": [
+      503,
+      782,
+      1820,
+      2750
+    ],
+    "quality": "Полный JSON геометрии совпадает побайтно; дополнительная проверка всех parent/spouse отношений и конечных координат.",
+    "baselineFlags": {
+      "partitioning": "true",
+      "layering": "NETWORK_SIMPLEX",
+      "modelOrder": "NODES_AND_EDGES",
+      "actualCoordinates": "x/y удалены",
+      "elkPosition": "удалён"
+    },
+    "presetFlags": {
+      "partitioning": "false",
+      "layering": "INTERACTIVE",
+      "modelOrder": "NODES_AND_EDGES",
+      "actualCoordinates": "y из generation ranks и высот слоёв, x=0 для свежего графа",
+      "elkPosition": "не нужен"
+    }
+  },
+  "baseline977Profile": {
+    "domainMs": 16551.6317,
+    "elkMs": 13694.478,
+    "graphNodes": 652,
+    "realEdges": 965,
+    "potentialPartitionDummyEdges": 48877,
+    "fullGeometryHash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+    "stages": [
+      {
+        "seed": "1",
+        "elkWallMs": 7109.024,
+        "namedStageShares": [
+          {
+            "name": "Partition midprocessing",
+            "share": 0.03682934222491664
+          },
+          {
+            "name": "Network simplex layering",
+            "share": 0.37344649893907245
+          },
+          {
+            "name": "Sort By Input Model NODES_AND_EDGES",
+            "share": 0.5086389815095483
+          },
+          {
+            "name": "Node and Port Label Placement and Node Sizing",
+            "share": 0.023643528341921793
+          }
+        ]
+      },
+      {
+        "seed": "15",
+        "elkWallMs": 6585.454,
+        "namedStageShares": [
+          {
+            "name": "Partition midprocessing",
+            "share": 0.02626997942712455
+          },
+          {
+            "name": "Network simplex layering",
+            "share": 0.3620826080075962
+          },
+          {
+            "name": "Sort By Input Model NODES_AND_EDGES",
+            "share": 0.5613229941446432
+          }
+        ]
+      }
+    ],
+    "timerCaveat": "Compiled BasicProgressMonitor использует Date.now()*1000 и delta*1e-9: published executionTime имеет ошибочный масштаб. Здесь использованы доли стадий и внешнее время performance.now(), без выдачи raw timer за секунды."
+  },
+  "comparisons": [
+    {
+      "people": 503,
+      "repeatsPerVariant": 1,
+      "baselineMedianDomainMs": 15589.534099999999,
+      "presetMedianDomainMs": 5015.2069,
+      "domainReductionPercent": 67.82965502477715,
+      "baselineMedianElkMs": 13523.678,
+      "presetMedianElkMs": 2673.0336,
+      "elkReductionPercent": 80.23441847698533,
+      "fullGeometryHash": "2dc870b9aae65441bd1e8797c7686464c2a471fe1acfe7a31cfc2caf3960931a",
+      "fullGeometryByteEqual": true,
+      "canonicalPerSeedEqual": null,
+      "qualityEqual": true
+    },
+    {
+      "people": 782,
+      "repeatsPerVariant": 1,
+      "baselineMedianDomainMs": 73667.6246,
+      "presetMedianDomainMs": 16280.6642,
+      "domainReductionPercent": 77.89983824183196,
+      "baselineMedianElkMs": 66240.436,
+      "presetMedianElkMs": 8327.6102,
+      "elkReductionPercent": 87.42820744718529,
+      "fullGeometryHash": "eee65a191bb3f47ecc481693a72aff31e34d2b3621528b710652ed085ae27fcc",
+      "fullGeometryByteEqual": true,
+      "canonicalPerSeedEqual": null,
+      "qualityEqual": true
+    },
+    {
+      "people": 977,
+      "repeatsPerVariant": 3,
+      "baselineMedianDomainMs": 16520.229600000002,
+      "presetMedianDomainMs": 10926.6453,
+      "domainReductionPercent": 33.858998545637654,
+      "baselineMedianElkMs": 13663.799899999998,
+      "presetMedianElkMs": 8090.2273000000005,
+      "elkReductionPercent": 40.79079495302034,
+      "fullGeometryHash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "fullGeometryByteEqual": true,
+      "canonicalPerSeedEqual": true,
+      "qualityEqual": true
+    },
+    {
+      "people": 1820,
+      "repeatsPerVariant": 1,
+      "baselineMedianDomainMs": 94417.4718,
+      "presetMedianDomainMs": 51566.3087,
+      "domainReductionPercent": 45.384781315442936,
+      "baselineMedianElkMs": 93595.7815,
+      "presetMedianElkMs": 50791.648100000006,
+      "elkReductionPercent": 45.73297291181867,
+      "fullGeometryHash": "184670e66471c05c725cd8d6590c76fb723552af0b7a59d5d6ef6b5cb298819d",
+      "fullGeometryByteEqual": true,
+      "canonicalPerSeedEqual": true,
+      "qualityEqual": true
+    },
+    {
+      "people": 2750,
+      "repeatsPerVariant": 1,
+      "baselineMedianDomainMs": 156071.7903,
+      "presetMedianDomainMs": 97094.9359,
+      "domainReductionPercent": 37.78828594625278,
+      "baselineMedianElkMs": 155250.4993,
+      "presetMedianElkMs": 96352.5105,
+      "elkReductionPercent": 37.937390904094826,
+      "fullGeometryHash": "78b986abc6180d87401f8234f711db21932b0fbf20c08b0eaa76b806b52e7d15",
+      "fullGeometryByteEqual": true,
+      "canonicalPerSeedEqual": true,
+      "qualityEqual": true
+    }
+  ],
+  "runs": [
+    {
+      "variant": "baseline",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 6,
+      "people": 503,
+      "occurrences": 503,
+      "branches": 646,
+      "domainMs": 15589.534099999999,
+      "elkMs": 13523.678,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "seed": "1",
+          "ms": 6984.144899999999
+        },
+        {
+          "seed": "15",
+          "ms": 6539.533100000001
+        }
+      ],
+      "hash": "2dc870b9aae65441bd1e8797c7686464c2a471fe1acfe7a31cfc2caf3960931a",
+      "quality": {
+        "distinct": 1122,
+        "segments": 2660,
+        "length": 2535237,
+        "bends": 948,
+        "contacts": 1122,
+        "crossings": 1122,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 62530,
+        "height": 3239,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 982,
+        "expectedSpouseRelations": 155,
+        "actualGenealogicalRelations": 1137,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T08:39:43.835Z",
+      "inputSnapshotRecordedBeforeEngine": false,
+      "configurationProvenance": "Старый модуль загружен до интеграции helper в production; конфигурация не записана в callback. Исходный runner оставлял граф без изменения."
+    },
+    {
+      "variant": "preset",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 6,
+      "people": 503,
+      "occurrences": 503,
+      "branches": 646,
+      "domainMs": 5015.2069,
+      "elkMs": 2673.0336,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "seed": "1",
+          "ms": 1448.6751
+        },
+        {
+          "seed": "15",
+          "ms": 1224.3585000000003
+        }
+      ],
+      "hash": "2dc870b9aae65441bd1e8797c7686464c2a471fe1acfe7a31cfc2caf3960931a",
+      "quality": {
+        "distinct": 1122,
+        "segments": 2660,
+        "length": 2535237,
+        "bends": 948,
+        "contacts": 1122,
+        "crossings": 1122,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 62530,
+        "height": 3239,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 982,
+        "expectedSpouseRelations": 155,
+        "actualGenealogicalRelations": 1137,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T08:39:49.255Z",
+      "inputSnapshotRecordedBeforeEngine": false,
+      "configurationProvenance": "Исходный runner назначал реальные x/y и elk.position по generation ranks; конфигурация не записана в callback. Итоговая геометрия совпала с baseline."
+    },
+    {
+      "variant": "baseline",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 7,
+      "people": 782,
+      "occurrences": 782,
+      "branches": 1020,
+      "domainMs": 73667.6246,
+      "elkMs": 66240.436,
+      "elkCalls": 3,
+      "calls": [
+        {
+          "seed": "1",
+          "ms": 24010.6044
+        },
+        {
+          "seed": "15",
+          "ms": 20015.8756
+        },
+        {
+          "seed": "20",
+          "ms": 22213.956000000006
+        }
+      ],
+      "hash": "eee65a191bb3f47ecc481693a72aff31e34d2b3621528b710652ed085ae27fcc",
+      "quality": {
+        "distinct": 3774,
+        "segments": 9871,
+        "length": 5994170,
+        "bends": 1462,
+        "contacts": 3774,
+        "crossings": 3774,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 91801,
+        "height": 4163,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1540,
+        "expectedSpouseRelations": 250,
+        "actualGenealogicalRelations": 1790,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T08:41:03.356Z",
+      "inputSnapshotRecordedBeforeEngine": false,
+      "configurationProvenance": "Старый модуль загружен до интеграции helper в production; конфигурация не записана в callback. Исходный runner оставлял граф без изменения."
+    },
+    {
+      "variant": "preset",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 7,
+      "people": 782,
+      "occurrences": 782,
+      "branches": 1020,
+      "domainMs": 16280.6642,
+      "elkMs": 8327.6102,
+      "elkCalls": 3,
+      "calls": [
+        {
+          "seed": "1",
+          "ms": 2893.3003
+        },
+        {
+          "seed": "15",
+          "ms": 2674.1589
+        },
+        {
+          "seed": "20",
+          "ms": 2760.151
+        }
+      ],
+      "hash": "eee65a191bb3f47ecc481693a72aff31e34d2b3621528b710652ed085ae27fcc",
+      "quality": {
+        "distinct": 3774,
+        "segments": 9871,
+        "length": 5994170,
+        "bends": 1462,
+        "contacts": 3774,
+        "crossings": 3774,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 91801,
+        "height": 4163,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1540,
+        "expectedSpouseRelations": 250,
+        "actualGenealogicalRelations": 1790,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T08:41:20.144Z",
+      "inputSnapshotRecordedBeforeEngine": false,
+      "configurationProvenance": "Исходный runner назначал реальные x/y и elk.position по generation ranks; конфигурация не записана в callback. Итоговая геометрия совпала с baseline."
+    },
+    {
+      "variant": "baseline",
+      "repeat": 1,
+      "seed": 1,
+      "generations": 9,
+      "people": 1820,
+      "occurrences": 1820,
+      "branches": 2408,
+      "domainMs": 94417.4718,
+      "elkMs": 93595.7815,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1220,
+            "edges": 1808,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                615
+              ]
+            ],
+            "potentialPartitionDummyEdges": 183055
+          },
+          "seed": "1",
+          "ms": 43375.3687,
+          "geometryHash": "01dcb1bb9851620c52dc6f72d5b1b57186c6d81875d07a83ed72687609d07c66"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1220,
+            "edges": 1808,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                615
+              ]
+            ],
+            "potentialPartitionDummyEdges": 183055
+          },
+          "seed": "15",
+          "ms": 50220.4128,
+          "geometryHash": "917d0bb284f24b6f57556fcf6eabc5314c6a9a0ba2ad0cba0c7dec3d3a9f123b"
+        }
+      ],
+      "hash": "184670e66471c05c725cd8d6590c76fb723552af0b7a59d5d6ef6b5cb298819d",
+      "quality": {
+        "distinct": 23830,
+        "segments": 58635,
+        "length": 29916250,
+        "bends": 3476,
+        "contacts": 23830,
+        "crossings": 23830,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 222861,
+        "height": 7331,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 3616,
+        "expectedSpouseRelations": 600,
+        "actualGenealogicalRelations": 4216,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:03:12.418Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "preset",
+      "repeat": 1,
+      "seed": 1,
+      "generations": 9,
+      "people": 1820,
+      "occurrences": 1820,
+      "branches": 2408,
+      "domainMs": 51566.3087,
+      "elkMs": 50791.648100000006,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1220,
+            "edges": 1808,
+            "positionedNodes": 1220,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                615
+              ]
+            ],
+            "potentialPartitionDummyEdges": 183055
+          },
+          "seed": "1",
+          "ms": 25405.5027,
+          "geometryHash": "01dcb1bb9851620c52dc6f72d5b1b57186c6d81875d07a83ed72687609d07c66"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1220,
+            "edges": 1808,
+            "positionedNodes": 1220,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                615
+              ]
+            ],
+            "potentialPartitionDummyEdges": 183055
+          },
+          "seed": "15",
+          "ms": 25386.1454,
+          "geometryHash": "917d0bb284f24b6f57556fcf6eabc5314c6a9a0ba2ad0cba0c7dec3d3a9f123b"
+        }
+      ],
+      "hash": "184670e66471c05c725cd8d6590c76fb723552af0b7a59d5d6ef6b5cb298819d",
+      "quality": {
+        "distinct": 23830,
+        "segments": 58635,
+        "length": 29916250,
+        "bends": 3476,
+        "contacts": 23830,
+        "crossings": 23830,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 222861,
+        "height": 7331,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 3616,
+        "expectedSpouseRelations": 600,
+        "actualGenealogicalRelations": 4216,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:04:04.649Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "baseline",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 10,
+      "people": 2750,
+      "occurrences": 2750,
+      "branches": 3645,
+      "domainMs": 156071.7903,
+      "elkMs": 155250.4993,
+      "elkCalls": 1,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1843,
+            "edges": 2738,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                308
+              ],
+              [
+                10,
+                930
+              ]
+            ],
+            "potentialPartitionDummyEdges": 404411
+          },
+          "seed": "1",
+          "ms": 155250.4993,
+          "geometryHash": "b27d93e38fbc64b23eaa6546ed7430e302c5f219e74beb63ade076b242a9b126"
+        }
+      ],
+      "hash": "78b986abc6180d87401f8234f711db21932b0fbf20c08b0eaa76b806b52e7d15",
+      "quality": {
+        "distinct": 52530,
+        "segments": 108860,
+        "length": 60995522,
+        "bends": 5258,
+        "contacts": 52530,
+        "crossings": 52530,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 347362,
+        "height": 9479,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 5476,
+        "expectedSpouseRelations": 907,
+        "actualGenealogicalRelations": 6383,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:08:32.454Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "preset",
+      "repeat": 0,
+      "seed": 1,
+      "generations": 10,
+      "people": 2750,
+      "occurrences": 2750,
+      "branches": 3645,
+      "domainMs": 97094.9359,
+      "elkMs": 96352.5105,
+      "elkCalls": 1,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 1843,
+            "edges": 2738,
+            "positionedNodes": 1843,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                10
+              ],
+              [
+                2,
+                17
+              ],
+              [
+                3,
+                27
+              ],
+              [
+                4,
+                38
+              ],
+              [
+                5,
+                60
+              ],
+              [
+                6,
+                95
+              ],
+              [
+                7,
+                140
+              ],
+              [
+                8,
+                212
+              ],
+              [
+                9,
+                308
+              ],
+              [
+                10,
+                930
+              ]
+            ],
+            "potentialPartitionDummyEdges": 404411
+          },
+          "seed": "1",
+          "ms": 96352.5105,
+          "geometryHash": "b27d93e38fbc64b23eaa6546ed7430e302c5f219e74beb63ade076b242a9b126"
+        }
+      ],
+      "hash": "78b986abc6180d87401f8234f711db21932b0fbf20c08b0eaa76b806b52e7d15",
+      "quality": {
+        "distinct": 52530,
+        "segments": 108860,
+        "length": 60995522,
+        "bends": 5258,
+        "contacts": 52530,
+        "crossings": 52530,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 347362,
+        "height": 9479,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 5476,
+        "expectedSpouseRelations": 907,
+        "actualGenealogicalRelations": 6383,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:10:10.448Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "baseline",
+      "repeat": 1,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 16104.401500000002,
+      "elkMs": 13311.7814,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 6887.1201,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 6424.6613,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:10:47.262Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "preset",
+      "repeat": 1,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 11864.187,
+      "elkMs": 8830.3135,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 4741.6848,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 4088.6287,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:10:59.651Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "baseline",
+      "repeat": 2,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 16520.229600000002,
+      "elkMs": 13744.167000000001,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 6861.907,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 6882.260000000001,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:11:28.007Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "preset",
+      "repeat": 2,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 10926.6453,
+      "elkMs": 8090.2273000000005,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 4332.8351,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 3757.3922000000002,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:11:11.047Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "baseline",
+      "repeat": 3,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 16548.115,
+      "elkMs": 13663.799899999998,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 6940.786999999999,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "true",
+            "layering": "NETWORK_SIMPLEX",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 0,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 6723.0129,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:11:45.039Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    },
+    {
+      "variant": "preset",
+      "repeat": 3,
+      "seed": 5,
+      "generations": 9,
+      "people": 977,
+      "occurrences": 977,
+      "branches": 1290,
+      "domainMs": 10385.9264,
+      "elkMs": 7503.983,
+      "elkCalls": 2,
+      "calls": [
+        {
+          "inputConfig": {
+            "seed": "1",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "1",
+          "ms": 3979.8086000000003,
+          "geometryHash": "38550cd057f3252eca517bbfc1f0eb413dfaf4c6489111b5fc22009b590fec7f"
+        },
+        {
+          "inputConfig": {
+            "seed": "15",
+            "partitioning": "false",
+            "layering": "INTERACTIVE",
+            "modelOrder": "NODES_AND_EDGES",
+            "thoroughness": "1",
+            "nodes": 652,
+            "edges": 965,
+            "positionedNodes": 652,
+            "elkPositionOptions": 0,
+            "ranks": [
+              [
+                0,
+                6
+              ],
+              [
+                1,
+                9
+              ],
+              [
+                2,
+                12
+              ],
+              [
+                3,
+                18
+              ],
+              [
+                4,
+                23
+              ],
+              [
+                5,
+                34
+              ],
+              [
+                6,
+                49
+              ],
+              [
+                7,
+                71
+              ],
+              [
+                8,
+                107
+              ],
+              [
+                9,
+                323
+              ]
+            ],
+            "potentialPartitionDummyEdges": 48877
+          },
+          "seed": "15",
+          "ms": 3524.1744,
+          "geometryHash": "3db88c0855a39cfa4b403c454240de35808c0f1b2eab12fea10b506ca2406daf"
+        }
+      ],
+      "hash": "1aabf38567c4ffa2349a8a26c10536dbbda9e66f381b37cf6abd8daaf92fe9b5",
+      "quality": {
+        "distinct": 5252,
+        "segments": 11336,
+        "length": 8417452,
+        "bends": 1842,
+        "contacts": 5252,
+        "crossings": 5252,
+        "cardHits": 0,
+        "cardOverlaps": 0,
+        "missingPeople": 0,
+        "diagonalSegments": 0,
+        "width": 122652,
+        "height": 5495,
+        "nonFiniteCoordinates": 0,
+        "expectedParentRelations": 1930,
+        "expectedSpouseRelations": 325,
+        "actualGenealogicalRelations": 2255,
+        "missingParentRelations": 0,
+        "missingSpouseRelations": 0,
+        "unexpectedGenealogicalRelations": 0
+      },
+      "artifactCreatedAt": "2026-10-02T09:11:55.947Z",
+      "inputSnapshotRecordedBeforeEngine": true
+    }
+  ],
+  "experimentalNotShipped": {
+    "option": "elk.layered.considerModelOrder.strategy=NONE + preset",
+    "fixture": {
+      "people": 977,
+      "seed": 5,
+      "generations": 9
+    },
+    "domainMs": 5209.7459,
+    "elkMs": 1621.4388999999996,
+    "hash": "2bf349fe7cac1dacf575e7e1354ab6223eb3b2c07db9197bf1892ea9a386832c",
+    "quality": {
+      "distinct": 5040,
+      "segments": 10599,
+      "length": 7759122,
+      "bends": 1848,
+      "contacts": 5040,
+      "crossings": 5040,
+      "cardHits": 0,
+      "cardOverlaps": 0,
+      "missingPeople": 0,
+      "diagonalSegments": 0,
+      "width": 113623,
+      "height": 5483
+    },
+    "reason": "Геометрия меняется; одиночный результат не обосновывает безопасное включение для разных деревьев."
+  },
+  "limitations": [
+    "Это synthetic randomFamily, а не реальный пользовательский архив.",
+    "Результаты относятся к Node.js на указанном CPU, а не к browser Worker, FPS, памяти или мобильному устройству.",
+    "503, 782, 1820 и 2750 — по одному измерению варианта; вариативность хоста не оценена статистически. 977 — три чередующиеся пары.",
+    "Сохраняются прежние seed budgets, crossing minimization, model order, node placement, маршрутизация и все postprocessing quality gates.",
+    "2750 человек всё ещё требует около 97 секунд; самый дорогой оставшийся участок — Sort By Input Model NODES_AND_EDGES.",
+    "Некорректный enum NODES_ONLY и ошибочно помеченный baseline1820 repeat0 исключены.",
+    "До интеграции helper парные503/782 callbacks не снимали inputConfig; их provenance явно помечена, canonical hashes по ELK seed не записаны."
+  ]
+}
