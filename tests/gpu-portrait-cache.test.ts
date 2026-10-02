@@ -107,6 +107,20 @@ function fixture(t: TestContext) {
   t.after(() => cache.destroy());
   const pending = () => images.filter((image) => image.src && image.onload);
   const complete = (image: FakeImage) => image.onload?.();
+  const failAll = (limit: number) => {
+    let failures = 0;
+    for (;;) {
+      const active = pending();
+      if (!active.length) break;
+      assert.ok(active.length <= 6);
+      assert.ok(
+        ++failures <= limit,
+        "failed portraits must not immediately restart",
+      );
+      active[0].onerror?.();
+    }
+    return failures;
+  };
   const drain = () => {
     let peak = 0;
     for (;;) {
@@ -123,6 +137,7 @@ function fixture(t: TestContext) {
     images,
     pending,
     complete,
+    failAll,
     drain,
     uploads,
     storage,
@@ -308,4 +323,84 @@ test("packing expands through 20px and caps at 10404 slots without exceeding mem
   assert.equal(f.cache.ready(), true);
   assert.equal(f.textureCount(), 2);
   assert.equal(f.storage.length, 2);
+});
+
+test("all 3313 unavailable portraits settle and retry only after the failure TTL", (t) => {
+  const f = fixture(t),
+    all = photos(3313);
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
+  f.cache.update(f.redraw, f.failure, new Set(all));
+  f.cache.request(all, 0.1);
+  assert.equal(f.failAll(all.length), all.length);
+  assert.equal(f.images.length, all.length);
+  assert.equal(f.cache.ready(), true);
+  now += 29_999;
+  f.cache.request(all, 0.1);
+  assert.equal(f.images.length, all.length);
+  assert.equal(f.cache.ready(), true);
+  now++;
+  assert.equal(f.cache.ready(), false);
+  f.cache.request(all, 0.1);
+  assert.equal(f.pending().length, 6);
+  f.drain();
+  assert.equal(f.images.length, all.length * 2);
+  assert.ok(all.every((photo) => f.cache.get(photo)));
+  assert.equal(f.cache.ready(), true);
+  const loaded = f.images.length;
+  f.cache.request(all, 0.1);
+  assert.equal(f.images.length, loaded);
+});
+
+test("failure history stays bounded across viewports without evicting current failures", (t) => {
+  const f = fixture(t),
+    all = photos(12000);
+  t.mock.method(Date, "now", () => 1000);
+  for (let start = 0; start < all.length; start += 3000) {
+    const visible = all.slice(start, start + 3000);
+    f.cache.request(visible, 0.1);
+    assert.equal(f.failAll(visible.length), visible.length);
+    assert.equal(f.cache.ready(), true);
+  }
+  assert.equal(f.images.length, all.length);
+  const recent = all.slice(9000);
+  f.cache.request(recent, 0.1);
+  assert.equal(f.images.length, all.length);
+  // The oldest inactive viewport was evicted to make room, not the current one.
+  f.cache.request([all[0]], 0.1);
+  assert.equal(f.images.length, all.length + 1);
+  f.failAll(1);
+  f.cache.request(recent, 0.1);
+  assert.equal(f.images.length, all.length + 1);
+});
+
+test("queue preserves requested priority across out-of-order completions and cancellation", (t) => {
+  const f = fixture(t),
+    all = photos(12);
+  f.cache.request(all, 0.1);
+  assert.deepEqual(
+    f.pending().map((image) => image.src),
+    all.slice(0, 6).map((photo) => `${photo}?variant=tiny`),
+  );
+  const stale = f.pending()[0],
+    lateLoad = stale.onload!,
+    lateError = stale.onerror!;
+  f.complete(f.pending()[4]);
+  assert.equal(f.images[6].src, `${all[6]}?variant=tiny`);
+  f.cache.request(all, 0.1);
+  assert.equal(f.images.length, 7);
+  const reversed = [...all].reverse();
+  f.cache.request(reversed, 0.1);
+  f.complete(f.pending()[1]);
+  assert.equal(f.images[7].src, `${all[11]}?variant=tiny`);
+  f.cache.request([all[10]], 0.1);
+  assert.equal(stale.src, "");
+  const uploads = f.uploads.length;
+  lateLoad();
+  lateError();
+  assert.equal(f.uploads.length, uploads);
+  assert.equal(f.pending().length, 1);
+  f.drain();
+  assert.equal(f.cache.ready(), true);
+  assert.ok(f.cache.get(all[10]));
 });
