@@ -223,7 +223,7 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       "073_discovery_branch_second_generation.sql",
     ],
     [
-      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='discovery_revoke_ineligible_publication' AND NOT tgisinternal",
+      "SELECT 1 AS present FROM pg_trigger WHERE tgrelid=to_regclass('people') AND tgname='discovery_revoke_ineligible_publication' AND NOT tgisinternal AND to_regclass('discovery_publication_reconciled_archives') IS NOT NULL",
       "074_revoke_ineligible_discovery_publication.sql",
     ],
   ]) {
@@ -241,6 +241,16 @@ export async function initializePostgresRuntimeSchema(db: StoreDatabase) {
       );
     });
   }
+  if (!(await db.prepare("", `SELECT 1 AS present FROM discovery_publication_reconciled_archives
+    WHERE archive_id=current_setting('drevo.archive_id', true)`).get())?.present)
+    await db.transaction(async () => {
+      await db.exec("", `DELETE FROM published_people published USING people p
+        WHERE p.archive_id=published.archive_id AND p.id=published.person_id
+          AND NOT (coalesce(p.data->>'deceased' = 'true', false) OR
+                   nullif(p.data->>'death', '') IS NOT NULL)`);
+      await db.exec("", `INSERT INTO discovery_publication_reconciled_archives(archive_id)
+        VALUES(current_setting('drevo.archive_id', true)) ON CONFLICT DO NOTHING`);
+    });
   // A preview staged before the additive migration still occupies capacity
   // when its archive starts. RLS keeps this backfill within the active archive.
   if ((await db.prepare("", "SELECT 1 AS present FROM workflow_stages WHERE kind='drevo' AND expires_at>? LIMIT 1")

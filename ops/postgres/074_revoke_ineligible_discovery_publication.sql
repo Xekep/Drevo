@@ -22,8 +22,19 @@ CREATE TRIGGER discovery_revoke_ineligible_publication
   FOR EACH ROW WHEN (OLD.data IS DISTINCT FROM NEW.data)
   EXECUTE FUNCTION revoke_ineligible_discovery_publication();
 
--- Clean the archive currently being initialized. RLS keeps the change local;
--- the trigger also protects older stale opt-ins in other archives on edit.
+-- The trigger is global, but existing opt-ins must be reconciled once per
+-- archive as its runtime opens under that archive's RLS scope.
+CREATE TABLE IF NOT EXISTS discovery_publication_reconciled_archives (
+  archive_id text PRIMARY KEY REFERENCES archives(id) ON DELETE CASCADE,
+  reconciled_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE discovery_publication_reconciled_archives ENABLE ROW LEVEL SECURITY;
+ALTER TABLE discovery_publication_reconciled_archives FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS archive_scope ON discovery_publication_reconciled_archives;
+CREATE POLICY archive_scope ON discovery_publication_reconciled_archives
+  USING (archive_id = current_setting('drevo.archive_id', true))
+  WITH CHECK (archive_id = current_setting('drevo.archive_id', true));
+
 DELETE FROM published_people published
  USING people p
  WHERE p.archive_id=published.archive_id AND p.id=published.person_id
@@ -31,3 +42,5 @@ DELETE FROM published_people published
      coalesce(p.data->>'deceased' = 'true', false) OR
      nullif(p.data->>'death', '') IS NOT NULL
    );
+INSERT INTO discovery_publication_reconciled_archives(archive_id)
+  VALUES(current_setting('drevo.archive_id', true)) ON CONFLICT DO NOTHING;
