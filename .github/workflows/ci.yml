@@ -19,7 +19,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/work:ro" postgres:18-trixie bash -ec '
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pgbackrest
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pgbackrest python3
             pgbackrest version
             exec gosu postgres bash /work/tests/pgbackrest-restore-smoke.sh
           '

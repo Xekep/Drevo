@@ -57,6 +57,20 @@ pgbackrest --config="$config" --stanza=smoke stanza-create
 pgbackrest --config="$config" --stanza=smoke check
 "${psql_primary[@]}" -c 'CREATE TABLE restore_smoke (id integer PRIMARY KEY, value text NOT NULL)'
 "${psql_primary[@]}" -c "INSERT INTO restore_smoke VALUES (1, 'before backup')"
+"${psql_primary[@]}" <<'SQL'
+CREATE TABLE archives(id text NOT NULL);
+CREATE TABLE people(archive_id text NOT NULL, data jsonb NOT NULL);
+CREATE TABLE photos(archive_id text NOT NULL, data jsonb NOT NULL);
+CREATE TABLE history(archive_id text NOT NULL, data jsonb NOT NULL);
+CREATE TABLE media_upload_grants(archive_id text NOT NULL, url text NOT NULL, expires_ms bigint NOT NULL);
+CREATE TABLE media_originals(archive_id text NOT NULL, url text NOT NULL, size_bytes bigint NOT NULL);
+CREATE TABLE documents(archive_id text NOT NULL, file_name text NOT NULL, file_size bigint NOT NULL);
+CREATE TABLE workflow_stages(archive_id text NOT NULL, kind text NOT NULL,
+  expires_at bigint NOT NULL, data jsonb NOT NULL, directory text);
+INSERT INTO archives VALUES ('tree-a');
+INSERT INTO people VALUES ('tree-a', '{"photo":"/media/one.jpg"}');
+INSERT INTO media_originals VALUES ('tree-a', '/media/one.jpg', 3);
+SQL
 pgbackrest --config="$config" --stanza=smoke --type=full backup
 
 # This row exists only in archived WAL, not in the completed full backup.
@@ -86,4 +100,14 @@ isolation="$("${psql_restored[@]}" -c "SELECT current_setting('listen_addresses'
   echo "Restored cluster is not isolated: $isolation" >&2
   exit 1
 }
+manifest="$work_dir/restored-refs.jsonl"
+"${psql_restored[@]}" -f "$root_dir/ops/postgres/media-filesystem-refs.sql" > "$manifest"
+mkdir -p "$work_dir/media-source/uploads"
+printf abc > "$work_dir/media-source/uploads/one.jpg"
+media_backup="$work_dir/media-20261002T000000Z.tar.gz"
+tar -C "$work_dir/media-source" -czf "$media_backup" uploads
+printf '%s  %s\n' "$(sha256sum "$media_backup" | cut -d ' ' -f 1)" \
+  "${media_backup##*/}" > "$media_backup.sha256"
+python3 "$root_dir/ops/postgres/verify-media-archive.py" "$media_backup" \
+  --scratch-parent "$work_dir" --reference-manifest "$manifest"
 echo 'PGBACKREST_RESTORE_SMOKE_VERIFIED post_backup_wal=1 isolated_socket=1'
