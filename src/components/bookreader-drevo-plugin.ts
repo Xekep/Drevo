@@ -37,7 +37,6 @@ export function makeDrevoPlugin(
   options: {
     downloadUrl: string;
     downloadName: string;
-    canEdit: boolean;
     fitSinglePage: boolean;
   },
 ) {
@@ -127,12 +126,6 @@ export function makeDrevoPlugin(
         () => emit({ source: "drevo-bookreader", type: "toggle-comments" }),
         "drevo-toolbar-comments",
       );
-      if (options.canEdit)
-        button(
-          "Редактировать сведения",
-          "M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L9 17l-4 1 1-4L16.5 3.5Z",
-          () => emit({ source: "drevo-bookreader", type: "edit" }),
-        );
       button(
         "Закрыть документ",
         "M18 6 6 18M6 6l12 12",
