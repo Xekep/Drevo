@@ -3872,7 +3872,8 @@ try {
   assert.equal((await app.archive.read()).family.people.length,
     peopleBeforeQuota.family.people.length,
     "shrinking an archive remains possible for a basic owner");
-  assert.ok(peopleBeforeQuota.family.people.length >= 2);
+  const beforePortraitFixture = await app.archive.read();
+  await app.archive.write(quotaFamily(2), beforePortraitFixture.revision, owner);
   for (const suffix of ["a", "b"])
     await quotaDb.prepare("", "INSERT INTO media_originals(url,size_bytes) VALUES(?,1)")
       .run(`/media/portrait-quota-${suffix}.jpg`);
@@ -3894,7 +3895,7 @@ try {
     "concurrent portrait patches must share the owner's final byte of quota");
   assert.equal((await accountCapacity(quotaDb, "owner")).mediaBytes, BASIC_MEDIA_BYTES);
   const afterCompetingPortraits = await app.archive.read();
-  await app.archive.write(beforeCompetingPortraits.family, afterCompetingPortraits.revision, owner);
+  await app.archive.write(peopleBeforeQuota.family, afterCompetingPortraits.revision, owner);
   for (const suffix of ["a", "b"])
     await quotaDb.prepare("", "DELETE FROM media_originals WHERE url=?")
       .run(`/media/portrait-quota-${suffix}.jpg`);
