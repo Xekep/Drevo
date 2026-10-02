@@ -1594,6 +1594,7 @@ try {
   const generatedStore = generatedResearchFileStore(
     app.archive.db, join(dirname(source), "uploads"), generatedChats,
   );
+  const stagedUsers = await userStore(app.archive.db);
   // A downgrade can commit while a generated file is staged but not installed.
   // The tier decision must be made under a lock at the install boundary.
   const stagedChat = await generatedChats.create("owner", JSON.stringify(["admin", "all", ""]));
@@ -1619,7 +1620,7 @@ try {
     } finally { clearTimeout(timeout); }
     assert.equal(readdirSync(stagedPath).length, 1,
       "the file must be staged before access is downgraded");
-    await runtimeHttpUsers.setFullAccess((await runtimeHttpUsers.get("owner"))!, "owner", false);
+    await stagedUsers.setFullAccess((await stagedUsers.get("owner"))!, "owner", false);
     assert.equal(await accountAiAccess(app.archive.db, "owner"), false);
     releaseInstall();
     const result = await stagedSave;
