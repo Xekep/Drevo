@@ -344,7 +344,7 @@
   .pdf-book-sidebar {
     position: absolute;
     z-index: 4;
-    top: 42px;
+    top: calc(var(--reader-toolbar-height, 38px) + 4px);
     right: 0;
     bottom: 0;
     width: min(82vw, 300px);

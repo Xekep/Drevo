@@ -194,6 +194,7 @@ test("BookReader explains when a PDF has no text layer", async ({
 test("BookReader keeps its navigation and Drevo comments and lens", async ({
   page,
 }, info) => {
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 640 });
   const csp = readFileSync("ops/nginx.conf", "utf8").match(
     /add_header Content-Security-Policy "([^"]+)"/,
   )![1];
@@ -231,6 +232,11 @@ test("BookReader keeps its navigation and Drevo comments and lens", async ({
   await commentsButton.click();
   await expect(sidebar).toBeVisible();
   await expect(commentsButton).toHaveAttribute("aria-expanded", "true");
+  if (info.project.name === "mobile") {
+    const toolbarBottom = await book.locator(".BRtoolbar").evaluate((bar) => bar.getBoundingClientRect().bottom);
+    await expect.poll(() => sidebar.evaluate((panel) => panel.getBoundingClientRect().top))
+      .toBeGreaterThanOrEqual(toolbarBottom);
+  }
   await commentsButton.click();
   await expect(sidebar).toBeHidden();
   await commentsButton.click();

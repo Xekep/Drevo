@@ -312,6 +312,21 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       },
     });
     reader.init();
+    const toolbar = document.querySelector<HTMLElement>(".BRtoolbar");
+    if (toolbar) {
+      const reportToolbarHeight = () =>
+        send({ source, type: "toolbar-height", height: Math.ceil(toolbar.getBoundingClientRect().bottom) });
+      const toolbarObserver = new ResizeObserver(reportToolbarHeight);
+      toolbarObserver.observe(toolbar);
+      window.addEventListener("resize", reportToolbarHeight);
+      const previousCleanup = cleanupDocument;
+      cleanupDocument = () => {
+        toolbarObserver.disconnect();
+        window.removeEventListener("resize", reportToolbarHeight);
+        previousCleanup();
+      };
+      reportToolbarHeight();
+    }
     reader.bind("pageChanged", () => {
       if (!reader) return;
       const page = reader.currentIndex();

@@ -32,6 +32,7 @@ export type ReaderCommand =
 export type ReaderEvent =
   | { source: "drevo-bookreader"; type: "ready" }
   | { source: "drevo-bookreader"; type: "loaded"; pageCount: number }
+  | { source: "drevo-bookreader"; type: "toolbar-height"; height: number }
   | { source: "drevo-bookreader"; type: "page"; page: number }
   | { source: "drevo-bookreader"; type: "magnifier-off" }
   | { source: "drevo-bookreader"; type: "toggle-magnifier" }
