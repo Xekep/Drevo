@@ -54,7 +54,8 @@ export function generatedResearchFileStore(
   const archiveDirectory = dirname(uploadsDirectory);
   const root = join(archiveDirectory, "ai-generated-files");
   const archiveParent = dirname(archiveDirectory);
-  const platformDirectory = basename(archiveParent) === "archives"
+  const platformDirectory = basename(archiveParent) === "archives" &&
+    basename(archiveDirectory) === db.archiveId
     ? dirname(archiveParent) : archiveDirectory;
   const withPhysicalLock = <T>(work: () => Promise<T>) => {
     if (!db.withExclusivePlatformTask) throw new Error("Platform file lock unavailable");
@@ -231,11 +232,12 @@ export function generatedResearchFileStore(
       if (!shared) return;
       await withPhysicalLock(async () => {
         if (!(await regularDirectory(root))) return;
+        const liveChats = await chats.allIds();
         for (const chat of await readdir(root, { withFileTypes: true })) {
           if (!uuid.test(chat.name) || !chat.isDirectory() || chat.isSymbolicLink()) continue;
           const path = folder(chat.name);
           if (!(await regularDirectory(path))) continue;
-          if (!(await chats.exists(chat.name))) {
+          if (!liveChats.has(chat.name)) {
             await rm(path, { recursive: true, force: true });
             continue;
           }
