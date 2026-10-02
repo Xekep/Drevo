@@ -724,6 +724,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           "awards",
           "parentageComplete",
           "deceased",
+          "needsReview",
         ] as const)
           if (Object.hasOwn(extra, key))
             Object.assign(p, { [key]: extra[key] });
