@@ -7,7 +7,7 @@ import type {
   Source,
   FamilyUnion,
 } from "./types.ts";
-import { validDate } from "./dates.ts";
+import { dateBound, validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import {
   TRANSFER_XML_LIMIT,
@@ -155,6 +155,12 @@ const spouseRoles = new Set([
   "Невеста",
   "Groom",
   "Bride",
+]);
+const formerSpouseRoles = new Set([
+  "Бывший муж",
+  "Бывшая жена",
+  "Ex-husband",
+  "Ex-wife",
 ]);
 
 export function importAgelongXml(
@@ -459,7 +465,7 @@ export function importAgelongXml(
     }
     if (type === "marriage" || type === "divorce") {
       const pair = participants
-        .filter((v) => spouseRoles.has(v.role))
+        .filter((v) => spouseRoles.has(v.role) || (type === "divorce" && formerSpouseRoles.has(v.role)))
         .map((v) => v.person);
       if (pair.length === 2) {
         for (const p of pair)
@@ -480,7 +486,7 @@ export function importAgelongXml(
           ...(eventSources.length ? { sources: eventSources } : {}),
         };
         unions.push({
-          id: `agelong-union-${eventId}`,
+          id: `${namespace}-union-${eventId}`,
           participants: [pair[0].id, pair[1].id],
           type: "marriage",
           ...(type === "marriage"
@@ -488,6 +494,7 @@ export function importAgelongXml(
             : { divorce: milestone }),
         });
       }
+      else warnings.add(`Событие ${n.attrs.type} ${eventId}: роли двух супругов не распознаны; семейный союз не создан.`);
     }
     for (const { person: p, role } of participants) {
       if ((birth && !birthRoles.has(role)) || (death && !deathRoles.has(role)))
@@ -570,6 +577,30 @@ export function importAgelongXml(
             : undefined,
         });
       }
+    }
+  }
+  // XML event order is not guaranteed. Attach a divorce only when one
+  // compatible marriage for this pair can be identified without guessing.
+  for (const divorce of unions.filter((union) => union.divorce)) {
+    const candidates = unions.filter(
+      (union) =>
+        union !== divorce &&
+        union.formation &&
+        !union.divorce &&
+        union.participants.every((id) => divorce.participants.includes(id)) &&
+        (!union.formation.date ||
+          !divorce.divorce?.date ||
+          dateBound(union.formation.date, false) <=
+            dateBound(divorce.divorce.date, true)),
+    );
+    if (candidates.length === 1) {
+      candidates[0].divorce = divorce.divorce;
+      unions.splice(unions.indexOf(divorce), 1);
+    } else {
+      const reason = candidates.length
+        ? "у пары несколько возможных союзов"
+        : "подходящий брак не найден";
+      warnings.add(`Развод ${divorce.id.slice(`${namespace}-union-`.length)} сохранён отдельным союзом: ${reason}.`);
     }
   }
   for (const n of nodes)
