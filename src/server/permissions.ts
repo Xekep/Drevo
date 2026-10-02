@@ -22,6 +22,9 @@ function catalogCitationSlots(family: Family) {
       add(["person", person.id, "event", event.id], event.sources);
       add(["person", person.id, "event", event.id, "dateClaim"], event.dateClaim?.sources);
       add(["person", person.id, "event", event.id, "placeClaim"], event.placeClaim?.sources);
+      for (const alternative of event.alternatives || [])
+        add(["person", person.id, "event", event.id, "alternative", alternative.id],
+          alternative.sources);
     }
   }
   for (const union of family.unions || []) {
@@ -100,7 +103,8 @@ export function authorizeArchive(
         "deathPlaceClaim", "occupationClaim", "maidenNameClaim"] as const;
       if (assessedValue.some((key) => person[key]?.confidence) ||
         person.factAlternatives?.some((alternative) => alternative.confidence) ||
-        person.events?.some((event) => event.dateClaim?.confidence || event.placeClaim?.confidence))
+        person.events?.some((event) => event.dateClaim?.confidence ||
+          event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence)))
         throw new ForbiddenError("Оценённую карточку может удалить только исследователь или администратор");
     }
     for (const person of next.people)
@@ -127,10 +131,27 @@ export function authorizeArchive(
             currentEvent?.gedcomTag !== oldEvent.gedcomTag))
             throw new ForbiddenError("Оценённое утверждение может менять только исследователь или администратор");
         }
+      for (const oldEvent of earlierEvents.values()) {
+        const currentEvent = currentEvents.get(oldEvent.id);
+        const present = new Set((currentEvent?.alternatives || []).map((item) => item.id));
+        if (oldEvent.alternatives?.some((item) => item.confidence) &&
+          (!currentEvent || currentEvent.type !== oldEvent.type ||
+            currentEvent.title !== oldEvent.title ||
+            currentEvent.gedcomTag !== oldEvent.gedcomTag))
+          throw new ForbiddenError("Оценённое утверждение может менять только исследователь или администратор");
+        for (const alternative of oldEvent.alternatives || [])
+          if (alternative.confidence && !present.has(alternative.id))
+            throw new ForbiddenError("Оценённый вариант может удалить только исследователь или администратор");
+      }
       for (const event of person.events || []) {
         const oldEvent = earlierEvents.get(event.id);
         for (const key of ["dateClaim", "placeClaim"] as const)
           if (event[key]?.confidence !== oldEvent?.[key]?.confidence)
+            throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
+        const oldAlternatives = new Map((oldEvent?.alternatives || [])
+          .map((item) => [item.id, item]));
+        for (const alternative of event.alternatives || [])
+          if (alternative.confidence !== oldAlternatives.get(alternative.id)?.confidence)
             throw new ForbiddenError("Статус достоверности может менять только исследователь или администратор");
       }
       const earlier = new Map((previous.get(person.id)?.factAlternatives || [])
@@ -152,6 +173,16 @@ export function authorizeArchive(
       const before = old.get(alternative.id);
       if (before && (before.field !== alternative.field || before.value !== alternative.value))
         throw new ForbiddenError("Для другого значения удалите прежний вариант и добавьте новый источник");
+    }
+    const oldEvents = new Map((previous?.events || []).map((event) => [event.id, event]));
+    for (const event of person.events || []) {
+      const old = new Map((oldEvents.get(event.id)?.alternatives || [])
+        .map((alternative) => [alternative.id, alternative]));
+      for (const alternative of event.alternatives || []) {
+        const before = old.get(alternative.id);
+        if (before && (before.field !== alternative.field || before.value !== alternative.value))
+          throw new ForbiddenError("Для другого значения удалите прежний вариант и добавьте новый источник");
+      }
     }
   }
   if (admin) return next;

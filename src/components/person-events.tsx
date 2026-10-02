@@ -1,28 +1,84 @@
 import { useState } from "react";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
-import type { ClaimConfidence, PersonEvent, Source } from "../domain/types";
+import type { ClaimConfidence, EventFactAlternative, PersonEvent, Source } from "../domain/types";
 import { CLAIM_CONFIDENCE_LABELS } from "../domain/claim-confidence.ts";
 import { repositorySummary } from "../domain/person-sources.ts";
 import { SourceRepositoryEditor } from "./source-repository-editor.tsx";
 import { claimableEventDate, EVENT_NAMES } from "../domain/person-events";
-import { dateInputLabel, dateLabel, safeUrl } from "../domain/dates";
+import { dateInputLabel, dateLabel, normalizeDateInput, safeUrl } from "../domain/dates";
 import { archiveResourceUrl, scopedArchivePath } from "../domain/archive-context.ts";
 import { archiveDocumentPath } from "../domain/archive-routes.ts";
 import { DocumentSourcePicker } from "./document-source-picker.tsx";
 import { CatalogPicker, CitationSourcesEditor } from "./union-sources-editor.tsx";
 import { sourceCitation } from "../shared/source-catalog.ts";
+const hasAssessment = (event: PersonEvent) => !!(event.dateClaim?.confidence ||
+  event.placeClaim?.confidence || event.alternatives?.some((item) => item.confidence));
+function EventAlternatives({ event, onChange, isAdmin, canAssess, savedIds }: {
+  event: PersonEvent;
+  onChange: (alternatives: EventFactAlternative[]) => void;
+  isAdmin: boolean;
+  canAssess: boolean;
+  savedIds: ReadonlySet<string>;
+}) {
+  const alternatives = event.alternatives || [];
+  const update = (id: string, patch: Partial<EventFactAlternative>) =>
+    onChange(alternatives.map((item) => item.id === id ? { ...item, ...patch } : item));
+  const add = (field: EventFactAlternative["field"]) =>
+    onChange([...alternatives, { id: crypto.randomUUID(), field, value: "", sources: [] }]);
+  return <details className="form-details event-alternatives">
+    <summary>Другие записи о событии{alternatives.length ? ` · ${alternatives.length}` : ""}</summary>
+    <p>Сохраните отличающуюся дату или место с источником. Показанные дата и место события останутся прежними.</p>
+    {alternatives.map((alternative) => {
+      const locked = savedIds.has(alternative.id);
+      return <section className="fact-alternative" key={alternative.id}>
+        <label>{alternative.field === "date" ? "Другая дата" : "Другое место"} события
+          <input required readOnly={locked} value={alternative.field === "date"
+            ? dateInputLabel(alternative.value) : alternative.value}
+            placeholder={alternative.field === "date" ? "Например, 1901 или 12.3.1901" : "Название в документе"}
+            onChange={(change) => update(alternative.id, { value: change.target.value })}
+            onBlur={() => {
+              if (alternative.field !== "date" || locked || !alternative.value.trim()) return;
+              try { update(alternative.id, { value: normalizeDateInput(alternative.value) }); }
+              catch { /* Сервер проверит дату перед сохранением. */ }
+            }} />
+        </label>
+        {locked && <small>Чтобы изменить вариант, удалите его и добавьте новую запись с источником.</small>}
+        <CitationSourcesEditor sources={alternative.sources}
+          onChange={(sources) => update(alternative.id, { sources })}
+          isAdmin={isAdmin} canRemoveLast={false} />
+        <label>Достоверность
+          <select value={alternative.confidence || ""} disabled={!canAssess}
+            onChange={(change) => update(alternative.id, { confidence: change.target.value
+              ? change.target.value as ClaimConfidence : undefined })}>
+            <option value="">Не оценено</option>
+            {(Object.keys(CLAIM_CONFIDENCE_LABELS) as ClaimConfidence[]).map((status) =>
+              <option key={status} value={status}>{CLAIM_CONFIDENCE_LABELS[status]}</option>)}
+          </select>
+        </label>
+        <button type="button" disabled={!!alternative.confidence && !canAssess}
+          onClick={() => onChange(alternatives.filter((item) => item.id !== alternative.id))}>
+          Удалить вариант
+        </button>
+      </section>;
+    })}
+    <button type="button" onClick={() => add("date")}>Добавить другую дату</button>
+    <button type="button" onClick={() => add("place")}>Добавить другое место</button>
+  </details>;
+}
 export function EventsEditor({
   events,
   onChange,
   personId,
   isAdmin,
   canAssess,
+  savedEvents,
 }: {
   events: PersonEvent[];
   onChange: (events: PersonEvent[]) => void;
   personId?: string;
   isAdmin: boolean;
   canAssess: boolean;
+  savedEvents?: PersonEvent[];
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const update = (id: string, patch: Partial<PersonEvent>) =>
@@ -70,7 +126,7 @@ export function EventsEditor({
               Событие
               <select
                 value={event.type}
-                disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                disabled={!canAssess && hasAssessment(event)}
                 onChange={(e) =>
                   update(event.id, {
                     type: e.target.value as PersonEvent["type"],
@@ -91,7 +147,7 @@ export function EventsEditor({
                   maxLength={1000}
                   placeholder="Название события"
                   value={event.title || ""}
-                  disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                  disabled={!canAssess && hasAssessment(event)}
                   onChange={(e) =>
                     update(event.id, { title: e.target.value || undefined })
                   }
@@ -182,6 +238,10 @@ export function EventsEditor({
                     </label>}</>
                   : <p>Укажите место, чтобы привязать к нему свидетельство.</p>}
             </details>
+            <EventAlternatives event={event} isAdmin={isAdmin} canAssess={canAssess}
+              savedIds={new Set(savedEvents?.find((item) => item.id === event.id)
+                ?.alternatives?.map((item) => item.id) || [])}
+              onChange={(alternatives) => update(event.id, { alternatives })} />
             <details className="event-extra">
               <summary>
                 Подробности
@@ -196,7 +256,7 @@ export function EventsEditor({
                   <input
                     maxLength={1000}
                     value={event.title || ""}
-                    disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+                    disabled={!canAssess && hasAssessment(event)}
                       onChange={(e) =>
                         update(event.id, { title: e.target.value || undefined })
                       }
@@ -361,12 +421,12 @@ export function EventsEditor({
             <button
               className="event-remove"
               type="button"
-              disabled={!canAssess && !!(event.dateClaim?.confidence || event.placeClaim?.confidence)}
+              disabled={!canAssess && hasAssessment(event)}
               onClick={() => onChange(events.filter((e) => e.id !== event.id))}
             >
               <Trash2 size={14} /> Убрать событие
             </button>
-            {!canAssess && (event.dateClaim?.confidence || event.placeClaim?.confidence) &&
+            {!canAssess && hasAssessment(event) &&
               <small>Оценённое событие может удалить исследователь или администратор.</small>}
           </div>
         </details>
@@ -452,6 +512,18 @@ export function PersonEvents({
                   sources={event.placeClaim.sources}
                   canLoadDocuments={canLoadDocuments} />
               )}
+              {!!event.alternatives?.length && <div className="event-competing-evidence">
+                <strong>Другие записи в источниках</strong>
+                {event.alternatives.map((alternative) =>
+                  <div key={alternative.id} className="event-competing-value">
+                    <p>{alternative.field === "date" ? "Другая дата" : "Другое место"}: {alternative.field === "date"
+                      ? dateLabel(alternative.value) : alternative.value}
+                      {alternative.confidence
+                        ? ` · ${CLAIM_CONFIDENCE_LABELS[alternative.confidence]}` : ""}</p>
+                    <EventSourceList label="Источники варианта" sources={alternative.sources}
+                      canLoadDocuments={canLoadDocuments} />
+                  </div>)}
+              </div>}
             </div>
           </article>
         ))}

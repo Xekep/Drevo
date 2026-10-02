@@ -283,6 +283,13 @@ export function generationReport(
         if (event.placeClaim?.confidence)
           write("Оценка места события", CLAIM_CONFIDENCE_LABELS[event.placeClaim.confidence]);
         sources("Источник места события", event.placeClaim?.sources);
+        for (const alternative of event.alternatives || []) {
+          write(alternative.field === "date" ? "Другая дата события" : "Другое место события",
+            alternative.field === "date" ? dateInputLabel(alternative.value) : alternative.value);
+          if (alternative.confidence)
+            write("Оценка варианта", CLAIM_CONFIDENCE_LABELS[alternative.confidence]);
+          sources("Источник варианта события", alternative.sources);
+        }
       }
       for (const award of person.awards || []) {
         write("Награда", [award.name, award.year].filter(Boolean).join("; "));

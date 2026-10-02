@@ -21,6 +21,7 @@ const contradictoryCodes = new Set([
   "conflicting-life-facts",
   "competing-life-evidence",
   "conflicting-event-facts",
+  "competing-event-evidence",
 ]);
 
 export function qualityCategory(warning: ArchiveWarning): QualityCategory {
@@ -147,8 +148,30 @@ export function analyzeArchiveCoverage(family: Family): ArchiveWarning[] {
           eventId: event.id,
           sourceTitles: factSourceTitles(conflictingEventFacts),
         });
+      const competingEventFacts = ([
+        ["date", "дата", claimableEventDate(event) || "", event.dateClaim],
+        ["place", "место", event.place || "", event.placeClaim],
+      ] as const).flatMap(([field, label, value, claim]) => {
+        const cited = (event.alternatives || []).filter((item) => item.field === field)
+          .map((item) => ({ value: item.value, sources: item.sources }));
+        if (hasExactSources({ label, value, claim }))
+          cited.unshift({ value, sources: claim!.sources });
+        return cited.length > 1 ? [{ label, cited }] : [];
+      });
+      if (competingEventFacts.length)
+        warnings.push({
+          code: "competing-event-evidence",
+          title: "Источники указывают разные сведения о событии",
+          detail: `${fullName(person)}: ${eventName} — ${competingEventFacts.map(({ label, cited }) =>
+            `${label}: ${cited.map((item) => item.value).join(" и ")}`).join("; ")}.`,
+          rule: "Разные значения сохранены с отдельными источниками. Drevo не выбирает правильный вариант автоматически.",
+          level: "check",
+          personIds: [person.id], eventId: event.id,
+          sourceTitles: [...new Set(competingEventFacts.flatMap(({ cited }) =>
+            cited.flatMap((item) => item.sources)).map((source) => source.title.trim()).filter(Boolean))],
+        });
       if (!event.sources?.length && !event.dateClaim?.sources.length &&
-        !event.placeClaim?.sources.length)
+        !event.placeClaim?.sources.length && !event.alternatives?.some((item) => item.sources.length))
         warnings.push({
           code: "unsourced-event",
           title: "Событие без прикреплённого источника",
