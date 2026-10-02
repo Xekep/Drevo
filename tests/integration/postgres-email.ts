@@ -242,7 +242,88 @@ export async function verifyEmailAccounts(
     "INSERT INTO account_oauth_session_proofs(token_hash,provider,authenticated_at) VALUES($1,'yandex',$2)",
     [renewedOAuthSession, Date.now()],
   );
-  await accounts.verifyLink("owner", linkToken, renewedOAuthSession);
+  let releaseLink!: () => void;
+  let linkLocked!: () => void;
+  const heldLink = new Promise<void>((resolve) => {
+    releaseLink = resolve;
+  });
+  const acquiredLinkLock = new Promise<void>((resolve) => {
+    linkLocked = resolve;
+  });
+  const blockingDb: StoreDatabase = {
+    ...db,
+    postgresTransaction: <T>(
+      work: (transaction: pg.PoolClient) => Promise<T>,
+    ) =>
+      db.postgresTransaction!(async (transaction) => {
+        const guarded = new Proxy(transaction, {
+          get(target, property, receiver) {
+            if (property !== "query")
+              return Reflect.get(target, property, receiver);
+            return (async (sql: string, params?: unknown[]) => {
+              const result = await target.query(sql, params);
+              if (sql.includes("FOR SHARE OF s,p")) {
+                linkLocked();
+                await heldLink;
+              }
+              return result;
+            }) as pg.PoolClient["query"];
+          },
+        });
+        return work(guarded);
+      }),
+  };
+  const blockingAccounts = emailCredentials(
+    blockingDb,
+    async () => {},
+    "https://mydrevo.org",
+  );
+  const completingLink = blockingAccounts.verifyLink(
+    "owner",
+    linkToken,
+    renewedOAuthSession,
+  );
+  let lockTimeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      acquiredLinkLock,
+      completingLink.then(() => {
+        throw new Error("Link completed before holding the OAuth session lock");
+      }),
+      new Promise<never>((_, reject) => {
+        lockTimeout = setTimeout(
+          () =>
+            reject(new Error("Timed out waiting for the OAuth session lock")),
+          10_000,
+        );
+      }),
+    ]);
+  } catch (error) {
+    releaseLink();
+    throw error;
+  } finally {
+    if (lockTimeout) clearTimeout(lockTimeout);
+  }
+  const revokingSession = client.query(
+    "DELETE FROM account_sessions WHERE token_hash=$1",
+    [renewedOAuthSession],
+  );
+  try {
+    assert.equal(
+      await Promise.race([
+        revokingSession.then(() => "revoked"),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("waiting"), 75),
+        ),
+      ]),
+      "waiting",
+      "revocation must wait for the in-flight credential transaction",
+    );
+  } finally {
+    releaseLink();
+  }
+  await completingLink;
+  await revokingSession;
   assert.equal(
     (
       await accounts.login({
@@ -254,7 +335,7 @@ export async function verifyEmailAccounts(
   );
   await assert.rejects(
     accounts.verifyLink("owner", linkToken, renewedOAuthSession),
-    InvalidEmailCredential,
+    StaleOAuthSession,
   );
   assert.deepEqual(
     (
