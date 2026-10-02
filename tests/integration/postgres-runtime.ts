@@ -2418,6 +2418,13 @@ try {
         await client.query("UPDATE ai_settings SET code_interpreter_enabled=1 WHERE id=1");
         let calculationCalls = 0;
         let uploads = 0;
+        let returnCalculationFile = false;
+        let notifyCleanup!: () => void;
+        let releaseCleanup!: () => void;
+        const cleanupStarted = new Promise<void>((resolve) => { notifyCleanup = resolve; });
+        const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+        const calculationFilesRoot = mkdtempSync(join(tmpdir(), "drevo-ai-calculation-tier-"));
+        let fileTestUsageBefore = 0;
         const adapted = adaptLegacyAiFake(async (url, init) => {
           if (String(url).endsWith("/models"))
             return Response.json({ data: [{ id: "gpt://folder-1/yandexgpt/rc", owned_by: "Yandex" }] });
@@ -2436,14 +2443,30 @@ try {
         const fake: typeof fetch = async (url, init) => {
           if (String(url).endsWith("/files") && init?.method === "POST") {
             uploads++;
-            await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+            if (!returnCalculationFile)
+              await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
             return Response.json({ id: "uploaded-before-tier-change" });
           }
-          if (String(url).includes("/files/") && init?.method === "DELETE")
+          if (String(url).endsWith("/files/file-output/content") && init?.method === "GET")
+            return new Response("year,count\n1900,2\n", { headers: { "content-type": "text/csv" } });
+          if (String(url).includes("/files/") && init?.method === "DELETE") {
+            if (returnCalculationFile && String(url).endsWith("/files/file-output")) {
+              notifyCleanup();
+              await cleanupGate;
+            }
             return Response.json({ deleted: true });
+          }
           if (String(url).endsWith("/responses") &&
             JSON.parse(String(init?.body)).tools?.some((tool: { type: string }) => tool.type === "code_interpreter")) {
             calculationCalls++;
+            if (returnCalculationFile)
+              return Response.json({ status: "completed", output: [
+                { type: "code_interpreter_call", status: "completed", container_id: "container-new" },
+                { type: "message", content: [{ type: "output_text", text: "Расчёт завершён", annotations: [
+                  { type: "container_file_citation", container_id: "container-new",
+                    file_id: "file-output", filename: "result.csv" },
+                ] }] },
+              ] });
             return Response.json({ status: "completed", output: [] });
           }
           return adapted(url, init);
@@ -2459,6 +2482,7 @@ try {
           previewImage: imagePreviews(join(dirname(source), "previews")),
           researchCatalog: researchCatalogStore(app!.archive.db),
           publicOrigin: process.env.PUBLIC_ORIGIN, fetcher: fake,
+          uploadsDirectory: join(calculationFilesRoot, "uploads"),
         });
         const server = createServer((req, res) => {
           void handler(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
@@ -2477,7 +2501,31 @@ try {
           assert.equal(uploads, 1, "the tier changes after a real provider upload");
           assert.equal(calculationCalls, 0,
             "the Code Interpreter model is not called after tier downgrade");
+          await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
+          fileTestUsageBefore = Number((await client.query(
+            "SELECT coalesce(max(id),0) AS id FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1",
+            [proposalMember],
+          )).rows[0].id);
+          returnCalculationFile = true;
+          const waitingForCleanup = fetch(`http://127.0.0.1:${port}/api/ai/chat`, {
+            method: "POST", headers: proposalHeaders,
+            body: JSON.stringify({ message: "Построй график рождений и сохрани CSV" }),
+          });
+          await Promise.race([cleanupStarted, waitingForCleanup.then(async (early) => {
+            throw new Error(`Calculation stopped before file cleanup: ${early.status} ${await early.clone().text()}`);
+          }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Calculation file cleanup did not start")), 15_000))]);
+          await client.query("UPDATE account_tiers SET full_access=false WHERE account_id=$1", [proposalMember]);
+          releaseCleanup();
+          const blockedFile = await waitingForCleanup;
+          assert.equal(blockedFile.status, 403, await blockedFile.clone().text());
+          const generatedRoot = join(calculationFilesRoot, "ai-generated-files");
+          assert.equal(existsSync(generatedRoot)
+            ? readdirSync(generatedRoot, { recursive: true, withFileTypes: true })
+              .filter((entry) => entry.isFile()).length : 0,
+            0, "downgrade during calculation cleanup cannot persist a generated file");
         } finally {
+          releaseCleanup();
           await client.query("UPDATE account_tiers SET full_access=true WHERE account_id=$1", [proposalMember]);
           await client.query("UPDATE ai_settings SET code_interpreter_enabled=$1 WHERE id=1", [previousInterpreter]);
           const newChats = (await client.query("SELECT id FROM ai_chats WHERE user_id=$1", [proposalMember]))
@@ -2485,6 +2533,10 @@ try {
           for (const chatId of newChats) await aiChatStore(app!.archive.db).delete(chatId, proposalMember);
           await new Promise<void>((resolve) => server.close(() => resolve()));
           await handler.close();
+          if (fileTestUsageBefore)
+            await client.query("DELETE FROM ai_usage WHERE archive_id='runtime-test' AND user_id=$1 AND id>$2",
+              [proposalMember, fileTestUsageBefore]);
+          rmSync(calculationFilesRoot, { recursive: true, force: true });
         }
       }
       await runDeferredAnswer("session-revoked", async () => {
