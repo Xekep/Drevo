@@ -4678,6 +4678,7 @@ try {
   const ownPerson = ownWithRelative.people.find((person) => person.id === "person-a")!;
   const otherPerson = otherWithRelative.people.find((person) => person.id === "person-a")!;
   ownPerson.birthPlace = "Россия, Свердловская область, Нижний Тагил";
+  ownPerson.deathPlace = "Казань";
   const parent = { ...structuredClone(ownPerson), id: "published-parent",
     surname: "Орлов", name: "Пётр", birth: "1960", deceased: true,
     parents: [], column: 50 };
@@ -4699,10 +4700,14 @@ try {
     birthPlace: "Россия, Свердловская область, Екатеринбург", deceased: true,
     parents: [], column: 55 });
   otherWithRelative.people.push({ ...structuredClone(otherPerson),
+    id: "death-place-match", surname: "Кузнецов", name: "Иван", birth: "1991",
+    deathPlace: "Казань", birthPlace: "", deceased: true,
+    parents: [], column: 56 });
+  otherWithRelative.people.push({ ...structuredClone(otherPerson),
     id: "closed-relative", surname: "Орлов", name: "Пётр", sex: "f", deceased: true,
     parents: [], spouses: ["relative-only"], column: 53 });
   const ownSignalWrite = await app.archive.write(ownWithRelative, ownBeforeSignals.revision);
-  const otherSignalWrite = await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
+  await otherApp.archive.write(otherWithRelative, otherBeforeSignals.revision);
   await otherPublication.publish("relative-only", "owner");
   await otherPublication.publish("name-typo", "owner");
   await otherPublication.publish("place-match", "owner");
@@ -4726,6 +4731,61 @@ try {
   "the indexed place and year branch can suggest a changed surname");
   assert.equal((await signalIds()).some((item) => item.id === "region-only"), false,
     "a shared region without a shared settlement is not a candidate clue");
+  const deathHeaders = { ...ownerHeaders, "X-Real-IP": "198.51.100.89" };
+  const deathCandidates = async () => {
+    const response = await fetch(securedBase + candidatePath, { headers: deathHeaders });
+    assert.equal(response.status, 200);
+    return (await response.json()).candidates as { id: string; reasons: string[] }[];
+  };
+  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+    "an unpublished death settlement is not searchable");
+  await otherPublication.publish("death-place-match", "owner", {
+    birthSurname: false, birthYear: true, deathYear: true,
+    birthPlace: true, deathPlace: false,
+  });
+  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+    "a death settlement withheld from publication cannot create a suggestion");
+  await otherPublication.publish("death-place-match", "owner");
+  assert.ok((await deathCandidates()).some((item) => item.id === "death-place-match" &&
+    item.reasons.includes("Место смерти совпадает")),
+  "the second indexed place branch finds a changed surname by opt-in death settlement and birth year");
+  await otherPublication.unpublish("death-place-match");
+  assert.equal((await deathCandidates()).some((item) => item.id === "death-place-match"), false,
+    "unpublishing removes the death-settlement suggestion immediately");
+  const beforeBothPlaces = await otherApp.archive.read();
+  const bothPlaces = structuredClone(beforeBothPlaces.family);
+  const bothPlaceIds = Array.from({ length: 25 }, (_, index) =>
+    `both-places-${String(index).padStart(2, "0")}`);
+  bothPlaces.people.push(...bothPlaceIds.map((id, index) => ({
+    ...structuredClone(otherPerson), id, surname: "Кузнецов", name: "Иван",
+    birth: "1991", birthPlace: "Нижний Тагил", deathPlace: "Казань",
+    deceased: true, parents: [], column: 60 + index,
+  })));
+  const bothPlaceWrite = await otherApp.archive.write(bothPlaces, beforeBothPlaces.revision);
+  for (const id of bothPlaceIds) await otherPublication.publish(id, "owner");
+  const pages: { id: string }[] = [];
+  let placeCursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < 4; pageNumber++) {
+    const pageUrl: string = securedBase + candidatePath + (placeCursor
+      ? `&cursor=${encodeURIComponent(placeCursor)}` : "");
+    const response: Response = await fetch(pageUrl, { headers: deathHeaders });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { candidates: { id: string }[]; nextCursor: string | null };
+    pages.push(...body.candidates);
+    if (pageNumber === 0) {
+      assert.equal(body.candidates.length, 24);
+      assert.equal(typeof body.nextCursor, "string");
+    }
+    placeCursor = body.nextCursor;
+    if (!placeCursor) break;
+  }
+  assert.equal(placeCursor, null, "two indexed place branches finish within bounded pages");
+  assert.equal(new Set(pages.map((person) => person.id)).size, pages.length,
+    "UNION deduplicates cards matching both birth and death places before pagination");
+  assert.equal(pages.filter((person) => bothPlaceIds.includes(person.id)).length, 25,
+    "a double-matched card beyond the first page remains reachable exactly once");
+  const afterBothPlaces = await otherApp.archive.write(beforeBothPlaces.family,
+    bothPlaceWrite.revision);
   await publishedPeopleStore(app.archive.db).publish(parent.id, "owner");
   await otherPublication.publish(parent.id, "owner");
   const revocableRequest = await fetch(securedBase + "/api/discovery/matches", {
@@ -4835,7 +4895,7 @@ try {
     FROM discovery_relative_names WHERE relative_person_id='published-parent'
       AND archive_id='other-archive'`).get())?.count, 0);
   await app.archive.write(ownBeforeSignals.family, ownSignalWrite.revision);
-  await otherApp.archive.write(otherBeforeSignals.family, otherSignalWrite.revision);
+  await otherApp.archive.write(otherBeforeSignals.family, afterBothPlaces.revision);
   await otherPublication.unpublish("person-a");
   await otherPublication.unpublish("person-b");
   assert.equal((await matchDb.prepare("", `SELECT count(*)::int AS count

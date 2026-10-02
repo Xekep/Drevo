@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { candidateEvidence, candidateFuzzyTerms, candidateNameQuery,
-  candidatePlaceQuery, candidateRelativeQuery } from "../src/server/discovery-candidate-ranking.ts";
+  candidatePlaceQueries, candidateRelativeQuery } from "../src/server/discovery-candidate-ranking.ts";
 
 test("candidate lookup searches published birth surname and given name", () => {
   assert.equal(candidateNameQuery({ name: "Петрова Анна", birthSurname: "Иванова" }),
@@ -60,29 +60,43 @@ test("partially matching published places are clues, distant places are conflict
 
 test("published place and year can find a changed surname without guessing identity", () => {
   const source = { name: "Иванова Анна", birthYear: "1900", birthPlace: "г. Москва" };
-  assert.deepEqual(candidatePlaceQuery(source),
-    { terms: "анна & москва", column: "birth_year", from: "1898", to: "1902" });
+  assert.deepEqual(candidatePlaceQueries(source),
+    [{ terms: "анна & москва", from: "1898", to: "1902" }]);
   const evidence = candidateEvidence(source,
     { name: "Петрова Анна", birthYear: "1901", birthPlace: "Москва" })!;
   assert.ok(evidence.reasons.includes("Место рождения совпадает"));
   assert.ok(evidence.conflicts.includes("Указанные фамилии различаются"));
-  assert.equal(candidatePlaceQuery({ name: "Иванова Анна", birthPlace: "Москва" }), null);
+  assert.deepEqual(candidatePlaceQueries({ name: "Иванова Анна", birthPlace: "Москва" }), []);
 });
 
 test("a shared country or region cannot stand in for a shared settlement", () => {
   const source = { name: "Иванова Анна", birthYear: "1900",
     birthPlace: "Россия, Свердловская область, Нижний Тагил" };
-  assert.deepEqual(candidatePlaceQuery(source),
-    { terms: "анна & нижний & тагил", column: "birth_year", from: "1898", to: "1902" });
+  assert.deepEqual(candidatePlaceQueries(source),
+    [{ terms: "анна & нижний & тагил", from: "1898", to: "1902" }]);
   const unrelated = { name: "Петрова Анна", birthYear: "1901",
     birthPlace: "Россия, Свердловская область, Екатеринбург" };
   assert.equal(candidateEvidence(source,unrelated), null);
-  assert.equal(candidatePlaceQuery({ name: "Иванова Анна", birthYear: "1900",
-    birthPlace: "Россия, Свердловская область" }), null);
-  assert.deepEqual(candidatePlaceQuery({ name: "Шульц Анна", deathYear: "1945",
-    deathPlace: "Кёнигсберг, Восточная Пруссия" }),
-  { terms: "анна & кенигсберг", column: "death_year", from: "1943", to: "1947" });
-  assert.deepEqual(candidatePlaceQuery({ name: "Шульц Анна", deathYear: "1945",
-    deathPlace: "д. Дубровка, Пермь" }),
-  { terms: "анна & дубровка", column: "death_year", from: "1943", to: "1947" });
+  assert.deepEqual(candidatePlaceQueries({ name: "Иванова Анна", birthYear: "1900",
+    birthPlace: "Россия, Свердловская область" }), []);
+  assert.deepEqual(candidatePlaceQueries({ name: "Шульц Анна", deathYear: "1945",
+    deathPlace: "Кёнигсберг, Восточная Пруссия" }), [],
+  "a death-year clue alone cannot satisfy the changed-surname birth-year evidence");
+  assert.deepEqual(candidatePlaceQueries({ name: "Шульц Анна", birthYear: "1900",
+    birthPlace: "Россия, Свердловская область", deathPlace: "д. Дубровка, Пермь" }),
+  [{ terms: "анна & дубровка", from: "1898", to: "1902" }]);
+});
+
+test("both published settlements can independently retrieve a changed surname", () => {
+  const source = { name: "Иванова Анна", birthYear: "1900",
+    birthPlace: "Москва", deathPlace: "Казань" };
+  assert.deepEqual(candidatePlaceQueries(source), [
+    { terms: "анна & москва", from: "1898", to: "1902" },
+    { terms: "анна & казань", from: "1898", to: "1902" },
+  ]);
+  assert.ok(candidateEvidence(source,{ name: "Петрова Анна", birthYear: "1901",
+    deathPlace: "Казань" })!.reasons.includes("Место смерти совпадает"));
+  assert.deepEqual(candidatePlaceQueries({ ...source, deathPlace: "Москва" }),
+    [{ terms: "анна & москва", from: "1898", to: "1902" }],
+  "the same locality needs only one indexed lookup");
 });
