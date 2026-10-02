@@ -1126,7 +1126,7 @@ try {
   const readerBefore = (await ownMemberships()).find((row) => row.user_id === "reader");
   assert.ok(readerBefore, "restore rehearsal requires the existing reader membership");
   const priorReaderRole = String(readerBefore.role);
-  const changedReaderRole = priorReaderRole === "reader" ? "editor" : "reader";
+  const changedReaderRole = priorReaderRole === "reader" ? "researcher" : "reader";
   await app.archive.db.prepare("", "UPDATE archive_memberships SET role=? WHERE user_id='reader'")
     .run(changedReaderRole);
   const currentMemberships = await ownMemberships();
