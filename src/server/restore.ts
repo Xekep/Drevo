@@ -800,6 +800,8 @@ export function restoreStore(
               event.dateClaim.sources = remapCitations(event.dateClaim.sources);
             if (event.placeClaim)
               event.placeClaim.sources = remapCitations(event.placeClaim.sources);
+            for (const alternative of event.alternatives || [])
+              alternative.sources = remapCitations(alternative.sources);
           }
         }
         for (const union of family.unions || []) {

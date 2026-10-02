@@ -53,6 +53,30 @@ function validFactAlternatives(person: Family["people"][number]): boolean {
   }
   return true;
 }
+function validEventAlternatives(event: NonNullable<Family["people"][number]["events"]>[number]): boolean {
+  if (event.alternatives === undefined) return true;
+  if (!Array.isArray(event.alternatives) || event.alternatives.length > 40) return false;
+  const ids = new Set<string>(), values = new Set<string>();
+  for (const alternative of event.alternatives) {
+    if (!alternative || typeof alternative !== "object" ||
+      typeof alternative.id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(alternative.id) ||
+      ids.has(alternative.id) ||
+      !["date", "place"].includes(alternative.field) ||
+      typeof alternative.value !== "string" ||
+      !alternative.value.trim() || alternative.value.length > 1000 ||
+      alternative.value !== alternative.value.trim() ||
+      !validValueClaim(alternative, alternative.value) ||
+      (alternative.field === "date" && !validDate(alternative.value)) ||
+      alternative.value === (alternative.field === "date"
+        ? claimableEventDate(event) : event.place) ||
+      values.has(`${alternative.field}:${alternative.value.toLocaleLowerCase("ru")}`))
+      return false;
+    ids.add(alternative.id);
+    values.add(`${alternative.field}:${alternative.value.toLocaleLowerCase("ru")}`);
+  }
+  return true;
+}
 export function validateFamily(value: unknown): Family {
   if (!value || typeof value !== "object")
     throw new Error("Некорректный формат архива");
@@ -133,6 +157,9 @@ export function validateFamily(value: unknown): Family {
     for (const event of p.events || [])
       if (!validValueClaim(event.dateClaim, claimableEventDate(event)))
         throw new Error("Источник даты события относится к другому значению; снимите связь перед изменением даты");
+    for (const event of p.events || [])
+      if (!validEventAlternatives(event))
+        throw new Error("Проверьте альтернативные значения события: каждому варианту нужен отдельный источник");
     if (!validValueClaim(p.birthDateClaim, p.birth))
       throw new Error("Источник даты рождения относится к другому значению; снимите связь перед изменением даты");
     if (!validValueClaim(p.deathDateClaim, p.death))

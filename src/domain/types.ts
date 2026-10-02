@@ -54,6 +54,8 @@ export type PersonEvent = {
   place?: string;
   /** Citations for this exact event-place wording, separate from event-wide evidence. */
   placeClaim?: PersonValueClaim;
+  /** Cited competing values; neither changes the displayed date or place. */
+  alternatives?: EventFactAlternative[];
   location?: PlaceLocation;
   description?: string;
   sources?: Source[];
@@ -61,6 +63,10 @@ export type PersonEvent = {
 export type ClaimConfidence = "confirmed" | "probable" | "tentative" | "conflicting" | "unknown";
 /** Citations and an explicit researcher's assessment of one recorded value. */
 export type PersonValueClaim = { value: string; sources: Source[]; confidence?: ClaimConfidence };
+export type EventFactAlternative = PersonValueClaim & {
+  id: string;
+  field: "date" | "place";
+};
 /** A cited competing record; it never silently replaces the displayed value. */
 export type PersonFactAlternative = PersonValueClaim & {
   id: string;

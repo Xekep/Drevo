@@ -3,6 +3,7 @@ import type {
   Person,
   PersonValueClaim,
   PersonEvent,
+  ClaimConfidence,
   PlaceLocation,
   Source,
   FamilyLink,
@@ -546,6 +547,22 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       eventDate && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_DATE");
     const placeSources = parsedSources.filter((_source, index) =>
       place?.trim() && value(sourceNodes[index], "_DREVO_CLAIM") === "EVENT_PLACE");
+    const alternatives = children(n, "_DREVO_EVENT_ALTERNATIVE").flatMap((node) => {
+      try {
+        const data = JSON.parse(node.value) as { id?: unknown; field?: unknown;
+          value?: unknown; confidence?: unknown };
+        if (typeof data.id !== "string" || !["date", "place"].includes(String(data.field)) ||
+          typeof data.value !== "string") throw new Error("invalid event alternative");
+        const citations = parsedSources.filter((_source, index) =>
+          value(sourceNodes[index], "_DREVO_ALTERNATIVE") === data.id);
+        return [{ id: data.id, field: data.field as "date" | "place",
+          value: data.value, sources: citations,
+          ...(data.confidence ? { confidence: data.confidence as ClaimConfidence } : {}) }];
+      } catch {
+        warnings.add("Повреждённый альтернативный вариант события не перенесён.");
+        return [];
+      }
+    });
     if (!eventDate && sourceNodes.some((source) =>
       value(source, "_DREVO_CLAIM") === "EVENT_DATE"))
       warnings.add("Источник даты события без одиночной распознанной даты сохранён как общий источник события.");
@@ -568,10 +585,12 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       place,
       ...(placeSources.length ? { placeClaim: valueClaim(place!, placeSources, n,
         "_DREVO_EVENT_PLACE_CONFIDENCE") } : {}),
+      ...(alternatives.length ? { alternatives } : {}),
       location: placeLocation(n),
       description: notes(n) || undefined,
       sources: parsedSources.filter((source) =>
-        !dateSources.includes(source) && !placeSources.includes(source)),
+        !dateSources.includes(source) && !placeSources.includes(source) &&
+        !alternatives.some((item) => item.sources.includes(source))),
     };
   }
   const people: Person[] = individuals.map((n) => {
@@ -707,6 +726,8 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
           stripArchiveSourceIds(item.sources);
           stripArchiveSourceIds(item.dateClaim?.sources);
           stripArchiveSourceIds(item.placeClaim?.sources);
+          for (const alternative of item.alternatives || [])
+            stripArchiveSourceIds(alternative.sources);
         }
         for (const item of extra.factAlternatives || [])
           stripArchiveSourceIds(item.sources);
@@ -767,8 +788,15 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
                 restoreCitationMedia(item.placeClaim.sources,
                   sources({ ...node, children: placeSources }), `места события ${item.id}`);
               }
+              for (const alternative of item.alternatives || []) {
+                const alternativeSources = children(node, "SOUR").filter((source) =>
+                  value(source, "_DREVO_ALTERNATIVE") === alternative.id);
+                restoreCitationMedia(alternative.sources,
+                  sources({ ...node, children: alternativeSources }),
+                  `варианта события ${item.id}/${alternative.id}`);
+              }
             } else if ((item.sources?.length || item.dateClaim?.sources?.length ||
-              item.placeClaim?.sources?.length) &&
+              item.placeClaim?.sources?.length || item.alternatives?.some((alt) => alt.sources.length)) &&
               (!uniqueTarget || matched.length > 1 || n.children.some((node) =>
                 children(node, "SOUR").some((source) => children(source, "OBJE").length))))
               warnings.add(`Событие ${item.id} не сопоставлено однозначно; связь с документом не перенесена.`);
@@ -1184,6 +1212,7 @@ export function importGedcom(text: string, namespace: string): GenealogyImport {
       retain(event.sources);
       retain(event.dateClaim?.sources);
       retain(event.placeClaim?.sources);
+      for (const alternative of event.alternatives || []) retain(alternative.sources);
     }
   }
   for (const union of unions) {
@@ -1629,6 +1658,13 @@ export function exportGedcom(
       for (const source of e.sources || []) citation(2, source);
       for (const source of e.dateClaim?.sources || []) citation(2, source, "EVENT_DATE");
       for (const source of e.placeClaim?.sources || []) citation(2, source, "EVENT_PLACE");
+      for (const alternative of e.alternatives || []) {
+        emit(2, "_DREVO_EVENT_ALTERNATIVE", JSON.stringify({ id: alternative.id,
+          field: alternative.field, value: alternative.value,
+          ...(alternative.confidence ? { confidence: alternative.confidence } : {}) }));
+        for (const source of alternative.sources)
+          citation(2, source, undefined, alternative.id);
+      }
       if (e.dateClaim?.confidence)
         emit(2, "_DREVO_EVENT_DATE_CONFIDENCE", e.dateClaim.confidence);
       if (e.placeClaim?.confidence)
@@ -1703,6 +1739,12 @@ export function exportGedcom(
         delete source.documentId;
         delete source.documentPage;
       }
+      for (const alternative of event.alternatives || [])
+        for (const source of alternative.sources) {
+          delete source.catalogId;
+          delete source.documentId;
+          delete source.documentPage;
+        }
     }
     for (const alternative of portableExtra.factAlternatives || [])
       for (const source of alternative.sources || []) {

@@ -56,6 +56,8 @@ export function sharedFamily(
           placeClaim: event.placeClaim && { value: event.placeClaim.value,
             ...(event.placeClaim.confidence ? { confidence: event.placeClaim.confidence } : {}),
             sources: event.placeClaim.sources.map(publicSource) },
+          alternatives: event.alternatives?.map((alternative) => ({ ...alternative,
+            sources: alternative.sources.map(publicSource) })),
         })),
         sources: p.sources.map(publicSource),
         photo: p.photo?.startsWith("/media/")

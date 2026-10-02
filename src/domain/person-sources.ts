@@ -101,6 +101,9 @@ export function collectPersonSources(person: Person): PersonSourceEntry[] {
       add(source, `Дата события: ${event.title?.trim() || event.type}`);
     for (const source of event.placeClaim?.sources || [])
       add(source, `Место события: ${event.title?.trim() || event.type}`);
+    for (const alternative of event.alternatives || [])
+      for (const source of alternative.sources)
+        add(source, `Другая ${alternative.field === "date" ? "дата" : "место"} события: ${alternative.value}`);
     for (const source of event.sources || []) {
       const label = event.title?.trim() || event.type;
       add(source, `Событие: ${label}`);

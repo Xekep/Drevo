@@ -365,6 +365,9 @@ export function PersonEditor({
       if (draft.factAlternatives?.some((alternative) =>
         !alternative.value.trim() || !alternative.sources.length))
         throw new Error("У каждого альтернативного варианта должны быть значение и источник.");
+      if (draft.events?.some((event) => event.alternatives?.some((alternative) =>
+        !alternative.value.trim() || !alternative.sources.length)))
+        throw new Error("У каждого альтернативного варианта события должны быть значение и источник.");
       const birth = normalizeDateInput(birthText),
         death = normalizeDateInput(deathText) || undefined;
       const current = family;
@@ -387,6 +390,11 @@ export function PersonEditor({
         })),
         events: draft.events?.map((event) => ({
           ...event,
+          alternatives: event.alternatives?.map((alternative) => ({
+            ...alternative,
+            value: alternative.field === "date"
+              ? normalizeDateInput(alternative.value) : alternative.value.trim(),
+          })),
           date: event.date ? normalizeDateInput(event.date) : undefined,
           endDate: event.endDate
             ? normalizeDateInput(event.endDate)
@@ -897,6 +905,7 @@ export function PersonEditor({
         </details>
         <EventsEditor
           events={draft.events || []}
+          savedEvents={person?.events}
           onChange={(events) => field("events", events)}
           personId={person?.id}
           isAdmin={isAdmin}
