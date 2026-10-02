@@ -178,7 +178,10 @@ export function aiAttachmentStore(
     async prune() {
       // Account deletion cascades chat rows. Remove orphan folders on startup.
       for (const entry of await readdir(root, { withFileTypes: true }).catch(
-        () => [],
+        (error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+          throw error;
+        },
       )) {
         if (!entry.isDirectory() || !uuid.test(entry.name)) continue;
         const folder = directory(entry.name);

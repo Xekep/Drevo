@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { vkAuthSettingsStore } from "../../src/server/vk-auth-settings.ts";
 import { createWriteStream, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { statfs, symlink, unlink } from "node:fs/promises";
+import { statfs, symlink, unlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -32,6 +32,7 @@ import {
   defaultAiRoleProfile,
 } from "../../src/server/ai-settings.ts";
 import { aiChatStore, AiChatLimitError } from "../../src/server/ai-chats.ts";
+import { aiAttachmentStore } from "../../src/server/ai-attachments.ts";
 import { adminAiHttp } from "../../src/server/admin-ai-http.ts";
 import { aiUsageStore } from "../../src/server/ai-usage.ts";
 import { aiResearchHttp } from "../../src/server/ai-research-http.ts";
@@ -7015,10 +7016,36 @@ try {
       "INSERT INTO account_sessions(token_hash,user_id,expires_at) VALUES($1,'deleting-account',$2)",
       [sessionTokenHash(deletingToken), Date.now() + 600_000],
     );
+    const deletedChatId = randomUUID();
+    const retainedChatId = randomUUID();
     await client.query(
-      "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES($1,'delete-chat','deleting-account','all')",
-      [recreatedId],
+      "INSERT INTO ai_chats(archive_id,id,user_id,access_scope) VALUES($1,$2,'deleting-account','all'),($1,$3,'transfer-target','all')",
+      [recreatedId, deletedChatId, retainedChatId],
     );
+    const recreatedFiles = join(dirname(oauthApp.archive.db.file), "archives", recreatedId);
+    const accountChatFiles = [
+      join(recreatedFiles, "uploads", "ai-chat-files", deletedChatId, randomUUID()),
+      join(recreatedFiles, "ai-generated-files", deletedChatId, randomUUID()),
+    ];
+    const retainedChatFiles = [
+      join(recreatedFiles, "uploads", "ai-chat-files", retainedChatId, randomUUID()),
+      join(recreatedFiles, "ai-generated-files", retainedChatId, randomUUID()),
+    ];
+    for (const path of [...accountChatFiles, ...retainedChatFiles]) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "private AI file bytes", { mode: 0o600 });
+    }
+    const formerChatId = randomUUID();
+    const formerChatFiles = [
+      join(dirname(source), "uploads", "ai-chat-files", formerChatId, randomUUID()),
+      join(dirname(source), "ai-generated-files", formerChatId, randomUUID()),
+    ];
+    for (const path of formerChatFiles) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "former archive orphan", { mode: 0o600 });
+    }
+    const formerExpired = new Date(Date.now() - 25 * 60 * 60_000);
+    await utimes(dirname(formerChatFiles[0]), formerExpired, formerExpired);
     await client.query(
       "INSERT INTO archive_audit_entries(archive_id,id,at,actor_id,actor_name,action,entity,entity_id,label,details) VALUES($1,987654,$2,'deleting-account','Delete me','update','archive',$1,'Test','[]'::jsonb)",
       [recreatedId, new Date().toISOString()],
@@ -7210,6 +7237,43 @@ try {
     assert.equal((await client.query("SELECT count(*)::int AS n FROM accounts WHERE id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_memberships WHERE user_id='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM ai_chats WHERE user_id='deleting-account'")).rows[0].n, 0);
+    for (let attempt = 0; attempt < 100 && accountChatFiles.some((path) => existsSync(path)); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(accountChatFiles.map((path) => existsSync(path)), [false, false],
+      "post-commit cleanup removes both attachment and generated AI bytes");
+    assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
+      "deleting one account preserves another member's AI files");
+    for (const path of accountChatFiles) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      writeFileSync(path, "orphan after crash", { mode: 0o600 });
+    }
+    const expired = new Date(Date.now() - 25 * 60 * 60_000);
+    await utimes(dirname(accountChatFiles[0]), expired, expired);
+    const recreatedDb = await openPostgresDatabase(recreatedId, join(recreatedFiles, "source.sqlite"));
+    try {
+      const recreatedChats = aiChatStore(recreatedDb);
+      await aiAttachmentStore(join(recreatedFiles, "uploads"), recreatedChats).prune();
+      const generated = generatedResearchFileStore(recreatedDb,
+        join(recreatedFiles, "uploads"), recreatedChats);
+      await generated.prune();
+      generated.close();
+    } finally {
+      await recreatedDb.close();
+    }
+    assert.deepEqual(accountChatFiles.map((path) => existsSync(path)), [false, false],
+      "startup/periodic orphan pruning removes files after a missed post-commit cleanup");
+    assert.deepEqual(retainedChatFiles.map((path) => existsSync(path)), [true, true],
+      "orphan pruning preserves another member's live chat files");
+    assert.deepEqual(formerChatFiles.map((path) => existsSync(path)), [true, true],
+      "deletion cannot identify orphan folders from an archive left earlier");
+    const formerChats = aiChatStore(app.archive.db);
+    await aiAttachmentStore(join(dirname(source), "uploads"), formerChats).prune();
+    const formerGenerated = generatedResearchFileStore(app.archive.db,
+      join(dirname(source), "uploads"), formerChats);
+    await formerGenerated.prune();
+    formerGenerated.close();
+    assert.deepEqual(formerChatFiles.map((path) => existsSync(path)), [false, false],
+      "an active former archive eventually removes orphan files without an account membership");
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_invitations WHERE created_by='deleting-account'")).rows[0].n, 0);
     assert.equal((await client.query("SELECT count(*)::int AS n FROM archive_owner_transfers WHERE to_user_id='deleting-account'")).rows[0].n, 0);
     assert.deepEqual((await client.query("SELECT actor_id,actor_name FROM archive_audit_entries WHERE archive_id=$1 AND id=987654", [recreatedId])).rows[0],

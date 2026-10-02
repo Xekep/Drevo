@@ -36,6 +36,8 @@ function fakeDatabase(installed = true, redactionAllowed = true, unionInstalled 
         return { rowCount: 2, rows: [{ account_id: "other-1" }, { account_id: "other-2" }] };
       if (sql.includes("FROM archive_memberships WHERE user_id=$1"))
         return { rowCount: 1, rows: [{ archive_id: "current-tree" }] };
+      if (sql.startsWith("SELECT id FROM ai_chats WHERE user_id=$1"))
+        return { rowCount: 0, rows: [] };
       if (sql.includes("FROM pg_proc entrypoint"))
         return { rowCount: 1, rows: [{ installed: sql.includes("runtime_anonymize_deleted_account_annotations")
           ? annotationInstalled : unionInstalled }] };
@@ -113,7 +115,7 @@ test("account deletion runs privileged anonymization before removing memberships
     name: "Имя",
     leaveSharedArchives: true,
   }, "test-session-hash");
-  assert.deepEqual(result, { deleted: true, sharedArchives: 1 });
+  assert.deepEqual(result, { deleted: true, sharedArchives: 1, aiChats: [] });
   const tombstone = writes.find(({ sql }) => sql.startsWith("INSERT INTO deleted_account_tombstones"));
   assert.ok(tombstone);
   assert.ok(writes.some(({ sql, args }) =>

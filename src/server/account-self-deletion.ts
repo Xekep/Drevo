@@ -103,6 +103,16 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
           throw new AccountDeletionConflict(
             "Подтвердите выход из остальных деревьев",
           );
+        const aiChats: Array<{ archiveId: string; chatId: string }> = [];
+        for (const { archive_id: archiveId } of memberships.rows) {
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+          const chats = await client.query<{ id: string }>(
+            "SELECT id FROM ai_chats WHERE user_id=$1 ORDER BY id",
+            [accountId],
+          );
+          for (const { id } of chats.rows)
+            aiChats.push({ archiveId, chatId: id });
+        }
 
         const cleanupFunction = await client.query(
           "SELECT to_regprocedure('public.runtime_anonymize_deleted_account_history(text)') AS installed",
@@ -198,7 +208,7 @@ export function accountSelfDeletion(db: StoreDatabase, enabled: boolean) {
         ]);
         if (deleted.rowCount !== 1)
           throw new AccountDeletionConflict("Аккаунт уже удалён");
-        return { deleted: true, sharedArchives: memberships.rowCount || 0 };
+        return { deleted: true, sharedArchives: memberships.rowCount || 0, aiChats };
       });
     },
   };
