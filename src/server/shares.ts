@@ -181,6 +181,44 @@ export function sharesStore(db: StoreDatabase) {
       if (!result.changes) await cleanup(now);
       return result.changes > 0;
     },
+    async deliverWhileActive(token: string, deliver: () => Promise<void>) {
+      if (!shareTokenPattern.test(token)) return false;
+      if (db.kind === "postgres") {
+        if (!db.postgresTransaction)
+          throw new Error("PostgreSQL transaction unavailable");
+        // Use the archive RLS context without taking the archive write lock.
+        // After locking the share row, delivery performs no archive writes.
+        return await db.postgresTransaction(async (client) => {
+          await client.query("SELECT set_config('drevo.archive_id',$1,true)", [db.archiveId]);
+          // A revoke updates this row. Keep its share lock until the HTTP
+          // response finishes so a completed revoke cannot precede delivery.
+          const row = (await client.query(
+            "SELECT id,revoked_at,expires_at FROM share_links WHERE token_hash=$1 FOR SHARE",
+            [hash(token)],
+          )).rows[0];
+          if (!row || row.revoked_at ||
+            String(row.expires_at) <= new Date().toISOString()) return false;
+          // Deleted-account tombstones also invalidate links in this view.
+          const visible = await client.query(
+            "SELECT 1 FROM runtime_visible_share_links WHERE id=$1 AND revoked_at IS NULL",
+            [row.id],
+          );
+          if (!visible.rowCount) return false;
+          await deliver();
+          return true;
+        });
+      }
+      return await db.transaction(async () => {
+        const row = await db.prepare(
+          "SELECT revoked_at,expires_at FROM share_links WHERE token_hash=?",
+          "",
+        ).get(hash(token));
+        if (!row || row.revoked_at ||
+          String(row.expires_at) <= new Date().toISOString()) return false;
+        await deliver();
+        return true;
+      }, true);
+    },
     async list(before = "", now = Date.now(), actor?: ArchiveUser) {
       await cleanup(now);
       const cursor = Number(before || 0);
