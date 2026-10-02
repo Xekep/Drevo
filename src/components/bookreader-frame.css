@@ -12,6 +12,10 @@ body {
 body {
   background: #1d211e;
 }
+.BRinfo .BRinfoValue {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 #bookreader.BookReader {
   background: #1d211e;
 }

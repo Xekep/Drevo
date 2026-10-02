@@ -266,7 +266,6 @@ async function open(command: Extract<ReaderCommand, { type: "init" }>) {
       makeDrevoPlugin(send, {
         downloadUrl: command.url,
         downloadName: command.downloadName,
-        canEdit: command.canEdit,
         fitSinglePage: pageCount === 1,
       }),
     );

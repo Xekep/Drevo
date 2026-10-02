@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MessageSquarePlus, Pencil } from "lucide-react";
 import { ConfirmDeleteButton } from "./confirm-delete-button";
+import { DocumentCommentText } from "./document-comment-text";
 import type { ReaderCommand, ReaderEvent } from "./bookreader-frame-messages";
 import type { ListedDocument } from "./documents-catalog";
 import { documentFileTypeFromMime } from "../shared/document-file.ts";
@@ -18,14 +19,12 @@ export function PdfBookReader({
   document: entry,
   initialPage = 1,
   onClose,
-  onEdit,
   mayAnnotate = false,
   annotateOnOpen = false,
 }: {
   document: ListedDocument;
   initialPage?: number;
   onClose: () => void;
-  onEdit?: () => void;
   mayAnnotate?: boolean;
   annotateOnOpen?: boolean;
 }) {
@@ -35,7 +34,6 @@ export function PdfBookReader({
   const editTrigger = useRef<HTMLButtonElement | null>(null);
   const editText = useRef<HTMLTextAreaElement | null>(null);
   const closeLatest = useRef(onClose);
-  const editLatest = useRef(onEdit);
   const magnifierLatest = useRef(false);
   const navigateToPage = useRef<((index: number) => void) | null>(null);
   const [readerReady, setReaderReady] = useState(false);
@@ -67,9 +65,6 @@ export function PdfBookReader({
   useEffect(() => {
     closeLatest.current = onClose;
   }, [onClose]);
-  useEffect(() => {
-    editLatest.current = onEdit;
-  }, [onEdit]);
   useEffect(() => {
     magnifierLatest.current = magnifier;
   }, [magnifier]);
@@ -154,7 +149,6 @@ export function PdfBookReader({
             ]
               .filter((item): item is [string, string] => !!item[1])
               .map(([label, value]) => ({ label, value })),
-            canEdit: !!onEdit,
           } satisfies ReaderCommand,
           window.location.origin,
         );
@@ -185,8 +179,6 @@ export function PdfBookReader({
         setMagnifier((value) => !value);
       } else if (message.type === "toggle-comments") {
         setCommentsOpen((value) => !value);
-      } else if (message.type === "edit") {
-        editLatest.current?.();
       } else if (message.type === "close") {
         closeLatest.current();
       } else if (message.type === "error") {
@@ -206,7 +198,6 @@ export function PdfBookReader({
     entry.provenance,
     entry.description,
     initialPage,
-    onEdit,
   ]);
 
   useEffect(() => {
@@ -599,6 +590,7 @@ export function PdfBookReader({
                   {annotations.map((item) => (
                     <article
                       key={item.id}
+                      role="presentation"
                       className={
                         item.id === activeAnnotation ? "is-active" : ""
                       }
@@ -609,30 +601,35 @@ export function PdfBookReader({
                         if (!event.currentTarget.contains(event.relatedTarget))
                           setHoveredAnnotation("");
                       }}
+                      onClick={(event) => {
+                        if (loading || error || !(event.target instanceof Element)) return;
+                        const control = event.target.closest("a, button, input, textarea, form");
+                        if (control && control !== event.currentTarget.firstElementChild) return;
+                        const selected = window.getSelection();
+                        if (
+                          event.detail > 0 && selected && !selected.isCollapsed &&
+                          (event.currentTarget.contains(selected.anchorNode) ||
+                            event.currentTarget.contains(selected.focusNode))
+                        ) return;
+                        navigateToPage.current?.(item.page - 1);
+                        setActiveAnnotation(item.id);
+                        setAnnotating(false);
+                        setSelection(null);
+                        setComment("");
+                      }}
                     >
                       <button
                         type="button"
                         aria-pressed={item.id === activeAnnotation}
                         disabled={loading || !!error}
-                        onClick={(event) => {
-                          const selected = window.getSelection();
-                          if (
-                            event.detail > 0 && selected && !selected.isCollapsed &&
-                            (event.currentTarget.contains(selected.anchorNode) ||
-                              event.currentTarget.contains(selected.focusNode))
-                          ) return;
-                          navigateToPage.current?.(item.page - 1);
-                          setActiveAnnotation(item.id);
-                          setAnnotating(false);
-                          setSelection(null);
-                          setComment("");
-                        }}
                       >
                         <small>
                           Страница {item.page} · {item.authorName}
                         </small>
-                        {editing?.id !== item.id && <span>{item.text}</span>}
                       </button>
+                      {editing?.id !== item.id && (
+                        <DocumentCommentText text={item.text} />
+                      )}
                       {item.canEdit && (
                         <button
                           type="button"

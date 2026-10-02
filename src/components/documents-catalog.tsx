@@ -837,11 +837,6 @@ export function DocumentsCatalog({
             setSelected(null);
             onSelectDocument(null);
           }}
-          onEdit={
-            mayEdit && activeSelected.canDelete
-              ? () => beginEdit(activeSelected)
-              : undefined
-          }
         />
       )}
     </section>

@@ -13,7 +13,6 @@ export type ReaderCommand =
       title: string;
       downloadName: string;
       metadata: { label: string; value: string }[];
-      canEdit: boolean;
     }
   | {
       source: "drevo-bookreader";
@@ -38,7 +37,6 @@ export type ReaderEvent =
   | { source: "drevo-bookreader"; type: "toggle-magnifier" }
   | { source: "drevo-bookreader"; type: "toggle-comments" }
   | { source: "drevo-bookreader"; type: "annotation"; id: string }
-  | { source: "drevo-bookreader"; type: "edit" }
   | { source: "drevo-bookreader"; type: "close" }
   | {
       source: "drevo-bookreader";

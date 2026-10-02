@@ -35,7 +35,8 @@ test("PDF без привязки остаётся в общем каталог�
   await form.getByLabel("Дата или период").fill("1887 год");
   await form.getByLabel("Место").fill("Реж");
   await form.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.104");
-  await form.getByLabel("Описание").fill("Запись о рождении");
+  const description = "Запись о рождении\nВторая строка\n\n**Обычный текст**, <не HTML>";
+  await form.getByLabel("Описание").fill(description);
   await expect(
     form.getByRole("button", { name: "Добавить документ" }),
   ).toBeEnabled();
@@ -56,8 +57,14 @@ test("PDF без привязки остаётся в общем каталог�
   await expect(reader).toBeVisible();
   await book.locator(".BRtoolbar .info").click();
   await expect(book.locator(".BRinfo")).toContainText("ГАСО Ф.6 Оп.13 Д.104");
+  const descriptionValue = book.locator(".BRinfoValueWrapper").filter({ has: book.getByText("Описание", { exact: true }) }).locator(".BRinfoValue");
+  await expect(descriptionValue).toHaveCSS("white-space", "pre-wrap");
+  expect(await descriptionValue.textContent()).toBe(description);
+  await expect(descriptionValue.locator("strong")).toHaveCount(0);
+  await expect(book.getByRole("button", { name: "Редактировать сведения" })).toHaveCount(0);
   await book.locator(".BRinfo .floatShut").click();
-  await book.getByRole("button", { name: "Редактировать сведения" }).click();
+  await book.getByRole("button", { name: "Закрыть документ" }).click();
+  await page.getByRole("button", { name: `Редактировать документ «${title}»` }).click();
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await expect(edit).toBeVisible();
   await edit.getByLabel("Происхождение").fill("ГАСО Ф.6 Оп.13 Д.105");
@@ -374,8 +381,9 @@ test("PDF можно перетащить, затем привязать из д
   const id = new URL(page.url()).pathname.split("/").at(-1);
   await reader
     .frameLocator("iframe.pdf-book-frame")
-    .getByRole("button", { name: "Редактировать сведения" })
+    .getByRole("button", { name: "Закрыть документ" })
     .click();
+  await page.getByRole("button", { name: `Редактировать документ «${title}»` }).click();
   const edit = page.getByRole("form", { name: "Редактировать документ" });
   await edit.getByLabel("Найти человека для документа").fill("Пётр");
   await edit
@@ -891,7 +899,7 @@ test("document comment clicks keep the panel open and text selection does not na
   await expect(sidebar).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(first).toHaveAttribute("aria-pressed", "true");
-  const text = last.locator("span");
+  const text = cards.last().locator(".pdf-book-comment-text p").first();
   await expect(text).toHaveCSS("user-select", "text");
   const bounds = await text.evaluate((node) => {
     const range = node.ownerDocument.createRange();
