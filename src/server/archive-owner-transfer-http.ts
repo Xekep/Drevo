@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { createAuth } from "./auth.ts";
 import { archiveOwnerTransfer } from "./archive-owner-transfer.ts";
+import { AccountSessionExpired } from "./account-session-guard.ts";
 import { ConflictError } from "./database.ts";
 import { isSameOriginRequest } from "./same-origin.ts";
 import type { StoreDatabase } from "./store-database.ts";
@@ -57,6 +58,9 @@ export function archiveOwnerTransferHttp(
     };
     const actor = await auth.currentUser(req);
     if (!actor) return respond(401, { error: "Требуется вход в дерево" });
+    const session = await auth.accountSession(req);
+    if (!session || session.accountId !== actor.id)
+      return respond(401, { error: "Сессия завершена. Войдите снова" });
     if (db.kind !== "postgres")
       return respond(404, { error: "Передача владения здесь недоступна" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
@@ -72,21 +76,23 @@ export function archiveOwnerTransferHttp(
           await transfer.candidates(actor, url.searchParams.get("q") || ""),
         );
       if (path.endsWith("/accept") && req.method === "POST")
-        return respond(200, await transfer.accept(actor));
+        return respond(200, await transfer.accept(actor, session.tokenHash));
       if (path === "/api/account/owner-transfer" && req.method === "GET")
         return respond(200, await transfer.status(actor));
       if (path === "/api/account/owner-transfer" && req.method === "POST")
         return respond(
           200,
-          await transfer.propose(actor, await readTarget(req)),
+          await transfer.propose(actor, await readTarget(req), session.tokenHash),
         );
       if (path === "/api/account/owner-transfer" && req.method === "DELETE")
-        return respond(200, await transfer.cancel(actor));
+        return respond(200, await transfer.cancel(actor, session.tokenHash));
       return respond(405, { error: "Неподдерживаемый метод" });
     } catch (error) {
       const status =
         error instanceof SyntaxError
           ? 400
+          : error instanceof AccountSessionExpired
+            ? 401
           : error instanceof ForbiddenError
             ? 403
             : error instanceof ConflictError ||

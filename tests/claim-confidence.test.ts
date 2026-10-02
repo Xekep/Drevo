@@ -76,6 +76,11 @@ test("only an owning researcher or administrator may assess an existing claim", 
   assert.equal(authorizeArchive(editedCitation, next, user("researcher", "relative"))
     .people[0].birthDateClaim?.sources.length, 2,
     "a relative can still improve citations without changing the assessment");
+  const changedValue = structuredClone(next);
+  changedValue.people[0].birth = "1881";
+  changedValue.people[0].birthDateClaim!.value = "1881";
+  assert.throws(() => authorizeArchive(changedValue, next, user("researcher", "relative")),
+    /Статус достоверности/, "a new value cannot inherit the old assessment");
   const unassessed = structuredClone(before);
   unassessed.people[0].birthDateClaim!.sources.push({ ...citation, reference: "л. 8" });
   assert.equal(authorizeArchive(unassessed, before, user("researcher", "relative"))

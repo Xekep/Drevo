@@ -562,6 +562,8 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
   const parent = { id: "parent-a", relation: "parent", name: "Анна Петрова" };
+  const grandparent = { id: "grandparent-a", relation: "grandparent",
+    name: "Елена Петрова", viaIds: ["parent-a"] };
   const incoming = { id: "parent-b", relation: "parent", name: "Мария Петрова" };
   let ownReady = false;
   let otherReady = false;
@@ -578,7 +580,7 @@ test("a linked branch needs both grants and clears a revoked projection", async 
     const method = route.request().method();
     if (method === "PUT") {
       expect(route.request().postDataJSON()).toEqual({
-        personIds: ["parent-a"], previewToken: "b".repeat(64),
+        personIds: ["parent-a", "grandparent-a"], previewToken: "b".repeat(64),
         recipientArchiveId: "tree-b", durationDays: 30,
       });
       ownReady = true;
@@ -589,11 +591,11 @@ test("a linked branch needs both grants and clears a revoked projection", async 
       return route.fulfill({ json: { shared: false } });
     }
     if (!linked) return route.fulfill({ status: 404, json: { error: "Связь не найдена" } });
-    return route.fulfill({ json: { available: [parent], truncated: false,
+    return route.fulfill({ json: { available: [parent, grandparent], truncated: false,
       previewToken: "b".repeat(64), ownReady, otherReady,
       recipientArchiveId: "tree-b", recipientPersonName: "Иван Петров",
       ownExpiresAt: ownReady ? "2026-10-30T00:00:00Z" : null,
-      outgoingIds: ownReady ? ["parent-a"] : [],
+      outgoingIds: ownReady ? ["parent-a", "grandparent-a"] : [],
       incoming: ownReady && otherReady ? [incoming] : [],
     } });
   });
@@ -603,8 +605,16 @@ test("a linked branch needs both grants and clears a revoked projection", async 
   const panel = page.locator(".match-card-share").filter({ hasText: "Поделиться разрешённой веткой" });
   await expect(panel).toContainText("Адресат: опубликованная карточка «Иван Петров», архив tree-b");
   await expect(page.getByText("Анна Петрова")).toBeVisible();
+  const ancestorOption = page.getByRole("checkbox", { name: /Предок.*Елена Петрова/ });
+  await expect(ancestorOption).toBeDisabled();
   await expect(page.getByText("Мария Петрова")).toHaveCount(0);
   await page.getByRole("checkbox", { name: /Родитель: Анна Петрова/ }).check();
+  await expect(ancestorOption).toBeEnabled();
+  await ancestorOption.check();
+  await page.getByRole("checkbox", { name: /Родитель: Анна Петрова/ }).uncheck();
+  await expect(ancestorOption).not.toBeChecked();
+  await page.getByRole("checkbox", { name: /Родитель: Анна Петрова/ }).check();
+  await ancestorOption.check();
   await page.getByLabel("Срок нового разрешения").selectOption("30");
   await page.getByRole("button", { name: "Разрешить выбранное" }).click();
   await expect(panel).toContainText("Ваше разрешение действует до");

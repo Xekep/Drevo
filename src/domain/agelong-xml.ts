@@ -7,7 +7,7 @@ import type {
   Source,
   FamilyUnion,
 } from "./types.ts";
-import { validDate } from "./dates.ts";
+import { dateBound, validDate } from "./dates.ts";
 import { validateFamily } from "./validation.ts";
 import {
   TRANSFER_XML_LIMIT,
@@ -155,6 +155,12 @@ const spouseRoles = new Set([
   "Невеста",
   "Groom",
   "Bride",
+]);
+const formerSpouseRoles = new Set([
+  "Бывший муж",
+  "Бывшая жена",
+  "Ex-husband",
+  "Ex-wife",
 ]);
 
 export function importAgelongXml(
@@ -459,7 +465,7 @@ export function importAgelongXml(
     }
     if (type === "marriage" || type === "divorce") {
       const pair = participants
-        .filter((v) => spouseRoles.has(v.role))
+        .filter((v) => spouseRoles.has(v.role) || (type === "divorce" && formerSpouseRoles.has(v.role)))
         .map((v) => v.person);
       if (pair.length === 2) {
         for (const p of pair)
@@ -480,7 +486,7 @@ export function importAgelongXml(
           ...(eventSources.length ? { sources: eventSources } : {}),
         };
         unions.push({
-          id: `agelong-union-${eventId}`,
+          id: `${namespace}-union-${eventId}`,
           participants: [pair[0].id, pair[1].id],
           type: "marriage",
           ...(type === "marriage"
@@ -488,6 +494,7 @@ export function importAgelongXml(
             : { divorce: milestone }),
         });
       }
+      else warnings.add(`Событие ${n.attrs.type} ${eventId}: роли двух супругов не распознаны; семейный союз не создан.`);
     }
     for (const { person: p, role } of participants) {
       if ((birth && !birthRoles.has(role)) || (death && !deathRoles.has(role)))
@@ -572,6 +579,30 @@ export function importAgelongXml(
       }
     }
   }
+  // XML event order is not guaranteed. Attach a divorce only when one
+  // compatible marriage for this pair can be identified without guessing.
+  for (const divorce of unions.filter((union) => union.divorce)) {
+    const candidates = unions.filter(
+      (union) =>
+        union !== divorce &&
+        union.formation &&
+        !union.divorce &&
+        union.participants.every((id) => divorce.participants.includes(id)) &&
+        (!union.formation.date ||
+          !divorce.divorce?.date ||
+          dateBound(union.formation.date, false) <=
+            dateBound(divorce.divorce.date, true)),
+    );
+    if (candidates.length === 1) {
+      candidates[0].divorce = divorce.divorce;
+      unions.splice(unions.indexOf(divorce), 1);
+    } else {
+      const reason = candidates.length
+        ? "у пары несколько возможных союзов"
+        : "подходящий брак не найден";
+      warnings.add(`Развод ${divorce.id.slice(`${namespace}-union-`.length)} сохранён отдельным союзом: ${reason}.`);
+    }
+  }
   for (const n of nodes)
     for (const ref of many(one(n, "events"), "event"))
       if (!events.has(ref.attrs.id))
@@ -579,6 +610,27 @@ export function importAgelongXml(
           `Событие ${ref.attrs.id} отсутствует в XML; ссылка не перенесена.`,
         );
   const documents = index(many(one(root, "documents"), "document"));
+  const familyDocuments = new Map<string, Set<string>>();
+  const linkFamilyDocument = (documentId: string, familyId: string) => {
+    if (!documents.has(documentId)) {
+      warnings.add(`Документ ${documentId || "без ID"} рода ${familyId || "без ID"} отсутствует в XML.`);
+      return;
+    }
+    if (!families.has(familyId)) {
+      warnings.add(`Род ${familyId || "без ID"} для документа ${documentId} отсутствует в XML; связь не перенесена.`);
+      return;
+    }
+    const refs = familyDocuments.get(documentId) || new Set<string>();
+    refs.add(familyId);
+    familyDocuments.set(documentId, refs);
+  };
+  for (const [familyId, family] of families)
+    for (const ref of many(one(family, "documents"), "document"))
+      linkFamilyDocument(ref.attrs.id, familyId);
+  for (const [documentId, document] of documents)
+    for (const detail of many(one(document, "details"), "detail"))
+      for (const ref of many(detail, "family"))
+        linkFamilyDocument(documentId, ref.attrs.id);
   const eventDocumentLinks = new Map<string, Array<{ personId: string; eventId: string }>>();
   const unlinkedEventDocuments = new Set<string>();
   for (const [eventId, eventNode] of events) {
@@ -639,6 +691,9 @@ export function importAgelongXml(
       } } : {}),
       photo: {
         description: addNotes(textOf(n, "comment") || undefined, [
+          ...[...(familyDocuments.get(id) || [])].map((familyId) =>
+            `Род в «Древе Жизни»: ${families.get(familyId)!.attrs.name || `ID ${familyId}`}`,
+          ),
           ...extraAttributes(n, ["id", "path", "title"], "document", warnings),
           ...extraChildren(
             n,
@@ -674,7 +729,11 @@ export function importAgelongXml(
     );
   if (families.size)
     warnings.add(
-      `Раздел families (${families.size} родов): структура, дополнительные свойства и документы родов не переносятся. Названия привязанных родов сохранены в биографиях.`,
+      `Раздел families (${families.size} родов): структура и дополнительные свойства не переносятся. Названия привязанных родов сохранены в биографиях.`,
+    );
+  if (familyDocuments.size)
+    warnings.add(
+      `Связи ${familyDocuments.size} документов с родами сохранены текстом в описаниях файлов; отдельной связи с родом в Drevo нет.`,
     );
   const placeList = [...places.values()];
   const datedPlaces = placeList.filter((place) => place.attrs.date).length;

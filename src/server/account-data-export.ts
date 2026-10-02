@@ -5,13 +5,28 @@ import { readArchive } from "./database.ts";
 import { commentFilesFromJson } from "./discussion-attachments.ts";
 import type { CommentAttachmentFile } from "../shared/person-discussion.ts";
 
-type CommentScope = {
+type AccessScope = {
   archiveId: string;
+  approved: boolean;
   role: string;
   treeAccess: string;
   personId: string | null;
   revision: number;
 };
+
+function scopesStillVisible(
+  scopes: AccessScope[],
+  rows: Array<Record<string, unknown>>,
+) {
+  const current = new Map(rows.map((row) => [String(row.archive_id), row]));
+  return scopes.every((scope) => {
+    const row = current.get(scope.archiveId);
+    return row?.approved === scope.approved && row.role === scope.role &&
+      row.tree_access === scope.treeAccess &&
+      (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
+      Number(row.revision) === scope.revision;
+  });
+}
 
 /** A consistent snapshot of the account's own profile and archive access. */
 export function accountDataExport(db: StoreDatabase) {
@@ -57,7 +72,7 @@ export function accountDataExport(db: StoreDatabase) {
           )
           .all(accountId);
         const archives = [];
-        const commentScopes: CommentScope[] = [];
+        const accessScopes: AccessScope[] = [];
         for (const membership of memberships) {
           await db
             .prepare("", "SELECT set_config('drevo.archive_id',?,true)")
@@ -81,19 +96,23 @@ export function accountDataExport(db: StoreDatabase) {
             editedAt: string | null;
             attachments: CommentAttachmentFile[];
           }> | null = null;
+          const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
+            .get(String(membership.archive_id));
+          if (!archive) return null;
+          // The download also includes title, role and preferences for an
+          // unapproved membership. Recheck every represented archive, even
+          // when it has no readable comments.
+          accessScopes.push({
+            archiveId: String(membership.archive_id),
+            approved: membership.approved === true,
+            role: String(membership.role),
+            treeAccess: String(membership.tree_access),
+            personId: membership.person_id == null
+              ? null
+              : String(membership.person_id),
+            revision: Number(archive.revision),
+          });
           if (membership.approved === true) {
-            const archive = await db.prepare("", "SELECT revision FROM archives WHERE id=?")
-              .get(String(membership.archive_id));
-            if (!archive) return null;
-            commentScopes.push({
-              archiveId: String(membership.archive_id),
-              role: String(membership.role),
-              treeAccess: String(membership.tree_access),
-              personId: membership.person_id == null
-                ? null
-                : String(membership.person_id),
-              revision: Number(archive.revision),
-            });
             const user: ArchiveUser = {
               id: accountId,
               name: String(profile.name),
@@ -151,7 +170,7 @@ export function accountDataExport(db: StoreDatabase) {
               : null,
           });
         }
-        return { commentScopes, download: {
+        return { accessScopes, download: {
           format: "drevo-account-data",
           version: 2,
           exportedAt: new Date().toISOString(),
@@ -174,7 +193,7 @@ export function accountDataExport(db: StoreDatabase) {
     },
     /** Recheck membership and graph revision before sending the snapshot.
      * A graph edit can narrow scoped visibility without changing membership. */
-    async canDeliver(accountId: string, scopes: CommentScope[]) {
+    async canDeliver(accountId: string, scopes: AccessScope[]) {
       if (db.kind !== "postgres") return false;
       return await db.transaction(async () => {
         await db.prepare("", "SELECT set_config('drevo.account_id',?,true)")
@@ -184,15 +203,71 @@ export function accountDataExport(db: StoreDatabase) {
         const rows = await db.prepare("", `SELECT m.archive_id,m.role,m.tree_access,
           m.person_id,m.approved,a.revision FROM archive_memberships m
           JOIN archives a ON a.id=m.archive_id WHERE m.user_id=?`).all(accountId);
-        const current = new Map(rows.map((row) => [String(row.archive_id), row]));
-        return scopes.every((scope) => {
-          const row = current.get(scope.archiveId);
-          return row?.approved === true && row.role === scope.role &&
-            row.tree_access === scope.treeAccess &&
-            (row.person_id == null ? null : String(row.person_id)) === scope.personId &&
-            Number(row.revision) === scope.revision;
-        });
+        return scopesStillVisible(scopes, rows);
       }, true);
+    },
+    /** Lock every scope represented in the prepared download, then the
+     * session and membership rows through the response handoff. Archive
+     * mutations take the archive lock first, so revocation and graph edits
+     * either finish before this check or wait until the response is handed
+     * to the HTTP server. The caller prepares JSON before entering here. */
+    async deliverWithCurrentSession(
+      accountId: string,
+      tokenHash: string,
+      scopes: AccessScope[],
+      deliver: () => void | Promise<void>,
+    ): Promise<"sent" | "session-expired" | "access-changed" | "access-busy"> {
+      if (db.kind !== "postgres" || !db.postgresTransaction)
+        return "access-changed";
+      // Account deletion locks session before archive; normal archive writes
+      // lock archive before session. Never wait while holding either lock.
+      // Retry only after postgresTransaction has rolled back and released all
+      // locks, then ask the caller to retry if another operation stays busy.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await db.postgresTransaction(async (client) => {
+            await client.query("SELECT set_config('drevo.account_id',$1,true)", [accountId]);
+            const archiveIds = [...new Set(scopes.map((scope) => scope.archiveId))].sort();
+            for (const archiveId of archiveIds) {
+              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              const archive = await client.query(
+                "SELECT id FROM archives WHERE id=$1 FOR SHARE NOWAIT", [archiveId],
+              );
+              if (!archive.rowCount) return "access-changed";
+            }
+            const session = await client.query(
+              `SELECT expires_at FROM account_sessions
+               WHERE token_hash=$1 AND user_id=$2 FOR SHARE NOWAIT`,
+              [tokenHash, accountId],
+            );
+            if (!session.rowCount || Number(session.rows[0].expires_at) <= Date.now())
+              return "session-expired";
+            if (!(await client.query("SELECT 1 FROM accounts WHERE id=$1", [accountId])).rowCount)
+              return "session-expired";
+            const membershipRows: Array<Record<string, unknown>> = [];
+            for (const archiveId of archiveIds) {
+              await client.query("SELECT set_config('drevo.archive_id',$1,true)", [archiveId]);
+              const membership = await client.query(
+                `SELECT m.archive_id,m.role,m.tree_access,m.person_id,m.approved,a.revision
+                 FROM archive_memberships m JOIN archives a ON a.id=m.archive_id
+                 WHERE m.user_id=$1 AND m.archive_id=$2
+                 FOR SHARE OF m,a NOWAIT`,
+                [accountId, archiveId],
+              );
+              membershipRows.push(...membership.rows);
+            }
+            if (!scopesStillVisible(scopes, membershipRows))
+              return "access-changed";
+            await deliver();
+            return "sent";
+          });
+        } catch (error) {
+          if ((error as { code?: string }).code !== "55P03") throw error;
+          if (attempt === 2) return "access-busy";
+          await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+        }
+      }
+      return "access-busy";
     },
   };
 }

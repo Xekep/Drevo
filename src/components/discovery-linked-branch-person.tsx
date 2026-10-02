@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { archiveFetch } from "../data/archive-fetch.ts";
 import { adminMatchesPath } from "../domain/archive-routes.ts";
+import { discoveryBranchRelationLabels as relationLabels,
+  type DiscoveryBranchRelation } from "../shared/discovery-branch.ts";
 
 type Person = { archiveId: string; id: string; name: string;
-  relation: "parent" | "child" | "spouse"; birthYear?: string; deathYear?: string;
+  relation: DiscoveryBranchRelation; birthYear?: string; deathYear?: string;
   birthPlace?: string; deathPlace?: string };
-const relationLabels = { parent: "Родитель", child: "Ребёнок", spouse: "Супруг(а)" };
 
 /** A direct URL always reloads one selected, mutually permitted projection. */
 export function DiscoveryLinkedBranchPerson({ archiveId, matchId, personId }: {
