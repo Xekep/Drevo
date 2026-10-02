@@ -162,13 +162,16 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
     if (!collection && !ownPeople && !candidates && !ignoredCandidates && !ignoredArchives && !detail) return false;
     if (db.kind !== "postgres" || !db.archiveId)
       return json(res, 501, { error: "Сопоставление деревьев доступно с PostgreSQL" });
+    const archiveId = db.archiveId;
+    const isOwner = async (userId: string, lock = false) => !!await db.prepare("",
+      `SELECT 1 FROM archive_owners WHERE archive_id=? AND user_id=? ${lock ? "FOR SHARE" : ""}`,
+    ).get(archiveId,userId);
     const user = await auth.currentUser(req);
     if (!user) return json(res, 401, { error: "Войдите в архив" });
-    if (user.role !== "admin" || user.approved !== true)
+    if (user.role !== "admin" || user.approved !== true || !await isOwner(user.id))
       return json(res, 403, { error: "Сопоставлять людей может владелец дерева" });
     if (req.method !== "GET" && !isSameOriginRequest(req, publicOrigin))
       return json(res, 403, { error: "Недопустимый источник запроса" });
-    const archiveId = db.archiveId;
 
     if (ignoredArchives) {
       if (req.method === "GET") {
@@ -195,7 +198,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           targetArchiveId === archiveId || typeof ignored !== "boolean")
         return json(res, 400, { error: "Выберите другое опубликованное дерево" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true)
+      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       if (!ignored) {
         await db.prepare("", `DELETE FROM discovery_ignored_archives
@@ -226,7 +229,7 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
           targetArchiveId === archiveId || typeof ignored !== "boolean")
         return json(res, 400, { error: "Выберите две опубликованные карточки из разных архивов" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true)
+      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       if (!ignored) {
         await db.prepare("", `DELETE FROM discovery_ignored_candidates WHERE archive_id=?
@@ -484,11 +487,12 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       if (typeof reason !== "string" || reason.trim().length > 500)
         return json(res, 400, { error: "Комментарий должен быть короче 500 символов" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true)
+      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const pair = [[archiveId,sourceId],[targetArchiveId,targetId]].sort((a,b) =>
         a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
       const result = await db.transaction(async () => {
+        if (!await isOwner(approved.id,true)) return undefined;
         const visible = await db.prepare("", `SELECT archive_id,person_id FROM discovery_people
           WHERE (archive_id=? AND person_id=?) OR (archive_id=? AND person_id=?)
           ORDER BY archive_id COLLATE "C",person_id COLLATE "C" FOR SHARE`)
@@ -511,6 +515,8 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
         }
         return row;
       });
+      if (result === undefined)
+        return json(res, 403, { error: "Доступ владельца отозван" });
       return result ? json(res, 200, { match: match(result) })
         : json(res, 409, { error: "Одна из карточек больше не открыта для поиска" });
     }
@@ -520,9 +526,11 @@ export function discoveryMatchesHttp({ archive, auth, publicOrigin,
       if (decision !== "accept" && decision !== "reject" && decision !== "revoke")
         return json(res, 400, { error: "Некорректное решение" });
       const approved = await auth.currentUser(req);
-      if (approved?.role !== "admin" || approved.approved !== true)
+      if (approved?.role !== "admin" || approved.approved !== true || !await isOwner(approved.id))
         return json(res, 403, { error: "Доступ отозван" });
       const result = await db.transaction(async () => {
+        if (!await isOwner(approved.id,true))
+          return { code: 403, error: "Доступ владельца отозван" };
         if (decision === "accept") {
           // Publication deletion also locks its row before the revocation
           // trigger locks this request. Keep the same order to avoid deadlock.
