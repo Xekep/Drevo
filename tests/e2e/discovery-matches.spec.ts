@@ -84,6 +84,37 @@ test("archive admin proposes a match using only two published cards", async ({ p
   await expect(page.getByRole("button", { name: "Подтвердить", exact: true })).toHaveCount(0);
 });
 
+test("a stale candidate page clears earlier suggestions and can be retried", async ({ page }) => {
+  const own = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
+  let stale = false;
+  await page.route("**/api/discovery/matches/own-people?**", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", people: [own] } }));
+  await page.route("**/api/discovery/matches/ignored-archives?**", (route) =>
+    route.fulfill({ json: { archives: [], nextPage: null } }));
+  await page.route("**/api/discovery/matches", (route) =>
+    route.fulfill({ json: { archiveId: "tree-a", matches: [], nextCursor: null } }));
+  await page.route("**/api/discovery/matches/candidates?**", (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    if (cursor) {
+      stale = true;
+      return route.fulfill({ status: 409, json: { error: "Опубликованные карточки изменились" } });
+    }
+    return route.fulfill({ json: { candidates: [{ archiveId: "tree-b",
+      id: stale ? "fresh" : "old", name: stale ? "Новая карточка" : "Старая карточка",
+      reasons: ["Совпадает имя"], conflicts: [] }], nextCursor: stale ? null : "page2" } });
+  });
+  await page.goto("/admin");
+  await openAdminSection(page, "matches", "Связи деревьев");
+  await page.getByRole("searchbox", { name: "Человек из этого дерева" }).fill("Иван");
+  await page.getByRole("button", { name: /Иван Петров/ }).click();
+  await expect(page.locator(".match-suggestion-list")).toContainText("Старая карточка");
+  await page.locator(".match-suggestions").getByRole("button", { name: "Показать ещё похожих" }).click();
+  await expect(page.locator(".match-suggestion-list")).not.toContainText("Старая карточка");
+  await expect(page.getByRole("button", { name: "Обновить подсказки" })).toBeVisible();
+  await page.getByRole("button", { name: "Обновить подсказки" }).click();
+  await expect(page.locator(".match-suggestion-list")).toContainText("Новая карточка");
+});
+
 test("a changed published card requires a fresh review before acceptance", async ({ page }) => {
   const left = { archiveId: "tree-a", id: "person-a", name: "Иван Петров" };
   const right = { archiveId: "tree-b", id: "person-b", name: "Иван Петров" };
