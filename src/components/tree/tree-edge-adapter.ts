@@ -71,6 +71,46 @@ type EdgeAdapterInput = {
   growthDelays: ReadonlyMap<string, number>;
 };
 
+type EdgePreparationInput = Omit<
+  EdgeAdapterInput,
+  "family" | "user" | "canEdit" | "busy"
+>;
+export type PreparedTreeEdges = {
+  edges: RelationshipEdgeType[];
+  /** Only standalone connections can reconnect; family branches and drafts cannot. */
+  directIndices: readonly number[];
+};
+type EdgePermissionInput = Pick<
+  EdgeAdapterInput,
+  "family" | "user" | "peopleMap" | "canEdit" | "busy"
+>;
+
+/** Keep routed geometry and handlers intact while applying the current write policy. */
+export function applyTreeEdgePermissions(
+  prepared: PreparedTreeEdges,
+  { family, user, peopleMap, canEdit, busy }: EdgePermissionInput,
+): RelationshipEdgeType[] {
+  let result = prepared.edges;
+  for (const index of prepared.directIndices) {
+    const edge = prepared.edges[index];
+    const reconnectable =
+      canEdit &&
+      !busy &&
+      canChangeConnection(family, user, edge.data!.connection, peopleMap);
+    if (edge.reconnectable === reconnectable) continue;
+    if (result === prepared.edges) result = prepared.edges.slice();
+    result[index] = { ...edge, reconnectable };
+  }
+  return result;
+}
+
+/** Compatibility entry point for callers that do not retain the preparation. */
+export function buildTreeEdges(
+  input: EdgeAdapterInput,
+): RelationshipEdgeType[] {
+  return applyTreeEdgePermissions(prepareTreeEdges(input), input);
+}
+
 function isHighlighted(
   highlighted: string[],
   edge: Pick<GraphConnection, "from" | "to">,
@@ -92,9 +132,7 @@ function keyboardSelect(select: () => void) {
   };
 }
 
-export function buildTreeEdges({
-  family,
-  user,
+export function prepareTreeEdges({
   mode,
   geometry,
   connections,
@@ -104,14 +142,12 @@ export function buildTreeEdges({
   peopleMap,
   highlighted,
   selectedEdge,
-  canEdit,
-  busy,
   extraVisible,
   preview,
   onEdge,
   onChoices,
   growthDelays,
-}: EdgeAdapterInput): RelationshipEdgeType[] {
+}: EdgePreparationInput): PreparedTreeEdges {
   const routes = new Map(geometry?.routes || []);
   const nodeWidth = geometry?.nodeSize?.width ?? TREE_NODE_WIDTH,
     nodeHeight = geometry?.nodeSize?.height ?? TREE_NODE_HEIGHT;
@@ -221,10 +257,7 @@ export function buildTreeEdges({
               width: 16,
               height: 16,
             },
-        reconnectable:
-          canEdit &&
-          !busy &&
-          canChangeConnection(family, user, edge, peopleMap),
+        reconnectable: false,
         focusable: true,
         domAttributes: { onKeyDown: keyboardSelect(select) },
         ariaLabel: `${fullName(peopleMap.get(edge.from)!)} — ${fullName(peopleMap.get(edge.to)!)}`,
@@ -304,6 +337,7 @@ export function buildTreeEdges({
     });
 
   const combined = [...familyEdges, ...edges];
+  const directIndices = edges.map((_, index) => familyEdges.length + index);
   const groups = new Map(
     (geometry?.branches || []).map((branch) => [branch.id, branch.union]),
   );
@@ -321,23 +355,26 @@ export function buildTreeEdges({
   );
 
   if (!preview?.from || !preview.to || preview.from === preview.to)
-    return withCrossings;
-  return [
-    ...withCrossings,
-    {
-      id: "draft-preview",
-      source: preview.from,
-      target: preview.to,
-      sourceHandle: "bottom",
-      targetHandle: "top",
-      type: "smoothstep",
-      label: "Предпросмотр",
-      style: {
-        stroke: "#527d67",
-        strokeWidth: 3,
-        strokeDasharray: "5 5",
+    return { edges: withCrossings, directIndices };
+  return {
+    directIndices,
+    edges: [
+      ...withCrossings,
+      {
+        id: "draft-preview",
+        source: preview.from,
+        target: preview.to,
+        sourceHandle: "bottom",
+        targetHandle: "top",
+        type: "smoothstep",
+        label: "Предпросмотр",
+        style: {
+          stroke: "#527d67",
+          strokeWidth: 3,
+          strokeDasharray: "5 5",
+        },
+        reconnectable: false,
       },
-      reconnectable: false,
-    },
-  ];
+    ],
+  };
 }

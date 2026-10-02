@@ -75,7 +75,7 @@ import "../../styles/family-view.css";
 import { useTreeFullscreen } from "./use-tree-fullscreen";
 import { ArchiveSummary } from "../archive-summary";
 import { relativeAtHandle } from "../../domain/tree-interactions";
-import { buildTreeEdges } from "./tree-edge-adapter";
+import { applyTreeEdgePermissions, prepareTreeEdges } from "./tree-edge-adapter";
 import { buildTreeNodeModel } from "./tree-node-model";
 import { treeRenderFamilyKey } from "./tree-render-family";
 import { TreeCameraTools } from "./tree-camera-tools";
@@ -946,11 +946,9 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
     ],
   );
   const connections = useMemo(() => archiveConnections(renderFamily), [renderFamily]);
-  const displayEdges = useMemo<RelationshipEdgeType[]>(
+  const preparedEdges = useMemo(
     () =>
-      buildTreeEdges({
-        family: renderFamily,
-        user,
+      prepareTreeEdges({
         mode: layoutMode,
         geometry,
         connections,
@@ -960,8 +958,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         peopleMap,
         highlighted,
         selectedEdge: props.selectedEdge,
-        canEdit: props.canEdit,
-        busy: props.busy,
         extraVisible,
         preview: props.preview,
         onEdge,
@@ -969,8 +965,6 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
         growthDelays,
       }),
     [
-      renderFamily,
-      user,
       layoutMode,
       geometry,
       connections,
@@ -980,13 +974,21 @@ const Canvas = forwardRef<TreeCanvasHandle, Props>(function Canvas(
       peopleMap,
       highlighted,
       props.selectedEdge,
-      props.canEdit,
-      props.busy,
       extraVisible,
       props.preview,
       onEdge,
       growthDelays,
     ],
+  );
+  const displayEdges = useMemo(
+    () => applyTreeEdgePermissions(preparedEdges, {
+      family: renderFamily,
+      user,
+      peopleMap,
+      canEdit: props.canEdit,
+      busy: props.busy,
+    }),
+    [preparedEdges, renderFamily, user, peopleMap, props.canEdit, props.busy],
   );
   useLayoutEffect(() => {
     if (!ready || !geometry) return;
