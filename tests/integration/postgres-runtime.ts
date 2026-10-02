@@ -57,6 +57,7 @@ import { accountSelfDeletionHttp } from "../../src/server/account-self-deletion-
 import { accountDataExportHttp } from "../../src/server/account-data-export-http.ts";
 import { gedcomHttp } from "../../src/server/gedcom-http.ts";
 import { mcpTokenStore } from "../../src/server/mcp-tokens.ts";
+import { mcpHttp } from "../../src/server/mcp-http.ts";
 import { mcpUsageStore } from "../../src/server/mcp-usage.ts";
 import { adminMcpHttp } from "../../src/server/admin-mcp-http.ts";
 import { sharesStore } from "../../src/server/shares.ts";
@@ -3119,6 +3120,59 @@ try {
   await app.archive.db
     .prepare("", "UPDATE account_tiers SET full_access=true WHERE account_id=?")
     .run("vk:42");
+  {
+    const tokenStore = mcpTokenStore(app.archive.db);
+    const issued = await tokenStore.issue(owner, {
+      name: "MCP delayed revoke regression", scopes: ["tree:read"],
+    });
+    let authenticationCount = 0;
+    let notify!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { notify = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gatedTokens = {
+      ...tokenStore,
+      authenticate: async (authorization?: string) => {
+        const grant = await tokenStore.authenticate(authorization);
+        if (++authenticationCount === 3) {
+          notify();
+          await gate;
+        }
+        return grant;
+      },
+    };
+    const endpoint = mcpHttp({ archive: app.archive, tokens: gatedTokens,
+      usage: mcpUsageStore(app.archive.db), publicOrigin: process.env.PUBLIC_ORIGIN });
+    const server = createServer((req, res) => {
+      void endpoint(req, res, new URL(req.url || "/", `http://${req.headers.host}`))
+        .catch((error) => { res.destroy(error); });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const port = (server.address() as { port: number }).port;
+      const request = fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST", headers: {
+          Origin: process.env.PUBLIC_ORIGIN!,
+          Authorization: `Bearer ${issued.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 11, method: "tools/call",
+          params: { name: "search_people", arguments: { query: "" } } }),
+      });
+      await Promise.race([entered,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("MCP tool did not reach final authentication")), 15_000))]);
+      await tokenStore.revoke(issued.item.id);
+      release();
+      const response = await request;
+      const body = await response.text();
+      assert.equal(response.status, 401,
+        `a revoked MCP token cannot receive a prepared tool result: ${body}`);
+      assert.doesNotMatch(body, /structuredContent|person-a/);
+    } finally {
+      release();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
   const guardedTokens = adminMcpHttp({
     auth: await createAuth(await userStore(app.archive.db), app.archive.db,
       process.env.PUBLIC_ORIGIN),
