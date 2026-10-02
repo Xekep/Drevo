@@ -90,34 +90,37 @@ def verify_archive(
             raise ValueError("Media backup checksum does not match")
         checksum_seconds = time.monotonic() - checksum_started
         source.seek(0)
-        with tarfile.open(fileobj=source, mode="r:gz") as media:
-            members = media.getmembers()
+        available_bytes = shutil.disk_usage(scratch_parent).free - reserve_bytes
+        if available_bytes < 0:
+            raise ValueError("Insufficient free space for media restore and reserve")
+
+        restore_started = time.monotonic()
+        with tempfile.TemporaryDirectory(
+            prefix="drevo-media-restore.", dir=scratch_parent
+        ) as temporary:
+            root = Path(temporary)
             seen: set[tuple[str, ...]] = set()
             files = 0
             total_bytes = 0
             has_legacy_uploads = False
-            for member in members:
-                parts = member_parts(member)
-                if parts in seen:
-                    raise ValueError(f"Duplicate media archive path: {member.name!r}")
-                seen.add(parts)
-                if parts == ("uploads",):
-                    has_legacy_uploads = True
-                if member.isfile():
-                    files += 1
-                    total_bytes += member.size
-            if not has_legacy_uploads or files == 0:
-                raise ValueError("Media backup has no legacy uploads root or no files")
-            if shutil.disk_usage(scratch_parent).free < total_bytes + reserve_bytes:
-                raise ValueError("Insufficient free space for media restore and reserve")
-
-            restore_started = time.monotonic()
-            with tempfile.TemporaryDirectory(
-                prefix="drevo-media-restore.", dir=scratch_parent
-            ) as temporary:
-                root = Path(temporary)
-                for member in members:
-                    target = root.joinpath(*member_parts(member))
+            with tarfile.open(fileobj=source, mode="r|gz") as media:
+                for member in media:
+                    parts = member_parts(member)
+                    if parts in seen:
+                        raise ValueError(f"Duplicate media archive path: {member.name!r}")
+                    seen.add(parts)
+                    if parts == ("uploads",):
+                        has_legacy_uploads = True
+                    if member.isfile():
+                        if member.size < 0:
+                            raise ValueError(f"Invalid media file size: {member.name!r}")
+                        files += 1
+                        total_bytes += member.size
+                        if total_bytes > available_bytes:
+                            raise ValueError(
+                                "Insufficient free space for media restore and reserve"
+                            )
+                    target = root.joinpath(*parts)
                     if member.isdir():
                         target.mkdir(parents=True, exist_ok=True)
                         continue
@@ -140,7 +143,9 @@ def verify_archive(
                             restored_digest.update(block)
                     if restored_digest.digest() != archived_digest.digest():
                         raise ValueError(f"Restored media differs from archive: {member.name!r}")
-                restore_seconds = time.monotonic() - restore_started
+            if not has_legacy_uploads or files == 0:
+                raise ValueError("Media backup has no legacy uploads root or no files")
+            restore_seconds = time.monotonic() - restore_started
     return RestoreResult(
         files, total_bytes, checksum_seconds, restore_seconds,
         time.monotonic() - started,

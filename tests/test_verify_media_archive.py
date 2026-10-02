@@ -57,6 +57,51 @@ class MediaRestoreTests(unittest.TestCase):
         self.assertGreaterEqual(result.ready_seconds, result.restore_seconds)
         self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
 
+    def test_multiple_files_are_restored_from_forward_only_tar_stream(self):
+        payloads = {
+            "uploads/one.jpg": b"one",
+            "uploads/large.bin": b"x" * (1024 * 1024 + 17),
+            "archives/tree-b/uploads/two.pdf": b"two",
+        }
+        with tarfile.open(self.backup, "w:gz") as media:
+            for name in ("uploads", "archives", "archives/tree-b",
+                         "archives/tree-b/uploads"):
+                directory = tarfile.TarInfo(name)
+                directory.type = tarfile.DIRTYPE
+                media.addfile(directory)
+            for name, payload in payloads.items():
+                entry = tarfile.TarInfo(name)
+                entry.size = len(payload)
+                media.addfile(entry, io.BytesIO(payload))
+        self.seal()
+
+        class ForwardOnly:
+            def __init__(self, source):
+                self.source = source
+
+            def read(self, size=-1):
+                return self.source.read(size)
+
+            def seek(self, *args):
+                raise AssertionError("tar stream attempted random seek")
+
+        actual_open = tarfile.open
+
+        def open_forward_only(*args, **kwargs):
+            self.assertEqual(kwargs["mode"], "r|gz")
+            kwargs["fileobj"] = ForwardOnly(kwargs["fileobj"])
+            return actual_open(*args, **kwargs)
+
+        with patch.object(verifier.tarfile, "open", side_effect=open_forward_only):
+            result = self.verify()
+        self.assertEqual(result.files, len(payloads))
+        self.assertEqual(result.bytes, sum(map(len, payloads.values())))
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+        with patch.object(verifier.shutil, "disk_usage", return_value=SimpleNamespace(free=3)):
+            with self.assertRaisesRegex(ValueError, "Insufficient free space"):
+                self.verify()
+        self.assertEqual(list(self.root.glob("drevo-media-restore.*")), [])
+
     def test_corrupt_archive_fails_before_extraction(self):
         with tarfile.open(self.backup, "w:gz") as media:
             directory = tarfile.TarInfo("uploads")
