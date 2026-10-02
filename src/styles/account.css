@@ -149,6 +149,53 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+.account-session-list {
+  margin-top: 14px;
+  border-top: 1px solid #ecede7;
+}
+.account-session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #ecede7;
+}
+.account-session-item > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.account-session-item strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-session-item span,
+.account-session-more {
+  color: #79877c;
+  font-size: 11px;
+}
+.account-session-revoke {
+  flex: none;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #dbe4d9;
+  border-radius: 9px;
+  color: #496f50;
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-session-revoke:hover {
+  background: #f3f7f0;
+}
+.account-session-revoke:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.account-session-more {
+  margin: 10px 0 0;
+  line-height: 1.4;
+}
 .account-archive-summary,
 .account-archive-list {
   margin-top: 22px;

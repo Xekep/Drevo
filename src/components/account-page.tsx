@@ -45,7 +45,16 @@ export type AccountSession = {
   yandex: boolean;
   vk?: boolean;
 };
-type SessionSummary = { currentExpiresAt: string | null; otherCount: number };
+type SessionSummary = {
+  currentExpiresAt: string | null;
+  otherCount: number;
+  items?: {
+    id: string;
+    isCurrent: boolean;
+    createdAt: string | null;
+    expiresAt: string;
+  }[];
+};
 function loginMethods(account: AccountSession["account"], identityId: string) {
   const providers = account?.providers?.length
     ? account.providers
@@ -116,6 +125,13 @@ const date = (value?: string | null) => {
     year: "numeric",
   }).format(new Date(value));
 };
+const dateTime = (value?: string | null) => {
+  if (!value || !Number.isFinite(Date.parse(value))) return null;
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+};
 
 export function AccountPage({
   session,
@@ -149,6 +165,9 @@ export function AccountPage({
     capacityState?.key === capacityKey ? capacityState.result : null;
   const [sessionError, setSessionError] = useState("");
   const [revoking, setRevoking] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(
+    null,
+  );
   useEffect(() => {
     if (!accountId || local) return;
     const controller = new AbortController();
@@ -213,7 +232,13 @@ export function AccountPage({
       );
       if (!response.ok) throw new Error("Не удалось завершить другие сеансы");
       setSessions((previous) =>
-        previous ? { ...previous, otherCount: 0 } : previous,
+        previous
+          ? {
+              ...previous,
+              otherCount: 0,
+              items: previous.items?.filter((item) => item.isCurrent),
+            }
+          : previous,
       );
     } catch {
       setSessionError(
@@ -221,6 +246,26 @@ export function AccountPage({
       );
     } finally {
       setRevoking(false);
+    }
+  };
+  const revokeOne = async (id: string) => {
+    setRevokingSessionId(id);
+    setSessionError("");
+    try {
+      const response = await archiveFetch(
+        `/api/account/sessions/${encodeURIComponent(id)}/revoke`,
+        { method: "POST" },
+      );
+      if (!response.ok) throw new Error("Не удалось завершить сеанс");
+      const refreshed = await archiveFetch("/api/account/sessions", {
+        cache: "no-store",
+      });
+      if (!refreshed.ok) throw new Error("Не удалось обновить список сеансов");
+      setSessions((await refreshed.json()) as SessionSummary);
+    } catch {
+      setSessionError("Не удалось завершить сеанс. Попробуйте ещё раз.");
+    } finally {
+      setRevokingSessionId(null);
     }
   };
   const logout = async () => {
@@ -498,10 +543,57 @@ export function AccountPage({
                         </strong>
                       </div>
                     </div>
+                    {sessions?.items && (
+                      <div
+                        className="account-session-list"
+                        aria-label="Активные сеансы"
+                      >
+                        {sessions.items.map((item) => (
+                          <div className="account-session-item" key={item.id}>
+                            <div>
+                              <strong>
+                                {item.isCurrent ? "Этот сеанс" : "Другой сеанс"}
+                              </strong>
+                              <span>
+                                {item.createdAt
+                                  ? `Вход ${dateTime(item.createdAt)}`
+                                  : "Дата входа неизвестна"}
+                              </span>
+                            </div>
+                            {item.isCurrent ? (
+                              <button
+                                className="account-session-revoke"
+                                onClick={() => void logout()}
+                              >
+                                Выйти
+                              </button>
+                            ) : (
+                              <button
+                                className="account-session-revoke"
+                                disabled={
+                                  revoking || revokingSessionId !== null
+                                }
+                                onClick={() => void revokeOne(item.id)}
+                              >
+                                {revokingSessionId === item.id
+                                  ? "Завершаем…"
+                                  : "Завершить"}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {sessions.otherCount > 20 && (
+                          <p className="account-session-more">
+                            Показаны последние 20 других сеансов. Остальные
+                            можно завершить кнопкой ниже.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {sessions && sessions.otherCount > 0 && (
                       <button
                         className="account-row-action"
-                        disabled={revoking}
+                        disabled={revoking || revokingSessionId !== null}
                         onClick={() => void revokeOthers()}
                       >
                         {revoking ? "Завершаем…" : "Завершить другие сеансы"}{" "}

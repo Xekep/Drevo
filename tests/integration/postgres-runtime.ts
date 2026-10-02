@@ -59,6 +59,7 @@ import { publishedPeopleStore } from "../../src/server/published-people.ts";
 import { accountArchiveDirectory } from "../../src/server/account-archives.ts";
 import { completePostgresOAuthLoginInTransaction } from "../../src/server/postgres-yandex-login.ts";
 import { verifyEmailAccounts } from "./postgres-email.ts";
+import { verifyAccountSessionManagement } from "./postgres-account-sessions.ts";
 import { verifyPostgresCommentEdits } from "./postgres-comment-edits.ts";
 import { importSqliteSnapshot } from "../../ops/postgres/import-sqlite.ts";
 import { writeDatabaseBackup } from "../../src/server/backup.ts";
@@ -1510,6 +1511,7 @@ try {
     ...headers,
     Cookie: `drevo_session=${aiOwnerToken}`,
   };
+  await verifyAccountSessionManagement(app.archive.db, securedBase, ownerHeaders, headers);
   const generatedChats = aiChatStore(app.archive.db);
   const generatedStore = generatedResearchFileStore(
     app.archive.db, join(dirname(source), "uploads"), generatedChats,

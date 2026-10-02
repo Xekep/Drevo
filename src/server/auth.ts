@@ -64,9 +64,13 @@ export async function createAuth(
             WHERE a.id=?`,
         )
       : null;
-  const oauthProof = db.kind === "postgres"
-    ? db.prepare("", "SELECT authenticated_at FROM account_oauth_session_proofs WHERE token_hash=?")
-    : null;
+  const oauthProof =
+    db.kind === "postgres"
+      ? db.prepare(
+          "",
+          "SELECT authenticated_at FROM account_oauth_session_proofs WHERE token_hash=?",
+        )
+      : null;
   const globalVisit =
     db.kind === "postgres"
       ? db.prepare(
@@ -170,7 +174,11 @@ export async function createAuth(
       const proof = await oauthProof.get(session.tokenHash);
       const authenticatedAt = Number(proof?.authenticated_at);
       const elapsed = Date.now() - authenticatedAt;
-      return Number.isFinite(authenticatedAt) && elapsed >= 0 && elapsed <= 10 * 60 * 1000;
+      return (
+        Number.isFinite(authenticatedAt) &&
+        elapsed >= 0 &&
+        elapsed <= 10 * 60 * 1000
+      );
     },
     async accountProfile(req: IncomingMessage) {
       if (!accountDetails || local) return null;
@@ -192,7 +200,9 @@ export async function createAuth(
                     ? "yandex"
                     : null,
             providers: Array.isArray(row.providers)
-              ? row.providers.filter((value) => ["email", "vk", "yandex"].includes(value))
+              ? row.providers.filter((value) =>
+                  ["email", "vk", "yandex"].includes(value),
+                )
               : [],
           }
         : null;
@@ -254,6 +264,65 @@ export async function createAuth(
         (db.kind !== "postgres" && !(await users.get(session.userId)))
       )
         return null;
+      if (db.kind === "postgres" && db.postgresTransaction) {
+        const now = Date.now();
+        return db.postgresTransaction(async (client) => {
+          const current = await client.query<{
+            id: string;
+            created_at: string | null;
+            expires_at: string;
+          }>(
+            `SELECT public_id::text AS id,created_at,expires_at
+               FROM account_sessions
+              WHERE token_hash=$1 AND user_id=$2 AND expires_at>$3 FOR SHARE`,
+            [session.tokenHash, session.userId, now],
+          );
+          if (
+            !current.rows[0] ||
+            Number(current.rows[0].expires_at) <= Date.now()
+          )
+            return null;
+          const listedAt = Date.now();
+          const others = await client.query<{
+            id: string;
+            created_at: string | null;
+            expires_at: string;
+          }>(
+            `SELECT public_id::text AS id,created_at,expires_at
+               FROM account_sessions
+              WHERE user_id=$1 AND token_hash<>$2 AND expires_at>$3
+              ORDER BY created_at DESC NULLS LAST,public_id LIMIT 20`,
+            [session.userId, session.tokenHash, listedAt],
+          );
+          const total = await client.query<{ count: string }>(
+            `SELECT count(*) AS count FROM account_sessions
+              WHERE user_id=$1 AND token_hash<>$2 AND expires_at>$3`,
+            [session.userId, session.tokenHash, listedAt],
+          );
+          const detail = (
+            row: (typeof current.rows)[number],
+            isCurrent: boolean,
+          ) => ({
+            id: row.id,
+            isCurrent,
+            createdAt:
+              row.created_at === null
+                ? null
+                : new Date(Number(row.created_at)).toISOString(),
+            expiresAt: new Date(Number(row.expires_at)).toISOString(),
+          });
+          return {
+            currentExpiresAt: new Date(
+              Number(current.rows[0].expires_at),
+            ).toISOString(),
+            otherCount: Number(total.rows[0].count),
+            items: [
+              detail(current.rows[0], true),
+              ...others.rows.map((row) => detail(row, false)),
+            ],
+          };
+        });
+      }
       return {
         currentExpiresAt: new Date(session.expires).toISOString(),
         otherCount: Number(
@@ -278,6 +347,31 @@ export async function createAuth(
       return Number(
         (await revokeOthers.run(session.userId, session.tokenHash)).changes,
       );
+    },
+    async revokeManagedSession(req: IncomingMessage, id: string) {
+      if (local || db.kind !== "postgres" || !db.postgresTransaction)
+        return null;
+      const session = await sessionFor(req);
+      if (!session) return null;
+      return db.postgresTransaction(async (client) => {
+        const current = await client.query<{ id: string; expires_at: string }>(
+          `SELECT public_id::text AS id,expires_at FROM account_sessions
+            WHERE token_hash=$1 AND user_id=$2 AND expires_at>$3 FOR SHARE`,
+          [session.tokenHash, session.userId, Date.now()],
+        );
+        if (
+          !current.rows[0] ||
+          Number(current.rows[0].expires_at) <= Date.now()
+        )
+          return null;
+        if (current.rows[0].id === id) return "current" as const;
+        const deleted = await client.query(
+          `DELETE FROM account_sessions
+            WHERE public_id=$1 AND user_id=$2 AND token_hash<>$3 AND expires_at>$4`,
+          [id, session.userId, session.tokenHash, Date.now()],
+        );
+        return deleted.rowCount === 1;
+      });
     },
     async refreshSession(req: IncomingMessage, res: ServerResponse) {
       if (local || req.headers["sec-fetch-site"] === "cross-site") return;
